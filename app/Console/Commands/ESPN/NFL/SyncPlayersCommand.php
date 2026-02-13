@@ -1,0 +1,31 @@
+<?php
+
+namespace App\Console\Commands\ESPN\NFL;
+
+use App\Jobs\ESPN\NFL\FetchPlayers;
+use Illuminate\Console\Command;
+
+class SyncPlayersCommand extends Command
+{
+    protected $signature = 'espn:sync-nfl-players
+                            {teamEspnId? : Optional ESPN team ID to sync a specific team}';
+
+    protected $description = 'Sync NFL players from ESPN API';
+
+    public function handle(): int
+    {
+        $teamEspnId = $this->argument('teamEspnId');
+
+        if ($teamEspnId) {
+            $this->info("Dispatching NFL players sync job for team {$teamEspnId}...");
+        } else {
+            $this->info('Dispatching NFL players sync job for all teams...');
+        }
+
+        FetchPlayers::dispatch($teamEspnId);
+
+        $this->info('NFL players sync job dispatched successfully.');
+
+        return Command::SUCCESS;
+    }
+}

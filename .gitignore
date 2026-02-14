@@ -26,3 +26,8 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+
+# Large SQL dump files (exceed GitHub 100MB limit)
+/database/mysql_data.sql
+/database/mysql_data_no_migrations.sql
+/database/sqlite_dump.sql

@@ -3,6 +3,7 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
@@ -11,22 +12,42 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('cfb_elo_ratings', function (Blueprint $table) {
-            $table->foreignId('game_id')->nullable()->after('team_id')->constrained('cfb_games')->onDelete('cascade');
-            $table->date('date')->nullable()->after('season_type');
+        // Use raw SQL to avoid Schema builder constraint validation
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
-            // Drop old unique constraint and add new one
-            $table->dropUnique(['team_id', 'season', 'week', 'season_type']);
+        // First, drop the foreign key on team_id (which may be using the unique index)
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP FOREIGN KEY cfb_elo_ratings_team_id_foreign');
 
-            // Make week nullable for backward compatibility
-            $table->integer('week')->nullable()->change();
+        // Now we can drop the unique constraint
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP INDEX cfb_elo_ratings_team_id_season_week_season_type_unique');
 
-            // Add new unique constraint on team_id and game_id
-            $table->unique(['team_id', 'game_id']);
+        // Make week nullable
+        DB::statement('ALTER TABLE cfb_elo_ratings MODIFY week INT NULL');
 
-            // Add useful indexes
-            $table->index(['team_id', 'season', 'date']);
-        });
+        // Add new columns
+        DB::statement('ALTER TABLE cfb_elo_ratings
+            ADD COLUMN game_id BIGINT UNSIGNED NULL AFTER team_id,
+            ADD COLUMN date DATE NULL AFTER season_type');
+
+        // Recreate the foreign key on team_id
+        DB::statement('ALTER TABLE cfb_elo_ratings
+            ADD CONSTRAINT cfb_elo_ratings_team_id_foreign
+            FOREIGN KEY (team_id) REFERENCES cfb_teams(id) ON DELETE CASCADE');
+
+        // Add foreign key on game_id
+        DB::statement('ALTER TABLE cfb_elo_ratings
+            ADD CONSTRAINT cfb_elo_ratings_game_id_foreign
+            FOREIGN KEY (game_id) REFERENCES cfb_games(id) ON DELETE CASCADE');
+
+        // Add new unique constraint
+        DB::statement('ALTER TABLE cfb_elo_ratings
+            ADD UNIQUE cfb_elo_ratings_team_id_game_id_unique (team_id, game_id)');
+
+        // Add useful indexes
+        DB::statement('ALTER TABLE cfb_elo_ratings
+            ADD INDEX cfb_elo_ratings_team_id_season_date_index (team_id, season, date)');
+
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
     }
 
     /**
@@ -34,14 +55,33 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('cfb_elo_ratings', function (Blueprint $table) {
-            $table->dropForeign(['game_id']);
-            $table->dropUnique(['team_id', 'game_id']);
-            $table->dropIndex(['team_id', 'season', 'date']);
-            $table->dropColumn(['game_id', 'date']);
+        // Use raw SQL for rollback as well
+        DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
-            $table->integer('week')->nullable(false)->change();
-            $table->unique(['team_id', 'season', 'week', 'season_type']);
-        });
+        // Drop foreign keys
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP FOREIGN KEY cfb_elo_ratings_team_id_foreign');
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP FOREIGN KEY cfb_elo_ratings_game_id_foreign');
+
+        // Drop unique constraint
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP INDEX cfb_elo_ratings_team_id_game_id_unique');
+
+        // Drop index
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP INDEX cfb_elo_ratings_team_id_season_date_index');
+
+        // Drop columns
+        DB::statement('ALTER TABLE cfb_elo_ratings DROP COLUMN game_id, DROP COLUMN date');
+
+        // Make week NOT NULL again
+        DB::statement('ALTER TABLE cfb_elo_ratings MODIFY week INT NOT NULL');
+
+        // Recreate original unique constraint
+        DB::statement('ALTER TABLE cfb_elo_ratings ADD UNIQUE cfb_elo_ratings_team_id_season_week_season_type_unique (team_id, season, week, season_type)');
+
+        // Recreate the original foreign key on team_id
+        DB::statement('ALTER TABLE cfb_elo_ratings
+            ADD CONSTRAINT cfb_elo_ratings_team_id_foreign
+            FOREIGN KEY (team_id) REFERENCES cfb_teams(id) ON DELETE CASCADE');
+
+        DB::statement('SET FOREIGN_KEY_CHECKS=1');
     }
 };

@@ -17,9 +17,10 @@ return new class extends Migration
 
             $table->boolean('enabled')->default(false);
 
-            $table->json('sports')->default('["nfl", "nba", "cbb", "wcbb", "mlb"]');
+            // MySQL 8.4.6 doesn't support default values for JSON columns
+            $table->json('sports');
 
-            $table->json('notification_types')->default('["email"]');
+            $table->json('notification_types');
 
             $table->decimal('minimum_edge', 5, 2)->default(5.00);
 

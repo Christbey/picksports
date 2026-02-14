@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import AppLayout from '@/layouts/AppLayout.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { type BreadcrumbItem, type Team, type Game } from '@/types'
+import { type BreadcrumbItem, type Team, type TeamMetric, type Game } from '@/types'
 import NFLGameController from '@/actions/App/Http/Controllers/NFL/GameController'
 
 const props = defineProps<{
@@ -17,10 +17,34 @@ const breadcrumbs: BreadcrumbItem[] = [
     { title: props.team.name, href: `/nfl/teams/${props.team.id}` }
 ]
 
+const teamMetrics = ref<TeamMetric | null>(null)
 const recentGames = ref<Game[]>([])
 const upcomingGames = ref<Game[]>([])
 const loading = ref(true)
 const error = ref<string | null>(null)
+
+const record = computed(() => {
+    if (recentGames.value.length === 0) return { wins: 0, losses: 0 }
+    const wins = recentGames.value.filter((g) => getGameResult(g) === 'W').length
+    const losses = recentGames.value.filter((g) => getGameResult(g) === 'L').length
+    return { wins, losses }
+})
+
+const formatNumber = (value: number | string | null, decimals = 1): string => {
+    if (value === null || value === undefined) return '-'
+    const num = typeof value === 'string' ? parseFloat(value) : value
+    if (isNaN(num)) return '-'
+    return num.toFixed(decimals)
+}
+
+const getRatingClass = (value: number | null): string => {
+    if (value === null) return ''
+    if (value > 5) return 'text-green-600 dark:text-green-400 font-semibold'
+    if (value > 0) return 'text-green-600 dark:text-green-400'
+    if (value < -5) return 'text-red-600 dark:text-red-400 font-semibold'
+    if (value < 0) return 'text-red-600 dark:text-red-400'
+    return ''
+}
 
 const formatDate = (dateString: string | null): string => {
     if (!dateString) return '-'
@@ -44,7 +68,15 @@ onMounted(async () => {
         loading.value = true
         error.value = null
 
-        const gamesRes = await fetch(`/api/v1/nfl/teams/${props.team.id}/games`)
+        const [metricsRes, gamesRes] = await Promise.all([
+            fetch(`/api/v1/nfl/teams/${props.team.id}/metrics`),
+            fetch(`/api/v1/nfl/teams/${props.team.id}/games`)
+        ])
+
+        if (metricsRes.ok) {
+            const metricsData = await metricsRes.json()
+            teamMetrics.value = metricsData.data?.[0] || null
+        }
 
         if (gamesRes.ok) {
             const gamesData = await gamesRes.json()
@@ -83,6 +115,14 @@ onMounted(async () => {
                     <p class="text-muted-foreground">
                         {{ team.conference }} {{ team.division ? `• ${team.division}` : '' }}
                     </p>
+                    <div class="mt-2 flex items-center gap-4">
+                        <div v-if="record.wins > 0 || record.losses > 0" class="text-sm font-medium">
+                            Record: {{ record.wins }}-{{ record.losses }}
+                        </div>
+                        <div v-if="team.elo_rating" class="text-sm font-medium">
+                            ELO: {{ team.elo_rating }}
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -91,11 +131,82 @@ onMounted(async () => {
             </Alert>
 
             <div v-if="loading" class="space-y-4">
+                <Skeleton class="h-32 w-full" />
                 <Skeleton class="h-64 w-full" />
                 <Skeleton class="h-64 w-full" />
             </div>
 
             <template v-else>
+                <Card v-if="teamMetrics">
+                    <CardHeader>
+                        <CardTitle>Current Season Metrics</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Off Rating</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.offensive_rating) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Def Rating</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.defensive_rating) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Net Rating</div>
+                                <div class="text-2xl font-bold" :class="getRatingClass(teamMetrics.net_rating)">
+                                    {{ formatNumber(teamMetrics.net_rating) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">PPG</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.points_per_game) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Pts Allowed</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.points_allowed_per_game) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Yards/Game</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.yards_per_game, 0) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Yards Allowed</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.yards_allowed_per_game, 0) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Pass Yds/G</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.passing_yards_per_game, 0) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">Rush Yds/G</div>
+                                <div class="text-2xl font-bold">
+                                    {{ formatNumber(teamMetrics.rushing_yards_per_game, 0) }}
+                                </div>
+                            </div>
+                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                <div class="text-sm text-muted-foreground">TO Diff</div>
+                                <div class="text-2xl font-bold" :class="getRatingClass(teamMetrics.turnover_differential)">
+                                    {{ teamMetrics.turnover_differential > 0 ? '+' : '' }}{{ formatNumber(teamMetrics.turnover_differential, 0) }}
+                                </div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 <Card v-if="recentGames.length > 0">
                     <CardHeader>
                         <CardTitle>Recent Games</CardTitle>

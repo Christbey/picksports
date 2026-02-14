@@ -15,12 +15,13 @@ return new class extends Migration
             $table->id();
             $table->string('espn_id', 50)->unique();
             $table->string('abbreviation', 10)->unique();
-            $table->string('school', 100)->nullable();
-            $table->string('mascot', 100)->nullable();
+            $table->string('location', 100)->nullable();
+            $table->string('name', 100)->nullable();
             $table->string('conference', 50)->nullable();
             $table->string('division', 50)->nullable();
             $table->string('color', 7)->nullable();
             $table->string('logo_url')->nullable();
+            $table->integer('elo_rating')->default(1500);
             $table->timestamps();
 
             $table->index(['conference', 'division']);

@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('cfb_predictions', function (Blueprint $table) {
-            $table->decimal('actual_spread', 5, 1)->nullable()->after('prediction_date');
+            $table->decimal('actual_spread', 5, 1)->nullable()->after('confidence_score');
             $table->decimal('actual_total', 5, 1)->nullable()->after('actual_spread');
             $table->decimal('spread_error', 5, 1)->nullable()->after('actual_total');
             $table->decimal('total_error', 5, 1)->nullable()->after('spread_error');

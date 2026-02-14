@@ -68,6 +68,11 @@ class Team extends Model
         return $this->hasMany(Prediction::class, 'team_id');
     }
 
+    public function teamMetrics(): HasMany
+    {
+        return $this->hasMany(TeamMetric::class, 'team_id');
+    }
+
     protected static function newFactory(): \Database\Factories\NflTeamFactory
     {
         return \Database\Factories\NflTeamFactory::new();

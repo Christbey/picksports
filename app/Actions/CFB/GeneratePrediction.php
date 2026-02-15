@@ -2,34 +2,35 @@
 
 namespace App\Actions\CFB;
 
-use App\Models\CFB\Game;
+use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Models\CFB\Prediction;
+use App\Models\CFB\TeamMetric;
+use Illuminate\Database\Eloquent\Model;
 
-class GeneratePrediction
+class GeneratePrediction extends AbstractPredictionGenerator
 {
-    public function execute(Game $game): ?Prediction
+    protected function getSport(): string
     {
-        // Don't predict games that are already completed
-        if ($game->status === 'STATUS_FINAL') {
-            return null;
-        }
+        return 'cfb';
+    }
 
-        $homeTeam = $game->homeTeam;
-        $awayTeam = $game->awayTeam;
+    protected function getTeamMetricModel(): string
+    {
+        return TeamMetric::class;
+    }
 
-        if (! $homeTeam || ! $awayTeam) {
-            return null;
-        }
+    protected function getPredictionModel(): string
+    {
+        return Prediction::class;
+    }
 
-        // Get current Elo ratings
-        $defaultElo = config('cfb.elo.default_rating');
-        $homeElo = $homeTeam->elo_rating ?? $defaultElo;
-        $awayElo = $awayTeam->elo_rating ?? $defaultElo;
-
-        // Get FPI ratings if available
-        $homeFpi = $homeTeam->fpi ?? null;
-        $awayFpi = $awayTeam->fpi ?? null;
-
+    protected function calculatePredictedSpread(
+        int $homeElo,
+        int $awayElo,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
         // Calculate predicted spread (negative means away team favored)
         $homeFieldAdvantage = $game->neutral_site ? 0 : config('cfb.elo.home_field_advantage');
         $pointsPerElo = config('cfb.predictions.points_per_elo');
@@ -41,40 +42,45 @@ class GeneratePrediction
         $minSpread = config('cfb.predictions.min_spread');
         $predictedSpread = max($minSpread, min($maxSpread, $predictedSpread));
 
+        return $predictedSpread;
+    }
+
+    protected function calculatePredictedTotal(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
         // Calculate predicted total
-        $predictedTotal = config('cfb.predictions.average_total');
-
-        // Calculate win probability from Elo difference
-        $winProbability = $this->calculateWinProbability($eloDiff);
-
-        // Calculate confidence score based on data quality
-        $confidenceScore = $this->calculateConfidence($homeElo, $awayElo);
-
-        // Create or update prediction
-        return Prediction::updateOrCreate(
-            ['game_id' => $game->id],
-            [
-                'home_elo' => $homeElo,
-                'away_elo' => $awayElo,
-                'home_fpi' => $homeFpi,
-                'away_fpi' => $awayFpi,
-                'predicted_spread' => $predictedSpread,
-                'predicted_total' => $predictedTotal,
-                'win_probability' => $winProbability,
-                'confidence_score' => $confidenceScore,
-            ]
-        );
+        return config('cfb.predictions.average_total');
     }
 
-    protected function calculateWinProbability(float $eloDiff): float
-    {
-        // Standard Elo probability formula
-        $probability = 1 / (1 + pow(10, -$eloDiff / 400));
+    protected function buildPredictionData(
+        int $homeElo,
+        int $awayElo,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        float $predictedSpread,
+        float $predictedTotal,
+        float $winProbability,
+        float $confidenceScore
+    ): array {
+        // Get FPI ratings if available
+        $homeFpi = $homeMetrics?->fpi ?? null;
+        $awayFpi = $awayMetrics?->fpi ?? null;
 
-        return round($probability, 3);
+        return [
+            'home_elo' => $homeElo,
+            'away_elo' => $awayElo,
+            'home_fpi' => $homeFpi,
+            'away_fpi' => $awayFpi,
+            'predicted_spread' => $predictedSpread,
+            'predicted_total' => $predictedTotal,
+            'win_probability' => $winProbability,
+            'confidence_score' => $confidenceScore,
+        ];
     }
 
-    protected function calculateConfidence(int $homeElo, int $awayElo): float
+    protected function calculateConfidence(?Model $homeMetrics, ?Model $awayMetrics, int $homeElo, int $awayElo): float
     {
         $defaultElo = config('cfb.elo.default_rating');
         $confidenceConfig = config('cfb.predictions.confidence');

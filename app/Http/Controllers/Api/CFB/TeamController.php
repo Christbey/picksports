@@ -2,29 +2,24 @@
 
 namespace App\Http\Controllers\Api\CFB;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractTeamController;
 use App\Http\Resources\CFB\TeamResource;
 use App\Models\CFB\Team;
 
-class TeamController extends Controller
+class TeamController extends AbstractTeamController
 {
-    /**
-     * Display a listing of CFB teams.
-     */
-    public function index()
+    protected function getTeamModel(): string
     {
-        $teams = Team::query()
-            ->orderBy('school')
-            ->paginate(15);
-
-        return TeamResource::collection($teams);
+        return Team::class;
     }
 
-    /**
-     * Display the specified CFB team.
-     */
-    public function show(Team $team)
+    protected function getTeamResource(): string
     {
-        return new TeamResource($team);
+        return TeamResource::class;
+    }
+
+    protected function getOrderByColumn(): string
+    {
+        return 'school';
     }
 }

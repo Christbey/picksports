@@ -29,6 +29,11 @@ class Prediction extends Model
         'total_error',
         'winner_correct',
         'graded_at',
+        'live_predicted_spread',
+        'live_win_probability',
+        'live_predicted_total',
+        'live_seconds_remaining',
+        'live_updated_at',
     ];
 
     protected function casts(): array
@@ -48,6 +53,11 @@ class Prediction extends Model
             'total_error' => 'decimal:1',
             'winner_correct' => 'boolean',
             'graded_at' => 'datetime',
+            'live_predicted_spread' => 'decimal:1',
+            'live_win_probability' => 'decimal:3',
+            'live_predicted_total' => 'decimal:1',
+            'live_seconds_remaining' => 'integer',
+            'live_updated_at' => 'datetime',
         ];
     }
 

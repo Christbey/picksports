@@ -2,30 +2,35 @@
 
 namespace App\Actions\NFL;
 
-use App\Models\NFL\Game;
+use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Models\NFL\Prediction;
+use App\Models\NFL\TeamMetric;
+use Illuminate\Database\Eloquent\Model;
 
-class GeneratePrediction
+class GeneratePrediction extends AbstractPredictionGenerator
 {
-    public function execute(Game $game): ?Prediction
+    protected function getSport(): string
     {
-        // Don't predict games that are already completed
-        if ($game->status === 'STATUS_FINAL') {
-            return null;
-        }
+        return 'nfl';
+    }
 
-        $homeTeam = $game->homeTeam;
-        $awayTeam = $game->awayTeam;
+    protected function getTeamMetricModel(): string
+    {
+        return TeamMetric::class;
+    }
 
-        if (! $homeTeam || ! $awayTeam) {
-            return null;
-        }
+    protected function getPredictionModel(): string
+    {
+        return Prediction::class;
+    }
 
-        // Get current Elo ratings
-        $defaultElo = config('nfl.elo.default_rating');
-        $homeElo = $homeTeam->elo_rating ?? $defaultElo;
-        $awayElo = $awayTeam->elo_rating ?? $defaultElo;
-
+    protected function calculatePredictedSpread(
+        int $homeElo,
+        int $awayElo,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
         // Calculate predicted spread (negative means away team favored)
         $homeFieldAdvantage = $game->neutral_site ? 0 : config('nfl.elo.home_field_advantage');
         $pointsPerElo = config('nfl.predictions.points_per_elo');
@@ -37,54 +42,15 @@ class GeneratePrediction
         $minSpread = config('nfl.predictions.min_spread');
         $predictedSpread = max($minSpread, min($maxSpread, $predictedSpread));
 
+        return $predictedSpread;
+    }
+
+    protected function calculatePredictedTotal(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
         // Calculate predicted total (over/under)
-        $predictedTotal = config('nfl.predictions.average_total');
-
-        // Calculate win probability from Elo difference
-        $winProbability = $this->calculateWinProbability($eloDiff);
-
-        // Calculate confidence score based on data quality
-        $confidenceScore = $this->calculateConfidence($homeElo, $awayElo);
-
-        // Create or update prediction
-        return Prediction::updateOrCreate(
-            ['game_id' => $game->id],
-            [
-                'home_elo' => $homeElo,
-                'away_elo' => $awayElo,
-                'predicted_spread' => $predictedSpread,
-                'predicted_total' => $predictedTotal,
-                'win_probability' => $winProbability,
-                'confidence_score' => $confidenceScore,
-            ]
-        );
-    }
-
-    protected function calculateWinProbability(float $eloDiff): float
-    {
-        // Standard Elo probability formula
-        $probability = 1 / (1 + pow(10, -$eloDiff / 400));
-
-        return round($probability, 3);
-    }
-
-    protected function calculateConfidence(int $homeElo, int $awayElo): float
-    {
-        $defaultElo = config('nfl.elo.default_rating');
-        $confidence = 0;
-
-        // Base confidence
-        $confidence += 50;
-
-        // Bonus for non-default Elo ratings (teams have played games)
-        if ($homeElo !== $defaultElo) {
-            $confidence += 25;
-        }
-
-        if ($awayElo !== $defaultElo) {
-            $confidence += 25;
-        }
-
-        return round(min($confidence, 100), 2);
+        return config('nfl.predictions.average_total');
     }
 }

@@ -2,89 +2,23 @@
 
 namespace App\Actions\CFB;
 
+use App\Actions\Sports\AbstractEloCalculator;
 use App\Models\CFB\EloRating;
-use App\Models\CFB\Game;
-use App\Models\CFB\Team;
+use Illuminate\Database\Eloquent\Model;
 
-class CalculateElo
+class CalculateElo extends AbstractEloCalculator
 {
-    public function execute(Game $game, bool $skipIfExists = true): array
+    protected function getSport(): string
     {
-        if ($game->status !== 'STATUS_FINAL') {
-            return ['home_change' => 0, 'away_change' => 0, 'skipped' => false];
-        }
-
-        $homeTeam = $game->homeTeam;
-        $awayTeam = $game->awayTeam;
-
-        if (! $homeTeam || ! $awayTeam) {
-            return ['home_change' => 0, 'away_change' => 0, 'skipped' => false];
-        }
-
-        // Check if Elo has already been calculated for this game
-        if ($skipIfExists) {
-            $existingHistory = EloRating::query()
-                ->where('game_id', $game->id)
-                ->where(function ($query) use ($homeTeam, $awayTeam) {
-                    $query->where('team_id', $homeTeam->id)
-                        ->orWhere('team_id', $awayTeam->id);
-                })
-                ->exists();
-
-            if ($existingHistory) {
-                return ['home_change' => 0, 'away_change' => 0, 'skipped' => true];
-            }
-        }
-
-        // Get current Elo ratings
-        $homeElo = $homeTeam->elo_rating ?? config('cfb.elo.default_rating');
-        $awayElo = $awayTeam->elo_rating ?? config('cfb.elo.default_rating');
-
-        // Adjust for home field advantage (skip if neutral site)
-        $homeFieldAdvantage = $game->neutral_site ? 0 : config('cfb.elo.home_field_advantage');
-        $adjustedHomeElo = $homeElo + $homeFieldAdvantage;
-
-        // Calculate expected win probabilities
-        $homeExpected = $this->calculateExpectedScore($adjustedHomeElo, $awayElo);
-        $awayExpected = 1 - $homeExpected;
-
-        // Determine actual scores (1 for win, 0 for loss)
-        $homeActual = $game->home_score > $game->away_score ? 1 : 0;
-        $awayActual = 1 - $homeActual;
-
-        // Calculate K-factor with margin of victory and playoff multiplier
-        $kFactor = $this->calculateKFactor($game);
-
-        // Calculate Elo changes
-        $homeChange = round($kFactor * ($homeActual - $homeExpected), 1);
-        $awayChange = round($kFactor * ($awayActual - $awayExpected), 1);
-
-        // Update team Elo ratings
-        $newHomeElo = round($homeElo + $homeChange);
-        $newAwayElo = round($awayElo + $awayChange);
-
-        $homeTeam->update(['elo_rating' => $newHomeElo]);
-        $awayTeam->update(['elo_rating' => $newAwayElo]);
-
-        // Save Elo history
-        $this->saveEloHistory($homeTeam, $game, $newHomeElo, $homeChange);
-        $this->saveEloHistory($awayTeam, $game, $newAwayElo, $awayChange);
-
-        return [
-            'home_change' => $homeChange,
-            'away_change' => $awayChange,
-            'home_new_elo' => $newHomeElo,
-            'away_new_elo' => $newAwayElo,
-            'skipped' => false,
-        ];
+        return 'cfb';
     }
 
-    protected function calculateExpectedScore(float $ratingA, float $ratingB): float
+    protected function getEloRatingModel(): string
     {
-        return 1 / (1 + pow(10, ($ratingB - $ratingA) / 400));
+        return EloRating::class;
     }
 
-    protected function calculateKFactor(Game $game): float
+    protected function calculateKFactor(Model $game): float
     {
         $kFactor = config('cfb.elo.base_k_factor');
 
@@ -105,12 +39,12 @@ class CalculateElo
         return $kFactor;
     }
 
-    protected function isPlayoffGame(Game $game): bool
+    protected function isPlayoffGame(Model $game): bool
     {
         return $game->season_type == config('cfb.season.types.postseason');
     }
 
-    protected function calculateMarginMultiplier(Game $game): float
+    protected function calculateMarginMultiplier(Model $game): float
     {
         $margin = abs($game->home_score - $game->away_score);
 
@@ -123,9 +57,11 @@ class CalculateElo
         return min($maxMultiplier, 1.0 + (log($margin + 1) * $coefficient));
     }
 
-    protected function saveEloHistory(Team $team, Game $game, int $newElo, float $eloChange): void
+    protected function saveEloHistory(Model $team, Model $game, int $newElo, float $eloChange): void
     {
-        EloRating::create([
+        $eloRatingClass = $this->getEloRatingModel();
+
+        $eloRatingClass::create([
             'team_id' => $team->id,
             'game_id' => $game->id,
             'season' => $game->season,

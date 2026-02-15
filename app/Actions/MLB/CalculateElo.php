@@ -2,16 +2,31 @@
 
 namespace App\Actions\MLB;
 
+use App\Actions\Sports\AbstractEloCalculator;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
 use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
+use Illuminate\Database\Eloquent\Model;
 
-class CalculateElo
+class CalculateElo extends AbstractEloCalculator
 {
-    public function execute(Game $game, bool $skipIfExists = true): array
+    protected function getSport(): string
+    {
+        return 'mlb';
+    }
+
+    protected function getEloRatingModel(): string
+    {
+        return EloRating::class;
+    }
+
+    /**
+     * Execute Elo calculation for MLB (handles both team and pitcher Elo)
+     */
+    public function execute(Model $game, bool $skipIfExists = true): array
     {
         if ($game->status !== 'STATUS_FINAL') {
             return [
@@ -37,24 +52,14 @@ class CalculateElo
         }
 
         // Check if Elo has already been calculated for this game
-        if ($skipIfExists) {
-            $existingHistory = EloRating::query()
-                ->where('game_id', $game->id)
-                ->where(function ($query) use ($homeTeam, $awayTeam) {
-                    $query->where('team_id', $homeTeam->id)
-                        ->orWhere('team_id', $awayTeam->id);
-                })
-                ->exists();
-
-            if ($existingHistory) {
-                return [
-                    'home_team_change' => 0,
-                    'away_team_change' => 0,
-                    'home_pitcher_change' => 0,
-                    'away_pitcher_change' => 0,
-                    'skipped' => true,
-                ];
-            }
+        if ($skipIfExists && $this->eloAlreadyCalculated($game, $homeTeam, $awayTeam)) {
+            return [
+                'home_team_change' => 0,
+                'away_team_change' => 0,
+                'home_pitcher_change' => 0,
+                'away_pitcher_change' => 0,
+                'skipped' => true,
+            ];
         }
 
         // Identify starting pitchers
@@ -133,8 +138,8 @@ class CalculateElo
         $awayTeam->update(['elo_rating' => $newAwayElo]);
 
         // Save Elo history
-        $this->saveTeamEloHistory($homeTeam, $game, $newHomeElo, $homeChange);
-        $this->saveTeamEloHistory($awayTeam, $game, $newAwayElo, $awayChange);
+        $this->saveEloHistory($homeTeam, $game, $newHomeElo, $homeChange);
+        $this->saveEloHistory($awayTeam, $game, $newAwayElo, $awayChange);
 
         return [
             'home_change' => $homeChange,
@@ -203,12 +208,7 @@ class CalculateElo
         return $result;
     }
 
-    protected function calculateExpectedScore(float $ratingA, float $ratingB): float
-    {
-        return 1 / (1 + pow(10, ($ratingB - $ratingA) / 400));
-    }
-
-    protected function calculateKFactor(Game $game): float
+    protected function calculateKFactor(Model $game): float
     {
         $kFactor = config('mlb.elo.base_k_factor');
 
@@ -224,12 +224,12 @@ class CalculateElo
         return $kFactor;
     }
 
-    protected function isPlayoffGame(Game $game): bool
+    protected function isPlayoffGame(Model $game): bool
     {
         return $game->season_type === config('mlb.season.types.postseason');
     }
 
-    protected function calculateMarginMultiplier(Game $game): float
+    protected function calculateMarginMultiplier(Model $game): float
     {
         $margin = abs($game->home_score - $game->away_score);
         $multipliers = config('mlb.elo.margin_multipliers');
@@ -241,19 +241,6 @@ class CalculateElo
         }
 
         return 1.0;
-    }
-
-    protected function saveTeamEloHistory(Team $team, Game $game, int $newElo, float $eloChange): void
-    {
-        EloRating::create([
-            'team_id' => $team->id,
-            'game_id' => $game->id,
-            'season' => $game->season,
-            'week' => $game->week,
-            'date' => $game->game_date,
-            'elo_rating' => $newElo,
-            'elo_change' => $eloChange,
-        ]);
     }
 
     protected function savePitcherEloHistory(Player $pitcher, Game $game, int $newElo, float $eloChange): void

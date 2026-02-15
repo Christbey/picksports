@@ -19,12 +19,15 @@ export interface LivePredictionData {
     homeScore?: number | null;
     awayScore?: number | null;
     period?: number | null;
+    inning?: number | null;
     gameClock?: string | null;
+    inningState?: string | null;
     status?: string | null;
     liveWinProbability?: number | null;
     livePredictedSpread?: number | null;
     livePredictedTotal?: number | null;
     liveSecondsRemaining?: number | null;
+    liveOutsRemaining?: number | null;
     preGameWinProbability: number;
     preGamePredictedSpread: number;
     preGamePredictedTotal: number;
@@ -60,6 +63,20 @@ function formatPeriod(period: number | null | undefined, status: string | null |
     if (status === 'STATUS_END_PERIOD') return `End Q${period}`;
     const ordinals = ['', '1st', '2nd', '3rd', '4th', 'OT'];
     return ordinals[period] || `OT${period - 4}`;
+}
+
+function formatInning(inning: number | null | undefined, inningState: string | null | undefined): string {
+    if (!inning) return '';
+    const state = inningState === 'top' ? 'Top' : inningState === 'bottom' ? 'Bot' : '';
+    return `${state} ${inning}`;
+}
+
+function formatOutsRemaining(outs: number | null | undefined): string {
+    if (outs === null || outs === undefined) return '-';
+    const innings = Math.floor(outs / 6);
+    const remainingOuts = outs % 6;
+    if (innings === 0) return `${remainingOuts} outs remaining`;
+    return `${innings}.${remainingOuts} innings remaining`;
 }
 
 function formatTimeRemaining(seconds: number | null | undefined): string {
@@ -112,6 +129,15 @@ function getBetTypeColor(type: string): string {
                                 <span class="font-normal text-muted-foreground">
                                     • {{ formatTimeRemaining(livePrediction.liveSecondsRemaining) }} remaining
                                 </span>
+                            </template>
+                            <template v-else-if="livePrediction.liveOutsRemaining !== null && livePrediction.liveOutsRemaining !== undefined">
+                                <span class="font-normal text-muted-foreground">
+                                    • {{ formatOutsRemaining(livePrediction.liveOutsRemaining) }}
+                                </span>
+                            </template>
+                            <template v-else-if="livePrediction.inning && livePrediction.inningState">
+                                •
+                                {{ formatInning(livePrediction.inning, livePrediction.inningState) }}
                             </template>
                             <template v-else-if="livePrediction.period || livePrediction.gameClock">
                                 •

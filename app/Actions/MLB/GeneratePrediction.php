@@ -2,14 +2,34 @@
 
 namespace App\Actions\MLB;
 
-use App\Models\MLB\Game;
+use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
+use App\Models\MLB\TeamMetric;
+use Illuminate\Database\Eloquent\Model;
 
-class GeneratePrediction
+class GeneratePrediction extends AbstractPredictionGenerator
 {
-    public function execute(Game $game): ?Prediction
+    protected function getSport(): string
+    {
+        return 'mlb';
+    }
+
+    protected function getTeamMetricModel(): string
+    {
+        return TeamMetric::class;
+    }
+
+    protected function getPredictionModel(): string
+    {
+        return Prediction::class;
+    }
+
+    /**
+     * Override execute to handle MLB-specific pitcher logic
+     */
+    public function execute(Model $game): ?Model
     {
         // Only generate predictions for scheduled games
         if ($game->status !== 'STATUS_SCHEDULED') {
@@ -42,9 +62,9 @@ class GeneratePrediction
         $adjustedHomeElo = $homeCombinedElo + config('mlb.elo.home_field_advantage');
 
         // Calculate win probability
-        $winProbability = $this->calculateWinProbability($adjustedHomeElo, $awayCombinedElo);
+        $winProbability = $this->calculateWinProbability($adjustedHomeElo - $awayCombinedElo);
 
-        // Calculate predicted spread (based on Elo difference)
+        // Calculate predicted spread
         $eloDiff = $adjustedHomeElo - $awayCombinedElo;
         $predictedSpread = $this->calculateSpread($eloDiff);
 
@@ -52,13 +72,15 @@ class GeneratePrediction
         $predictedTotal = $this->calculateTotal($homeCombinedElo, $awayCombinedElo);
 
         // Calculate confidence score based on pitcher data availability
-        $confidenceScore = $this->calculateConfidence(
+        $confidenceScore = $this->calculatePitcherConfidence(
             $homePitcherResult['confidence'],
             $awayPitcherResult['confidence']
         );
 
-        // Update or create prediction
-        return Prediction::updateOrCreate(
+        // Create prediction with MLB-specific fields
+        $predictionModel = $this->getPredictionModel();
+
+        return $predictionModel::updateOrCreate(
             ['game_id' => $game->id],
             [
                 'home_team_elo' => round($homeTeamElo, 1),
@@ -110,9 +132,24 @@ class GeneratePrediction
         ];
     }
 
-    protected function calculateWinProbability(float $homeElo, float $awayElo): float
-    {
-        return 1 / (1 + pow(10, ($awayElo - $homeElo) / 400));
+    protected function calculatePredictedSpread(
+        int $homeElo,
+        int $awayElo,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
+        // Not used in MLB - we override execute() instead
+        return 0.0;
+    }
+
+    protected function calculatePredictedTotal(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
+        // Not used in MLB - we override execute() instead
+        return 0.0;
     }
 
     protected function calculateSpread(float $eloDiff): float
@@ -132,7 +169,7 @@ class GeneratePrediction
         return config('mlb.elo.average_runs_per_game') + $eloAdjustment;
     }
 
-    protected function calculateConfidence(float $homeConfidence, float $awayConfidence): float
+    protected function calculatePitcherConfidence(float $homeConfidence, float $awayConfidence): float
     {
         // Average the confidence scores from both pitchers
         return ($homeConfidence + $awayConfidence) / 2;
@@ -140,7 +177,7 @@ class GeneratePrediction
 
     public function executeForAllScheduledGames(int $season): int
     {
-        $games = Game::query()
+        $games = \App\Models\MLB\Game::query()
             ->where('season', $season)
             ->where('status', 'STATUS_SCHEDULED')
             ->with(['homeTeam', 'awayTeam'])

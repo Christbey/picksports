@@ -25,7 +25,15 @@ Schedule::command('espn:sync-nba-games-scoreboard --from-date='.date('Y-m-d').' 
     ->withoutOverlapping()
     ->runInBackground();
 
-// 2. Sync game details for completed games (during game hours)
+// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-nba-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('18:00', '03:00') // NBA games 6pm-3am EST
+    ->name('NBA: Live Scoreboard Sync')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 3. Sync game details for completed games (during game hours)
 Schedule::command('espn:sync-nba-game-details')
     ->everyThirtyMinutes()
     ->between('18:00', '03:00') // NBA games typically 7pm-2am EST
@@ -33,21 +41,21 @@ Schedule::command('espn:sync-nba-game-details')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 3. Calculate Elo ratings (after games complete)
+// 4. Calculate Elo ratings (after games complete)
 Schedule::command('nba:calculate-elo --season='.date('Y'))
     ->dailyAt('03:30')
     ->name('NBA: Calculate Elo Ratings')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 4. Calculate team metrics (after Elo updates)
+// 5. Calculate team metrics (after Elo updates)
 Schedule::command('nba:calculate-team-metrics --season='.date('Y'))
     ->dailyAt('04:00')
     ->name('NBA: Calculate Team Metrics')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 5. Generate predictions for upcoming games (after metrics update)
+// 6. Generate predictions for upcoming games (after metrics update)
 Schedule::command('nba:generate-predictions --season='.date('Y'))
     ->dailyAt('04:30')
     ->name('NBA: Generate Predictions')
@@ -75,6 +83,14 @@ Schedule::command('espn:sync-cbb-all-team-schedules')
 Schedule::command('espn:sync-cbb-current')
     ->dailyAt('02:00')
     ->name('CBB: Sync Current Week')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 2a. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-cbb-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('18:00', '01:00') // CBB games 6pm-1am EST peak hours
+    ->name('CBB: Live Scoreboard Sync')
     ->withoutOverlapping()
     ->runInBackground();
 
@@ -130,6 +146,14 @@ Schedule::command('espn:sync-wcbb-game-details --season='.date('Y'))
     ->withoutOverlapping()
     ->runInBackground();
 
+// 2a. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-wcbb-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('18:00', '23:00') // WCBB games 6pm-11pm EST
+    ->name('WCBB: Live Scoreboard Sync')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 // 3. Grade predictions for completed games (after sync)
 Schedule::command('wcbb:grade-predictions --season='.date('Y'))
     ->dailyAt('03:30')
@@ -175,7 +199,15 @@ Schedule::command('espn:sync-mlb-schedules --season=2026')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 2. Sync game details for completed games (during typical game hours)
+// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-mlb-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('13:00', '04:00') // 1pm-4am EST (day + night + west coast)
+    ->name('MLB: Live Scoreboard Sync')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 3. Sync game details for completed games (during typical game hours)
 // MLB games: Day games 1pm-4pm, night games 7pm-11pm EST
 Schedule::command('espn:sync-mlb-game-details')
     ->everyThirtyMinutes()
@@ -184,24 +216,42 @@ Schedule::command('espn:sync-mlb-game-details')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 3. Calculate Elo ratings (after games complete)
+// 4. Calculate Elo ratings (after games complete)
 Schedule::command('mlb:calculate-elo --season=2026')
     ->dailyAt('04:30')
     ->name('MLB: Calculate Elo Ratings')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 4. Calculate team metrics (after Elo updates)
+// 5. Calculate team metrics (after Elo updates)
 Schedule::command('mlb:calculate-team-metrics --season=2026')
     ->dailyAt('05:00')
     ->name('MLB: Calculate Team Metrics')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 5. Generate predictions for upcoming games (after metrics update)
+// 6. Generate predictions for upcoming games (after metrics update)
 Schedule::command('mlb:generate-predictions --season=2026')
     ->dailyAt('05:30')
     ->name('MLB: Generate Predictions')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| WNBA Automated Pipeline
+|--------------------------------------------------------------------------
+|
+| Automated schedule for syncing WNBA games and updating live predictions.
+| Runs during WNBA season (May - September).
+|
+*/
+
+// 1. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-wnba-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('19:00', '23:00') // WNBA games 7pm-11pm EST
+    ->name('WNBA: Live Scoreboard Sync')
     ->withoutOverlapping()
     ->runInBackground();
 
@@ -222,7 +272,15 @@ Schedule::command('espn:sync-nfl-current')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 2. Sync game details for completed games (during typical NFL game hours)
+// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-nfl-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('17:00', '02:00') // NFL games Thu/Sun/Mon 5pm-2am EST
+    ->name('NFL: Live Scoreboard Sync')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 3. Sync game details for completed games (during typical NFL game hours)
 // NFL games: Thursday 8:15pm, Sunday 1pm/4pm/8pm, Monday 8:15pm EST
 Schedule::command('espn:sync-nfl-game-details')
     ->everyThirtyMinutes()
@@ -231,16 +289,35 @@ Schedule::command('espn:sync-nfl-game-details')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 3. Calculate Elo ratings (after games complete)
+// 4. Calculate Elo ratings (after games complete)
 Schedule::command('nfl:calculate-elo --season=2025')
     ->dailyAt('08:30')
     ->name('NFL: Calculate Elo Ratings')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 4. Generate predictions for upcoming games (after Elo updates)
+// 5. Generate predictions for upcoming games (after Elo updates)
 Schedule::command('nfl:generate-predictions --season=2025')
     ->dailyAt('09:00')
     ->name('NFL: Generate Predictions')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+/*
+|--------------------------------------------------------------------------
+| CFB Automated Pipeline
+|--------------------------------------------------------------------------
+|
+| Automated schedule for syncing CFB games and updating live predictions.
+| Runs during college football season, primarily on Saturdays.
+|
+*/
+
+// 1. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
+Schedule::command('espn:sync-cfb-games-scoreboard --date='.date('Ymd'))
+    ->everyFiveMinutes()
+    ->between('12:00', '23:00') // CFB games Saturday noon-11pm EST
+    ->saturdays()
+    ->name('CFB: Live Scoreboard Sync')
     ->withoutOverlapping()
     ->runInBackground();

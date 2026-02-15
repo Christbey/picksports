@@ -25,13 +25,16 @@ interface Prediction {
     home_score?: number;
     away_score?: number;
     period?: number;
+    inning?: number;
     game_clock?: string;
+    inning_state?: string;
     status?: string;
     // Live prediction data
     live_win_probability?: number;
     live_predicted_spread?: number;
     live_predicted_total?: number;
     live_seconds_remaining?: number;
+    live_outs_remaining?: number;
 }
 
 interface Sport {
@@ -96,12 +99,20 @@ function getGameUrl(sport: string, gameId: number) {
     return `/${sportLower}/games/${gameId}`;
 }
 
-function formatPeriod(period: number | undefined, status: string | undefined) {
+function formatPeriod(period: number | undefined, status: string | undefined, sport?: string) {
     if (!period) return '';
     if (status === 'STATUS_HALFTIME') return 'Half';
     if (status === 'STATUS_END_PERIOD') return `End Q${period}`;
+
+    // Basketball uses quarters
     const ordinals = ['', '1st', '2nd', '3rd', '4th', 'OT'];
     return ordinals[period] || `OT${period - 4}`;
+}
+
+function formatInning(inning: number | undefined, inningState: string | undefined) {
+    if (!inning) return '';
+    const state = inningState === 'top' ? 'Top' : inningState === 'bottom' ? 'Bot' : '';
+    return `${state} ${inning}`;
 }
 
 function buildLivePredictionData(prediction: Prediction): LivePredictionData | undefined {
@@ -111,12 +122,15 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
         homeScore: prediction.home_score,
         awayScore: prediction.away_score,
         period: prediction.period,
+        inning: prediction.inning,
         gameClock: prediction.game_clock,
+        inningState: prediction.inning_state,
         status: prediction.status,
         liveWinProbability: prediction.live_win_probability,
         livePredictedSpread: prediction.live_predicted_spread,
         livePredictedTotal: prediction.live_predicted_total,
         liveSecondsRemaining: prediction.live_seconds_remaining,
+        liveOutsRemaining: prediction.live_outs_remaining,
         preGameWinProbability: prediction.win_probability,
         preGamePredictedSpread: prediction.predicted_spread,
         preGamePredictedTotal: prediction.predicted_total,

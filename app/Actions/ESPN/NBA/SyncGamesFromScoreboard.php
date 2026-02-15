@@ -2,6 +2,7 @@
 
 namespace App\Actions\ESPN\NBA;
 
+use App\Actions\NBA\UpdateLivePrediction;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
@@ -10,8 +11,11 @@ use App\Services\ESPN\NBA\EspnService;
 class SyncGamesFromScoreboard
 {
     public function __construct(
-        protected EspnService $espnService
-    ) {}
+        protected EspnService $espnService,
+        protected ?UpdateLivePrediction $updateLivePrediction = null
+    ) {
+        $this->updateLivePrediction ??= new UpdateLivePrediction;
+    }
 
     public function execute(string $date): int
     {
@@ -62,10 +66,13 @@ class SyncGamesFromScoreboard
                 'broadcast_networks' => $dto->broadcastNetworks,
             ];
 
-            Game::updateOrCreate(
+            $game = Game::updateOrCreate(
                 ['espn_event_id' => $dto->espnEventId],
                 $gameAttributes
             );
+
+            // Update live predictions for in-progress games
+            $this->updateLivePrediction->execute($game);
 
             $synced++;
         }

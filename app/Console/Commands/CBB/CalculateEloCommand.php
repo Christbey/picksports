@@ -3,12 +3,12 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\CalculateElo;
+use App\Console\Commands\Sports\AbstractCalculateEloCommand;
 use App\Models\CBB\EloRating;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
-use Illuminate\Console\Command;
 
-class CalculateEloCommand extends Command
+class CalculateEloCommand extends AbstractCalculateEloCommand
 {
     protected $signature = 'cbb:calculate-elo
                             {--season= : Calculate Elo for a specific season}
@@ -20,115 +20,28 @@ class CalculateEloCommand extends Command
 
     protected $description = 'Calculate CBB team Elo ratings based on completed games';
 
-    public function handle(): int
+    protected function getSportName(): string
     {
-        $calculateElo = new CalculateElo;
+        return 'CBB';
+    }
 
-        // Reset Elo ratings if requested
-        if ($this->option('reset')) {
-            $this->info('Resetting all Elo ratings to 1500...');
-            Team::query()->update(['elo_rating' => 1500]);
-            EloRating::query()->truncate();
-            $this->info('Elo ratings reset successfully.');
-        }
+    protected function getGameModel(): string
+    {
+        return Game::class;
+    }
 
-        // Apply season regression (30% toward mean) if requested
-        if ($this->option('regress')) {
-            $this->info('Applying 30% regression toward mean (1500)...');
+    protected function getTeamModel(): string
+    {
+        return Team::class;
+    }
 
-            $teams = Team::all();
-            $regressedCount = 0;
+    protected function getEloRatingModel(): string
+    {
+        return EloRating::class;
+    }
 
-            foreach ($teams as $team) {
-                $currentElo = $team->elo_rating ?? 1500;
-
-                // Regression formula: newElo = 1500 + ((currentElo - 1500) * 0.7)
-                // This moves the rating 30% closer to the mean (1500)
-                $regressedElo = (int) round(1500 + (($currentElo - 1500) * 0.7));
-
-                if ($regressedElo !== $currentElo) {
-                    $team->update(['elo_rating' => $regressedElo]);
-                    $regressedCount++;
-                }
-            }
-
-            $this->info("Season regression applied to {$regressedCount} teams.");
-        }
-
-        // Build query for completed games
-        $query = Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->with(['homeTeam', 'awayTeam'])
-            ->orderBy('game_date')
-            ->orderBy('id');
-
-        // Apply filters
-        if ($season = $this->option('season')) {
-            $query->where('season', $season);
-        }
-
-        if ($week = $this->option('week')) {
-            $query->where('week', $week);
-        }
-
-        if ($fromDate = $this->option('from-date')) {
-            $query->where('game_date', '>=', $fromDate);
-        }
-
-        if ($toDate = $this->option('to-date')) {
-            $query->where('game_date', '<=', $toDate);
-        }
-
-        $games = $query->get();
-
-        if ($games->isEmpty()) {
-            $this->warn('No completed games found matching the criteria.');
-
-            return Command::SUCCESS;
-        }
-
-        $this->info("Calculating Elo ratings for {$games->count()} games...");
-
-        $bar = $this->output->createProgressBar($games->count());
-        $bar->start();
-
-        $totalCalculated = 0;
-
-        foreach ($games as $game) {
-            $result = $calculateElo->execute($game);
-
-            if ($result['home_change'] != 0 || $result['away_change'] != 0) {
-                $totalCalculated++;
-            }
-
-            $bar->advance();
-        }
-
-        $bar->finish();
-        $this->newLine(2);
-
-        $this->info("Elo calculation complete! {$totalCalculated} games calculated.");
-
-        // Show top teams by Elo
-        $this->newLine();
-        $this->info('Top 10 Teams by Elo Rating:');
-
-        $topTeams = Team::query()
-            ->orderBy('elo_rating', 'desc')
-            ->limit(10)
-            ->get();
-
-        if ($topTeams->isNotEmpty()) {
-            $this->table(
-                ['Rank', 'Team', 'Elo Rating'],
-                $topTeams->map(fn ($team, $index) => [
-                    $index + 1,
-                    $team->abbreviation,
-                    $team->elo_rating,
-                ])
-            );
-        }
-
-        return Command::SUCCESS;
+    protected function getCalculateEloAction(): string
+    {
+        return CalculateElo::class;
     }
 }

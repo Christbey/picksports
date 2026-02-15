@@ -17,7 +17,7 @@ class EloRatingController extends Controller
     {
         $ratings = EloRating::query()
             ->with(['team'])
-            ->orderByDesc('date')
+            ->orderByDesc('game_date')
             ->paginate(15);
 
         return EloRatingResource::collection($ratings);
@@ -40,7 +40,7 @@ class EloRatingController extends Controller
     {
         $ratings = EloRating::query()
             ->where('team_id', $team->id)
-            ->orderByDesc('date')
+            ->orderByDesc('game_date')
             ->paginate(15);
 
         return EloRatingResource::collection($ratings);
@@ -56,7 +56,7 @@ class EloRatingController extends Controller
         $ratings = EloRating::query()
             ->with(['team'])
             ->where('season', $season)
-            ->orderByDesc('date')
+            ->orderByDesc('game_date')
             ->paginate(15);
 
         return EloRatingResource::collection($ratings);

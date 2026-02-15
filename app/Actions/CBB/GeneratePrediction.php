@@ -2,55 +2,48 @@
 
 namespace App\Actions\CBB;
 
-use App\Models\CBB\Game;
+use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Models\CBB\Prediction;
 use App\Models\CBB\TeamMetric;
+use Illuminate\Database\Eloquent\Model;
 
-class GeneratePrediction
+class GeneratePrediction extends AbstractPredictionGenerator
 {
-    public function execute(Game $game): ?Prediction
+    protected function getSport(): string
     {
-        // Don't predict games that are already completed
-        if ($game->status === 'STATUS_FINAL') {
-            return null;
-        }
+        return 'cbb';
+    }
 
-        $homeTeam = $game->homeTeam;
-        $awayTeam = $game->awayTeam;
+    protected function getTeamMetricModel(): string
+    {
+        return TeamMetric::class;
+    }
 
-        if (! $homeTeam || ! $awayTeam) {
-            return null;
-        }
+    protected function getPredictionModel(): string
+    {
+        return Prediction::class;
+    }
 
-        // Get current Elo ratings
-        $defaultElo = config('cbb.elo.default');
-        $homeElo = $homeTeam->elo_rating ?? $defaultElo;
-        $awayElo = $awayTeam->elo_rating ?? $defaultElo;
-
-        // Get team metrics for the season
-        $homeMetrics = TeamMetric::query()
-            ->where('team_id', $homeTeam->id)
-            ->where('season', $game->season)
-            ->first();
-
-        $awayMetrics = TeamMetric::query()
-            ->where('team_id', $awayTeam->id)
-            ->where('season', $game->season)
-            ->first();
-
+    protected function calculatePredictedSpread(
+        int $homeElo,
+        int $awayElo,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
         // Extract efficiency metrics (prefer adjusted, fall back to raw, then league average)
         $defaultEfficiency = config('cbb.prediction.default_efficiency');
-        $homeOffEff = $homeMetrics->adj_offensive_efficiency
-            ?? $homeMetrics->offensive_efficiency
+        $homeOffEff = $homeMetrics?->adj_offensive_efficiency
+            ?? $homeMetrics?->offensive_efficiency
             ?? $defaultEfficiency;
-        $homeDefEff = $homeMetrics->adj_defensive_efficiency
-            ?? $homeMetrics->defensive_efficiency
+        $homeDefEff = $homeMetrics?->adj_defensive_efficiency
+            ?? $homeMetrics?->defensive_efficiency
             ?? $defaultEfficiency;
-        $awayOffEff = $awayMetrics->adj_offensive_efficiency
-            ?? $awayMetrics->offensive_efficiency
+        $awayOffEff = $awayMetrics?->adj_offensive_efficiency
+            ?? $awayMetrics?->offensive_efficiency
             ?? $defaultEfficiency;
-        $awayDefEff = $awayMetrics->adj_defensive_efficiency
-            ?? $awayMetrics->defensive_efficiency
+        $awayDefEff = $awayMetrics?->adj_defensive_efficiency
+            ?? $awayMetrics?->defensive_efficiency
             ?? $defaultEfficiency;
 
         // Calculate Elo-based spread
@@ -60,9 +53,6 @@ class GeneratePrediction
         $eloSpread = $eloDiff / $eloToSpread;
 
         // Calculate efficiency-based spread using matchup formula
-        // Home margin = (HomeOff - AwayDef) - (AwayOff - HomeDef) + HCA
-        // Simplified: (HomeOff + HomeDef) - (AwayOff + AwayDef) + HCA (with efficiency)
-        // Actually: Home scores at (HomeOff * AwayDef / 100), Away scores at (AwayOff * HomeDef / 100)
         $homeNetRating = $homeOffEff - $homeDefEff;
         $awayNetRating = $awayOffEff - $awayDefEff;
         $homeCourtPoints = config('cbb.prediction.home_court_points');
@@ -73,32 +63,47 @@ class GeneratePrediction
         $eloWeight = config('cbb.prediction.elo_weight');
         if ($hasValidMetrics) {
             // Use blended spread when we have good efficiency data
-            $predictedSpread = round(
+            return round(
                 ($eloWeight * $eloSpread) + ((1 - $eloWeight) * $efficiencySpread),
                 1
             );
         } else {
             // Fall back to Elo-only when metrics are insufficient
-            $predictedSpread = round($eloSpread, 1);
+            return round($eloSpread, 1);
         }
+    }
 
-        // Calculate predicted total using MATCHUP-based efficiency
-        // Home team scores: HomeOff vs AwayDef (adjusted for tempo)
-        // Away team scores: AwayOff vs HomeDef (adjusted for tempo)
-        $homeTempo = $homeMetrics->adj_tempo ?? $homeMetrics->tempo ?? $defaultEfficiency;
-        $awayTempo = $awayMetrics->adj_tempo ?? $awayMetrics->tempo ?? $defaultEfficiency;
+    protected function calculatePredictedTotal(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): float {
+        // Get efficiency and tempo metrics
+        $defaultEfficiency = config('cbb.prediction.default_efficiency');
+        $homeOffEff = $homeMetrics?->adj_offensive_efficiency
+            ?? $homeMetrics?->offensive_efficiency
+            ?? $defaultEfficiency;
+        $homeDefEff = $homeMetrics?->adj_defensive_efficiency
+            ?? $homeMetrics?->defensive_efficiency
+            ?? $defaultEfficiency;
+        $awayOffEff = $awayMetrics?->adj_offensive_efficiency
+            ?? $awayMetrics?->offensive_efficiency
+            ?? $defaultEfficiency;
+        $awayDefEff = $awayMetrics?->adj_defensive_efficiency
+            ?? $awayMetrics?->defensive_efficiency
+            ?? $defaultEfficiency;
+
+        $homeTempo = $homeMetrics?->adj_tempo ?? $homeMetrics?->tempo ?? $defaultEfficiency;
+        $awayTempo = $awayMetrics?->adj_tempo ?? $awayMetrics?->tempo ?? $defaultEfficiency;
 
         // Average tempo for the game (both teams influence pace)
         $gameTempo = ($homeTempo + $awayTempo) / 2;
 
         // Convert normalized tempo to possessions per game
-        // gameTempo of 100 = average_pace possessions
         $averagePace = config('cbb.prediction.average_pace');
         $possessionsPerGame = $averagePace * ($gameTempo / 100);
 
         // Calculate expected points using matchup formula
-        // Home team offense vs away team defense: (HomeOff + AwayDef) / 2
-        // This accounts for the interaction between offense and defense
         $homeExpectedEfficiency = ($homeOffEff + $awayDefEff) / 2;
         $awayExpectedEfficiency = ($awayOffEff + $homeDefEff) / 2;
 
@@ -106,43 +111,49 @@ class GeneratePrediction
         $homePredictedScore = $homeExpectedEfficiency * ($possessionsPerGame / 100);
         $awayPredictedScore = $awayExpectedEfficiency * ($possessionsPerGame / 100);
 
-        $predictedTotal = round($homePredictedScore + $awayPredictedScore, 1);
-
-        // Calculate win probability from spread using calibrated logistic function
-        $winProbability = $this->calculateWinProbability($predictedSpread);
-
-        // Calculate confidence score based on data quality
-        $confidenceScore = $this->calculateConfidence($homeMetrics, $awayMetrics, $homeElo, $awayElo);
-
-        // Create or update prediction
-        return Prediction::updateOrCreate(
-            ['game_id' => $game->id],
-            [
-                'home_elo' => $homeElo,
-                'away_elo' => $awayElo,
-                'home_off_eff' => $homeOffEff,
-                'home_def_eff' => $homeDefEff,
-                'away_off_eff' => $awayOffEff,
-                'away_def_eff' => $awayDefEff,
-                'predicted_spread' => $predictedSpread,
-                'predicted_total' => $predictedTotal,
-                'win_probability' => $winProbability,
-                'confidence_score' => $confidenceScore,
-            ]
-        );
+        return round($homePredictedScore + $awayPredictedScore, 1);
     }
 
-    protected function calculateWinProbability(float $spread): float
-    {
-        // Logistic function: 1 / (1 + e^(-spread/coefficient))
-        // Calibrated so 7-point spread ≈ 78% win probability
-        $coefficient = config('cbb.prediction.spread_to_probability_coefficient');
-        $probability = 1 / (1 + exp(-$spread / $coefficient));
+    protected function buildPredictionData(
+        int $homeElo,
+        int $awayElo,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        float $predictedSpread,
+        float $predictedTotal,
+        float $winProbability,
+        float $confidenceScore
+    ): array {
+        // Extract efficiency metrics for storage
+        $defaultEfficiency = config('cbb.prediction.default_efficiency');
+        $homeOffEff = $homeMetrics?->adj_offensive_efficiency
+            ?? $homeMetrics?->offensive_efficiency
+            ?? $defaultEfficiency;
+        $homeDefEff = $homeMetrics?->adj_defensive_efficiency
+            ?? $homeMetrics?->defensive_efficiency
+            ?? $defaultEfficiency;
+        $awayOffEff = $awayMetrics?->adj_offensive_efficiency
+            ?? $awayMetrics?->offensive_efficiency
+            ?? $defaultEfficiency;
+        $awayDefEff = $awayMetrics?->adj_defensive_efficiency
+            ?? $awayMetrics?->defensive_efficiency
+            ?? $defaultEfficiency;
 
-        return round($probability, 3);
+        return [
+            'home_elo' => $homeElo,
+            'away_elo' => $awayElo,
+            'home_off_eff' => $homeOffEff,
+            'home_def_eff' => $homeDefEff,
+            'away_off_eff' => $awayOffEff,
+            'away_def_eff' => $awayDefEff,
+            'predicted_spread' => $predictedSpread,
+            'predicted_total' => $predictedTotal,
+            'win_probability' => $winProbability,
+            'confidence_score' => $confidenceScore,
+        ];
     }
 
-    protected function calculateConfidence(?TeamMetric $homeMetrics, ?TeamMetric $awayMetrics, int $homeElo, int $awayElo): float
+    protected function calculateConfidence(?Model $homeMetrics, ?Model $awayMetrics, int $homeElo, int $awayElo): float
     {
         $confidenceConfig = config('cbb.prediction.confidence');
         $defaultElo = config('cbb.elo.default');

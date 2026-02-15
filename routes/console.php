@@ -26,7 +26,7 @@ Schedule::command('espn:sync-nba-games-scoreboard --from-date='.date('Y-m-d').' 
     ->runInBackground();
 
 // 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-nba-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-nba-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('18:00', '03:00') // NBA games 6pm-3am EST
     ->name('NBA: Live Scoreboard Sync')
@@ -87,7 +87,7 @@ Schedule::command('espn:sync-cbb-current')
     ->runInBackground();
 
 // 2a. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-cbb-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-cbb-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('18:00', '01:00') // CBB games 6pm-1am EST peak hours
     ->name('CBB: Live Scoreboard Sync')
@@ -147,7 +147,7 @@ Schedule::command('espn:sync-wcbb-game-details --season='.date('Y'))
     ->runInBackground();
 
 // 2a. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-wcbb-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-wcbb-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('18:00', '23:00') // WCBB games 6pm-11pm EST
     ->name('WCBB: Live Scoreboard Sync')
@@ -200,7 +200,7 @@ Schedule::command('espn:sync-mlb-schedules --season=2026')
     ->runInBackground();
 
 // 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-mlb-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-mlb-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('13:00', '04:00') // 1pm-4am EST (day + night + west coast)
     ->name('MLB: Live Scoreboard Sync')
@@ -248,7 +248,7 @@ Schedule::command('mlb:generate-predictions --season=2026')
 */
 
 // 1. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-wnba-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-wnba-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('19:00', '23:00') // WNBA games 7pm-11pm EST
     ->name('WNBA: Live Scoreboard Sync')
@@ -273,7 +273,7 @@ Schedule::command('espn:sync-nfl-current')
     ->runInBackground();
 
 // 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-nfl-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-nfl-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('17:00', '02:00') // NFL games Thu/Sun/Mon 5pm-2am EST
     ->name('NFL: Live Scoreboard Sync')
@@ -314,7 +314,7 @@ Schedule::command('nfl:generate-predictions --season=2025')
 */
 
 // 1. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-Schedule::command('espn:sync-cfb-games-scoreboard --date='.date('Ymd'))
+Schedule::command('espn:sync-cfb-games-scoreboard '.date('Ymd'))
     ->everyFiveMinutes()
     ->between('12:00', '23:00') // CFB games Saturday noon-11pm EST
     ->saturdays()

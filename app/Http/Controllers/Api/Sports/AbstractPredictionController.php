@@ -105,11 +105,12 @@ abstract class AbstractPredictionController extends Controller
     /**
      * Display the specified prediction
      */
-    public function show(Model $prediction): JsonResource
+    public function show(int $prediction): JsonResource
     {
+        $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
 
-        $prediction->load(['game']);
+        $prediction = $predictionModel::query()->with(['game'])->findOrFail($prediction);
 
         return new $resourceClass($prediction);
     }
@@ -117,13 +118,13 @@ abstract class AbstractPredictionController extends Controller
     /**
      * Display predictions for a specific game
      */
-    public function byGame(Model $game): JsonResource|AnonymousResourceCollection|JsonResponse
+    public function byGame(int $game): JsonResource|AnonymousResourceCollection|JsonResponse
     {
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
 
         $query = $predictionModel::query()
-            ->where('game_id', $game->id)
+            ->where('game_id', $game)
             ->orderByDesc('created_at');
 
         if ($this->returnFirstPredictionOnly()) {

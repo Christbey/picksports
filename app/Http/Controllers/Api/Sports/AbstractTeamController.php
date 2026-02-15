@@ -63,9 +63,12 @@ abstract class AbstractTeamController extends Controller
     /**
      * Display the specified team
      */
-    public function show(Model $team): JsonResource
+    public function show(int $team): JsonResource
     {
+        $teamModel = $this->getTeamModel();
         $resourceClass = $this->getTeamResource();
+
+        $team = $teamModel::findOrFail($team);
 
         return new $resourceClass($team);
     }
@@ -73,14 +76,16 @@ abstract class AbstractTeamController extends Controller
     /**
      * Calculate team trends based on recent games
      */
-    public function trends(Model $team, Request $request): JsonResponse
+    public function trends(int $team, Request $request): JsonResponse
     {
+        $teamModel = $this->getTeamModel();
         $calculatorClass = $this->getTrendsCalculator();
 
         if (! $calculatorClass) {
             abort(404, 'Trends not available for this sport');
         }
 
+        $team = $teamModel::findOrFail($team);
         $calculator = app($calculatorClass);
 
         $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));

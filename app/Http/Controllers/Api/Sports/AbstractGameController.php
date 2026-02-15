@@ -46,11 +46,12 @@ abstract class AbstractGameController extends Controller
     /**
      * Display the specified game
      */
-    public function show(Model $game): JsonResource
+    public function show(int $game): JsonResource
     {
+        $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
 
-        $game->load(['homeTeam', 'awayTeam', 'prediction']);
+        $game = $gameModel::query()->with(['homeTeam', 'awayTeam', 'prediction'])->findOrFail($game);
 
         return new $resourceClass($game);
     }
@@ -58,7 +59,7 @@ abstract class AbstractGameController extends Controller
     /**
      * Display games for a specific team
      */
-    public function byTeam(Model $team, Request $request): AnonymousResourceCollection
+    public function byTeam(int $team, Request $request): AnonymousResourceCollection
     {
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
@@ -66,8 +67,8 @@ abstract class AbstractGameController extends Controller
         $games = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
             ->where(function ($query) use ($team) {
-                $query->where('home_team_id', $team->id)
-                    ->orWhere('away_team_id', $team->id);
+                $query->where('home_team_id', $team)
+                    ->orWhere('away_team_id', $team);
             })
             ->orderByDesc('game_date')
             ->paginate($request->per_page ?? 15);

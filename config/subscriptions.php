@@ -35,6 +35,8 @@ return [
                 'email_alerts' => false,
                 'priority_support' => false,
             ],
+            'data_permissions' => ['spread'],
+            'predictions_limit' => 5,
             'permissions' => [
                 'view_predictions',
                 'view_dashboard',
@@ -62,6 +64,8 @@ return [
                 'email_alerts' => true,
                 'priority_support' => false,
             ],
+            'data_permissions' => ['spread', 'win_probability'],
+            'predictions_limit' => 25,
             'permissions' => [
                 'view_predictions',
                 'view_dashboard',
@@ -91,6 +95,8 @@ return [
                 'email_alerts' => true,
                 'priority_support' => false,
             ],
+            'data_permissions' => ['spread', 'win_probability', 'confidence_score', 'elo_diff'],
+            'predictions_limit' => null,
             'permissions' => [
                 'view_predictions',
                 'view_dashboard',
@@ -122,6 +128,8 @@ return [
                 'email_alerts' => true,
                 'priority_support' => true,
             ],
+            'data_permissions' => ['spread', 'win_probability', 'confidence_score', 'elo_diff', 'away_elo', 'home_elo', 'betting_value'],
+            'predictions_limit' => null,
             'permissions' => [
                 'view_predictions',
                 'view_dashboard',

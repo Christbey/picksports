@@ -2,7 +2,6 @@
 
 namespace App\Actions\CFB;
 
-use App\Models\CFB\Game;
 use App\Models\CFB\Prediction;
 use Illuminate\Support\Collection;
 
@@ -16,7 +15,7 @@ class GradePredictions
             ->whereNotNull('cfb_games.home_score')
             ->whereNotNull('cfb_games.away_score')
             ->whereNull('cfb_predictions.graded_at')
-            ->select('cfb_predictions.*');
+            ->select('cfb_predictions.*', 'cfb_games.home_score', 'cfb_games.away_score');
 
         if ($season) {
             $query->where('cfb_games.season', $season);
@@ -40,14 +39,8 @@ class GradePredictions
         $totalErrors = [];
 
         foreach ($predictions as $prediction) {
-            $game = Game::find($prediction->game_id);
-
-            if (! $game || ! $game->home_score || ! $game->away_score) {
-                continue;
-            }
-
-            $actualSpread = $game->home_score - $game->away_score;
-            $actualTotal = $game->home_score + $game->away_score;
+            $actualSpread = $prediction->home_score - $prediction->away_score;
+            $actualTotal = $prediction->home_score + $prediction->away_score;
 
             $spreadError = abs($actualSpread - $prediction->predicted_spread);
             $totalError = abs($actualTotal - $prediction->predicted_total);

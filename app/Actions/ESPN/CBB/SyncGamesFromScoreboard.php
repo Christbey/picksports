@@ -27,12 +27,12 @@ class SyncGamesFromScoreboard
 
         $synced = 0;
 
-        foreach ($response['events'] as $game) {
-            if (empty($game['id'])) {
+        foreach ($response['events'] as $eventData) {
+            if (empty($eventData['id'])) {
                 continue;
             }
 
-            $dto = GameData::fromEspnResponse($game);
+            $dto = GameData::fromEspnResponse($eventData);
 
             $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
             $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
@@ -43,12 +43,12 @@ class SyncGamesFromScoreboard
 
             $gameAttributes = [
                 'espn_event_id' => $dto->espnEventId,
-                'espn_uid' => $game['uid'] ?? null,
+                'espn_uid' => $eventData['uid'] ?? null,
                 'season' => $dto->season,
                 'week' => $dto->week,
                 'season_type' => $dto->seasonType,
-                'game_date' => $game['date'] ? date('Y-m-d', strtotime($game['date'])) : null,
-                'game_time' => $game['date'] ? date('H:i:s', strtotime($game['date'])) : null,
+                'game_date' => $eventData['date'] ? date('Y-m-d', strtotime($eventData['date'])) : null,
+                'game_time' => $eventData['date'] ? date('H:i:s', strtotime($eventData['date'])) : null,
                 'name' => $dto->name,
                 'short_name' => $dto->shortName,
                 'home_team_id' => $homeTeam->id,
@@ -66,13 +66,20 @@ class SyncGamesFromScoreboard
                 'broadcast_networks' => $dto->broadcastNetworks,
             ];
 
-            $game = Game::updateOrCreate(
-                ['espn_event_id' => $dto->espnEventId],
-                $gameAttributes
-            );
+            $existingGame = Game::where('espn_event_id', $dto->espnEventId)->first();
 
-            // Update live predictions for in-progress games
-            $this->updateLivePrediction->execute($game);
+            if ($existingGame) {
+                // Don't overwrite completed game data
+                if (! in_array($existingGame->status, ['STATUS_FINAL', 'STATUS_FULL_TIME'])) {
+                    $existingGame->update($gameAttributes);
+                }
+                $gameModel = $existingGame;
+            } else {
+                $gameModel = Game::create($gameAttributes);
+            }
+
+            // Update live predictions for in-progress games, clear stale data for finished games
+            $this->updateLivePrediction->execute($gameModel);
 
             $synced++;
         }

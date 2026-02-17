@@ -29,6 +29,7 @@ class HealthcheckRun extends Command
             $this->checkStalePredictions($sport);
             $this->checkEloStatus($sport);
             $this->checkTeamMetrics($sport);
+            $this->checkLiveScoreboardSync($sport);
         }
 
         return $this->displayResults();
@@ -421,6 +422,93 @@ class HealthcheckRun extends Command
             'total_teams' => $totalTeams,
             'teams_with_metrics' => $teamsWithMetrics,
             'recently_updated' => $recentlyUpdated,
+        ]);
+    }
+
+    protected function checkLiveScoreboardSync(string $sport): void
+    {
+        $gamesTable = "{$sport}_games";
+        $predictionsTable = "{$sport}_predictions";
+
+        // Only check sports that have predictions
+        if (! in_array($sport, ['mlb', 'nba', 'nfl', 'cbb', 'cfb', 'wcbb', 'wnba'])) {
+            return;
+        }
+
+        // Determine game hours for this sport
+        $gameHours = match ($sport) {
+            'nba' => ['start' => 18, 'end' => 3],
+            'cbb', 'wcbb', 'cfb' => ['start' => 12, 'end' => 1],
+            'mlb' => ['start' => 13, 'end' => 4],
+            'wnba' => ['start' => 19, 'end' => 23],
+            'nfl' => ['start' => 17, 'end' => 2],
+            default => ['start' => 12, 'end' => 2],
+        };
+
+        $currentHour = (int) now()->format('H');
+        $isDuringGameHours = $gameHours['end'] < $gameHours['start']
+            ? ($currentHour >= $gameHours['start'] || $currentHour < $gameHours['end'])
+            : ($currentHour >= $gameHours['start'] && $currentHour < $gameHours['end']);
+
+        // Count in-progress games right now
+        $inProgressGames = DB::table($gamesTable)
+            ->whereIn('status', ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
+            ->count();
+
+        // Check how recently in-progress games were updated
+        $staleInProgressGames = DB::table($gamesTable)
+            ->whereIn('status', ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
+            ->where('updated_at', '<', now()->subMinutes(10))
+            ->count();
+
+        // Check live prediction freshness for in-progress games
+        $hasPredictions = DB::table("{$predictionsTable}")->exists();
+        $gamesWithStaleLivePredictions = 0;
+        $gamesWithoutLivePredictions = 0;
+
+        if ($hasPredictions && $inProgressGames > 0) {
+            $gamesWithoutLivePredictions = DB::table($gamesTable)
+                ->join($predictionsTable, "{$gamesTable}.id", '=', "{$predictionsTable}.game_id")
+                ->whereIn("{$gamesTable}.status", ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
+                ->whereNull("{$predictionsTable}.live_seconds_remaining")
+                ->count();
+
+            $gamesWithStaleLivePredictions = DB::table($gamesTable)
+                ->join($predictionsTable, "{$gamesTable}.id", '=', "{$predictionsTable}.game_id")
+                ->whereIn("{$gamesTable}.status", ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
+                ->whereNotNull("{$predictionsTable}.live_updated_at")
+                ->where("{$predictionsTable}.live_updated_at", '<', now()->subMinutes(10))
+                ->count();
+        }
+
+        // Determine status
+        $status = 'passing';
+        $message = $inProgressGames > 0
+            ? "{$inProgressGames} games in progress. Scoreboard sync is active."
+            : 'No games currently in progress.';
+
+        if ($inProgressGames > 0 && $staleInProgressGames > 0) {
+            $status = 'failing';
+            $message = "{$staleInProgressGames}/{$inProgressGames} in-progress games not updated in 10+ min. Scoreboard sync may be down.";
+        } elseif ($inProgressGames > 0 && $gamesWithoutLivePredictions > 0) {
+            $status = 'warning';
+            $message = "{$gamesWithoutLivePredictions}/{$inProgressGames} in-progress games missing live predictions.";
+        } elseif ($inProgressGames > 0 && $gamesWithStaleLivePredictions > 0) {
+            $status = 'warning';
+            $message = "{$gamesWithStaleLivePredictions}/{$inProgressGames} in-progress games have stale live predictions (10+ min old).";
+        } elseif ($isDuringGameHours && $inProgressGames === 0) {
+            $status = 'passing';
+            $message = 'During game hours but no games currently in progress. Sync is idle.';
+        }
+
+        $this->recordCheck($sport, 'live_scoreboard_sync', $status, $message, [
+            'in_progress_games' => $inProgressGames,
+            'stale_in_progress_games' => $staleInProgressGames,
+            'games_without_live_predictions' => $gamesWithoutLivePredictions,
+            'games_with_stale_live_predictions' => $gamesWithStaleLivePredictions,
+            'is_during_game_hours' => $isDuringGameHours,
+            'current_hour' => $currentHour,
+            'game_hours' => $gameHours,
         ]);
     }
 

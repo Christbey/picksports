@@ -33,11 +33,19 @@ export interface LivePredictionData {
     preGamePredictedTotal: number;
 }
 
-defineProps<{
+import { computed } from 'vue';
+
+const props = defineProps<{
     bettingValue?: BettingRecommendation[];
     livePrediction?: LivePredictionData;
     showDraftKingsLabel?: boolean;
 }>();
+
+const hasLivePredictionData = computed(() => {
+    if (!props.livePrediction?.isLive) return false;
+    return props.livePrediction.liveWinProbability !== null
+        && props.livePrediction.liveWinProbability !== undefined;
+});
 
 function formatSpread(spread: number | string | null | undefined): string {
     if (spread === null || spread === undefined) return '-';
@@ -107,9 +115,9 @@ function getBetTypeColor(type: string): string {
 
 <template>
     <div class="space-y-3">
-        <!-- Live Prediction Card -->
+        <!-- Live Prediction Card (only when actual live data exists) -->
         <div
-            v-if="livePrediction?.isLive"
+            v-if="hasLivePredictionData"
             class="rounded-md border border-red-200 bg-red-50/50 p-3 dark:border-red-900 dark:bg-red-950/30"
         >
             <div class="flex items-start justify-between gap-2">

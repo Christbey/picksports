@@ -26,6 +26,8 @@ interface Tier {
     stripe_price_id_yearly: string | null;
     features: TierFeatures | null;
     permissions: string[] | null;
+    data_permissions: string[] | null;
+    predictions_limit: number | null;
     team_metrics_limit: number | null;
     is_default: boolean;
     is_active: boolean;
@@ -54,6 +56,15 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 const availableSports = ['NBA', 'NFL', 'CBB', 'WCBB', 'MLB', 'CFB', 'WNBA'];
+const availableDataPermissions = [
+    { key: 'spread', label: 'Spread & Total' },
+    { key: 'win_probability', label: 'Win Probability' },
+    { key: 'confidence_score', label: 'Confidence Score' },
+    { key: 'elo_diff', label: 'Elo Difference' },
+    { key: 'away_elo', label: 'Away Elo / Efficiency' },
+    { key: 'home_elo', label: 'Home Elo / Efficiency' },
+    { key: 'betting_value', label: 'Betting Value' },
+];
 
 const form = useForm({
     name: props.tier?.name || '',
@@ -74,6 +85,8 @@ const form = useForm({
         priority_support: props.tier?.features?.priority_support ?? false,
     },
     permissions: props.tier?.permissions || [],
+    data_permissions: props.tier?.data_permissions || [],
+    predictions_limit: props.tier?.predictions_limit ?? null,
     team_metrics_limit: props.tier?.team_metrics_limit ?? null,
     is_default: props.tier?.is_default || false,
     is_active: props.tier?.is_active ?? true,
@@ -84,6 +97,7 @@ const newPermission = ref('');
 
 const unlimitedPredictions = ref(form.features.predictions_per_day === null);
 const unlimitedHistory = ref(form.features.historical_data_days === null);
+const unlimitedPredictionsLimit = ref(form.predictions_limit === null);
 const unlimitedTeamMetrics = ref(form.team_metrics_limit === null);
 
 function toggleUnlimitedPredictions() {
@@ -99,6 +113,23 @@ function toggleUnlimitedHistory() {
         form.features.historical_data_days = null;
     } else if (form.features.historical_data_days === null) {
         form.features.historical_data_days = 7;
+    }
+}
+
+function toggleUnlimitedPredictionsLimit() {
+    if (unlimitedPredictionsLimit.value) {
+        form.predictions_limit = null;
+    } else if (form.predictions_limit === null) {
+        form.predictions_limit = 25;
+    }
+}
+
+function toggleDataPermission(key: string) {
+    const index = form.data_permissions.indexOf(key);
+    if (index > -1) {
+        form.data_permissions.splice(index, 1);
+    } else {
+        form.data_permissions.push(key);
     }
 }
 
@@ -331,6 +362,51 @@ function submit() {
                                         class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
                                     />
                                     <span class="ml-2 text-sm">Unlimited</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Predictions Limit -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Predictions Limit (API)</label>
+                            <div class="flex gap-4 items-center">
+                                <input
+                                    v-model.number="form.predictions_limit"
+                                    type="number"
+                                    min="1"
+                                    :disabled="unlimitedPredictionsLimit"
+                                    class="w-32 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
+                                />
+                                <label class="flex items-center cursor-pointer">
+                                    <input
+                                        v-model="unlimitedPredictionsLimit"
+                                        type="checkbox"
+                                        @change="toggleUnlimitedPredictionsLimit"
+                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                    />
+                                    <span class="ml-2 text-sm">Unlimited</span>
+                                </label>
+                            </div>
+                            <p class="mt-1 text-xs text-muted-foreground">Max predictions returned per API request</p>
+                        </div>
+
+                        <!-- Data Permissions -->
+                        <div>
+                            <label class="block text-sm font-medium mb-2">Data Permissions</label>
+                            <p class="mb-3 text-xs text-muted-foreground">Controls which prediction fields are visible to users on this tier</p>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <label
+                                    v-for="perm in availableDataPermissions"
+                                    :key="perm.key"
+                                    class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 hover:bg-sidebar-accent transition-colors"
+                                >
+                                    <input
+                                        type="checkbox"
+                                        :checked="form.data_permissions.includes(perm.key)"
+                                        @change="toggleDataPermission(perm.key)"
+                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                    />
+                                    <span class="ml-2 text-sm font-medium">{{ perm.label }}</span>
                                 </label>
                             </div>
                         </div>

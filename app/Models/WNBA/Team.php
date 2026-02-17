@@ -15,16 +15,13 @@ class Team extends Model
 
     protected $fillable = [
         'espn_id',
-        'name',
         'abbreviation',
-        'display_name',
-        'short_display_name',
-        'logo',
-        'color',
-        'alternate_color',
         'location',
+        'name',
         'conference',
         'division',
+        'color',
+        'logo_url',
     ];
 
     public function players(): HasMany

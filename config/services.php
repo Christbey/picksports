@@ -40,4 +40,19 @@ return [
         'base_url' => 'https://api.the-odds-api.com/v4',
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Schedule Heartbeat Ping URLs
+    |--------------------------------------------------------------------------
+    |
+    | External monitoring URLs (e.g. BetterStack, OhDear, Envoyer) that get
+    | pinged on success/failure of scheduled live scoreboard syncs.
+    | Set these in .env to enable external heartbeat monitoring.
+    |
+    */
+
+    'heartbeat' => [
+        'live_scoreboard_url' => env('HEARTBEAT_LIVE_SCOREBOARD_URL'),
+    ],
+
 ];

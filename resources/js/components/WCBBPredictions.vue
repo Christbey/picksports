@@ -7,13 +7,14 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
+import { Lock } from 'lucide-vue-next'
 
 interface Prediction {
   id: number
-  predicted_spread: number
-  predicted_total: number
-  win_probability: number
-  confidence_score: number
+  predicted_spread?: number
+  predicted_total?: number
+  win_probability?: number
+  confidence_score?: number
   actual_spread?: number
   actual_total?: number
   spread_error?: number
@@ -196,20 +197,32 @@ onMounted(() => {
         <CardContent class="space-y-4">
           <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
-              <div class="text-xs text-muted-foreground">Spread</div>
-              <div class="text-lg font-semibold">{{ formatSpread(prediction.predicted_spread) }}</div>
+              <div class="text-xs text-muted-foreground mb-1">Spread</div>
+              <div v-if="prediction.predicted_spread !== undefined" class="text-lg font-semibold leading-7">{{ formatSpread(prediction.predicted_spread) }}</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
             <div>
-              <div class="text-xs text-muted-foreground">Total</div>
-              <div class="text-lg font-semibold">{{ prediction.predicted_total }}</div>
+              <div class="text-xs text-muted-foreground mb-1">Total</div>
+              <div v-if="prediction.predicted_total !== undefined" class="text-lg font-semibold leading-7">{{ prediction.predicted_total }}</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
             <div>
-              <div class="text-xs text-muted-foreground">Win Prob</div>
-              <div class="text-lg font-semibold">{{ (prediction.win_probability * 100).toFixed(1) }}%</div>
+              <div class="text-xs text-muted-foreground mb-1">Win Prob</div>
+              <div v-if="prediction.win_probability !== undefined" class="text-lg font-semibold leading-7">{{ (prediction.win_probability * 100).toFixed(1) }}%</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
             <div>
-              <div class="text-xs text-muted-foreground">Confidence</div>
-              <div class="text-lg font-semibold">{{ prediction.confidence_score }}%</div>
+              <div class="text-xs text-muted-foreground mb-1">Confidence</div>
+              <div v-if="prediction.confidence_score !== undefined" class="text-lg font-semibold leading-7">{{ prediction.confidence_score }}%</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
           </div>
 

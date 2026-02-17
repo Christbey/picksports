@@ -2,7 +2,6 @@
 
 namespace App\Actions\NBA;
 
-use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use Illuminate\Support\Collection;
 
@@ -16,7 +15,7 @@ class GradePredictions
             ->whereNotNull('nba_games.home_score')
             ->whereNotNull('nba_games.away_score')
             ->whereNull('nba_predictions.graded_at')
-            ->select('nba_predictions.*');
+            ->select('nba_predictions.*', 'nba_games.home_score', 'nba_games.away_score');
 
         if ($season) {
             $query->where('nba_games.season', $season);
@@ -40,14 +39,8 @@ class GradePredictions
         $totalErrors = [];
 
         foreach ($predictions as $prediction) {
-            $game = Game::find($prediction->game_id);
-
-            if (! $game || ! $game->home_score || ! $game->away_score) {
-                continue;
-            }
-
-            $actualSpread = $game->home_score - $game->away_score;
-            $actualTotal = $game->home_score + $game->away_score;
+            $actualSpread = $prediction->home_score - $prediction->away_score;
+            $actualTotal = $prediction->home_score + $prediction->away_score;
 
             $spreadError = abs($actualSpread - $prediction->predicted_spread);
             $totalError = abs($actualTotal - $prediction->predicted_total);

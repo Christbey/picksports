@@ -46,6 +46,59 @@ test('returns null for completed game', function () {
     expect($result)->toBeNull();
 });
 
+test('clears stale live data when game is no longer in progress', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'period' => 2,
+        'home_score' => 75,
+        'away_score' => 68,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'live_predicted_spread' => 4.5,
+        'live_win_probability' => 0.750,
+        'live_predicted_total' => 148.0,
+        'live_seconds_remaining' => 120,
+        'live_updated_at' => now(),
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    expect($result)->toBeNull();
+
+    $prediction->refresh();
+
+    expect($prediction->live_predicted_spread)->toBeNull()
+        ->and($prediction->live_win_probability)->toBeNull()
+        ->and($prediction->live_predicted_total)->toBeNull()
+        ->and($prediction->live_seconds_remaining)->toBeNull()
+        ->and($prediction->live_updated_at)->toBeNull();
+});
+
+test('does not clear live data for scheduled game without prior live data', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'period' => 0,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'live_seconds_remaining' => null,
+    ]);
+
+    $this->action->execute($game->fresh());
+
+    $prediction->refresh();
+
+    // Should not have attempted any update since live_seconds_remaining was already null
+    expect($prediction->live_seconds_remaining)->toBeNull();
+});
+
 test('returns null for game without prediction', function () {
     $game = Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,
@@ -95,6 +148,32 @@ test('updates live prediction for in-progress game', function () {
         ->and($prediction->live_predicted_total)->not->toBeNull()
         ->and($prediction->live_seconds_remaining)->not->toBeNull()
         ->and($prediction->live_updated_at)->not->toBeNull();
+});
+
+test('handles suspended game as in progress', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SUSPENDED',
+        'period' => 2,
+        'game_clock' => '8:00',
+        'home_score' => 45,
+        'away_score' => 42,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => -3.0,
+        'predicted_total' => 140.0,
+        'win_probability' => 0.55,
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    expect($result)->not->toBeNull()
+        ->and($result['live_predicted_spread'])->toBeFloat()
+        ->and($result['live_win_probability'])->toBeFloat()
+        ->and($result['live_seconds_remaining'])->toBe(480);
 });
 
 test('calculates seconds remaining correctly for first half', function () {
@@ -171,6 +250,29 @@ test('handles overtime correctly', function () {
 
     // OT capped at 5 min (300 sec), 3:00 remaining = 180 sec
     expect($result['live_seconds_remaining'])->toBe(180);
+});
+
+test('handles double overtime correctly', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_IN_PROGRESS',
+        'period' => 4, // OT2
+        'game_clock' => '4:00',
+        'home_score' => 85,
+        'away_score' => 83,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_total' => 145.0,
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    // 2OT with 4:00 left = 240 sec remaining
+    expect($result['live_seconds_remaining'])->toBe(240)
+        ->and($result['live_predicted_total'])->toBeGreaterThan(168);
 });
 
 test('handles halftime status', function () {
@@ -259,6 +361,30 @@ test('calculates live spread reflecting current margin', function () {
         ->and($result['live_predicted_spread'])->toBeLessThan(7.0);
 });
 
+test('live spread incorporates pre-game prediction at halftime', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_HALFTIME',
+        'period' => 1,
+        'game_clock' => '0:00',
+        'home_score' => 40,
+        'away_score' => 30,
+    ]);
+
+    Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => -5.0, // Pre-game: away favored by 5
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    // At halftime up 10 with pre-game spread of -5, the live spread should
+    // incorporate some regression — not just equal the current margin of 10
+    expect($result['live_predicted_spread'])->toBeGreaterThan(5.0)
+        ->and($result['live_predicted_spread'])->toBeLessThan(10.0);
+});
+
 test('calculates live total based on scoring pace', function () {
     $game = Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,
@@ -280,6 +406,29 @@ test('calculates live total based on scoring pace', function () {
     // After 10 min (600 sec elapsed), 65 pts scored
     // Pace suggests higher than current 65
     expect($result['live_predicted_total'])->toBeGreaterThan(65);
+});
+
+test('overtime total uses dynamic upper bound', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_IN_PROGRESS',
+        'period' => 3, // OT1
+        'game_clock' => '2:00',
+        'home_score' => 100,
+        'away_score' => 100,
+    ]);
+
+    Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_total' => 180.0,
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    // In OT with 200 points already, total should exceed 200
+    // Upper bound for OT1 = 220 + 25 = 245
+    expect($result['live_predicted_total'])->toBeGreaterThan(200);
 });
 
 test('clears live prediction', function () {

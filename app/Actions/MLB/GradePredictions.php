@@ -2,7 +2,6 @@
 
 namespace App\Actions\MLB;
 
-use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use Illuminate\Support\Collection;
 
@@ -16,7 +15,7 @@ class GradePredictions
             ->whereNotNull('mlb_games.home_score')
             ->whereNotNull('mlb_games.away_score')
             ->whereNull('mlb_predictions.graded_at')
-            ->select('mlb_predictions.*');
+            ->select('mlb_predictions.*', 'mlb_games.home_score', 'mlb_games.away_score');
 
         if ($season) {
             $query->where('mlb_games.season', $season);
@@ -40,14 +39,8 @@ class GradePredictions
         $totalErrors = [];
 
         foreach ($predictions as $prediction) {
-            $game = Game::find($prediction->game_id);
-
-            if (! $game || ! $game->home_score || ! $game->away_score) {
-                continue;
-            }
-
-            $actualSpread = $game->home_score - $game->away_score;
-            $actualTotal = $game->home_score + $game->away_score;
+            $actualSpread = $prediction->home_score - $prediction->away_score;
+            $actualTotal = $prediction->home_score + $prediction->away_score;
 
             $spreadError = abs($actualSpread - $prediction->predicted_spread);
             $totalError = abs($actualTotal - $prediction->predicted_total);

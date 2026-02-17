@@ -16,8 +16,8 @@ class Team extends Model
     protected $fillable = [
         'espn_id',
         'abbreviation',
-        'school',
-        'mascot',
+        'location',
+        'name',
         'conference',
         'division',
         'color',

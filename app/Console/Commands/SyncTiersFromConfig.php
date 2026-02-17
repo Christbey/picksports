@@ -32,6 +32,8 @@ class SyncTiersFromConfig extends Command
                     'stripe_price_id_yearly' => $tierData['stripe_price_id']['yearly'],
                     'features' => $tierData['features'],
                     'permissions' => $tierData['permissions'],
+                    'data_permissions' => $tierData['data_permissions'] ?? null,
+                    'predictions_limit' => $tierData['predictions_limit'] ?? null,
                     'is_default' => $slug === config('subscriptions.default_tier'),
                     'is_active' => true,
                     'sort_order' => $sortOrder++,

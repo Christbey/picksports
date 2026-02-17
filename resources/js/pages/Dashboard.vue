@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { computed, onMounted, onUnmounted } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import UpgradeCard from '@/components/UpgradeCard.vue';
@@ -22,6 +23,7 @@ interface Prediction {
     betting_value?: BettingRecommendation[];
     // Live game data
     is_live?: boolean;
+    is_final?: boolean;
     home_score?: number;
     away_score?: number;
     period?: number;
@@ -50,10 +52,59 @@ interface Stats {
     healthcheck_status: string;
 }
 
-defineProps<{
+const props = defineProps<{
     sports: Sport[];
     stats: Stats;
 }>();
+
+// Adaptive polling: 30s when live games are active, 5min when idle
+const LIVE_POLL_INTERVAL = 30_000;
+const IDLE_POLL_INTERVAL = 300_000;
+
+const hasLiveGames = computed(() =>
+    props.sports.some(sport => sport.predictions.some(p => p.is_live)),
+);
+
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
+function schedulePoll(): void {
+    stopPolling();
+    const interval = hasLiveGames.value ? LIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL;
+    pollTimer = setTimeout(() => {
+        if (document.hidden) {
+            schedulePoll();
+            return;
+        }
+        router.reload({
+            only: ['sports', 'stats'],
+            onFinish: () => schedulePoll(),
+        });
+    }, interval);
+}
+
+function stopPolling(): void {
+    if (pollTimer) {
+        clearTimeout(pollTimer);
+        pollTimer = null;
+    }
+}
+
+function handleVisibilityChange(): void {
+    if (!document.hidden) {
+        router.reload({ only: ['sports', 'stats'] });
+        schedulePoll();
+    }
+}
+
+onMounted(() => {
+    schedulePoll();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+});
+
+onUnmounted(() => {
+    stopPolling();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+});
 
 function getSportHeaderColor(color: string) {
     const colors: Record<string, string> = {
@@ -115,6 +166,10 @@ function formatInning(inning: number | undefined, inningState: string | undefine
     return `${state} ${inning}`;
 }
 
+function hasLiveData(prediction: Prediction): boolean {
+    return !!prediction.is_live && prediction.live_win_probability != null;
+}
+
 function buildLivePredictionData(prediction: Prediction): LivePredictionData | undefined {
     if (!prediction.is_live) return undefined;
     return {
@@ -153,10 +208,10 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                 v-if="sports.length === 0"
                 class="relative min-h-[100vh] flex-1 rounded-xl border border-sidebar-border/70 bg-white p-6 md:min-h-min dark:border-sidebar-border dark:bg-sidebar"
             >
-                <h2 class="mb-4 text-xl font-semibold">Upcoming Predictions</h2>
+                <h2 class="mb-4 text-xl font-semibold">Today's Predictions</h2>
                 <div class="py-12 text-center">
                     <p class="text-muted-foreground">
-                        No predictions available for the next 24 hours
+                        No predictions available for today
                     </p>
                 </div>
             </div>
@@ -214,6 +269,16 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                             >LIVE</span
                                         >
                                     </div>
+                                    <!-- Final indicator -->
+                                    <div
+                                        v-else-if="prediction.is_final"
+                                        class="flex items-center gap-1.5 rounded-full bg-gray-100 px-2 py-0.5 self-start dark:bg-gray-800"
+                                    >
+                                        <span
+                                            class="text-xs font-semibold text-gray-600 dark:text-gray-400"
+                                            >FINAL</span
+                                        >
+                                    </div>
 
                                     <!-- Teams -->
                                     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
@@ -227,7 +292,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                                 {{ prediction.away_team }}
                                             </span>
                                             <span
-                                                v-if="prediction.is_live"
+                                                v-if="prediction.is_live || prediction.is_final"
                                                 class="text-base md:text-lg font-bold ml-auto"
                                             >
                                                 {{ prediction.away_score }}
@@ -244,7 +309,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                                 {{ prediction.home_team }}
                                             </span>
                                             <span
-                                                v-if="prediction.is_live"
+                                                v-if="prediction.is_live || prediction.is_final"
                                                 class="text-base md:text-lg font-bold ml-auto"
                                             >
                                                 {{ prediction.home_score }}
@@ -258,7 +323,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                     <div class="text-center">
                                         <div class="text-xs text-muted-foreground">
                                             {{
-                                                prediction.is_live
+                                                hasLiveData(prediction)
                                                     ? 'Live Prob'
                                                     : 'Win Prob'
                                             }}
@@ -267,14 +332,13 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                             class="text-sm md:text-base font-semibold"
                                             :class="{
                                                 'text-red-500':
-                                                    prediction.is_live,
+                                                    hasLiveData(prediction),
                                             }"
                                         >
                                             {{
                                                 (
-                                                    (prediction.is_live &&
-                                                    prediction.live_win_probability
-                                                        ? prediction.live_win_probability
+                                                    (hasLiveData(prediction)
+                                                        ? prediction.live_win_probability!
                                                         : prediction.win_probability) *
                                                     100
                                                 ).toFixed(1)
@@ -284,7 +348,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                     <div class="text-center">
                                         <div class="text-xs text-muted-foreground">
                                             {{
-                                                prediction.is_live
+                                                hasLiveData(prediction)
                                                     ? 'Live Spread'
                                                     : 'Spread'
                                             }}
@@ -293,12 +357,12 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                             class="text-sm md:text-base font-semibold"
                                             :class="{
                                                 'text-red-500':
-                                                    prediction.is_live,
+                                                    hasLiveData(prediction),
                                             }"
                                         >
                                             {{
                                                 formatSpread(
-                                                    prediction.is_live &&
+                                                    hasLiveData(prediction) &&
                                                         prediction.live_predicted_spread !==
                                                             null
                                                         ? prediction.live_predicted_spread
@@ -310,7 +374,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                     <div class="text-center">
                                         <div class="text-xs text-muted-foreground">
                                             {{
-                                                prediction.is_live
+                                                hasLiveData(prediction)
                                                     ? 'Live Total'
                                                     : 'Total'
                                             }}
@@ -319,11 +383,11 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                             class="text-sm md:text-base font-semibold"
                                             :class="{
                                                 'text-red-500':
-                                                    prediction.is_live,
+                                                    hasLiveData(prediction),
                                             }"
                                         >
                                             {{
-                                                (prediction.is_live &&
+                                                (hasLiveData(prediction) &&
                                                 prediction.live_predicted_total !==
                                                     null
                                                     ? prediction.live_predicted_total
@@ -340,21 +404,21 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                 v-if="
                                     (prediction.betting_value &&
                                         prediction.betting_value.length > 0) ||
-                                    prediction.is_live
+                                    hasLiveData(prediction)
                                 "
                                 class="mt-4 border-t border-sidebar-border/70 pt-4"
                             >
                                 <div class="mb-2 flex items-center gap-2">
                                     <div class="text-sm font-medium">
                                         {{
-                                            prediction.is_live
+                                            hasLiveData(prediction)
                                                 ? 'Live Analysis'
                                                 : 'Betting Value Detected'
                                         }}
                                     </div>
                                     <div
                                         v-if="
-                                            !prediction.is_live &&
+                                            !hasLiveData(prediction) &&
                                             prediction.betting_value?.length
                                         "
                                         class="text-xs text-muted-foreground"

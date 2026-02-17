@@ -83,10 +83,16 @@ class SyncGamesFromScoreboard
                 'broadcast_networks' => $dto->broadcastNetworks,
             ];
 
-            $game = Game::updateOrCreate(
-                ['espn_event_id' => $dto->espnEventId],
-                $gameAttributes
-            );
+            $existingGame = Game::where('espn_event_id', $dto->espnEventId)->first();
+
+            if ($existingGame) {
+                if (! in_array($existingGame->status, ['STATUS_FINAL', 'STATUS_FULL_TIME'])) {
+                    $existingGame->update($gameAttributes);
+                }
+                $game = $existingGame;
+            } else {
+                $game = Game::create($gameAttributes);
+            }
 
             // Update live predictions for in-progress games
             $this->updateLivePrediction->execute($game);

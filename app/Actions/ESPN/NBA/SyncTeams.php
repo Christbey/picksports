@@ -33,10 +33,6 @@ class SyncTeams
             $dto = TeamData::fromEspnResponse($team);
 
             $teamAttributes = $dto->toArray();
-            // Map pro-style fields to NBA database schema
-            $teamAttributes['school'] = $teamAttributes['location'] ?? null;
-            $teamAttributes['mascot'] = $teamAttributes['name'] ?? null;
-            unset($teamAttributes['location'], $teamAttributes['name']);
 
             Team::updateOrCreate(
                 ['espn_id' => $dto->espnId],

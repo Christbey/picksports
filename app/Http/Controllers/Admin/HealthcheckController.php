@@ -110,6 +110,7 @@ class HealthcheckController extends Controller
             'elo_status' => $this->getEloCommand($sport),
             'team_metrics' => $this->getTeamMetricsCommand($sport),
             'team_schedules' => $this->getTeamSchedulesCommand($sport),
+            'live_scoreboard_sync' => $this->getLiveScoreboardCommand($sport),
             default => null,
         };
     }
@@ -167,6 +168,20 @@ class HealthcheckController extends Controller
     {
         return match ($sport) {
             'cbb' => 'espn:sync-cbb-all-team-schedules',
+            default => null,
+        };
+    }
+
+    protected function getLiveScoreboardCommand(string $sport): ?string
+    {
+        return match ($sport) {
+            'nba' => 'espn:sync-nba-games-scoreboard '.date('Ymd'),
+            'cbb' => 'espn:sync-cbb-games-scoreboard '.date('Ymd'),
+            'wcbb' => 'espn:sync-wcbb-games-scoreboard '.date('Ymd'),
+            'mlb' => 'espn:sync-mlb-games-scoreboard '.date('Ymd'),
+            'wnba' => 'espn:sync-wnba-games-scoreboard '.date('Ymd'),
+            'nfl' => 'espn:sync-nfl-games-scoreboard '.date('Ymd'),
+            'cfb' => 'espn:sync-cfb-games-scoreboard '.date('Ymd'),
             default => null,
         };
     }

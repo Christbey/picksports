@@ -5,14 +5,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
+import { Lock } from 'lucide-vue-next'
 
 interface Prediction {
   id: number
-  predicted_spread: number
-  win_probability: number
-  confidence_score: number
-  home_elo: number
-  away_elo: number
+  predicted_spread?: number
+  win_probability?: number
+  confidence_score?: number
+  home_elo?: number
+  away_elo?: number
   home_fpi?: number
   away_fpi?: number
   game: {
@@ -226,34 +227,48 @@ onMounted(() => {
         <CardContent class="space-y-4">
           <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
             <div>
-              <div class="text-xs text-muted-foreground">Spread</div>
-              <div class="text-lg font-semibold">{{ formatSpread(prediction.predicted_spread) }}</div>
+              <div class="text-xs text-muted-foreground mb-1">Spread</div>
+              <div v-if="prediction.predicted_spread !== undefined" class="text-lg font-semibold leading-7">{{ formatSpread(prediction.predicted_spread) }}</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
             <div>
-              <div class="text-xs text-muted-foreground">Win Prob</div>
-              <div class="text-lg font-semibold">{{ (prediction.win_probability * 100).toFixed(1) }}%</div>
+              <div class="text-xs text-muted-foreground mb-1">Win Prob</div>
+              <div v-if="prediction.win_probability !== undefined" class="text-lg font-semibold leading-7">{{ (prediction.win_probability * 100).toFixed(1) }}%</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
             <div>
-              <div class="text-xs text-muted-foreground">Confidence</div>
-              <div class="text-lg font-semibold">{{ prediction.confidence_score.toFixed(1) }}%</div>
+              <div class="text-xs text-muted-foreground mb-1">Confidence</div>
+              <div v-if="prediction.confidence_score !== undefined" class="text-lg font-semibold leading-7">{{ prediction.confidence_score.toFixed(1) }}%</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
             <div>
-              <div class="text-xs text-muted-foreground">Elo Diff</div>
-              <div class="text-lg font-semibold">{{ (prediction.home_elo - prediction.away_elo).toFixed(1) }}</div>
+              <div class="text-xs text-muted-foreground mb-1">Elo Diff</div>
+              <div v-if="prediction.home_elo !== undefined && prediction.away_elo !== undefined" class="text-lg font-semibold leading-7">{{ (prediction.home_elo - prediction.away_elo).toFixed(1) }}</div>
+              <div v-else class="text-muted-foreground leading-7">
+                <Lock class="h-4 w-4" />
+              </div>
             </div>
           </div>
 
           <!-- Team Metrics -->
-          <div class="border-t pt-4">
+          <div v-if="prediction.away_elo !== undefined || prediction.home_elo !== undefined" class="border-t pt-4">
             <div class="mb-2 text-sm font-medium">Team Metrics</div>
             <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
               <div>
                 <div class="text-xs text-muted-foreground">Away Elo</div>
-                <div class="text-sm font-semibold">{{ prediction.away_elo }}</div>
+                <div v-if="prediction.away_elo !== undefined" class="text-sm font-semibold">{{ prediction.away_elo }}</div>
+                <div v-else class="text-muted-foreground"><Lock class="h-4 w-4" /></div>
               </div>
               <div>
                 <div class="text-xs text-muted-foreground">Home Elo</div>
-                <div class="text-sm font-semibold">{{ prediction.home_elo }}</div>
+                <div v-if="prediction.home_elo !== undefined" class="text-sm font-semibold">{{ prediction.home_elo }}</div>
+                <div v-else class="text-muted-foreground"><Lock class="h-4 w-4" /></div>
               </div>
               <div v-if="prediction.away_fpi">
                 <div class="text-xs text-muted-foreground">Away FPI</div>

@@ -42,11 +42,21 @@ class BaseEspnService
     protected function get(string $url, bool $useCache = true): ?array
     {
         if ($useCache) {
-            return Cache::remember(
-                "espn.{$this->sport}.".md5($url),
-                now()->addMinutes($this->cacheMinutes),
-                fn () => $this->fetchFromApi($url)
-            );
+            $cacheKey = "espn.{$this->sport}.".md5($url);
+
+            $cached = Cache::get($cacheKey);
+            if ($cached !== null) {
+                return $cached;
+            }
+
+            $result = $this->fetchFromApi($url);
+
+            // Only cache successful responses, never cache null (API errors/rate limits)
+            if ($result !== null) {
+                Cache::put($cacheKey, $result, now()->addMinutes($this->cacheMinutes));
+            }
+
+            return $result;
         }
 
         return $this->fetchFromApi($url);

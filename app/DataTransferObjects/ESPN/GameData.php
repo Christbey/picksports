@@ -33,7 +33,7 @@ class GameData
     /**
      * Normalize ESPN status value to uppercase STATUS_* format
      */
-    protected static function normalizeStatus(string $status): string
+    public static function normalizeStatus(string $status): string
     {
         $trimmedStatus = trim($status);
 

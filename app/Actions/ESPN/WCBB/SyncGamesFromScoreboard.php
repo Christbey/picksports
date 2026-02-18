@@ -26,11 +26,14 @@ class SyncGamesFromScoreboard
         }
 
         $synced = 0;
+        $scoreboardEventIds = [];
 
         foreach ($response['events'] as $game) {
             if (empty($game['id'])) {
                 continue;
             }
+
+            $scoreboardEventIds[] = (string) $game['id'];
 
             $dto = GameData::fromEspnResponse($game);
 
@@ -89,17 +92,84 @@ class SyncGamesFromScoreboard
                 if (! in_array($existingGame->status, ['STATUS_FINAL', 'STATUS_FULL_TIME'])) {
                     $existingGame->update($gameAttributes);
                 }
-                $game = $existingGame;
+                $gameModel = $existingGame;
             } else {
-                $game = Game::create($gameAttributes);
+                $gameModel = Game::create($gameAttributes);
             }
 
             // Update live predictions for in-progress games
-            $this->updateLivePrediction->execute($game);
+            $this->updateLivePrediction->execute($gameModel);
 
             $synced++;
         }
 
+        // ESPN drops completed games from the scoreboard response.
+        // Fetch final scores individually for games still marked in-progress in the DB.
+        $synced += $this->syncOrphanedInProgressGames($scoreboardEventIds);
+
         return $synced;
+    }
+
+    /**
+     * Find games marked in-progress in the DB that ESPN dropped from the scoreboard
+     * (because they finished) and fetch their final status individually.
+     */
+    protected function syncOrphanedInProgressGames(array $scoreboardEventIds): int
+    {
+        $orphanedGames = Game::query()
+            ->whereIn('status', ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
+            ->when($scoreboardEventIds, fn ($q) => $q->whereNotIn('espn_event_id', $scoreboardEventIds))
+            ->get();
+
+        $synced = 0;
+
+        foreach ($orphanedGames as $game) {
+            $gameData = $this->espnService->getGame($game->espn_event_id);
+
+            if (! $gameData) {
+                usleep(300_000);
+
+                continue;
+            }
+
+            $this->updateGameFromSummary($gameData, $game);
+            $this->updateLivePrediction->execute($game->refresh());
+            $synced++;
+
+            usleep(300_000);
+        }
+
+        return $synced;
+    }
+
+    /**
+     * Update a game record from the ESPN game summary endpoint response.
+     */
+    protected function updateGameFromSummary(array $gameData, Game $game): void
+    {
+        $header = $gameData['header'] ?? [];
+        $competitions = $header['competitions'] ?? [];
+        $competition = $competitions[0] ?? [];
+
+        $competitors = $competition['competitors'] ?? [];
+        $status = $competition['status'] ?? [];
+
+        $homeTeam = collect($competitors)->firstWhere('homeAway', 'home');
+        $awayTeam = collect($competitors)->firstWhere('homeAway', 'away');
+
+        $statusName = $status['type']['name'] ?? 'scheduled';
+        $normalizedStatus = str_starts_with($statusName, 'STATUS_')
+            ? $statusName
+            : GameData::normalizeStatus($statusName);
+
+        $game->update([
+            'status' => $normalizedStatus,
+            'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : $game->home_score,
+            'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : $game->away_score,
+            'home_linescores' => $homeTeam['linescores'] ?? $game->home_linescores,
+            'away_linescores' => $awayTeam['linescores'] ?? $game->away_linescores,
+            'period' => isset($status['period']) ? (int) $status['period'] : $game->period,
+            'game_clock' => $status['displayClock'] ?? $game->game_clock,
+        ]);
     }
 }

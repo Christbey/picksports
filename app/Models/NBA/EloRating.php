@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EloRating extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbEloRatingFactory> */
+    /** @use HasFactory<\Database\Factories\NbaEloRatingFactory> */
     use HasFactory;
 
     protected $table = 'nba_elo_ratings';

@@ -29,11 +29,16 @@ class DashboardController extends Controller
     {
         // Get today's predictions from all sports
         $todaysPredictions = collect();
-        $today = now()->toDateString();
+        $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
+        $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
+        $todayGameScope = fn ($q) => $q->whereRaw(
+            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+            [$todayStartUtc, $todayEndUtc]
+        );
 
         // Add NBA predictions
         $nba = NBAPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
@@ -71,7 +76,7 @@ class DashboardController extends Controller
 
         // Add CBB predictions
         $cbb = CBBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
@@ -109,7 +114,7 @@ class DashboardController extends Controller
 
         // Add WCBB predictions
         $wcbb = WCBBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
@@ -146,7 +151,7 @@ class DashboardController extends Controller
 
         // Add NFL predictions
         $nfl = NFLPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
@@ -184,7 +189,7 @@ class DashboardController extends Controller
 
         // Add MLB predictions
         $mlb = MLBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_DELAYED']);
@@ -221,7 +226,7 @@ class DashboardController extends Controller
 
         // Add CFB predictions
         $cfb = CFBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
@@ -258,7 +263,7 @@ class DashboardController extends Controller
 
         // Add WNBA predictions
         $wnba = WNBAPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', fn ($q) => $q->whereDate('game_date', $today))
+            ->whereHas('game', $todayGameScope)
             ->get()
             ->map(function ($p) {
                 $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
@@ -322,15 +327,20 @@ class DashboardController extends Controller
         })->filter(fn ($sport) => $sport['predictions']->isNotEmpty())->values();
 
         // Get stats for top sections
+        $todayGameCount = fn ($model) => $model::whereRaw(
+            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+            [$todayStartUtc, $todayEndUtc]
+        )->count();
+
         $stats = [
             'total_predictions_today' => $todaysPredictions->count(),
-            'total_games_today' => NBAGame::whereDate('game_date', $today)->count()
-                + CBBGame::whereDate('game_date', $today)->count()
-                + WCBBGame::whereDate('game_date', $today)->count()
-                + NFLGame::whereDate('game_date', $today)->count()
-                + MLBGame::whereDate('game_date', $today)->count()
-                + CFBGame::whereDate('game_date', $today)->count()
-                + WNBAGame::whereDate('game_date', $today)->count(),
+            'total_games_today' => $todayGameCount(NBAGame::class)
+                + $todayGameCount(CBBGame::class)
+                + $todayGameCount(WCBBGame::class)
+                + $todayGameCount(NFLGame::class)
+                + $todayGameCount(MLBGame::class)
+                + $todayGameCount(CFBGame::class)
+                + $todayGameCount(WNBAGame::class),
             'healthcheck_status' => Healthcheck::where('checked_at', '>=', now()->subHours(1))
                 ->where('status', 'failing')
                 ->exists() ? 'failing' : 'passing',

@@ -199,7 +199,7 @@ Schedule::command('espn:sync-wcbb-current')
     ->runInBackground();
 
 // 2. Sync game details (box scores) for completed games without team stats
-Schedule::command('espn:sync-wcbb-game-details --season='.date('Y'))
+Schedule::command('espn:sync-wcbb-game-details')
     ->dailyAt('03:15')
     ->when($wcbbInSeason)
     ->name('WCBB: Sync Game Details (Daily)')
@@ -220,7 +220,7 @@ if ($heartbeatUrl) {
 }
 
 // 2b. Sync game details during game hours (box scores for completed games)
-Schedule::command('espn:sync-wcbb-game-details --season='.date('Y'))
+Schedule::command('espn:sync-wcbb-game-details')
     ->everyThirtyMinutes()
     ->between('14:00', '02:00')
     ->when($wcbbInSeason)

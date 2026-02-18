@@ -36,11 +36,12 @@ class EspnService extends BaseEspnService
     public function getScoreboard(?string $date = null): ?array
     {
         $url = $this->buildUrl('site', 'scoreboard');
+        $url .= '?limit=200&groups=50';
         if ($date) {
-            $url .= "?dates={$date}";
+            $url .= "&dates={$date}";
         }
 
-        return $this->get($url);
+        return $this->get($url, useCache: false);
     }
 
     public function getGame(string $eventId): ?array

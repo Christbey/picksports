@@ -136,6 +136,7 @@ abstract class AbstractEloCalculator
             'season' => $game->season,
             'week' => $game->week ?? null,
             'date' => $game->game_date,
+            'game_date' => $game->game_date,
             'elo_rating' => $newElo,
             'elo_change' => $eloChange,
         ]);

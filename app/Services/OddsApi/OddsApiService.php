@@ -227,6 +227,8 @@ class OddsApiService
         }
 
         // Fuzzy match on first name variations
+        $normalizedHomeNames = array_values($normalizedHomeNames);
+        $normalizedAwayNames = array_values($normalizedAwayNames);
         if (! empty($normalizedHomeNames) && ! empty($normalizedAwayNames)) {
             similar_text($normalizedHomeNames[0], $oddsHome, $homePercent);
             similar_text($normalizedAwayNames[0], $oddsAway, $awayPercent);

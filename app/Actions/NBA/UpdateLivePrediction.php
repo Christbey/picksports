@@ -12,14 +12,23 @@ class UpdateLivePrediction
 
     private const SECONDS_PER_QUARTER = 720; // 12 minutes
 
+    private const SECONDS_PER_OT = 300; // 5 minutes
+
     /**
      * Update live prediction data for an in-progress game.
+     * Clears live prediction data when the game is no longer in progress.
      *
      * @return array{live_predicted_spread: float, live_win_probability: float, live_predicted_total: float, live_seconds_remaining: int}|null
      */
     public function execute(Game $game): ?array
     {
         if (! $this->isGameInProgress($game)) {
+            // Clear stale live data when game is no longer in progress
+            $prediction = $game->prediction;
+            if ($prediction && $prediction->live_seconds_remaining !== null) {
+                $this->clearLivePrediction($prediction);
+            }
+
             return null;
         }
 
@@ -30,14 +39,20 @@ class UpdateLivePrediction
         }
 
         $secondsRemaining = $this->calculateSecondsRemaining($game->period, $game->game_clock);
-        $secondsElapsed = self::TOTAL_GAME_SECONDS - $secondsRemaining;
+        $actualSecondsElapsed = $this->calculateActualSecondsElapsed($game->period, $game->game_clock);
         $margin = ($game->home_score ?? 0) - ($game->away_score ?? 0);
         $totalPoints = ($game->home_score ?? 0) + ($game->away_score ?? 0);
+
+        // For time-fraction calculations, use regulation total as the baseline
+        // but account for OT by allowing fractions > 1.0 to be clamped
+        $effectiveGameLength = $this->calculateEffectiveGameLength($game->period);
+        $timeElapsedFraction = min(1.0, $actualSecondsElapsed / $effectiveGameLength);
 
         // Calculate live win probability
         $liveWinProbability = $this->calculateLiveWinProbability(
             $margin,
             $secondsRemaining,
+            $timeElapsedFraction,
             $prediction->win_probability ?? 0.5
         );
 
@@ -45,14 +60,17 @@ class UpdateLivePrediction
         $livePredictedSpread = $this->calculateLiveSpread(
             $margin,
             $secondsRemaining,
+            $timeElapsedFraction,
             $prediction->predicted_spread ?? 0
         );
 
         // Calculate live predicted total (expected final total points)
         $livePredictedTotal = $this->calculateLiveTotal(
             $totalPoints,
-            $secondsElapsed,
+            $actualSecondsElapsed,
             $secondsRemaining,
+            $effectiveGameLength,
+            $game->period,
             $prediction->predicted_total ?? 220
         );
 
@@ -79,6 +97,7 @@ class UpdateLivePrediction
             'STATUS_IN_PROGRESS',
             'STATUS_HALFTIME',
             'STATUS_END_PERIOD',
+            'STATUS_SUSPENDED',
         ];
 
         return in_array($game->status, $inProgressStatuses) && $game->period >= 1;
@@ -99,8 +118,50 @@ class UpdateLivePrediction
             return $secondsFromQuarters + $clockSeconds;
         }
 
-        // Overtime - treat as 5 minutes remaining max
-        return min($clockSeconds, 300);
+        // Overtime - only the current OT period's clock matters
+        return min($clockSeconds, self::SECONDS_PER_OT);
+    }
+
+    /**
+     * Calculate actual seconds elapsed including completed OT periods.
+     */
+    protected function calculateActualSecondsElapsed(int $period, ?string $gameClock): int
+    {
+        if ($period < 1) {
+            return 0;
+        }
+
+        $clockSeconds = $this->parseGameClock($gameClock);
+
+        if ($period <= 4) {
+            // Regulation: completed quarters + elapsed time in current quarter
+            $completedQuarters = $period - 1;
+            $elapsedInCurrentQuarter = self::SECONDS_PER_QUARTER - $clockSeconds;
+
+            return ($completedQuarters * self::SECONDS_PER_QUARTER) + $elapsedInCurrentQuarter;
+        }
+
+        // Overtime: all regulation (2880) + completed OT periods + elapsed in current OT
+        $completedOtPeriods = $period - 5; // period 5 = OT1, period 6 = OT2, etc.
+        $elapsedInCurrentOt = self::SECONDS_PER_OT - min($clockSeconds, self::SECONDS_PER_OT);
+
+        return self::TOTAL_GAME_SECONDS + ($completedOtPeriods * self::SECONDS_PER_OT) + $elapsedInCurrentOt;
+    }
+
+    /**
+     * Calculate effective total game length based on current period.
+     * In regulation this is 2880 seconds. In OT, extends by 300 per OT period.
+     */
+    protected function calculateEffectiveGameLength(int $period): int
+    {
+        if ($period <= 4) {
+            return self::TOTAL_GAME_SECONDS;
+        }
+
+        // In OT: regulation + all OT periods through the current one
+        $otPeriods = $period - 4;
+
+        return self::TOTAL_GAME_SECONDS + ($otPeriods * self::SECONDS_PER_OT);
     }
 
     protected function parseGameClock(?string $gameClock): int
@@ -124,7 +185,7 @@ class UpdateLivePrediction
     /**
      * Calculate live win probability based on margin and time remaining.
      */
-    protected function calculateLiveWinProbability(int $margin, int $secondsRemaining, float $preGameProbability): float
+    protected function calculateLiveWinProbability(int $margin, int $secondsRemaining, float $timeElapsedFraction, float $preGameProbability): float
     {
         if ($secondsRemaining <= 0) {
             if ($margin > 0) {
@@ -136,8 +197,6 @@ class UpdateLivePrediction
 
             return 0.5;
         }
-
-        $timeElapsedFraction = 1 - ($secondsRemaining / self::TOTAL_GAME_SECONDS);
 
         // Points are worth more as game progresses
         $pointValue = 0.02 + (0.15 * pow($timeElapsedFraction, 2));
@@ -162,30 +221,26 @@ class UpdateLivePrediction
      * The live spread represents the expected final margin from the current game state.
      * It blends the pre-game prediction with the current in-game performance.
      */
-    protected function calculateLiveSpread(int $currentMargin, int $secondsRemaining, float $preGameSpread): float
+    protected function calculateLiveSpread(int $currentMargin, int $secondsRemaining, float $timeElapsedFraction, float $preGameSpread): float
     {
         if ($secondsRemaining <= 0) {
             return (float) $currentMargin;
         }
 
-        $timeElapsedFraction = 1 - ($secondsRemaining / self::TOTAL_GAME_SECONDS);
-
-        // Calculate expected remaining margin based on pace
-        $remainingMinutes = $secondsRemaining / 60;
+        $remainingFraction = 1 - $timeElapsedFraction;
 
         // Expected additional margin contribution from pre-game prediction
-        // Scales down as game progresses
-        $remainingPreGameContribution = $preGameSpread * (1 - $timeElapsedFraction);
+        // Scales down linearly as game progresses
+        $remainingPreGameContribution = $preGameSpread * $remainingFraction;
 
-        // Current pace margin: extrapolate current margin to full game
-        // But weight it based on how much of the game has been played
+        // Current pace margin: extrapolate current margin to remaining time
         $currentPaceMargin = $timeElapsedFraction > 0
-            ? ($currentMargin / $timeElapsedFraction) * (1 - $timeElapsedFraction)
+            ? ($currentMargin / $timeElapsedFraction) * $remainingFraction
             : 0;
 
         // Blend current margin with remaining expected margin
-        // As game progresses, current margin dominates
-        $liveSpread = $currentMargin + ($remainingPreGameContribution * (1 - $timeElapsedFraction))
+        // Pre-game contribution weighted linearly, pace contribution grows with time
+        $liveSpread = $currentMargin + ($remainingPreGameContribution * (1 - $timeElapsedFraction * 0.5))
                                       + ($currentPaceMargin * $timeElapsedFraction * 0.3);
 
         // Apply regression toward current margin as game progresses
@@ -200,23 +255,23 @@ class UpdateLivePrediction
      *
      * Projects final total based on current scoring pace and pre-game prediction.
      */
-    protected function calculateLiveTotal(int $currentTotal, int $secondsElapsed, int $secondsRemaining, float $preGameTotal): float
+    protected function calculateLiveTotal(int $currentTotal, int $actualSecondsElapsed, int $secondsRemaining, int $effectiveGameLength, int $period, float $preGameTotal): float
     {
         if ($secondsRemaining <= 0) {
             return (float) $currentTotal;
         }
 
-        if ($secondsElapsed <= 0) {
+        if ($actualSecondsElapsed <= 0) {
             return $preGameTotal;
         }
 
-        $timeElapsedFraction = $secondsElapsed / self::TOTAL_GAME_SECONDS;
+        $timeElapsedFraction = $actualSecondsElapsed / $effectiveGameLength;
 
-        // Calculate current scoring pace (points per second)
-        $currentPace = $currentTotal / $secondsElapsed;
+        // Calculate current scoring pace (points per second) using actual elapsed time
+        $currentPace = $currentTotal / $actualSecondsElapsed;
 
-        // Project final total based on current pace
-        $pacePredictedTotal = $currentPace * self::TOTAL_GAME_SECONDS;
+        // Project final total based on current pace over the effective game length
+        $pacePredictedTotal = $currentPace * $effectiveGameLength;
 
         // Pre-game total prediction for remaining time
         $remainingPreGamePoints = $preGameTotal * (1 - $timeElapsedFraction);
@@ -231,8 +286,14 @@ class UpdateLivePrediction
 
         $liveTotal = $currentTotal + max(0, $projectedRemaining);
 
-        // Apply bounds (NBA games typically score between 180-260 total points)
-        return max($currentTotal, min(300, $liveTotal));
+        // Dynamic upper bound: 300 for regulation, +25 per OT period
+        $upperBound = 300;
+        if ($period > 4) {
+            $otPeriods = $period - 4;
+            $upperBound += $otPeriods * 25;
+        }
+
+        return max($currentTotal, min($upperBound, $liveTotal));
     }
 
     /**

@@ -108,6 +108,15 @@ Schedule::command('nba:generate-predictions --season='.date('Y'))
     ->withoutOverlapping()
     ->runInBackground();
 
+// 8. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('nba:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($nbaInSeason)
+    ->name('NBA: Sync Odds')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | CBB Automated Pipeline (Nov - Apr)
@@ -181,6 +190,15 @@ Schedule::command('cbb:generate-predictions --season='.date('Y'))
     ->dailyAt('06:30')
     ->when($cbbInSeason)
     ->name('CBB: Generate Predictions')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 7. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('cbb:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($cbbInSeason)
+    ->name('CBB: Sync Odds')
     ->withoutOverlapping()
     ->runInBackground();
 
@@ -260,6 +278,15 @@ Schedule::command('wcbb:generate-predictions --season='.date('Y'))
     ->withoutOverlapping()
     ->runInBackground();
 
+// 7. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('wcbb:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($wcbbInSeason)
+    ->name('WCBB: Sync Odds')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | MLB Automated Pipeline (Mar - Nov)
@@ -328,6 +355,15 @@ Schedule::command('mlb:generate-predictions --season=2026')
     ->withoutOverlapping()
     ->runInBackground();
 
+// 8. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('mlb:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($mlbInSeason)
+    ->name('MLB: Sync Odds')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | WNBA Automated Pipeline (Apr - Oct)
@@ -384,6 +420,15 @@ Schedule::command('wnba:generate-predictions --season='.date('Y'))
     ->dailyAt('02:00')
     ->when($wnbaInSeason)
     ->name('WNBA: Generate Predictions')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 7. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('wnba:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($wnbaInSeason)
+    ->name('WNBA: Sync Odds')
     ->withoutOverlapping()
     ->runInBackground();
 
@@ -455,6 +500,15 @@ Schedule::command('nfl:generate-predictions --season=2025')
     ->withoutOverlapping()
     ->runInBackground();
 
+// 8. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('nfl:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($nflInSeason)
+    ->name('NFL: Sync Odds')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | CFB Automated Pipeline (Aug - Jan)
@@ -520,5 +574,14 @@ Schedule::command('cfb:generate-predictions --season='.date('Y'))
     ->dailyAt('04:30')
     ->when($cfbInSeason)
     ->name('CFB: Generate Predictions')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 8. Sync odds from The Odds API (every 4 hours during the day)
+Schedule::command('cfb:sync-odds')
+    ->everyFourHours()
+    ->between('08:00', '23:00')
+    ->when($cfbInSeason)
+    ->name('CFB: Sync Odds')
     ->withoutOverlapping()
     ->runInBackground();

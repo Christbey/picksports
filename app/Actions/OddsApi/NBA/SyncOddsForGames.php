@@ -56,17 +56,17 @@ class SyncOddsForGames
 
         foreach ($games as $game) {
             $homeNames = array_filter([
-                $game->homeTeam->school ?? '',
+                trim(($game->homeTeam->location ?? '').' '.($game->homeTeam->name ?? '')),
                 $game->homeTeam->location ?? '',
-                $game->homeTeam->display_name ?? '',
                 $game->homeTeam->name ?? '',
+                $game->homeTeam->abbreviation ?? '',
             ]);
 
             $awayNames = array_filter([
-                $game->awayTeam->school ?? '',
+                trim(($game->awayTeam->location ?? '').' '.($game->awayTeam->name ?? '')),
                 $game->awayTeam->location ?? '',
-                $game->awayTeam->display_name ?? '',
                 $game->awayTeam->name ?? '',
+                $game->awayTeam->abbreviation ?? '',
             ]);
 
             if ($this->oddsApiService->fuzzyMatchTeams(

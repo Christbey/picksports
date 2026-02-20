@@ -29,9 +29,9 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => [
     { title: `Game ${props.game.id}`, href: `/nba/games/${props.game.id}` }
 ])
 
-const homeTeam = ref<Team | null>(null)
-const awayTeam = ref<Team | null>(null)
-const prediction = ref<Prediction | null>(null)
+const homeTeam = ref<Team | null>(props.game.home_team ?? null)
+const awayTeam = ref<Team | null>(props.game.away_team ?? null)
+const prediction = ref<Prediction | null>(props.game.prediction ?? null)
 const homeMetrics = ref<TeamMetric | null>(null)
 const awayMetrics = ref<TeamMetric | null>(null)
 const homeTeamStats = ref<any>(null)
@@ -129,17 +129,8 @@ const calculatePercentage = (made: number, attempted: number): string => {
     return ((made / attempted) * 100).toFixed(1)
 }
 
-const parseLinescores = (linescoresStr: string | null): any[] => {
-    if (!linescoresStr) return []
-    try {
-        return JSON.parse(linescoresStr)
-    } catch {
-        return []
-    }
-}
-
-const homeLinescores = computed(() => parseLinescores(props.game.home_linescores))
-const awayLinescores = computed(() => parseLinescores(props.game.away_linescores))
+const homeLinescores = computed(() => props.game.home_linescores ?? [])
+const awayLinescores = computed(() => props.game.away_linescores ?? [])
 
 const getRecentForm = (games: Game[], teamId: number): string => {
     return games.map(g => {
@@ -150,70 +141,73 @@ const getRecentForm = (games: Game[], teamId: number): string => {
     }).join('-')
 }
 
-const broadcastNetworks = computed(() => {
-    if (!props.game.broadcast_networks) return []
-    try {
-        return JSON.parse(props.game.broadcast_networks)
-    } catch {
-        return []
-    }
-})
+const broadcastNetworks = computed(() => props.game.broadcast_networks ?? [])
 
 onMounted(async () => {
     try {
         loading.value = true
         error.value = null
 
-        const [gameRes, predictionRes, teamStatsRes, playerStatsRes] = await Promise.all([
+        const homeTeamId = props.game.home_team?.id ?? props.game.home_team_id
+        const awayTeamId = props.game.away_team?.id ?? props.game.away_team_id
+
+        // Fetch trends independently — they load with their own skeleton
+        if (homeTeamId || awayTeamId) {
+            trendsLoading.value = true
+            const beforeDate = props.game.game_date || ''
+            const trendsPromises = []
+
+            if (homeTeamId) {
+                trendsPromises.push(
+                    fetch(`/api/v1/nba/teams/${homeTeamId}/trends?before_date=${beforeDate}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(data => { homeTrends.value = data })
+                        .catch(() => { homeTrends.value = null })
+                )
+            }
+
+            if (awayTeamId) {
+                trendsPromises.push(
+                    fetch(`/api/v1/nba/teams/${awayTeamId}/trends?before_date=${beforeDate}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(data => { awayTrends.value = data })
+                        .catch(() => { awayTrends.value = null })
+                )
+            }
+
+            Promise.all(trendsPromises).finally(() => { trendsLoading.value = false })
+        }
+
+        // Fetch all independent data in parallel
+        const fetches: Promise<any>[] = [
             fetch(`/api/v1/nba/games/${props.game.id}`),
             fetch(`/api/v1/nba/games/${props.game.id}/prediction`),
             fetch(`/api/v1/nba/games/${props.game.id}/team-stats`),
-            fetch(`/api/v1/nba/games/${props.game.id}/player-stats`)
-        ])
+            fetch(`/api/v1/nba/games/${props.game.id}/player-stats`),
+        ]
+
+        if (homeTeamId) {
+            fetches.push(
+                fetch(`/api/v1/nba/teams/${homeTeamId}/metrics`),
+                fetch(`/api/v1/nba/teams/${homeTeamId}/games`),
+            )
+        }
+
+        if (awayTeamId) {
+            fetches.push(
+                fetch(`/api/v1/nba/teams/${awayTeamId}/metrics`),
+                fetch(`/api/v1/nba/teams/${awayTeamId}/games`),
+            )
+        }
+
+        const responses = await Promise.all(fetches)
+        const [gameRes, predictionRes, teamStatsRes, playerStatsRes, ...teamResponses] = responses
 
         if (gameRes.ok) {
             const gameData = await gameRes.json()
             const fullGame = gameData.data
-            homeTeam.value = fullGame.home_team
-            awayTeam.value = fullGame.away_team
-
-            if (fullGame.home_team?.id) {
-                const [homeMetricsRes, homeGamesRes] = await Promise.all([
-                    fetch(`/api/v1/nba/teams/${fullGame.home_team.id}/metrics`),
-                    fetch(`/api/v1/nba/teams/${fullGame.home_team.id}/games`)
-                ])
-
-                if (homeMetricsRes.ok) {
-                    const data = await homeMetricsRes.json()
-                    homeMetrics.value = data.data?.[0] || null
-                }
-
-                if (homeGamesRes.ok) {
-                    const gamesData = await homeGamesRes.json()
-                    homeRecentGames.value = (gamesData.data || [])
-                        .filter((g: Game) => g.status === 'STATUS_FINAL')
-                        .slice(0, 5)
-                }
-            }
-
-            if (fullGame.away_team?.id) {
-                const [awayMetricsRes, awayGamesRes] = await Promise.all([
-                    fetch(`/api/v1/nba/teams/${fullGame.away_team.id}/metrics`),
-                    fetch(`/api/v1/nba/teams/${fullGame.away_team.id}/games`)
-                ])
-
-                if (awayMetricsRes.ok) {
-                    const data = await awayMetricsRes.json()
-                    awayMetrics.value = data.data?.[0] || null
-                }
-
-                if (awayGamesRes.ok) {
-                    const gamesData = await awayGamesRes.json()
-                    awayRecentGames.value = (gamesData.data || [])
-                        .filter((g: Game) => g.status === 'STATUS_FINAL')
-                        .slice(0, 5)
-                }
-            }
+            homeTeam.value = fullGame.home_team ?? homeTeam.value
+            awayTeam.value = fullGame.away_team ?? awayTeam.value
         }
 
         if (predictionRes.ok) {
@@ -233,32 +227,40 @@ onMounted(async () => {
             topPerformers.value = (playerStatsData.data || []).slice(0, 10)
         }
 
-        // Fetch trends for both teams
-        if (homeTeam.value?.id || awayTeam.value?.id) {
-            trendsLoading.value = true
-            const beforeDate = props.game.game_date || undefined
-            const trendsPromises = []
+        // Process team-specific responses
+        let idx = 0
+        if (homeTeamId) {
+            const homeMetricsRes = teamResponses[idx++]
+            const homeGamesRes = teamResponses[idx++]
 
-            if (homeTeam.value?.id) {
-                trendsPromises.push(
-                    fetch(`/api/v1/nba/teams/${homeTeam.value.id}/trends?before_date=${beforeDate || ''}`)
-                        .then(res => res.ok ? res.json() : null)
-                        .then(data => { homeTrends.value = data })
-                        .catch(() => { homeTrends.value = null })
-                )
+            if (homeMetricsRes?.ok) {
+                const data = await homeMetricsRes.json()
+                homeMetrics.value = data.data?.[0] || null
             }
 
-            if (awayTeam.value?.id) {
-                trendsPromises.push(
-                    fetch(`/api/v1/nba/teams/${awayTeam.value.id}/trends?before_date=${beforeDate || ''}`)
-                        .then(res => res.ok ? res.json() : null)
-                        .then(data => { awayTrends.value = data })
-                        .catch(() => { awayTrends.value = null })
-                )
+            if (homeGamesRes?.ok) {
+                const gamesData = await homeGamesRes.json()
+                homeRecentGames.value = (gamesData.data || [])
+                    .filter((g: Game) => g.status === 'STATUS_FINAL')
+                    .slice(0, 5)
+            }
+        }
+
+        if (awayTeamId) {
+            const awayMetricsRes = teamResponses[idx++]
+            const awayGamesRes = teamResponses[idx++]
+
+            if (awayMetricsRes?.ok) {
+                const data = await awayMetricsRes.json()
+                awayMetrics.value = data.data?.[0] || null
             }
 
-            await Promise.all(trendsPromises)
-            trendsLoading.value = false
+            if (awayGamesRes?.ok) {
+                const gamesData = await awayGamesRes.json()
+                awayRecentGames.value = (gamesData.data || [])
+                    .filter((g: Game) => g.status === 'STATUS_FINAL')
+                    .slice(0, 5)
+            }
         }
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred'

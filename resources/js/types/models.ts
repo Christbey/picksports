@@ -25,21 +25,24 @@ export interface Game {
     week: number | null
     game_date: string | null
     game_time: string | null
-    venue: string | null
-    attendance: number | null
+    venue?: string | null
+    venue_name?: string | null
+    venue_city?: string | null
+    venue_state?: string | null
     status: string
     period: number | null
-    clock: string | null
+    clock?: string | null
+    game_clock?: string | null
     home_score: number | null
     away_score: number | null
-    home_linescores: string | null
-    away_linescores: string | null
-    broadcast_networks: string | null
-    completed_at: string | null
+    home_linescores: Array<{ period: number; value: number }> | null
+    away_linescores: Array<{ period: number; value: number }> | null
+    broadcast_networks: string[] | null
     created_at: string | null
     updated_at: string | null
     home_team?: Team
     away_team?: Team
+    prediction?: Prediction
 }
 
 export interface TeamMetric {

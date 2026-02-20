@@ -212,14 +212,31 @@ class UpdateLivePrediction
 
         $probability = 1 / (1 + exp(-$combinedLogOdds));
 
+        // Blowout compression: push extreme margins toward certainty late in the game.
+        // A 20+ point margin in the 4th quarter should produce 99%+ probability.
+        $absMargin = abs($margin);
+        if ($absMargin >= 15 && $timeElapsedFraction >= 0.5) {
+            // Scale factor grows with both margin size and time elapsed
+            $blowoutIntensity = (($absMargin - 15) / 15) * pow($timeElapsedFraction, 2);
+            $blowoutBoost = 1 - exp(-2.5 * $blowoutIntensity);
+
+            if ($margin > 0) {
+                $probability = $probability + ((0.999 - $probability) * $blowoutBoost);
+            } else {
+                $probability = $probability - (($probability - 0.001) * $blowoutBoost);
+            }
+        }
+
         return max(0.001, min(0.999, $probability));
     }
 
     /**
      * Calculate live predicted spread (expected final margin).
      *
-     * The live spread represents the expected final margin from the current game state.
-     * It blends the pre-game prediction with the current in-game performance.
+     * Blends the pre-game spread with the current margin proportionally to time elapsed.
+     * Early in the game, the pre-game spread dominates. Late in the game, the current
+     * margin dominates. A pace-based projection adds a small data-driven adjustment
+     * that grows with sample size.
      */
     protected function calculateLiveSpread(int $currentMargin, int $secondsRemaining, float $timeElapsedFraction, float $preGameSpread): float
     {
@@ -227,27 +244,27 @@ class UpdateLivePrediction
             return (float) $currentMargin;
         }
 
-        $remainingFraction = 1 - $timeElapsedFraction;
+        // Weight current evidence with a power curve so pre-game spread
+        // dominates through Q1, transitions mid-game, and current margin takes over in Q4
+        $currentWeight = pow($timeElapsedFraction, 1.5);
+        $preGameWeight = 1 - $currentWeight;
 
-        // Expected additional margin contribution from pre-game prediction
-        // Scales down linearly as game progresses
-        $remainingPreGameContribution = $preGameSpread * $remainingFraction;
+        // Current-evidence projection: blend the raw margin with the pace extrapolation.
+        // Early in the game, trust the raw margin over the noisy pace projection.
+        // paceCredibility ramps from 0 → 1 as sample size grows.
+        $paceCredibility = pow($timeElapsedFraction, 2);
+        $paceProjectedMargin = $timeElapsedFraction > 0
+            ? $currentMargin / $timeElapsedFraction
+            : (float) $currentMargin;
+        $currentEvidence = ($currentMargin * (1 - $paceCredibility)) + ($paceProjectedMargin * $paceCredibility);
 
-        // Current pace margin: extrapolate current margin to remaining time
-        $currentPaceMargin = $timeElapsedFraction > 0
-            ? ($currentMargin / $timeElapsedFraction) * $remainingFraction
-            : 0;
+        // Blend pre-game spread with current evidence
+        $blendedProjection = ($preGameSpread * $preGameWeight) + ($currentEvidence * $currentWeight);
 
-        // Blend current margin with remaining expected margin
-        // Pre-game contribution weighted linearly, pace contribution grows with time
-        $liveSpread = $currentMargin + ($remainingPreGameContribution * (1 - $timeElapsedFraction * 0.5))
-                                      + ($currentPaceMargin * $timeElapsedFraction * 0.3);
+        // Late in the game, converge fully to the raw current margin
+        $lateGameConvergence = pow($timeElapsedFraction, 3);
 
-        // Apply regression toward current margin as game progresses
-        // Late in the game, the live spread should be very close to current margin
-        $regressionWeight = pow($timeElapsedFraction, 2);
-
-        return ($liveSpread * (1 - $regressionWeight)) + ($currentMargin * $regressionWeight);
+        return ($blendedProjection * (1 - $lateGameConvergence)) + ($currentMargin * $lateGameConvergence);
     }
 
     /**

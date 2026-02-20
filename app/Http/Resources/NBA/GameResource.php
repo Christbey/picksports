@@ -16,7 +16,7 @@ class GameResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'espn_id' => $this->espn_id,
+            'espn_id' => $this->espn_event_id,
             'home_team_id' => $this->home_team_id,
             'away_team_id' => $this->away_team_id,
             'season' => $this->season,
@@ -24,21 +24,22 @@ class GameResource extends JsonResource
             'week' => $this->week,
             'game_date' => $this->game_date?->toDateString(),
             'game_time' => $this->game_time,
-            'venue' => $this->venue,
-            'attendance' => $this->attendance,
+            'venue_name' => $this->venue_name,
+            'venue_city' => $this->venue_city,
+            'venue_state' => $this->venue_state,
             'status' => $this->status,
             'period' => $this->period,
-            'clock' => $this->clock,
+            'game_clock' => $this->game_clock,
             'home_score' => $this->home_score,
             'away_score' => $this->away_score,
             'home_linescores' => $this->home_linescores,
             'away_linescores' => $this->away_linescores,
             'broadcast_networks' => $this->broadcast_networks,
-            'completed_at' => $this->completed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'home_team' => TeamResource::make($this->whenLoaded('homeTeam')),
             'away_team' => TeamResource::make($this->whenLoaded('awayTeam')),
+            'prediction' => PredictionResource::make($this->whenLoaded('prediction')),
         ];
     }
 }

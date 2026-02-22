@@ -61,6 +61,52 @@ class TeamStatController extends Controller
     }
 
     /**
+     * Display season averages for all teams, for ranking purposes.
+     */
+    public function allSeasonAverages()
+    {
+        $stats = TeamStat::query()
+            ->selectRaw('
+                team_id,
+                COUNT(*) as games_played,
+                AVG(points) as points_per_game,
+                AVG(rebounds) as rebounds_per_game,
+                AVG(assists) as assists_per_game,
+                AVG(steals) as steals_per_game,
+                AVG(blocks) as blocks_per_game,
+                AVG(turnovers) as turnovers_per_game,
+                SUM(field_goals_made) as total_fg_made,
+                SUM(field_goals_attempted) as total_fg_attempted,
+                SUM(three_point_made) as total_3p_made,
+                SUM(three_point_attempted) as total_3p_attempted,
+                SUM(free_throws_made) as total_ft_made,
+                SUM(free_throws_attempted) as total_ft_attempted
+            ')
+            ->groupBy('team_id')
+            ->get();
+
+        $data = $stats->map(function ($s) {
+            return [
+                'team_id' => $s->team_id,
+                'points_per_game' => round($s->points_per_game, 1),
+                'rebounds_per_game' => round($s->rebounds_per_game, 1),
+                'assists_per_game' => round($s->assists_per_game, 1),
+                'steals_per_game' => round($s->steals_per_game, 1),
+                'blocks_per_game' => round($s->blocks_per_game, 1),
+                'turnovers_per_game' => round($s->turnovers_per_game, 1),
+                'field_goal_percentage' => $s->total_fg_attempted > 0
+                    ? round(($s->total_fg_made / $s->total_fg_attempted) * 100, 1) : 0,
+                'three_point_percentage' => $s->total_3p_attempted > 0
+                    ? round(($s->total_3p_made / $s->total_3p_attempted) * 100, 1) : 0,
+                'free_throw_percentage' => $s->total_ft_attempted > 0
+                    ? round(($s->total_ft_made / $s->total_ft_attempted) * 100, 1) : 0,
+            ];
+        });
+
+        return response()->json(['data' => $data]);
+    }
+
+    /**
      * Display season averages for a specific team.
      */
     public function seasonAverages(Team $team)

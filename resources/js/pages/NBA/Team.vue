@@ -24,8 +24,10 @@ const teamMetrics = ref<TeamMetric | null>(null)
 const seasonStats = ref<any>(null)
 const recentGames = ref<Game[]>([])
 const upcomingGames = ref<Game[]>([])
-const eloData = ref<any>(null)
-const trendsData = ref<any>(null)
+const powerRanking = ref<{ rank: number; total_teams: number } | null>(null)
+const statRankings = ref<Record<string, number>>({})
+const trendsData = ref<Record<string, string[]> | null>(null)
+const lockedTrends = ref<Record<string, string> | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
 
@@ -63,21 +65,33 @@ const getGameResult = (game: Game): string | null => {
 }
 
 // Computed properties
-const currentElo = computed(() => {
-    if (!eloData.value || eloData.value.length === 0) return null
-    return eloData.value[0]
-})
-
-const eloChange = computed(() => {
-    if (!eloData.value || eloData.value.length < 2) return 0
-    const latest = eloData.value[0]?.elo_rating || 0
-    const previous = eloData.value[1]?.elo_rating || 0
-    return latest - previous
-})
-
 const recentForm = computed(() => {
     return recentGames.value.slice(0, 5).map(g => getGameResult(g)).join('-')
 })
+
+const trendLabel = (key: string): string => {
+    const labels: Record<string, string> = {
+        scoring: 'Scoring',
+        margins: 'Margins',
+        streaks: 'Streaks',
+        quarters: 'Quarters',
+        halves: 'Halves',
+        totals: 'Totals',
+        first_score: 'First Score',
+        situational: 'Situational',
+        advanced: 'Advanced',
+        time_based: 'Time Based',
+        rest_schedule: 'Rest & Schedule',
+        opponent_strength: 'Opponent Strength',
+        conference: 'Conference',
+        scoring_patterns: 'Scoring Patterns',
+        offensive_efficiency: 'Offensive Efficiency',
+        defensive_performance: 'Defensive Performance',
+        momentum: 'Momentum',
+        clutch_performance: 'Clutch Performance',
+    }
+    return labels[key] || key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+}
 
 const recentRecord = computed(() => {
     const last5 = recentGames.value.slice(0, 5)
@@ -91,11 +105,12 @@ onMounted(async () => {
         loading.value = true
         error.value = null
 
-        const [metricsRes, seasonStatsRes, gamesRes, eloRes, trendsRes] = await Promise.all([
+        const [metricsRes, seasonStatsRes, gamesRes, allMetricsRes, allStatsRes, trendsRes] = await Promise.all([
             fetch(`/api/v1/nba/teams/${props.team.id}/metrics`),
             fetch(`/api/v1/nba/teams/${props.team.id}/stats/season-averages`),
             fetch(`/api/v1/nba/teams/${props.team.id}/games`),
-            fetch(`/api/v1/nba/teams/${props.team.id}/elo-ratings?per_page=20`),
+            fetch(`/api/v1/nba/team-metrics`),
+            fetch(`/api/v1/nba/team-stats/season-averages`),
             fetch(`/api/v1/nba/teams/${props.team.id}/trends?games=20`)
         ])
 
@@ -122,14 +137,42 @@ onMounted(async () => {
                 .slice(0, 5)
         }
 
-        if (eloRes.ok) {
-            const eloResData = await eloRes.json()
-            eloData.value = eloResData.data || []
+        if (allMetricsRes.ok) {
+            const allMetricsData = await allMetricsRes.json()
+            const allMetrics = allMetricsData.data || []
+            const idx = allMetrics.findIndex((m: any) => m.team_id === props.team.id)
+            if (idx !== -1) {
+                powerRanking.value = { rank: idx + 1, total_teams: allMetrics.length }
+            }
+        }
+
+        if (allStatsRes.ok) {
+            const allStatsData = await allStatsRes.json()
+            const allStats = allStatsData.data || []
+            const rankStat = (key: string, descending = true) => {
+                const sorted = [...allStats].sort((a: any, b: any) =>
+                    descending ? b[key] - a[key] : a[key] - b[key]
+                )
+                const idx = sorted.findIndex((s: any) => s.team_id === props.team.id)
+                return idx !== -1 ? idx + 1 : 0
+            }
+            statRankings.value = {
+                points_per_game: rankStat('points_per_game'),
+                rebounds_per_game: rankStat('rebounds_per_game'),
+                assists_per_game: rankStat('assists_per_game'),
+                field_goal_percentage: rankStat('field_goal_percentage'),
+                three_point_percentage: rankStat('three_point_percentage'),
+                free_throw_percentage: rankStat('free_throw_percentage'),
+                steals_per_game: rankStat('steals_per_game'),
+                blocks_per_game: rankStat('blocks_per_game'),
+                turnovers_per_game: rankStat('turnovers_per_game', false),
+            }
         }
 
         if (trendsRes.ok) {
             const trendsResData = await trendsRes.json()
             trendsData.value = trendsResData.trends || null
+            lockedTrends.value = trendsResData.locked_trends || null
         }
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred'
@@ -170,30 +213,27 @@ onMounted(async () => {
             </div>
 
             <template v-else>
-                <!-- ELO Rating and Recent Form Cards -->
+                <!-- Power Ranking and Recent Form Cards -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- ELO Rating Card -->
-                    <Card v-if="currentElo">
+                    <!-- Power Ranking Card -->
+                    <Card v-if="powerRanking">
                         <CardHeader>
-                            <CardTitle>ELO Rating</CardTitle>
+                            <CardTitle>Power Ranking</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div class="flex items-center justify-between">
                                 <div>
-                                    <div class="text-4xl font-bold">{{ formatNumber(currentElo.elo_rating, 0) }}</div>
-                                    <div class="text-sm text-muted-foreground mt-1">Current Rating</div>
+                                    <div class="text-4xl font-bold">#{{ powerRanking.rank }}</div>
+                                    <div class="text-sm text-muted-foreground mt-1">of {{ powerRanking.total_teams }} teams</div>
                                 </div>
-                                <div class="text-right">
+                                <div v-if="teamMetrics" class="text-right">
                                     <div
-                                        :class="[
-                                            'text-2xl font-semibold',
-                                            eloChange > 0 ? 'text-green-600 dark:text-green-400' : eloChange < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'
-                                        ]"
+                                        class="text-2xl font-semibold"
+                                        :class="getRatingClass(teamMetrics.net_rating)"
                                     >
-                                        {{ eloChange > 0 ? '↗' : eloChange < 0 ? '↘' : '→' }}
-                                        {{ eloChange > 0 ? '+' : '' }}{{ formatNumber(eloChange, 1) }}
+                                        {{ teamMetrics.net_rating > 0 ? '+' : '' }}{{ formatNumber(teamMetrics.net_rating) }}
                                     </div>
-                                    <div class="text-xs text-muted-foreground mt-1">vs Last Game</div>
+                                    <div class="text-xs text-muted-foreground mt-1">Net Rating</div>
                                 </div>
                             </div>
                         </CardContent>
@@ -283,6 +323,103 @@ onMounted(async () => {
                         </div>
                     </CardContent>
                 </Card>
+
+                            <Card v-if="seasonStats">
+                                <CardHeader>
+                                    <CardTitle>Season Averages ({{ seasonStats.games_played }} games)</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                        <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                            <div class="text-sm text-muted-foreground">PPG</div>
+                                            <div class="text-2xl font-bold">
+                                                {{ formatNumber(seasonStats.points_per_game) }}
+                                                <span v-if="statRankings.points_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.points_per_game }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                            <div class="text-sm text-muted-foreground">RPG</div>
+                                            <div class="text-2xl font-bold">
+                                                {{ formatNumber(seasonStats.rebounds_per_game) }}
+                                                <span v-if="statRankings.rebounds_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.rebounds_per_game }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                            <div class="text-sm text-muted-foreground">APG</div>
+                                            <div class="text-2xl font-bold">
+                                                {{ formatNumber(seasonStats.assists_per_game) }}
+                                                <span v-if="statRankings.assists_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.assists_per_game }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                            <div class="text-sm text-muted-foreground">FG%</div>
+                                            <div class="text-2xl font-bold">
+                                                {{ formatNumber(seasonStats.field_goal_percentage) }}%
+                                                <span v-if="statRankings.field_goal_percentage" class="text-xs font-normal text-muted-foreground">#{{ statRankings.field_goal_percentage }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                            <div class="text-sm text-muted-foreground">3P%</div>
+                                            <div class="text-2xl font-bold">
+                                                {{ formatNumber(seasonStats.three_point_percentage) }}%
+                                                <span v-if="statRankings.three_point_percentage" class="text-xs font-normal text-muted-foreground">#{{ statRankings.three_point_percentage }}</span>
+                                            </div>
+                                        </div>
+                                        <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                            <div class="text-sm text-muted-foreground">FT%</div>
+                                            <div class="text-2xl font-bold">
+                                                {{ formatNumber(seasonStats.free_throw_percentage) }}%
+                                                <span v-if="statRankings.free_throw_percentage" class="text-xs font-normal text-muted-foreground">#{{ statRankings.free_throw_percentage }}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <!-- Recent Games Preview -->
+                            <Card v-if="recentGames.length > 0">
+                                <CardHeader>
+                                    <CardTitle>Recent Games</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div class="space-y-2">
+                                        <Link
+                                            v-for="game in recentGames.slice(0, 5)"
+                                            :key="game.id"
+                                            :href="NBAGameController(game.id)"
+                                            class="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                                        >
+                                            <div class="flex items-center gap-3 flex-1">
+                                                <span
+                                                    class="font-bold text-sm w-6"
+                                                    :class="getGameResult(game) === 'W' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                                >
+                                                    {{ getGameResult(game) }}
+                                                </span>
+                                                <span class="text-sm text-muted-foreground">
+                                                    {{ game.home_team_id === team.id ? 'vs' : '@' }}
+                                                </span>
+                                                <span class="font-medium">
+                                                    {{ getOpponent(game, game.home_team_id === team.id)?.name }}
+                                                </span>
+                                            </div>
+                                            <div class="flex items-center gap-4">
+                                                <span class="text-sm font-medium">
+                                                    {{ game.home_team_id === team.id ? game.home_score : game.away_score }} -
+                                                    {{ game.home_team_id === team.id ? game.away_score : game.home_score }}
+                                                </span>
+                                                <span class="text-sm text-muted-foreground">
+                                                    {{ formatDate(game.game_date) }}
+                                                </span>
+                                            </div>
+                                        </Link>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            <div v-if="!teamMetrics && !seasonStats && recentGames.length === 0" class="text-center py-8 text-muted-foreground">
+                                <p>No overview data available for this team yet.</p>
+                            </div>
                         </div>
                     </TabsContent>
 
@@ -298,54 +435,63 @@ onMounted(async () => {
                                         <div class="text-sm text-muted-foreground">PPG</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.points_per_game) }}
+                                            <span v-if="statRankings.points_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.points_per_game }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">RPG</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.rebounds_per_game) }}
+                                            <span v-if="statRankings.rebounds_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.rebounds_per_game }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">APG</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.assists_per_game) }}
+                                            <span v-if="statRankings.assists_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.assists_per_game }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">FG%</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.field_goal_percentage) }}%
+                                            <span v-if="statRankings.field_goal_percentage" class="text-xs font-normal text-muted-foreground">#{{ statRankings.field_goal_percentage }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">3P%</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.three_point_percentage) }}%
+                                            <span v-if="statRankings.three_point_percentage" class="text-xs font-normal text-muted-foreground">#{{ statRankings.three_point_percentage }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">FT%</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.free_throw_percentage) }}%
+                                            <span v-if="statRankings.free_throw_percentage" class="text-xs font-normal text-muted-foreground">#{{ statRankings.free_throw_percentage }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">SPG</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.steals_per_game) }}
+                                            <span v-if="statRankings.steals_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.steals_per_game }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">BPG</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.blocks_per_game) }}
+                                            <span v-if="statRankings.blocks_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.blocks_per_game }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
                                         <div class="text-sm text-muted-foreground">TPG</div>
                                         <div class="text-2xl font-bold">
                                             {{ formatNumber(seasonStats.turnovers_per_game) }}
+                                            <span v-if="statRankings.turnovers_per_game" class="text-xs font-normal text-muted-foreground">#{{ statRankings.turnovers_per_game }}</span>
                                         </div>
                                     </div>
                                     <div class="text-center p-4 bg-muted/50 rounded-lg">
@@ -391,120 +537,49 @@ onMounted(async () => {
 
                     <!-- Trends Tab -->
                     <TabsContent value="trends">
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Team Trends (Last 20 Games)</CardTitle>
-                            </CardHeader>
-                            <CardContent>
-                                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    <!-- Home/Away Record -->
-                                    <div v-if="trendsData.situational" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Home Record</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ trendsData.situational?.home_games?.wins || 0 }}-{{ trendsData.situational?.home_games?.losses || 0 }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            {{ trendsData.situational?.home_games?.games || 0 }} games
-                                        </div>
-                                    </div>
-
-                                    <div v-if="trendsData.situational" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Away Record</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ trendsData.situational?.away_games?.wins || 0 }}-{{ trendsData.situational?.away_games?.losses || 0 }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            {{ trendsData.situational?.away_games?.games || 0 }} games
-                                        </div>
-                                    </div>
-
-                                    <!-- Scoring Trends -->
-                                    <div v-if="trendsData.scoring" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Avg Points Scored</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ formatNumber(trendsData.scoring?.average_points || 0) }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            Per game
-                                        </div>
-                                    </div>
-
-                                    <!-- Margin Trends -->
-                                    <div v-if="trendsData.margin" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Avg Margin</div>
-                                        <div
-                                            class="text-2xl font-bold"
-                                            :class="getRatingClass(trendsData.margin?.average_margin || 0)"
+                        <div v-if="trendsData && Object.keys(trendsData).length > 0" class="space-y-4">
+                            <Card v-for="(insights, key) in trendsData" :key="key">
+                                <CardHeader>
+                                    <CardTitle>{{ trendLabel(key) }}</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <ul class="space-y-2">
+                                        <li
+                                            v-for="(insight, idx) in insights"
+                                            :key="idx"
+                                            class="flex items-start gap-2 text-sm"
                                         >
-                                            {{ trendsData.margin?.average_margin > 0 ? '+' : '' }}{{ formatNumber(trendsData.margin?.average_margin || 0) }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            Points per game
-                                        </div>
-                                    </div>
+                                            <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                                            <span>{{ insight }}</span>
+                                        </li>
+                                    </ul>
+                                </CardContent>
+                            </Card>
 
-                                    <!-- Quarter Performance -->
-                                    <div v-if="trendsData.quarter" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Strongest Quarter</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ trendsData.quarter?.best_quarter || '-' }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            Best performance
-                                        </div>
-                                    </div>
-
-                                    <!-- Streak -->
-                                    <div v-if="trendsData.streak" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Current Streak</div>
+                            <!-- Locked trends -->
+                            <Card v-if="lockedTrends && Object.keys(lockedTrends).length > 0" class="opacity-60">
+                                <CardHeader>
+                                    <CardTitle>More Insights Available</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
                                         <div
-                                            class="text-2xl font-bold"
-                                            :class="trendsData.streak?.current_streak_type === 'W' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                            v-for="(tier, key) in lockedTrends"
+                                            :key="key"
+                                            class="flex items-center justify-between p-3 border rounded-lg"
                                         >
-                                            {{ trendsData.streak?.current_streak_type || '-' }}{{ trendsData.streak?.current_streak || 0 }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            {{ trendsData.streak?.current_streak_type === 'W' ? 'Win' : 'Loss' }} streak
+                                            <span class="text-sm font-medium">{{ trendLabel(key) }}</span>
+                                            <span class="text-xs text-muted-foreground capitalize">{{ tier }}</span>
                                         </div>
                                     </div>
+                                </CardContent>
+                            </Card>
+                        </div>
 
-                                    <!-- Clutch Performance -->
-                                    <div v-if="trendsData.clutch" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Close Games (±5)</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ trendsData.clutch?.close_wins || 0 }}-{{ trendsData.clutch?.close_losses || 0 }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            Clutch record
-                                        </div>
-                                    </div>
-
-                                    <!-- Offensive Efficiency Trend -->
-                                    <div v-if="trendsData.offensive_efficiency" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Offensive Efficiency</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ formatNumber(trendsData.offensive_efficiency?.current || 0) }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            Recent trend
-                                        </div>
-                                    </div>
-
-                                    <!-- Defensive Performance -->
-                                    <div v-if="trendsData.defensive_performance" class="p-4 border rounded-lg">
-                                        <div class="text-sm text-muted-foreground mb-2">Defensive Rating</div>
-                                        <div class="text-2xl font-bold">
-                                            {{ formatNumber(trendsData.defensive_performance?.current || 0) }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground mt-1">
-                                            Recent trend
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- No trends message -->
-                                <div v-if="!trendsData || Object.keys(trendsData).length === 0" class="text-center py-8 text-muted-foreground">
-                                    <p>Not enough games played to calculate trends (minimum 20 games required)</p>
+                        <Card v-else>
+                            <CardContent class="py-8">
+                                <div class="text-center text-muted-foreground">
+                                    <p>Not enough games played to calculate trends.</p>
                                 </div>
                             </CardContent>
                         </Card>

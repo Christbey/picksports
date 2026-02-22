@@ -387,6 +387,15 @@ onMounted(async () => {
                                 </div>
                             </CardContent>
                         </Card>
+                    </TabsContent>
+
+                    <!-- Trends Tab -->
+                    <TabsContent value="trends">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Team Trends (Last 20 Games)</CardTitle>
+                            </CardHeader>
+                            <CardContent>
                                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     <!-- Home/Away Record -->
                                     <div v-if="trendsData.situational" class="p-4 border rounded-lg">
@@ -497,14 +506,6 @@ onMounted(async () => {
                                 <div v-if="!trendsData || Object.keys(trendsData).length === 0" class="text-center py-8 text-muted-foreground">
                                     <p>Not enough games played to calculate trends (minimum 20 games required)</p>
                                 </div>
-                            </CardContent>
-                        </Card>
-
-                        <Card v-else>
-                            <CardContent class="py-8">
-                                <div class="text-center text-muted-foreground">
-                                    <p>Not enough games played to calculate trends</p>
-                                    <p class="text-sm mt-2">Minimum 20 games required</p>
                                 </div>
                             </CardContent>
                         </Card>

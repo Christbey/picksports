@@ -38,5 +38,34 @@ The {system.app_name} Team',
                 'push_body' => '{prediction.game_description} - {prediction.recommended_pick}. Confidence: {prediction.confidence}',
             ]
         );
+
+        NotificationTemplate::updateOrCreate(
+            ['name' => 'Daily Betting Digest'],
+            [
+                'description' => 'Daily summary of top betting opportunities',
+                'active' => true,
+                'subject' => 'Your Daily Betting Digest - {digest.bets_count} Top Opportunities for {digest.date}',
+                'email_body' => 'Good morning {user.name},
+
+Here\'s your daily betting digest for {digest.date}.
+
+**Summary**
+- Games Analyzed: {digest.total_games}
+- Top Picks: {digest.bets_count}
+
+{digest.bets_table}
+
+{digest.empty_message}
+
+These picks were selected using our advanced ranking algorithm based on edge value, confidence, and optimal bet sizing.
+
+Manage your digest preferences at {system.app_url}/settings/alert-preferences
+
+Good luck,
+The {system.app_name} Team',
+                'push_title' => 'Daily Digest: {digest.bets_count} picks for {digest.date}',
+                'push_body' => '{digest.bets_count} top betting opportunities selected from {digest.total_games} games',
+            ]
+        );
     }
 }

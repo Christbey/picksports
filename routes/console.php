@@ -202,6 +202,15 @@ Schedule::command('cbb:sync-odds')
     ->withoutOverlapping()
     ->runInBackground();
 
+// 8. Send daily betting digests (hourly to support user-chosen times)
+Schedule::command('alerts:send-daily-digests --sport=cbb')
+    ->hourly()
+    ->between('06:00', '22:00')
+    ->when($cbbInSeason)
+    ->name('CBB: Send Daily Digests')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | WCBB Automated Pipeline (Nov - Apr)

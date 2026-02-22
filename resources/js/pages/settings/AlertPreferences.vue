@@ -88,6 +88,7 @@ const availableNotificationTypes = [
 const selectedSports = ref<string[]>(currentPreference.value.sports);
 const selectedNotificationTypes = ref<string[]>(currentPreference.value.notification_types);
 const selectedTemplateIds = ref<number[]>(currentPreference.value.enabled_template_ids);
+const selectedDigestMode = ref<string>(currentPreference.value.digest_mode);
 
 function toggleSport(sport: string) {
     const index = selectedSports.value.indexOf(sport);
@@ -411,37 +412,53 @@ function checkAlerts(sport?: string) {
                                     name="digest_mode"
                                     value="realtime"
                                     id="digest-realtime"
-                                    :checked="currentPreference.digest_mode === 'realtime'"
+                                    :checked="selectedDigestMode === 'realtime'"
+                                    @change="selectedDigestMode = 'realtime'"
                                     class="size-4 border-input text-primary focus:ring-primary"
                                 />
                                 <Label for="digest-realtime" class="cursor-pointer">
                                     <div class="font-medium">Real-time</div>
                                     <div class="text-sm text-muted-foreground">
-                                        Get notified immediately when opportunities are found
+                                        Get notified immediately when high-value opportunities are found
                                     </div>
                                 </Label>
                             </div>
 
-                            <div class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar opacity-50">
+                            <div class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
                                 <input
                                     type="radio"
                                     name="digest_mode"
                                     value="daily_summary"
                                     id="digest-daily"
-                                    :checked="currentPreference.digest_mode === 'daily_summary'"
-                                    disabled
+                                    :checked="selectedDigestMode === 'daily_summary'"
+                                    @change="selectedDigestMode = 'daily_summary'"
                                     class="size-4 border-input text-primary focus:ring-primary"
                                 />
                                 <Label for="digest-daily" class="cursor-pointer">
-                                    <div class="font-medium">Daily Summary (Coming Soon)</div>
+                                    <div class="font-medium">Daily Summary</div>
                                     <div class="text-sm text-muted-foreground">
-                                        Receive a single daily digest of all opportunities
+                                        Receive one consolidated email per day with the top betting opportunities
                                     </div>
                                 </Label>
                             </div>
                         </div>
 
                         <InputError :message="errors.digest_mode" />
+
+                        <!-- Digest Time Picker (only for daily_summary mode) -->
+                        <div v-if="selectedDigestMode === 'daily_summary'" class="mt-4 grid gap-2 max-w-xs">
+                            <Label for="digest_time">Digest Delivery Time</Label>
+                            <Input
+                                id="digest_time"
+                                name="digest_time"
+                                type="time"
+                                :default-value="currentPreference.digest_time || '10:00'"
+                            />
+                            <p class="text-xs text-muted-foreground">
+                                Receive your daily digest at this time (your local timezone)
+                            </p>
+                            <InputError :message="errors.digest_time" />
+                        </div>
                     </div>
 
                     <!-- Phone Number (for future SMS) -->

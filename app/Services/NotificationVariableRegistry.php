@@ -28,6 +28,14 @@ class NotificationVariableRegistry
                 'game_time' => 'Game start time',
                 'game_date' => 'Game date',
             ],
+            'digest' => [
+                'date' => 'Digest date (formatted)',
+                'total_games' => 'Total number of games analyzed',
+                'bets_count' => 'Number of bets included in digest',
+                'has_bets' => 'Whether digest has any bets (true/false)',
+                'empty_message' => 'Message to show when no bets available',
+                'bets_table' => 'Formatted table of betting recommendations',
+            ],
             'system' => [
                 'app_name' => 'Application name',
                 'app_url' => 'Application URL',

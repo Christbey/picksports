@@ -506,7 +506,6 @@ onMounted(async () => {
                                 <div v-if="!trendsData || Object.keys(trendsData).length === 0" class="text-center py-8 text-muted-foreground">
                                     <p>Not enough games played to calculate trends (minimum 20 games required)</p>
                                 </div>
-                                </div>
                             </CardContent>
                         </Card>
                     </TabsContent>

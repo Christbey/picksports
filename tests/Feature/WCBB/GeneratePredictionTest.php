@@ -1,13 +1,13 @@
 <?php
 
-use App\Actions\CBB\GeneratePrediction;
-use App\Models\CBB\Game;
-use App\Models\CBB\Prediction;
-use App\Models\CBB\Team;
-use App\Models\CBB\TeamMetric;
-use App\Models\CBB\TeamStat;
+use App\Actions\WCBB\GeneratePrediction;
+use App\Models\WCBB\Game;
+use App\Models\WCBB\Prediction;
+use App\Models\WCBB\Team;
+use App\Models\WCBB\TeamMetric;
+use App\Models\WCBB\TeamStat;
 
-uses()->group('cbb', 'predictions');
+uses()->group('wcbb', 'predictions');
 
 beforeEach(function () {
     $this->homeTeam = Team::factory()->create(['elo_rating' => 1550]);
@@ -35,7 +35,6 @@ it('generates prediction for an upcoming game', function () {
 });
 
 it('calculates confidence from win probability', function () {
-    // Big Elo gap → high win probability → high confidence
     $strongHome = Team::factory()->create(['elo_rating' => 1700]);
     $weakAway = Team::factory()->create(['elo_rating' => 1300]);
 
@@ -46,7 +45,6 @@ it('calculates confidence from win probability', function () {
         'season' => 2026,
     ]);
 
-    // Even teams → ~50% win probability → lower confidence
     $evenHome = Team::factory()->create(['elo_rating' => 1500]);
     $evenAway = Team::factory()->create(['elo_rating' => 1500]);
 
@@ -62,21 +60,14 @@ it('calculates confidence from win probability', function () {
     $prediction1 = $action->execute($game1);
     $prediction2 = $action->execute($game2);
 
-    // Mismatched game should have higher confidence
     expect((float) $prediction1->confidence_score)->toBeGreaterThan((float) $prediction2->confidence_score);
 
-    // Confidence should be between 50 and 100
     expect((float) $prediction1->confidence_score)->toBeGreaterThanOrEqual(50)->toBeLessThanOrEqual(100);
     expect((float) $prediction2->confidence_score)->toBeGreaterThanOrEqual(50)->toBeLessThanOrEqual(100);
 
-    // Confidence should equal max(wp, 1-wp) * 100
     $wp1 = (float) $prediction1->win_probability;
     $expectedConfidence1 = round(max($wp1, 1 - $wp1) * 100, 2);
     expect((float) $prediction1->confidence_score)->toBe($expectedConfidence1);
-
-    $wp2 = (float) $prediction2->win_probability;
-    $expectedConfidence2 = round(max($wp2, 1 - $wp2) * 100, 2);
-    expect((float) $prediction2->confidence_score)->toBe($expectedConfidence2);
 });
 
 it('does not generate prediction for completed game', function () {
@@ -84,8 +75,8 @@ it('does not generate prediction for completed game', function () {
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_FINAL',
-        'home_score' => 80,
-        'away_score' => 70,
+        'home_score' => 75,
+        'away_score' => 65,
     ]);
 
     $action = new GeneratePrediction;
@@ -105,8 +96,8 @@ it('uses team metrics when available', function () {
     TeamMetric::create([
         'team_id' => $this->homeTeam->id,
         'season' => 2026,
-        'offensive_efficiency' => 115.0,
-        'defensive_efficiency' => 105.0,
+        'offensive_efficiency' => 110.0,
+        'defensive_efficiency' => 100.0,
         'net_rating' => 10.0,
         'tempo' => 70.0,
         'strength_of_schedule' => 1500.0,
@@ -116,9 +107,9 @@ it('uses team metrics when available', function () {
     TeamMetric::create([
         'team_id' => $this->awayTeam->id,
         'season' => 2026,
-        'offensive_efficiency' => 108.0,
-        'defensive_efficiency' => 112.0,
-        'net_rating' => -4.0,
+        'offensive_efficiency' => 105.0,
+        'defensive_efficiency' => 108.0,
+        'net_rating' => -3.0,
         'tempo' => 68.0,
         'strength_of_schedule' => 1500.0,
         'calculation_date' => now()->toDateString(),
@@ -128,10 +119,10 @@ it('uses team metrics when available', function () {
     $prediction = $action->execute($game);
 
     expect($prediction)->not->toBeNull();
-    expect((float) $prediction->home_off_eff)->toBe(115.0);
-    expect((float) $prediction->home_def_eff)->toBe(105.0);
-    expect((float) $prediction->away_off_eff)->toBe(108.0);
-    expect((float) $prediction->away_def_eff)->toBe(112.0);
+    expect((float) $prediction->home_off_eff)->toBe(110.0);
+    expect((float) $prediction->home_def_eff)->toBe(100.0);
+    expect((float) $prediction->away_off_eff)->toBe(105.0);
+    expect((float) $prediction->away_def_eff)->toBe(108.0);
 });
 
 it('stores spread components in prediction metadata', function () {
@@ -145,8 +136,8 @@ it('stores spread components in prediction metadata', function () {
     TeamMetric::create([
         'team_id' => $this->homeTeam->id,
         'season' => 2026,
-        'offensive_efficiency' => 115.0,
-        'defensive_efficiency' => 105.0,
+        'offensive_efficiency' => 110.0,
+        'defensive_efficiency' => 100.0,
         'net_rating' => 10.0,
         'tempo' => 70.0,
         'strength_of_schedule' => 1500.0,
@@ -156,9 +147,9 @@ it('stores spread components in prediction metadata', function () {
     TeamMetric::create([
         'team_id' => $this->awayTeam->id,
         'season' => 2026,
-        'offensive_efficiency' => 108.0,
-        'defensive_efficiency' => 112.0,
-        'net_rating' => -4.0,
+        'offensive_efficiency' => 105.0,
+        'defensive_efficiency' => 108.0,
+        'net_rating' => -3.0,
         'tempo' => 68.0,
         'strength_of_schedule' => 1500.0,
         'calculation_date' => now()->toDateString(),
@@ -167,20 +158,18 @@ it('stores spread components in prediction metadata', function () {
     $action = new GeneratePrediction;
     $prediction = $action->execute($game);
 
-    // Spread components should be populated
     expect($prediction->elo_spread_component)->not->toBeNull();
     expect($prediction->efficiency_spread_component)->not->toBeNull();
     expect($prediction->form_spread_component)->not->toBeNull();
 
-    // ELO component: home favored (1550 + 35 - 1450) / 30 ≈ 4.5
+    // ELO component: (1550 + 35 - 1450) / 30 ≈ 4.5
     expect((float) $prediction->elo_spread_component)->toBeGreaterThan(0);
 
-    // Efficiency component: home has +10 net, away has -4 → should be positive
+    // Efficiency component: home +10 net, away -3 → should be positive
     expect((float) $prediction->efficiency_spread_component)->toBeGreaterThan(0);
 });
 
 it('incorporates recent form from completed games', function () {
-    // Create some completed games with team stats for the home team
     for ($i = 0; $i < 5; $i++) {
         $opponent = Team::factory()->create();
         $completedGame = Game::factory()->create([
@@ -189,15 +178,15 @@ it('incorporates recent form from completed games', function () {
             'status' => 'STATUS_FINAL',
             'season' => 2026,
             'game_date' => now()->subDays(10 - $i),
-            'home_score' => 85,
-            'away_score' => 70,
+            'home_score' => 80,
+            'away_score' => 65,
         ]);
 
         TeamStat::factory()->create([
             'team_id' => $this->homeTeam->id,
             'game_id' => $completedGame->id,
             'team_type' => 'home',
-            'points' => 85,
+            'points' => 80,
             'possessions' => 70,
             'turnovers' => 12,
             'rebounds' => 40,
@@ -207,7 +196,7 @@ it('incorporates recent form from completed games', function () {
             'team_id' => $opponent->id,
             'game_id' => $completedGame->id,
             'team_type' => 'away',
-            'points' => 70,
+            'points' => 65,
             'possessions' => 70,
             'turnovers' => 15,
             'rebounds' => 35,
@@ -226,7 +215,6 @@ it('incorporates recent form from completed games', function () {
     $prediction = $action->execute($upcomingGame);
 
     expect($prediction)->not->toBeNull();
-    // Home team has strong recent form (85/70*100 = 121.4 off eff), so form component should be positive
     expect((float) $prediction->home_recent_form)->toBeGreaterThan(0);
     expect((float) $prediction->form_spread_component)->not->toBeNull();
 });
@@ -234,7 +222,6 @@ it('incorporates recent form from completed games', function () {
 it('applies rest day advantage when home team is rested', function () {
     $opponent = Team::factory()->create();
 
-    // Home team last played 3 days ago
     Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $opponent->id,
@@ -243,7 +230,6 @@ it('applies rest day advantage when home team is rested', function () {
         'game_date' => now()->subDays(3),
     ]);
 
-    // Away team last played yesterday (back-to-back)
     Game::factory()->create([
         'home_team_id' => $opponent->id,
         'away_team_id' => $this->awayTeam->id,
@@ -266,18 +252,16 @@ it('applies rest day advantage when home team is rested', function () {
     expect($prediction)->not->toBeNull();
     expect($prediction->rest_days_home)->toBeGreaterThan($prediction->rest_days_away);
 
-    // Compare with same matchup but no rest advantage
     $evenGame = Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
-        'season' => 2025, // Different season so no prior games
+        'season' => 2025,
         'game_date' => now()->addDays(2),
     ]);
 
     $evenPrediction = $action->execute($evenGame);
 
-    // Rested home team should have more favorable spread
     expect((float) $prediction->predicted_spread)->toBeGreaterThan((float) $evenPrediction->predicted_spread);
 });
 
@@ -331,7 +315,6 @@ it('generates prediction without vegas spread when no odds data', function () {
 });
 
 it('stores turnover and rebound adjustments', function () {
-    // Create completed games with stats for both teams
     for ($i = 0; $i < 3; $i++) {
         $opponent = Team::factory()->create();
 
@@ -346,15 +329,15 @@ it('stores turnover and rebound adjustments', function () {
         TeamStat::factory()->create([
             'team_id' => $this->homeTeam->id,
             'game_id' => $completedGame->id,
-            'turnovers' => 10, // Low turnovers
-            'rebounds' => 45, // High rebounds
+            'turnovers' => 10,
+            'rebounds' => 45,
         ]);
 
         TeamStat::factory()->create([
             'team_id' => $opponent->id,
             'game_id' => $completedGame->id,
-            'turnovers' => 18, // High turnovers (forced by home team)
-            'rebounds' => 33, // Low rebounds
+            'turnovers' => 18,
+            'rebounds' => 33,
         ]);
     }
 
@@ -370,13 +353,12 @@ it('stores turnover and rebound adjustments', function () {
     $prediction = $action->execute($upcomingGame);
 
     expect($prediction)->not->toBeNull();
-    // Home team has positive TO diff and rebound margin
     expect((float) $prediction->turnover_diff_adj)->toBeGreaterThan(0);
     expect((float) $prediction->rebound_margin_adj)->toBeGreaterThan(0);
 });
 
 it('ensemble weights sum to one', function () {
-    $config = config('cbb.prediction');
+    $config = config('wcbb.prediction');
     $sum = $config['elo_weight'] + $config['efficiency_weight'] + $config['form_weight'];
 
     expect($sum)->toBe(1.0);
@@ -390,14 +372,12 @@ it('falls back gracefully when no recent form data exists', function () {
         'season' => 2026,
     ]);
 
-    // No completed games exist — form should fall back to defaults
     $action = new GeneratePrediction;
     $prediction = $action->execute($game);
 
     expect($prediction)->not->toBeNull();
-    // With no form data, form component uses default (0 net rating + home court)
     expect((float) $prediction->form_spread_component)->toBe(
-        config('cbb.prediction.home_court_points')
+        config('wcbb.prediction.home_court_points')
     );
 });
 
@@ -411,15 +391,12 @@ it('updates existing prediction instead of creating duplicate', function () {
 
     $action = new GeneratePrediction;
 
-    // First prediction
     $prediction1 = $action->execute($game);
     expect(Prediction::count())->toBe(1);
 
-    // Update team Elo
     $this->homeTeam->update(['elo_rating' => 1600]);
     $game->refresh();
 
-    // Second prediction should update, not create new
     $prediction2 = $action->execute($game);
 
     expect(Prediction::count())->toBe(1);

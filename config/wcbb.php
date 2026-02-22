@@ -242,18 +242,35 @@ return [
     */
 
     'prediction' => [
-        // Elo points per point of spread (calibrated for WCBB)
         'elo_to_spread_divisor' => 30,
-
-        // Average WCBB pace (possessions per 40 minutes)
         'average_pace' => 70.0,
-
-        // League average efficiency (points per 100 possessions)
         'default_efficiency' => 100.0,
-
-        // Win probability logistic denominator
-        // Calibrated so 7-point spread ≈ 70% probability
         'spread_to_probability_coefficient' => 4.0,
+
+        // Ensemble weights (sum to 1.0)
+        'elo_weight' => 0.25,
+        'efficiency_weight' => 0.40,
+        'form_weight' => 0.35,
+
+        // Recent form
+        'recent_form_games' => 10,
+        'recency_decay' => 0.9,
+
+        // Rest days
+        'rest_day_adjustment' => 1.0,
+        'back_to_back_penalty' => -1.5,
+
+        // Situational weights
+        'home_away_split_weight' => 0.15,
+        'turnover_diff_weight' => 0.4,
+        'rebound_margin_weight' => 0.25,
+
+        // Vegas integration
+        'vegas_weight' => 0.25,
+        'model_weight_with_vegas' => 0.75,
+
+        // Home court
+        'home_court_points' => 3.5,
     ],
 
 ];

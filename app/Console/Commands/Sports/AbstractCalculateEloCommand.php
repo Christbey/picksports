@@ -40,6 +40,17 @@ abstract class AbstractCalculateEloCommand extends Command
         return 1500;
     }
 
+    /**
+     * Get season types eligible for analytics (e.g., exclude spring training).
+     * Return null to include all season types.
+     *
+     * @return array<int, string>|null
+     */
+    protected function getAnalyticsSeasonTypes(): ?array
+    {
+        return null;
+    }
+
     public function handle(): int
     {
         $calculateEloClass = $this->getCalculateEloAction();
@@ -63,6 +74,12 @@ abstract class AbstractCalculateEloCommand extends Command
             ->with(['homeTeam', 'awayTeam'])
             ->orderBy('game_date')
             ->orderBy('id');
+
+        // Filter to analytics-eligible season types (e.g., exclude spring training)
+        $analyticsTypes = $this->getAnalyticsSeasonTypes();
+        if ($analyticsTypes) {
+            $query->whereIn('season_type', $analyticsTypes);
+        }
 
         // Apply filters
         if ($season = $this->option('season')) {

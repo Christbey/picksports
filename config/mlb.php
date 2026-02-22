@@ -38,6 +38,12 @@ return [
             'postseason' => 3,
             'allstar' => 4,
         ],
+        'type_names' => [
+            'preseason' => 'Preseason',
+            'regular' => 'Regular Season',
+            'postseason' => 'Postseason',
+        ],
+        'analytics_types' => ['Regular Season', 'Postseason'],
         'games' => [
             'regular_season' => 162,
             'playoff_rounds' => 4,

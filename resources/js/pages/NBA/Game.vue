@@ -286,90 +286,76 @@ onMounted(async () => {
             </div>
 
             <template v-else>
-                <Card>
-                    <CardContent class="pt-6">
-                        <div class="flex items-center justify-between gap-6">
+                <!-- Matchup Hero -->
+                <div class="rounded-xl overflow-hidden bg-gradient-to-r from-orange-600 to-orange-800 dark:from-orange-800 dark:to-orange-950 text-white shadow-lg">
+                    <div class="px-6 py-8">
+                        <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                             <Link
                                 v-if="awayTeam"
                                 :href="NBATeamController(awayTeam.id)"
-                                class="flex-1 flex items-center justify-end gap-3 hover:opacity-75 transition-opacity"
+                                class="flex-1 flex flex-col items-center md:items-end gap-2 hover:opacity-80 transition-opacity"
                             >
-                                <div class="text-right">
-                                    <div class="text-2xl font-bold">{{ awayTeam.display_name || awayTeam.name }}</div>
-                                    <div class="text-sm text-muted-foreground">Away</div>
-                                    <div v-if="awayRecentGames.length > 0" class="text-xs text-muted-foreground mt-1">
-                                        {{ getRecentForm(awayRecentGames, game.away_team_id) }}
-                                    </div>
-                                </div>
                                 <img
                                     v-if="awayTeam.logo"
                                     :src="awayTeam.logo"
                                     :alt="awayTeam.name"
-                                    class="w-16 h-16 object-contain"
+                                    class="w-20 h-20 object-contain drop-shadow-lg"
                                 />
+                                <div class="text-center md:text-right">
+                                    <div class="text-xl md:text-2xl font-bold">{{ awayTeam.display_name || awayTeam.name }}</div>
+                                    <div class="text-sm text-white/70">Away</div>
+                                    <div v-if="awayRecentGames.length > 0" class="text-xs text-white/60 mt-1">
+                                        {{ getRecentForm(awayRecentGames, game.away_team_id) }}
+                                    </div>
+                                </div>
                             </Link>
 
                             <div class="text-center min-w-[120px]">
-                                <div v-if="game.status === 'STATUS_FINAL'" class="text-4xl font-bold">
+                                <div v-if="game.status === 'STATUS_FINAL'" class="text-4xl md:text-5xl font-bold tracking-tight">
                                     {{ game.away_score }} - {{ game.home_score }}
                                 </div>
-                                <div v-else class="text-2xl font-bold text-muted-foreground">
+                                <div v-else class="text-2xl md:text-3xl font-bold text-white/70">
                                     vs
                                 </div>
-                                <Badge class="mt-2">{{ gameStatus }}</Badge>
-                                <div class="text-sm text-muted-foreground mt-2">
-                                    {{ formatDate(game.game_date) }}
-                                </div>
+                                <Badge class="mt-2 bg-white/20 text-white border-white/30 hover:bg-white/30">{{ gameStatus }}</Badge>
                             </div>
 
                             <Link
                                 v-if="homeTeam"
                                 :href="NBATeamController(homeTeam.id)"
-                                class="flex-1 flex items-center justify-start gap-3 hover:opacity-75 transition-opacity"
+                                class="flex-1 flex flex-col items-center md:items-start gap-2 hover:opacity-80 transition-opacity"
                             >
                                 <img
                                     v-if="homeTeam.logo"
                                     :src="homeTeam.logo"
                                     :alt="homeTeam.name"
-                                    class="w-16 h-16 object-contain"
+                                    class="w-20 h-20 object-contain drop-shadow-lg"
                                 />
-                                <div class="text-left">
-                                    <div class="text-2xl font-bold">{{ homeTeam.display_name || homeTeam.name }}</div>
-                                    <div class="text-sm text-muted-foreground">Home</div>
-                                    <div v-if="homeRecentGames.length > 0" class="text-xs text-muted-foreground mt-1">
+                                <div class="text-center md:text-left">
+                                    <div class="text-xl md:text-2xl font-bold">{{ homeTeam.display_name || homeTeam.name }}</div>
+                                    <div class="text-sm text-white/70">Home</div>
+                                    <div v-if="homeRecentGames.length > 0" class="text-xs text-white/60 mt-1">
                                         {{ getRecentForm(homeRecentGames, game.home_team_id) }}
                                     </div>
                                 </div>
                             </Link>
                         </div>
-                    </CardContent>
-                </Card>
+                    </div>
+                    <!-- Game Info Bar -->
+                    <div class="bg-black/20 px-6 py-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-white/80">
+                        <span>{{ formatDate(game.game_date) }}</span>
+                        <span v-if="game.venue_name" class="flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
+                            {{ game.venue_name }}<span v-if="game.venue_city">, {{ game.venue_city }}</span>
+                        </span>
+                        <span v-if="broadcastNetworks.length > 0" class="flex items-center gap-1">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" /></svg>
+                            {{ broadcastNetworks.join(', ') }}
+                        </span>
+                    </div>
+                </div>
 
-                <Card v-if="game.venue_name">
-                    <CardHeader>
-                        <CardTitle>Game Details</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                            <div>
-                                <div class="text-muted-foreground">Venue</div>
-                                <div class="font-medium">{{ game.venue_name }}</div>
-                                <div v-if="game.venue_city" class="text-xs text-muted-foreground">
-                                    {{ game.venue_city }}<span v-if="game.venue_state">, {{ game.venue_state }}</span>
-                                </div>
-                            </div>
-                            <div v-if="broadcastNetworks.length > 0">
-                                <div class="text-muted-foreground">Broadcast</div>
-                                <div class="font-medium">{{ broadcastNetworks.join(', ') }}</div>
-                            </div>
-                            <div>
-                                <div class="text-muted-foreground">Season</div>
-                                <div class="font-medium">{{ game.season_type }} - Week {{ game.week }}</div>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
+                <!-- Linescore Table -->
                 <Card v-if="homeLinescores.length > 0 && awayLinescores.length > 0 && game.status === 'STATUS_FINAL'">
                     <CardHeader>
                         <CardTitle>Quarter by Quarter</CardTitle>
@@ -379,8 +365,8 @@ onMounted(async () => {
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="border-b">
-                                        <th class="text-left p-2">Team</th>
-                                        <th class="text-center p-2" v-for="quarter in homeLinescores" :key="quarter.period">
+                                        <th class="text-left p-2 text-muted-foreground font-medium">Team</th>
+                                        <th class="text-center p-2 text-muted-foreground font-medium" v-for="quarter in homeLinescores" :key="quarter.period">
                                             Q{{ quarter.period }}
                                         </th>
                                         <th class="text-center p-2 font-bold">Final</th>
@@ -388,18 +374,28 @@ onMounted(async () => {
                                 </thead>
                                 <tbody>
                                     <tr class="border-b">
-                                        <td class="p-2 font-medium">{{ awayTeam?.abbreviation }}</td>
+                                        <td class="p-2 font-medium">
+                                            <span class="flex items-center gap-2">
+                                                <img v-if="awayTeam?.logo" :src="awayTeam.logo" :alt="awayTeam.abbreviation" class="h-5 w-5 object-contain" />
+                                                {{ awayTeam?.abbreviation }}
+                                            </span>
+                                        </td>
                                         <td class="text-center p-2" v-for="quarter in awayLinescores" :key="quarter.period">
                                             {{ quarter.value }}
                                         </td>
-                                        <td class="text-center p-2 font-bold">{{ game.away_score }}</td>
+                                        <td class="text-center p-2 font-bold" :class="game.away_score > game.home_score ? 'text-green-600 dark:text-green-400' : ''">{{ game.away_score }}</td>
                                     </tr>
                                     <tr>
-                                        <td class="p-2 font-medium">{{ homeTeam?.abbreviation }}</td>
+                                        <td class="p-2 font-medium">
+                                            <span class="flex items-center gap-2">
+                                                <img v-if="homeTeam?.logo" :src="homeTeam.logo" :alt="homeTeam.abbreviation" class="h-5 w-5 object-contain" />
+                                                {{ homeTeam?.abbreviation }}
+                                            </span>
+                                        </td>
                                         <td class="text-center p-2" v-for="quarter in homeLinescores" :key="quarter.period">
                                             {{ quarter.value }}
                                         </td>
-                                        <td class="text-center p-2 font-bold">{{ game.home_score }}</td>
+                                        <td class="text-center p-2 font-bold" :class="game.home_score > game.away_score ? 'text-green-600 dark:text-green-400' : ''">{{ game.home_score }}</td>
                                     </tr>
                                 </tbody>
                             </table>
@@ -407,38 +403,45 @@ onMounted(async () => {
                     </CardContent>
                 </Card>
 
+                <!-- Prediction -->
                 <Card v-if="prediction">
                     <CardHeader>
                         <CardTitle>Prediction</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Win Probability</div>
-                                <div class="text-2xl font-bold">
-                                    {{ awayTeam?.abbreviation }}: {{ formatNumber(prediction.away_win_probability * 100, 0) }}%
-                                </div>
-                                <div class="text-2xl font-bold mt-1">
-                                    {{ homeTeam?.abbreviation }}: {{ formatNumber(prediction.home_win_probability * 100, 0) }}%
-                                </div>
+                        <!-- Win Probability Bar -->
+                        <div class="mb-6">
+                            <div class="flex items-center justify-between text-sm font-medium mb-2">
+                                <span>{{ awayTeam?.abbreviation }} {{ formatNumber(prediction.away_win_probability * 100, 0) }}%</span>
+                                <span>{{ homeTeam?.abbreviation }} {{ formatNumber(prediction.home_win_probability * 100, 0) }}%</span>
                             </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Predicted Spread</div>
+                            <div class="flex h-3 rounded-full overflow-hidden">
+                                <div class="bg-orange-500 dark:bg-orange-600 transition-all" :style="{ width: `${prediction.away_win_probability * 100}%` }"></div>
+                                <div class="bg-orange-800 dark:bg-orange-400 transition-all" :style="{ width: `${prediction.home_win_probability * 100}%` }"></div>
+                            </div>
+                        </div>
+                        <!-- Stat Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="text-center p-4 rounded-lg border">
+                                <div class="text-sm text-muted-foreground">Spread</div>
                                 <div class="text-2xl font-bold">
                                     {{ prediction.predicted_spread > 0 ? '+' : '' }}{{ formatNumber(prediction.predicted_spread) }}
                                 </div>
+                                <div class="text-xs text-muted-foreground mt-1">{{ prediction.predicted_spread < 0 ? (homeTeam?.abbreviation || 'Home') : (awayTeam?.abbreviation || 'Away') }} favored</div>
                             </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Predicted Total</div>
+                            <div class="text-center p-4 rounded-lg border">
+                                <div class="text-sm text-muted-foreground">Total</div>
                                 <div class="text-2xl font-bold">
                                     {{ formatNumber(prediction.predicted_total) }}
                                 </div>
+                                <div class="text-xs text-muted-foreground mt-1">Projected points</div>
                             </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                            <div class="text-center p-4 rounded-lg border">
                                 <div class="text-sm text-muted-foreground">Confidence</div>
                                 <div class="text-2xl font-bold capitalize">
                                     {{ prediction.confidence_level }}
                                 </div>
+                                <div v-if="prediction.confidence_score" class="text-xs text-muted-foreground mt-1">Score: {{ formatNumber(prediction.confidence_score) }}</div>
                             </div>
                         </div>
                     </CardContent>

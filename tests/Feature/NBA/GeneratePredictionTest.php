@@ -87,7 +87,6 @@ it('uses team metrics when available', function () {
     expect((float) $prediction->away_off_eff)->toBe(108.0);
     expect((float) $prediction->away_def_eff)->toBe(112.0);
     expect((float) $prediction->predicted_total)->toBeGreaterThan(200); // Should be realistic NBA total
-    expect((float) $prediction->confidence_score)->toBeGreaterThan(80); // High confidence with all data
 });
 
 it('uses default metrics when team metrics unavailable', function () {
@@ -106,7 +105,6 @@ it('uses default metrics when team metrics unavailable', function () {
     expect((float) $prediction->home_def_eff)->toBe(110.0);
     expect((float) $prediction->away_off_eff)->toBe(110.0);
     expect((float) $prediction->away_def_eff)->toBe(110.0);
-    expect((float) $prediction->confidence_score)->toBeLessThan(80); // Lower confidence without metrics
 });
 
 it('favors home team with home court advantage', function () {
@@ -191,53 +189,43 @@ it('calculates higher win probability for bigger spread', function () {
         ->and($prediction1->win_probability)->toBeGreaterThan($prediction2->win_probability);
 });
 
-it('calculates confidence based on data availability', function () {
-    $game = Game::factory()->create([
-        'home_team_id' => $this->homeTeam->id,
-        'away_team_id' => $this->awayTeam->id,
+it('calculates confidence based on win probability', function () {
+    // Big Elo gap → high win probability → high confidence
+    $strongHome = Team::factory()->create(['elo_rating' => 1700]);
+    $weakAway = Team::factory()->create(['elo_rating' => 1300]);
+
+    $game1 = Game::factory()->create([
+        'home_team_id' => $strongHome->id,
+        'away_team_id' => $weakAway->id,
         'status' => 'STATUS_SCHEDULED',
         'season' => 2026,
     ]);
 
-    // No metrics, default Elo
-    $defaultTeam1 = Team::factory()->create(['elo_rating' => 1500]);
-    $defaultTeam2 = Team::factory()->create(['elo_rating' => 1500]);
+    // Even teams → ~50% win probability → lower confidence
+    $evenHome = Team::factory()->create(['elo_rating' => 1500]);
+    $evenAway = Team::factory()->create(['elo_rating' => 1500]);
 
     $game2 = Game::factory()->create([
-        'home_team_id' => $defaultTeam1->id,
-        'away_team_id' => $defaultTeam2->id,
+        'home_team_id' => $evenHome->id,
+        'away_team_id' => $evenAway->id,
         'status' => 'STATUS_SCHEDULED',
         'season' => 2026,
-    ]);
-
-    // With metrics
-    TeamMetric::create([
-        'team_id' => $this->homeTeam->id,
-        'season' => 2026,
-        'offensive_efficiency' => 115.0,
-        'defensive_efficiency' => 105.0,
-        'net_rating' => 10.0,
-        'tempo' => 100.0,
-        'strength_of_schedule' => 1500.0,
-        'calculation_date' => now()->toDateString(),
-    ]);
-
-    TeamMetric::create([
-        'team_id' => $this->awayTeam->id,
-        'season' => 2026,
-        'offensive_efficiency' => 108.0,
-        'defensive_efficiency' => 112.0,
-        'net_rating' => -4.0,
-        'tempo' => 98.0,
-        'strength_of_schedule' => 1500.0,
-        'calculation_date' => now()->toDateString(),
     ]);
 
     $action = new GeneratePrediction;
 
-    $prediction1 = $action->execute($game); // Has metrics + non-default Elo
-    $prediction2 = $action->execute($game2); // No metrics + default Elo
+    $prediction1 = $action->execute($game1);
+    $prediction2 = $action->execute($game2);
 
-    // Prediction with more data should have higher confidence
+    // Mismatched game should have higher confidence than even matchup
     expect((float) $prediction1->confidence_score)->toBeGreaterThan((float) $prediction2->confidence_score);
+
+    // Confidence should be between 50 and 100
+    expect((float) $prediction1->confidence_score)->toBeGreaterThanOrEqual(50)->toBeLessThanOrEqual(100);
+    expect((float) $prediction2->confidence_score)->toBeGreaterThanOrEqual(50)->toBeLessThanOrEqual(100);
+
+    // Confidence should equal max(wp, 1-wp) * 100
+    $wp1 = (float) $prediction1->win_probability;
+    $expectedConfidence1 = round(max($wp1, 1 - $wp1) * 100, 2);
+    expect((float) $prediction1->confidence_score)->toBe($expectedConfidence1);
 });

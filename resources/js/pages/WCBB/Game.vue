@@ -128,91 +128,99 @@ onMounted(async () => {
             </div>
 
             <template v-else>
-                <Card>
-                    <CardContent class="pt-6">
-                        <div class="flex items-center justify-between gap-6">
+                <!-- Matchup Hero -->
+                <div class="rounded-xl overflow-hidden bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-800 dark:to-purple-950 text-white shadow-lg">
+                    <div class="px-6 py-8">
+                        <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                             <Link
                                 v-if="awayTeam"
                                 :href="WCBBTeamController(awayTeam.id)"
-                                class="flex-1 flex items-center justify-end gap-3 hover:opacity-75 transition-opacity"
+                                class="flex-1 flex flex-col items-center md:items-end gap-2 hover:opacity-80 transition-opacity"
                             >
-                                <div class="text-right">
-                                    <div class="text-2xl font-bold">{{ awayTeam.display_name || awayTeam.name }}</div>
-                                    <div class="text-sm text-muted-foreground">Away</div>
-                                </div>
                                 <img
                                     v-if="awayTeam.logo"
                                     :src="awayTeam.logo"
                                     :alt="awayTeam.name"
-                                    class="w-16 h-16 object-contain"
+                                    class="w-20 h-20 object-contain drop-shadow-lg"
                                 />
+                                <div class="text-center md:text-right">
+                                    <div class="text-xl md:text-2xl font-bold">{{ awayTeam.display_name || awayTeam.name }}</div>
+                                    <div class="text-sm text-white/70">Away</div>
+                                </div>
                             </Link>
 
                             <div class="text-center min-w-[120px]">
-                                <div v-if="game.status === 'STATUS_FINAL'" class="text-4xl font-bold">
+                                <div v-if="game.status === 'STATUS_FINAL'" class="text-4xl md:text-5xl font-bold tracking-tight">
                                     {{ game.away_score }} - {{ game.home_score }}
                                 </div>
-                                <div v-else class="text-2xl font-bold text-muted-foreground">
+                                <div v-else class="text-2xl md:text-3xl font-bold text-white/70">
                                     vs
                                 </div>
-                                <Badge class="mt-2">{{ gameStatus }}</Badge>
-                                <div class="text-sm text-muted-foreground mt-2">
-                                    {{ formatDate(game.game_date) }}
-                                </div>
+                                <Badge class="mt-2 bg-white/20 text-white border-white/30 hover:bg-white/30">{{ gameStatus }}</Badge>
                             </div>
 
                             <Link
                                 v-if="homeTeam"
                                 :href="WCBBTeamController(homeTeam.id)"
-                                class="flex-1 flex items-center justify-start gap-3 hover:opacity-75 transition-opacity"
+                                class="flex-1 flex flex-col items-center md:items-start gap-2 hover:opacity-80 transition-opacity"
                             >
                                 <img
                                     v-if="homeTeam.logo"
                                     :src="homeTeam.logo"
                                     :alt="homeTeam.name"
-                                    class="w-16 h-16 object-contain"
+                                    class="w-20 h-20 object-contain drop-shadow-lg"
                                 />
-                                <div class="text-left">
-                                    <div class="text-2xl font-bold">{{ homeTeam.display_name || homeTeam.name }}</div>
-                                    <div class="text-sm text-muted-foreground">Home</div>
+                                <div class="text-center md:text-left">
+                                    <div class="text-xl md:text-2xl font-bold">{{ homeTeam.display_name || homeTeam.name }}</div>
+                                    <div class="text-sm text-white/70">Home</div>
                                 </div>
                             </Link>
                         </div>
-                    </CardContent>
-                </Card>
+                    </div>
+                    <!-- Game Info Bar -->
+                    <div class="bg-black/20 px-6 py-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-white/80">
+                        <span>{{ formatDate(game.game_date) }}</span>
+                    </div>
+                </div>
 
                 <Card v-if="prediction">
                     <CardHeader>
                         <CardTitle>Prediction</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Win Probability</div>
-                                <div class="text-2xl font-bold">
-                                    {{ awayTeam?.abbreviation }}: {{ formatNumber(prediction.away_win_probability * 100, 0) }}%
-                                </div>
-                                <div class="text-2xl font-bold mt-1">
-                                    {{ homeTeam?.abbreviation }}: {{ formatNumber(prediction.home_win_probability * 100, 0) }}%
-                                </div>
+                        <!-- Win Probability Bar -->
+                        <div class="mb-6">
+                            <div class="flex items-center justify-between text-sm font-medium mb-2">
+                                <span>{{ awayTeam?.abbreviation }} {{ formatNumber(prediction.away_win_probability * 100, 0) }}%</span>
+                                <span>{{ homeTeam?.abbreviation }} {{ formatNumber(prediction.home_win_probability * 100, 0) }}%</span>
                             </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Predicted Spread</div>
+                            <div class="flex h-3 rounded-full overflow-hidden">
+                                <div class="bg-purple-500 dark:bg-purple-600 transition-all" :style="{ width: `${prediction.away_win_probability * 100}%` }"></div>
+                                <div class="bg-purple-800 dark:bg-purple-400 transition-all" :style="{ width: `${prediction.home_win_probability * 100}%` }"></div>
+                            </div>
+                        </div>
+                        <!-- Stat Cards -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="text-center p-4 rounded-lg border">
+                                <div class="text-sm text-muted-foreground">Spread</div>
                                 <div class="text-2xl font-bold">
                                     {{ prediction.predicted_spread > 0 ? '+' : '' }}{{ formatNumber(prediction.predicted_spread) }}
                                 </div>
+                                <div class="text-xs text-muted-foreground mt-1">{{ prediction.predicted_spread < 0 ? (homeTeam?.abbreviation || 'Home') : (awayTeam?.abbreviation || 'Away') }} favored</div>
                             </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Predicted Total</div>
+                            <div class="text-center p-4 rounded-lg border">
+                                <div class="text-sm text-muted-foreground">Total</div>
                                 <div class="text-2xl font-bold">
                                     {{ formatNumber(prediction.predicted_total) }}
                                 </div>
+                                <div class="text-xs text-muted-foreground mt-1">Projected points</div>
                             </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
+                            <div class="text-center p-4 rounded-lg border">
                                 <div class="text-sm text-muted-foreground">Confidence</div>
                                 <div class="text-2xl font-bold capitalize">
                                     {{ prediction.confidence_level }}
                                 </div>
+                                <div v-if="prediction.confidence_score" class="text-xs text-muted-foreground mt-1">Score: {{ formatNumber(prediction.confidence_score) }}</div>
                             </div>
                         </div>
                     </CardContent>

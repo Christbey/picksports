@@ -45,8 +45,8 @@ class PredictionResource extends JsonResource
 
             // Determine confidence level based on score
             $data['confidence_level'] = match (true) {
-                $confidenceScore >= 80 => 'high',
-                $confidenceScore >= 50 => 'medium',
+                $confidenceScore >= 75 => 'high',
+                $confidenceScore >= 60 => 'medium',
                 default => 'low',
             };
         }

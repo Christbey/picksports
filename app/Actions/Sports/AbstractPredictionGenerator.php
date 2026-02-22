@@ -84,8 +84,8 @@ abstract class AbstractPredictionGenerator
         // Calculate win probability from spread
         $winProbability = $this->calculateWinProbability($predictedSpread);
 
-        // Calculate confidence score based on data quality
-        $confidenceScore = $this->calculateConfidence($homeMetrics, $awayMetrics, $homeElo, $awayElo);
+        // Calculate confidence score based on win probability
+        $confidenceScore = $this->calculateConfidence($winProbability);
 
         // Build prediction data
         $predictionData = $this->buildPredictionData(
@@ -121,37 +121,14 @@ abstract class AbstractPredictionGenerator
     }
 
     /**
-     * Calculate confidence score based on data quality
+     * Calculate confidence score from win probability.
+     *
+     * Maps the predicted winner's probability to a 50-100 scale:
+     * 95% WP → 95 confidence, 55% WP → 55 confidence, 30% WP (away favored) → 70 confidence
      */
-    protected function calculateConfidence(?Model $homeMetrics, ?Model $awayMetrics, int $homeElo, int $awayElo): float
+    protected function calculateConfidence(float $winProbability): float
     {
-        $sport = $this->getSport();
-        $confidenceConfig = config("{$sport}.prediction.confidence");
-        $defaultElo = config("{$sport}.elo.default") ?? config("{$sport}.elo.default_rating");
-        $confidence = 0;
-
-        // Base confidence from having Elo data
-        $confidence += $confidenceConfig['base'] ?? 40;
-
-        // Bonus for having team metrics
-        if ($homeMetrics) {
-            $confidence += $confidenceConfig['home_metrics'] ?? 15;
-        }
-
-        if ($awayMetrics) {
-            $confidence += $confidenceConfig['away_metrics'] ?? 15;
-        }
-
-        // Bonus for non-default Elo ratings (teams have played games)
-        if ($homeElo !== $defaultElo) {
-            $confidence += $confidenceConfig['home_non_default_elo'] ?? 15;
-        }
-
-        if ($awayElo !== $defaultElo) {
-            $confidence += $confidenceConfig['away_non_default_elo'] ?? 15;
-        }
-
-        return round(min($confidence, 100), 2);
+        return round(max($winProbability, 1 - $winProbability) * 100, 2);
     }
 
     /**

@@ -98,6 +98,10 @@ class CalculateTeamTrends
     {
         return Game::query()
             ->where('status', 'STATUS_FINAL')
+            ->when(
+                config('mlb.season.analytics_types'),
+                fn ($q, $types) => $q->whereIn('season_type', $types)
+            )
             ->where(fn ($q) => $q
                 ->where('home_team_id', $team->id)
                 ->orWhere('away_team_id', $team->id))

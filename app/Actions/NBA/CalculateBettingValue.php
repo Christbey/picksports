@@ -285,52 +285,16 @@ class CalculateBettingValue
     {
         $diff = round(abs($modelSpread - $marketSpread), 1);
 
-        if ($betHome) {
-            // Model favors home team
-            if ($marketSpread > 0) {
-                // Market also favors home team
-                return sprintf(
-                    'Model predicts %s by %.1f, market has %s by %.1f (%.1f point edge)',
-                    $homeTeam,
-                    abs($modelSpread),
-                    $homeTeam,
-                    abs($marketSpread),
-                    $diff
-                );
-            } else {
-                // Market favors away team
-                return sprintf(
-                    'Model predicts %s by %.1f, market has %s by %.1f (%.1f point edge)',
-                    $homeTeam,
-                    abs($modelSpread),
-                    $awayTeam,
-                    abs($marketSpread),
-                    $diff
-                );
-            }
-        }
+        $modelFavors = $modelSpread >= 0 ? $homeTeam : $awayTeam;
+        $marketFavors = $marketSpread >= 0 ? $homeTeam : $awayTeam;
 
-        // Model favors away team
-        if ($marketSpread < 0) {
-            // Market also favors away team
-            return sprintf(
-                'Model predicts %s by %.1f, market has %s by %.1f (%.1f point edge)',
-                $awayTeam,
-                abs($marketSpread),
-                $awayTeam,
-                abs($modelSpread),
-                $diff
-            );
-        } else {
-            // Market favors home team
-            return sprintf(
-                'Model predicts %s by %.1f, market has %s by %.1f (%.1f point edge)',
-                $awayTeam,
-                abs($marketSpread),
-                $homeTeam,
-                abs($modelSpread),
-                $diff
-            );
-        }
+        return sprintf(
+            'Model has %s by %.1f, market has %s by %.1f (%.1f point edge)',
+            $modelFavors,
+            abs($modelSpread),
+            $marketFavors,
+            abs($marketSpread),
+            $diff
+        );
     }
 }

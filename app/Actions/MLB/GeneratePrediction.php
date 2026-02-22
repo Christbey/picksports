@@ -180,6 +180,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $games = \App\Models\MLB\Game::query()
             ->where('season', $season)
             ->where('status', 'STATUS_SCHEDULED')
+            ->when(
+                config('mlb.season.analytics_types'),
+                fn ($query, $types) => $query->whereIn('season_type', $types)
+            )
             ->with(['homeTeam', 'awayTeam'])
             ->get();
 

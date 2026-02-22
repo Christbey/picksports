@@ -173,15 +173,6 @@ return [
         // Logistic function coefficient for win probability
         // Calibrated so 7-point spread ≈ 70% win probability
         'spread_to_probability_coefficient' => 4,
-
-        // Confidence score components (sum to 100 max)
-        'confidence' => [
-            'base' => 30,              // Having any Elo data
-            'home_metrics' => 20,      // Home team has metrics
-            'away_metrics' => 20,      // Away team has metrics
-            'home_non_default_elo' => 15, // Home team played games
-            'away_non_default_elo' => 15, // Away team played games
-        ],
     ],
 
     /*

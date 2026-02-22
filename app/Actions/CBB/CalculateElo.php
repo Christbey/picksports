@@ -52,4 +52,18 @@ class CalculateElo extends AbstractEloCalculator
 
         return 1.0;
     }
+
+    protected function calculateSosAdjustment(int $homeElo, int $awayElo): float
+    {
+        $config = config('cbb.elo.sos_adjustment');
+
+        if (! $config['enabled']) {
+            return 1.0;
+        }
+
+        $eloGap = abs($homeElo - $awayElo);
+        $dampener = 1.0 - ($eloGap / $config['divisor']);
+
+        return max($config['floor'], $dampener);
+    }
 }

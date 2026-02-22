@@ -42,4 +42,9 @@ class CalculateEloCommand extends AbstractCalculateEloCommand
     {
         return CalculateElo::class;
     }
+
+    protected function getAnalyticsSeasonTypes(): ?array
+    {
+        return config('mlb.season.analytics_types');
+    }
 }

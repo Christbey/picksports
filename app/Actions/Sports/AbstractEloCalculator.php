@@ -74,6 +74,7 @@ abstract class AbstractEloCalculator
 
         // Calculate K-factor with margin of victory and playoff multiplier
         $kFactor = $this->calculateKFactor($game);
+        $kFactor *= $this->calculateSosAdjustment($homeElo, $awayElo);
 
         // Calculate Elo changes
         $homeChange = round($kFactor * ($homeActual - $homeExpected), 1);
@@ -113,6 +114,15 @@ abstract class AbstractEloCalculator
                     ->orWhere('team_id', $awayTeam->id);
             })
             ->exists();
+    }
+
+    /**
+     * Calculate strength-of-schedule adjustment to dampen K-factor for mismatched games.
+     * Override in sport-specific subclasses to enable.
+     */
+    protected function calculateSosAdjustment(int $homeElo, int $awayElo): float
+    {
+        return 1.0;
     }
 
     /**

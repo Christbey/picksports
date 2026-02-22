@@ -220,8 +220,7 @@ return [
         'playoff_multiplier' => 1.5,
 
         // Home court advantage in Elo points
-        // Higher than CBB (35) as women's games tend to have stronger home advantages
-        'home_court_advantage' => 70,
+        'home_court_advantage' => 35,
 
         // Margin of victory multipliers
         'margin_multipliers' => [
@@ -255,17 +254,6 @@ return [
         // Win probability logistic denominator
         // Calibrated so 7-point spread ≈ 70% probability
         'spread_to_probability_coefficient' => 4.0,
-
-        // Confidence score components (sum to 100 max)
-        'confidence' => [
-            'base' => 20,
-            'home_metrics' => 15,
-            'away_metrics' => 15,
-            'home_adjusted_metrics' => 10,
-            'away_adjusted_metrics' => 10,
-            'home_non_default_elo' => 15,
-            'away_non_default_elo' => 15,
-        ],
     ],
 
 ];

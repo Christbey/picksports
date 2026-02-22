@@ -381,126 +381,124 @@ onMounted(async () => {
       </div>
 
       <template v-else>
-        <Card class="overflow-hidden">
-        <CardContent class="pt-6">
-          <div class="flex flex-col md:flex-row items-center justify-between gap-4 md:gap-6">
-            <div class="flex-1 w-full flex items-center justify-center md:justify-end gap-3">
-              <div class="text-center md:text-right">
-                <div class="text-xl md:text-2xl font-bold">
-                  {{ awayTeam?.display_name || `${awayTeam?.location} ${awayTeam?.name}`.trim() || awayTeam?.abbreviation }}
+        <!-- Matchup Hero -->
+        <div class="rounded-xl overflow-hidden bg-gradient-to-r from-green-600 to-green-800 dark:from-green-800 dark:to-green-950 text-white shadow-lg">
+          <div class="px-6 py-8">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-6">
+              <div class="flex-1 flex flex-col items-center md:items-end gap-2">
+                <div class="relative">
+                  <div
+                    v-if="awayTeam?.color"
+                    class="absolute inset-0 rounded-full opacity-20 blur-xl"
+                    :style="{ backgroundColor: `#${awayTeam.color}` }"
+                  ></div>
+                  <img
+                    v-if="awayTeam?.logo"
+                    :src="awayTeam.logo"
+                    :alt="awayTeam.abbreviation"
+                    class="w-20 h-20 object-contain relative z-10 drop-shadow-lg"
+                  />
                 </div>
-                <div class="text-xs md:text-sm text-muted-foreground">Away</div>
-              </div>
-              <div class="relative">
-                <div
-                  v-if="awayTeam?.color"
-                  class="absolute inset-0 rounded-full opacity-20 blur-xl"
-                  :style="{ backgroundColor: `#${awayTeam.color}` }"
-                ></div>
-                <img
-                  v-if="awayTeam?.logo"
-                  :src="awayTeam.logo"
-                  :alt="awayTeam.abbreviation"
-                  class="w-16 h-16 md:w-20 md:h-20 object-contain relative z-10"
-                />
-              </div>
-            </div>
-
-            <div class="text-center min-w-[120px]">
-              <div v-if="(game.status === 'STATUS_FINAL' || game.status === 'STATUS_IN_PROGRESS' || game.status === 'STATUS_HALFTIME') && game.away_score !== undefined && game.home_score !== undefined" class="text-3xl md:text-4xl font-bold">
-                {{ game.away_score }} - {{ game.home_score }}
-              </div>
-              <div v-else class="text-xl md:text-2xl font-bold text-muted-foreground">
-                vs
-              </div>
-              <Badge class="mt-2" :class="{ 'animate-pulse bg-red-600': game.status === 'STATUS_IN_PROGRESS' || game.status === 'STATUS_HALFTIME' }">{{ gameStatus }}</Badge>
-              <div class="text-xs md:text-sm text-muted-foreground mt-2">
-                {{ formatDate(game.game_date, game.game_time) }}
-              </div>
-            </div>
-
-            <div class="flex-1 w-full flex items-center justify-center md:justify-start gap-3">
-              <div class="relative">
-                <div
-                  v-if="homeTeam?.color"
-                  class="absolute inset-0 rounded-full opacity-20 blur-xl"
-                  :style="{ backgroundColor: `#${homeTeam.color}` }"
-                ></div>
-                <img
-                  v-if="homeTeam?.logo"
-                  :src="homeTeam.logo"
-                  :alt="homeTeam.abbreviation"
-                  class="w-16 h-16 md:w-20 md:h-20 object-contain relative z-10"
-                />
-              </div>
-              <div class="text-center md:text-left">
-                <div class="text-xl md:text-2xl font-bold">
-                  {{ homeTeam?.display_name || `${homeTeam?.location} ${homeTeam?.name}`.trim() || homeTeam?.abbreviation }}
+                <div class="text-center md:text-right">
+                  <div class="text-xl md:text-2xl font-bold">
+                    {{ awayTeam?.display_name || `${awayTeam?.location} ${awayTeam?.name}`.trim() || awayTeam?.abbreviation }}
+                  </div>
+                  <div class="text-sm text-white/70">Away</div>
                 </div>
-                <div class="text-xs md:text-sm text-muted-foreground">Home</div>
+              </div>
+
+              <div class="text-center min-w-[120px]">
+                <div v-if="(game.status === 'STATUS_FINAL' || game.status === 'STATUS_IN_PROGRESS' || game.status === 'STATUS_HALFTIME') && game.away_score !== undefined && game.home_score !== undefined" class="text-4xl md:text-5xl font-bold tracking-tight">
+                  {{ game.away_score }} - {{ game.home_score }}
+                </div>
+                <div v-else class="text-2xl md:text-3xl font-bold text-white/70">
+                  vs
+                </div>
+                <Badge class="mt-2 bg-white/20 text-white border-white/30 hover:bg-white/30" :class="{ 'animate-pulse !bg-red-600 !border-red-500': game.status === 'STATUS_IN_PROGRESS' || game.status === 'STATUS_HALFTIME' }">{{ gameStatus }}</Badge>
+              </div>
+
+              <div class="flex-1 flex flex-col items-center md:items-start gap-2">
+                <div class="relative">
+                  <div
+                    v-if="homeTeam?.color"
+                    class="absolute inset-0 rounded-full opacity-20 blur-xl"
+                    :style="{ backgroundColor: `#${homeTeam.color}` }"
+                  ></div>
+                  <img
+                    v-if="homeTeam?.logo"
+                    :src="homeTeam.logo"
+                    :alt="homeTeam.abbreviation"
+                    class="w-20 h-20 object-contain relative z-10 drop-shadow-lg"
+                  />
+                </div>
+                <div class="text-center md:text-left">
+                  <div class="text-xl md:text-2xl font-bold">
+                    {{ homeTeam?.display_name || `${homeTeam?.location} ${homeTeam?.name}`.trim() || homeTeam?.abbreviation }}
+                  </div>
+                  <div class="text-sm text-white/70">Home</div>
+                </div>
               </div>
             </div>
           </div>
-        </CardContent>
-      </Card>
+          <!-- Game Info Bar -->
+          <div class="bg-black/20 px-6 py-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-white/80">
+            <span>{{ formatDate(game.game_date, game.game_time) }}</span>
+            <span v-if="getWeekLabel">{{ game.season_type }} - {{ getWeekLabel }}</span>
+            <span v-if="game.venue" class="flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd" /></svg>
+              {{ game.venue }}
+            </span>
+            <span v-if="broadcastNetworks.length > 0" class="flex items-center gap-1">
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" /></svg>
+              {{ broadcastNetworks.join(', ') }}
+            </span>
+          </div>
+        </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Game Details</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-              <div v-if="game.venue">
-                <div class="text-muted-foreground">Venue</div>
-                <div class="font-medium">{{ game.venue }}</div>
-              </div>
-              <div v-if="broadcastNetworks.length > 0">
-                <div class="text-muted-foreground">Broadcast</div>
-                <div class="font-medium">{{ broadcastNetworks.join(', ') }}</div>
-              </div>
-              <div>
-                <div class="text-muted-foreground">Season</div>
-                <div class="font-medium">{{ game.season_type }} - {{ getWeekLabel }}</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
+        <!-- Prediction Model -->
         <Card v-if="prediction">
           <CardHeader>
             <CardTitle>Prediction Model</CardTitle>
           </CardHeader>
           <CardContent>
-            <div class="space-y-4">
-              <div class="grid grid-cols-2 gap-4 text-sm">
-                <div class="text-center p-3 rounded-lg bg-muted/50">
-                  <div class="text-muted-foreground mb-1">Away ELO</div>
-                  <div class="text-2xl font-bold">{{ formatNumber(prediction.away_elo, 0) }}</div>
-                  <div class="text-xs text-muted-foreground mt-0.5">{{ awayTeam?.abbreviation }}</div>
-                </div>
-                <div class="text-center p-3 rounded-lg bg-muted/50">
-                  <div class="text-muted-foreground mb-1">Home ELO</div>
-                  <div class="text-2xl font-bold">{{ formatNumber(prediction.home_elo, 0) }}</div>
-                  <div class="text-xs text-muted-foreground mt-0.5">{{ homeTeam?.abbreviation }}</div>
-                </div>
+            <!-- Win Probability Bar -->
+            <div class="mb-6">
+              <div class="flex items-center justify-between text-sm font-medium mb-2">
+                <span>{{ awayTeam?.abbreviation }} {{ formatNumber((1 - Number(prediction.win_probability)) * 100, 0) }}%</span>
+                <span>{{ homeTeam?.abbreviation }} {{ formatNumber(Number(prediction.win_probability) * 100, 0) }}%</span>
               </div>
-              <div class="grid grid-cols-2 gap-4 text-sm">
-                <div class="text-center p-3 rounded-lg border border-primary/20 bg-primary/5">
-                  <div class="text-muted-foreground mb-1">Predicted Spread</div>
-                  <div class="text-2xl font-bold text-primary">{{ formatSpread(prediction.predicted_spread) }}</div>
-                </div>
-                <div class="text-center p-3 rounded-lg border border-primary/20 bg-primary/5">
-                  <div class="text-muted-foreground mb-1">Win Probability</div>
-                  <div class="text-2xl font-bold text-primary">{{ formatNumber(Number(prediction.win_probability) * 100, 1) }}%</div>
-                  <div class="text-xs text-muted-foreground mt-0.5">{{ homeTeam?.abbreviation }}</div>
-                </div>
+              <div class="flex h-3 rounded-full overflow-hidden">
+                <div class="bg-green-500 dark:bg-green-600 transition-all" :style="{ width: `${(1 - Number(prediction.win_probability)) * 100}%` }"></div>
+                <div class="bg-green-800 dark:bg-green-400 transition-all" :style="{ width: `${Number(prediction.win_probability) * 100}%` }"></div>
+              </div>
+            </div>
+            <!-- Stat Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div class="text-center p-3 rounded-lg border">
+                <div class="text-sm text-muted-foreground">Away ELO</div>
+                <div class="text-2xl font-bold">{{ formatNumber(prediction.away_elo, 0) }}</div>
+                <div class="text-xs text-muted-foreground mt-0.5">{{ awayTeam?.abbreviation }}</div>
+              </div>
+              <div class="text-center p-3 rounded-lg border">
+                <div class="text-sm text-muted-foreground">Home ELO</div>
+                <div class="text-2xl font-bold">{{ formatNumber(prediction.home_elo, 0) }}</div>
+                <div class="text-xs text-muted-foreground mt-0.5">{{ homeTeam?.abbreviation }}</div>
+              </div>
+              <div class="text-center p-3 rounded-lg border border-primary/20 bg-primary/5">
+                <div class="text-sm text-muted-foreground">Spread</div>
+                <div class="text-2xl font-bold text-primary">{{ formatSpread(prediction.predicted_spread) }}</div>
+                <div class="text-xs text-muted-foreground mt-0.5">{{ Number(prediction.predicted_spread) < 0 ? (homeTeam?.abbreviation || 'Home') : (awayTeam?.abbreviation || 'Away') }} favored</div>
+              </div>
+              <div class="text-center p-3 rounded-lg border border-primary/20 bg-primary/5">
+                <div class="text-sm text-muted-foreground">Win Prob</div>
+                <div class="text-2xl font-bold text-primary">{{ formatNumber(Number(prediction.win_probability) * 100, 1) }}%</div>
+                <div class="text-xs text-muted-foreground mt-0.5">{{ homeTeam?.abbreviation }}</div>
               </div>
             </div>
           </CardContent>
         </Card>
-      </div>
 
+      <!-- Linescore Table -->
       <Card v-if="homeLinescores.length > 0 && awayLinescores.length > 0 && game.status === 'STATUS_FINAL'">
         <CardHeader>
           <CardTitle>Quarter by Quarter</CardTitle>
@@ -510,8 +508,8 @@ onMounted(async () => {
             <table class="w-full text-sm">
               <thead>
                 <tr class="border-b">
-                  <th class="text-left p-2">Team</th>
-                  <th class="text-center p-2" v-for="quarter in homeLinescores" :key="quarter.period">
+                  <th class="text-left p-2 text-muted-foreground font-medium">Team</th>
+                  <th class="text-center p-2 text-muted-foreground font-medium" v-for="quarter in homeLinescores" :key="quarter.period">
                     Q{{ quarter.period }}
                   </th>
                   <th class="text-center p-2 font-bold">Final</th>
@@ -519,18 +517,28 @@ onMounted(async () => {
               </thead>
               <tbody>
                 <tr class="border-b">
-                  <td class="p-2 font-medium">{{ awayTeam?.abbreviation }}</td>
+                  <td class="p-2 font-medium">
+                    <span class="flex items-center gap-2">
+                      <img v-if="awayTeam?.logo" :src="awayTeam.logo" :alt="awayTeam.abbreviation" class="h-5 w-5 object-contain" />
+                      {{ awayTeam?.abbreviation }}
+                    </span>
+                  </td>
                   <td class="text-center p-2" v-for="quarter in awayLinescores" :key="quarter.period">
                     {{ quarter.value }}
                   </td>
-                  <td class="text-center p-2 font-bold">{{ game.away_score }}</td>
+                  <td class="text-center p-2 font-bold" :class="game.away_score > game.home_score ? 'text-green-600 dark:text-green-400' : ''">{{ game.away_score }}</td>
                 </tr>
                 <tr>
-                  <td class="p-2 font-medium">{{ homeTeam?.abbreviation }}</td>
+                  <td class="p-2 font-medium">
+                    <span class="flex items-center gap-2">
+                      <img v-if="homeTeam?.logo" :src="homeTeam.logo" :alt="homeTeam.abbreviation" class="h-5 w-5 object-contain" />
+                      {{ homeTeam?.abbreviation }}
+                    </span>
+                  </td>
                   <td class="text-center p-2" v-for="quarter in homeLinescores" :key="quarter.period">
                     {{ quarter.value }}
                   </td>
-                  <td class="text-center p-2 font-bold">{{ game.home_score }}</td>
+                  <td class="text-center p-2 font-bold" :class="game.home_score > game.away_score ? 'text-green-600 dark:text-green-400' : ''">{{ game.home_score }}</td>
                 </tr>
               </tbody>
             </table>

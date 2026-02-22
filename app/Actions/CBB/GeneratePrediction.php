@@ -153,43 +153,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ];
     }
 
-    protected function calculateConfidence(?Model $homeMetrics, ?Model $awayMetrics, int $homeElo, int $awayElo): float
+    protected function calculateConfidence(float $winProbability): float
     {
-        $confidenceConfig = config('cbb.prediction.confidence');
-        $defaultElo = config('cbb.elo.default');
-        $confidence = 0;
-
-        // Base confidence from having Elo data (always have this)
-        $confidence += $confidenceConfig['base'];
-
-        // Bonus for having team metrics
-        if ($homeMetrics) {
-            $confidence += $confidenceConfig['home_metrics'];
-
-            // Additional bonus for having adjusted metrics (opponent-adjusted data)
-            if ($homeMetrics->adj_offensive_efficiency !== null) {
-                $confidence += $confidenceConfig['home_adjusted_metrics'];
-            }
-        }
-
-        if ($awayMetrics) {
-            $confidence += $confidenceConfig['away_metrics'];
-
-            // Additional bonus for having adjusted metrics (opponent-adjusted data)
-            if ($awayMetrics->adj_offensive_efficiency !== null) {
-                $confidence += $confidenceConfig['away_adjusted_metrics'];
-            }
-        }
-
-        // Bonus for non-default Elo ratings (teams have played games)
-        if ($homeElo !== $defaultElo) {
-            $confidence += $confidenceConfig['home_non_default_elo'];
-        }
-
-        if ($awayElo !== $defaultElo) {
-            $confidence += $confidenceConfig['away_non_default_elo'];
-        }
-
-        return round(min($confidence, 100), 2);
+        return round(max($winProbability, 1 - $winProbability) * 100, 2);
     }
 }

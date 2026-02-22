@@ -245,6 +245,14 @@ return [
             'decisive' => ['max_margin' => 20, 'multiplier' => 1.5],
             'blowout' => ['max_margin' => null, 'multiplier' => 1.75],
         ],
+
+        // Strength-of-schedule dampener reduces K-factor for mismatched games
+        // Games between evenly-matched teams move ELO more
+        'sos_adjustment' => [
+            'enabled' => true,
+            'divisor' => 800,
+            'floor' => 0.5,
+        ],
     ],
 
     /*
@@ -276,17 +284,6 @@ return [
         // Win probability logistic denominator (higher = more conservative)
         // Calibrated so 7-point spread ≈ 78% probability
         'spread_to_probability_coefficient' => 5.5,
-
-        // Confidence score components (sum to 100 max)
-        'confidence' => [
-            'base' => 20,
-            'home_metrics' => 15,
-            'away_metrics' => 15,
-            'home_adjusted_metrics' => 10,
-            'away_adjusted_metrics' => 10,
-            'home_non_default_elo' => 15,
-            'away_non_default_elo' => 15,
-        ],
     ],
 
     /*

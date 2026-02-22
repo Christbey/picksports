@@ -229,13 +229,13 @@ function getBetTypeColor(type: string): string {
                         <div v-if="bet.model_line !== undefined">
                             <span class="text-muted-foreground">Model:</span>
                             <span class="ml-1 font-medium">
-                                {{ formatSpread(bet.model_line) }}
+                                {{ bet.type === 'total' ? formatNumber(bet.model_line) : formatSpread(bet.model_line) }}
                             </span>
                         </div>
                         <div v-if="bet.market_line !== undefined">
                             <span class="text-muted-foreground">Market:</span>
                             <span class="ml-1 font-medium">
-                                {{ formatSpread(bet.market_line) }}
+                                {{ bet.type === 'total' ? formatNumber(bet.market_line) : formatSpread(bet.market_line) }}
                             </span>
                         </div>
                         <div v-if="bet.model_probability !== undefined">

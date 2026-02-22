@@ -44,28 +44,45 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ?Model $awayMetrics,
         Model $game
     ): float {
-        // Extract efficiency metrics (prefer adjusted, fall back to raw, then league average)
         $defaultEfficiency = config('wcbb.prediction.default_efficiency');
+        $averagePace = config('wcbb.prediction.average_pace');
+
         $homeOffEff = $homeMetrics?->adj_offensive_efficiency
             ?? $homeMetrics?->offensive_efficiency
+            ?? $defaultEfficiency;
+        $homeDefEff = $homeMetrics?->adj_defensive_efficiency
+            ?? $homeMetrics?->defensive_efficiency
             ?? $defaultEfficiency;
         $awayOffEff = $awayMetrics?->adj_offensive_efficiency
             ?? $awayMetrics?->offensive_efficiency
             ?? $defaultEfficiency;
-
-        // Calculate predicted total using efficiency metrics
-        // Use adjusted tempo if available, fall back to raw tempo, then league average
-        $normalizedTempo = $homeMetrics?->adj_tempo
-            ?? $homeMetrics?->tempo
-            ?? $awayMetrics?->adj_tempo
-            ?? $awayMetrics?->tempo
+        $awayDefEff = $awayMetrics?->adj_defensive_efficiency
+            ?? $awayMetrics?->defensive_efficiency
             ?? $defaultEfficiency;
 
-        // Convert normalized tempo to actual possessions and calculate scores
-        $averagePace = config('wcbb.prediction.average_pace');
-        $tempoFactor = ($averagePace / 100) * ($normalizedTempo / 100);
-        $homePredictedScore = $homeOffEff * $tempoFactor;
-        $awayPredictedScore = $awayOffEff * $tempoFactor;
+        // Get tempo — adj_tempo is normalized around 100, raw tempo is actual possessions
+        $homeHasAdjTempo = $homeMetrics?->adj_tempo !== null;
+        $awayHasAdjTempo = $awayMetrics?->adj_tempo !== null;
+
+        if ($homeHasAdjTempo || $awayHasAdjTempo) {
+            // Use normalized adj_tempo: convert to possessions via averagePace
+            $homeTempo = $homeMetrics?->adj_tempo ?? 100;
+            $awayTempo = $awayMetrics?->adj_tempo ?? 100;
+            $gameTempo = ($homeTempo + $awayTempo) / 2;
+            $possessionsPerGame = $averagePace * ($gameTempo / 100);
+        } else {
+            // Raw tempo IS possessions per game — use directly
+            $homeTempo = $homeMetrics?->tempo ?? $averagePace;
+            $awayTempo = $awayMetrics?->tempo ?? $averagePace;
+            $possessionsPerGame = ($homeTempo + $awayTempo) / 2;
+        }
+
+        // Matchup formula: average each offense against opposing defense
+        $homeExpectedEfficiency = ($homeOffEff + $awayDefEff) / 2;
+        $awayExpectedEfficiency = ($awayOffEff + $homeDefEff) / 2;
+
+        $homePredictedScore = $homeExpectedEfficiency * ($possessionsPerGame / 100);
+        $awayPredictedScore = $awayExpectedEfficiency * ($possessionsPerGame / 100);
 
         return round($homePredictedScore + $awayPredictedScore, 1);
     }
@@ -109,43 +126,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ];
     }
 
-    protected function calculateConfidence(?Model $homeMetrics, ?Model $awayMetrics, int $homeElo, int $awayElo): float
+    protected function calculateConfidence(float $winProbability): float
     {
-        $confidenceConfig = config('wcbb.prediction.confidence');
-        $defaultElo = config('wcbb.elo.default');
-        $confidence = 0;
-
-        // Base confidence from having Elo data (always have this)
-        $confidence += $confidenceConfig['base'];
-
-        // Bonus for having team metrics
-        if ($homeMetrics) {
-            $confidence += $confidenceConfig['home_metrics'];
-
-            // Additional bonus for having adjusted metrics (opponent-adjusted data)
-            if ($homeMetrics->adj_offensive_efficiency !== null) {
-                $confidence += $confidenceConfig['home_adjusted_metrics'];
-            }
-        }
-
-        if ($awayMetrics) {
-            $confidence += $confidenceConfig['away_metrics'];
-
-            // Additional bonus for having adjusted metrics (opponent-adjusted data)
-            if ($awayMetrics->adj_offensive_efficiency !== null) {
-                $confidence += $confidenceConfig['away_adjusted_metrics'];
-            }
-        }
-
-        // Bonus for non-default Elo ratings (teams have played games)
-        if ($homeElo !== $defaultElo) {
-            $confidence += $confidenceConfig['home_non_default_elo'];
-        }
-
-        if ($awayElo !== $defaultElo) {
-            $confidence += $confidenceConfig['away_non_default_elo'];
-        }
-
-        return round(min($confidence, 100), 2);
+        return round(max($winProbability, 1 - $winProbability) * 100, 2);
     }
 }

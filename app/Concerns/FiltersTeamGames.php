@@ -16,10 +16,15 @@ trait FiltersTeamGames
         string $sport
     ): Collection {
         $gameModel = "App\\Models\\{$sport}\\Game";
+        $sportSlug = strtolower($sport);
 
         return $gameModel::query()
             ->where('season', $season)
-            ->where('status', config(strtolower($sport).'.statuses.final'))
+            ->where('status', config("{$sportSlug}.statuses.final"))
+            ->when(
+                config("{$sportSlug}.season.analytics_types"),
+                fn ($query, $types) => $query->whereIn('season_type', $types)
+            )
             ->where(function ($query) use ($team) {
                 $query->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);

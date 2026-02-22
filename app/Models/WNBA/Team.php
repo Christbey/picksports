@@ -22,6 +22,7 @@ class Team extends Model
         'division',
         'color',
         'logo_url',
+        'elo_rating',
     ];
 
     public function players(): HasMany

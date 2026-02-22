@@ -298,18 +298,20 @@ class DashboardController extends Controller
             });
         $todaysPredictions = $todaysPredictions->merge($wnba);
 
-        // Apply user's tier limit on predictions per day
+        // Apply user's tier limit on predictions per sport
         $user = auth()->user();
         $predictionsPerDay = $user->subscriptionTier()?->features['predictions_per_day'] ?? null;
 
-        if ($predictionsPerDay !== null) {
-            $todaysPredictions = $todaysPredictions->sortBy('game_time')->take($predictionsPerDay);
-        }
-
-        // Group predictions by sport and sort each group by game time
+        // Group predictions by sport and sort each group by game time, applying per-sport limit
         $predictionsBySport = $todaysPredictions
             ->groupBy('sport')
-            ->map(fn ($predictions) => $predictions->sortBy('game_time')->values());
+            ->map(function ($predictions) use ($predictionsPerDay) {
+                $sorted = $predictions->sortBy('game_time');
+
+                return $predictionsPerDay !== null
+                    ? $sorted->take($predictionsPerDay)->values()
+                    : $sorted->values();
+            });
 
         // Define sport order and metadata
         $sports = collect([
@@ -333,7 +335,7 @@ class DashboardController extends Controller
         )->count();
 
         $stats = [
-            'total_predictions_today' => $todaysPredictions->count(),
+            'total_predictions_today' => $predictionsBySport->sum(fn ($predictions) => $predictions->count()),
             'total_games_today' => $todayGameCount(NBAGame::class)
                 + $todayGameCount(CBBGame::class)
                 + $todayGameCount(WCBBGame::class)

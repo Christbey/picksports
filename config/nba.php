@@ -173,6 +173,33 @@ return [
         // Logistic function coefficient for win probability
         // Calibrated so 7-point spread ≈ 70% win probability
         'spread_to_probability_coefficient' => 4,
+
+        // Ensemble weights (must sum to 1.0)
+        'elo_weight' => 0.30,
+        'efficiency_weight' => 0.40,
+        'form_weight' => 0.30,
+
+        // Recent form
+        'recent_form_games' => 10,
+        'recency_decay' => 0.9,
+
+        // Rest days
+        'rest_day_adjustment' => 1.5,
+        'back_to_back_penalty' => -2.0,
+
+        // Home/away split
+        'home_away_split_weight' => 0.15,
+
+        // Turnover & rebound
+        'turnover_diff_weight' => 0.5,
+        'rebound_margin_weight' => 0.3,
+
+        // Vegas integration
+        'vegas_weight' => 0.25,
+        'model_weight_with_vegas' => 0.75,
+
+        // Home court (efficiency-based)
+        'home_court_points' => 3.0,
     ],
 
     /*

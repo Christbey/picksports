@@ -283,159 +283,110 @@ onMounted(async () => {
                         </div>
                     </CardContent>
                 </Card>
-
-                <Card v-if="seasonStats">
-                    <CardHeader>
-                        <CardTitle>Season Averages ({{ seasonStats.games_played }} games)</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">PPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.points_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">RPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.rebounds_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">APG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.assists_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">FG%</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.field_goal_percentage) }}%
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">3P%</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.three_point_percentage) }}%
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">FT%</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.free_throw_percentage) }}%
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">SPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.steals_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">BPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.blocks_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">TPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.turnovers_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">ORPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.offensive_rebounds_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">DRPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.defensive_rebounds_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Fast Break PPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.fast_break_points_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Paint PPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.points_in_paint_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">2nd Chance PPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.second_chance_points_per_game) }}
-                                </div>
-                            </div>
-                            <div class="text-center p-4 bg-muted/50 rounded-lg">
-                                <div class="text-sm text-muted-foreground">Bench PPG</div>
-                                <div class="text-2xl font-bold">
-                                    {{ formatNumber(seasonStats.bench_points_per_game) }}
-                                </div>
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
                         </div>
                     </TabsContent>
 
                     <!-- Advanced Stats Tab -->
                     <TabsContent value="stats">
                         <Card v-if="seasonStats">
-                    <CardHeader>
-                        <CardTitle>Recent Games</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div class="space-y-2">
-                            <Link
-                                v-for="game in recentGames"
-                                :key="game.id"
-                                :href="NBAGameController(game.id)"
-                                class="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                            >
-                                <div class="flex items-center gap-3 flex-1">
-                                    <span
-                                        class="font-bold text-sm w-6"
-                                        :class="getGameResult(game) === 'W' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
-                                    >
-                                        {{ getGameResult(game) }}
-                                    </span>
-                                    <span class="text-sm text-muted-foreground">
-                                        {{ game.home_team_id === team.id ? 'vs' : '@' }}
-                                    </span>
-                                    <span class="font-medium">
-                                        {{ getOpponent(game, game.home_team_id === team.id)?.name }}
-                                    </span>
-                                </div>
-                                <div class="flex items-center gap-4">
-                                    <span class="text-sm font-medium">
-                                        {{ game.home_team_id === team.id ? game.home_score : game.away_score }} -
-                                        {{ game.home_team_id === team.id ? game.away_score : game.home_score }}
-                                    </span>
-                                    <span class="text-sm text-muted-foreground">
-                                        {{ formatDate(game.game_date) }}
-                                    </span>
-                                </div>
-                            </Link>
-                        </div>
-                    </CardContent>
-                </Card>
-                    </TabsContent>
-
-                    <!-- Trends & Insights Tab -->
-                    <TabsContent value="trends">
-                        <Card v-if="trendsData">
                             <CardHeader>
-                                <CardTitle>Team Trends & Insights</CardTitle>
+                                <CardTitle>Season Averages ({{ seasonStats.games_played }} games)</CardTitle>
                             </CardHeader>
                             <CardContent>
+                                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">PPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.points_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">RPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.rebounds_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">APG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.assists_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">FG%</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.field_goal_percentage) }}%
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">3P%</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.three_point_percentage) }}%
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">FT%</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.free_throw_percentage) }}%
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">SPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.steals_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">BPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.blocks_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">TPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.turnovers_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">ORPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.offensive_rebounds_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">DRPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.defensive_rebounds_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">Fast Break PPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.fast_break_points_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">Paint PPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.points_in_paint_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">2nd Chance PPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.second_chance_points_per_game) }}
+                                        </div>
+                                    </div>
+                                    <div class="text-center p-4 bg-muted/50 rounded-lg">
+                                        <div class="text-sm text-muted-foreground">Bench PPG</div>
+                                        <div class="text-2xl font-bold">
+                                            {{ formatNumber(seasonStats.bench_points_per_game) }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </CardContent>
+                        </Card>
                                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     <!-- Home/Away Record -->
                                     <div v-if="trendsData.situational" class="p-4 border rounded-lg">
@@ -563,32 +514,44 @@ onMounted(async () => {
                     <TabsContent value="schedule">
                         <div class="space-y-4">
                             <Card v-if="recentGames.length > 0">
-                    <CardHeader>
-                        <CardTitle>Upcoming Games</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div class="space-y-2">
-                            <Link
-                                v-for="game in upcomingGames"
-                                :key="game.id"
-                                :href="NBAGameController(game.id)"
-                                class="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
-                            >
-                                <div class="flex items-center gap-3 flex-1">
-                                    <span class="text-sm text-muted-foreground">
-                                        {{ game.home_team_id === team.id ? 'vs' : '@' }}
-                                    </span>
-                                    <span class="font-medium">
-                                        {{ getOpponent(game, game.home_team_id === team.id)?.name }}
-                                    </span>
-                                </div>
-                                <span class="text-sm text-muted-foreground">
-                                    {{ formatDate(game.game_date) }}
-                                </span>
-                            </Link>
-                        </div>
-                    </CardContent>
-                </Card>
+                                <CardHeader>
+                                    <CardTitle>Recent Games</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div class="space-y-2">
+                                        <Link
+                                            v-for="game in recentGames"
+                                            :key="game.id"
+                                            :href="NBAGameController(game.id)"
+                                            class="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                                        >
+                                            <div class="flex items-center gap-3 flex-1">
+                                                <span
+                                                    class="font-bold text-sm w-6"
+                                                    :class="getGameResult(game) === 'W' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                                                >
+                                                    {{ getGameResult(game) }}
+                                                </span>
+                                                <span class="text-sm text-muted-foreground">
+                                                    {{ game.home_team_id === team.id ? 'vs' : '@' }}
+                                                </span>
+                                                <span class="font-medium">
+                                                    {{ getOpponent(game, game.home_team_id === team.id)?.name }}
+                                                </span>
+                                            </div>
+                                            <div class="flex items-center gap-4">
+                                                <span class="text-sm font-medium">
+                                                    {{ game.home_team_id === team.id ? game.home_score : game.away_score }} -
+                                                    {{ game.home_team_id === team.id ? game.away_score : game.home_score }}
+                                                </span>
+                                                <span class="text-sm text-muted-foreground">
+                                                    {{ formatDate(game.game_date) }}
+                                                </span>
+                                            </div>
+                                        </Link>
+                                    </div>
+                                </CardContent>
+                            </Card>
 
                             <Card v-if="upcomingGames.length > 0">
                                 <CardHeader>

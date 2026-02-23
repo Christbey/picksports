@@ -13,8 +13,7 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
     Route::prefix('wcbb')->name('wcbb.')->group(fn () => $registerSportRoutes('wcbb', 'WCBB'));
     Route::prefix('nba')->name('nba.')->group(fn () => $registerSportRoutes('nba', 'NBA'));
     Route::prefix('wnba')->name('wnba.')->group(fn () => $registerSportRoutes('wnba', 'WNBA'));
-    // MLB routes temporarily disabled - controllers need to be created
-    // Route::prefix('mlb')->name('mlb.')->group(fn () => $registerSportRoutes('mlb', 'MLB'));
+    Route::prefix('mlb')->name('mlb.')->group(fn () => $registerSportRoutes('mlb', 'MLB'));
 
     // User Bets Routes (protected by auth)
     Route::middleware('auth')->prefix('user-bets')->name('user-bets.')->group(base_path('routes/api/user-bets.php'));

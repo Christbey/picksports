@@ -30,16 +30,20 @@ return function (string $sport, string $namespace) {
     // Plays
     Route::apiResource('plays', "{$controllerNamespace}\\PlayController")->only(['index', 'show']);
 
-    // Player Stats
-    Route::apiResource('player-stats', "{$controllerNamespace}\\PlayerStatController")->only(['index', 'show']);
-    Route::get('games/{game}/player-stats', ["{$controllerNamespace}\\PlayerStatController", 'byGame']);
-    Route::get('players/{player}/stats', ["{$controllerNamespace}\\PlayerStatController", 'byPlayer']);
+    // Sport-specific: Registered before apiResource to avoid route conflicts with {wildcard} params
+    if (in_array($sport, ['nba', 'cbb'])) {
+        Route::get('player-stats/leaderboard', ["{$controllerNamespace}\\PlayerStatController", 'leaderboard']);
+    }
 
-    // NBA-specific: Season averages for team stats (registered before apiResource to avoid route conflicts)
     if ($sport === 'nba') {
         Route::get('team-stats/season-averages', ["{$controllerNamespace}\\TeamStatController", 'allSeasonAverages']);
         Route::get('teams/{team}/stats/season-averages', ["{$controllerNamespace}\\TeamStatController", 'seasonAverages']);
     }
+
+    // Player Stats
+    Route::apiResource('player-stats', "{$controllerNamespace}\\PlayerStatController")->only(['index', 'show']);
+    Route::get('games/{game}/player-stats', ["{$controllerNamespace}\\PlayerStatController", 'byGame']);
+    Route::get('players/{player}/stats', ["{$controllerNamespace}\\PlayerStatController", 'byPlayer']);
 
     // Team Stats
     Route::apiResource('team-stats', "{$controllerNamespace}\\TeamStatController")->only(['index', 'show']);

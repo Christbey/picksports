@@ -71,6 +71,10 @@ Route::get('cbb-team-metrics', function () {
     return Inertia::render('CBBTeamMetrics');
 })->middleware(['auth', 'verified'])->name('cbb-team-metrics');
 
+Route::get('cbb-player-stats', function () {
+    return Inertia::render('CBBPlayerStats');
+})->middleware(['auth', 'verified'])->name('cbb-player-stats');
+
 Route::get('wcbb-team-metrics', function () {
     return Inertia::render('WCBBTeamMetrics');
 })->middleware(['auth', 'verified'])->name('wcbb-team-metrics');
@@ -78,6 +82,10 @@ Route::get('wcbb-team-metrics', function () {
 Route::get('nba-team-metrics', function () {
     return Inertia::render('NBATeamMetrics');
 })->middleware(['auth', 'verified'])->name('nba-team-metrics');
+
+Route::get('nba-player-stats', function () {
+    return Inertia::render('NBAPlayerStats');
+})->middleware(['auth', 'verified'])->name('nba-player-stats');
 
 Route::get('wnba-team-metrics', function () {
     return Inertia::render('WNBATeamMetrics');

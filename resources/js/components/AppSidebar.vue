@@ -25,6 +25,8 @@ import {
     cbbTeamMetrics,
     wcbbTeamMetrics,
     nbaTeamMetrics,
+    nbaPlayerStats,
+    cbbPlayerStats,
     wnbaTeamMetrics,
     mlbTeamMetrics,
     nflTeamMetrics,
@@ -68,6 +70,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: nbaTeamMetrics(),
+            },
+            {
+                title: 'Player Stats',
+                href: nbaPlayerStats(),
             },
         ],
     },
@@ -124,6 +130,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: cbbTeamMetrics(),
+            },
+            {
+                title: 'Player Stats',
+                href: cbbPlayerStats(),
             },
         ],
     },

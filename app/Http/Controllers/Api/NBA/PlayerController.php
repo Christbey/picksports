@@ -16,7 +16,7 @@ class PlayerController extends Controller
     {
         $players = Player::query()
             ->with('team')
-            ->orderBy('display_name')
+            ->orderBy('full_name')
             ->paginate(15);
 
         return PlayerResource::collection($players);
@@ -39,8 +39,8 @@ class PlayerController extends Controller
     {
         $players = Player::query()
             ->where('team_id', $team->id)
-            ->orderBy('display_name')
-            ->paginate(15);
+            ->orderBy('full_name')
+            ->get();
 
         return PlayerResource::collection($players);
     }

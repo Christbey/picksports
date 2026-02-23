@@ -52,10 +52,10 @@ class PlayerStatController extends Controller
     public function byPlayer(Player $player)
     {
         $stats = PlayerStat::query()
-            ->with(['game'])
+            ->with(['game.homeTeam', 'game.awayTeam'])
             ->where('player_id', $player->id)
             ->orderByDesc('id')
-            ->paginate(15);
+            ->paginate(100);
 
         return PlayerStatResource::collection($stats);
     }

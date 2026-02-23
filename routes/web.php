@@ -93,6 +93,8 @@ Route::get('nfl-team-metrics', function () {
 
 Route::get('/nba/teams/{team}', \App\Http\Controllers\NBA\TeamController::class)->middleware(['auth', 'verified']);
 
+Route::get('/nba/players/{player}', \App\Http\Controllers\NBA\PlayerController::class)->middleware(['auth', 'verified']);
+
 Route::get('/nba/games/{game}', \App\Http\Controllers\NBA\GameController::class)->middleware(['auth', 'verified']);
 
 Route::get('/wnba/teams/{team}', \App\Http\Controllers\WNBA\TeamController::class)->middleware(['auth', 'verified']);

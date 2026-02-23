@@ -2,7 +2,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
-import WCBBPredictionsComponent from '@/components/WCBBPredictions.vue';
+import SportPredictions from '@/components/SportPredictions.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { wcbbPredictions, responsibleGambling } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -28,7 +28,15 @@ const breadcrumbs: BreadcrumbItem[] = [
                 </AlertDescription>
             </Alert>
 
-            <WCBBPredictionsComponent />
+            <SportPredictions :config="{
+                sport: 'wcbb',
+                title: 'WCBB Predictions',
+                subtitle: 'Predictions based on Elo ratings and advanced metrics',
+                useEasternTime: false,
+                showGameTime: true,
+                confidenceIsDecimal: false,
+                confidenceDecimals: 0,
+            }" />
         </div>
     </AppLayout>
 </template>

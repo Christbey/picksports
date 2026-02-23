@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\DB;
 
 abstract class AbstractPredictionController extends Controller
 {
@@ -100,6 +101,29 @@ abstract class AbstractPredictionController extends Controller
             'tier_limit' => $tierLimit,
             'tier_name' => $tier?->name,
         ]);
+    }
+
+    /**
+     * Get available dates that have predictions
+     */
+    public function availableDates(): JsonResponse
+    {
+        $predictionModel = $this->getPredictionModel();
+        $gameInstance = new ($this->getGameModel());
+        $predictionInstance = new $predictionModel();
+
+        $dates = $predictionModel::query()
+            ->join(
+                $gameInstance->getTable(),
+                "{$gameInstance->getTable()}.id",
+                '=',
+                "{$predictionInstance->getTable()}.game_id"
+            )
+            ->select(DB::raw("DISTINCT DATE({$gameInstance->getTable()}.{$this->getGameDateColumn()}) as game_date"))
+            ->orderBy('game_date')
+            ->pluck('game_date');
+
+        return response()->json(['data' => $dates]);
     }
 
     /**

@@ -70,6 +70,14 @@ class PredictionResource extends JsonResource
             $data['betting_value'] = $this->betting_value ?? app(CalculateBettingValue::class)->execute($this->game);
         }
 
+        // Grading fields (always included for historical analysis)
+        $data['actual_spread'] = $this->actual_spread;
+        $data['actual_total'] = $this->actual_total;
+        $data['spread_error'] = $this->spread_error;
+        $data['total_error'] = $this->total_error;
+        $data['winner_correct'] = $this->winner_correct;
+        $data['graded_at'] = $this->graded_at?->toIso8601String();
+
         $data['created_at'] = $this->created_at?->toIso8601String();
         $data['updated_at'] = $this->updated_at?->toIso8601String();
 

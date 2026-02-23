@@ -59,6 +59,7 @@ Route::get('elo-ratings/season/{season}', ["{$controllerNamespace}\\EloRatingCon
 
     // Predictions (requires authentication for tier limits)
     Route::middleware(['web', 'auth'])->group(function () use ($controllerNamespace) {
+        Route::get('predictions/available-dates', ["{$controllerNamespace}\\PredictionController", 'availableDates']);
         Route::apiResource('predictions', "{$controllerNamespace}\\PredictionController")->only(['index', 'show']);
         Route::get('games/{game}/prediction', ["{$controllerNamespace}\\PredictionController", 'byGame']);
     });

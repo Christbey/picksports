@@ -30,6 +30,9 @@ class TeamMetricResource extends JsonResource
             // Minimum games tracking
             'games_played' => $this->games_played,
             'meets_minimum' => $this->meets_minimum,
+            // W-L record
+            'wins' => $this->wins ?? null,
+            'losses' => $this->losses ?? null,
             // Adjusted metrics
             'adj_offensive_efficiency' => $this->adj_offensive_efficiency,
             'adj_defensive_efficiency' => $this->adj_defensive_efficiency,

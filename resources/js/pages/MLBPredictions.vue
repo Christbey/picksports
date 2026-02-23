@@ -2,7 +2,7 @@
 import { Head, Link } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
-import MLBPredictionsComponent from '@/components/MLBPredictions.vue';
+import SportPredictions from '@/components/SportPredictions.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { mlbPredictions, responsibleGambling } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
@@ -28,7 +28,15 @@ const breadcrumbs: BreadcrumbItem[] = [
                 </AlertDescription>
             </Alert>
 
-            <MLBPredictionsComponent />
+            <SportPredictions :config="{
+                sport: 'mlb',
+                title: 'MLB Predictions',
+                subtitle: 'Predictions based on team and pitcher Elo ratings',
+                useEasternTime: false,
+                showGameTime: true,
+                confidenceIsDecimal: true,
+                confidenceDecimals: 0,
+            }" />
         </div>
     </AppLayout>
 </template>

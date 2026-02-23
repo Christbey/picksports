@@ -26,6 +26,8 @@ class TeamMetricResource extends JsonResource
             'tempo' => $this->tempo,
             'pace' => $this->tempo,
             'strength_of_schedule' => $this->strength_of_schedule,
+            'wins' => $this->wins ?? null,
+            'losses' => $this->losses ?? null,
             'calculation_date' => $this->calculation_date,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

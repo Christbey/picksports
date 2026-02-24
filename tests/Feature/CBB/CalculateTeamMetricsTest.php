@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\CBB\CalculateTeamMetrics;
+use App\Models\CBB\EloRating;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
@@ -28,6 +29,27 @@ it('calculates basic team metrics for a season', function () {
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,
         'status' => 'STATUS_FINAL',
+    ]);
+
+    // Create per-game ELO records for opponents (pre-game ELO = elo_rating - elo_change)
+    // Opponent1: pre-game ELO was 1520 (post-game 1550, change +30)
+    EloRating::create([
+        'team_id' => $this->opponent1->id,
+        'game_id' => $game1->id,
+        'season' => 2026,
+        'date' => now(),
+        'elo_rating' => 1550,
+        'elo_change' => 30,
+    ]);
+
+    // Opponent2: pre-game ELO was 1470 (post-game 1450, change -20)
+    EloRating::create([
+        'team_id' => $this->opponent2->id,
+        'game_id' => $game2->id,
+        'season' => 2026,
+        'date' => now(),
+        'elo_rating' => 1450,
+        'elo_change' => -20,
     ]);
 
     // Create team stats with possessions
@@ -90,8 +112,11 @@ it('calculates basic team metrics for a season', function () {
     expect($metric->tempo)->toBeGreaterThan(68)
         ->toBeLessThan(74);
 
-    // Strength of Schedule: (1550 + 1450) / 2 = 1500
-    expect((float) $metric->strength_of_schedule)->toBe(1500.0);
+    // Strength of Schedule uses per-game pre-game ELO:
+    // Opponent1 pre-game: 1550 - 30 = 1520
+    // Opponent2 pre-game: 1450 - (-20) = 1470
+    // SOS: (1520 + 1470) / 2 = 1495.0
+    expect((float) $metric->strength_of_schedule)->toBe(1495.0);
 
     // Possession coefficient should be saved
     expect((float) $metric->possession_coefficient)->toBe(config('cbb.metrics.possession_coefficient'));

@@ -171,8 +171,9 @@ class CalculateElo extends AbstractEloCalculator
         $homeElo = $homeStartingPitcher->elo_rating ?? $defaultElo;
         $awayElo = $awayStartingPitcher->elo_rating ?? $defaultElo;
 
-        // Adjust for home field advantage
-        $adjustedHomeElo = $homeElo + config('mlb.elo.home_field_advantage');
+        // Pitcher Elo uses its own HFA (default 0 — pitchers don't get home advantage)
+        $pitcherHfa = config('mlb.elo.pitcher_home_field_advantage');
+        $adjustedHomeElo = $homeElo + $pitcherHfa;
 
         // Calculate expected win probabilities
         $homeExpected = $this->calculateExpectedScore($adjustedHomeElo, $awayElo);
@@ -182,8 +183,8 @@ class CalculateElo extends AbstractEloCalculator
         $homeActual = $homeWon ? 1 : 0;
         $awayActual = 1 - $homeActual;
 
-        // Calculate K-factor (same as team)
-        $kFactor = $this->calculateKFactor($game);
+        // Use pitcher-specific K-factor
+        $kFactor = $this->calculatePitcherKFactor($game);
 
         // Calculate Elo changes
         $homeChange = round($kFactor * ($homeActual - $homeExpected), 1);
@@ -196,9 +197,11 @@ class CalculateElo extends AbstractEloCalculator
         $homeStartingPitcher->update(['elo_rating' => $newHomeElo]);
         $awayStartingPitcher->update(['elo_rating' => $newAwayElo]);
 
-        // Save pitcher Elo history
-        $this->savePitcherEloHistory($homeStartingPitcher, $game, $newHomeElo, $homeChange);
-        $this->savePitcherEloHistory($awayStartingPitcher, $game, $newAwayElo, $awayChange);
+        // Save pitcher Elo history with team context
+        $homeTeam = $game->homeTeam;
+        $awayTeam = $game->awayTeam;
+        $this->savePitcherEloHistory($homeStartingPitcher, $game, $newHomeElo, $homeChange, $homeTeam);
+        $this->savePitcherEloHistory($awayStartingPitcher, $game, $newAwayElo, $awayChange, $awayTeam);
 
         $result['home_change'] = $homeChange;
         $result['away_change'] = $awayChange;
@@ -206,6 +209,24 @@ class CalculateElo extends AbstractEloCalculator
         $result['away_new_elo'] = $newAwayElo;
 
         return $result;
+    }
+
+    protected function calculatePitcherKFactor(Model $game): float
+    {
+        $kFactor = config('mlb.elo.pitcher_k_factor');
+
+        // Apply playoff multiplier
+        if ($this->isPlayoffGame($game)) {
+            $kFactor *= config('mlb.elo.playoff_multiplier');
+        }
+
+        // Apply dampened margin of victory multiplier
+        $marginMultiplier = $this->calculateMarginMultiplier($game);
+        $dampening = config('mlb.elo.pitcher_margin_dampening');
+        $dampenedMultiplier = 1.0 + (($marginMultiplier - 1.0) * $dampening);
+        $kFactor *= $dampenedMultiplier;
+
+        return $kFactor;
     }
 
     protected function calculateKFactor(Model $game): float
@@ -226,7 +247,7 @@ class CalculateElo extends AbstractEloCalculator
 
     protected function isPlayoffGame(Model $game): bool
     {
-        return $game->season_type === config('mlb.season.type_names.postseason');
+        return $game->season_type === config('mlb.season.types.postseason');
     }
 
     protected function calculateMarginMultiplier(Model $game): float
@@ -243,15 +264,17 @@ class CalculateElo extends AbstractEloCalculator
         return 1.0;
     }
 
-    protected function savePitcherEloHistory(Player $pitcher, Game $game, int $newElo, float $eloChange): void
+    protected function savePitcherEloHistory(Player $pitcher, Game $game, int $newElo, float $eloChange, ?Team $team = null): void
     {
-        // Get current games started count for this pitcher
+        // Count games started this season only
         $gamesStarted = PitcherEloRating::query()
             ->where('player_id', $pitcher->id)
+            ->where('season', $game->season)
             ->count() + 1;
 
         PitcherEloRating::create([
             'player_id' => $pitcher->id,
+            'team_id' => $team?->id,
             'game_id' => $game->id,
             'season' => $game->season,
             'date' => $game->game_date,

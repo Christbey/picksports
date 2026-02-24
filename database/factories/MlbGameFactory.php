@@ -23,7 +23,7 @@ class MlbGameFactory extends Factory
             'espn_uid' => $this->faker->unique()->numerify('s:1~l:10~e:#########'),
             'season' => $this->faker->numberBetween(2020, 2025),
             'week' => $this->faker->numberBetween(1, 26),
-            'season_type' => $this->faker->numberBetween(1, 3),
+            'season_type' => config('mlb.season.types.regular'),
             'game_date' => $this->faker->date(),
             'game_time' => $this->faker->time(),
             'name' => $this->faker->words(3, true),
@@ -40,5 +40,19 @@ class MlbGameFactory extends Factory
             'home_score' => $this->faker->numberBetween(0, 12),
             'away_score' => $this->faker->numberBetween(0, 12),
         ];
+    }
+
+    public function regularSeason(): static
+    {
+        return $this->state(fn () => [
+            'season_type' => config('mlb.season.types.regular'),
+        ]);
+    }
+
+    public function postseason(): static
+    {
+        return $this->state(fn () => [
+            'season_type' => config('mlb.season.types.postseason'),
+        ]);
     }
 }

@@ -11,6 +11,7 @@ class PitcherEloRating extends Model
 
     protected $fillable = [
         'player_id',
+        'team_id',
         'game_id',
         'season',
         'date',
@@ -31,6 +32,11 @@ class PitcherEloRating extends Model
     public function player(): BelongsTo
     {
         return $this->belongsTo(Player::class);
+    }
+
+    public function team(): BelongsTo
+    {
+        return $this->belongsTo(Team::class);
     }
 
     public function game(): BelongsTo

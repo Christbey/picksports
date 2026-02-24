@@ -8,7 +8,7 @@ class GameData
         public string $espnEventId,
         public int $season,
         public int $week,
-        public string $seasonType,
+        public int $seasonType,
         public string $gameDate,
         public ?string $name,
         public ?string $shortName,
@@ -68,14 +68,7 @@ class GameData
         $homeTeam = collect($competition['competitors'] ?? [])->firstWhere('homeAway', 'home');
         $awayTeam = collect($competition['competitors'] ?? [])->firstWhere('homeAway', 'away');
 
-        // Map season type number to string
-        $seasonTypeMap = [
-            1 => 'Preseason',
-            2 => 'Regular Season',
-            3 => 'Postseason',
-        ];
-        $seasonTypeNum = (int) ($game['season']['type'] ?? 2);
-        $seasonType = $seasonTypeMap[$seasonTypeNum] ?? 'Regular Season';
+        $seasonType = (int) ($game['season']['type'] ?? 2);
 
         return new self(
             espnEventId: (string) $game['id'],

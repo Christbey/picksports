@@ -108,11 +108,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // TODO: When ESPN provides probable pitcher data, check for it first
         // For now, fall back to team's recent pitcher average
 
-        // Get team's recent pitcher Elo ratings
+        // Get recent pitcher Elo ratings for this team (uses team_id on history row,
+        // so traded pitchers are attributed to the team they pitched for)
         $recentPitcherElos = PitcherEloRating::query()
-            ->whereHas('player', function ($query) use ($team) {
-                $query->where('team_id', $team->id);
-            })
+            ->where('team_id', $team->id)
             ->orderByDesc('date')
             ->limit(config('mlb.elo.recent_starts_limit'))
             ->pluck('elo_rating');

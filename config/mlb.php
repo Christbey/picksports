@@ -43,7 +43,7 @@ return [
             'regular' => 'Regular Season',
             'postseason' => 'Postseason',
         ],
-        'analytics_types' => ['Regular Season', 'Postseason'],
+        'analytics_types' => [2, 3],
         'games' => [
             'regular_season' => 162,
             'playoff_rounds' => 4,
@@ -167,6 +167,21 @@ return [
          * Pitcher Elo regression to mean during offseason
          */
         'pitcher_regression_factor' => 0.40,
+
+        /**
+         * Pitcher-specific K-factor (lower than team's base_k_factor)
+         */
+        'pitcher_k_factor' => 15,
+
+        /**
+         * Dampening factor for margin of victory on pitcher Elo (0.0–1.0)
+         */
+        'pitcher_margin_dampening' => 0.5,
+
+        /**
+         * Home field advantage for pitcher Elo (0 = no HFA for pitchers)
+         */
+        'pitcher_home_field_advantage' => 0,
 
         /**
          * Margin of victory multipliers (run differential)

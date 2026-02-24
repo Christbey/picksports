@@ -2,13 +2,23 @@
 
 namespace App\Models\MLB;
 
+use Database\Factories\MlbPlayerFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Player extends Model
 {
+    /** @use HasFactory<MlbPlayerFactory> */
+    use HasFactory;
+
     protected $table = 'mlb_players';
+
+    protected static function newFactory(): MlbPlayerFactory
+    {
+        return MlbPlayerFactory::new();
+    }
 
     protected $fillable = [
         'team_id',

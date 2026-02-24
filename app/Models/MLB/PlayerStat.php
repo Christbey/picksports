@@ -2,12 +2,22 @@
 
 namespace App\Models\MLB;
 
+use Database\Factories\MlbPlayerStatFactory;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PlayerStat extends Model
 {
+    /** @use HasFactory<MlbPlayerStatFactory> */
+    use HasFactory;
+
     protected $table = 'mlb_player_stats';
+
+    protected static function newFactory(): MlbPlayerStatFactory
+    {
+        return MlbPlayerStatFactory::new();
+    }
 
     protected $fillable = [
         'player_id',

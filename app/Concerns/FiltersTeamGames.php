@@ -44,6 +44,9 @@ trait FiltersTeamGames
         $opponentStats = [];
         $opponentElos = [];
 
+        // Batch-load per-game ELO ratings for accurate SOS calculation
+        $perGameElos = $this->loadPerGameEloRatings($games, $team);
+
         foreach ($games as $game) {
             $isHome = $game->home_team_id === $team->id;
 
@@ -59,13 +62,52 @@ trait FiltersTeamGames
                 $opponentStats[] = $opponentStat;
             }
 
-            $opponent = $isHome ? $game->awayTeam : $game->homeTeam;
-            if ($opponent && $opponent->elo_rating) {
-                $opponentElos[] = $opponent->elo_rating;
+            // Use per-game ELO (pre-game rating) when available, fall back to current ELO
+            $eloKey = $game->id.'-'.$opponentId;
+            if (isset($perGameElos[$eloKey])) {
+                $opponentElos[] = $perGameElos[$eloKey];
+            } else {
+                $opponent = $isHome ? $game->awayTeam : $game->homeTeam;
+                if ($opponent && $opponent->elo_rating) {
+                    $opponentElos[] = $opponent->elo_rating;
+                }
             }
         }
 
         return compact('teamStats', 'opponentStats', 'opponentElos');
+    }
+
+    /**
+     * Load per-game ELO ratings for opponents, returning pre-game ELO values.
+     *
+     * @return array<string, float> Keyed by "game_id-team_id" with pre-game ELO values
+     */
+    protected function loadPerGameEloRatings(Collection $games, Model $team): array
+    {
+        if ($games->isEmpty()) {
+            return [];
+        }
+
+        $sport = class_basename((new \ReflectionClass($team))->getNamespaceName());
+        $eloRatingModel = "App\\Models\\{$sport}\\EloRating";
+
+        if (! class_exists($eloRatingModel)) {
+            return [];
+        }
+
+        $gameIds = $games->pluck('id')->toArray();
+
+        return $eloRatingModel::query()
+            ->whereIn('game_id', $gameIds)
+            ->where('team_id', '!=', $team->id)
+            ->get()
+            ->mapWithKeys(function ($record) {
+                // Pre-game ELO = post-game ELO minus the change from this game
+                $preGameElo = (float) $record->elo_rating - (float) $record->elo_change;
+
+                return [$record->game_id.'-'.$record->team_id => $preGameElo];
+            })
+            ->toArray();
     }
 
     /**

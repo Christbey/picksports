@@ -3,6 +3,9 @@
 use App\Actions\MLB\CalculateElo;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
+use App\Models\MLB\PitcherEloRating;
+use App\Models\MLB\Player;
+use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
 
 uses()->group('mlb', 'elo');
@@ -19,7 +22,6 @@ it('calculates elo ratings for a completed game', function () {
         'home_score' => 5,
         'away_score' => 3,
         'status' => 'STATUS_FINAL',
-        'season_type' => 2,
     ]);
 
     $action = new CalculateElo;
@@ -61,7 +63,6 @@ it('applies home field advantage correctly', function () {
         'home_score' => 4,
         'away_score' => 3,
         'status' => 'STATUS_FINAL',
-        'season_type' => 2,
     ]);
 
     $action = new CalculateElo;
@@ -78,7 +79,6 @@ it('applies margin of victory multiplier for close games', function () {
         'home_score' => 3,
         'away_score' => 2,
         'status' => 'STATUS_FINAL',
-        'season_type' => 2,
     ]);
 
     $action = new CalculateElo;
@@ -97,7 +97,6 @@ it('applies margin of victory multiplier for close games', function () {
         'home_score' => 12,
         'away_score' => 2,
         'status' => 'STATUS_FINAL',
-        'season_type' => 2,
     ]);
 
     $blowoutResult = $action->execute($blowoutGame);
@@ -108,13 +107,12 @@ it('applies margin of victory multiplier for close games', function () {
 
 it('applies playoff multiplier correctly', function () {
     // Regular season game
-    $regularGame = Game::factory()->create([
+    $regularGame = Game::factory()->regularSeason()->create([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'home_score' => 5,
         'away_score' => 3,
         'status' => 'STATUS_FINAL',
-        'season_type' => 2,
     ]);
 
     $action = new CalculateElo;
@@ -124,14 +122,13 @@ it('applies playoff multiplier correctly', function () {
     $this->homeTeam->update(['elo_rating' => 1500]);
     $this->awayTeam->update(['elo_rating' => 1500]);
 
-    // Playoff game (season_type = 3)
-    $playoffGame = Game::factory()->create([
+    // Playoff game
+    $playoffGame = Game::factory()->postseason()->create([
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
         'home_score' => 5,
         'away_score' => 3,
         'status' => 'STATUS_FINAL',
-        'season_type' => 3,
     ]);
 
     $playoffResult = $action->execute($playoffGame);
@@ -217,7 +214,6 @@ it('skips games that already have elo history', function () {
         'home_score' => 5,
         'away_score' => 3,
         'status' => 'STATUS_FINAL',
-        'season_type' => 2,
     ]);
 
     $action = new CalculateElo;
@@ -261,4 +257,285 @@ it('applies team regression to mean correctly', function () {
 
     $this->homeTeam->refresh();
     expect($this->homeTeam->elo_rating)->toBe($regressedElo);
+});
+
+// --- Pitcher ELO Tests ---
+
+it('calculates pitcher elo for starting pitchers', function () {
+    $homePitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->homeTeam->id,
+        'elo_rating' => 1500,
+    ]);
+    $awayPitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->awayTeam->id,
+        'elo_rating' => 1500,
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'status' => 'STATUS_FINAL',
+        'season' => 2025,
+        'game_date' => '2025-06-15',
+    ]);
+
+    // Create pitching stats so getStartingPitcher finds them
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $homePitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->homeTeam->id,
+        'innings_pitched' => 6.0,
+    ]);
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $awayPitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->awayTeam->id,
+        'innings_pitched' => 5.0,
+    ]);
+
+    $action = new CalculateElo;
+    $result = $action->execute($game);
+
+    // Winning pitcher gains, losing pitcher loses
+    expect($result['home_pitcher_change'])->toBeGreaterThan(0)
+        ->and($result['away_pitcher_change'])->toBeLessThan(0);
+
+    // Pitcher Elo history should exist
+    expect(PitcherEloRating::where('player_id', $homePitcher->id)->count())->toBe(1)
+        ->and(PitcherEloRating::where('player_id', $awayPitcher->id)->count())->toBe(1);
+});
+
+it('skips pitcher elo when pitcher is missing', function () {
+    // No pitching stats created — getStartingPitcher returns null
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    $action = new CalculateElo;
+    $result = $action->execute($game);
+
+    expect($result['home_pitcher_change'])->toBe(0)
+        ->and($result['away_pitcher_change'])->toBe(0);
+
+    expect(PitcherEloRating::count())->toBe(0);
+});
+
+it('uses separate k-factor for pitcher elo', function () {
+    $homePitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->homeTeam->id,
+        'elo_rating' => 1500,
+    ]);
+    $awayPitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->awayTeam->id,
+        'elo_rating' => 1500,
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'status' => 'STATUS_FINAL',
+        'season' => 2025,
+        'game_date' => '2025-06-15',
+    ]);
+
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $homePitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->homeTeam->id,
+        'innings_pitched' => 6.0,
+    ]);
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $awayPitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->awayTeam->id,
+        'innings_pitched' => 5.0,
+    ]);
+
+    $action = new CalculateElo;
+    $result = $action->execute($game);
+
+    // pitcher_k_factor (15) < base_k_factor (20), so pitcher change < team change
+    expect(abs($result['home_pitcher_change']))->toBeLessThan(abs($result['home_team_change']));
+});
+
+it('does not apply home field advantage to pitcher elo', function () {
+    // Both pitchers at same Elo
+    $homePitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->homeTeam->id,
+        'elo_rating' => 1500,
+    ]);
+    $awayPitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->awayTeam->id,
+        'elo_rating' => 1500,
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'status' => 'STATUS_FINAL',
+        'season' => 2025,
+        'game_date' => '2025-06-15',
+    ]);
+
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $homePitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->homeTeam->id,
+        'innings_pitched' => 6.0,
+    ]);
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $awayPitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->awayTeam->id,
+        'innings_pitched' => 5.0,
+    ]);
+
+    $action = new CalculateElo;
+    $result = $action->execute($game);
+
+    // With no HFA and equal ratings, changes should be symmetric (|home| == |away|)
+    expect(abs($result['home_pitcher_change']))->toBe(abs($result['away_pitcher_change']));
+});
+
+it('applies pitcher regression to mean correctly', function () {
+    $pitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->homeTeam->id,
+        'elo_rating' => 1600,
+    ]);
+
+    $action = new CalculateElo;
+    $regressedElo = $action->applyPitcherRegression($pitcher);
+
+    // pitcher_regression_factor is 0.40 (stronger than team's 0.33)
+    // regressedElo = 1600 + 0.40 * (1500 - 1600) = 1600 - 40 = 1560
+    expect($regressedElo)->toBe(1560);
+
+    $pitcher->refresh();
+    expect($pitcher->elo_rating)->toBe(1560);
+});
+
+it('saves pitcher elo history with team_id', function () {
+    $homePitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->homeTeam->id,
+        'elo_rating' => 1500,
+    ]);
+    $awayPitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->awayTeam->id,
+        'elo_rating' => 1500,
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'status' => 'STATUS_FINAL',
+        'season' => 2025,
+        'game_date' => '2025-06-15',
+    ]);
+
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $homePitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->homeTeam->id,
+        'innings_pitched' => 6.0,
+    ]);
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $awayPitcher->id,
+        'game_id' => $game->id,
+        'team_id' => $this->awayTeam->id,
+        'innings_pitched' => 5.0,
+    ]);
+
+    $action = new CalculateElo;
+    $action->execute($game);
+
+    $homeHistory = PitcherEloRating::where('player_id', $homePitcher->id)->first();
+    $awayHistory = PitcherEloRating::where('player_id', $awayPitcher->id)->first();
+
+    expect($homeHistory->team_id)->toBe($this->homeTeam->id)
+        ->and($awayHistory->team_id)->toBe($this->awayTeam->id);
+});
+
+it('tracks games_started count for pitchers per season', function () {
+    $homePitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->homeTeam->id,
+        'elo_rating' => 1500,
+    ]);
+    $awayPitcher = Player::factory()->pitcher()->create([
+        'team_id' => $this->awayTeam->id,
+        'elo_rating' => 1500,
+    ]);
+
+    // Game 1
+    $game1 = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'status' => 'STATUS_FINAL',
+        'season' => 2025,
+        'game_date' => '2025-06-15',
+    ]);
+
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $homePitcher->id,
+        'game_id' => $game1->id,
+        'team_id' => $this->homeTeam->id,
+        'innings_pitched' => 6.0,
+    ]);
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $awayPitcher->id,
+        'game_id' => $game1->id,
+        'team_id' => $this->awayTeam->id,
+        'innings_pitched' => 5.0,
+    ]);
+
+    $action = new CalculateElo;
+    $action->execute($game1);
+
+    // Game 2 (same season)
+    $game2 = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'home_score' => 3,
+        'away_score' => 5,
+        'status' => 'STATUS_FINAL',
+        'season' => 2025,
+        'game_date' => '2025-06-20',
+    ]);
+
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $homePitcher->id,
+        'game_id' => $game2->id,
+        'team_id' => $this->homeTeam->id,
+        'innings_pitched' => 7.0,
+    ]);
+    PlayerStat::factory()->pitching()->create([
+        'player_id' => $awayPitcher->id,
+        'game_id' => $game2->id,
+        'team_id' => $this->awayTeam->id,
+        'innings_pitched' => 6.0,
+    ]);
+
+    $action->execute($game2);
+
+    // games_started should increment per season
+    $histories = PitcherEloRating::where('player_id', $homePitcher->id)
+        ->orderBy('games_started')
+        ->get();
+
+    expect($histories)->toHaveCount(2)
+        ->and($histories[0]->games_started)->toBe(1)
+        ->and($histories[1]->games_started)->toBe(2);
 });

@@ -87,6 +87,25 @@
             'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
             'Noto Color Emoji';
     }
+
+    /* Grid background pattern utilities */
+    .bg-grid-gray-900\/\[0\.04\] {
+        background-image: linear-gradient(rgba(17, 24, 39, 0.04) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(17, 24, 39, 0.04) 1px, transparent 1px);
+        background-size: 32px 32px;
+    }
+
+    .bg-grid-white\/\[0\.02\] {
+        background-image: linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+        background-size: 32px 32px;
+    }
+
+    .bg-grid-white\/\[0\.05\] {
+        background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                          linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+        background-size: 32px 32px;
+    }
 }
 
 :root {

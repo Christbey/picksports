@@ -7,16 +7,16 @@ use Illuminate\Support\Facades\Http;
 
 class OddsApiService
 {
-    protected string $apiKey;
+    protected ?string $apiKey;
 
-    protected string $baseUrl;
+    protected ?string $baseUrl;
 
     protected int $cacheMinutes = 5;
 
     public function __construct()
     {
         $this->apiKey = config('services.odds_api.key');
-        $this->baseUrl = config('services.odds_api.base_url');
+        $this->baseUrl = config('services.odds_api.base_url', 'https://api.the-odds-api.com/v4');
     }
 
     public function getOdds(?string $eventId = null, string $sport = 'basketball_ncaab'): ?array
@@ -107,6 +107,13 @@ class OddsApiService
 
     protected function fetchFromApi(string $url, array $params = []): ?array
     {
+        if (! $this->apiKey) {
+            throw new \RuntimeException(
+                'Odds API key is not configured. Please set ODDS_API_KEY in your .env file. '.
+                'Get your free API key at https://the-odds-api.com/'
+            );
+        }
+
         $response = Http::timeout(30)
             ->connectTimeout(30)
             ->get($url, $params);
@@ -202,8 +209,15 @@ class OddsApiService
         string $oddsAway,
         array $homeNames,
         array $awayNames,
-        float $threshold = 70.0
+        float $threshold = 70.0,
+        ?string $sport = null
     ): bool {
+        // Step 1: Check manual mappings first
+        if ($sport && $this->checkManualMappings($oddsHome, $oddsAway, $homeNames, $awayNames, $sport)) {
+            return true;
+        }
+
+        // Step 2: Fall back to fuzzy matching
         $oddsHome = $this->normalizeTeamName($oddsHome);
         $oddsAway = $this->normalizeTeamName($oddsAway);
 
@@ -237,5 +251,66 @@ class OddsApiService
         }
 
         return false;
+    }
+
+    /**
+     * Check manual team mappings before fuzzy matching
+     */
+    protected function checkManualMappings(
+        string $oddsHome,
+        string $oddsAway,
+        array $homeNames,
+        array $awayNames,
+        string $sport
+    ): bool {
+        // Find manual mappings for both Odds API teams
+        $homeMappings = \App\Models\OddsApiTeamMapping::query()
+            ->where('sport', $sport)
+            ->where('odds_api_team_name', $oddsHome)
+            ->whereNotNull('espn_team_name')
+            ->pluck('espn_team_name')
+            ->toArray();
+
+        $awayMappings = \App\Models\OddsApiTeamMapping::query()
+            ->where('sport', $sport)
+            ->where('odds_api_team_name', $oddsAway)
+            ->whereNotNull('espn_team_name')
+            ->pluck('espn_team_name')
+            ->toArray();
+
+        // If no mappings exist for either team, skip manual matching
+        if (empty($homeMappings) || empty($awayMappings)) {
+            return false;
+        }
+
+        // Normalize all names for comparison
+        $normalizedHomeNames = array_map(fn ($name) => $this->normalizeTeamName($name), $homeNames);
+        $normalizedAwayNames = array_map(fn ($name) => $this->normalizeTeamName($name), $awayNames);
+        $normalizedHomeMappings = array_map(fn ($name) => $this->normalizeTeamName($name), $homeMappings);
+        $normalizedAwayMappings = array_map(fn ($name) => $this->normalizeTeamName($name), $awayMappings);
+
+        // Check if any home mapping matches any home name variation
+        $homeMatch = false;
+        foreach ($normalizedHomeMappings as $mapping) {
+            foreach ($normalizedHomeNames as $name) {
+                if ($mapping === $name || str_contains($mapping, $name) || str_contains($name, $mapping)) {
+                    $homeMatch = true;
+                    break 2;
+                }
+            }
+        }
+
+        // Check if any away mapping matches any away name variation
+        $awayMatch = false;
+        foreach ($normalizedAwayMappings as $mapping) {
+            foreach ($normalizedAwayNames as $name) {
+                if ($mapping === $name || str_contains($mapping, $name) || str_contains($name, $mapping)) {
+                    $awayMatch = true;
+                    break 2;
+                }
+            }
+        }
+
+        return $homeMatch && $awayMatch;
     }
 }

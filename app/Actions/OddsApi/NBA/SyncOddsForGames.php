@@ -7,6 +7,8 @@ use App\Services\OddsApi\OddsApiService;
 
 class SyncOddsForGames
 {
+    protected string $sport = 'basketball_nba';
+
     public function __construct(
         protected OddsApiService $oddsApiService
     ) {}
@@ -74,7 +76,8 @@ class SyncOddsForGames
                 $event['away_team'],
                 $homeNames,
                 $awayNames,
-                80.0
+                80.0,
+                $this->sport
             )) {
                 return $game;
             }

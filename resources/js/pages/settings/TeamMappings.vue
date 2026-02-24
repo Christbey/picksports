@@ -37,6 +37,12 @@ type Props = {
     };
     espnTeams: Team[];
     currentSport: string;
+    currentFilter: string;
+    stats: {
+        total: number;
+        mapped: number;
+        unmapped: number;
+    };
     sports: Sport[];
 };
 
@@ -65,12 +71,13 @@ const filteredMappings = computed(() => {
     );
 });
 
-const unmappedCount = computed(() => {
-    return props.mappings.data.filter((m) => !m.espn_team_name).length;
-});
-
 const currentSportLabel = computed(() => {
     return props.sports.find((s) => s.key === props.currentSport)?.label ?? '';
+});
+
+const mappingPercentage = computed(() => {
+    if (props.stats.total === 0) return 0;
+    return Math.round((props.stats.mapped / props.stats.total) * 100);
 });
 
 const startEdit = (mapping: Mapping) => {
@@ -106,7 +113,11 @@ const removeMapping = (mappingId: number) => {
 };
 
 const changeSport = (sportKey: string) => {
-    router.visit(`/settings/team-mappings?sport=${sportKey}`);
+    router.visit(`/settings/team-mappings?sport=${sportKey}&filter=${props.currentFilter}`);
+};
+
+const changeFilter = (filter: string) => {
+    router.visit(`/settings/team-mappings?sport=${props.currentSport}&filter=${filter}`);
 };
 </script>
 
@@ -121,21 +132,81 @@ const changeSport = (sportKey: string) => {
                 <Heading
                     variant="small"
                     :title="`${currentSportLabel} Odds API Team Mappings`"
-                    :description="`Map ESPN team names to Odds API team names for accurate odds matching. ${unmappedCount} unmapped teams.`"
+                    :description="`Verification view for team mappings between ESPN and Odds API. ${stats.mapped} of ${stats.total} teams mapped (${mappingPercentage}%).`"
                 />
 
-                <div class="flex flex-wrap gap-2">
-                    <Button
-                        v-for="sport in sports"
-                        :key="sport.key"
-                        :variant="
-                            sport.key === currentSport ? 'default' : 'outline'
-                        "
-                        size="sm"
-                        @click="changeSport(sport.key)"
-                    >
-                        {{ sport.label }}
-                    </Button>
+                <!-- Statistics -->
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="rounded-lg border p-4">
+                        <div class="text-2xl font-bold">{{ stats.total }}</div>
+                        <div class="text-sm text-muted-foreground">Total Teams</div>
+                    </div>
+                    <div class="rounded-lg border p-4 bg-green-50 dark:bg-green-950">
+                        <div class="text-2xl font-bold text-green-700 dark:text-green-300">
+                            {{ stats.mapped }}
+                        </div>
+                        <div class="text-sm text-green-600 dark:text-green-400">
+                            Mapped ({{ mappingPercentage }}%)
+                        </div>
+                    </div>
+                    <div class="rounded-lg border p-4 bg-yellow-50 dark:bg-yellow-950">
+                        <div class="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
+                            {{ stats.unmapped }}
+                        </div>
+                        <div class="text-sm text-yellow-600 dark:text-yellow-400">
+                            Unmapped
+                        </div>
+                    </div>
+                    <div class="rounded-lg border p-4">
+                        <div class="text-2xl font-bold">{{ mappings.total }}</div>
+                        <div class="text-sm text-muted-foreground">Showing</div>
+                    </div>
+                </div>
+
+                <!-- Sport Selector -->
+                <div>
+                    <div class="text-sm font-medium mb-2">Sport</div>
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-for="sport in sports"
+                            :key="sport.key"
+                            :variant="
+                                sport.key === currentSport ? 'default' : 'outline'
+                            "
+                            size="sm"
+                            @click="changeSport(sport.key)"
+                        >
+                            {{ sport.label }}
+                        </Button>
+                    </div>
+                </div>
+
+                <!-- Filter Selector -->
+                <div>
+                    <div class="text-sm font-medium mb-2">Filter</div>
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            :variant="currentFilter === 'all' ? 'default' : 'outline'"
+                            size="sm"
+                            @click="changeFilter('all')"
+                        >
+                            All ({{ stats.total }})
+                        </Button>
+                        <Button
+                            :variant="currentFilter === 'mapped' ? 'default' : 'outline'"
+                            size="sm"
+                            @click="changeFilter('mapped')"
+                        >
+                            Mapped ({{ stats.mapped }})
+                        </Button>
+                        <Button
+                            :variant="currentFilter === 'unmapped' ? 'default' : 'outline'"
+                            size="sm"
+                            @click="changeFilter('unmapped')"
+                        >
+                            Unmapped ({{ stats.unmapped }})
+                        </Button>
+                    </div>
                 </div>
 
                 <div class="grid gap-2">
@@ -148,19 +219,48 @@ const changeSport = (sportKey: string) => {
                     />
                 </div>
 
-                <div class="space-y-2">
+                <!-- Empty state -->
+                <div
+                    v-if="stats.total === 0"
+                    class="rounded-lg border border-dashed p-8 text-center"
+                >
+                    <div class="text-lg font-medium mb-2">No teams found</div>
+                    <div class="text-sm text-muted-foreground mb-4">
+                        Run the populate command to fetch teams from Odds API
+                    </div>
+                    <code class="text-sm bg-muted px-3 py-1 rounded">
+                        php artisan odds:populate-team-mappings {{ currentSport }}
+                    </code>
+                </div>
+
+                <div v-else class="space-y-2">
                     <div
                         v-for="mapping in filteredMappings"
                         :key="mapping.id"
                         class="rounded-lg border p-4"
                         :class="{
-                            'bg-muted': !mapping.espn_team_name,
+                            'bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-900': mapping.espn_team_name,
+                            'bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900': !mapping.espn_team_name,
                         }"
                     >
                         <div class="flex items-start justify-between gap-4">
                             <div class="flex-1 space-y-2">
-                                <div class="font-medium">
-                                    {{ mapping.odds_api_team_name }}
+                                <div class="flex items-center gap-2">
+                                    <div class="font-medium">
+                                        {{ mapping.odds_api_team_name }}
+                                    </div>
+                                    <span
+                                        v-if="mapping.espn_team_name"
+                                        class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300"
+                                    >
+                                        Mapped
+                                    </span>
+                                    <span
+                                        v-else
+                                        class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300"
+                                    >
+                                        Unmapped
+                                    </span>
                                 </div>
                                 <div
                                     v-if="editingMappingId === mapping.id"
@@ -205,13 +305,17 @@ const changeSport = (sportKey: string) => {
                                 </div>
                                 <div
                                     v-else
-                                    class="text-sm text-muted-foreground"
+                                    class="text-sm"
+                                    :class="{
+                                        'text-green-700 dark:text-green-300': mapping.espn_team_name,
+                                        'text-muted-foreground': !mapping.espn_team_name,
+                                    }"
                                 >
                                     <span v-if="mapping.espn_team_name"
-                                        >→ {{ mapping.espn_team_name }}</span
+                                        >→ ESPN: {{ mapping.espn_team_name }}</span
                                     >
                                     <span v-else class="italic"
-                                        >Not mapped</span
+                                        >No ESPN team mapped</span
                                     >
                                 </div>
                             </div>
@@ -254,7 +358,7 @@ const changeSport = (sportKey: string) => {
                             size="sm"
                             @click="
                                 router.visit(
-                                    `/settings/team-mappings?sport=${currentSport}&page=${mappings.current_page - 1}`
+                                    `/settings/team-mappings?sport=${currentSport}&filter=${currentFilter}&page=${mappings.current_page - 1}`
                                 )
                             "
                         >
@@ -268,7 +372,7 @@ const changeSport = (sportKey: string) => {
                             size="sm"
                             @click="
                                 router.visit(
-                                    `/settings/team-mappings?sport=${currentSport}&page=${mappings.current_page + 1}`
+                                    `/settings/team-mappings?sport=${currentSport}&filter=${currentFilter}&page=${mappings.current_page + 1}`
                                 )
                             "
                         >

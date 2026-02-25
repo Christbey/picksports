@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BettingRecommendationsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PerformanceController;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,15 @@ Route::get('/', function () {
 })->name('home');
 
 Route::get('performance', PerformanceController::class)->name('performance');
+
+// Player Props - Betting Recommendations by Sport
+Route::get('nba-player-props', [BettingRecommendationsController::class, 'nba'])->name('nba.player-props');
+Route::get('mlb-player-props', [BettingRecommendationsController::class, 'mlb'])->name('mlb.player-props');
+Route::get('nfl-player-props', [BettingRecommendationsController::class, 'nfl'])->name('nfl.player-props');
+Route::get('cbb-player-props', [BettingRecommendationsController::class, 'cbb'])->name('cbb.player-props');
+
+// Legacy route - redirect to NBA
+Route::get('betting-recommendations', fn () => redirect()->route('nba.player-props'));
 
 Route::get('terms', function () {
     return Inertia::render('Legal/Terms');
@@ -144,7 +154,9 @@ Route::get('nfl-team-metrics', function () {
 
 Route::get('/nba/teams/{team}', \App\Http\Controllers\NBA\TeamController::class)->middleware(['auth', 'verified']);
 
-Route::get('/nba/players/{player}', \App\Http\Controllers\NBA\PlayerController::class)->middleware(['auth', 'verified']);
+Route::get('/nba/players/{player}', \App\Http\Controllers\NBA\PlayerController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('nba.player.show');
 
 Route::get('/nba/games/{game}', \App\Http\Controllers\NBA\GameController::class)->middleware(['auth', 'verified']);
 

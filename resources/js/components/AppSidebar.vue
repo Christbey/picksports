@@ -56,6 +56,10 @@ const sportNavItems: NavItem[] = [
                 title: 'Team Metrics',
                 href: nflTeamMetrics(),
             },
+            {
+                title: 'Player Props',
+                href: '/nfl-player-props',
+            },
         ],
     },
     {
@@ -74,6 +78,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Player Stats',
                 href: nbaPlayerStats(),
+            },
+            {
+                title: 'Player Props',
+                href: '/nba-player-props',
             },
         ],
     },
@@ -105,6 +113,10 @@ const sportNavItems: NavItem[] = [
                 title: 'Team Metrics',
                 href: mlbTeamMetrics(),
             },
+            {
+                title: 'Player Props',
+                href: '/mlb-player-props',
+            },
         ],
     },
     {
@@ -134,6 +146,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Player Stats',
                 href: cbbPlayerStats(),
+            },
+            {
+                title: 'Player Props',
+                href: '/cbb-player-props',
             },
         ],
     },

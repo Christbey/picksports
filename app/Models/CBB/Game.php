@@ -85,4 +85,9 @@ class Game extends Model
     {
         return $this->hasOne(Prediction::class, 'game_id');
     }
+
+    public function playerProps(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(\App\Models\PlayerProp::class, 'gameable');
+    }
 }

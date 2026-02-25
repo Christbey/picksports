@@ -117,6 +117,14 @@ Schedule::command('nba:sync-odds')
     ->withoutOverlapping()
     ->runInBackground();
 
+// 9. Sync player props (multiple times per day - props released closer to game time)
+Schedule::command('nba:sync-player-props')
+    ->twiceDaily(14, 18)
+    ->when($nbaInSeason)
+    ->name('NBA: Sync Player Props')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | CBB Automated Pipeline (Nov - Apr)
@@ -199,6 +207,14 @@ Schedule::command('cbb:sync-odds')
     ->between('08:00', '23:00')
     ->when($cbbInSeason)
     ->name('CBB: Sync Odds')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 7a. Sync player props (multiple times per day - props released closer to game time)
+Schedule::command('cbb:sync-player-props')
+    ->twiceDaily(12, 17)
+    ->when($cbbInSeason)
+    ->name('CBB: Sync Player Props')
     ->withoutOverlapping()
     ->runInBackground();
 
@@ -373,6 +389,14 @@ Schedule::command('mlb:sync-odds')
     ->withoutOverlapping()
     ->runInBackground();
 
+// 9. Sync player props (multiple times per day - props released closer to game time)
+Schedule::command('mlb:sync-player-props')
+    ->twiceDaily(11, 16)
+    ->when($mlbInSeason)
+    ->name('MLB: Sync Player Props')
+    ->withoutOverlapping()
+    ->runInBackground();
+
 /*
 |--------------------------------------------------------------------------
 | WNBA Automated Pipeline (Apr - Oct)
@@ -515,6 +539,14 @@ Schedule::command('nfl:sync-odds')
     ->between('08:00', '23:00')
     ->when($nflInSeason)
     ->name('NFL: Sync Odds')
+    ->withoutOverlapping()
+    ->runInBackground();
+
+// 9. Sync player props (multiple times per day - props released closer to game time)
+Schedule::command('nfl:sync-player-props')
+    ->twiceDaily(10, 15)
+    ->when($nflInSeason)
+    ->name('NFL: Sync Player Props')
     ->withoutOverlapping()
     ->runInBackground();
 

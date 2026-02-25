@@ -68,6 +68,114 @@ class OddsApiService
         return $this->getOdds($eventId, 'basketball_wnba');
     }
 
+    /**
+     * Get player props odds for a specific event
+     *
+     * Available markets:
+     * - player_points, player_rebounds, player_assists
+     * - player_threes, player_blocks, player_steals
+     * - player_points_rebounds_assists, player_points_rebounds, player_points_assists
+     * - player_rebounds_assists, player_blocks_steals
+     * - player_turnovers, player_first_basket
+     *
+     * @param  string|null  $eventId  Specific event ID (optional)
+     * @param  string  $sport  Sport key (e.g., 'basketball_nba', 'basketball_ncaab')
+     * @param  array  $markets  Array of player prop markets to fetch (defaults to common props)
+     * @param  string  $bookmaker  Bookmaker to fetch from (defaults to 'draftkings')
+     */
+    public function getPlayerProps(
+        string $eventId,
+        string $sport = 'basketball_nba',
+        array $markets = ['player_points', 'player_rebounds', 'player_assists'],
+        string $bookmaker = 'draftkings'
+    ): ?array {
+        // Player props require event-specific endpoint
+        $url = $this->baseUrl."/sports/{$sport}/events/{$eventId}/odds";
+
+        $params = [
+            'apiKey' => $this->apiKey,
+            'regions' => 'us',
+            'markets' => implode(',', $markets),
+            'bookmakers' => $bookmaker,
+            'oddsFormat' => 'american',
+        ];
+
+        return $this->get($url, $params);
+    }
+
+    /**
+     * Get all available player prop markets for NBA
+     */
+    public function getNbaPlayerProps(string $eventId, ?array $markets = null): ?array
+    {
+        $defaultMarkets = [
+            'player_points',
+            'player_rebounds',
+            'player_assists',
+            'player_threes',
+            'player_blocks',
+            'player_steals',
+            'player_points_rebounds_assists',
+        ];
+
+        return $this->getPlayerProps(
+            eventId: $eventId,
+            sport: 'basketball_nba',
+            markets: $markets ?? $defaultMarkets
+        );
+    }
+
+    /**
+     * Get player props for MLB
+     */
+    public function getMlbPlayerProps(string $eventId, ?array $markets = null): ?array
+    {
+        $defaultMarkets = [
+            'batter_home_runs',
+            'batter_hits',
+            'batter_total_bases',
+            'batter_rbis',
+            'batter_runs_scored',
+            'batter_hits_runs_rbis',
+            'pitcher_strikeouts',
+            'pitcher_hits_allowed',
+            'pitcher_walks',
+            'pitcher_earned_runs',
+        ];
+
+        return $this->getPlayerProps(
+            eventId: $eventId,
+            sport: 'baseball_mlb',
+            markets: $markets ?? $defaultMarkets
+        );
+    }
+
+    /**
+     * Get player props for NFL
+     */
+    public function getNflPlayerProps(string $eventId, ?array $markets = null): ?array
+    {
+        $defaultMarkets = [
+            'player_pass_tds',
+            'player_pass_yds',
+            'player_pass_completions',
+            'player_pass_attempts',
+            'player_pass_interceptions',
+            'player_rush_yds',
+            'player_rush_attempts',
+            'player_receptions',
+            'player_reception_yds',
+            'player_anytime_td',
+            'player_1st_td',
+        ];
+
+        return $this->getPlayerProps(
+            eventId: $eventId,
+            sport: 'americanfootball_nfl',
+            markets: $markets ?? $defaultMarkets
+        );
+    }
+
     public function getEvents(): ?array
     {
         $url = $this->baseUrl.'/sports/basketball_ncaab/events/';

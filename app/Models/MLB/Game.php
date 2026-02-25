@@ -15,6 +15,11 @@ class Game extends Model
 
     protected $table = 'mlb_games';
 
+    public function playerProps(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    {
+        return $this->morphMany(\App\Models\PlayerProp::class, 'gameable');
+    }
+
     protected static function newFactory(): MlbGameFactory
     {
         return MlbGameFactory::new();

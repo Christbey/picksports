@@ -22,6 +22,10 @@ class PlayerProp extends Model
         'under_price',
         'raw_data',
         'fetched_at',
+        'actual_value',
+        'hit_over',
+        'error',
+        'graded_at',
     ];
 
     protected function casts(): array
@@ -32,6 +36,10 @@ class PlayerProp extends Model
             'under_price' => 'integer',
             'raw_data' => 'array',
             'fetched_at' => 'datetime',
+            'actual_value' => 'decimal:2',
+            'hit_over' => 'boolean',
+            'error' => 'decimal:2',
+            'graded_at' => 'datetime',
         ];
     }
 

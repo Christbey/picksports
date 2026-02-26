@@ -31,7 +31,7 @@ interface Tier {
 
 const props = defineProps<{
     tiers: Tier[];
-    currentTier: string;
+    currentTier: string | null;
 }>();
 
 const selectedBillingPeriod = ref<'monthly' | 'yearly'>('monthly');

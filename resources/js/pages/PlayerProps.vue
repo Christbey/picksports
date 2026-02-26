@@ -29,7 +29,12 @@ type Recommendation = {
         season_avg: number;
         recent_avg: number;
         last5_avg: number;
+        times_covered_last5: { hits: number; games: number } | null;
+        times_covered_season: { hits: number; games: number } | null;
+        vs_opponent_avg: number | null;
+        consistency: { std_dev: number; level: string; min: number; max: number } | null;
     };
+    streak: { count: number; type: string; status: string } | null;
     edge: number;
     reasoning: string[];
     game: {
@@ -114,9 +119,9 @@ const getConfidenceColor = (confidence: number) => {
 };
 
 const getConfidenceBadge = (confidence: number) => {
-    if (confidence >= 80) return 'destructive';
-    if (confidence >= 70) return 'default';
-    return 'secondary';
+    if (confidence >= 80) return 'default';
+    if (confidence >= 70) return 'secondary';
+    return 'outline';
 };
 
 const formatOdds = (odds: number) => {
@@ -229,29 +234,35 @@ const getInitials = (name: string) => {
                 <Card v-if="rec && rec.player" class="hover:shadow-lg transition-shadow">
                     <CardHeader>
                         <div class="flex items-start justify-between gap-3">
-                            <div class="flex items-start gap-3 flex-1">
+                            <div class="flex items-start gap-3 flex-1 min-w-0">
                                 <Link :href="rec.player?.url || '#'" class="flex-shrink-0">
                                     <Avatar class="h-12 w-12 border-2 border-border hover:border-primary transition-colors">
-                                        <AvatarImage :src="rec.player?.headshot" :alt="rec.player?.name" />
+                                        <AvatarImage :src="rec.player?.headshot" :alt="rec.player?.name" class="object-cover" />
                                         <AvatarFallback>{{ getInitials(rec.player?.name || 'Unknown') }}</AvatarFallback>
                                     </Avatar>
                                 </Link>
                                 <div class="space-y-1 flex-1 min-w-0">
                                     <Link :href="rec.player?.url || '#'" class="hover:underline">
-                                        <CardTitle class="text-lg">{{ rec.player?.name }}</CardTitle>
+                                        <CardTitle class="text-lg truncate">{{ rec.player?.name }}</CardTitle>
                                     </Link>
-                                    <CardDescription v-if="rec.player?.position && rec.player?.team">
-                                        {{ rec.player.position }} • {{ rec.player.team }}
-                                    </CardDescription>
-                                    <CardDescription class="text-xs">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <CardDescription v-if="rec.player?.position && rec.player?.team" class="shrink-0">
+                                            {{ rec.player.position }} • {{ rec.player.team }}
+                                        </CardDescription>
+                                        <Badge
+                                            v-if="rec.streak && rec.streak.count >= 2"
+                                            :variant="rec.streak.status === 'hot' ? 'default' : 'secondary'"
+                                            class="text-xs shrink-0"
+                                        >
+                                            {{ rec.streak.status === 'hot' ? '🔥' : '❄️' }} {{ rec.streak.count }}
+                                        </Badge>
+                                    </div>
+                                    <CardDescription class="text-xs truncate">
                                         {{ rec.game?.away_team }} @ {{ rec.game?.home_team }}
                                     </CardDescription>
-                                    <p class="text-xs text-muted-foreground">
-                                        {{ formatGameTime(rec.game?.date || '', rec.game?.time || '') }}
-                                    </p>
                                 </div>
                             </div>
-                            <Badge :variant="getConfidenceBadge(rec.confidence)" class="flex-shrink-0">
+                            <Badge :variant="getConfidenceBadge(rec.confidence)" class="flex-shrink-0 h-fit">
                                 {{ rec.confidence }}%
                             </Badge>
                         </div>
@@ -310,6 +321,47 @@ const getInitials = (name: string) => {
                                     {{ rec.stats?.last5_avg ?? 0 }}
                                 </span>
                             </div>
+                            <div v-if="rec.stats?.vs_opponent_avg" class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">vs Opponent</span>
+                                <span
+                                    :class="[
+                                        'font-medium',
+                                        rec.stats.vs_opponent_avg > (rec.stats?.season_avg ?? 0)
+                                            ? 'text-green-600 dark:text-green-400'
+                                            : 'text-red-600 dark:text-red-400',
+                                    ]"
+                                >
+                                    {{ rec.stats.vs_opponent_avg }}
+                                </span>
+                            </div>
+                            <div v-if="rec.stats?.times_covered_last5" class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">
+                                    Hit {{ rec.recommendation }} (L5)
+                                </span>
+                                <span class="font-medium">
+                                    {{ rec.recommendation === 'Under'
+                                        ? (rec.stats.times_covered_last5.games - rec.stats.times_covered_last5.hits)
+                                        : rec.stats.times_covered_last5.hits
+                                    }}/{{ rec.stats.times_covered_last5.games }}
+                                </span>
+                            </div>
+                            <div v-if="rec.stats?.times_covered_season" class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">
+                                    Hit {{ rec.recommendation }} (Season)
+                                </span>
+                                <span class="font-medium">
+                                    {{ rec.recommendation === 'Under'
+                                        ? (rec.stats.times_covered_season.games - rec.stats.times_covered_season.hits)
+                                        : rec.stats.times_covered_season.hits
+                                    }}/{{ rec.stats.times_covered_season.games }}
+                                </span>
+                            </div>
+                            <div v-if="rec.stats?.consistency" class="flex justify-between text-sm">
+                                <span class="text-muted-foreground">Consistency</span>
+                                <span class="font-medium text-xs">
+                                    {{ rec.stats.consistency.level }} (±{{ rec.stats.consistency.std_dev }})
+                                </span>
+                            </div>
                             <div class="flex justify-between text-sm border-t pt-2">
                                 <span class="text-muted-foreground">Edge vs Line</span>
                                 <span
@@ -351,10 +403,6 @@ const getInitials = (name: string) => {
                             </ul>
                         </div>
 
-                        <!-- Bookmaker -->
-                        <div class="text-xs text-muted-foreground capitalize border-t pt-2">
-                            via {{ rec.bookmaker }}
-                        </div>
                     </CardContent>
                 </Card>
                 </template>

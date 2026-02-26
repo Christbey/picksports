@@ -29,8 +29,15 @@ interface PaginatedUsers {
     total: number;
 }
 
+interface Tier {
+    id: number;
+    name: string;
+    slug: string;
+}
+
 const props = defineProps<{
     users: PaginatedUsers;
+    tiers: Tier[];
     filters: {
         search: string | null;
     };
@@ -50,6 +57,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 const search = ref(props.filters.search || '');
 const isSyncing = ref(false);
 const syncingUserId = ref<number | null>(null);
+const assigningTierUserId = ref<number | null>(null);
 
 watch(search, (value) => {
     router.get('/admin/subscriptions', { search: value }, {
@@ -105,6 +113,30 @@ function formatDate(dateString: string | null): string {
         day: 'numeric',
     });
 }
+
+function assignTier(userId: number, tierSlug: string) {
+    if (!tierSlug) return;
+
+    if (!confirm(`Are you sure you want to assign ${tierSlug} tier to this user?`)) {
+        return;
+    }
+
+    assigningTierUserId.value = userId;
+    router.post(`/admin/subscriptions/${userId}/assign-tier`, {
+        tier_slug: tierSlug,
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            console.log('Tier assigned successfully');
+        },
+        onError: (errors) => {
+            console.error('Error assigning tier:', errors);
+        },
+        onFinish: () => {
+            assigningTierUserId.value = null;
+        },
+    });
+}
 </script>
 
 <template>
@@ -142,7 +174,8 @@ function formatDate(dateString: string | null): string {
                     <thead>
                         <tr class="border-b border-sidebar-border bg-sidebar-accent text-left text-sm">
                             <th class="p-4 font-semibold">User</th>
-                            <th class="p-4 font-semibold">Tier</th>
+                            <th class="p-4 font-semibold">Current Tier</th>
+                            <th class="p-4 font-semibold">Assign Tier</th>
                             <th class="p-4 font-semibold">Status</th>
                             <th class="p-4 font-semibold">Stripe ID</th>
                             <th class="p-4 font-semibold">Created</th>
@@ -163,6 +196,28 @@ function formatDate(dateString: string | null): string {
                                 <span class="inline-block rounded-full bg-sidebar-accent px-3 py-1 text-sm font-medium capitalize">
                                     {{ user.tier }}
                                 </span>
+                            </td>
+                            <td class="p-4">
+                                <select
+                                    :value="user.tier.toLowerCase()"
+                                    @change="(e) => {
+                                        const target = e.target as HTMLSelectElement;
+                                        if (target.value && target.value !== user.tier.toLowerCase()) {
+                                            assignTier(user.id, target.value);
+                                        }
+                                    }"
+                                    :disabled="assigningTierUserId === user.id"
+                                    class="rounded-lg border border-sidebar-border bg-white px-3 py-1 text-sm dark:bg-sidebar focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <option value="">Select tier...</option>
+                                    <option
+                                        v-for="tier in tiers"
+                                        :key="tier.id"
+                                        :value="tier.slug"
+                                    >
+                                        {{ tier.name }}
+                                    </option>
+                                </select>
                             </td>
                             <td class="p-4">
                                 <span

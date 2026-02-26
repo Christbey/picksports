@@ -195,6 +195,7 @@ Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->grou
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/subscriptions', [\App\Http\Controllers\Admin\SubscriptionController::class, 'index'])->name('subscriptions');
     Route::post('/subscriptions/{user}/sync', [\App\Http\Controllers\Admin\SubscriptionController::class, 'sync'])->name('subscriptions.sync');
+    Route::post('/subscriptions/{user}/assign-tier', [\App\Http\Controllers\Admin\SubscriptionController::class, 'assignTier'])->name('subscriptions.assign-tier');
     Route::post('/subscriptions/sync-all', [\App\Http\Controllers\Admin\SubscriptionController::class, 'syncAll'])->name('subscriptions.sync-all');
 
     Route::resource('tiers', \App\Http\Controllers\Admin\TierController::class)->except(['show']);

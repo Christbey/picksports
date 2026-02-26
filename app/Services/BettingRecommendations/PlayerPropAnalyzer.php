@@ -78,6 +78,10 @@ class PlayerPropAnalyzer
         $vsOpponentAvg = $this->calculateVsOpponentAverage($player->id, $opponentId, $statField, $sportConfig['player_stat_model'], $sportConfig['game_model']);
         $homeAwayAvg = $this->calculateHomeAwayAverage($player->id, $isHome, $statField, $sportConfig['player_stat_model'], $sportConfig['game_model']);
         $hitRate = $this->calculateHitRateVsOpponent($player->id, $opponentId, $statField, $prop->line, $sportConfig['player_stat_model'], $sportConfig['game_model']);
+        $timesCoveredLast5 = $this->calculateTimesCovered($player->id, $statField, $prop->line, 5, $sportConfig['player_stat_model']);
+        $timesCoveredSeason = $this->calculateTimesCovered($player->id, $statField, $prop->line, 82, $sportConfig['player_stat_model']);
+        $consistency = $this->calculateConsistency($player->id, $statField, 10, $sportConfig['player_stat_model']);
+        $streak = $this->calculateStreak($player->id, $statField, $prop->line, $sportConfig['player_stat_model']);
 
         if ($seasonAvg === null) {
             return null;
@@ -114,6 +118,10 @@ class PlayerPropAnalyzer
             'vs_opponent_avg' => $vsOpponentAvg ? round($vsOpponentAvg, 1) : null,
             'home_away_avg' => $homeAwayAvg ? round($homeAwayAvg, 1) : null,
             'hit_rate_vs_opponent' => $hitRate,
+            'times_covered_last5' => $timesCoveredLast5,
+            'times_covered_season' => $timesCoveredSeason,
+            'consistency' => $consistency,
+            'streak' => $streak,
             'edge' => $analysis['edge'],
             'reasoning' => $analysis['reasoning'],
         ];
@@ -381,6 +389,130 @@ class PlayerPropAnalyzer
         return [
             'hits' => $hits,
             'games' => $stats->count(),
+        ];
+    }
+
+    /**
+     * Calculate how many times player has covered the line in recent games
+     */
+    protected function calculateTimesCovered(
+        int $playerId,
+        string $statField,
+        float $line,
+        int $games,
+        string $playerStatModel
+    ): ?array {
+        $stats = $playerStatModel::where('player_id', $playerId)
+            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
+            ->orderBy('id', 'desc')
+            ->take($games)
+            ->get();
+
+        if ($stats->isEmpty()) {
+            return null;
+        }
+
+        $hits = $stats->filter(fn ($stat) => $stat->{$statField} > $line)->count();
+
+        return [
+            'hits' => $hits,
+            'games' => $stats->count(),
+        ];
+    }
+
+    /**
+     * Calculate consistency (standard deviation) over recent games
+     */
+    protected function calculateConsistency(
+        int $playerId,
+        string $statField,
+        int $games,
+        string $playerStatModel
+    ): ?array {
+        $stats = $playerStatModel::where('player_id', $playerId)
+            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
+            ->orderBy('id', 'desc')
+            ->take($games)
+            ->get();
+
+        if ($stats->count() < 3) {
+            return null;
+        }
+
+        $values = $stats->pluck($statField)->toArray();
+        $mean = array_sum($values) / count($values);
+
+        // Calculate standard deviation
+        $variance = array_sum(array_map(fn ($x) => pow($x - $mean, 2), $values)) / count($values);
+        $stdDev = sqrt($variance);
+
+        // Determine consistency level
+        $consistency = match (true) {
+            $stdDev <= 2.0 => 'Very Consistent',
+            $stdDev <= 4.0 => 'Consistent',
+            $stdDev <= 6.0 => 'Moderate',
+            $stdDev <= 8.0 => 'Volatile',
+            default => 'Very Volatile',
+        };
+
+        return [
+            'std_dev' => round($stdDev, 1),
+            'level' => $consistency,
+            'min' => min($values),
+            'max' => max($values),
+        ];
+    }
+
+    /**
+     * Calculate recent streak (consecutive overs or unders)
+     */
+    protected function calculateStreak(
+        int $playerId,
+        string $statField,
+        float $line,
+        string $playerStatModel
+    ): ?array {
+        $stats = $playerStatModel::where('player_id', $playerId)
+            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
+            ->orderBy('id', 'desc')
+            ->take(10)
+            ->get();
+
+        if ($stats->count() < 2) {
+            return null;
+        }
+
+        $streakCount = 0;
+        $streakType = null;
+        $lastResult = null;
+
+        foreach ($stats as $stat) {
+            $isOver = $stat->{$statField} > $line;
+            $currentResult = $isOver ? 'over' : 'under';
+
+            if ($lastResult === null) {
+                // First game in the sequence
+                $lastResult = $currentResult;
+                $streakType = $currentResult;
+                $streakCount = 1;
+            } elseif ($currentResult === $lastResult) {
+                // Streak continues
+                $streakCount++;
+            } else {
+                // Streak ends
+                break;
+            }
+        }
+
+        // Only return if there's a meaningful streak (2+)
+        if ($streakCount < 2) {
+            return null;
+        }
+
+        return [
+            'count' => $streakCount,
+            'type' => $streakType, // 'over' or 'under'
+            'status' => $streakType === 'over' ? 'hot' : 'cold',
         ];
     }
 

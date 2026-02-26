@@ -31,6 +31,22 @@ interface Player {
     } | null
 }
 
+interface PlayerProp {
+    id: number
+    market: string
+    line: number
+    over_price: number
+    under_price: number
+    bookmaker: string
+    game: {
+        id: number
+        home_team: string
+        away_team: string
+        date: string
+        time: string
+    }
+}
+
 interface PlayerStat {
     id: number
     game_id: number
@@ -64,6 +80,7 @@ interface PlayerStat {
 
 const props = defineProps<{
     player: Player
+    playerProps?: PlayerProp[]
 }>()
 
 const gameLogs = ref<PlayerStat[]>([])
@@ -89,6 +106,10 @@ const formatDate = (dateString: string | null): string => {
 const pct = (made: number | null, attempted: number | null): string => {
     if (!made || !attempted || attempted === 0) return '-'
     return (made / attempted * 100).toFixed(1)
+}
+
+const formatOdds = (odds: number): string => {
+    return odds > 0 ? `+${odds}` : odds.toString()
 }
 
 const avg = (values: (number | null)[]): string => {
@@ -187,6 +208,42 @@ onMounted(async () => {
                     </div>
                 </div>
             </div>
+
+            <!-- Player Props -->
+            <Card v-if="playerProps && playerProps.length > 0" class="mb-4">
+                <CardHeader>
+                    <CardTitle>Upcoming Props</CardTitle>
+                </CardHeader>
+                <CardContent>
+                    <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                        <div
+                            v-for="prop in playerProps"
+                            :key="prop.id"
+                            class="border rounded-lg p-4 space-y-2"
+                        >
+                            <div class="flex items-center justify-between">
+                                <span class="font-semibold text-sm">{{ prop.market }}</span>
+                                <span class="text-xs text-muted-foreground">
+                                    {{ prop.game.away_team }} @ {{ prop.game.home_team }}
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-center py-2">
+                                <span class="text-2xl font-bold">{{ prop.line }}</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                <div class="text-center p-2 bg-muted rounded">
+                                    <div class="text-xs text-muted-foreground">Over</div>
+                                    <div class="font-mono font-semibold">{{ formatOdds(prop.over_price) }}</div>
+                                </div>
+                                <div class="text-center p-2 bg-muted rounded">
+                                    <div class="text-xs text-muted-foreground">Under</div>
+                                    <div class="font-mono font-semibold">{{ formatOdds(prop.under_price) }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
 
             <!-- Season Averages -->
             <div v-if="loading" class="space-y-4">

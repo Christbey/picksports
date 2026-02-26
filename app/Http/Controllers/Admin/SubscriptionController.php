@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\SubscriptionTier;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -42,8 +43,11 @@ class SubscriptionController extends Controller
             ];
         });
 
+        $tiers = SubscriptionTier::orderBy('price_monthly')->get(['id', 'name', 'slug']);
+
         return Inertia::render('Admin/Subscriptions', [
             'users' => $users,
+            'tiers' => $tiers,
             'filters' => [
                 'search' => $search,
             ],
@@ -102,5 +106,27 @@ class SubscriptionController extends Controller
         }
 
         return back()->with('success', $message);
+    }
+
+    public function assignTier(Request $request, User $user): \Illuminate\Http\RedirectResponse
+    {
+        $request->validate([
+            'tier_slug' => 'required|exists:subscription_tiers,slug',
+        ]);
+
+        $tier = SubscriptionTier::where('slug', $request->tier_slug)->first();
+
+        if (! $tier) {
+            return back()->with('error', 'Tier not found.');
+        }
+
+        try {
+            // Sync the user's role based on the tier
+            $user->syncRoles([$tier->slug]);
+
+            return back()->with('success', "Successfully assigned {$tier->name} tier to {$user->name}.");
+        } catch (\Exception $e) {
+            return back()->with('error', "Failed to assign tier: {$e->getMessage()}");
+        }
     }
 }

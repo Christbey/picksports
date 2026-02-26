@@ -14,14 +14,11 @@ class PlayerPropAnalyzer
     {
         $sportConfig = $this->getSportConfig($sport);
 
-        // Get all upcoming player props with game data
+        // Get player props filtered by date/game selection
         $props = PlayerProp::query()
             ->where('sport', $sportConfig['odds_api_key'])
             ->where('gameable_type', $sportConfig['game_model'])
             ->whereHas('gameable', function ($q) use ($dateFilter, $gameFilter) {
-                $q->where('status', 'STATUS_SCHEDULED')
-                    ->whereDate('game_date', '>=', now());
-
                 if ($dateFilter) {
                     $q->whereDate('game_date', $dateFilter);
                 }
@@ -619,9 +616,7 @@ class PlayerPropAnalyzer
         $gameModel = $sportConfig['game_model'];
 
         return $gameModel::query()
-            ->where('status', 'STATUS_SCHEDULED')
-            ->whereDate('game_date', '>=', now())
-            ->whereHas('playerProps')
+            ->whereHas('playerProps', fn ($q) => $q->where('sport', $sportConfig['odds_api_key']))
             ->selectRaw('DATE(game_date) as date')
             ->groupBy('date')
             ->orderBy('date')
@@ -645,9 +640,7 @@ class PlayerPropAnalyzer
         $gameModel = $sportConfig['game_model'];
 
         $query = $gameModel::query()
-            ->where('status', 'STATUS_SCHEDULED')
-            ->whereDate('game_date', '>=', now())
-            ->whereHas('playerProps')
+            ->whereHas('playerProps', fn ($q) => $q->where('sport', $sportConfig['odds_api_key']))
             ->with(['homeTeam', 'awayTeam']);
 
         if ($date) {

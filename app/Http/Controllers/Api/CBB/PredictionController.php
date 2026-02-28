@@ -11,25 +11,11 @@ use Illuminate\Database\Eloquent\Collection;
 
 class PredictionController extends AbstractPredictionController
 {
-    protected function getPredictionModel(): string
-    {
-        return Prediction::class;
-    }
+    protected const PREDICTION_MODEL = Prediction::class;
 
-    protected function getGameModel(): string
-    {
-        return Game::class;
-    }
+    protected const GAME_MODEL = Game::class;
 
-    protected function getPredictionResource(): string
-    {
-        return PredictionResource::class;
-    }
-
-    protected function getGameDateColumn(): string
-    {
-        return 'game_date';
-    }
+    protected const PREDICTION_RESOURCE = PredictionResource::class;
 
     protected function returnFirstPredictionOnly(): bool
     {

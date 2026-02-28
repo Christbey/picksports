@@ -8,29 +8,21 @@ use Illuminate\Database\Eloquent\Model;
 
 class CalculateElo extends AbstractEloCalculator
 {
-    protected function getSport(): string
-    {
-        return 'cfb';
-    }
+    protected const SPORT_KEY = 'cfb';
 
-    protected function getEloRatingModel(): string
-    {
-        return EloRating::class;
-    }
+    protected const ELO_RATING_MODEL = EloRating::class;
 
     protected function calculateKFactor(Model $game): float
     {
         $kFactor = config('cfb.elo.base_k_factor');
 
-        // Increase K-factor early in season (more volatility as teams find identity)
-        if ($game->week && $game->week <= config('cfb.elo.recency_weeks') && $game->season_type == config('cfb.season.types.regular')) {
-            $kFactor *= config('cfb.elo.recency_multiplier');
-        }
+        $kFactor = $this->applyRecencyWeekMultiplier(
+            $game,
+            (float) $kFactor,
+            config('cfb.season.types.regular')
+        );
 
-        // Apply playoff multiplier (bowl games and CFP)
-        if ($this->isPlayoffGame($game)) {
-            $kFactor *= config('cfb.elo.playoff_multiplier');
-        }
+        $kFactor = $this->applyPlayoffMultiplier($game, (float) $kFactor);
 
         // Apply margin of victory multiplier
         $marginMultiplier = $this->calculateMarginMultiplier($game);
@@ -47,14 +39,10 @@ class CalculateElo extends AbstractEloCalculator
     protected function calculateMarginMultiplier(Model $game): float
     {
         $margin = abs($game->home_score - $game->away_score);
-
-        // Logarithmic formula with diminishing returns
-        // Formula: 1.0 + (log(margin + 1) * coefficient)
-        // This prevents blowouts from dominating too much
         $coefficient = config('cfb.elo.mov_coefficient');
         $maxMultiplier = config('cfb.elo.max_mov_multiplier');
 
-        return min($maxMultiplier, 1.0 + (log($margin + 1) * $coefficient));
+        return $this->resolveLogMarginMultiplier($margin, (float) $coefficient, (float) $maxMultiplier);
     }
 
     protected function saveEloHistory(Model $team, Model $game, int $newElo, float $eloChange): void

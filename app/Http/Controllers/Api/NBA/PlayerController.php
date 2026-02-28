@@ -2,46 +2,18 @@
 
 namespace App\Http\Controllers\Api\NBA;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractPlayerController;
 use App\Http\Resources\NBA\PlayerResource;
 use App\Models\NBA\Player;
 use App\Models\NBA\Team;
 
-class PlayerController extends Controller
+class PlayerController extends AbstractPlayerController
 {
-    /**
-     * Display a listing of NBA players.
-     */
-    public function index()
-    {
-        $players = Player::query()
-            ->with('team')
-            ->orderBy('full_name')
-            ->paginate(15);
+    protected const PLAYER_MODEL = Player::class;
 
-        return PlayerResource::collection($players);
-    }
+    protected const TEAM_MODEL = Team::class;
 
-    /**
-     * Display the specified NBA player.
-     */
-    public function show(Player $player)
-    {
-        $player->load('team');
+    protected const PLAYER_RESOURCE = PlayerResource::class;
 
-        return new PlayerResource($player);
-    }
-
-    /**
-     * Display players for a specific team.
-     */
-    public function byTeam(Team $team)
-    {
-        $players = Player::query()
-            ->where('team_id', $team->id)
-            ->orderBy('full_name')
-            ->get();
-
-        return PlayerResource::collection($players);
-    }
+    protected const BY_TEAM_PAGINATED = false;
 }

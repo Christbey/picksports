@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { X, Sparkles } from 'lucide-vue-next';
-import { useSubscription } from '@/composables/useSubscription';
+import { ref, computed, onMounted } from 'vue';
 import { Button } from '@/components/ui/button';
+import { useSubscription } from '@/composables/useSubscription';
 import { plans as subscriptionPlans } from '@/routes/subscription';
 
 interface Props {

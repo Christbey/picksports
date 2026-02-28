@@ -21,7 +21,7 @@ class GameResource extends JsonResource
 
         return [
             'id' => $this->id,
-            'espn_id' => $this->espn_id,
+            'espn_id' => $this->espn_event_id ?? $this->espn_id,
             'home_team_id' => $this->home_team_id,
             'away_team_id' => $this->away_team_id,
             'season' => $this->season,
@@ -29,11 +29,11 @@ class GameResource extends JsonResource
             'week' => $this->week,
             'game_date' => $etDatetime->toDateString(),
             'game_time' => $etDatetime->toTimeString(),
-            'venue' => $this->venue,
+            'venue' => $this->venue_name ?? $this->venue,
             'attendance' => $this->attendance,
             'status' => $this->status,
             'period' => $this->period,
-            'clock' => $this->clock,
+            'clock' => $this->game_clock ?? $this->clock,
             'home_score' => $this->home_score,
             'away_score' => $this->away_score,
             'home_linescores' => $this->home_linescores,

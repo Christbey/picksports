@@ -2,48 +2,41 @@
 
 namespace App\Console\Commands\ESPN\CBB;
 
+use App\Console\Commands\ESPN\AbstractDispatchOverRecordsCommand;
 use App\Jobs\ESPN\CBB\FetchTeamSchedule;
 use App\Models\CBB\Team;
-use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 
-class SyncAllTeamSchedulesCommand extends Command
+class SyncAllTeamSchedulesCommand extends AbstractDispatchOverRecordsCommand
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'espn:sync-cbb-all-team-schedules';
+    protected const COMMAND_NAME = 'espn:sync-cbb-all-team-schedules';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Sync full schedules for all CBB teams from ESPN';
+    protected const COMMAND_DESCRIPTION = 'Sync full schedules for all CBB teams from ESPN';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle(): int
+    protected function emptyMessage(): string
     {
-        $teams = Team::all();
+        return 'No CBB teams found.';
+    }
 
-        $this->info("Syncing schedules for {$teams->count()} teams...");
+    protected function startMessage(int $count): string
+    {
+        return "Syncing schedules for {$count} teams...";
+    }
 
-        $bar = $this->output->createProgressBar($teams->count());
-        $bar->start();
+    protected function completeMessage(int $count): string
+    {
+        return "Dispatched {$count} team schedule sync jobs successfully.";
+    }
 
-        foreach ($teams as $team) {
-            FetchTeamSchedule::dispatch($team->espn_id);
-            $bar->advance();
-        }
+    protected function recordsToDispatch(): Collection
+    {
+        return Team::query()->get();
+    }
 
-        $bar->finish();
-        $this->newLine(2);
-
-        $this->info("Dispatched {$teams->count()} team schedule sync jobs successfully.");
-
-        return Command::SUCCESS;
+    protected function dispatchForRecord(Model $record): void
+    {
+        /** @var Team $record */
+        FetchTeamSchedule::dispatch((string) $record->espn_id);
     }
 }

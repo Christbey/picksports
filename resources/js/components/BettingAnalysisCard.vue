@@ -41,10 +41,21 @@ const props = defineProps<{
     showDraftKingsLabel?: boolean;
 }>();
 
+const fallbackLivePrediction: LivePredictionData = {
+    isLive: false,
+    preGameWinProbability: 0,
+    preGamePredictedSpread: 0,
+    preGamePredictedTotal: 0,
+};
+
+const livePrediction = computed<LivePredictionData>(
+    () => props.livePrediction ?? fallbackLivePrediction,
+);
+
 const hasLivePredictionData = computed(() => {
-    if (!props.livePrediction?.isLive) return false;
-    return props.livePrediction.liveWinProbability !== null
-        && props.livePrediction.liveWinProbability !== undefined;
+    if (!livePrediction.value.isLive) return false;
+    return livePrediction.value.liveWinProbability !== null
+        && livePrediction.value.liveWinProbability !== undefined;
 });
 
 function formatSpread(spread: number | string | null | undefined): string {

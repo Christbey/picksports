@@ -6,15 +6,33 @@ use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractEloCalculator
 {
+    protected const SPORT_KEY = '';
+
+    protected const ELO_RATING_MODEL = Model::class;
+
     /**
      * Get the sport identifier for config lookups (e.g., 'nba', 'nfl')
      */
-    abstract protected function getSport(): string;
+    protected function getSport(): string
+    {
+        if (static::SPORT_KEY === '') {
+            throw new \RuntimeException('SPORT_KEY must be defined on elo calculator.');
+        }
+
+        return static::SPORT_KEY;
+    }
 
     /**
      * Get the EloRating model class for this sport
      */
-    abstract protected function getEloRatingModel(): string;
+    protected function getEloRatingModel(): string
+    {
+        if (static::ELO_RATING_MODEL === Model::class) {
+            throw new \RuntimeException('ELO_RATING_MODEL must be defined on elo calculator.');
+        }
+
+        return static::ELO_RATING_MODEL;
+    }
 
     /**
      * Calculate sport-specific K-factor
@@ -30,6 +48,61 @@ abstract class AbstractEloCalculator
      * Calculate margin of victory multiplier (sport-specific logic)
      */
     abstract protected function calculateMarginMultiplier(Model $game): float;
+
+    protected function applyPlayoffMultiplier(Model $game, float $value): float
+    {
+        if (! $this->isPlayoffGame($game)) {
+            return $value;
+        }
+
+        $sport = $this->getSport();
+
+        return $value * (float) config("{$sport}.elo.playoff_multiplier", 1.0);
+    }
+
+    protected function calculateStandardKFactor(Model $game, string $baseKey = 'base_k_factor'): float
+    {
+        $sport = $this->getSport();
+        $kFactor = (float) config("{$sport}.elo.{$baseKey}");
+        $kFactor = $this->applyPlayoffMultiplier($game, $kFactor);
+        $kFactor *= $this->calculateMarginMultiplier($game);
+
+        return $kFactor;
+    }
+
+    protected function applyRecencyWeekMultiplier(Model $game, float $kFactor, mixed $regularSeasonType): float
+    {
+        $sport = $this->getSport();
+        $week = (int) ($game->week ?? 0);
+        $recencyWeeks = (int) config("{$sport}.elo.recency_weeks", 0);
+
+        if ($week < 1 || $week > $recencyWeeks || $game->season_type != $regularSeasonType) {
+            return $kFactor;
+        }
+
+        return $kFactor * (float) config("{$sport}.elo.recency_multiplier", 1.0);
+    }
+
+    protected function resolveLogMarginMultiplier(int $margin, float $coefficient, float $maxMultiplier): float
+    {
+        return min($maxMultiplier, 1.0 + (log($margin + 1) * $coefficient));
+    }
+
+    /**
+     * Resolve margin-of-victory multiplier from configured tiers.
+     *
+     * @param  array<int, array{max_margin:int|null,multiplier:float|int}>  $tiers
+     */
+    protected function resolveMarginMultiplier(int $margin, array $tiers): float
+    {
+        foreach ($tiers as $tier) {
+            if (($tier['max_margin'] ?? null) === null || $margin <= (int) $tier['max_margin']) {
+                return (float) ($tier['multiplier'] ?? 1.0);
+            }
+        }
+
+        return 1.0;
+    }
 
     /**
      * Execute Elo calculation for a game

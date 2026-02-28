@@ -16,6 +16,7 @@ class GameResource extends JsonResource
     {
         return [
             'id' => $this->id,
+            'espn_id' => $this->espn_event_id,
             'espn_event_id' => $this->espn_event_id,
             'espn_uid' => $this->espn_uid,
             'season' => $this->season,

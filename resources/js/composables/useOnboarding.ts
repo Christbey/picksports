@@ -1,6 +1,6 @@
-import { ref, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
+import { ref, computed } from 'vue';
 import type {
     OnboardingProgress,
     OnboardingStep,

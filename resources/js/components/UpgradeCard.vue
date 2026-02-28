@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { Check, Zap } from 'lucide-vue-next';
-import { useSubscription } from '@/composables/useSubscription';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { computed } from 'vue';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSubscription } from '@/composables/useSubscription';
 import { plans as subscriptionPlans } from '@/routes/subscription';
 
 interface Props {

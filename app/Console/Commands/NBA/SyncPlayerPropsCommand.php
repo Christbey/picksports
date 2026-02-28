@@ -2,39 +2,15 @@
 
 namespace App\Console\Commands\NBA;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\Sports\AbstractSyncPlayerPropsCommand;
 
-class SyncPlayerPropsCommand extends Command
+class SyncPlayerPropsCommand extends AbstractSyncPlayerPropsCommand
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'nba:sync-player-props
-                            {--markets=* : Specific markets to fetch (defaults to common props)}';
+    protected const COMMAND_NAME = 'nba:sync-player-props';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Sync NBA player props from The Odds API';
+    protected const COMMAND_DESCRIPTION = 'Sync NBA player props from The Odds API';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle(\App\Actions\OddsApi\NBA\SyncPlayerPropsForGames $sync): int
-    {
-        $this->info('Syncing NBA player props from The Odds API...');
+    protected const SYNC_ACTION_CLASS = \App\Actions\OddsApi\NBA\SyncPlayerPropsForGames::class;
 
-        $markets = $this->option('markets');
-        $markets = empty($markets) ? null : $markets;
-
-        $stored = $sync->execute($markets);
-
-        $this->info("Successfully stored {$stored} player props.");
-
-        return self::SUCCESS;
-    }
+    protected const SPORT_LABEL = 'NBA';
 }

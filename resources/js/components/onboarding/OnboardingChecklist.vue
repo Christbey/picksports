@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { CheckCircle2, Circle } from 'lucide-vue-next';
-import type { ChecklistItem } from '@/types/onboarding';
 import Card from '@/components/ui/card/Card.vue';
+import CardContent from '@/components/ui/card/CardContent.vue';
+import CardDescription from '@/components/ui/card/CardDescription.vue';
 import CardHeader from '@/components/ui/card/CardHeader.vue';
 import CardTitle from '@/components/ui/card/CardTitle.vue';
-import CardDescription from '@/components/ui/card/CardDescription.vue';
-import CardContent from '@/components/ui/card/CardContent.vue';
+import type { ChecklistItem } from '@/types/onboarding';
 
 defineProps<{
     items: ChecklistItem[];

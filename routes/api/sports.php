@@ -11,60 +11,110 @@ use Illuminate\Support\Facades\Route;
  */
 return function (string $sport, string $namespace) {
     $controllerNamespace = "App\\Http\\Controllers\\Api\\{$namespace}";
+    $controllers = [
+        'team' => "{$controllerNamespace}\\TeamController",
+        'player' => "{$controllerNamespace}\\PlayerController",
+        'game' => "{$controllerNamespace}\\GameController",
+        'play' => "{$controllerNamespace}\\PlayController",
+        'player_stat' => "{$controllerNamespace}\\PlayerStatController",
+        'team_stat' => "{$controllerNamespace}\\TeamStatController",
+        'elo' => "{$controllerNamespace}\\EloRatingController",
+        'team_metric' => "{$controllerNamespace}\\TeamMetricController",
+        'prediction' => "{$controllerNamespace}\\PredictionController",
+    ];
+    $sportCapabilities = [
+        'nba' => [
+            'player_stats_leaderboard' => true,
+            'team_stats_all_season_averages' => true,
+            'team_stats_team_season_averages' => true,
+        ],
+        'cbb' => [
+            'player_stats_leaderboard' => true,
+            'team_stats_team_season_averages' => true,
+        ],
+        'mlb' => [
+            'team_stats_team_season_averages' => true,
+        ],
+    ];
+    $capabilities = $sportCapabilities[$sport] ?? [];
+
+    $registerIndexShowResource = function (string $resource, string $controller): void {
+        Route::apiResource($resource, $controller)->only(['index', 'show']);
+    };
+
+    $registerAdditionalGetRoutes = function (array $routes): void {
+        foreach ($routes as [$uri, $controller, $method]) {
+            Route::get($uri, [$controller, $method]);
+        }
+    };
 
     // Teams
-    Route::apiResource('teams', "{$controllerNamespace}\\TeamController");
-    Route::middleware('web')->get('teams/{team}/trends', ["{$controllerNamespace}\\TeamController", 'trends']);
+    $registerIndexShowResource('teams', $controllers['team']);
+    $registerAdditionalGetRoutes([
+        ['teams/{team}/trends', $controllers['team'], 'trends'],
+    ]);
 
     // Players
-    Route::apiResource('players', "{$controllerNamespace}\\PlayerController");
-    Route::get('teams/{team}/players', ["{$controllerNamespace}\\PlayerController", 'byTeam']);
+    $registerIndexShowResource('players', $controllers['player']);
+    $registerAdditionalGetRoutes([
+        ['teams/{team}/players', $controllers['player'], 'byTeam'],
+    ]);
 
     // Games
-    Route::apiResource('games', "{$controllerNamespace}\\GameController");
-    Route::get('games/{game}/plays', ["{$controllerNamespace}\\PlayController", 'byGame']);
-    Route::get('teams/{team}/games', ["{$controllerNamespace}\\GameController", 'byTeam']);
-    Route::get('games/season/{season}', ["{$controllerNamespace}\\GameController", 'bySeason']);
-    Route::get('games/season/{season}/week/{week}', ["{$controllerNamespace}\\GameController", 'byWeek']);
+    $registerIndexShowResource('games', $controllers['game']);
+    $registerAdditionalGetRoutes([
+        ['games/{game}/plays', $controllers['play'], 'byGame'],
+        ['teams/{team}/games', $controllers['game'], 'byTeam'],
+        ['games/season/{season}', $controllers['game'], 'bySeason'],
+        ['games/season/{season}/week/{week}', $controllers['game'], 'byWeek'],
+    ]);
 
     // Plays
-    Route::apiResource('plays', "{$controllerNamespace}\\PlayController")->only(['index', 'show']);
+    $registerIndexShowResource('plays', $controllers['play']);
 
     // Sport-specific: Registered before apiResource to avoid route conflicts with {wildcard} params
-    if (in_array($sport, ['nba', 'cbb'])) {
-        Route::get('player-stats/leaderboard', ["{$controllerNamespace}\\PlayerStatController", 'leaderboard']);
+    if (($capabilities['player_stats_leaderboard'] ?? false) === true) {
+        Route::get('player-stats/leaderboard', [$controllers['player_stat'], 'leaderboard']);
     }
 
-    if ($sport === 'nba') {
-        Route::get('team-stats/season-averages', ["{$controllerNamespace}\\TeamStatController", 'allSeasonAverages']);
-        Route::get('teams/{team}/stats/season-averages', ["{$controllerNamespace}\\TeamStatController", 'seasonAverages']);
+    if (($capabilities['team_stats_all_season_averages'] ?? false) === true) {
+        Route::get('team-stats/season-averages', [$controllers['team_stat'], 'allSeasonAverages']);
+    }
+
+    if (($capabilities['team_stats_team_season_averages'] ?? false) === true) {
+        Route::get('teams/{team}/stats/season-averages', [$controllers['team_stat'], 'seasonAverages']);
     }
 
     // Player Stats
-    Route::apiResource('player-stats', "{$controllerNamespace}\\PlayerStatController")->only(['index', 'show']);
-    Route::get('games/{game}/player-stats', ["{$controllerNamespace}\\PlayerStatController", 'byGame']);
-    Route::get('players/{player}/stats', ["{$controllerNamespace}\\PlayerStatController", 'byPlayer']);
+    $registerIndexShowResource('player-stats', $controllers['player_stat']);
+    $registerAdditionalGetRoutes([
+        ['games/{game}/player-stats', $controllers['player_stat'], 'byGame'],
+        ['players/{player}/stats', $controllers['player_stat'], 'byPlayer'],
+    ]);
 
     // Team Stats
-    Route::apiResource('team-stats', "{$controllerNamespace}\\TeamStatController")->only(['index', 'show']);
-    Route::get('games/{game}/team-stats', ["{$controllerNamespace}\\TeamStatController", 'byGame']);
-    Route::get('teams/{team}/stats', ["{$controllerNamespace}\\TeamStatController", 'byTeam']);
+    $registerIndexShowResource('team-stats', $controllers['team_stat']);
+    $registerAdditionalGetRoutes([
+        ['games/{game}/team-stats', $controllers['team_stat'], 'byGame'],
+        ['teams/{team}/stats', $controllers['team_stat'], 'byTeam'],
+    ]);
 
     // ELO Ratings
-    Route::apiResource('elo-ratings', "{$controllerNamespace}\\EloRatingController")->only(['index', 'show']);
-    Route::get('teams/{team}/elo-ratings', ["{$controllerNamespace}\\EloRatingController", 'byTeam']);
-Route::get('elo-ratings/season/{season}', ["{$controllerNamespace}\\EloRatingController", 'bySeason']);
+    $registerIndexShowResource('elo-ratings', $controllers['elo']);
+    $registerAdditionalGetRoutes([
+        ['teams/{team}/elo-ratings', $controllers['elo'], 'byTeam'],
+        ['elo-ratings/season/{season}', $controllers['elo'], 'bySeason'],
+    ]);
 
-    // Team Metrics (requires authentication for tier limits)
-    Route::middleware(['web', 'auth'])->group(function () use ($controllerNamespace) {
-        Route::apiResource('team-metrics', "{$controllerNamespace}\\TeamMetricController")->only(['index', 'show']);
-        Route::get('teams/{team}/metrics', ["{$controllerNamespace}\\TeamMetricController", 'byTeam']);
-    });
+    // Protected endpoints (requires authentication for tier limits)
+    Route::middleware(['auth:sanctum'])->group(function () use ($controllers) {
+        // Team Metrics
+        Route::apiResource('team-metrics', $controllers['team_metric'])->only(['index', 'show']);
+        Route::get('teams/{team}/metrics', [$controllers['team_metric'], 'byTeam']);
 
-    // Predictions (requires authentication for tier limits)
-    Route::middleware(['web', 'auth'])->group(function () use ($controllerNamespace) {
-        Route::get('predictions/available-dates', ["{$controllerNamespace}\\PredictionController", 'availableDates']);
-        Route::apiResource('predictions', "{$controllerNamespace}\\PredictionController")->only(['index', 'show']);
-        Route::get('games/{game}/prediction', ["{$controllerNamespace}\\PredictionController", 'byGame']);
+        // Predictions
+        Route::get('predictions/available-dates', [$controllers['prediction'], 'availableDates']);
+        Route::apiResource('predictions', $controllers['prediction'])->only(['index', 'show']);
+        Route::get('games/{game}/prediction', [$controllers['prediction'], 'byGame']);
     });
 };

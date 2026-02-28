@@ -2,87 +2,14 @@
 
 namespace App\Actions\ESPN\NFL;
 
+use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
 use App\Actions\NFL\UpdateLivePrediction;
-use App\DataTransferObjects\ESPN\GameData;
-use App\Models\NFL\Game;
-use App\Models\NFL\Team;
-use App\Services\ESPN\NFL\EspnService;
 
-class SyncGamesFromScoreboard
+class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 {
-    public function __construct(
-        protected EspnService $espnService,
-        protected ?UpdateLivePrediction $updateLivePrediction = null
-    ) {
-        $this->updateLivePrediction ??= new UpdateLivePrediction;
-    }
+    protected const GAME_MODEL_CLASS = \App\Models\NFL\Game::class;
 
-    public function execute(string $date): int
-    {
-        $response = $this->espnService->getScoreboard($date);
+    protected const TEAM_MODEL_CLASS = \App\Models\NFL\Team::class;
 
-        if (! $response || ! isset($response['events'])) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        foreach ($response['events'] as $game) {
-            if (empty($game['id'])) {
-                continue;
-            }
-
-            $dto = GameData::fromEspnResponse($game);
-
-            $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
-            $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
-
-            if (! $homeTeam || ! $awayTeam) {
-                continue;
-            }
-
-            $gameAttributes = [
-                'espn_event_id' => $dto->espnEventId,
-                'espn_uid' => $game['uid'] ?? null,
-                'season' => $dto->season,
-                'week' => $dto->week,
-                'season_type' => $dto->seasonType,
-                'game_date' => $game['date'] ? date('Y-m-d', strtotime($game['date'])) : null,
-                'game_time' => $game['date'] ? date('H:i:s', strtotime($game['date'])) : null,
-                'name' => $dto->name,
-                'short_name' => $dto->shortName,
-                'home_team_id' => $homeTeam->id,
-                'away_team_id' => $awayTeam->id,
-                'home_score' => $dto->homeScore,
-                'away_score' => $dto->awayScore,
-                'home_linescores' => $dto->homeLinescores,
-                'away_linescores' => $dto->awayLinescores,
-                'status' => $dto->status,
-                'period' => $dto->period,
-                'game_clock' => $dto->gameClock,
-                'venue_name' => $dto->venueName,
-                'venue_city' => $dto->venueCity,
-                'venue_state' => $dto->venueState,
-                'broadcast_networks' => $dto->broadcastNetworks,
-            ];
-
-            $existingGame = Game::where('espn_event_id', $dto->espnEventId)->first();
-
-            if ($existingGame) {
-                if (! in_array($existingGame->status, ['STATUS_FINAL', 'STATUS_FULL_TIME'])) {
-                    $existingGame->update($gameAttributes);
-                }
-                $game = $existingGame;
-            } else {
-                $game = Game::create($gameAttributes);
-            }
-
-            // Update live predictions for in-progress games
-            $this->updateLivePrediction->execute($game);
-
-            $synced++;
-        }
-
-        return $synced;
-    }
+    protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
 }

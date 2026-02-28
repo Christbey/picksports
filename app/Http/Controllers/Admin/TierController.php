@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TierRequest;
+use App\Http\Resources\Admin\NotificationTemplateAdminResource;
+use App\Http\Resources\Admin\SubscriptionTierAdminResource;
+use App\Models\NotificationTemplate;
 use App\Models\SubscriptionTier;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
@@ -11,15 +14,21 @@ use Inertia\Response;
 
 class TierController extends Controller
 {
+    private const INDEX_ROUTE = 'admin.tiers.index';
+
     public function index(): Response
     {
-        $tiers = SubscriptionTier::query()
-            ->ordered()
-            ->get();
+        $tiers = $this->resourcePayload(SubscriptionTierAdminResource::collection(
+            SubscriptionTier::query()
+                ->ordered()
+                ->get()
+        ));
 
-        $notificationTemplates = \App\Models\NotificationTemplate::query()
-            ->orderBy('name')
-            ->get();
+        $notificationTemplates = $this->resourcePayload(NotificationTemplateAdminResource::collection(
+            NotificationTemplate::query()
+                ->orderBy('name')
+                ->get()
+        ));
 
         return Inertia::render('Admin/Tiers/Index', [
             'tiers' => $tiers,
@@ -29,34 +38,30 @@ class TierController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('Admin/Tiers/Form', [
-            'tier' => null,
-        ]);
+        return $this->renderFormPage('Admin/Tiers/Form', 'tier');
     }
 
     public function store(TierRequest $request): RedirectResponse
     {
         $tier = SubscriptionTier::create($request->validated());
 
-        return redirect()
-            ->route('admin.tiers.index')
-            ->with('success', "Tier '{$tier->name}' created successfully.");
+        return $this->redirectSuccess(self::INDEX_ROUTE, $this->successMessage('created', $tier->name));
     }
 
     public function edit(SubscriptionTier $tier): Response
     {
-        return Inertia::render('Admin/Tiers/Form', [
-            'tier' => $tier,
-        ]);
+        return $this->renderFormPage(
+            'Admin/Tiers/Form',
+            'tier',
+            (new SubscriptionTierAdminResource($tier))->resolve()
+        );
     }
 
     public function update(TierRequest $request, SubscriptionTier $tier): RedirectResponse
     {
         $tier->update($request->validated());
 
-        return redirect()
-            ->route('admin.tiers.index')
-            ->with('success', "Tier '{$tier->name}' updated successfully.");
+        return $this->redirectSuccess(self::INDEX_ROUTE, $this->successMessage('updated', $tier->name));
     }
 
     public function destroy(SubscriptionTier $tier): RedirectResponse
@@ -64,8 +69,11 @@ class TierController extends Controller
         $name = $tier->name;
         $tier->delete();
 
-        return redirect()
-            ->route('admin.tiers.index')
-            ->with('success', "Tier '{$name}' deleted successfully.");
+        return $this->redirectSuccess(self::INDEX_ROUTE, $this->successMessage('deleted', $name));
+    }
+
+    private function successMessage(string $action, string $name): string
+    {
+        return "Tier '{$name}' {$action} successfully.";
     }
 }

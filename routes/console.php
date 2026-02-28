@@ -19,13 +19,18 @@ Artisan::command('inspire', function () {
 |
 */
 
-$nbaInSeason = fn () => in_array(now()->month, [10, 11, 12, 1, 2, 3, 4, 5, 6]); // Oct-Jun
-$cbbInSeason = fn () => in_array(now()->month, [11, 12, 1, 2, 3, 4]); // Nov-Apr
-$wcbbInSeason = fn () => in_array(now()->month, [11, 12, 1, 2, 3, 4]); // Nov-Apr
-$mlbInSeason = fn () => in_array(now()->month, [3, 4, 5, 6, 7, 8, 9, 10, 11]); // Mar-Nov
-$wnbaInSeason = fn () => in_array(now()->month, [4, 5, 6, 7, 8, 9, 10]); // Apr-Oct
-$nflInSeason = fn () => in_array(now()->month, [8, 9, 10, 11, 12, 1, 2]); // Aug-Feb
-$cfbInSeason = fn () => in_array(now()->month, [8, 9, 10, 11, 12, 1]); // Aug-Jan
+$inSeasonMonths = fn (array $months) => fn () => in_array(now()->month, $months, true);
+$nbaInSeason = $inSeasonMonths([10, 11, 12, 1, 2, 3, 4, 5, 6]); // Oct-Jun
+$cbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
+$wcbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
+$mlbInSeason = $inSeasonMonths([3, 4, 5, 6, 7, 8, 9, 10, 11]); // Mar-Nov
+$wnbaInSeason = $inSeasonMonths([4, 5, 6, 7, 8, 9, 10]); // Apr-Oct
+$nflInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1, 2]); // Aug-Feb
+$cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
+
+// Season year helpers
+$currentYear = (int) now()->year;
+$fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
 
 /*
 |--------------------------------------------------------------------------
@@ -39,99 +44,212 @@ $cfbInSeason = fn () => in_array(now()->month, [8, 9, 10, 11, 12, 1]); // Aug-Ja
 */
 
 $heartbeatUrl = config('services.heartbeat.live_scoreboard_url');
+$scheduleLiveScoreboardSync = function (
+    string $command,
+    string $betweenStart,
+    string $betweenEnd,
+    callable $inSeason,
+    string $name
+) use ($heartbeatUrl) {
+    $event = Schedule::command("{$command} ".date('Ymd'))
+        ->everyFiveMinutes()
+        ->between($betweenStart, $betweenEnd)
+        ->when($inSeason)
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+
+    if ($heartbeatUrl) {
+        $event->pingOnSuccess($heartbeatUrl);
+    }
+};
+
+$scheduleDailySeasonJob = function (
+    string $command,
+    string $time,
+    callable $inSeason,
+    string $name
+) {
+    Schedule::command($command)
+        ->dailyAt($time)
+        ->when($inSeason)
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+};
+
+$scheduleHalfHourlyWindowJob = function (
+    string $command,
+    string $betweenStart,
+    string $betweenEnd,
+    callable $inSeason,
+    string $name
+) {
+    Schedule::command($command)
+        ->everyThirtyMinutes()
+        ->between($betweenStart, $betweenEnd)
+        ->when($inSeason)
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+};
+
+$scheduleOddsSyncWindow = function (
+    string $command,
+    callable $inSeason,
+    string $name
+) {
+    Schedule::command($command)
+        ->everyFourHours()
+        ->between('08:00', '23:00')
+        ->when($inSeason)
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+};
+
+$schedulePlayerPropsWindow = function (
+    string $command,
+    int $firstHour,
+    int $secondHour,
+    callable $inSeason,
+    string $name
+) {
+    Schedule::command($command)
+        ->twiceDaily($firstHour, $secondHour)
+        ->when($inSeason)
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+};
+
+$schedulePredictionPipeline = function (
+    string $sportCommandPrefix,
+    string $sportLabel,
+    int $season,
+    callable $inSeason,
+    array $times
+) use ($scheduleDailySeasonJob) {
+    $definitions = [
+        'grade-predictions' => 'Grade Predictions',
+        'calculate-elo' => 'Calculate Elo Ratings',
+        'calculate-team-metrics' => 'Calculate Team Metrics',
+        'generate-predictions' => 'Generate Predictions',
+    ];
+
+    foreach ($definitions as $commandSuffix => $jobLabel) {
+        $scheduleDailySeasonJob(
+            "{$sportCommandPrefix}:{$commandSuffix} --season={$season}",
+            $times[$commandSuffix],
+            $inSeason,
+            "{$sportLabel}: {$jobLabel}"
+        );
+    }
+};
+
+$scheduleSportPipeline = function (
+    string $preSyncCommand,
+    string $preSyncTime,
+    string $preSyncName,
+    string $liveCommand,
+    string $liveBetweenStart,
+    string $liveBetweenEnd,
+    string $liveName,
+    ?string $detailsCommand,
+    ?string $detailsBetweenStart,
+    ?string $detailsBetweenEnd,
+    ?string $detailsName,
+    string $sportCommandPrefix,
+    string $sportLabel,
+    int $season,
+    callable $inSeason,
+    array $predictionTimes,
+    string $oddsCommand,
+    string $oddsName,
+    ?string $playerPropsCommand = null,
+    ?int $playerPropsFirstHour = null,
+    ?int $playerPropsSecondHour = null,
+    ?string $playerPropsName = null
+) use (
+    $scheduleDailySeasonJob,
+    $scheduleLiveScoreboardSync,
+    $scheduleHalfHourlyWindowJob,
+    $schedulePredictionPipeline,
+    $scheduleOddsSyncWindow,
+    $schedulePlayerPropsWindow
+) {
+    $scheduleDailySeasonJob($preSyncCommand, $preSyncTime, $inSeason, $preSyncName);
+    $scheduleLiveScoreboardSync($liveCommand, $liveBetweenStart, $liveBetweenEnd, $inSeason, $liveName);
+
+    if ($detailsCommand && $detailsBetweenStart && $detailsBetweenEnd && $detailsName) {
+        $scheduleHalfHourlyWindowJob(
+            $detailsCommand,
+            $detailsBetweenStart,
+            $detailsBetweenEnd,
+            $inSeason,
+            $detailsName
+        );
+    }
+
+    $schedulePredictionPipeline(
+        $sportCommandPrefix,
+        $sportLabel,
+        $season,
+        $inSeason,
+        $predictionTimes
+    );
+
+    $scheduleOddsSyncWindow($oddsCommand, $inSeason, $oddsName);
+
+    if ($playerPropsCommand && $playerPropsFirstHour !== null && $playerPropsSecondHour !== null && $playerPropsName) {
+        $schedulePlayerPropsWindow(
+            $playerPropsCommand,
+            $playerPropsFirstHour,
+            $playerPropsSecondHour,
+            $inSeason,
+            $playerPropsName
+        );
+    }
+};
 
 /*
 |--------------------------------------------------------------------------
-| NBA Automated Pipeline (Oct - Jun)
+| Sport Pipelines
 |--------------------------------------------------------------------------
 */
 
-// 1. Sync today's games + next 7 days (captures new scheduled games)
-Schedule::command('espn:sync-nba-games-scoreboard --from-date='.date('Y-m-d').' --to-date='.date('Y-m-d', strtotime('+7 days')))
-    ->dailyAt('01:00')
-    ->when($nbaInSeason)
-    ->name('NBA: Sync Scoreboard (Today + 7 Days)')
-    ->withoutOverlapping()
-    ->runInBackground();
+// NBA
+$scheduleSportPipeline(
+    'espn:sync-nba-games-scoreboard --from-date='.date('Y-m-d').' --to-date='.date('Y-m-d', strtotime('+7 days')),
+    '01:00',
+    'NBA: Sync Scoreboard (Today + 7 Days)',
+    'espn:sync-nba-games-scoreboard',
+    '18:00',
+    '03:00',
+    'NBA: Live Scoreboard Sync',
+    'espn:sync-nba-game-details',
+    '18:00',
+    '03:00',
+    'NBA: Sync Game Details',
+    'nba',
+    'NBA',
+    $currentYear,
+    $nbaInSeason,
+    [
+        'grade-predictions' => '03:30',
+        'calculate-elo' => '04:00',
+        'calculate-team-metrics' => '04:30',
+        'generate-predictions' => '05:00',
+    ],
+    'nba:sync-odds',
+    'NBA: Sync Odds',
+    'nba:sync-player-props',
+    14,
+    18,
+    'NBA: Sync Player Props'
+);
 
-// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$nbaLiveSync = Schedule::command('espn:sync-nba-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('18:00', '03:00')
-    ->when($nbaInSeason)
-    ->name('NBA: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-if ($heartbeatUrl) {
-    $nbaLiveSync->pingOnSuccess($heartbeatUrl);
-}
-
-// 3. Sync game details for completed games (during game hours)
-Schedule::command('espn:sync-nba-game-details')
-    ->everyThirtyMinutes()
-    ->between('18:00', '03:00')
-    ->when($nbaInSeason)
-    ->name('NBA: Sync Game Details')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Grade predictions for completed games (after all games finalize)
-Schedule::command('nba:grade-predictions --season='.date('Y'))
-    ->dailyAt('03:30')
-    ->when($nbaInSeason)
-    ->name('NBA: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate Elo ratings (after grading)
-Schedule::command('nba:calculate-elo --season='.date('Y'))
-    ->dailyAt('04:00')
-    ->when($nbaInSeason)
-    ->name('NBA: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Calculate team metrics (after Elo updates)
-Schedule::command('nba:calculate-team-metrics --season='.date('Y'))
-    ->dailyAt('04:30')
-    ->when($nbaInSeason)
-    ->name('NBA: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Generate predictions for upcoming games (after metrics update)
-Schedule::command('nba:generate-predictions --season='.date('Y'))
-    ->dailyAt('05:00')
-    ->when($nbaInSeason)
-    ->name('NBA: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 8. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('nba:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($nbaInSeason)
-    ->name('NBA: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 9. Sync player props (multiple times per day - props released closer to game time)
-Schedule::command('nba:sync-player-props')
-    ->twiceDaily(14, 18)
-    ->when($nbaInSeason)
-    ->name('NBA: Sync Player Props')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-/*
-|--------------------------------------------------------------------------
-| CBB Automated Pipeline (Nov - Apr)
-|--------------------------------------------------------------------------
-*/
-
-// 1. Sync all team schedules (comprehensive schedule sync)
+// CBB
 Schedule::command('espn:sync-cbb-all-team-schedules')
     ->weeklyOn(0, '01:30')
     ->when($cbbInSeason)
@@ -139,86 +257,36 @@ Schedule::command('espn:sync-cbb-all-team-schedules')
     ->withoutOverlapping()
     ->runInBackground();
 
-// 2. Sync current week's games (captures new scheduled games)
-Schedule::command('espn:sync-cbb-current')
-    ->dailyAt('02:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Sync Current Week')
-    ->withoutOverlapping()
-    ->runInBackground();
+$scheduleSportPipeline(
+    'espn:sync-cbb-current',
+    '02:00',
+    'CBB: Sync Current Week',
+    'espn:sync-cbb-games-scoreboard',
+    '12:00',
+    '01:00',
+    'CBB: Live Scoreboard Sync',
+    'espn:sync-cbb-game-details',
+    '14:00',
+    '02:00',
+    'CBB: Sync Game Details',
+    'cbb',
+    'CBB',
+    $currentYear,
+    $cbbInSeason,
+    [
+        'grade-predictions' => '05:00',
+        'calculate-elo' => '05:30',
+        'calculate-team-metrics' => '06:00',
+        'generate-predictions' => '06:30',
+    ],
+    'cbb:sync-odds',
+    'CBB: Sync Odds',
+    'cbb:sync-player-props',
+    12,
+    17,
+    'CBB: Sync Player Props'
+);
 
-// 2a. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$cbbLiveSync = Schedule::command('espn:sync-cbb-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('12:00', '01:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-if ($heartbeatUrl) {
-    $cbbLiveSync->pingOnSuccess($heartbeatUrl);
-}
-
-// 2b. Sync game details (box scores + stats) for completed games during game hours
-Schedule::command('espn:sync-cbb-game-details')
-    ->everyThirtyMinutes()
-    ->between('14:00', '02:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Sync Game Details')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 3. Grade predictions for completed games (after all games finalize)
-Schedule::command('cbb:grade-predictions --season='.date('Y'))
-    ->dailyAt('05:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Calculate Elo ratings (after grading)
-Schedule::command('cbb:calculate-elo --season='.date('Y'))
-    ->dailyAt('05:30')
-    ->when($cbbInSeason)
-    ->name('CBB: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate team metrics (after Elo updates, requires box score stats)
-Schedule::command('cbb:calculate-team-metrics --season='.date('Y'))
-    ->dailyAt('06:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Generate predictions for upcoming games (after metrics update)
-Schedule::command('cbb:generate-predictions --season='.date('Y'))
-    ->dailyAt('06:30')
-    ->when($cbbInSeason)
-    ->name('CBB: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('cbb:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7a. Sync player props (multiple times per day - props released closer to game time)
-Schedule::command('cbb:sync-player-props')
-    ->twiceDaily(12, 17)
-    ->when($cbbInSeason)
-    ->name('CBB: Sync Player Props')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 8. Send daily betting digests (hourly to support user-chosen times)
 Schedule::command('alerts:send-daily-digests --sport=cbb')
     ->hourly()
     ->between('06:00', '22:00')
@@ -227,402 +295,147 @@ Schedule::command('alerts:send-daily-digests --sport=cbb')
     ->withoutOverlapping()
     ->runInBackground();
 
-/*
-|--------------------------------------------------------------------------
-| WCBB Automated Pipeline (Nov - Apr)
-|--------------------------------------------------------------------------
-*/
+// WCBB
+$scheduleDailySeasonJob('espn:sync-wcbb-game-details', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');
 
-// 1. Sync current week's games (captures new scheduled games)
-Schedule::command('espn:sync-wcbb-current')
-    ->dailyAt('03:00')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Sync Current Week')
-    ->withoutOverlapping()
-    ->runInBackground();
+$scheduleSportPipeline(
+    'espn:sync-wcbb-current',
+    '03:00',
+    'WCBB: Sync Current Week',
+    'espn:sync-wcbb-games-scoreboard',
+    '12:00',
+    '01:00',
+    'WCBB: Live Scoreboard Sync',
+    'espn:sync-wcbb-game-details',
+    '14:00',
+    '02:00',
+    'WCBB: Sync Game Details',
+    'wcbb',
+    'WCBB',
+    $currentYear,
+    $wcbbInSeason,
+    [
+        'grade-predictions' => '03:30',
+        'calculate-elo' => '04:00',
+        'calculate-team-metrics' => '04:30',
+        'generate-predictions' => '05:00',
+    ],
+    'wcbb:sync-odds',
+    'WCBB: Sync Odds'
+);
 
-// 2. Sync game details (box scores) for completed games without team stats
-Schedule::command('espn:sync-wcbb-game-details')
-    ->dailyAt('03:15')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Sync Game Details (Daily)')
-    ->withoutOverlapping()
-    ->runInBackground();
+// MLB
+$scheduleSportPipeline(
+    'espn:sync-mlb-schedules --season='.$currentYear,
+    '01:30',
+    'MLB: Sync Schedules',
+    'espn:sync-mlb-games-scoreboard',
+    '13:00',
+    '04:00',
+    'MLB: Live Scoreboard Sync',
+    'espn:sync-mlb-game-details',
+    '16:00',
+    '04:00',
+    'MLB: Sync Game Details',
+    'mlb',
+    'MLB',
+    $currentYear,
+    $mlbInSeason,
+    [
+        'grade-predictions' => '04:30',
+        'calculate-elo' => '05:00',
+        'calculate-team-metrics' => '05:30',
+        'generate-predictions' => '06:00',
+    ],
+    'mlb:sync-odds',
+    'MLB: Sync Odds',
+    'mlb:sync-player-props',
+    11,
+    16,
+    'MLB: Sync Player Props'
+);
 
-// 2a. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$wcbbLiveSync = Schedule::command('espn:sync-wcbb-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('12:00', '01:00')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
+// WNBA
+$scheduleSportPipeline(
+    'espn:sync-wnba-current',
+    '01:00',
+    'WNBA: Sync Current Week',
+    'espn:sync-wnba-games-scoreboard',
+    '19:00',
+    '23:00',
+    'WNBA: Live Scoreboard Sync',
+    null,
+    null,
+    null,
+    null,
+    'wnba',
+    'WNBA',
+    $currentYear,
+    $wnbaInSeason,
+    [
+        'grade-predictions' => '00:00',
+        'calculate-elo' => '00:30',
+        'calculate-team-metrics' => '01:30',
+        'generate-predictions' => '02:00',
+    ],
+    'wnba:sync-odds',
+    'WNBA: Sync Odds'
+);
 
-if ($heartbeatUrl) {
-    $wcbbLiveSync->pingOnSuccess($heartbeatUrl);
-}
+// NFL
+$scheduleSportPipeline(
+    'espn:sync-nfl-current',
+    '08:00',
+    'NFL: Sync Current Week',
+    'espn:sync-nfl-games-scoreboard',
+    '17:00',
+    '02:00',
+    'NFL: Live Scoreboard Sync',
+    'espn:sync-nfl-game-details',
+    '17:00',
+    '02:00',
+    'NFL: Sync Game Details',
+    'nfl',
+    'NFL',
+    $fallSeasonYear,
+    $nflInSeason,
+    [
+        'grade-predictions' => '08:30',
+        'calculate-elo' => '09:00',
+        'calculate-team-metrics' => '09:30',
+        'generate-predictions' => '10:00',
+    ],
+    'nfl:sync-odds',
+    'NFL: Sync Odds',
+    'nfl:sync-player-props',
+    10,
+    15,
+    'NFL: Sync Player Props'
+);
 
-// 2b. Sync game details during game hours (box scores for completed games)
-Schedule::command('espn:sync-wcbb-game-details')
-    ->everyThirtyMinutes()
-    ->between('14:00', '02:00')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Sync Game Details')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 3. Grade predictions for completed games (after all games finalize)
-Schedule::command('wcbb:grade-predictions --season='.date('Y'))
-    ->dailyAt('03:30')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Calculate Elo ratings (after grading)
-Schedule::command('wcbb:calculate-elo --season='.date('Y'))
-    ->dailyAt('04:00')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate team metrics (after Elo updates)
-Schedule::command('wcbb:calculate-team-metrics --season='.date('Y'))
-    ->dailyAt('04:30')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Generate predictions for upcoming games (after metrics update)
-Schedule::command('wcbb:generate-predictions --season='.date('Y'))
-    ->dailyAt('05:00')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('wcbb:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($wcbbInSeason)
-    ->name('WCBB: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-/*
-|--------------------------------------------------------------------------
-| MLB Automated Pipeline (Mar - Nov)
-|--------------------------------------------------------------------------
-*/
-
-// 1. Sync schedules for all teams (captures new scheduled games)
-Schedule::command('espn:sync-mlb-schedules --season=2026')
-    ->dailyAt('01:30')
-    ->when($mlbInSeason)
-    ->name('MLB: Sync Schedules')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$mlbLiveSync = Schedule::command('espn:sync-mlb-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('13:00', '04:00')
-    ->when($mlbInSeason)
-    ->name('MLB: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-if ($heartbeatUrl) {
-    $mlbLiveSync->pingOnSuccess($heartbeatUrl);
-}
-
-// 3. Sync game details for completed games (during typical game hours)
-Schedule::command('espn:sync-mlb-game-details')
-    ->everyThirtyMinutes()
-    ->between('16:00', '04:00')
-    ->when($mlbInSeason)
-    ->name('MLB: Sync Game Details')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Grade predictions for completed games (after all games finalize)
-Schedule::command('mlb:grade-predictions --season=2026')
-    ->dailyAt('04:30')
-    ->when($mlbInSeason)
-    ->name('MLB: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate Elo ratings (after grading)
-Schedule::command('mlb:calculate-elo --season=2026')
-    ->dailyAt('05:00')
-    ->when($mlbInSeason)
-    ->name('MLB: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Calculate team metrics (after Elo updates)
-Schedule::command('mlb:calculate-team-metrics --season=2026')
-    ->dailyAt('05:30')
-    ->when($mlbInSeason)
-    ->name('MLB: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Generate predictions for upcoming games (after metrics update)
-Schedule::command('mlb:generate-predictions --season=2026')
-    ->dailyAt('06:00')
-    ->when($mlbInSeason)
-    ->name('MLB: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 8. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('mlb:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($mlbInSeason)
-    ->name('MLB: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 9. Sync player props (multiple times per day - props released closer to game time)
-Schedule::command('mlb:sync-player-props')
-    ->twiceDaily(11, 16)
-    ->when($mlbInSeason)
-    ->name('MLB: Sync Player Props')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-/*
-|--------------------------------------------------------------------------
-| WNBA Automated Pipeline (Apr - Oct)
-|--------------------------------------------------------------------------
-*/
-
-// 1. Sync current week's games (captures new scheduled games)
-Schedule::command('espn:sync-wnba-current')
-    ->dailyAt('01:00')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Sync Current Week')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$wnbaLiveSync = Schedule::command('espn:sync-wnba-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('19:00', '23:00')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-if ($heartbeatUrl) {
-    $wnbaLiveSync->pingOnSuccess($heartbeatUrl);
-}
-
-// 3. Grade predictions for completed games (after all games finalize)
-Schedule::command('wnba:grade-predictions --season='.date('Y'))
-    ->dailyAt('00:00')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Calculate Elo ratings (after grading)
-Schedule::command('wnba:calculate-elo --season='.date('Y'))
-    ->dailyAt('00:30')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate team metrics (after Elo updates)
-Schedule::command('wnba:calculate-team-metrics --season='.date('Y'))
-    ->dailyAt('01:30')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Generate predictions for upcoming games (after metrics update)
-Schedule::command('wnba:generate-predictions --season='.date('Y'))
-    ->dailyAt('02:00')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('wnba:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($wnbaInSeason)
-    ->name('WNBA: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-/*
-|--------------------------------------------------------------------------
-| NFL Automated Pipeline (Aug - Feb)
-|--------------------------------------------------------------------------
-*/
-
-// 1. Sync current week's games (captures new scheduled games)
-Schedule::command('espn:sync-nfl-current')
-    ->dailyAt('08:00')
-    ->when($nflInSeason)
-    ->name('NFL: Sync Current Week')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$nflLiveSync = Schedule::command('espn:sync-nfl-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('17:00', '02:00')
-    ->when($nflInSeason)
-    ->name('NFL: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-if ($heartbeatUrl) {
-    $nflLiveSync->pingOnSuccess($heartbeatUrl);
-}
-
-// 3. Sync game details for completed games (during typical NFL game hours)
-Schedule::command('espn:sync-nfl-game-details')
-    ->everyThirtyMinutes()
-    ->between('17:00', '02:00')
-    ->when($nflInSeason)
-    ->name('NFL: Sync Game Details')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Grade predictions for completed games (after all games finalize)
-Schedule::command('nfl:grade-predictions --season=2025')
-    ->dailyAt('08:30')
-    ->when($nflInSeason)
-    ->name('NFL: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate Elo ratings (after grading)
-Schedule::command('nfl:calculate-elo --season=2025')
-    ->dailyAt('09:00')
-    ->when($nflInSeason)
-    ->name('NFL: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Calculate team metrics (after Elo updates)
-Schedule::command('nfl:calculate-team-metrics --season=2025')
-    ->dailyAt('09:30')
-    ->when($nflInSeason)
-    ->name('NFL: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Generate predictions for upcoming games (after metrics update)
-Schedule::command('nfl:generate-predictions --season=2025')
-    ->dailyAt('10:00')
-    ->when($nflInSeason)
-    ->name('NFL: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 8. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('nfl:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($nflInSeason)
-    ->name('NFL: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 9. Sync player props (multiple times per day - props released closer to game time)
-Schedule::command('nfl:sync-player-props')
-    ->twiceDaily(10, 15)
-    ->when($nflInSeason)
-    ->name('NFL: Sync Player Props')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-/*
-|--------------------------------------------------------------------------
-| CFB Automated Pipeline (Aug - Jan)
-|--------------------------------------------------------------------------
-*/
-
-// 1. Sync current week's games (captures new scheduled games)
-Schedule::command('espn:sync-cfb-current')
-    ->dailyAt('07:00')
-    ->when($cfbInSeason)
-    ->name('CFB: Sync Current Week')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 2. Live scoreboard sync during game hours (updates scores + live predictions every 5 min)
-$cfbLiveSync = Schedule::command('espn:sync-cfb-games-scoreboard '.date('Ymd'))
-    ->everyFiveMinutes()
-    ->between('12:00', '02:00')
-    ->when($cfbInSeason)
-    ->name('CFB: Live Scoreboard Sync')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-if ($heartbeatUrl) {
-    $cfbLiveSync->pingOnSuccess($heartbeatUrl);
-}
-
-// 3. Sync game details during game hours (box scores for completed games)
-Schedule::command('espn:sync-cfb-game-details')
-    ->everyThirtyMinutes()
-    ->between('14:00', '02:00')
-    ->when($cfbInSeason)
-    ->name('CFB: Sync Game Details')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 4. Grade predictions for completed games (after all games finalize)
-Schedule::command('cfb:grade-predictions --season='.date('Y'))
-    ->dailyAt('03:00')
-    ->when($cfbInSeason)
-    ->name('CFB: Grade Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 5. Calculate Elo ratings (after grading)
-Schedule::command('cfb:calculate-elo --season='.date('Y'))
-    ->dailyAt('03:30')
-    ->when($cfbInSeason)
-    ->name('CFB: Calculate Elo Ratings')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 6. Calculate team metrics (after Elo updates)
-Schedule::command('cfb:calculate-team-metrics --season='.date('Y'))
-    ->dailyAt('04:00')
-    ->when($cfbInSeason)
-    ->name('CFB: Calculate Team Metrics')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 7. Generate predictions for upcoming games (after metrics update)
-Schedule::command('cfb:generate-predictions --season='.date('Y'))
-    ->dailyAt('04:30')
-    ->when($cfbInSeason)
-    ->name('CFB: Generate Predictions')
-    ->withoutOverlapping()
-    ->runInBackground();
-
-// 8. Sync odds from The Odds API (every 4 hours during the day)
-Schedule::command('cfb:sync-odds')
-    ->everyFourHours()
-    ->between('08:00', '23:00')
-    ->when($cfbInSeason)
-    ->name('CFB: Sync Odds')
-    ->withoutOverlapping()
-    ->runInBackground();
+// CFB
+$scheduleSportPipeline(
+    'espn:sync-cfb-current',
+    '07:00',
+    'CFB: Sync Current Week',
+    'espn:sync-cfb-games-scoreboard',
+    '12:00',
+    '02:00',
+    'CFB: Live Scoreboard Sync',
+    'espn:sync-cfb-game-details',
+    '14:00',
+    '02:00',
+    'CFB: Sync Game Details',
+    'cfb',
+    'CFB',
+    $fallSeasonYear,
+    $cfbInSeason,
+    [
+        'grade-predictions' => '03:00',
+        'calculate-elo' => '03:30',
+        'calculate-team-metrics' => '04:00',
+        'generate-predictions' => '04:30',
+    ],
+    'cfb:sync-odds',
+    'CFB: Sync Odds'
+);

@@ -1,42 +1,17 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import AppLayout from '@/layouts/AppLayout.vue';
-import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
+import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
 import SportPredictions from '@/components/SportPredictions.vue';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { mlbPredictions, responsibleGambling } from '@/routes';
-import { type BreadcrumbItem } from '@/types';
-
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'MLB Predictions',
-        href: mlbPredictions().url,
-    },
-];
+import { mlbPredictionsConfig } from '@/config/predictions-configs';
+import { mlbPredictions } from '@/routes';
 </script>
 
 <template>
-    <Head title="MLB Predictions" />
-
-    <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
-            <SubscriptionBanner variant="subtle" storage-key="mlb-predictions-banner-dismissed" />
-
-            <Alert>
-                <AlertDescription>
-                    <strong>Entertainment Only:</strong> These predictions are for entertainment purposes only. Past performance does not guarantee future results. Please gamble responsibly. If you or someone you know has a gambling problem, call 1-800-522-4700 or visit our <Link :href="responsibleGambling()" class="underline">Responsible Gambling</Link> page.
-                </AlertDescription>
-            </Alert>
-
-            <SportPredictions :config="{
-                sport: 'mlb',
-                title: 'MLB Predictions',
-                subtitle: 'Predictions based on team and pitcher Elo ratings',
-                useEasternTime: false,
-                showGameTime: true,
-                confidenceIsDecimal: true,
-                confidenceDecimals: 0,
-            }" />
-        </div>
-    </AppLayout>
+    <PredictionsPageShell
+        title="MLB Predictions"
+        breadcrumb-title="MLB Predictions"
+        :breadcrumb-href="mlbPredictions().url"
+        banner-storage-key="mlb-predictions-banner-dismissed"
+    >
+        <SportPredictions :config="mlbPredictionsConfig" />
+    </PredictionsPageShell>
 </template>

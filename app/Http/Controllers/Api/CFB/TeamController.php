@@ -8,18 +8,9 @@ use App\Models\CFB\Team;
 
 class TeamController extends AbstractTeamController
 {
-    protected function getTeamModel(): string
-    {
-        return Team::class;
-    }
+    protected const TEAM_MODEL = Team::class;
 
-    protected function getTeamResource(): string
-    {
-        return TeamResource::class;
-    }
+    protected const TEAM_RESOURCE = TeamResource::class;
 
-    protected function getOrderByColumn(): string
-    {
-        return 'school';
-    }
+    protected const ORDER_BY_COLUMN = 'school';
 }

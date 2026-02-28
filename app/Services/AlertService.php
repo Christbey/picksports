@@ -7,7 +7,6 @@ use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Notification;
 
 class AlertService
 {
@@ -34,7 +33,6 @@ class AlertService
         }
 
         $models = self::SPORTS_MODELS[$sport];
-        $gameModel = $models['game'];
         $predictionModel = $models['prediction'];
 
         $predictions = $predictionModel::query()
@@ -50,7 +48,7 @@ class AlertService
         $alertsSent = 0;
 
         foreach ($predictions as $prediction) {
-            $opportunities = $this->analyzeOpportunities($prediction, $sport);
+            $opportunities = $this->analyzeOpportunities($prediction);
 
             foreach ($opportunities as $opportunity) {
                 $alertsSent += $this->sendAlertsToUsers(
@@ -65,7 +63,7 @@ class AlertService
         return $alertsSent;
     }
 
-    protected function analyzeOpportunities(Model $prediction, string $sport): array
+    protected function analyzeOpportunities(Model $prediction): array
     {
         $game = $prediction->game;
         $opportunities = [];
@@ -127,12 +125,12 @@ class AlertService
 
         if ($predictedSpread < $marketSpread) {
             $expectedValue = (($confidence / 100) - $impliedProb) * 100;
-            $homeTeamName = $game->homeTeam->name ?? $game->homeTeam->school;
+            $homeTeamName = $this->teamName($game->homeTeam);
             $recommendation = "Bet HOME ({$homeTeamName}) at {$marketSpread}";
         } else {
             $awayImpliedProb = $this->americanOddsToProb($awayOutcome['price']);
             $expectedValue = (((100 - $confidence) / 100) - $awayImpliedProb) * 100;
-            $awayTeamName = $game->awayTeam->name ?? $game->awayTeam->school;
+            $awayTeamName = $this->teamName($game->awayTeam);
             $recommendation = "Bet AWAY ({$awayTeamName}) at ".($marketSpread * -1);
         }
 
@@ -200,11 +198,11 @@ class AlertService
         $expectedValue = (($predictedWinProb - $impliedProb) * $confidence) / 10;
 
         if ($predictedWinProb > $impliedProb) {
-            $homeTeamName = $game->homeTeam->name ?? $game->homeTeam->school;
+            $homeTeamName = $this->teamName($game->homeTeam);
             $priceSign = $homeOutcome['price'] > 0 ? '+' : '';
             $recommendation = "Bet HOME ({$homeTeamName}) ML at {$priceSign}{$homeOutcome['price']}";
         } else {
-            $awayTeamName = $game->awayTeam->name ?? $game->awayTeam->school;
+            $awayTeamName = $this->teamName($game->awayTeam);
             $recommendation = "Bet AWAY ({$awayTeamName}) ML";
         }
 
@@ -221,6 +219,15 @@ class AlertService
         }
 
         return abs($odds) / (abs($odds) + 100);
+    }
+
+    protected function teamName(?Model $team): string
+    {
+        if (! $team) {
+            return 'Unknown';
+        }
+
+        return (string) ($team->name ?? $team->school ?? 'Unknown');
     }
 
     protected function sendAlertsToUsers(Model $prediction, string $sport, float $expectedValue, string $recommendation): int

@@ -2,132 +2,43 @@
 
 namespace App\Http\Controllers\Api\CBB;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractPlayerStatController;
 use App\Http\Resources\CBB\PlayerStatResource;
 use App\Models\CBB\Game;
 use App\Models\CBB\Player;
 use App\Models\CBB\PlayerStat;
-use Illuminate\Http\JsonResponse;
+use App\Services\PlayerStats\BasketballLeaderboardService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
-class PlayerStatController extends Controller
+class PlayerStatController extends AbstractPlayerStatController
 {
-    /**
-     * Display season averages for all players, for leaderboard/ranking purposes.
-     */
-    public function leaderboard(): JsonResponse
+    protected const PLAYER_STAT_MODEL = PlayerStat::class;
+
+    protected const PLAYER_MODEL = Player::class;
+
+    protected const GAME_MODEL = Game::class;
+
+    protected const PLAYER_STAT_RESOURCE = PlayerStatResource::class;
+
+    public function __construct(
+        protected BasketballLeaderboardService $leaderboardService
+    ) {}
+
+    protected function getByGameRelations(): array
     {
-        $stats = PlayerStat::query()
-            ->selectRaw('
-                player_id,
-                COUNT(*) as games_played,
-                AVG(points) as points_per_game,
-                AVG(rebounds_total) as rebounds_per_game,
-                AVG(assists) as assists_per_game,
-                AVG(steals) as steals_per_game,
-                AVG(blocks) as blocks_per_game,
-                AVG(minutes_played) as minutes_per_game,
-                SUM(field_goals_made) as total_fg_made,
-                SUM(field_goals_attempted) as total_fg_attempted,
-                SUM(three_point_made) as total_3p_made,
-                SUM(three_point_attempted) as total_3p_attempted,
-                SUM(free_throws_made) as total_ft_made,
-                SUM(free_throws_attempted) as total_ft_attempted
-            ')
-            ->groupBy('player_id')
-            ->havingRaw('COUNT(*) >= 10')
-            ->get();
-
-        $playerIds = $stats->pluck('player_id');
-        $players = Player::query()
-            ->with('team')
-            ->whereIn('id', $playerIds)
-            ->get()
-            ->keyBy('id');
-
-        $data = $stats->map(function ($s) use ($players) {
-            $player = $players->get($s->player_id);
-
-            return [
-                'player_id' => $s->player_id,
-                'player' => $player ? [
-                    'id' => $player->id,
-                    'full_name' => $player->full_name,
-                    'headshot_url' => $player->headshot_url,
-                    'position' => $player->position,
-                    'jersey_number' => $player->jersey_number,
-                    'team' => $player->team ? [
-                        'id' => $player->team->id,
-                        'name' => $player->team->name,
-                        'display_name' => $player->team->display_name,
-                        'abbreviation' => $player->team->abbreviation,
-                    ] : null,
-                ] : null,
-                'games_played' => (int) $s->games_played,
-                'points_per_game' => round($s->points_per_game, 1),
-                'rebounds_per_game' => round($s->rebounds_per_game, 1),
-                'assists_per_game' => round($s->assists_per_game, 1),
-                'steals_per_game' => round($s->steals_per_game, 1),
-                'blocks_per_game' => round($s->blocks_per_game, 1),
-                'minutes_per_game' => round((float) $s->minutes_per_game, 1),
-                'field_goal_percentage' => $s->total_fg_attempted > 0
-                    ? round(($s->total_fg_made / $s->total_fg_attempted) * 100, 1) : 0,
-                'three_point_percentage' => $s->total_3p_attempted > 0
-                    ? round(($s->total_3p_made / $s->total_3p_attempted) * 100, 1) : 0,
-                'free_throw_percentage' => $s->total_ft_attempted > 0
-                    ? round(($s->total_ft_made / $s->total_ft_attempted) * 100, 1) : 0,
-            ];
-        })->values();
-
-        return response()->json(['data' => $data]);
+        return ['player', 'team'];
     }
 
-    /**
-     * Display a listing of CBB player stats.
-     */
-    public function index()
+    protected function supportsLeaderboard(): bool
     {
-        $stats = PlayerStat::query()
-            ->with(['player', 'game'])
-            ->orderByDesc('id')
-            ->paginate(15);
-
-        return PlayerStatResource::collection($stats);
+        return true;
     }
 
-    /**
-     * Display the specified CBB player stat.
-     */
-    public function show(PlayerStat $playerStat)
+    protected function getLeaderboardData(Request $request): Collection
     {
-        $playerStat->load(['player', 'game']);
+        $minGames = (int) ($request->integer('min_games') ?: 10);
 
-        return new PlayerStatResource($playerStat);
-    }
-
-    /**
-     * Display player stats for a specific game.
-     */
-    public function byGame(Game $game)
-    {
-        $stats = PlayerStat::query()
-            ->with(['player', 'team'])
-            ->where('game_id', $game->id)
-            ->paginate(15);
-
-        return PlayerStatResource::collection($stats);
-    }
-
-    /**
-     * Display stats for a specific player.
-     */
-    public function byPlayer(Player $player)
-    {
-        $stats = PlayerStat::query()
-            ->with(['game'])
-            ->where('player_id', $player->id)
-            ->orderByDesc('id')
-            ->paginate(15);
-
-        return PlayerStatResource::collection($stats);
+        return $this->leaderboardService->execute(PlayerStat::class, Player::class, $minGames);
     }
 }

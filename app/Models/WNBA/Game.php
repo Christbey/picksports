@@ -10,18 +10,32 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Game extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbGameFactory> */
+    /** @use HasFactory<\Database\Factories\WnbaGameFactory> */
     use HasFactory;
 
     protected $table = 'wnba_games';
 
+    protected static function newFactory(): \Database\Factories\WnbaGameFactory
+    {
+        return \Database\Factories\WnbaGameFactory::new();
+    }
+
     protected $fillable = [
         'espn_id',
+        'espn_event_id',
+        'espn_uid',
         'home_team_id',
         'away_team_id',
         'season',
+        'week',
         'season_type',
         'game_date',
+        'game_time',
+        'name',
+        'short_name',
+        'venue_name',
+        'venue_city',
+        'venue_state',
         'venue',
         'attendance',
         'status',
@@ -29,6 +43,7 @@ class Game extends Model
         'odds_data',
         'odds_updated_at',
         'period',
+        'game_clock',
         'clock',
         'home_score',
         'away_score',

@@ -2,60 +2,14 @@
 
 namespace App\Console\Commands\ESPN\CBB;
 
+use App\Console\Commands\ESPN\AbstractSyncMissingPlayerStatsGameDetailsCommand;
 use App\Jobs\ESPN\CBB\FetchGameDetails;
 use App\Models\CBB\Game;
-use Illuminate\Console\Command;
 
-class SyncGameDetailsCommand extends Command
+class SyncGameDetailsCommand extends AbstractSyncMissingPlayerStatsGameDetailsCommand
 {
-    protected $signature = 'espn:sync-cbb-game-details
-                            {eventId? : The ESPN event ID (optional - syncs all completed games without stats if not provided)}';
-
-    protected $description = 'Sync CBB game details (plays and player stats) from ESPN API';
-
-    public function handle(): int
-    {
-        $eventId = $this->argument('eventId');
-
-        if ($eventId) {
-            $this->info("Dispatching CBB game details sync job for event {$eventId}...");
-            FetchGameDetails::dispatch($eventId);
-            $this->info('CBB game details sync job dispatched successfully.');
-
-            return Command::SUCCESS;
-        }
-
-        // Sync all completed games without stats
-        $this->info('Finding all completed games without stats...');
-
-        $games = Game::query()
-            ->whereNotNull('espn_event_id')
-            ->whereDoesntHave('playerStats')
-            ->orderBy('game_date', 'asc')
-            ->get();
-
-        if ($games->isEmpty()) {
-            $this->info('No completed games found without stats.');
-
-            return Command::SUCCESS;
-        }
-
-        $this->info("Found {$games->count()} completed games without stats.");
-        $this->info('Dispatching game details sync jobs...');
-
-        $bar = $this->output->createProgressBar($games->count());
-        $bar->start();
-
-        foreach ($games as $game) {
-            FetchGameDetails::dispatch($game->espn_event_id);
-            $bar->advance();
-        }
-
-        $bar->finish();
-        $this->newLine(2);
-
-        $this->info("Dispatched {$games->count()} game details sync jobs successfully.");
-
-        return Command::SUCCESS;
-    }
+    protected const COMMAND_NAME = 'espn:sync-cbb-game-details';
+    protected const SPORT_CODE = 'CBB';
+    protected const GAME_MODEL_CLASS = Game::class;
+    protected const GAME_DETAILS_JOB_CLASS = FetchGameDetails::class;
 }

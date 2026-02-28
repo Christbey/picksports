@@ -9,35 +9,9 @@ use App\Models\NFL\Prediction;
 
 class PredictionController extends AbstractPredictionController
 {
-    protected function getPredictionModel(): string
-    {
-        return Prediction::class;
-    }
+    protected const PREDICTION_MODEL = Prediction::class;
 
-    protected function getGameModel(): string
-    {
-        return Game::class;
-    }
+    protected const GAME_MODEL = Game::class;
 
-    protected function getPredictionResource(): string
-    {
-        return PredictionResource::class;
-    }
-
-    protected function applyIndexFilters($query): void
-    {
-        // Filter by season type if provided
-        if (request('season_type')) {
-            $query->whereHas('game', function ($q) {
-                $q->where('season_type', request('season_type'));
-            });
-        }
-
-        // Filter by week if provided
-        if (request('week')) {
-            $query->whereHas('game', function ($q) {
-                $q->where('week', request('week'));
-            });
-        }
-    }
+    protected const PREDICTION_RESOURCE = PredictionResource::class;
 }

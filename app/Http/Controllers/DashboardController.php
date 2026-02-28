@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\CBB\CalculateBettingValue as CBBCalculateBettingValue;
 use App\Actions\NBA\CalculateBettingValue as NBACalculateBettingValue;
 use App\Actions\NFL\CalculateBettingValue as NFLCalculateBettingValue;
+use App\Http\Resources\DashboardPredictionResource;
 use App\Models\CBB\Game as CBBGame;
 use App\Models\CBB\Prediction as CBBPrediction;
 use App\Models\CFB\Game as CFBGame;
@@ -20,292 +21,38 @@ use App\Models\WCBB\Game as WCBBGame;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class DashboardController extends Controller
 {
+    private const DEFAULT_LIVE_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+
+    private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
+
     public function __invoke(): Response
     {
-        // Get today's predictions from all sports
-        $todaysPredictions = collect();
         $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
         $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
-        $todayGameScope = fn ($q) => $q->whereRaw(
+
+        $todayGameScope = fn (Builder $q) => $q->whereRaw(
             'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
             [$todayStartUtc, $todayEndUtc]
         );
 
-        // Add NBA predictions
-        $nba = NBAPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
+        $sportConfigs = $this->sportConfigs();
 
-                return [
-                    'sport' => 'NBA',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    'betting_value' => app(NBACalculateBettingValue::class)->execute($p->game),
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'period' => $isLive ? $p->game->period : null,
-                    'game_clock' => $isLive ? $p->game->game_clock : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_seconds_remaining' => $isLive ? $p->live_seconds_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($nba);
+        $todaysPredictions = collect($sportConfigs)
+            ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope));
 
-        // Add CBB predictions
-        $cbb = CBBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
-
-                return [
-                    'sport' => 'CBB',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    'betting_value' => app(CBBCalculateBettingValue::class)->execute($p->game),
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'period' => $isLive ? $p->game->period : null,
-                    'game_clock' => $isLive ? $p->game->game_clock : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_seconds_remaining' => $isLive ? $p->live_seconds_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($cbb);
-
-        // Add WCBB predictions
-        $wcbb = WCBBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
-
-                return [
-                    'sport' => 'WCBB',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'period' => $isLive ? $p->game->period : null,
-                    'game_clock' => $isLive ? $p->game->game_clock : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_seconds_remaining' => $isLive ? $p->live_seconds_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($wcbb);
-
-        // Add NFL predictions
-        $nfl = NFLPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
-
-                return [
-                    'sport' => 'NFL',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    'betting_value' => app(NFLCalculateBettingValue::class)->execute($p->game),
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'period' => $isLive ? $p->game->period : null,
-                    'game_clock' => $isLive ? $p->game->game_clock : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_seconds_remaining' => $isLive ? $p->live_seconds_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($nfl);
-
-        // Add MLB predictions
-        $mlb = MLBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_DELAYED']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
-
-                return [
-                    'sport' => 'MLB',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'inning' => $isLive ? $p->game->inning : null,
-                    'inning_state' => $isLive ? $p->game->inning_state : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_outs_remaining' => $isLive ? $p->live_outs_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($mlb);
-
-        // Add CFB predictions
-        $cfb = CFBPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
-
-                return [
-                    'sport' => 'CFB',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'period' => $isLive ? $p->game->period : null,
-                    'game_clock' => $isLive ? $p->game->game_clock : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_seconds_remaining' => $isLive ? $p->live_seconds_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($cfb);
-
-        // Add WNBA predictions
-        $wnba = WNBAPrediction::with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', $todayGameScope)
-            ->get()
-            ->map(function ($p) {
-                $isLive = in_array($p->game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD']);
-                $isFinal = in_array($p->game->status, ['STATUS_FINAL', 'STATUS_FULL_TIME']);
-
-                return [
-                    'sport' => 'WNBA',
-                    'game_id' => $p->game->id,
-                    'game' => $p->game->name,
-                    'game_time' => $p->game->game_date,
-                    'home_team' => $p->game->homeTeam->abbreviation,
-                    'away_team' => $p->game->awayTeam->abbreviation,
-                    'win_probability' => (float) $p->win_probability,
-                    'predicted_spread' => (float) $p->predicted_spread,
-                    'predicted_total' => (float) $p->predicted_total,
-                    'home_logo' => $p->game->homeTeam->logo_url,
-                    'away_logo' => $p->game->awayTeam->logo_url,
-                    // Live game data
-                    'is_live' => $isLive,
-                    'is_final' => $isFinal,
-                    'home_score' => ($isLive || $isFinal) ? $p->game->home_score : null,
-                    'away_score' => ($isLive || $isFinal) ? $p->game->away_score : null,
-                    'period' => $isLive ? $p->game->period : null,
-                    'game_clock' => $isLive ? $p->game->game_clock : null,
-                    'status' => $p->game->status,
-                    // Live prediction data
-                    'live_win_probability' => $isLive && $p->live_win_probability !== null ? (float) $p->live_win_probability : null,
-                    'live_predicted_spread' => $isLive && $p->live_predicted_spread !== null ? (float) $p->live_predicted_spread : null,
-                    'live_predicted_total' => $isLive && $p->live_predicted_total !== null ? (float) $p->live_predicted_total : null,
-                    'live_seconds_remaining' => $isLive ? $p->live_seconds_remaining : null,
-                ];
-            });
-        $todaysPredictions = $todaysPredictions->merge($wnba);
-
-        // Apply user's tier limit on predictions per sport
         $user = auth()->user();
         $predictionsPerDay = $user->subscriptionTier()?->features['predictions_per_day'] ?? null;
 
-        // Group predictions by sport and sort each group by game time, applying per-sport limit
         $predictionsBySport = $todaysPredictions
             ->groupBy('sport')
-            ->map(function ($predictions) use ($predictionsPerDay) {
+            ->map(function (Collection $predictions) use ($predictionsPerDay) {
                 $sorted = $predictions->sortBy('game_time');
 
                 return $predictionsPerDay !== null
@@ -313,36 +60,27 @@ class DashboardController extends Controller
                     : $sorted->values();
             });
 
-        // Define sport order and metadata
-        $sports = collect([
-            'NBA' => ['name' => 'NBA', 'fullName' => 'National Basketball Association', 'color' => 'orange'],
-            'CBB' => ['name' => 'CBB', 'fullName' => "Men's College Basketball", 'color' => 'blue'],
-            'WCBB' => ['name' => 'WCBB', 'fullName' => "Women's College Basketball", 'color' => 'purple'],
-            'NFL' => ['name' => 'NFL', 'fullName' => 'National Football League', 'color' => 'green'],
-            'MLB' => ['name' => 'MLB', 'fullName' => 'Major League Baseball', 'color' => 'orange'],
-            'CFB' => ['name' => 'CFB', 'fullName' => 'College Football', 'color' => 'blue'],
-            'WNBA' => ['name' => 'WNBA', 'fullName' => "Women's National Basketball Association", 'color' => 'purple'],
-        ])->map(function ($sport, $key) use ($predictionsBySport) {
-            return array_merge($sport, [
-                'predictions' => $predictionsBySport->get($key, collect())->values(),
-            ]);
-        })->filter(fn ($sport) => $sport['predictions']->isNotEmpty())->values();
+        $sports = collect($sportConfigs)
+            ->map(function (array $config, string $sport) use ($predictionsBySport) {
+                return [
+                    'name' => $sport,
+                    'fullName' => $config['full_name'],
+                    'color' => $config['color'],
+                    'predictions' => $predictionsBySport->get($sport, collect())->values(),
+                ];
+            })
+            ->filter(fn (array $sport) => $sport['predictions']->isNotEmpty())
+            ->values();
 
-        // Get stats for top sections
-        $todayGameCount = fn ($model) => $model::whereRaw(
+        $todayGameCount = fn (string $model) => $model::whereRaw(
             'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
             [$todayStartUtc, $todayEndUtc]
         )->count();
 
         $stats = [
-            'total_predictions_today' => $predictionsBySport->sum(fn ($predictions) => $predictions->count()),
-            'total_games_today' => $todayGameCount(NBAGame::class)
-                + $todayGameCount(CBBGame::class)
-                + $todayGameCount(WCBBGame::class)
-                + $todayGameCount(NFLGame::class)
-                + $todayGameCount(MLBGame::class)
-                + $todayGameCount(CFBGame::class)
-                + $todayGameCount(WNBAGame::class),
+            'total_predictions_today' => $predictionsBySport->sum(fn (Collection $predictions) => $predictions->count()),
+            'total_games_today' => collect($sportConfigs)
+                ->sum(fn (array $config) => $todayGameCount($config['game_model'])),
             'healthcheck_status' => Healthcheck::where('checked_at', '>=', now()->subHours(1))
                 ->where('status', 'failing')
                 ->exists() ? 'failing' : 'passing',
@@ -352,5 +90,117 @@ class DashboardController extends Controller
             'sports' => $sports,
             'stats' => $stats,
         ]);
+    }
+
+    private function sportConfigs(): array
+    {
+        return [
+            'NBA' => $this->sportConfig(
+                fullName: 'National Basketball Association',
+                color: 'orange',
+                predictionModel: NBAPrediction::class,
+                gameModel: NBAGame::class,
+                bettingCalculator: NBACalculateBettingValue::class
+            ),
+            'CBB' => $this->sportConfig(
+                fullName: "Men's College Basketball",
+                color: 'blue',
+                predictionModel: CBBPrediction::class,
+                gameModel: CBBGame::class,
+                bettingCalculator: CBBCalculateBettingValue::class
+            ),
+            'WCBB' => $this->sportConfig(
+                fullName: "Women's College Basketball",
+                color: 'purple',
+                predictionModel: WCBBPrediction::class,
+                gameModel: WCBBGame::class
+            ),
+            'NFL' => $this->sportConfig(
+                fullName: 'National Football League',
+                color: 'green',
+                predictionModel: NFLPrediction::class,
+                gameModel: NFLGame::class,
+                bettingCalculator: NFLCalculateBettingValue::class
+            ),
+            'MLB' => $this->sportConfig(
+                fullName: 'Major League Baseball',
+                color: 'orange',
+                predictionModel: MLBPrediction::class,
+                gameModel: MLBGame::class,
+                liveStatuses: ['STATUS_IN_PROGRESS', 'STATUS_DELAYED'],
+                liveRemainingField: 'live_outs_remaining',
+                includeInning: true
+            ),
+            'CFB' => $this->sportConfig(
+                fullName: 'College Football',
+                color: 'blue',
+                predictionModel: CFBPrediction::class,
+                gameModel: CFBGame::class
+            ),
+            'WNBA' => $this->sportConfig(
+                fullName: "Women's National Basketball Association",
+                color: 'purple',
+                predictionModel: WNBAPrediction::class,
+                gameModel: WNBAGame::class
+            ),
+        ];
+    }
+
+    /**
+     * @return array{
+     *   full_name:string,
+     *   color:string,
+     *   prediction_model:class-string,
+     *   game_model:class-string,
+     *   live_statuses:array<int,string>,
+     *   final_statuses:array<int,string>,
+     *   live_remaining_field:string,
+     *   include_inning:bool,
+     *   betting_calculator:class-string|null
+     * }
+     */
+    private function sportConfig(
+        string $fullName,
+        string $color,
+        string $predictionModel,
+        string $gameModel,
+        ?string $bettingCalculator = null,
+        ?array $liveStatuses = null,
+        ?array $finalStatuses = null,
+        string $liveRemainingField = 'live_seconds_remaining',
+        bool $includeInning = false,
+    ): array {
+        return [
+            'full_name' => $fullName,
+            'color' => $color,
+            'prediction_model' => $predictionModel,
+            'game_model' => $gameModel,
+            'live_statuses' => $liveStatuses ?? self::DEFAULT_LIVE_STATUSES,
+            'final_statuses' => $finalStatuses ?? self::DEFAULT_FINAL_STATUSES,
+            'live_remaining_field' => $liveRemainingField,
+            'include_inning' => $includeInning,
+            'betting_calculator' => $bettingCalculator,
+        ];
+    }
+
+    private function getPredictionsForSport(string $sport, array $config, \Closure $todayGameScope): Collection
+    {
+        $predictions = $config['prediction_model']::with(['game.homeTeam', 'game.awayTeam'])
+            ->whereHas('game', $todayGameScope)
+            ->get();
+
+        return $predictions->map(function ($prediction) use ($sport, $config) {
+            $resource = DashboardPredictionResource::make($prediction)
+                ->sport($sport)
+                ->statuses($config['live_statuses'], $config['final_statuses'])
+                ->includeInning($config['include_inning'])
+                ->liveRemainingField($config['live_remaining_field']);
+
+            if ($config['betting_calculator']) {
+                $resource->bettingValue(app($config['betting_calculator'])->execute($prediction->game));
+            }
+
+            return $resource->resolve();
+        });
     }
 }

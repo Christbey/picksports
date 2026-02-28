@@ -2,45 +2,17 @@
 
 namespace App\Console\Commands\ESPN\WNBA;
 
+use App\Console\Commands\ESPN\AbstractSyncCurrentWeekNumberCommand;
 use App\Jobs\ESPN\WNBA\FetchGames;
 use App\Jobs\ESPN\WNBA\FetchTeams;
-use Illuminate\Console\Command;
 
-class SyncCurrentWeekCommand extends Command
+class SyncCurrentWeekCommand extends AbstractSyncCurrentWeekNumberCommand
 {
-    protected $signature = 'espn:sync-wnba-current';
-
-    protected $description = 'Sync WNBA teams and current week games from ESPN API';
-
-    public function handle(): int
-    {
-        $this->info('Syncing WNBA teams...');
-        FetchTeams::dispatch();
-
-        $currentYear = (int) date('Y');
-        $currentWeek = $this->getCurrentWeek();
-
-        $this->info("Syncing WNBA games for Week {$currentWeek}...");
-        FetchGames::dispatch($currentYear, 2, $currentWeek);
-
-        $this->info('Sync jobs dispatched successfully.');
-
-        return Command::SUCCESS;
-    }
-
-    protected function getCurrentWeek(): int
-    {
-        // Simple logic: estimate based on date
-        // WNBA season typically starts second week of May
-        $now = now();
-        $seasonStart = now()->setMonth(5)->setDay(8);
-
-        if ($now->lessThan($seasonStart)) {
-            return 1;
-        }
-
-        $weekNumber = $now->diffInWeeks($seasonStart) + 1;
-
-        return min($weekNumber, 15); // Regular season is approximately 15 weeks
-    }
+    protected const COMMAND_NAME = 'espn:sync-wnba-current';
+    protected const SPORT_CODE = 'WNBA';
+    protected const SEASON_START_MONTH = 5;
+    protected const SEASON_START_DAY = 8;
+    protected const MAX_REGULAR_SEASON_WEEKS = 15;
+    protected const TEAM_SYNC_JOB_CLASS = FetchTeams::class;
+    protected const WEEK_GAMES_SYNC_JOB_CLASS = FetchGames::class;
 }

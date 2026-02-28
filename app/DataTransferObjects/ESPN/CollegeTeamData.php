@@ -2,7 +2,7 @@
 
 namespace App\DataTransferObjects\ESPN;
 
-class CollegeTeamData
+class CollegeTeamData extends AbstractTeamData
 {
     public function __construct(
         public string $espnId,
@@ -15,31 +15,25 @@ class CollegeTeamData
         public ?string $logoUrl,
     ) {}
 
-    public static function fromEspnResponse(array $team): self
+    protected static function fromCommonAndRaw(array $common, array $team): static
     {
-        return new self(
-            espnId: (string) $team['id'],
-            abbreviation: $team['abbreviation'] ?? '',
+        return new static(
+            espnId: $common['espnId'],
+            abbreviation: $common['abbreviation'],
             school: $team['school'] ?? $team['location'] ?? '',
             mascot: $team['mascot'] ?? $team['name'] ?? '',
-            conference: $team['conference']['name'] ?? null,
-            division: $team['division']['name'] ?? null,
-            color: $team['color'] ?? null,
-            logoUrl: $team['logos'][0]['href'] ?? null,
+            conference: $common['conference'],
+            division: $common['division'],
+            color: $common['color'],
+            logoUrl: $common['logoUrl'],
         );
     }
 
-    public function toArray(): array
+    protected function extraTeamFields(): array
     {
         return [
-            'espn_id' => $this->espnId,
-            'abbreviation' => $this->abbreviation,
             'school' => $this->school,
             'mascot' => $this->mascot,
-            'conference' => $this->conference,
-            'division' => $this->division,
-            'color' => $this->color,
-            'logo_url' => $this->logoUrl,
         ];
     }
 }

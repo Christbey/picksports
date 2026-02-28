@@ -2,61 +2,19 @@
 
 namespace App\Http\Controllers\Api\NFL;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractTeamStatController;
 use App\Http\Resources\NFL\TeamStatResource;
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamStat;
 
-class TeamStatController extends Controller
+class TeamStatController extends AbstractTeamStatController
 {
-    /**
-     * Display a listing of NFL team stats.
-     */
-    public function index()
-    {
-        $stats = TeamStat::query()
-            ->with(['team', 'game'])
-            ->orderByDesc('id')
-            ->paginate(15);
+    protected const TEAM_STAT_MODEL = TeamStat::class;
 
-        return TeamStatResource::collection($stats);
-    }
+    protected const GAME_MODEL = Game::class;
 
-    /**
-     * Display the specified NFL team stat.
-     */
-    public function show(TeamStat $teamStat)
-    {
-        $teamStat->load(['team', 'game']);
+    protected const TEAM_MODEL = Team::class;
 
-        return new TeamStatResource($teamStat);
-    }
-
-    /**
-     * Display team stats for a specific game.
-     */
-    public function byGame(Game $game)
-    {
-        $stats = TeamStat::query()
-            ->with(['team'])
-            ->where('game_id', $game->id)
-            ->paginate(15);
-
-        return TeamStatResource::collection($stats);
-    }
-
-    /**
-     * Display stats for a specific team.
-     */
-    public function byTeam(Team $team)
-    {
-        $stats = TeamStat::query()
-            ->with(['game'])
-            ->where('team_id', $team->id)
-            ->orderByDesc('id')
-            ->paginate(15);
-
-        return TeamStatResource::collection($stats);
-    }
+    protected const TEAM_STAT_RESOURCE = TeamStatResource::class;
 }

@@ -1,5 +1,5 @@
-import { computed } from 'vue';
 import { usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import type { AppPageProps, SubscriptionTier } from '@/types';
 
 export function useSubscription() {
@@ -17,7 +17,11 @@ export function useSubscription() {
     const isPremium = computed(() => tier.value === 'premium');
 
     const hasFeature = (feature: string): boolean => {
-        return features.value?.[feature] ?? false;
+        const featureValue = features.value?.[feature];
+        if (typeof featureValue === 'boolean') {
+            return featureValue;
+        }
+        return Boolean(featureValue);
     };
 
     const canAccessTier = (requiredTier: SubscriptionTier): boolean => {

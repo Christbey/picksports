@@ -2,16 +2,21 @@
 
 namespace App\Actions\ESPN\MLB;
 
+use App\Actions\ESPN\MLB\Concerns\ParsesMlbStatValues;
+use App\Actions\ESPN\MLB\Concerns\ResolvesMlbBoxscoreTeams;
 use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
-use App\Models\MLB\Team;
 
 class SyncPlayerStats
 {
+    use ParsesMlbStatValues;
+    use ResolvesMlbBoxscoreTeams;
+
     public function execute(array $gameData, Game $game): int
     {
-        if (! isset($gameData['boxscore']['players'])) {
+        $playerSections = $this->boxscoreSection($gameData, 'players');
+        if ($playerSections === []) {
             return 0;
         }
 
@@ -20,15 +25,8 @@ class SyncPlayerStats
 
         $synced = 0;
 
-        foreach ($gameData['boxscore']['players'] as $teamData) {
-            $teamEspnId = $teamData['team']['id'] ?? null;
-
-            if (! $teamEspnId) {
-                continue;
-            }
-
-            $team = Team::query()->where('espn_id', $teamEspnId)->first();
-
+        foreach ($playerSections as $teamData) {
+            $team = $this->resolveTeamFromBoxscore($teamData);
             if (! $team) {
                 continue;
             }
@@ -93,17 +91,17 @@ class SyncPlayerStats
         // Stats array typically: [AB, R, H, HR, RBI, BB, K, SB, AVG, OBP, SLG]
         // But order may vary, so we map by index
         return [
-            'at_bats' => isset($stats[0]) && is_numeric($stats[0]) ? (int) $stats[0] : null,
-            'runs' => isset($stats[1]) && is_numeric($stats[1]) ? (int) $stats[1] : null,
-            'hits' => isset($stats[2]) && is_numeric($stats[2]) ? (int) $stats[2] : null,
-            'home_runs' => isset($stats[3]) && is_numeric($stats[3]) ? (int) $stats[3] : null,
-            'rbis' => isset($stats[4]) && is_numeric($stats[4]) ? (int) $stats[4] : null,
-            'walks' => isset($stats[5]) && is_numeric($stats[5]) ? (int) $stats[5] : null,
-            'strikeouts' => isset($stats[6]) && is_numeric($stats[6]) ? (int) $stats[6] : null,
-            'stolen_bases' => isset($stats[7]) && is_numeric($stats[7]) ? (int) $stats[7] : null,
-            'batting_average' => isset($stats[8]) && is_numeric($stats[8]) ? (float) $stats[8] : null,
-            'on_base_percentage' => isset($stats[9]) && is_numeric($stats[9]) ? (float) $stats[9] : null,
-            'slugging_percentage' => isset($stats[10]) && is_numeric($stats[10]) ? (float) $stats[10] : null,
+            'at_bats' => $this->intAt($stats, 0),
+            'runs' => $this->intAt($stats, 1),
+            'hits' => $this->intAt($stats, 2),
+            'home_runs' => $this->intAt($stats, 3),
+            'rbis' => $this->intAt($stats, 4),
+            'walks' => $this->intAt($stats, 5),
+            'strikeouts' => $this->intAt($stats, 6),
+            'stolen_bases' => $this->intAt($stats, 7),
+            'batting_average' => $this->floatAt($stats, 8),
+            'on_base_percentage' => $this->floatAt($stats, 9),
+            'slugging_percentage' => $this->floatAt($stats, 10),
         ];
     }
 
@@ -112,15 +110,15 @@ class SyncPlayerStats
         // Stats array typically: [IP, H, R, ER, BB, K, HR, ERA, Pitches]
         return [
             'innings_pitched' => $stats[0] ?? null,
-            'hits_allowed' => isset($stats[1]) && is_numeric($stats[1]) ? (int) $stats[1] : null,
-            'runs_allowed' => isset($stats[2]) && is_numeric($stats[2]) ? (int) $stats[2] : null,
-            'earned_runs' => isset($stats[3]) && is_numeric($stats[3]) ? (int) $stats[3] : null,
-            'walks_allowed' => isset($stats[4]) && is_numeric($stats[4]) ? (int) $stats[4] : null,
-            'strikeouts_pitched' => isset($stats[5]) && is_numeric($stats[5]) ? (int) $stats[5] : null,
-            'home_runs_allowed' => isset($stats[6]) && is_numeric($stats[6]) ? (int) $stats[6] : null,
-            'era' => isset($stats[7]) && is_numeric($stats[7]) ? (float) $stats[7] : null,
-            'pitches_thrown' => isset($stats[8]) && is_numeric($stats[8]) ? (int) $stats[8] : null,
-            'pitch_count' => isset($stats[8]) && is_numeric($stats[8]) ? (int) $stats[8] : null,
+            'hits_allowed' => $this->intAt($stats, 1),
+            'runs_allowed' => $this->intAt($stats, 2),
+            'earned_runs' => $this->intAt($stats, 3),
+            'walks_allowed' => $this->intAt($stats, 4),
+            'strikeouts_pitched' => $this->intAt($stats, 5),
+            'home_runs_allowed' => $this->intAt($stats, 6),
+            'era' => $this->floatAt($stats, 7),
+            'pitches_thrown' => $this->intAt($stats, 8),
+            'pitch_count' => $this->intAt($stats, 8),
         ];
     }
 
@@ -128,9 +126,9 @@ class SyncPlayerStats
     {
         // Stats array typically: [PO, A, E]
         return [
-            'putouts' => isset($stats[0]) && is_numeric($stats[0]) ? (int) $stats[0] : null,
-            'assists' => isset($stats[1]) && is_numeric($stats[1]) ? (int) $stats[1] : null,
-            'errors' => isset($stats[2]) && is_numeric($stats[2]) ? (int) $stats[2] : null,
+            'putouts' => $this->intAt($stats, 0),
+            'assists' => $this->intAt($stats, 1),
+            'errors' => $this->intAt($stats, 2),
         ];
     }
 }

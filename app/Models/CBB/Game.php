@@ -15,6 +15,11 @@ class Game extends Model
 
     protected $table = 'cbb_games';
 
+    protected static function newFactory(): \Database\Factories\CbbGameFactory
+    {
+        return \Database\Factories\CbbGameFactory::new();
+    }
+
     protected $fillable = [
         'espn_event_id',
         'espn_uid',

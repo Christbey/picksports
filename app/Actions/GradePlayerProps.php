@@ -8,6 +8,34 @@ use Illuminate\Support\Collection;
 class GradePlayerProps
 {
     /**
+     * Sport-specific game/stat mapping used for grading and seasonal filtering.
+     *
+     * @var array<string, array{games_table:string, gameable_type:class-string, player_stat_model:class-string}>
+     */
+    private const SPORT_CONFIG = [
+        'basketball_nba' => [
+            'games_table' => 'nba_games',
+            'gameable_type' => \App\Models\NBA\Game::class,
+            'player_stat_model' => \App\Models\NBA\PlayerStat::class,
+        ],
+        'basketball_ncaab' => [
+            'games_table' => 'cbb_games',
+            'gameable_type' => \App\Models\CBB\Game::class,
+            'player_stat_model' => \App\Models\CBB\PlayerStat::class,
+        ],
+        'americanfootball_nfl' => [
+            'games_table' => 'nfl_games',
+            'gameable_type' => \App\Models\NFL\Game::class,
+            'player_stat_model' => \App\Models\NFL\PlayerStat::class,
+        ],
+        'baseball_mlb' => [
+            'games_table' => 'mlb_games',
+            'gameable_type' => \App\Models\MLB\Game::class,
+            'player_stat_model' => \App\Models\MLB\PlayerStat::class,
+        ],
+    ];
+
+    /**
      * Market to stat column mapping
      */
     protected array $marketToStatMap = [
@@ -83,54 +111,20 @@ class GradePlayerProps
             ->whereNull('graded_at')
             ->where('sport', $sport);
 
-        // Join with the game table based on sport
-        if ($sport === 'basketball_nba') {
-            $query->join('nba_games', function ($join) {
-                $join->on('player_props.gameable_id', '=', 'nba_games.id')
-                    ->where('player_props.gameable_type', '=', 'App\\Models\\NBA\\Game');
-            })
-                ->where('nba_games.status', 'STATUS_FINAL')
-                ->whereNotNull('nba_games.home_score')
-                ->whereNotNull('nba_games.away_score');
+        $sportConfig = $this->sportConfig($sport);
+        if ($sportConfig !== null) {
+            $gamesTable = $sportConfig['games_table'];
 
-            if ($season) {
-                $query->where('nba_games.season', $season);
-            }
-        } elseif ($sport === 'basketball_ncaab') {
-            $query->join('cbb_games', function ($join) {
-                $join->on('player_props.gameable_id', '=', 'cbb_games.id')
-                    ->where('player_props.gameable_type', '=', 'App\\Models\\CBB\\Game');
+            $query->join($gamesTable, function ($join) use ($gamesTable, $sportConfig) {
+                $join->on('player_props.gameable_id', '=', $gamesTable.'.id')
+                    ->where('player_props.gameable_type', '=', $sportConfig['gameable_type']);
             })
-                ->where('cbb_games.status', 'STATUS_FINAL')
-                ->whereNotNull('cbb_games.home_score')
-                ->whereNotNull('cbb_games.away_score');
+                ->where($gamesTable.'.status', 'STATUS_FINAL')
+                ->whereNotNull($gamesTable.'.home_score')
+                ->whereNotNull($gamesTable.'.away_score');
 
-            if ($season) {
-                $query->where('cbb_games.season', $season);
-            }
-        } elseif ($sport === 'americanfootball_nfl') {
-            $query->join('nfl_games', function ($join) {
-                $join->on('player_props.gameable_id', '=', 'nfl_games.id')
-                    ->where('player_props.gameable_type', '=', 'App\\Models\\NFL\\Game');
-            })
-                ->where('nfl_games.status', 'STATUS_FINAL')
-                ->whereNotNull('nfl_games.home_score')
-                ->whereNotNull('nfl_games.away_score');
-
-            if ($season) {
-                $query->where('nfl_games.season', $season);
-            }
-        } elseif ($sport === 'baseball_mlb') {
-            $query->join('mlb_games', function ($join) {
-                $join->on('player_props.gameable_id', '=', 'mlb_games.id')
-                    ->where('player_props.gameable_type', '=', 'App\\Models\\MLB\\Game');
-            })
-                ->where('mlb_games.status', 'STATUS_FINAL')
-                ->whereNotNull('mlb_games.home_score')
-                ->whereNotNull('mlb_games.away_score');
-
-            if ($season) {
-                $query->where('mlb_games.season', $season);
+            if ($season !== null) {
+                $query->where($gamesTable.'.season', $season);
             }
         }
 
@@ -182,21 +176,13 @@ class GradePlayerProps
 
     protected function findPlayerStat(PlayerProp $prop)
     {
-        $gameableType = $prop->gameable_type;
         $gameId = $prop->gameable_id;
 
-        // Determine the player stats model based on sport
-        if ($prop->sport === 'basketball_nba') {
-            $playerStatModel = \App\Models\NBA\PlayerStat::class;
-        } elseif ($prop->sport === 'basketball_ncaab') {
-            $playerStatModel = \App\Models\CBB\PlayerStat::class;
-        } elseif ($prop->sport === 'americanfootball_nfl') {
-            $playerStatModel = \App\Models\NFL\PlayerStat::class;
-        } elseif ($prop->sport === 'baseball_mlb') {
-            $playerStatModel = \App\Models\MLB\PlayerStat::class;
-        } else {
+        $sportConfig = $this->sportConfig($prop->sport);
+        if ($sportConfig === null) {
             return null;
         }
+        $playerStatModel = $sportConfig['player_stat_model'];
 
         // Try exact player_id match first
         if ($prop->player_id) {
@@ -246,17 +232,18 @@ class GradePlayerProps
             ->whereNotNull('graded_at')
             ->where('sport', $sport);
 
-        if ($season) {
-            // Join with game table to filter by season
-            if ($sport === 'basketball_nba') {
-                $query->join('nba_games', function ($join) {
-                    $join->on('player_props.gameable_id', '=', 'nba_games.id')
-                        ->where('player_props.gameable_type', '=', 'App\\Models\\NBA\\Game');
+        if ($season !== null) {
+            $sportConfig = $this->sportConfig($sport);
+            if ($sportConfig !== null) {
+                $gamesTable = $sportConfig['games_table'];
+
+                $query->join($gamesTable, function ($join) use ($gamesTable, $sportConfig) {
+                    $join->on('player_props.gameable_id', '=', $gamesTable.'.id')
+                        ->where('player_props.gameable_type', '=', $sportConfig['gameable_type']);
                 })
-                    ->where('nba_games.season', $season)
+                    ->where($gamesTable.'.season', $season)
                     ->select('player_props.*');
             }
-            // Add other sports as needed
         }
 
         return $query->get()->groupBy('market')->map(function ($props, $market) {
@@ -272,5 +259,13 @@ class GradePlayerProps
                 'avg_error' => round($avgError, 2),
             ];
         })->sortByDesc('total_props')->values();
+    }
+
+    /**
+     * @return array{games_table:string, gameable_type:class-string, player_stat_model:class-string}|null
+     */
+    protected function sportConfig(string $sport): ?array
+    {
+        return self::SPORT_CONFIG[$sport] ?? null;
     }
 }

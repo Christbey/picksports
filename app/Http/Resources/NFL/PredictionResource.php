@@ -2,10 +2,10 @@
 
 namespace App\Http\Resources\NFL;
 
+use App\Http\Resources\Sports\AbstractPredictionResource;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 
-class PredictionResource extends JsonResource
+class PredictionResource extends AbstractPredictionResource
 {
     /**
      * Transform the resource into an array.
@@ -14,17 +14,10 @@ class PredictionResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $user = $request->user();
-        $tier = $user?->subscriptionTier();
-
-        $data = [
-            'id' => $this->id,
-            'game_id' => $this->game_id,
-            'game' => GameResource::make($this->whenLoaded('game')),
-        ];
+        $data = $this->basePredictionData(GameResource::class);
 
         // Spread (includes predicted_spread and predicted_total)
-        if ($tier?->hasDataPermission('spread')) {
+        if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = $this->predicted_spread;
             $data['predicted_total'] = $this->predicted_total;
             $data['live_predicted_spread'] = $this->live_predicted_spread;
@@ -32,7 +25,7 @@ class PredictionResource extends JsonResource
         }
 
         // Win Probability
-        if ($tier?->hasDataPermission('win_probability')) {
+        if ($this->hasTierPermission($request, 'win_probability')) {
             $data['win_probability'] = $this->win_probability;
             $data['live_win_probability'] = $this->live_win_probability;
             $data['live_seconds_remaining'] = $this->live_seconds_remaining;
@@ -40,33 +33,30 @@ class PredictionResource extends JsonResource
         }
 
         // Confidence Score
-        if ($tier?->hasDataPermission('confidence_score')) {
+        if ($this->hasTierPermission($request, 'confidence_score')) {
             $data['confidence_score'] = $this->confidence_score;
         }
 
         // Away Elo
-        if ($tier?->hasDataPermission('away_elo')) {
+        if ($this->hasTierPermission($request, 'away_elo')) {
             $data['away_elo'] = $this->away_elo;
         }
 
         // Home Elo
-        if ($tier?->hasDataPermission('home_elo')) {
+        if ($this->hasTierPermission($request, 'home_elo')) {
             $data['home_elo'] = $this->home_elo;
         }
 
         // Elo Diff (calculated field)
-        if ($tier?->hasDataPermission('elo_diff')) {
+        if ($this->hasTierPermission($request, 'elo_diff')) {
             $data['elo_diff'] = $this->home_elo - $this->away_elo;
         }
 
         // Betting Value
-        if ($tier?->hasDataPermission('betting_value') && $this->game) {
+        if ($this->hasTierPermission($request, 'betting_value') && $this->game) {
             $data['betting_value'] = app(\App\Actions\NFL\CalculateBettingValue::class)->execute($this->game);
         }
 
-        $data['created_at'] = $this->created_at?->toIso8601String();
-        $data['updated_at'] = $this->updated_at?->toIso8601String();
-
-        return $data;
+        return $this->appendStandardTimestamps($data);
     }
 }

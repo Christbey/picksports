@@ -3,19 +3,14 @@
 namespace App\Http\Controllers\CBB;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\CBB\GameResource;
 use App\Models\CBB\Game;
-use Inertia\Inertia;
 use Inertia\Response;
 
 class GameController extends Controller
 {
-    /**
-     * Handle the incoming request.
-     */
     public function __invoke(Game $game): Response
     {
-        return Inertia::render('CBB/Game', [
-            'game' => $game,
-        ]);
+        return $this->renderResourcePage('CBB/Game', 'game', $game, GameResource::class, ['homeTeam', 'awayTeam']);
     }
 }

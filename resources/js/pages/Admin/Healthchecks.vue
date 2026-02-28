@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
+import { ref, computed } from 'vue';
+import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import { ref, computed } from 'vue';
 
 interface Healthcheck {
     id: number;
@@ -12,6 +13,14 @@ interface Healthcheck {
     message: string;
     metadata: Record<string, any> | null;
     checked_at: string;
+}
+
+interface TeamScheduleOutlier {
+    type: string;
+    espn_id: number | string;
+    team: string;
+    games?: number;
+    deviation_from_avg?: number;
 }
 
 interface Props {
@@ -189,13 +198,29 @@ const overallStatus = computed(() => {
     if ((props.status_counts.warning || 0) > 0) return 'warning';
     return 'passing';
 });
+
+function getTeamScheduleOutliers(metadata: Record<string, any> | null): TeamScheduleOutlier[] {
+    if (!metadata || !Array.isArray(metadata.outliers)) {
+        return [];
+    }
+    return metadata.outliers as TeamScheduleOutlier[];
+}
+
+function getNoGameOutliers(metadata: Record<string, any> | null): TeamScheduleOutlier[] {
+    return getTeamScheduleOutliers(metadata).filter((outlier) => outlier.type === 'no_games');
+}
+
+function getScheduleOutliers(metadata: Record<string, any> | null): TeamScheduleOutlier[] {
+    return getTeamScheduleOutliers(metadata).filter((outlier) => outlier.type !== 'no_games');
+}
 </script>
 
 <template>
     <Head title="Health Checks" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <RenderErrorBoundary title="Health Checks Render Error">
+            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-2xl font-bold">Health Checks</h1>
@@ -315,15 +340,15 @@ const overallStatus = computed(() => {
                                     </div>
 
                                     <!-- Teams with no games and outliers -->
-                                    <div v-if="check.metadata.outliers && check.metadata.outliers.length > 0" class="mt-2 space-y-2">
+                                    <div v-if="getTeamScheduleOutliers(check.metadata).length > 0" class="mt-2 space-y-2">
                                         <!-- Teams with no games -->
-                                        <div v-if="check.metadata.outliers.filter(o => o.type === 'no_games').length > 0">
+                                        <div v-if="getNoGameOutliers(check.metadata).length > 0">
                                             <p class="text-xs font-medium text-red-600 dark:text-red-400">
-                                                Teams with no games ({{ check.metadata.outliers.filter(o => o.type === 'no_games').length }}):
+                                                Teams with no games ({{ getNoGameOutliers(check.metadata).length }}):
                                             </p>
                                             <div class="mt-1 flex flex-wrap gap-1">
                                                 <span
-                                                    v-for="team in check.metadata.outliers.filter(o => o.type === 'no_games')"
+                                                    v-for="team in getNoGameOutliers(check.metadata)"
                                                     :key="team.espn_id"
                                                     class="rounded bg-red-100 dark:bg-red-900/30 px-2 py-1 text-xs text-red-800 dark:text-red-300"
                                                 >
@@ -333,16 +358,16 @@ const overallStatus = computed(() => {
                                         </div>
 
                                         <!-- Schedule outliers (too many/too few games) -->
-                                        <div v-if="check.metadata.outliers.filter(o => o.type !== 'no_games').length > 0">
+                                        <div v-if="getScheduleOutliers(check.metadata).length > 0">
                                             <p class="text-xs font-medium text-yellow-600 dark:text-yellow-400">
-                                                Schedule outliers ({{ check.metadata.outliers.filter(o => o.type !== 'no_games').length }}):
+                                                Schedule outliers ({{ getScheduleOutliers(check.metadata).length }}):
                                             </p>
                                             <div class="mt-1 flex flex-wrap gap-1">
                                                 <span
-                                                    v-for="outlier in check.metadata.outliers.filter(o => o.type !== 'no_games')"
+                                                    v-for="outlier in getScheduleOutliers(check.metadata)"
                                                     :key="outlier.espn_id"
                                                     class="rounded bg-yellow-100 dark:bg-yellow-900/30 px-2 py-1 text-xs text-yellow-800 dark:text-yellow-300"
-                                                    :title="`${outlier.type}: ${Math.round(outlier.deviation_from_avg * 10) / 10} deviation from avg`"
+                                                    :title="`${outlier.type}: ${Math.round((outlier.deviation_from_avg ?? 0) * 10) / 10} deviation from avg`"
                                                 >
                                                     {{ outlier.team }} ({{ outlier.games }} games)
                                                 </span>
@@ -393,6 +418,7 @@ const overallStatus = computed(() => {
                     </div>
                 </div>
             </div>
-        </div>
+            </div>
+        </RenderErrorBoundary>
     </AppLayout>
 </template>

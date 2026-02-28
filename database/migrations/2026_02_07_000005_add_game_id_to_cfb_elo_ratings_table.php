@@ -12,6 +12,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         // Use raw SQL to avoid Schema builder constraint validation
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
@@ -55,6 +59,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (DB::getDriverName() !== 'mysql') {
+            return;
+        }
+
         // Use raw SQL for rollback as well
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 

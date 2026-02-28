@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { X } from 'lucide-vue-next';
-import { useOnboarding } from '@/composables/useOnboarding';
-import type { OnboardingStep, PersonalizationData } from '@/types/onboarding';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import Button from '@/components/ui/button/Button.vue';
 import Dialog from '@/components/ui/dialog/Dialog.vue';
 import DialogContent from '@/components/ui/dialog/DialogContent.vue';
-import DialogHeader from '@/components/ui/dialog/DialogHeader.vue';
-import DialogTitle from '@/components/ui/dialog/DialogTitle.vue';
 import DialogDescription from '@/components/ui/dialog/DialogDescription.vue';
 import DialogFooter from '@/components/ui/dialog/DialogFooter.vue';
-import Button from '@/components/ui/button/Button.vue';
+import DialogHeader from '@/components/ui/dialog/DialogHeader.vue';
+import DialogTitle from '@/components/ui/dialog/DialogTitle.vue';
+import { useOnboarding } from '@/composables/useOnboarding';
+import type { OnboardingStep, PersonalizationData } from '@/types/onboarding';
 import OnboardingProgressBar from './OnboardingProgressBar.vue';
 import PersonalizationForm from './PersonalizationForm.vue';
 

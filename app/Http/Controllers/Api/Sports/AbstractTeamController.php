@@ -2,39 +2,48 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-abstract class AbstractTeamController extends Controller
+abstract class AbstractTeamController extends AbstractSportsApiController
 {
-    /**
-     * Get the Team model class for this sport
-     */
-    abstract protected function getTeamModel(): string;
+    protected const TEAM_MODEL = '';
 
-    /**
-     * Get the TeamResource class for this sport
-     */
-    abstract protected function getTeamResource(): string;
+    protected const TEAM_RESOURCE = '';
 
-    /**
-     * Get the CalculateTeamTrends action class for this sport (optional)
-     */
-    protected function getTrendsCalculator(): ?string
+    protected const TRENDS_CALCULATOR = null;
+
+    protected const ORDER_BY_COLUMN = 'display_name';
+
+    protected function getTeamModel(): string
     {
-        return null;
+        if (static::TEAM_MODEL === '') {
+            throw new \RuntimeException('TEAM_MODEL must be defined on team controller.');
+        }
+
+        return static::TEAM_MODEL;
     }
 
-    /**
-     * Get the default order by column for team listing
-     */
+    protected function getTeamResource(): string
+    {
+        if (static::TEAM_RESOURCE === '') {
+            throw new \RuntimeException('TEAM_RESOURCE must be defined on team controller.');
+        }
+
+        return static::TEAM_RESOURCE;
+    }
+
+    protected function getTrendsCalculator(): ?string
+    {
+        return static::TRENDS_CALCULATOR;
+    }
+
     protected function getOrderByColumn(): string
     {
-        return 'display_name';
+        return static::ORDER_BY_COLUMN;
     }
 
     /**
@@ -63,12 +72,13 @@ abstract class AbstractTeamController extends Controller
     /**
      * Display the specified team
      */
-    public function show(int $team): JsonResource
+    public function show($team): JsonResource
     {
         $teamModel = $this->getTeamModel();
         $resourceClass = $this->getTeamResource();
+        $teamId = $this->requireNumericId($team);
 
-        $team = $teamModel::findOrFail($team);
+        $team = $teamModel::findOrFail($teamId);
 
         return new $resourceClass($team);
     }
@@ -76,16 +86,17 @@ abstract class AbstractTeamController extends Controller
     /**
      * Calculate team trends based on recent games
      */
-    public function trends(int $team, Request $request): JsonResponse
+    public function trends($team, Request $request): JsonResponse
     {
         $teamModel = $this->getTeamModel();
         $calculatorClass = $this->getTrendsCalculator();
+        $teamId = $this->requireNumericId($team);
 
         if (! $calculatorClass) {
             abort(404, 'Trends not available for this sport');
         }
 
-        $team = $teamModel::findOrFail($team);
+        $team = $teamModel::findOrFail($teamId);
         $calculator = app($calculatorClass);
 
         $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));

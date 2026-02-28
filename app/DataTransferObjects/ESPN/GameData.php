@@ -2,8 +2,16 @@
 
 namespace App\DataTransferObjects\ESPN;
 
+use App\DataTransferObjects\ESPN\Concerns\ParsesEspnGameFields;
+
 class GameData
 {
+    public const FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
+
+    public const IN_PROGRESS_STATUSES = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+
+    use ParsesEspnGameFields;
+
     public function __construct(
         public string $espnEventId,
         public int $season,
@@ -30,43 +38,11 @@ class GameData
         public ?array $broadcastNetworks,
     ) {}
 
-    /**
-     * Normalize ESPN status value to uppercase STATUS_* format
-     */
-    public static function normalizeStatus(string $status): string
-    {
-        $trimmedStatus = trim($status);
-
-        // If status is already in STATUS_* format, return it as-is
-        if (str_starts_with($trimmedStatus, 'STATUS_')) {
-            return $trimmedStatus;
-        }
-
-        $statusMap = [
-            'scheduled' => 'STATUS_SCHEDULED',
-            'pre' => 'STATUS_SCHEDULED',
-            'in progress' => 'STATUS_IN_PROGRESS',
-            'in_progress' => 'STATUS_IN_PROGRESS',
-            'in' => 'STATUS_IN_PROGRESS',
-            'final' => 'STATUS_FINAL',
-            'post' => 'STATUS_FINAL',
-            'postponed' => 'STATUS_POSTPONED',
-            'canceled' => 'STATUS_CANCELED',
-            'cancelled' => 'STATUS_CANCELED',
-            'suspended' => 'STATUS_SUSPENDED',
-            'delayed' => 'STATUS_DELAYED',
-        ];
-
-        $normalizedKey = strtolower($trimmedStatus);
-
-        return $statusMap[$normalizedKey] ?? 'STATUS_SCHEDULED';
-    }
-
     public static function fromEspnResponse(array $game): self
     {
-        $competition = $game['competitions'][0] ?? [];
-        $homeTeam = collect($competition['competitors'] ?? [])->firstWhere('homeAway', 'home');
-        $awayTeam = collect($competition['competitors'] ?? [])->firstWhere('homeAway', 'away');
+        $competition = self::competitionFromGame($game);
+        $homeTeam = self::homeCompetitor($competition);
+        $awayTeam = self::awayCompetitor($competition);
 
         $seasonType = (int) ($game['season']['type'] ?? 2);
 
@@ -78,36 +54,36 @@ class GameData
             gameDate: $game['date'],
             name: $game['name'] ?? null,
             shortName: $game['shortName'] ?? null,
-            homeTeamEspnId: (string) $homeTeam['team']['id'],
-            awayTeamEspnId: (string) $awayTeam['team']['id'],
-            homeScore: isset($homeTeam['score']) && is_numeric($homeTeam['score']) ? (int) $homeTeam['score'] : null,
-            awayScore: isset($awayTeam['score']) && is_numeric($awayTeam['score']) ? (int) $awayTeam['score'] : null,
+            homeTeamEspnId: self::competitorTeamEspnId($homeTeam),
+            awayTeamEspnId: self::competitorTeamEspnId($awayTeam),
+            homeScore: self::competitorScore($homeTeam),
+            awayScore: self::competitorScore($awayTeam),
             homeLinescores: $homeTeam['linescores'] ?? null,
             awayLinescores: $awayTeam['linescores'] ?? null,
             status: self::normalizeStatus($game['status']['type']['name'] ?? 'scheduled'),
-            period: isset($game['status']['period']) ? (int) $game['status']['period'] : null,
+            period: self::intOrNull($game['status']['period'] ?? null),
             gameClock: $game['status']['displayClock'] ?? null,
             neutralSite: $competition['neutralSite'] ?? false,
             conferenceGame: $competition['conferenceCompetition'] ?? false,
-            venueName: $competition['venue']['fullName'] ?? null,
-            venueCity: $competition['venue']['address']['city'] ?? null,
-            venueState: $competition['venue']['address']['state'] ?? null,
-            attendance: isset($competition['attendance']) ? (int) $competition['attendance'] : null,
-            broadcastNetworks: collect($competition['broadcasts'] ?? [])->pluck('names')->flatten()->toArray(),
+            venueName: self::venueName($competition),
+            venueCity: self::venueCity($competition),
+            venueState: self::venueState($competition),
+            attendance: self::intOrNull($competition['attendance'] ?? null),
+            broadcastNetworks: self::broadcastNetworks($competition),
         );
     }
 
     public function toArray(): array
     {
-        $gameDateTime = new \DateTime($this->gameDate);
+        $dateParts = self::extractDateParts($this->gameDate);
 
         return [
             'espn_event_id' => $this->espnEventId,
             'season' => $this->season,
             'week' => $this->week,
             'season_type' => $this->seasonType,
-            'game_date' => $gameDateTime->format('Y-m-d'),
-            'game_time' => $gameDateTime->format('H:i:s'),
+            'game_date' => $dateParts['game_date'],
+            'game_time' => $dateParts['game_time'],
             'name' => $this->name,
             'short_name' => $this->shortName,
             'status' => $this->status,
@@ -124,5 +100,21 @@ class GameData
             'venue_state' => $this->venueState,
             'broadcast_networks' => $this->broadcastNetworks,
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function finalStatuses(): array
+    {
+        return self::FINAL_STATUSES;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function inProgressStatuses(): array
+    {
+        return self::IN_PROGRESS_STATUSES;
     }
 }

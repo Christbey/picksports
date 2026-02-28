@@ -2,30 +2,12 @@
 
 namespace App\Console\Commands\ESPN\NBA;
 
+use App\Console\Commands\ESPN\AbstractSyncPlayersCommand;
 use App\Jobs\ESPN\NBA\FetchPlayers;
-use Illuminate\Console\Command;
 
-class SyncPlayersCommand extends Command
+class SyncPlayersCommand extends AbstractSyncPlayersCommand
 {
-    protected $signature = 'espn:sync-nba-players
-                            {teamEspnId? : Optional ESPN team ID to sync a specific team}';
-
-    protected $description = 'Sync NBA players from ESPN API';
-
-    public function handle(): int
-    {
-        $teamEspnId = $this->argument('teamEspnId');
-
-        if ($teamEspnId) {
-            $this->info("Dispatching NBA players sync job for team {$teamEspnId}...");
-        } else {
-            $this->info('Dispatching NBA players sync job for all teams...');
-        }
-
-        FetchPlayers::dispatch($teamEspnId);
-
-        $this->info('NBA players sync job dispatched successfully.');
-
-        return Command::SUCCESS;
-    }
+    protected const COMMAND_NAME = 'espn:sync-nba-players';
+    protected const SPORT_CODE = 'NBA';
+    protected const PLAYERS_SYNC_JOB_CLASS = FetchPlayers::class;
 }

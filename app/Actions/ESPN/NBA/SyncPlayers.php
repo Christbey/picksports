@@ -2,64 +2,13 @@
 
 namespace App\Actions\ESPN\NBA;
 
-use App\DataTransferObjects\ESPN\PlayerData;
-use App\Models\NBA\Player;
-use App\Models\NBA\Team;
-use App\Services\ESPN\NBA\EspnService;
+use App\Actions\ESPN\AbstractSyncPlayers;
 
-class SyncPlayers
+class SyncPlayers extends AbstractSyncPlayers
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const PLAYER_MODEL_CLASS = \App\Models\NBA\Player::class;
 
-    public function execute(string $teamEspnId): int
-    {
-        $response = $this->espnService->getRoster($teamEspnId);
+    protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
 
-        if (! $response || ! isset($response['athletes'])) {
-            return 0;
-        }
-
-        $team = Team::query()->where('espn_id', $teamEspnId)->first();
-
-        if (! $team) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        // NBA returns athletes as a flat array, not grouped by position
-        foreach ($response['athletes'] as $athleteData) {
-            if (empty($athleteData['id'])) {
-                continue;
-            }
-
-            $dto = PlayerData::fromEspnResponse($athleteData);
-
-            $playerAttributes = $dto->toArray();
-            $playerAttributes['team_id'] = $team->id;
-
-            Player::updateOrCreate(
-                ['espn_id' => $dto->espnId],
-                $playerAttributes
-            );
-
-            $synced++;
-        }
-
-        return $synced;
-    }
-
-    public function syncAllTeams(): int
-    {
-        $teams = Team::all();
-        $totalSynced = 0;
-
-        foreach ($teams as $team) {
-            $totalSynced += $this->execute($team->espn_id);
-        }
-
-        return $totalSynced;
-    }
+    protected const PLAYER_DTO_CLASS = \App\DataTransferObjects\ESPN\PlayerData::class;
 }

@@ -2,28 +2,44 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
-use App\Http\Controllers\Controller;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-abstract class AbstractGameController extends Controller
+abstract class AbstractGameController extends AbstractSportsApiController
 {
-    /**
-     * Get the Game model class for this sport
-     */
-    abstract protected function getGameModel(): string;
+    protected const GAME_MODEL = '';
 
-    /**
-     * Get the Team model class for this sport
-     */
-    abstract protected function getTeamModel(): string;
+    protected const TEAM_MODEL = '';
 
-    /**
-     * Get the GameResource class for this sport
-     */
-    abstract protected function getGameResource(): string;
+    protected const GAME_RESOURCE = '';
+
+    protected function getGameModel(): string
+    {
+        if (static::GAME_MODEL === '') {
+            throw new \RuntimeException('GAME_MODEL must be defined on game controller.');
+        }
+
+        return static::GAME_MODEL;
+    }
+
+    protected function getTeamModel(): string
+    {
+        if (static::TEAM_MODEL === '') {
+            throw new \RuntimeException('TEAM_MODEL must be defined on game controller.');
+        }
+
+        return static::TEAM_MODEL;
+    }
+
+    protected function getGameResource(): string
+    {
+        if (static::GAME_RESOURCE === '') {
+            throw new \RuntimeException('GAME_RESOURCE must be defined on game controller.');
+        }
+
+        return static::GAME_RESOURCE;
+    }
 
     /**
      * Display a listing of games
@@ -46,12 +62,13 @@ abstract class AbstractGameController extends Controller
     /**
      * Display the specified game
      */
-    public function show(int $game): JsonResource
+    public function show($game): JsonResource
     {
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
+        $gameId = $this->requireNumericId($game);
 
-        $game = $gameModel::query()->with(['homeTeam', 'awayTeam', 'prediction'])->findOrFail($game);
+        $game = $gameModel::query()->with(['homeTeam', 'awayTeam', 'prediction'])->findOrFail($gameId);
 
         return new $resourceClass($game);
     }
@@ -59,16 +76,17 @@ abstract class AbstractGameController extends Controller
     /**
      * Display games for a specific team
      */
-    public function byTeam(int $team, Request $request): AnonymousResourceCollection
+    public function byTeam($team, Request $request): AnonymousResourceCollection
     {
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
+        $teamId = $this->requireNumericId($team);
 
         $games = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->where(function ($query) use ($team) {
-                $query->where('home_team_id', $team)
-                    ->orWhere('away_team_id', $team);
+            ->where(function ($query) use ($teamId) {
+                $query->where('home_team_id', $teamId)
+                    ->orWhere('away_team_id', $teamId);
             })
             ->orderByDesc('game_date')
             ->paginate($request->per_page ?? 15);
@@ -79,14 +97,15 @@ abstract class AbstractGameController extends Controller
     /**
      * Display games for a specific season
      */
-    public function bySeason(int $season, Request $request): AnonymousResourceCollection
+    public function bySeason($season, Request $request): AnonymousResourceCollection
     {
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
+        $seasonValue = $this->requireNumericId($season);
 
         $games = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->where('season', $season)
+            ->where('season', $seasonValue)
             ->orderByDesc('game_date')
             ->paginate($request->per_page ?? 50);
 
@@ -96,15 +115,17 @@ abstract class AbstractGameController extends Controller
     /**
      * Display games for a specific week
      */
-    public function byWeek(int $season, int $week, Request $request): AnonymousResourceCollection
+    public function byWeek($season, $week, Request $request): AnonymousResourceCollection
     {
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
+        $seasonValue = $this->requireNumericId($season);
+        $weekValue = $this->requireNumericId($week);
 
         $games = $gameModel::query()
             ->with(['homeTeam', 'awayTeam', 'prediction'])
-            ->where('season', $season)
-            ->where('week', $week)
+            ->where('season', $seasonValue)
+            ->where('week', $weekValue)
             ->oldest('game_date')
             ->get();
 

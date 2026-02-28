@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class CfbGameFactory extends Factory
 {
+    protected $model = \App\Models\CFB\Game::class;
+
     /**
      * Define the model's default state.
      *
@@ -17,7 +19,25 @@ class CfbGameFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'espn_event_id' => $this->faker->unique()->numerify('#########'),
+            'espn_uid' => $this->faker->unique()->numerify('s:20~l:28~e:#########'),
+            'season' => $this->faker->numberBetween(2020, 2027),
+            'week' => $this->faker->numberBetween(1, 18),
+            'season_type' => $this->faker->randomElement(['regular', 'postseason']),
+            'game_date' => $this->faker->date(),
+            'game_time' => $this->faker->time(),
+            'name' => $this->faker->words(3, true),
+            'short_name' => $this->faker->words(2, true),
+            'venue_name' => $this->faker->company().' Stadium',
+            'venue_city' => $this->faker->city(),
+            'venue_state' => $this->faker->stateAbbr(),
+            'status' => $this->faker->randomElement(['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_FINAL']),
+            'period' => $this->faker->numberBetween(1, 4),
+            'game_clock' => $this->faker->time('i:s'),
+            'home_score' => $this->faker->numberBetween(0, 60),
+            'away_score' => $this->faker->numberBetween(0, 60),
+            'neutral_site' => $this->faker->boolean(10),
+            'conference_game' => $this->faker->boolean(60),
         ];
     }
 }

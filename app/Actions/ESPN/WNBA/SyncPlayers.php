@@ -2,69 +2,15 @@
 
 namespace App\Actions\ESPN\WNBA;
 
-use App\DataTransferObjects\ESPN\PlayerData;
-use App\Models\WNBA\Player;
-use App\Models\WNBA\Team;
-use App\Services\ESPN\WNBA\EspnService;
+use App\Actions\ESPN\AbstractSyncPlayers;
 
-class SyncPlayers
+class SyncPlayers extends AbstractSyncPlayers
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const PLAYER_MODEL_CLASS = \App\Models\WNBA\Player::class;
 
-    public function execute(string $teamEspnId): int
-    {
-        $response = $this->espnService->getRoster($teamEspnId);
+    protected const TEAM_MODEL_CLASS = \App\Models\WNBA\Team::class;
 
-        if (! $response || ! isset($response['athletes'])) {
-            return 0;
-        }
+    protected const PLAYER_DTO_CLASS = \App\DataTransferObjects\ESPN\PlayerData::class;
 
-        $team = Team::query()->where('espn_id', $teamEspnId)->first();
-
-        if (! $team) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        foreach ($response['athletes'] as $positionGroup) {
-            if (! isset($positionGroup['items']) || ! is_array($positionGroup['items'])) {
-                continue;
-            }
-
-            foreach ($positionGroup['items'] as $athleteData) {
-                if (empty($athleteData['id'])) {
-                    continue;
-                }
-
-                $dto = PlayerData::fromEspnResponse($athleteData);
-
-                $playerAttributes = $dto->toArray();
-                $playerAttributes['team_id'] = $team->id;
-
-                Player::updateOrCreate(
-                    ['espn_id' => $dto->espnId],
-                    $playerAttributes
-                );
-
-                $synced++;
-            }
-        }
-
-        return $synced;
-    }
-
-    public function syncAllTeams(): int
-    {
-        $teams = Team::all();
-        $totalSynced = 0;
-
-        foreach ($teams as $team) {
-            $totalSynced += $this->execute($team->espn_id);
-        }
-
-        return $totalSynced;
-    }
+    protected const ATHLETES_NESTED_UNDER_GROUP_ITEMS = true;
 }

@@ -2,46 +2,16 @@
 
 namespace App\Http\Controllers\Api\CBB;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractPlayController;
 use App\Http\Resources\CBB\PlayResource;
 use App\Models\CBB\Game;
 use App\Models\CBB\Play;
 
-class PlayController extends Controller
+class PlayController extends AbstractPlayController
 {
-    /**
-     * Display a listing of CBB plays.
-     */
-    public function index()
-    {
-        $plays = Play::query()
-            ->with(['game'])
-            ->orderByDesc('id')
-            ->paginate(15);
+    protected const PLAY_MODEL = Play::class;
 
-        return PlayResource::collection($plays);
-    }
+    protected const GAME_MODEL = Game::class;
 
-    /**
-     * Display the specified CBB play.
-     */
-    public function show(Play $play)
-    {
-        $play->load(['game']);
-
-        return new PlayResource($play);
-    }
-
-    /**
-     * Display plays for a specific game.
-     */
-    public function byGame(Game $game)
-    {
-        $plays = Play::query()
-            ->where('game_id', $game->id)
-            ->orderBy('id')
-            ->paginate(15);
-
-        return PlayResource::collection($plays);
-    }
+    protected const PLAY_RESOURCE = PlayResource::class;
 }

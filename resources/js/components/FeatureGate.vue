@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue';
 import { Link } from '@inertiajs/vue3';
 import { Lock } from 'lucide-vue-next';
-import { useSubscription } from '@/composables/useSubscription';
+import { computed } from 'vue';
 import { Button } from '@/components/ui/button';
+import { useSubscription } from '@/composables/useSubscription';
 import { plans as subscriptionPlans } from '@/routes/subscription';
 import type { SubscriptionTier } from '@/types';
 

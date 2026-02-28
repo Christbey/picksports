@@ -7,6 +7,55 @@ use Illuminate\Support\Facades\Http;
 
 class OddsApiService
 {
+    /**
+     * @var array<string, array{sport:string,markets:array<int,string>}>
+     */
+    protected const PLAYER_PROP_PRESETS = [
+        'nba' => [
+            'sport' => 'basketball_nba',
+            'markets' => [
+                'player_points',
+                'player_rebounds',
+                'player_assists',
+                'player_threes',
+                'player_blocks',
+                'player_steals',
+                'player_points_rebounds_assists',
+            ],
+        ],
+        'mlb' => [
+            'sport' => 'baseball_mlb',
+            'markets' => [
+                'batter_home_runs',
+                'batter_hits',
+                'batter_total_bases',
+                'batter_rbis',
+                'batter_runs_scored',
+                'batter_hits_runs_rbis',
+                'pitcher_strikeouts',
+                'pitcher_hits_allowed',
+                'pitcher_walks',
+                'pitcher_earned_runs',
+            ],
+        ],
+        'nfl' => [
+            'sport' => 'americanfootball_nfl',
+            'markets' => [
+                'player_pass_tds',
+                'player_pass_yds',
+                'player_pass_completions',
+                'player_pass_attempts',
+                'player_pass_interceptions',
+                'player_rush_yds',
+                'player_rush_attempts',
+                'player_receptions',
+                'player_reception_yds',
+                'player_anytime_td',
+                'player_1st_td',
+            ],
+        ],
+    ];
+
     protected ?string $apiKey;
 
     protected ?string $baseUrl;
@@ -23,49 +72,18 @@ class OddsApiService
     {
         $url = $this->baseUrl."/sports/{$sport}/odds/";
 
-        $params = [
-            'apiKey' => $this->apiKey,
+        $params = $this->withApiKey([
             'regions' => 'us',
             'markets' => 'h2h,spreads,totals',
             'bookmakers' => 'draftkings',
             'oddsFormat' => 'american',
-        ];
+        ]);
 
         if ($eventId) {
             $params['eventIds'] = $eventId;
         }
 
         return $this->get($url, $params);
-    }
-
-    public function getNbaOdds(?string $eventId = null): ?array
-    {
-        return $this->getOdds($eventId, 'basketball_nba');
-    }
-
-    public function getMlbOdds(?string $eventId = null): ?array
-    {
-        return $this->getOdds($eventId, 'baseball_mlb');
-    }
-
-    public function getWcbbOdds(?string $eventId = null): ?array
-    {
-        return $this->getOdds($eventId, 'basketball_wncaab');
-    }
-
-    public function getNflOdds(?string $eventId = null): ?array
-    {
-        return $this->getOdds($eventId, 'americanfootball_nfl');
-    }
-
-    public function getCfbOdds(?string $eventId = null): ?array
-    {
-        return $this->getOdds($eventId, 'americanfootball_ncaaf');
-    }
-
-    public function getWnbaOdds(?string $eventId = null): ?array
-    {
-        return $this->getOdds($eventId, 'basketball_wnba');
     }
 
     /**
@@ -92,13 +110,12 @@ class OddsApiService
         // Player props require event-specific endpoint
         $url = $this->baseUrl."/sports/{$sport}/events/{$eventId}/odds";
 
-        $params = [
-            'apiKey' => $this->apiKey,
+        $params = $this->withApiKey([
             'regions' => 'us',
             'markets' => implode(',', $markets),
             'bookmakers' => $bookmaker,
             'oddsFormat' => 'american',
-        ];
+        ]);
 
         return $this->get($url, $params);
     }
@@ -108,21 +125,7 @@ class OddsApiService
      */
     public function getNbaPlayerProps(string $eventId, ?array $markets = null): ?array
     {
-        $defaultMarkets = [
-            'player_points',
-            'player_rebounds',
-            'player_assists',
-            'player_threes',
-            'player_blocks',
-            'player_steals',
-            'player_points_rebounds_assists',
-        ];
-
-        return $this->getPlayerProps(
-            eventId: $eventId,
-            sport: 'basketball_nba',
-            markets: $markets ?? $defaultMarkets
-        );
+        return $this->getPresetPlayerProps('nba', $eventId, $markets);
     }
 
     /**
@@ -130,24 +133,7 @@ class OddsApiService
      */
     public function getMlbPlayerProps(string $eventId, ?array $markets = null): ?array
     {
-        $defaultMarkets = [
-            'batter_home_runs',
-            'batter_hits',
-            'batter_total_bases',
-            'batter_rbis',
-            'batter_runs_scored',
-            'batter_hits_runs_rbis',
-            'pitcher_strikeouts',
-            'pitcher_hits_allowed',
-            'pitcher_walks',
-            'pitcher_earned_runs',
-        ];
-
-        return $this->getPlayerProps(
-            eventId: $eventId,
-            sport: 'baseball_mlb',
-            markets: $markets ?? $defaultMarkets
-        );
+        return $this->getPresetPlayerProps('mlb', $eventId, $markets);
     }
 
     /**
@@ -155,24 +141,20 @@ class OddsApiService
      */
     public function getNflPlayerProps(string $eventId, ?array $markets = null): ?array
     {
-        $defaultMarkets = [
-            'player_pass_tds',
-            'player_pass_yds',
-            'player_pass_completions',
-            'player_pass_attempts',
-            'player_pass_interceptions',
-            'player_rush_yds',
-            'player_rush_attempts',
-            'player_receptions',
-            'player_reception_yds',
-            'player_anytime_td',
-            'player_1st_td',
-        ];
+        return $this->getPresetPlayerProps('nfl', $eventId, $markets);
+    }
+
+    protected function getPresetPlayerProps(string $preset, string $eventId, ?array $markets = null): ?array
+    {
+        $config = self::PLAYER_PROP_PRESETS[$preset] ?? null;
+        if (! $config) {
+            throw new \InvalidArgumentException("Unknown player prop preset [{$preset}].");
+        }
 
         return $this->getPlayerProps(
             eventId: $eventId,
-            sport: 'americanfootball_nfl',
-            markets: $markets ?? $defaultMarkets
+            sport: $config['sport'],
+            markets: $markets ?? $config['markets']
         );
     }
 
@@ -180,9 +162,7 @@ class OddsApiService
     {
         $url = $this->baseUrl.'/sports/basketball_ncaab/events/';
 
-        $params = [
-            'apiKey' => $this->apiKey,
-        ];
+        $params = $this->withApiKey();
 
         return $this->get($url, $params);
     }
@@ -191,9 +171,7 @@ class OddsApiService
     {
         $url = $this->baseUrl."/sports/{$sport}/participants";
 
-        $params = [
-            'apiKey' => $this->apiKey,
-        ];
+        $params = $this->withApiKey();
 
         return $this->get($url, $params, false);
     }
@@ -211,6 +189,11 @@ class OddsApiService
         }
 
         return $this->fetchFromApi($url, $params);
+    }
+
+    protected function withApiKey(array $params = []): array
+    {
+        return ['apiKey' => $this->apiKey] + $params;
     }
 
     protected function fetchFromApi(string $url, array $params = []): ?array
@@ -372,19 +355,8 @@ class OddsApiService
         string $sport
     ): bool {
         // Find manual mappings for both Odds API teams
-        $homeMappings = \App\Models\OddsApiTeamMapping::query()
-            ->where('sport', $sport)
-            ->where('odds_api_team_name', $oddsHome)
-            ->whereNotNull('espn_team_name')
-            ->pluck('espn_team_name')
-            ->toArray();
-
-        $awayMappings = \App\Models\OddsApiTeamMapping::query()
-            ->where('sport', $sport)
-            ->where('odds_api_team_name', $oddsAway)
-            ->whereNotNull('espn_team_name')
-            ->pluck('espn_team_name')
-            ->toArray();
+        $homeMappings = $this->mappedEspnNamesForOddsTeam($sport, $oddsHome);
+        $awayMappings = $this->mappedEspnNamesForOddsTeam($sport, $oddsAway);
 
         // If no mappings exist for either team, skip manual matching
         if (empty($homeMappings) || empty($awayMappings)) {
@@ -397,28 +369,39 @@ class OddsApiService
         $normalizedHomeMappings = array_map(fn ($name) => $this->normalizeTeamName($name), $homeMappings);
         $normalizedAwayMappings = array_map(fn ($name) => $this->normalizeTeamName($name), $awayMappings);
 
-        // Check if any home mapping matches any home name variation
-        $homeMatch = false;
-        foreach ($normalizedHomeMappings as $mapping) {
-            foreach ($normalizedHomeNames as $name) {
-                if ($mapping === $name || str_contains($mapping, $name) || str_contains($name, $mapping)) {
-                    $homeMatch = true;
-                    break 2;
-                }
-            }
-        }
-
-        // Check if any away mapping matches any away name variation
-        $awayMatch = false;
-        foreach ($normalizedAwayMappings as $mapping) {
-            foreach ($normalizedAwayNames as $name) {
-                if ($mapping === $name || str_contains($mapping, $name) || str_contains($name, $mapping)) {
-                    $awayMatch = true;
-                    break 2;
-                }
-            }
-        }
+        $homeMatch = $this->hasMappingNameMatch($normalizedHomeMappings, $normalizedHomeNames);
+        $awayMatch = $this->hasMappingNameMatch($normalizedAwayMappings, $normalizedAwayNames);
 
         return $homeMatch && $awayMatch;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function mappedEspnNamesForOddsTeam(string $sport, string $oddsApiTeamName): array
+    {
+        return \App\Models\OddsApiTeamMapping::query()
+            ->where('sport', $sport)
+            ->where('odds_api_team_name', $oddsApiTeamName)
+            ->whereNotNull('espn_team_name')
+            ->pluck('espn_team_name')
+            ->toArray();
+    }
+
+    /**
+     * @param  array<int, string>  $mappings
+     * @param  array<int, string>  $names
+     */
+    protected function hasMappingNameMatch(array $mappings, array $names): bool
+    {
+        foreach ($mappings as $mapping) {
+            foreach ($names as $name) {
+                if ($mapping === $name || str_contains($mapping, $name) || str_contains($name, $mapping)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

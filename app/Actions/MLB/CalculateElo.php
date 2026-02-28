@@ -13,15 +13,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class CalculateElo extends AbstractEloCalculator
 {
-    protected function getSport(): string
-    {
-        return 'mlb';
-    }
+    protected const SPORT_KEY = 'mlb';
 
-    protected function getEloRatingModel(): string
-    {
-        return EloRating::class;
-    }
+    protected const ELO_RATING_MODEL = EloRating::class;
 
     /**
      * Execute Elo calculation for MLB (handles both team and pitcher Elo)
@@ -214,11 +208,7 @@ class CalculateElo extends AbstractEloCalculator
     protected function calculatePitcherKFactor(Model $game): float
     {
         $kFactor = config('mlb.elo.pitcher_k_factor');
-
-        // Apply playoff multiplier
-        if ($this->isPlayoffGame($game)) {
-            $kFactor *= config('mlb.elo.playoff_multiplier');
-        }
+        $kFactor = $this->applyPlayoffMultiplier($game, (float) $kFactor);
 
         // Apply dampened margin of victory multiplier
         $marginMultiplier = $this->calculateMarginMultiplier($game);
@@ -231,18 +221,7 @@ class CalculateElo extends AbstractEloCalculator
 
     protected function calculateKFactor(Model $game): float
     {
-        $kFactor = config('mlb.elo.base_k_factor');
-
-        // Apply playoff multiplier
-        if ($this->isPlayoffGame($game)) {
-            $kFactor *= config('mlb.elo.playoff_multiplier');
-        }
-
-        // Apply margin of victory multiplier
-        $marginMultiplier = $this->calculateMarginMultiplier($game);
-        $kFactor *= $marginMultiplier;
-
-        return $kFactor;
+        return $this->calculateStandardKFactor($game);
     }
 
     protected function isPlayoffGame(Model $game): bool
@@ -253,15 +232,9 @@ class CalculateElo extends AbstractEloCalculator
     protected function calculateMarginMultiplier(Model $game): float
     {
         $margin = abs($game->home_score - $game->away_score);
-        $multipliers = config('mlb.elo.margin_multipliers');
+        $multipliers = config('mlb.elo.margin_multipliers', []);
 
-        foreach ($multipliers as $tier) {
-            if ($tier['max_margin'] === null || $margin <= $tier['max_margin']) {
-                return $tier['multiplier'];
-            }
-        }
-
-        return 1.0;
+        return $this->resolveMarginMultiplier($margin, $multipliers);
     }
 
     protected function savePitcherEloHistory(Player $pitcher, Game $game, int $newElo, float $eloChange, ?Team $team = null): void

@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Healthcheck;
+use App\Support\SportCatalog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -12,13 +13,11 @@ class HealthcheckRun extends Command
 
     protected $description = 'Run healthchecks to monitor data sync across all sports';
 
-    protected array $sports = ['mlb', 'nba', 'nfl', 'cbb', 'cfb', 'wcbb', 'wnba'];
-
     public function handle(): int
     {
         $this->info('Running healthchecks...');
 
-        $sports = $this->option('sport') ? [$this->option('sport')] : $this->sports;
+        $sports = $this->option('sport') ? [$this->option('sport')] : SportCatalog::ALL;
 
         foreach ($sports as $sport) {
             $this->line("Checking {$sport}...");
@@ -264,7 +263,7 @@ class HealthcheckRun extends Command
     protected function checkStalePredictions(string $sport): void
     {
         // Only sports with predictions
-        if (! in_array($sport, ['mlb', 'nba', 'nfl', 'cbb', 'wcbb'])) {
+        if (! in_array($sport, SportCatalog::STALE_PREDICTIONS, true)) {
             return;
         }
 
@@ -372,7 +371,7 @@ class HealthcheckRun extends Command
     protected function checkTeamMetrics(string $sport): void
     {
         // Only sports with team metrics
-        if (! in_array($sport, ['mlb', 'nba', 'cbb', 'wcbb', 'wnba'])) {
+        if (! in_array($sport, SportCatalog::TEAM_METRICS, true)) {
             return;
         }
 
@@ -431,7 +430,7 @@ class HealthcheckRun extends Command
         $predictionsTable = "{$sport}_predictions";
 
         // Only check sports that have predictions
-        if (! in_array($sport, ['mlb', 'nba', 'nfl', 'cbb', 'cfb', 'wcbb', 'wnba'])) {
+        if (! in_array($sport, SportCatalog::ALL, true)) {
             return;
         }
 

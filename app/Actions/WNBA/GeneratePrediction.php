@@ -9,20 +9,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class GeneratePrediction extends AbstractPredictionGenerator
 {
-    protected function getSport(): string
-    {
-        return 'wnba';
-    }
+    protected const SPORT_KEY = 'wnba';
 
-    protected function getTeamMetricModel(): string
-    {
-        return TeamMetric::class;
-    }
+    protected const TEAM_METRIC_MODEL = TeamMetric::class;
 
-    protected function getPredictionModel(): string
-    {
-        return Prediction::class;
-    }
+    protected const PREDICTION_MODEL = Prediction::class;
 
     protected function calculatePredictedSpread(
         int $homeElo,
@@ -69,24 +60,20 @@ class GeneratePrediction extends AbstractPredictionGenerator
         float $winProbability,
         float $confidenceScore
     ): array {
-        // Extract efficiency metrics for storage
         $defaultEfficiency = config('wnba.prediction.default_efficiency');
-        $homeOffEff = $homeMetrics?->offensive_efficiency ?? $defaultEfficiency;
-        $homeDefEff = $homeMetrics?->defensive_efficiency ?? $defaultEfficiency;
-        $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
-        $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
 
-        return [
-            'home_elo' => $homeElo,
-            'away_elo' => $awayElo,
-            'home_off_eff' => $homeOffEff,
-            'home_def_eff' => $homeDefEff,
-            'away_off_eff' => $awayOffEff,
-            'away_def_eff' => $awayDefEff,
-            'predicted_spread' => $predictedSpread,
-            'predicted_total' => $predictedTotal,
-            'win_probability' => $winProbability,
-            'confidence_score' => $confidenceScore,
-        ];
+        return array_merge(
+            parent::buildPredictionData(
+                $homeElo,
+                $awayElo,
+                $homeMetrics,
+                $awayMetrics,
+                $predictedSpread,
+                $predictedTotal,
+                $winProbability,
+                $confidenceScore
+            ),
+            $this->efficiencyPredictionData($homeMetrics, $awayMetrics, $defaultEfficiency)
+        );
     }
 }

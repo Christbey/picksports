@@ -2,39 +2,15 @@
 
 namespace App\Console\Commands\CBB;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\Sports\AbstractSyncPlayerPropsCommand;
 
-class SyncPlayerPropsCommand extends Command
+class SyncPlayerPropsCommand extends AbstractSyncPlayerPropsCommand
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'cbb:sync-player-props
-                            {--markets=* : Specific markets to fetch (defaults to common props)}';
+    protected const COMMAND_NAME = 'cbb:sync-player-props';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Sync CBB player props from The Odds API';
+    protected const COMMAND_DESCRIPTION = 'Sync CBB player props from The Odds API';
 
-    /**
-     * Execute the console command.
-     */
-    public function handle(\App\Actions\OddsApi\CBB\SyncPlayerPropsForGames $sync): int
-    {
-        $this->info('Syncing CBB player props from The Odds API...');
+    protected const SYNC_ACTION_CLASS = \App\Actions\OddsApi\CBB\SyncPlayerPropsForGames::class;
 
-        $markets = $this->option('markets');
-        $markets = empty($markets) ? null : $markets;
-
-        $stored = $sync->execute($markets);
-
-        $this->info("Successfully stored {$stored} player props.");
-
-        return self::SUCCESS;
-    }
+    protected const SPORT_LABEL = 'CBB';
 }

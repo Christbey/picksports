@@ -7,19 +7,29 @@ use Carbon\Carbon;
 
 class PerformanceStatistics
 {
+    protected const SPORTS = ['nfl', 'cbb', 'nba', 'wcbb', 'wnba', 'mlb', 'cfb'];
+
+    protected const SPORT_LABELS = [
+        'nfl' => 'NFL',
+        'cbb' => 'College Basketball',
+        'nba' => 'NBA',
+        'wcbb' => 'Women\'s College Basketball',
+        'wnba' => 'WNBA',
+        'mlb' => 'MLB',
+        'cfb' => 'College Football',
+    ];
+
     /**
      * Get overall performance statistics across all sports.
      */
     public function getOverallStats(?string $fromDate = null, ?string $toDate = null): array
     {
-        $sports = ['nfl', 'cbb', 'nba', 'wcbb', 'wnba', 'mlb', 'cfb'];
-
         $totalGraded = 0;
         $totalWinnerCorrect = 0;
         $spreadErrors = [];
         $totalErrors = [];
 
-        foreach ($sports as $sport) {
+        foreach (self::SPORTS as $sport) {
             $stats = $this->getSportStats($sport, $fromDate, $toDate);
             $totalGraded += $stats['total_graded'];
             $totalWinnerCorrect += $stats['winner_correct'];
@@ -41,35 +51,13 @@ class PerformanceStatistics
      */
     public function getStatsBySport(?string $fromDate = null, ?string $toDate = null): array
     {
-        $sports = [
-            'nfl' => 'NFL',
-            'cbb' => 'College Basketball',
-            'nba' => 'NBA',
-            'wcbb' => 'Women\'s College Basketball',
-            'wnba' => 'WNBA',
-            'mlb' => 'MLB',
-            'cfb' => 'College Football',
-        ];
-
         $results = [];
 
-        foreach ($sports as $key => $label) {
+        foreach (self::SPORT_LABELS as $key => $label) {
             $stats = $this->getSportStats($key, $fromDate, $toDate);
 
             if ($stats['total_graded'] > 0) {
-                $results[$key] = [
-                    'label' => $label,
-                    'total_graded' => $stats['total_graded'],
-                    'winner_correct' => $stats['winner_correct'],
-                    'winner_accuracy' => round(($stats['winner_correct'] / $stats['total_graded']) * 100, 1),
-                    'avg_spread_error' => !empty($stats['spread_errors'])
-                        ? round(array_sum($stats['spread_errors']) / count($stats['spread_errors']), 2)
-                        : 0,
-                    'avg_total_error' => !empty($stats['total_errors'])
-                        ? round(array_sum($stats['total_errors']) / count($stats['total_errors']), 2)
-                        : 0,
-                    'win_record' => "{$stats['winner_correct']}-" . ($stats['total_graded'] - $stats['winner_correct']),
-                ];
+                $results[$key] = $this->sportSummary($label, $stats, includeErrorMetrics: true);
             }
         }
 
@@ -118,12 +106,10 @@ class PerformanceStatistics
      */
     public function calculateROI(?string $fromDate = null, ?string $toDate = null): array
     {
-        $sports = ['nfl', 'cbb', 'nba', 'wcbb', 'wnba', 'mlb', 'cfb'];
-
         $totalBets = 0;
         $totalWins = 0;
 
-        foreach ($sports as $sport) {
+        foreach (self::SPORTS as $sport) {
             $stats = $this->getSportStats($sport, $fromDate, $toDate);
             $totalBets += $stats['total_graded'];
             $totalWins += $stats['winner_correct'];
@@ -187,26 +173,38 @@ class PerformanceStatistics
             $stats = $this->getSportStats($sport, $startDate, Carbon::now()->toDateString());
 
             if ($stats['total_graded'] > 0) {
-                $sportLabels = [
-                    'nfl' => 'NFL',
-                    'cbb' => 'College Basketball',
-                    'nba' => 'NBA',
-                    'wcbb' => 'Women\'s College Basketball',
-                    'wnba' => 'WNBA',
-                    'mlb' => 'MLB',
-                    'cfb' => 'College Football',
-                ];
-
-                $results[$sport] = [
-                    'label' => $sportLabels[$sport],
-                    'total_graded' => $stats['total_graded'],
-                    'winner_correct' => $stats['winner_correct'],
-                    'winner_accuracy' => round(($stats['winner_correct'] / $stats['total_graded']) * 100, 1),
-                    'win_record' => "{$stats['winner_correct']}-" . ($stats['total_graded'] - $stats['winner_correct']),
-                ];
+                $results[$sport] = $this->sportSummary(self::SPORT_LABELS[$sport], $stats);
             }
         }
 
         return $results;
+    }
+
+    /**
+     * @param  array{total_graded:int,winner_correct:int,spread_errors:array<int, mixed>,total_errors:array<int, mixed>}  $stats
+     * @return array<string, mixed>
+     */
+    private function sportSummary(string $label, array $stats, bool $includeErrorMetrics = false): array
+    {
+        $summary = [
+            'label' => $label,
+            'total_graded' => $stats['total_graded'],
+            'winner_correct' => $stats['winner_correct'],
+            'winner_accuracy' => round(($stats['winner_correct'] / $stats['total_graded']) * 100, 1),
+            'win_record' => "{$stats['winner_correct']}-".($stats['total_graded'] - $stats['winner_correct']),
+        ];
+
+        if (! $includeErrorMetrics) {
+            return $summary;
+        }
+
+        return array_merge($summary, [
+            'avg_spread_error' => ! empty($stats['spread_errors'])
+                ? round(array_sum($stats['spread_errors']) / count($stats['spread_errors']), 2)
+                : 0,
+            'avg_total_error' => ! empty($stats['total_errors'])
+                ? round(array_sum($stats['total_errors']) / count($stats['total_errors']), 2)
+                : 0,
+        ]);
     }
 }

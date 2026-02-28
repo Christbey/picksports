@@ -10,36 +10,17 @@ use App\Models\WNBA\Team;
 
 class CalculateEloCommand extends AbstractCalculateEloCommand
 {
-    protected $signature = 'wnba:calculate-elo
-                            {--season= : Calculate Elo for a specific season}
-                            {--from-date= : Calculate Elo starting from this date (YYYY-MM-DD)}
-                            {--to-date= : Calculate Elo up to this date (YYYY-MM-DD)}
-                            {--reset : Reset all Elo ratings to default (1500) before calculating}';
+    protected const COMMAND_NAME = 'wnba:calculate-elo';
 
-    protected $description = 'Calculate WNBA team Elo ratings based on completed games';
+    protected const COMMAND_DESCRIPTION = 'Calculate WNBA team Elo ratings based on completed games';
 
-    protected function getSportName(): string
-    {
-        return 'WNBA';
-    }
+    protected const SPORT_NAME = 'WNBA';
 
-    protected function getGameModel(): string
-    {
-        return Game::class;
-    }
+    protected const GAME_MODEL = Game::class;
 
-    protected function getTeamModel(): string
-    {
-        return Team::class;
-    }
+    protected const TEAM_MODEL = Team::class;
 
-    protected function getEloRatingModel(): string
-    {
-        return EloRating::class;
-    }
+    protected const ELO_RATING_MODEL = EloRating::class;
 
-    protected function getCalculateEloAction(): string
-    {
-        return CalculateElo::class;
-    }
+    protected const CALCULATE_ELO_ACTION = CalculateElo::class;
 }

@@ -3,30 +3,26 @@
 namespace App\Console\Commands\ESPN\CBB;
 
 use App\Actions\ESPN\CBB\SyncGameDetails;
+use App\Console\Commands\ESPN\AbstractBackfillGamesCommand;
+use App\DataTransferObjects\ESPN\GameData;
 use App\Jobs\ESPN\CBB\FetchGameDetails;
 use App\Models\CBB\Game;
-use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 
-class BackfillStaleGamesCommand extends Command
+class BackfillStaleGamesCommand extends AbstractBackfillGamesCommand
 {
-    protected $signature = 'espn:backfill-cbb-stale-games
-                            {--status=STATUS_SCHEDULED : Game status to target (or "all" for any non-final)}
-                            {--date= : Only backfill games on a specific date (Y-m-d)}
-                            {--limit=0 : Limit number of games to process (0 = all)}
-                            {--sync : Run synchronously instead of dispatching to queue}';
+    protected const COMMAND_NAME = 'espn:backfill-cbb-stale-games';
 
-    protected $description = 'Backfill past CBB games stuck in non-final status by fetching details from ESPN';
+    protected const COMMAND_DESCRIPTION = 'Backfill past CBB games stuck in non-final status by fetching details from ESPN';
 
-    public function handle(SyncGameDetails $syncGameDetails): int
+    /**
+     * @return Collection<int, Game>
+     */
+    protected function staleGames(string $targetStatus, ?string $date, int $limit): Collection
     {
-        $targetStatus = $this->option('status');
-        $limit = (int) $this->option('limit');
-        $sync = $this->option('sync');
-        $date = $this->option('date');
-
         $query = Game::query()
             ->where('game_date', '<', now()->format('Y-m-d'))
-            ->whereNotIn('status', ['STATUS_FINAL', 'STATUS_FULL_TIME'])
+            ->whereNotIn('status', GameData::finalStatuses())
             ->whereNotNull('espn_event_id')
             ->orderBy('game_date', 'asc');
 
@@ -42,56 +38,23 @@ class BackfillStaleGamesCommand extends Command
             $query->limit($limit);
         }
 
+        /** @var Collection<int, Game> $games */
         $games = $query->get();
 
-        if ($games->isEmpty()) {
-            $this->info('No stale past games found.');
+        return $games;
+    }
 
-            return Command::SUCCESS;
-        }
+    protected function syncGameByEventId(string $eventId): bool
+    {
+        /** @var SyncGameDetails $syncGameDetails */
+        $syncGameDetails = app(SyncGameDetails::class);
+        $result = $syncGameDetails->execute($eventId);
 
-        $this->info("Found {$games->count()} past games with non-final status.");
+        return (bool) ($result['game_updated'] ?? false);
+    }
 
-        $statusBreakdown = $games->groupBy('status')->map->count();
-        foreach ($statusBreakdown as $status => $count) {
-            $this->line("  {$status}: {$count}");
-        }
-
-        $this->newLine();
-
-        if ($sync) {
-            $this->info('Running synchronously...');
-        } else {
-            $this->info('Dispatching game details sync jobs to queue...');
-        }
-
-        $bar = $this->output->createProgressBar($games->count());
-        $bar->start();
-
-        $updated = 0;
-
-        foreach ($games as $game) {
-            if ($sync) {
-                $result = $syncGameDetails->execute($game->espn_event_id);
-                if ($result['game_updated']) {
-                    $updated++;
-                }
-            } else {
-                FetchGameDetails::dispatch($game->espn_event_id);
-            }
-            $bar->advance();
-        }
-
-        $bar->finish();
-        $this->newLine(2);
-
-        if ($sync) {
-            $this->info("Updated {$updated} of {$games->count()} games.");
-        } else {
-            $this->info("Dispatched {$games->count()} game details sync jobs.");
-            $this->info('Run a queue worker to process: php artisan queue:work');
-        }
-
-        return Command::SUCCESS;
+    protected function dispatchGameByEventId(string $eventId): void
+    {
+        FetchGameDetails::dispatch($eventId);
     }
 }

@@ -2,15 +2,20 @@
 
 namespace App\Actions\ESPN\MLB;
 
+use App\Actions\ESPN\MLB\Concerns\ParsesMlbStatValues;
+use App\Actions\ESPN\MLB\Concerns\ResolvesMlbBoxscoreTeams;
 use App\Models\MLB\Game;
-use App\Models\MLB\Team;
 use App\Models\MLB\TeamStat;
 
 class SyncTeamStats
 {
+    use ParsesMlbStatValues;
+    use ResolvesMlbBoxscoreTeams;
+
     public function execute(array $gameData, Game $game): int
     {
-        if (! isset($gameData['boxscore']['teams'])) {
+        $teamSections = $this->boxscoreSection($gameData, 'teams');
+        if ($teamSections === []) {
             return 0;
         }
 
@@ -19,9 +24,8 @@ class SyncTeamStats
 
         $synced = 0;
 
-        foreach ($gameData['boxscore']['teams'] as $teamData) {
-            $team = Team::query()->where('espn_id', $teamData['team']['id'])->first();
-
+        foreach ($teamSections as $teamData) {
+            $team = $this->resolveTeamFromBoxscore($teamData);
             if (! $team) {
                 continue;
             }
@@ -114,7 +118,7 @@ class SyncTeamStats
                     }
                 } else {
                     // Handle single value stats
-                    $parsed[$categoryName][$name] = is_numeric($value) ? (str_contains($value, '.') ? (float) $value : (int) $value) : $value;
+                    $parsed[$categoryName][$name] = $this->parseDisplayStatValue($value);
                 }
             }
         }

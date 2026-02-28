@@ -4,6 +4,8 @@ export * from './ui';
 export * from './models';
 export * from './subscription';
 export * from './onboarding';
+export * from './sports';
+export * from './sport-team';
 
 import type { Auth } from './auth';
 import type { SubscriptionInfo } from './subscription';

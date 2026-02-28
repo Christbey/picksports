@@ -2,53 +2,11 @@
 
 namespace App\Actions\ESPN\CFB;
 
-use App\DataTransferObjects\ESPN\GameData;
-use App\Models\CFB\Game;
-use App\Models\CFB\Team;
-use App\Services\ESPN\CFB\EspnService;
+use App\Actions\ESPN\AbstractSyncGames;
 
-class SyncGames
+class SyncGames extends AbstractSyncGames
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const GAME_MODEL_CLASS = \App\Models\CFB\Game::class;
 
-    public function execute(int $season, int $seasonType, int $week): int
-    {
-        $response = $this->espnService->getGames($season, $seasonType, $week);
-
-        if (! $response || ! isset($response['items'])) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        foreach ($response['items'] as $gameData) {
-            if (empty($gameData['id'])) {
-                continue;
-            }
-
-            $dto = GameData::fromEspnResponse($gameData);
-
-            $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
-            $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
-
-            if (! $homeTeam || ! $awayTeam) {
-                continue;
-            }
-
-            $gameAttributes = $dto->toArray();
-            $gameAttributes['home_team_id'] = $homeTeam->id;
-            $gameAttributes['away_team_id'] = $awayTeam->id;
-
-            Game::updateOrCreate(
-                ['espn_event_id' => $dto->espnEventId],
-                $gameAttributes
-            );
-
-            $synced++;
-        }
-
-        return $synced;
-    }
+    protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
 }

@@ -2,10 +2,10 @@
 
 namespace App\Http\Resources\MLB;
 
+use App\Http\Resources\Sports\AbstractPredictionResource;
 use Illuminate\Http\Request;
-use Illuminate\Http\Resources\Json\JsonResource;
 
-class PredictionResource extends JsonResource
+class PredictionResource extends AbstractPredictionResource
 {
     /**
      * Transform the resource into an array.
@@ -14,56 +14,38 @@ class PredictionResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $user = $request->user();
-        $tier = $user?->subscriptionTier();
-
-        $data = [
-            'id' => $this->id,
-            'game_id' => $this->game_id,
-            'game' => GameResource::make($this->whenLoaded('game')),
-        ];
+        $data = $this->basePredictionData(GameResource::class);
 
         // Spread (includes predicted_spread and predicted_total)
-        if ($tier?->hasDataPermission('spread')) {
+        if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = (float) $this->predicted_spread;
             $data['predicted_total'] = (float) $this->predicted_total;
         }
 
         // Win Probability
-        if ($tier?->hasDataPermission('win_probability')) {
+        if ($this->hasTierPermission($request, 'win_probability')) {
             $data['win_probability'] = (float) $this->win_probability;
         }
 
         // Confidence Score
-        if ($tier?->hasDataPermission('confidence_score')) {
+        if ($this->hasTierPermission($request, 'confidence_score')) {
             $data['confidence_score'] = (float) $this->confidence_score;
         }
 
         // Away Elo (includes team and pitcher elo)
-        if ($tier?->hasDataPermission('away_elo')) {
+        if ($this->hasTierPermission($request, 'away_elo')) {
             $data['away_team_elo'] = (float) $this->away_team_elo;
             $data['away_pitcher_elo'] = (float) $this->away_pitcher_elo;
             $data['away_combined_elo'] = (float) $this->away_combined_elo;
         }
 
         // Home Elo (includes team and pitcher elo)
-        if ($tier?->hasDataPermission('home_elo')) {
+        if ($this->hasTierPermission($request, 'home_elo')) {
             $data['home_team_elo'] = (float) $this->home_team_elo;
             $data['home_pitcher_elo'] = (float) $this->home_pitcher_elo;
             $data['home_combined_elo'] = (float) $this->home_combined_elo;
         }
 
-        // Grading fields (always included for historical analysis)
-        $data['actual_spread'] = $this->actual_spread;
-        $data['actual_total'] = $this->actual_total;
-        $data['spread_error'] = $this->spread_error;
-        $data['total_error'] = $this->total_error;
-        $data['winner_correct'] = $this->winner_correct;
-        $data['graded_at'] = $this->graded_at?->toIso8601String();
-
-        $data['created_at'] = $this->created_at?->toIso8601String();
-        $data['updated_at'] = $this->updated_at?->toIso8601String();
-
-        return $data;
+        return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }
 }

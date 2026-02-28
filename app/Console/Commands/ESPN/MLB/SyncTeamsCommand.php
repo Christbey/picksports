@@ -2,23 +2,12 @@
 
 namespace App\Console\Commands\ESPN\MLB;
 
+use App\Console\Commands\ESPN\AbstractSyncTeamsCommand;
 use App\Jobs\ESPN\MLB\FetchTeams;
-use Illuminate\Console\Command;
 
-class SyncTeamsCommand extends Command
+class SyncTeamsCommand extends AbstractSyncTeamsCommand
 {
-    protected $signature = 'espn:sync-mlb-teams';
-
-    protected $description = 'Sync MLB teams from ESPN API';
-
-    public function handle(): int
-    {
-        $this->info('Dispatching MLB teams sync job...');
-
-        FetchTeams::dispatch();
-
-        $this->info('MLB teams sync job dispatched successfully.');
-
-        return Command::SUCCESS;
-    }
+    protected const COMMAND_NAME = 'espn:sync-mlb-teams';
+    protected const SPORT_CODE = 'MLB';
+    protected const TEAMS_SYNC_JOB_CLASS = FetchTeams::class;
 }

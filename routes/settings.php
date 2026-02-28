@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Settings\AlertPreferenceController;
 use App\Http\Controllers\Settings\OnboardingController;
+use App\Http\Controllers\Settings\OddsApiTeamMappingController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
@@ -58,7 +59,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('alert-preferences.update');
 
     Route::post('settings/alert-preferences/check-alerts', [AlertPreferenceController::class, 'checkAlerts'])
-        ->middleware('admin')
         ->name('alert-preferences.check');
 
     Route::get('settings/onboarding', OnboardingController::class)->name('settings.onboarding');
@@ -74,8 +74,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     })->name('admin.settings');
 
     Route::middleware(['admin'])->group(function () {
-        Route::get('settings/team-mappings', [\App\Http\Controllers\Settings\OddsApiTeamMappingController::class, 'index'])->name('team-mappings.index');
-        Route::patch('settings/team-mappings/{mapping}', [\App\Http\Controllers\Settings\OddsApiTeamMappingController::class, 'update'])->name('team-mappings.update');
-        Route::delete('settings/team-mappings/{mapping}', [\App\Http\Controllers\Settings\OddsApiTeamMappingController::class, 'destroy'])->name('team-mappings.destroy');
+        Route::get('settings/team-mappings', [OddsApiTeamMappingController::class, 'index'])->name('team-mappings.index');
+        Route::patch('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'update'])->name('team-mappings.update');
+        Route::delete('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'destroy'])->name('team-mappings.destroy');
     });
 });

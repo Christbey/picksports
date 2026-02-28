@@ -2,6 +2,7 @@
 
 namespace App\Actions\CBB;
 
+use App\Actions\Trends\AbstractCalculateTeamTrends;
 use App\Actions\Trends\Collectors\AdvancedTrendCollector;
 use App\Actions\Trends\Collectors\ClutchPerformanceTrendCollector;
 use App\Actions\Trends\Collectors\ConferenceTrendCollector;
@@ -20,17 +21,19 @@ use App\Actions\Trends\Collectors\StreakTrendCollector;
 use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
 use App\Models\CBB\Game;
-use App\Models\CBB\Team;
-use Illuminate\Support\Collection;
 
-class CalculateTeamTrends
+class CalculateTeamTrends extends AbstractCalculateTeamTrends
 {
+    protected const SPORT_KEY = 'cbb';
+
+    protected const GAME_MODEL = Game::class;
+
     /**
      * Basketball-appropriate collectors (excludes quarter-based and drive efficiency).
      *
      * @var array<int, class-string>
      */
-    protected array $collectors = [
+    protected const COLLECTORS = [
         ScoringTrendCollector::class,
         HalfTrendCollector::class,
         MarginTrendCollector::class,
@@ -49,65 +52,4 @@ class CalculateTeamTrends
         MomentumTrendCollector::class,
         ClutchPerformanceTrendCollector::class,
     ];
-
-    /**
-     * @return array{trends: array<string, array<int, string>>, locked: array<string, string>}
-     */
-    public function execute(Team $team, int $gameCount = 20, ?int $season = null, ?string $beforeDate = null, string $userTier = 'free'): array
-    {
-        $games = $this->fetchRecentGames($team, $gameCount, $season, $beforeDate);
-
-        if ($games->isEmpty()) {
-            return ['trends' => [], 'locked' => []];
-        }
-
-        $trends = [];
-        $locked = [];
-        $enabledCollectors = config('trends.collectors', []);
-        $tierRequirements = config('trends.tier_requirements', []);
-        $tierLevels = config('trends.tier_levels', []);
-        $userTierLevel = $tierLevels[$userTier] ?? 0;
-
-        foreach ($this->collectors as $collectorClass) {
-            $collector = app($collectorClass);
-            $key = $collector->key();
-
-            if (! ($enabledCollectors[$key] ?? true)) {
-                continue;
-            }
-
-            $requiredTier = $tierRequirements[$key] ?? 'free';
-            $requiredLevel = $tierLevels[$requiredTier] ?? 0;
-
-            if ($userTierLevel < $requiredLevel) {
-                $locked[$key] = $requiredTier;
-
-                continue;
-            }
-
-            $collector->setContext('cbb', $team, $games);
-            $messages = $collector->collect();
-
-            if (! empty($messages)) {
-                $trends[$key] = $messages;
-            }
-        }
-
-        return ['trends' => $trends, 'locked' => $locked];
-    }
-
-    protected function fetchRecentGames(Team $team, int $count, ?int $season = null, ?string $beforeDate = null): Collection
-    {
-        return Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->where(fn ($q) => $q
-                ->where('home_team_id', $team->id)
-                ->orWhere('away_team_id', $team->id))
-            ->when($season, fn ($q) => $q->where('season', $season))
-            ->when($beforeDate, fn ($q) => $q->where('game_date', '<', $beforeDate))
-            ->with(['homeTeam', 'awayTeam', 'teamStats', 'prediction'])
-            ->orderByDesc('game_date')
-            ->limit($count)
-            ->get();
-    }
 }

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import type { PersonalizationData, Sport, BettingExperience } from '@/types/onboarding';
 import Button from '@/components/ui/button/Button.vue';
 import Checkbox from '@/components/ui/checkbox/Checkbox.vue';
 import Label from '@/components/ui/label/Label.vue';
+import type { PersonalizationData, Sport, BettingExperience } from '@/types/onboarding';
 
 const emit = defineEmits<{
     submit: [data: PersonalizationData];

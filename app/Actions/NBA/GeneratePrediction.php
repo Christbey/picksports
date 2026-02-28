@@ -15,20 +15,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
     /** @var array<string, mixed> Cached metadata for the current prediction */
     private array $metadata = [];
 
-    protected function getSport(): string
-    {
-        return 'nba';
-    }
+    protected const SPORT_KEY = 'nba';
 
-    protected function getTeamMetricModel(): string
-    {
-        return TeamMetric::class;
-    }
+    protected const TEAM_METRIC_MODEL = TeamMetric::class;
 
-    protected function getPredictionModel(): string
-    {
-        return Prediction::class;
-    }
+    protected const PREDICTION_MODEL = Prediction::class;
 
     protected function calculatePredictedSpread(
         int $homeElo,
@@ -39,7 +30,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
     ): float {
         $config = config('nba.prediction');
         $homeCourtAdvantage = config('nba.elo.home_court_advantage');
-        $defaultEfficiency = $config['default_efficiency'];
 
         // 1. ELO spread component
         $eloSpread = ($homeElo + $homeCourtAdvantage - $awayElo) / $config['elo_to_spread_divisor'];
@@ -158,18 +148,20 @@ class GeneratePrediction extends AbstractPredictionGenerator
     ): array {
         $defaultEfficiency = config('nba.prediction.default_efficiency');
 
-        return array_merge([
-            'home_elo' => $homeElo,
-            'away_elo' => $awayElo,
-            'home_off_eff' => $homeMetrics?->offensive_efficiency ?? $defaultEfficiency,
-            'home_def_eff' => $homeMetrics?->defensive_efficiency ?? $defaultEfficiency,
-            'away_off_eff' => $awayMetrics?->offensive_efficiency ?? $defaultEfficiency,
-            'away_def_eff' => $awayMetrics?->defensive_efficiency ?? $defaultEfficiency,
-            'predicted_spread' => $predictedSpread,
-            'predicted_total' => $predictedTotal,
-            'win_probability' => $winProbability,
-            'confidence_score' => $confidenceScore,
-        ], $this->metadata);
+        return array_merge(
+            parent::buildPredictionData(
+                $homeElo,
+                $awayElo,
+                $homeMetrics,
+                $awayMetrics,
+                $predictedSpread,
+                $predictedTotal,
+                $winProbability,
+                $confidenceScore
+            ),
+            $this->efficiencyPredictionData($homeMetrics, $awayMetrics, $defaultEfficiency),
+            $this->metadata
+        );
     }
 
     /**
@@ -198,12 +190,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             ->toArray();
 
         if (empty($recentGames)) {
-            return [
-                'off_eff' => $defaultEff,
-                'def_eff' => $defaultEff,
-                'net_rating' => 0.0,
-                'tempo' => $defaultPace,
-            ];
+            return $this->defaultRecentForm($defaultEff, $defaultPace);
         }
 
         $stats = TeamStat::query()
@@ -215,12 +202,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             ->get();
 
         if ($stats->isEmpty()) {
-            return [
-                'off_eff' => $defaultEff,
-                'def_eff' => $defaultEff,
-                'net_rating' => 0.0,
-                'tempo' => $defaultPace,
-            ];
+            return $this->defaultRecentForm($defaultEff, $defaultPace);
         }
 
         $totalWeight = 0;
@@ -287,8 +269,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     private function calculateHomeAwaySplitAdjustment(Model $game, ?Model $homeMetrics, ?Model $awayMetrics): float
     {
-        $defaultEff = config('nba.prediction.default_efficiency');
-
         $homeStats = $this->getVenueEfficiency($game->homeTeam, $game->season, 'home');
         $awayStats = $this->getVenueEfficiency($game->awayTeam, $game->season, 'away');
 
@@ -310,15 +290,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
     private function getVenueEfficiency(Team $team, int $season, string $venue): array
     {
         $defaultEff = config('nba.prediction.default_efficiency');
-
-        $gameColumn = $venue === 'home' ? 'home_team_id' : 'away_team_id';
-
-        $games = Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->where('season', $season)
-            ->where($gameColumn, $team->id)
-            ->pluck('id')
-            ->toArray();
+        $games = $this->completedSeasonGameIdsForTeam($team, $season, $venue);
 
         if (empty($games)) {
             return ['off' => $defaultEff, 'def' => $defaultEff, 'net' => 0];
@@ -335,7 +307,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $totalPoints = $stats->sum('points');
         $totalPoss = $stats->sum('possessions');
-        $avgPoss = $totalPoss / $stats->count();
 
         $offEff = $totalPoss > 0 ? ($totalPoints / $totalPoss) * 100 : $defaultEff;
 
@@ -398,15 +369,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     private function getTurnoverDifferential(Team $team, int $season): float
     {
-        $games = Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->where('season', $season)
-            ->where(function ($q) use ($team) {
-                $q->where('home_team_id', $team->id)
-                    ->orWhere('away_team_id', $team->id);
-            })
-            ->pluck('id')
-            ->toArray();
+        $games = $this->completedSeasonGameIdsForTeam($team, $season);
 
         if (empty($games)) {
             return 0;
@@ -441,15 +404,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     private function getReboundMargin(Team $team, int $season): float
     {
-        $games = Game::query()
-            ->where('status', 'STATUS_FINAL')
-            ->where('season', $season)
-            ->where(function ($q) use ($team) {
-                $q->where('home_team_id', $team->id)
-                    ->orWhere('away_team_id', $team->id);
-            })
-            ->pluck('id')
-            ->toArray();
+        $games = $this->completedSeasonGameIdsForTeam($team, $season);
 
         if (empty($games)) {
             return 0;
@@ -576,5 +531,41 @@ class GeneratePrediction extends AbstractPredictionGenerator
         }
 
         return 0.5;
+    }
+
+    /**
+     * @return array{off_eff: float, def_eff: float, net_rating: float, tempo: float}
+     */
+    private function defaultRecentForm(float $defaultEfficiency, float $defaultPace): array
+    {
+        return [
+            'off_eff' => $defaultEfficiency,
+            'def_eff' => $defaultEfficiency,
+            'net_rating' => 0.0,
+            'tempo' => $defaultPace,
+        ];
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function completedSeasonGameIdsForTeam(Team $team, int $season, ?string $venue = null): array
+    {
+        $query = Game::query()
+            ->where('status', 'STATUS_FINAL')
+            ->where('season', $season);
+
+        if ($venue === 'home') {
+            $query->where('home_team_id', $team->id);
+        } elseif ($venue === 'away') {
+            $query->where('away_team_id', $team->id);
+        } else {
+            $query->where(function ($q) use ($team) {
+                $q->where('home_team_id', $team->id)
+                    ->orWhere('away_team_id', $team->id);
+            });
+        }
+
+        return $query->pluck('id')->toArray();
     }
 }

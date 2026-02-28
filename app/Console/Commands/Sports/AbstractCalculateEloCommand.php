@@ -2,35 +2,80 @@
 
 namespace App\Console\Commands\Sports;
 
+use App\Console\Commands\Concerns\ResolvesRequiredConfig;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractCalculateEloCommand extends Command
 {
+    use ResolvesRequiredConfig;
+
+    protected const COMMAND_NAME = '';
+
+    protected const COMMAND_DESCRIPTION = '';
+
+    /**
+     * @var array<int, string>
+     */
+    protected const EXTRA_SIGNATURE_OPTIONS = [];
+
+    protected const SPORT_NAME = '';
+
+    protected const GAME_MODEL = Model::class;
+
+    protected const TEAM_MODEL = Model::class;
+
+    protected const ELO_RATING_MODEL = Model::class;
+
+    protected const CALCULATE_ELO_ACTION = '';
+
+    public function __construct()
+    {
+        $this->signature = $this->buildSignature();
+        $this->description = $this->commandDescription();
+
+        parent::__construct();
+    }
+
     /**
      * Get the sport name for display
      */
-    abstract protected function getSportName(): string;
+    protected function getSportName(): string
+    {
+        return $this->requiredString(static::SPORT_NAME, 'SPORT_NAME must be defined on calculate-elo command.');
+    }
 
     /**
      * Get the Game model class
      */
-    abstract protected function getGameModel(): string;
+    protected function getGameModel(): string
+    {
+        return $this->requiredNonDefaultString(static::GAME_MODEL, Model::class, 'GAME_MODEL must be defined on calculate-elo command.');
+    }
 
     /**
      * Get the Team model class
      */
-    abstract protected function getTeamModel(): string;
+    protected function getTeamModel(): string
+    {
+        return $this->requiredNonDefaultString(static::TEAM_MODEL, Model::class, 'TEAM_MODEL must be defined on calculate-elo command.');
+    }
 
     /**
      * Get the EloRating model class
      */
-    abstract protected function getEloRatingModel(): string;
+    protected function getEloRatingModel(): string
+    {
+        return $this->requiredNonDefaultString(static::ELO_RATING_MODEL, Model::class, 'ELO_RATING_MODEL must be defined on calculate-elo command.');
+    }
 
     /**
      * Get the CalculateElo action class
      */
-    abstract protected function getCalculateEloAction(): string;
+    protected function getCalculateEloAction(): string
+    {
+        return $this->requiredString(static::CALCULATE_ELO_ACTION, 'CALCULATE_ELO_ACTION must be defined on calculate-elo command.');
+    }
 
     /**
      * Get the default Elo rating
@@ -51,6 +96,29 @@ abstract class AbstractCalculateEloCommand extends Command
         return null;
     }
 
+    protected function buildSignature(): string
+    {
+        $segments = [
+            $this->commandName(),
+            '{--season= : Calculate Elo for a specific season}',
+            '{--from-date= : Calculate Elo starting from this date (YYYY-MM-DD)}',
+            '{--to-date= : Calculate Elo up to this date (YYYY-MM-DD)}',
+            '{--reset : Reset all Elo ratings to default (1500) before calculating}',
+        ];
+
+        return implode("\n ", array_merge($segments, static::EXTRA_SIGNATURE_OPTIONS));
+    }
+
+    protected function commandName(): string
+    {
+        return $this->requiredString(static::COMMAND_NAME, 'COMMAND_NAME must be defined.');
+    }
+
+    protected function commandDescription(): string
+    {
+        return $this->requiredString(static::COMMAND_DESCRIPTION, 'COMMAND_DESCRIPTION must be defined.');
+    }
+
     public function handle(): int
     {
         $calculateEloClass = $this->getCalculateEloAction();
@@ -65,6 +133,10 @@ abstract class AbstractCalculateEloCommand extends Command
             $teamModel::query()->update(['elo_rating' => $this->getDefaultElo()]);
             $eloRatingModel::query()->truncate();
             $this->info('Elo ratings reset successfully.');
+        }
+
+        if ($this->hasOption('regress') && $this->option('regress') && ! $this->option('reset')) {
+            $this->applyRegressionTowardMean();
         }
 
         // Build query for completed games
@@ -84,6 +156,10 @@ abstract class AbstractCalculateEloCommand extends Command
         // Apply filters
         if ($season = $this->option('season')) {
             $query->where('season', $season);
+        }
+
+        if ($this->hasOption('week') && ($week = $this->option('week'))) {
+            $query->where('week', $week);
         }
 
         if ($fromDate = $this->option('from-date')) {
@@ -129,5 +205,19 @@ abstract class AbstractCalculateEloCommand extends Command
         $this->comment("Skipped {$skipped} games (already calculated).");
 
         return Command::SUCCESS;
+    }
+
+    protected function applyRegressionTowardMean(): void
+    {
+        $teamModel = $this->getTeamModel();
+        $defaultElo = $this->getDefaultElo();
+
+        $this->info('Applying 30% regression toward mean Elo before calculation...');
+
+        $teamModel::query()->each(function (Model $team) use ($defaultElo) {
+            $current = (int) ($team->elo_rating ?? $defaultElo);
+            $regressed = (int) round(($current * 0.7) + ($defaultElo * 0.3));
+            $team->update(['elo_rating' => $regressed]);
+        });
     }
 }

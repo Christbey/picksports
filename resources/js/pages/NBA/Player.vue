@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3'
 import { ref, onMounted, computed } from 'vue'
-import AppLayout from '@/layouts/AppLayout.vue'
+import NBAGameController from '@/actions/App/Http/Controllers/NBA/GameController'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import AppLayout from '@/layouts/AppLayout.vue'
 import { type BreadcrumbItem } from '@/types'
-import NBAGameController from '@/actions/App/Http/Controllers/NBA/GameController'
 
 interface Player {
     id: number

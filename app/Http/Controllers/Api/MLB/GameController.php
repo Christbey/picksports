@@ -9,18 +9,9 @@ use App\Models\MLB\Team;
 
 class GameController extends AbstractGameController
 {
-    protected function getGameModel(): string
-    {
-        return Game::class;
-    }
+    protected const GAME_MODEL = Game::class;
 
-    protected function getTeamModel(): string
-    {
-        return Team::class;
-    }
+    protected const TEAM_MODEL = Team::class;
 
-    protected function getGameResource(): string
-    {
-        return GameResource::class;
-    }
+    protected const GAME_RESOURCE = GameResource::class;
 }

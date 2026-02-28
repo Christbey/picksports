@@ -23,12 +23,13 @@ class NbaTeamFactory extends Factory
         return [
             'espn_id' => $this->faker->unique()->numerify('##'),
             'abbreviation' => $this->faker->unique()->lexify('???'),
-            'school' => $city,
-            'mascot' => $this->faker->randomElement(['Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls']),
+            'location' => $city,
+            'name' => $this->faker->randomElement(['Lakers', 'Celtics', 'Warriors', 'Heat', 'Bulls']),
             'conference' => $this->faker->randomElement(['Eastern', 'Western']),
             'division' => $this->faker->randomElement(['Atlantic', 'Central', 'Southeast', 'Northwest', 'Pacific', 'Southwest']),
             'color' => $this->faker->hexColor(),
             'logo_url' => $this->faker->imageUrl(),
+            'elo_rating' => 1500,
         ];
     }
 }

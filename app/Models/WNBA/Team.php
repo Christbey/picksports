@@ -8,20 +8,31 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbTeamFactory> */
+    /** @use HasFactory<\Database\Factories\WnbaTeamFactory> */
     use HasFactory;
 
     protected $table = 'wnba_teams';
+
+    protected static function newFactory(): \Database\Factories\WnbaTeamFactory
+    {
+        return \Database\Factories\WnbaTeamFactory::new();
+    }
 
     protected $fillable = [
         'espn_id',
         'abbreviation',
         'location',
         'name',
+        'school',
+        'mascot',
+        'display_name',
+        'short_display_name',
         'conference',
         'division',
         'color',
+        'logo',
         'logo_url',
+        'alternate_color',
         'elo_rating',
     ];
 

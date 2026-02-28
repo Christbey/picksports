@@ -2,87 +2,14 @@
 
 namespace App\Console\Commands\ESPN\WNBA;
 
+use App\Console\Commands\ESPN\AbstractSeasonalSyncGamesFromScoreboardCommand;
 use App\Jobs\ESPN\WNBA\FetchGamesFromScoreboard;
-use Carbon\Carbon;
-use Illuminate\Console\Command;
 
-class SyncGamesFromScoreboardCommand extends Command
+class SyncGamesFromScoreboardCommand extends AbstractSeasonalSyncGamesFromScoreboardCommand
 {
-    protected $signature = 'espn:sync-wnba-games-scoreboard
-                            {date? : The date in YYYYMMDD format (defaults to today)}
-                            {--from-date= : Start date in YYYY-MM-DD format}
-                            {--to-date= : End date in YYYY-MM-DD format}
-                            {--season= : Sync entire season (e.g., 2026 syncs May - Sep 2026)}';
-
-    protected $description = 'Sync WNBA games from ESPN scoreboard API';
-
-    public function handle(): int
-    {
-        // Handle season option
-        if ($season = $this->option('season')) {
-            return $this->syncSeason($season);
-        }
-
-        // Handle date range
-        if ($fromDate = $this->option('from-date')) {
-            $toDate = $this->option('to-date') ?? date('Y-m-d');
-
-            return $this->syncDateRange($fromDate, $toDate);
-        }
-
-        // Handle single date
-        $date = $this->argument('date') ?? date('Ymd');
-
-        $this->info("Dispatching WNBA games scoreboard sync job for date {$date}...");
-
-        FetchGamesFromScoreboard::dispatch($date);
-
-        $this->info('WNBA games scoreboard sync job dispatched successfully.');
-
-        return Command::SUCCESS;
-    }
-
-    protected function syncSeason(int $season): int
-    {
-        // WNBA season runs from May to September
-        $startDate = Carbon::create($season, 5, 1)->startOfMonth();
-        $endDate = Carbon::create($season, 9, 30)->endOfMonth();
-
-        $this->info("Syncing full {$season} WNBA season ({$startDate->format('Y-m-d')} to {$endDate->format('Y-m-d')})...");
-
-        if ($endDate->isFuture()) {
-            $this->info('Note: Including future dates to capture scheduled games.');
-        }
-
-        return $this->syncDateRange($startDate->format('Y-m-d'), $endDate->format('Y-m-d'));
-    }
-
-    protected function syncDateRange(string $fromDate, string $toDate): int
-    {
-        $startDate = Carbon::parse($fromDate);
-        $endDate = Carbon::parse($toDate);
-
-        $totalDays = $startDate->diffInDays($endDate) + 1;
-
-        $this->info("Queuing {$totalDays} days of games ({$fromDate} to {$toDate})...");
-
-        $bar = $this->output->createProgressBar($totalDays);
-        $bar->start();
-
-        $currentDate = $startDate->copy();
-
-        while ($currentDate->lte($endDate)) {
-            FetchGamesFromScoreboard::dispatch($currentDate->format('Ymd'));
-            $bar->advance();
-            $currentDate->addDay();
-        }
-
-        $bar->finish();
-        $this->newLine(2);
-
-        $this->info("Queued {$totalDays} game sync jobs successfully.");
-        $this->info('Run "php artisan queue:work" to process the jobs.');
-
-        return Command::SUCCESS;
-    }
+    protected const COMMAND_NAME = 'espn:sync-wnba-games-scoreboard';
+    protected const SPORT_CODE = 'WNBA';
+    protected const SEASON_START_MONTH = 5;
+    protected const SEASON_END_MONTH = 9;
+    protected const SCOREBOARD_SYNC_JOB_CLASS = FetchGamesFromScoreboard::class;
 }

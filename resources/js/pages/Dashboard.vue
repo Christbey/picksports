@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted } from 'vue';
-import AppLayout from '@/layouts/AppLayout.vue';
+import BettingAnalysisCard, { type LivePredictionData, type BettingRecommendation } from '@/components/BettingAnalysisCard.vue';
+import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import UpgradeCard from '@/components/UpgradeCard.vue';
-import BettingAnalysisCard, { type LivePredictionData, type BettingRecommendation } from '@/components/BettingAnalysisCard.vue';
+import AppLayout from '@/layouts/AppLayout.vue';
 import { dashboard } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
 
@@ -66,19 +67,37 @@ const hasLiveGames = computed(() =>
 );
 
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
+let isMounted = false;
+let isReloading = false;
+
+function reloadDashboardData(onFinish?: () => void): void {
+    if (isReloading || !isMounted) return;
+
+    isReloading = true;
+    router.reload({
+        only: ['sports', 'stats'],
+        onFinish: () => {
+            isReloading = false;
+            if (!isMounted) return;
+            onFinish?.();
+        },
+    });
+}
 
 function schedulePoll(): void {
+    if (!isMounted) return;
+
     stopPolling();
     const interval = hasLiveGames.value ? LIVE_POLL_INTERVAL : IDLE_POLL_INTERVAL;
     pollTimer = setTimeout(() => {
+        if (!isMounted) return;
+
         if (document.hidden) {
             schedulePoll();
             return;
         }
-        router.reload({
-            only: ['sports', 'stats'],
-            onFinish: () => schedulePoll(),
-        });
+
+        reloadDashboardData(() => schedulePoll());
     }, interval);
 }
 
@@ -91,17 +110,19 @@ function stopPolling(): void {
 
 function handleVisibilityChange(): void {
     if (!document.hidden) {
-        router.reload({ only: ['sports', 'stats'] });
-        schedulePoll();
+        stopPolling();
+        reloadDashboardData(() => schedulePoll());
     }
 }
 
 onMounted(() => {
+    isMounted = true;
     schedulePoll();
     document.addEventListener('visibilitychange', handleVisibilityChange);
 });
 
 onUnmounted(() => {
+    isMounted = false;
     stopPolling();
     document.removeEventListener('visibilitychange', handleVisibilityChange);
 });
@@ -116,16 +137,6 @@ function getSportHeaderColor(color: string) {
     return colors[color] || 'from-gray-500 to-gray-700';
 }
 
-function getSportBadgeColor(color: string) {
-    const colors: Record<string, string> = {
-        orange: 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200',
-        blue: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-        purple: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-        green: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
-    };
-    return colors[color] || 'bg-gray-100 text-gray-800';
-}
-
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Dashboard',
@@ -133,37 +144,18 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-function formatTime(dateString: string) {
-    return new Date(dateString).toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        timeZone: 'America/Chicago',
-    });
-}
-
 function formatSpread(spread: number) {
     return spread > 0 ? `+${spread.toFixed(1)}` : spread.toFixed(1);
+}
+
+function formatTotal(total: number | null | undefined): string {
+    if (total === null || total === undefined) return '-';
+    return total.toFixed(1);
 }
 
 function getGameUrl(sport: string, gameId: number) {
     const sportLower = sport.toLowerCase();
     return `/${sportLower}/games/${gameId}`;
-}
-
-function formatPeriod(period: number | undefined, status: string | undefined, sport?: string) {
-    if (!period) return '';
-    if (status === 'STATUS_HALFTIME') return 'Half';
-    if (status === 'STATUS_END_PERIOD') return `End Q${period}`;
-
-    // Basketball uses quarters
-    const ordinals = ['', '1st', '2nd', '3rd', '4th', 'OT'];
-    return ordinals[period] || `OT${period - 4}`;
-}
-
-function formatInning(inning: number | undefined, inningState: string | undefined) {
-    if (!inning) return '';
-    const state = inningState === 'top' ? 'Top' : inningState === 'bottom' ? 'Bot' : '';
-    return `${state} ${inning}`;
 }
 
 function hasLiveData(prediction: Prediction): boolean {
@@ -197,11 +189,12 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
     <Head title="Dashboard" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div
-            class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4"
-        >
-            <!-- Subscription Banner -->
-            <SubscriptionBanner variant="gradient" />
+        <RenderErrorBoundary title="Dashboard Render Error">
+            <div
+                class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4"
+            >
+                <!-- Subscription Banner -->
+                <SubscriptionBanner variant="gradient" />
 
             <!-- No Predictions Message -->
             <div
@@ -248,8 +241,8 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                     <!-- Predictions List -->
                     <div class="space-y-3 p-4">
                         <Link
-                            v-for="(prediction, index) in sport.predictions"
-                            :key="index"
+                            v-for="prediction in sport.predictions"
+                            :key="`${prediction.sport}-${prediction.game_id}`"
                             :href="getGameUrl(prediction.sport, prediction.game_id)"
                             class="block rounded-lg border border-sidebar-border/70 bg-sidebar-accent/30 p-3 md:p-4 transition-all hover:border-sidebar-border hover:bg-sidebar-accent/50 dark:border-sidebar-border"
                         >
@@ -363,7 +356,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                             {{
                                                 formatSpread(
                                                     hasLiveData(prediction) &&
-                                                        prediction.live_predicted_spread !==
+                                                        prediction.live_predicted_spread !=
                                                             null
                                                         ? prediction.live_predicted_spread
                                                         : prediction.predicted_spread,
@@ -387,12 +380,13 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                                             }"
                                         >
                                             {{
-                                                (hasLiveData(prediction) &&
-                                                prediction.live_predicted_total !==
-                                                    null
-                                                    ? prediction.live_predicted_total
-                                                    : prediction.predicted_total
-                                                ).toFixed(1)
+                                                formatTotal(
+                                                    hasLiveData(prediction) &&
+                                                        prediction.live_predicted_total !=
+                                                            null
+                                                        ? prediction.live_predicted_total
+                                                        : prediction.predicted_total,
+                                                )
                                             }}
                                         </div>
                                     </div>
@@ -450,6 +444,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
                     </div>
                 </div>
             </div>
-        </div>
+            </div>
+        </RenderErrorBoundary>
     </AppLayout>
 </template>

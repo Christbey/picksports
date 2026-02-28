@@ -9,23 +9,9 @@ use App\Models\WNBA\Prediction;
 
 class PredictionController extends AbstractPredictionController
 {
-    protected function getPredictionModel(): string
-    {
-        return Prediction::class;
-    }
+    protected const PREDICTION_MODEL = Prediction::class;
 
-    protected function getGameModel(): string
-    {
-        return Game::class;
-    }
+    protected const GAME_MODEL = Game::class;
 
-    protected function getPredictionResource(): string
-    {
-        return PredictionResource::class;
-    }
-
-    protected function applyIndexFilters($query): void
-    {
-        // WNBA doesn't have custom filters
-    }
+    protected const PREDICTION_RESOURCE = PredictionResource::class;
 }

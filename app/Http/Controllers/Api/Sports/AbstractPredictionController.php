@@ -2,30 +2,46 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\DB;
 
-abstract class AbstractPredictionController extends Controller
+abstract class AbstractPredictionController extends AbstractSportsApiController
 {
-    /**
-     * Get the Prediction model class for this sport
-     */
-    abstract protected function getPredictionModel(): string;
+    protected const PREDICTION_MODEL = '';
 
-    /**
-     * Get the Game model class for this sport
-     */
-    abstract protected function getGameModel(): string;
+    protected const GAME_MODEL = '';
 
-    /**
-     * Get the PredictionResource class for this sport
-     */
-    abstract protected function getPredictionResource(): string;
+    protected const PREDICTION_RESOURCE = '';
+
+    protected function getPredictionModel(): string
+    {
+        if (static::PREDICTION_MODEL === '') {
+            throw new \RuntimeException('PREDICTION_MODEL must be defined on prediction controller.');
+        }
+
+        return static::PREDICTION_MODEL;
+    }
+
+    protected function getGameModel(): string
+    {
+        if (static::GAME_MODEL === '') {
+            throw new \RuntimeException('GAME_MODEL must be defined on prediction controller.');
+        }
+
+        return static::GAME_MODEL;
+    }
+
+    protected function getPredictionResource(): string
+    {
+        if (static::PREDICTION_RESOURCE === '') {
+            throw new \RuntimeException('PREDICTION_RESOURCE must be defined on prediction controller.');
+        }
+
+        return static::PREDICTION_RESOURCE;
+    }
 
     /**
      * Apply sport-specific filters to the index query
@@ -77,10 +93,9 @@ abstract class AbstractPredictionController extends Controller
     {
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
-
-        $user = auth()->user();
-        $tier = $user?->subscriptionTier();
-        $tierLimit = $tier?->getPredictionsLimit();
+        $tierContext = $this->resolveTierContext('getPredictionsLimit');
+        $tierMetadata = $tierContext['metadata'];
+        $tierLimit = $tierContext['limit'];
 
         $query = $predictionModel::query()
             ->with(['game.homeTeam', 'game.awayTeam']);
@@ -97,10 +112,7 @@ abstract class AbstractPredictionController extends Controller
             $predictions = $predictions->take($tierLimit);
         }
 
-        return $resourceClass::collection($predictions)->additional([
-            'tier_limit' => $tierLimit,
-            'tier_name' => $tier?->name,
-        ]);
+        return $this->withTierMetadata($resourceClass::collection($predictions), $tierMetadata);
     }
 
     /**
@@ -129,12 +141,13 @@ abstract class AbstractPredictionController extends Controller
     /**
      * Display the specified prediction
      */
-    public function show(int $prediction): JsonResource
+    public function show($prediction): JsonResource
     {
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
+        $predictionId = $this->requireNumericId($prediction);
 
-        $prediction = $predictionModel::query()->with(['game'])->findOrFail($prediction);
+        $prediction = $predictionModel::query()->with(['game'])->findOrFail($predictionId);
 
         return new $resourceClass($prediction);
     }
@@ -142,13 +155,14 @@ abstract class AbstractPredictionController extends Controller
     /**
      * Display predictions for a specific game
      */
-    public function byGame(int $game): JsonResource|AnonymousResourceCollection|JsonResponse
+    public function byGame($game): JsonResource|AnonymousResourceCollection|JsonResponse
     {
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
+        $gameId = $this->requireNumericId($game);
 
         $query = $predictionModel::query()
-            ->where('game_id', $game)
+            ->where('game_id', $gameId)
             ->orderByDesc('created_at');
 
         if ($this->returnFirstPredictionOnly()) {

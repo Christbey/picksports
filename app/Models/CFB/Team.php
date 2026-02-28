@@ -13,6 +13,11 @@ class Team extends Model
 
     protected $table = 'cfb_teams';
 
+    protected static function newFactory(): \Database\Factories\CfbTeamFactory
+    {
+        return \Database\Factories\CfbTeamFactory::new();
+    }
+
     protected $fillable = [
         'espn_id',
         'name',
@@ -20,9 +25,12 @@ class Team extends Model
         'display_name',
         'short_display_name',
         'logo',
+        'logo_url',
         'color',
         'alternate_color',
         'location',
+        'school',
+        'mascot',
         'conference',
         'division',
         'elo_rating',

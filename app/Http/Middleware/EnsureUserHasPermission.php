@@ -5,6 +5,8 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Spatie\Permission\Exceptions\GuardDoesNotMatch;
+use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureUserHasPermission
@@ -22,7 +24,13 @@ class EnsureUserHasPermission
             return redirect()->route('login');
         }
 
-        if (! $user->hasPermissionTo($permission)) {
+        try {
+            $hasPermission = $user->hasPermissionTo($permission);
+        } catch (PermissionDoesNotExist|GuardDoesNotMatch) {
+            $hasPermission = false;
+        }
+
+        if (! $hasPermission) {
             return $this->denyAccess($request, $permission);
         }
 
@@ -31,7 +39,7 @@ class EnsureUserHasPermission
 
     protected function denyAccess(Request $request, string $permission): Response
     {
-        if ($request->expectsJson()) {
+        if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
                 'message' => "You don't have permission to access this resource. Required permission: {$permission}",
             ], 403);

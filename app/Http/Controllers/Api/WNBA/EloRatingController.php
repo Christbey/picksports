@@ -2,65 +2,26 @@
 
 namespace App\Http\Controllers\Api\WNBA;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractEloRatingController;
 use App\Http\Resources\WNBA\EloRatingResource;
 use App\Models\WNBA\EloRating;
 use App\Models\WNBA\Team;
-use Illuminate\Http\Request;
 
-class EloRatingController extends Controller
+class EloRatingController extends AbstractEloRatingController
 {
-    /**
-     * Display a listing of WNBA Elo ratings.
-     */
-    public function index()
-    {
-        $ratings = EloRating::query()
-            ->with(['team'])
-            ->orderByDesc('season')
-            ->orderByDesc('week')
-            ->paginate(15);
+    protected const ELO_RATING_MODEL = EloRating::class;
 
-        return EloRatingResource::collection($ratings);
+    protected const TEAM_MODEL = Team::class;
+
+    protected const ELO_RATING_RESOURCE = EloRatingResource::class;
+
+    protected function getDefaultOrderColumns(): array
+    {
+        return ['season', 'week'];
     }
 
-    /**
-     * Display the specified WNBA Elo rating.
-     */
-    public function show(EloRating $eloRating)
+    protected function getBySeasonOrderColumns(): array
     {
-        $eloRating->load(['team']);
-
-        return new EloRatingResource($eloRating);
-    }
-
-    /**
-     * Display Elo ratings for a specific team.
-     */
-    public function byTeam(Team $team)
-    {
-        $ratings = EloRating::query()
-            ->where('team_id', $team->id)
-            ->orderByDesc('season')
-            ->orderByDesc('week')
-            ->paginate(15);
-
-        return EloRatingResource::collection($ratings);
-    }
-
-    /**
-     * Display Elo ratings for a specific season.
-     */
-    public function bySeason(Request $request)
-    {
-        $season = $request->input('season');
-
-        $ratings = EloRating::query()
-            ->with(['team'])
-            ->where('season', $season)
-            ->orderByDesc('week')
-            ->paginate(15);
-
-        return EloRatingResource::collection($ratings);
+        return ['week'];
     }
 }

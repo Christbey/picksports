@@ -1,15 +1,15 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import { ref, onMounted, computed } from 'vue';
-import AppLayout from '@/layouts/AppLayout.vue';
+import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Alert, AlertDescription } from '@/components/ui/alert';
+import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
-import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
 
 interface PlayerLeaderboardEntry {
     player_id: number;

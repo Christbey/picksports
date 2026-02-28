@@ -2,26 +2,15 @@
 
 namespace App\Console\Commands\MLB;
 
-use Illuminate\Console\Command;
+use App\Console\Commands\Sports\AbstractSyncPlayerPropsCommand;
 
-class SyncPlayerPropsCommand extends Command
+class SyncPlayerPropsCommand extends AbstractSyncPlayerPropsCommand
 {
-    protected $signature = 'mlb:sync-player-props
-                            {--markets=* : Specific markets to fetch (defaults to common props)}';
+    protected const COMMAND_NAME = 'mlb:sync-player-props';
 
-    protected $description = 'Sync MLB player props from The Odds API';
+    protected const COMMAND_DESCRIPTION = 'Sync MLB player props from The Odds API';
 
-    public function handle(\App\Actions\OddsApi\MLB\SyncPlayerPropsForGames $sync): int
-    {
-        $this->info('Syncing MLB player props from The Odds API...');
+    protected const SYNC_ACTION_CLASS = \App\Actions\OddsApi\MLB\SyncPlayerPropsForGames::class;
 
-        $markets = $this->option('markets');
-        $markets = empty($markets) ? null : $markets;
-
-        $stored = $sync->execute($markets);
-
-        $this->info("Successfully stored {$stored} player props.");
-
-        return self::SUCCESS;
-    }
+    protected const SPORT_LABEL = 'MLB';
 }

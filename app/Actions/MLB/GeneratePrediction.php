@@ -11,20 +11,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class GeneratePrediction extends AbstractPredictionGenerator
 {
-    protected function getSport(): string
-    {
-        return 'mlb';
-    }
+    protected const SPORT_KEY = 'mlb';
 
-    protected function getTeamMetricModel(): string
-    {
-        return TeamMetric::class;
-    }
+    protected const TEAM_METRIC_MODEL = TeamMetric::class;
 
-    protected function getPredictionModel(): string
-    {
-        return Prediction::class;
-    }
+    protected const PREDICTION_MODEL = Prediction::class;
 
     /**
      * Override execute to handle MLB-specific pitcher logic

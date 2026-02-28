@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class WnbaTeamFactory extends Factory
 {
+    protected $model = \App\Models\WNBA\Team::class;
+
     /**
      * Define the model's default state.
      *
@@ -17,7 +19,15 @@ class WnbaTeamFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'espn_id' => $this->faker->unique()->numerify('###'),
+            'abbreviation' => $this->faker->unique()->lexify('???'),
+            'location' => $this->faker->city(),
+            'name' => $this->faker->word(),
+            'conference' => $this->faker->randomElement(['Eastern', 'Western']),
+            'division' => $this->faker->randomElement(['North', 'South', 'East', 'West']),
+            'color' => $this->faker->hexColor(),
+            'logo_url' => $this->faker->imageUrl(),
+            'elo_rating' => 1500,
         ];
     }
 }

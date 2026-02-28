@@ -2,30 +2,12 @@
 
 namespace App\Console\Commands\ESPN\CBB;
 
+use App\Console\Commands\ESPN\AbstractSyncPlayersCommand;
 use App\Jobs\ESPN\CBB\FetchPlayers;
-use Illuminate\Console\Command;
 
-class SyncPlayersCommand extends Command
+class SyncPlayersCommand extends AbstractSyncPlayersCommand
 {
-    protected $signature = 'espn:sync-cbb-players
-                            {teamEspnId? : Optional ESPN team ID to sync a specific team}';
-
-    protected $description = 'Sync CBB players from ESPN API';
-
-    public function handle(): int
-    {
-        $teamEspnId = $this->argument('teamEspnId');
-
-        if ($teamEspnId) {
-            $this->info("Dispatching CBB players sync job for team {$teamEspnId}...");
-        } else {
-            $this->info('Dispatching CBB players sync job for all teams...');
-        }
-
-        FetchPlayers::dispatch($teamEspnId);
-
-        $this->info('CBB players sync job dispatched successfully.');
-
-        return Command::SUCCESS;
-    }
+    protected const COMMAND_NAME = 'espn:sync-cbb-players';
+    protected const SPORT_CODE = 'CBB';
+    protected const PLAYERS_SYNC_JOB_CLASS = FetchPlayers::class;
 }

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { Form, Head, router, usePage } from '@inertiajs/vue3';
-import { update } from '@/routes/alert-preferences';
+import { computed, ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
+import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -10,8 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
+import { update } from '@/routes/alert-preferences';
 import { type BreadcrumbItem } from '@/types';
-import { computed, ref } from 'vue';
 
 interface Preference {
     enabled: boolean;
@@ -68,6 +69,16 @@ const defaultPreference: Preference = {
 };
 
 const currentPreference = computed(() => props.preference || defaultPreference);
+const usersBySport = computed<Record<string, number>>(() => props.adminStats?.users_by_sport ?? {});
+const mostPopularSport = computed(() => {
+    const entries = Object.entries(usersBySport.value);
+    if (entries.length === 0) return 'N/A';
+    return entries.reduce((maxEntry, entry) => (entry[1] > maxEntry[1] ? entry : maxEntry))[0].toUpperCase();
+});
+const maxUsersBySport = computed(() => {
+    const counts = Object.values(usersBySport.value);
+    return counts.length ? Math.max(...counts) : 0;
+});
 
 const availableSports = [
     { value: 'nfl', label: 'NFL' },
@@ -171,7 +182,8 @@ function checkAlerts(sport?: string) {
         <h1 class="sr-only">Alert Preferences</h1>
 
         <SettingsLayout>
-            <div class="flex flex-col space-y-6">
+            <RenderErrorBoundary title="Alert Preferences Render Error">
+                <div class="flex flex-col space-y-6">
                 <Heading
                     variant="small"
                     title="Alert Preferences"
@@ -474,7 +486,7 @@ function checkAlerts(sport?: string) {
                             id="phone_number"
                             name="phone_number"
                             type="tel"
-                            :default-value="currentPreference.phone_number"
+                            :default-value="currentPreference.phone_number || ''"
                             class="max-w-xs"
                             placeholder="+1 (555) 000-0000"
                             disabled
@@ -530,12 +542,10 @@ function checkAlerts(sport?: string) {
                         <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
                             <div class="text-sm font-medium text-muted-foreground">Most Popular Sport</div>
                             <div class="mt-2 text-3xl font-bold">
-                                {{ Object.keys(adminStats.users_by_sport).reduce((a, b) =>
-                                    adminStats.users_by_sport[a] > adminStats.users_by_sport[b] ? a : b
-                                ).toUpperCase() }}
+                                {{ mostPopularSport }}
                             </div>
                             <div class="mt-1 text-xs text-muted-foreground">
-                                {{ Math.max(...Object.values(adminStats.users_by_sport)) }} users subscribed
+                                {{ maxUsersBySport }} users subscribed
                             </div>
                         </div>
 
@@ -584,7 +594,8 @@ function checkAlerts(sport?: string) {
                         </div>
                     </div>
                 </div>
-            </div>
+                </div>
+            </RenderErrorBoundary>
         </SettingsLayout>
     </AppLayout>
 </template>

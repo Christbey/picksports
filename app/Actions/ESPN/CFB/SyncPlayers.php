@@ -2,69 +2,15 @@
 
 namespace App\Actions\ESPN\CFB;
 
-use App\DataTransferObjects\ESPN\CollegePlayerData;
-use App\Models\CFB\Player;
-use App\Models\CFB\Team;
-use App\Services\ESPN\CFB\EspnService;
+use App\Actions\ESPN\AbstractSyncPlayers;
 
-class SyncPlayers
+class SyncPlayers extends AbstractSyncPlayers
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const PLAYER_MODEL_CLASS = \App\Models\CFB\Player::class;
 
-    public function execute(string $teamEspnId): int
-    {
-        $response = $this->espnService->getRoster($teamEspnId);
+    protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
 
-        if (! $response || ! isset($response['athletes'])) {
-            return 0;
-        }
+    protected const PLAYER_DTO_CLASS = \App\DataTransferObjects\ESPN\CollegePlayerData::class;
 
-        $team = Team::query()->where('espn_id', $teamEspnId)->first();
-
-        if (! $team) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        foreach ($response['athletes'] as $positionGroup) {
-            if (! isset($positionGroup['items']) || ! is_array($positionGroup['items'])) {
-                continue;
-            }
-
-            foreach ($positionGroup['items'] as $athleteData) {
-                if (empty($athleteData['id'])) {
-                    continue;
-                }
-
-                $dto = CollegePlayerData::fromEspnResponse($athleteData);
-
-                $playerAttributes = $dto->toArray();
-                $playerAttributes['team_id'] = $team->id;
-
-                Player::updateOrCreate(
-                    ['espn_id' => $dto->espnId],
-                    $playerAttributes
-                );
-
-                $synced++;
-            }
-        }
-
-        return $synced;
-    }
-
-    public function syncAllTeams(): int
-    {
-        $teams = Team::all();
-        $totalSynced = 0;
-
-        foreach ($teams as $team) {
-            $totalSynced += $this->execute($team->espn_id);
-        }
-
-        return $totalSynced;
-    }
+    protected const ATHLETES_NESTED_UNDER_GROUP_ITEMS = true;
 }

@@ -2,32 +2,13 @@
 
 namespace App\Console\Commands\NBA;
 
-use App\Actions\OddsApi\NBA\SyncOddsForGames;
-use Illuminate\Console\Command;
+use App\Console\Commands\Sports\AbstractSyncOddsCommand;
 
-class SyncOddsCommand extends Command
+class SyncOddsCommand extends AbstractSyncOddsCommand
 {
-    protected $signature = 'nba:sync-odds
-                            {--days= : Number of days ahead to sync odds for (default: 7)}';
+    protected const COMMAND_NAME = 'nba:sync-odds';
 
-    protected $description = 'Sync betting odds from The Odds API for NBA games';
+    protected const COMMAND_DESCRIPTION = 'Sync betting odds from The Odds API for NBA games';
 
-    public function handle(SyncOddsForGames $syncOddsForGames): int
-    {
-        $days = $this->option('days') ?? 7;
-
-        $this->info("Syncing odds for upcoming games (next {$days} days)...");
-
-        $updated = $syncOddsForGames->execute($days);
-
-        if ($updated === 0) {
-            $this->warn('No games were updated with odds data.');
-
-            return Command::SUCCESS;
-        }
-
-        $this->info("Successfully updated odds for {$updated} games.");
-
-        return Command::SUCCESS;
-    }
+    protected const SYNC_ACTION_CLASS = \App\Actions\OddsApi\NBA\SyncOddsForGames::class;
 }

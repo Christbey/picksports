@@ -3,6 +3,15 @@
 use App\Http\Controllers\BettingRecommendationsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
+use App\Http\Controllers\Admin\NotificationTemplateController as AdminNotificationTemplateController;
+use App\Http\Controllers\Admin\PermissionController as AdminPermissionController;
+use App\Http\Controllers\Admin\SubscriptionController as AdminSubscriptionController;
+use App\Http\Controllers\Admin\TierController as AdminTierController;
+use App\Http\Controllers\Subscription\BillingPortalController;
+use App\Http\Controllers\Subscription\CheckoutController;
+use App\Http\Controllers\Subscription\SubscriptionController;
+use App\Http\Controllers\WebhookController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
@@ -66,25 +75,21 @@ Route::get('/', function () {
 Route::get('performance', PerformanceController::class)->name('performance');
 
 // Player Props - Betting Recommendations by Sport
-Route::get('nba-player-props', [BettingRecommendationsController::class, 'nba'])->name('nba.player-props');
-Route::get('mlb-player-props', [BettingRecommendationsController::class, 'mlb'])->name('mlb.player-props');
-Route::get('nfl-player-props', [BettingRecommendationsController::class, 'nfl'])->name('nfl.player-props');
-Route::get('cbb-player-props', [BettingRecommendationsController::class, 'cbb'])->name('cbb.player-props');
+foreach (['nba', 'mlb', 'nfl', 'cbb'] as $sport) {
+    Route::get("{$sport}-player-props", [BettingRecommendationsController::class, $sport])
+        ->name("{$sport}.player-props");
+}
 
 // Legacy route - redirect to NBA
 Route::get('betting-recommendations', fn () => redirect()->route('nba.player-props'));
 
-Route::get('terms', function () {
-    return Inertia::render('Legal/Terms');
-})->name('terms');
-
-Route::get('privacy', function () {
-    return Inertia::render('Legal/Privacy');
-})->name('privacy');
-
-Route::get('responsible-gambling', function () {
-    return Inertia::render('Legal/ResponsibleGambling');
-})->name('responsible-gambling');
+foreach ([
+    'terms' => 'Legal/Terms',
+    'privacy' => 'Legal/Privacy',
+    'responsible-gambling' => 'Legal/ResponsibleGambling',
+] as $path => $page) {
+    Route::get($path, fn () => Inertia::render($page))->name($path);
+}
 
 Route::get('dashboard', DashboardController::class)->middleware(['auth', 'verified'])->name('dashboard');
 
@@ -92,121 +97,106 @@ Route::get('my-bets', function () {
     return Inertia::render('MyBets');
 })->middleware(['auth', 'verified'])->name('my-bets');
 
-Route::get('nba-predictions', function () {
-    return Inertia::render('NBAPredictions');
-})->middleware(['auth', 'verified', 'permission:view-nba-predictions'])->name('nba-predictions');
+foreach ([
+    'nba' => 'NBAPredictions',
+    'cbb' => 'CBBPredictions',
+    'wcbb' => 'WCBBPredictions',
+    'nfl' => 'NFLPredictions',
+    'mlb' => 'MLBPredictions',
+    'cfb' => 'CFBPredictions',
+    'wnba' => 'WNBAPredictions',
+] as $sport => $page) {
+    Route::get("{$sport}-predictions", fn () => Inertia::render($page))
+        ->middleware(['auth', 'verified', "permission:view-{$sport}-predictions"])
+        ->name("{$sport}-predictions");
+}
 
-Route::get('cbb-predictions', function () {
-    return Inertia::render('CBBPredictions');
-})->middleware(['auth', 'verified', 'permission:view-cbb-predictions'])->name('cbb-predictions');
+foreach ([
+    'cbb-team-metrics' => ['page' => 'CBBTeamMetrics', 'sport' => 'cbb'],
+    'cbb-player-stats' => ['page' => 'CBBPlayerStats', 'sport' => 'cbb'],
+    'wcbb-team-metrics' => ['page' => 'WCBBTeamMetrics', 'sport' => 'wcbb'],
+    'nba-team-metrics' => ['page' => 'NBATeamMetrics', 'sport' => 'nba'],
+    'nba-player-stats' => ['page' => 'NBAPlayerStats', 'sport' => 'nba'],
+    'wnba-team-metrics' => ['page' => 'WNBATeamMetrics', 'sport' => 'wnba'],
+    'mlb-team-metrics' => ['page' => 'MLBTeamMetrics', 'sport' => 'mlb'],
+    'nfl-team-metrics' => ['page' => 'NFLTeamMetrics', 'sport' => 'nfl'],
+] as $path => $config) {
+    Route::get($path, fn () => Inertia::render($config['page']))
+        ->middleware(['auth', 'verified', "permission:view-{$config['sport']}-predictions"])
+        ->name($path);
+}
 
-Route::get('wcbb-predictions', function () {
-    return Inertia::render('WCBBPredictions');
-})->middleware(['auth', 'verified', 'permission:view-wcbb-predictions'])->name('wcbb-predictions');
+foreach ([
+    'nba' => [
+        'team' => \App\Http\Controllers\NBA\TeamController::class,
+        'game' => \App\Http\Controllers\NBA\GameController::class,
+        'player' => \App\Http\Controllers\NBA\PlayerController::class,
+    ],
+    'wnba' => [
+        'team' => \App\Http\Controllers\WNBA\TeamController::class,
+        'game' => \App\Http\Controllers\WNBA\GameController::class,
+    ],
+    'cbb' => [
+        'team' => \App\Http\Controllers\CBB\TeamController::class,
+        'game' => \App\Http\Controllers\CBB\GameController::class,
+    ],
+    'wcbb' => [
+        'team' => \App\Http\Controllers\WCBB\TeamController::class,
+        'game' => \App\Http\Controllers\WCBB\GameController::class,
+    ],
+    'nfl' => [
+        'team' => \App\Http\Controllers\NFL\TeamController::class,
+        'game' => \App\Http\Controllers\NFL\GameController::class,
+    ],
+    'mlb' => [
+        'team' => \App\Http\Controllers\MLB\TeamController::class,
+        'game' => \App\Http\Controllers\MLB\GameController::class,
+    ],
+] as $sport => $controllers) {
+    $sportDetailMiddleware = ['auth', 'verified', "permission:view-{$sport}-predictions"];
 
-Route::get('nfl-predictions', function () {
-    return Inertia::render('NFLPredictions');
-})->middleware(['auth', 'verified', 'permission:view-nfl-predictions'])->name('nfl-predictions');
+    Route::get("/{$sport}/teams/{team}", $controllers['team'])->middleware($sportDetailMiddleware);
+    Route::get("/{$sport}/games/{game}", $controllers['game'])->middleware($sportDetailMiddleware);
 
-Route::get('mlb-predictions', function () {
-    return Inertia::render('MLBPredictions');
-})->middleware(['auth', 'verified', 'permission:view-mlb-predictions'])->name('mlb-predictions');
-
-Route::get('cfb-predictions', function () {
-    return Inertia::render('CFBPredictions');
-})->middleware(['auth', 'verified', 'permission:view-cfb-predictions'])->name('cfb-predictions');
-
-Route::get('wnba-predictions', function () {
-    return Inertia::render('WNBAPredictions');
-})->middleware(['auth', 'verified', 'permission:view-wnba-predictions'])->name('wnba-predictions');
-
-Route::get('cbb-team-metrics', function () {
-    return Inertia::render('CBBTeamMetrics');
-})->middleware(['auth', 'verified'])->name('cbb-team-metrics');
-
-Route::get('cbb-player-stats', function () {
-    return Inertia::render('CBBPlayerStats');
-})->middleware(['auth', 'verified'])->name('cbb-player-stats');
-
-Route::get('wcbb-team-metrics', function () {
-    return Inertia::render('WCBBTeamMetrics');
-})->middleware(['auth', 'verified'])->name('wcbb-team-metrics');
-
-Route::get('nba-team-metrics', function () {
-    return Inertia::render('NBATeamMetrics');
-})->middleware(['auth', 'verified'])->name('nba-team-metrics');
-
-Route::get('nba-player-stats', function () {
-    return Inertia::render('NBAPlayerStats');
-})->middleware(['auth', 'verified'])->name('nba-player-stats');
-
-Route::get('wnba-team-metrics', function () {
-    return Inertia::render('WNBATeamMetrics');
-})->middleware(['auth', 'verified'])->name('wnba-team-metrics');
-
-Route::get('mlb-team-metrics', function () {
-    return Inertia::render('MLBTeamMetrics');
-})->middleware(['auth', 'verified'])->name('mlb-team-metrics');
-
-Route::get('nfl-team-metrics', function () {
-    return Inertia::render('NFLTeamMetrics');
-})->middleware(['auth', 'verified'])->name('nfl-team-metrics');
-
-Route::get('/nba/teams/{team}', \App\Http\Controllers\NBA\TeamController::class)->middleware(['auth', 'verified']);
-
-Route::get('/nba/players/{player}', \App\Http\Controllers\NBA\PlayerController::class)
-    ->middleware(['auth', 'verified'])
-    ->name('nba.player.show');
-
-Route::get('/nba/games/{game}', \App\Http\Controllers\NBA\GameController::class)->middleware(['auth', 'verified']);
-
-Route::get('/wnba/teams/{team}', \App\Http\Controllers\WNBA\TeamController::class)->middleware(['auth', 'verified']);
-
-Route::get('/wnba/games/{game}', \App\Http\Controllers\WNBA\GameController::class)->middleware(['auth', 'verified']);
-
-Route::get('/cbb/teams/{team}', \App\Http\Controllers\CBB\TeamController::class)->middleware(['auth', 'verified']);
-
-Route::get('/cbb/games/{game}', \App\Http\Controllers\CBB\GameController::class)->middleware(['auth', 'verified']);
-
-Route::get('/wcbb/teams/{team}', \App\Http\Controllers\WCBB\TeamController::class)->middleware(['auth', 'verified']);
-
-Route::get('/wcbb/games/{game}', \App\Http\Controllers\WCBB\GameController::class)->middleware(['auth', 'verified']);
-
-Route::get('/nfl/teams/{team}', \App\Http\Controllers\NFL\TeamController::class)->middleware(['auth', 'verified']);
-
-Route::get('/nfl/games/{game}', \App\Http\Controllers\NFL\GameController::class)->middleware(['auth', 'verified']);
-
-Route::get('/mlb/teams/{team}', \App\Http\Controllers\MLB\TeamController::class)->middleware(['auth', 'verified']);
-
-Route::get('/mlb/games/{game}', \App\Http\Controllers\MLB\GameController::class)->middleware(['auth', 'verified']);
+    if (isset($controllers['player'])) {
+        Route::get("/{$sport}/players/{player}", $controllers['player'])
+            ->middleware($sportDetailMiddleware)
+            ->name("{$sport}.player.show");
+    }
+}
 
 Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->group(function () {
-    Route::get('/plans', [\App\Http\Controllers\Subscription\SubscriptionController::class, 'plans'])->name('plans');
-    Route::get('/manage', [\App\Http\Controllers\Subscription\SubscriptionController::class, 'manage'])->name('manage');
-    Route::post('/cancel', [\App\Http\Controllers\Subscription\SubscriptionController::class, 'cancel'])->name('cancel');
-    Route::post('/resume', [\App\Http\Controllers\Subscription\SubscriptionController::class, 'resume'])->name('resume');
-
-    Route::post('/checkout', \App\Http\Controllers\Subscription\CheckoutController::class)->name('checkout');
-    Route::get('/success', [\App\Http\Controllers\Subscription\CheckoutController::class, 'success'])->name('success');
-
-    Route::post('/billing-portal', \App\Http\Controllers\Subscription\BillingPortalController::class)->name('billing-portal');
+    foreach ([
+        ['get', '/plans', [SubscriptionController::class, 'plans'], 'plans'],
+        ['get', '/manage', [SubscriptionController::class, 'manage'], 'manage'],
+        ['post', '/cancel', [SubscriptionController::class, 'cancel'], 'cancel'],
+        ['post', '/resume', [SubscriptionController::class, 'resume'], 'resume'],
+        ['post', '/checkout', CheckoutController::class, 'checkout'],
+        ['get', '/success', [CheckoutController::class, 'success'], 'success'],
+        ['post', '/billing-portal', BillingPortalController::class, 'billing-portal'],
+    ] as [$method, $uri, $action, $name]) {
+        Route::$method($uri, $action)->name($name);
+    }
 });
 
 Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(function () {
-    Route::get('/subscriptions', [\App\Http\Controllers\Admin\SubscriptionController::class, 'index'])->name('subscriptions');
-    Route::post('/subscriptions/{user}/sync', [\App\Http\Controllers\Admin\SubscriptionController::class, 'sync'])->name('subscriptions.sync');
-    Route::post('/subscriptions/{user}/assign-tier', [\App\Http\Controllers\Admin\SubscriptionController::class, 'assignTier'])->name('subscriptions.assign-tier');
-    Route::post('/subscriptions/sync-all', [\App\Http\Controllers\Admin\SubscriptionController::class, 'syncAll'])->name('subscriptions.sync-all');
+    foreach ([
+        ['get', '/subscriptions', [AdminSubscriptionController::class, 'index'], 'subscriptions'],
+        ['post', '/subscriptions/{user}/sync', [AdminSubscriptionController::class, 'sync'], 'subscriptions.sync'],
+        ['post', '/subscriptions/{user}/assign-tier', [AdminSubscriptionController::class, 'assignTier'], 'subscriptions.assign-tier'],
+        ['post', '/subscriptions/sync-all', [AdminSubscriptionController::class, 'syncAll'], 'subscriptions.sync-all'],
+        ['get', '/permissions', [AdminPermissionController::class, 'index'], 'permissions'],
+        ['get', '/healthchecks', [AdminHealthcheckController::class, 'index'], 'healthchecks'],
+        ['post', '/healthchecks/run', [AdminHealthcheckController::class, 'run'], 'healthchecks.run'],
+        ['post', '/healthchecks/sync', [AdminHealthcheckController::class, 'sync'], 'healthchecks.sync'],
+    ] as [$method, $uri, $action, $name]) {
+        Route::$method($uri, $action)->name($name);
+    }
 
-    Route::resource('tiers', \App\Http\Controllers\Admin\TierController::class)->except(['show']);
-    Route::resource('notification-templates', \App\Http\Controllers\Admin\NotificationTemplateController::class)->except(['show']);
-
-    Route::get('/permissions', [\App\Http\Controllers\Admin\PermissionController::class, 'index'])->name('permissions');
-    Route::get('/healthchecks', [\App\Http\Controllers\Admin\HealthcheckController::class, 'index'])->name('healthchecks');
-    Route::post('/healthchecks/run', [\App\Http\Controllers\Admin\HealthcheckController::class, 'run'])->name('healthchecks.run');
-    Route::post('/healthchecks/sync', [\App\Http\Controllers\Admin\HealthcheckController::class, 'sync'])->name('healthchecks.sync');
+    Route::resource('tiers', AdminTierController::class)->except(['show']);
+    Route::resource('notification-templates', AdminNotificationTemplateController::class)->except(['show']);
 });
 
-Route::post('/stripe/webhook', [\App\Http\Controllers\WebhookController::class, 'handleWebhook'])->name('cashier.webhook');
+Route::post('/stripe/webhook', [WebhookController::class, 'handleWebhook'])->name('cashier.webhook');
 
 require __DIR__.'/settings.php';

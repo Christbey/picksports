@@ -1,14 +1,14 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
+import { TrendingUp, TrendingDown, Target, BarChart3, X } from 'lucide-vue-next';
 import { ref, computed } from 'vue';
-import AppLayout from '@/layouts/AppLayout.vue';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Button } from '@/components/ui/button';
-import { TrendingUp, TrendingDown, Target, BarChart3, X } from 'lucide-vue-next';
+import AppLayout from '@/layouts/AppLayout.vue';
 
 type Recommendation = {
     id: number;

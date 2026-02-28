@@ -6,20 +6,47 @@ use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractPredictionGenerator
 {
+    protected const SPORT_KEY = '';
+
+    protected const TEAM_METRIC_MODEL = '';
+
+    protected const PREDICTION_MODEL = '';
+
     /**
      * Get the sport identifier for config lookups
      */
-    abstract protected function getSport(): string;
+    protected function getSport(): string
+    {
+        if (static::SPORT_KEY === '') {
+            throw new \RuntimeException('SPORT_KEY must be defined on prediction action.');
+        }
+
+        return static::SPORT_KEY;
+    }
 
     /**
      * Get the TeamMetric model class
      */
-    abstract protected function getTeamMetricModel(): string;
+    protected function getTeamMetricModel(): string
+    {
+        if (static::TEAM_METRIC_MODEL === '') {
+            throw new \RuntimeException('TEAM_METRIC_MODEL must be defined on prediction action.');
+        }
+
+        return static::TEAM_METRIC_MODEL;
+    }
 
     /**
      * Get the Prediction model class
      */
-    abstract protected function getPredictionModel(): string;
+    protected function getPredictionModel(): string
+    {
+        if (static::PREDICTION_MODEL === '') {
+            throw new \RuntimeException('PREDICTION_MODEL must be defined on prediction action.');
+        }
+
+        return static::PREDICTION_MODEL;
+    }
 
     /**
      * Calculate sport-specific predicted spread
@@ -65,17 +92,7 @@ abstract class AbstractPredictionGenerator
         $awayElo = $awayTeam->elo_rating ?? $defaultElo;
 
         // Get team metrics for the season
-        $teamMetricModel = $this->getTeamMetricModel();
-
-        $homeMetrics = $teamMetricModel::query()
-            ->where('team_id', $homeTeam->id)
-            ->where('season', $game->season)
-            ->first();
-
-        $awayMetrics = $teamMetricModel::query()
-            ->where('team_id', $awayTeam->id)
-            ->where('season', $game->season)
-            ->first();
+        [$homeMetrics, $awayMetrics] = $this->teamMetricsForGame($game, $homeTeam->id, $awayTeam->id);
 
         // Calculate predictions using sport-specific logic
         $predictedSpread = $this->calculatePredictedSpread($homeElo, $awayElo, $homeMetrics, $awayMetrics, $game);
@@ -151,6 +168,41 @@ abstract class AbstractPredictionGenerator
             'predicted_total' => $predictedTotal,
             'win_probability' => $winProbability,
             'confidence_score' => $confidenceScore,
+        ];
+    }
+
+    /**
+     * @return array<string, float|int|null>
+     */
+    protected function efficiencyPredictionData(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        float $defaultEfficiency
+    ): array {
+        return [
+            'home_off_eff' => $homeMetrics?->offensive_efficiency ?? $defaultEfficiency,
+            'home_def_eff' => $homeMetrics?->defensive_efficiency ?? $defaultEfficiency,
+            'away_off_eff' => $awayMetrics?->offensive_efficiency ?? $defaultEfficiency,
+            'away_def_eff' => $awayMetrics?->defensive_efficiency ?? $defaultEfficiency,
+        ];
+    }
+
+    /**
+     * @return array{0:?Model,1:?Model}
+     */
+    protected function teamMetricsForGame(Model $game, int $homeTeamId, int $awayTeamId): array
+    {
+        $teamMetricModel = $this->getTeamMetricModel();
+
+        $metrics = $teamMetricModel::query()
+            ->where('season', $game->season)
+            ->whereIn('team_id', [$homeTeamId, $awayTeamId])
+            ->get()
+            ->keyBy('team_id');
+
+        return [
+            $metrics->get($homeTeamId),
+            $metrics->get($awayTeamId),
         ];
     }
 }

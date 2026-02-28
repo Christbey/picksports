@@ -25,7 +25,7 @@ class CheckoutController extends Controller
         $tier = SubscriptionTier::where('slug', $tierSlug)->first();
 
         if (! $tier || $tier->is_default) {
-            return back()->with('error', 'Cannot subscribe to the free tier.');
+            return $this->backError('Cannot subscribe to the free tier.');
         }
 
         $stripePriceId = $billingPeriod === 'monthly'
@@ -33,7 +33,7 @@ class CheckoutController extends Controller
             : $tier->stripe_price_id_yearly;
 
         if (! $stripePriceId) {
-            return back()->with('error', 'Invalid subscription tier or billing period.');
+            return $this->backError('Invalid subscription tier or billing period.');
         }
 
         if ($user->subscribed()) {
@@ -41,8 +41,7 @@ class CheckoutController extends Controller
 
             $user->syncRoleFromTier();
 
-            return redirect()->route('subscription.manage')
-                ->with('success', 'Your subscription has been updated successfully.');
+            return $this->redirectSuccess('subscription.manage', 'Your subscription has been updated successfully.');
         }
 
         $checkout = $user->newSubscription('default', $stripePriceId)
@@ -58,7 +57,6 @@ class CheckoutController extends Controller
     {
         $request->user()->syncRoleFromTier();
 
-        return redirect()->route('dashboard')
-            ->with('success', 'Thank you for subscribing! Your subscription is now active.');
+        return $this->redirectSuccess('dashboard', 'Thank you for subscribing! Your subscription is now active.');
     }
 }

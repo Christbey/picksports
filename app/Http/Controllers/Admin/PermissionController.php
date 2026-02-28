@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Admin\PermissionSummaryResource;
+use App\Http\Resources\Admin\RolePermissionSummaryResource;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -13,25 +15,19 @@ class PermissionController extends Controller
 {
     public function index(Request $request): Response
     {
-        $roles = Role::with('permissions')
-            ->withCount('users')
-            ->orderBy('name')
-            ->get()
-            ->map(function ($role) {
-                return [
-                    'id' => $role->id,
-                    'name' => $role->name,
-                    'users_count' => $role->users_count,
-                    'permissions' => $role->permissions->pluck('name')->toArray(),
-                ];
-            });
+        $roles = $this->resourcePayload(RolePermissionSummaryResource::collection(
+            Role::query()
+                ->with('permissions')
+                ->withCount('users')
+                ->orderBy('name')
+                ->get()
+        ));
 
-        $permissions = Permission::orderBy('name')->get()->map(function ($permission) {
-            return [
-                'id' => $permission->id,
-                'name' => $permission->name,
-            ];
-        });
+        $permissions = $this->resourcePayload(PermissionSummaryResource::collection(
+            Permission::query()
+                ->orderBy('name')
+                ->get()
+        ));
 
         return Inertia::render('Admin/Permissions', [
             'roles' => $roles,

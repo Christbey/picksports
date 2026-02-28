@@ -1,245 +1,189 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
-import { Link } from '@inertiajs/vue3'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Label } from '@/components/ui/label'
-import { Lock } from 'lucide-vue-next'
-
-interface SportConfig {
-  sport: string
-  title: string
-  subtitle: string
-  useEasternTime: boolean
-  showGameTime: boolean
-  confidenceIsDecimal: boolean
-  confidenceDecimals: number
-}
-
-interface BettingRecommendation {
-  type: 'spread' | 'total' | 'moneyline'
-  recommendation: string
-  bet_team?: string
-  model_line?: number
-  market_line?: number
-  model_probability?: number
-  implied_probability?: number
-  edge: number
-  odds: number
-  kelly_bet_size_percent?: number
-  confidence: number
-  reasoning: string
-}
-
-interface Prediction {
-  id: number
-  predicted_spread?: number
-  predicted_total?: number
-  win_probability?: number
-  confidence_score?: number
-  actual_spread?: number
-  actual_total?: number
-  spread_error?: number
-  total_error?: number
-  winner_correct?: boolean
-  graded_at?: string
-  betting_value?: BettingRecommendation[]
-  home_elo?: number
-  away_elo?: number
-  home_off_eff?: number
-  home_def_eff?: number
-  away_off_eff?: number
-  away_def_eff?: number
-  home_team_elo?: number
-  away_team_elo?: number
-  home_pitcher_elo?: number
-  away_pitcher_elo?: number
-  home_combined_elo?: number
-  away_combined_elo?: number
-  game: {
-    id: number
-    game_date: string
-    game_time?: string
-    status: string
-    home_score?: number
-    away_score?: number
-    home_team: {
-      abbreviation: string
-      school?: string
-      mascot?: string
-      location?: string
-      name?: string
-      logo?: string
-      color?: string
-    }
-    away_team: {
-      abbreviation: string
-      school?: string
-      mascot?: string
-      location?: string
-      name?: string
-      logo?: string
-      color?: string
-    }
-  }
-}
-
-interface PaginationMeta {
-  current_page: number
-  last_page: number
-  per_page: number
-  total: number
-}
+import { Link } from '@inertiajs/vue3';
+import { Lock } from 'lucide-vue-next';
+import { ref, watch, onMounted, computed } from 'vue';
+import NFLPredictionCard from '@/components/predictions/NFLPredictionCard.vue';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
+import { formatDateShort, formatSpread } from '@/composables/useFormatters';
+import { usePredictionList } from '@/composables/usePredictionList';
+import type { PredictionListItem, SportPredictionsConfig } from '@/types';
 
 const props = defineProps<{
-  config: SportConfig
-}>()
+    config: SportPredictionsConfig;
+}>();
 
-const predictions = ref<Prediction[]>([])
-const meta = ref<PaginationMeta | null>(null)
-const loading = ref(true)
-const error = ref<string | null>(null)
-const availableDates = ref<string[]>([])
-const selectedDate = ref('')
-const today = ref('')
+const filterMode = computed(() => props.config.filterMode ?? 'date');
+const cardVariant = computed(() => props.config.cardVariant ?? 'default');
+const availableDates = ref<string[]>([]);
+const selectedDate = ref('');
+const today = ref('');
+const seasonType = ref('');
+const week = ref('');
+
+const weekOptions = computed(() => {
+    if (!props.config.seasonWeekConfig || !seasonType.value) return [];
+
+    if (seasonType.value === 'Regular Season') {
+        return Array.from({ length: props.config.seasonWeekConfig.regularSeasonWeeks }, (_, i) => ({
+            value: String(i + 1),
+            label: `Week ${i + 1}`,
+        }));
+    }
+
+    return props.config.seasonWeekConfig.postseasonOptions;
+});
+
+const buildParams = (page: number): URLSearchParams => {
+    const params = new URLSearchParams({ page: String(page) });
+
+    if (filterMode.value === 'date' && selectedDate.value) {
+        params.append('from_date', selectedDate.value);
+        params.append('to_date', selectedDate.value);
+    }
+
+    if (filterMode.value === 'seasonWeek') {
+        if (seasonType.value) params.append('season_type', seasonType.value);
+        if (week.value) params.append('week', week.value);
+    }
+
+    return params;
+};
+
+const {
+    items: predictions,
+    meta,
+    loading,
+    error,
+    fetchPage: fetchPredictions,
+} = usePredictionList<PredictionListItem>(async (page) => {
+    if (filterMode.value === 'date' && !selectedDate.value) {
+        return { data: [], meta: null };
+    }
+
+    const response = await fetch(`/api/v1/${props.config.sport}/predictions?${buildParams(page)}`);
+    if (!response.ok) throw new Error('Failed to fetch predictions');
+    return response.json();
+});
 
 const formatDateLabel = (dateStr: string) => {
-  const [y, m, d] = dateStr.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-  return dateStr === today.value ? `${label} (Today)` : label
-}
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    const label = date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    return dateStr === today.value ? `${label} (Today)` : label;
+};
 
 const fetchAvailableDates = async () => {
-  try {
-    const response = await fetch(`/api/v1/${props.config.sport}/predictions/available-dates`)
-    if (!response.ok) throw new Error('Failed to fetch available dates')
-    const data = await response.json()
-    availableDates.value = data.data
+    const response = await fetch(`/api/v1/${props.config.sport}/predictions/available-dates`);
+    if (!response.ok) throw new Error('Failed to fetch available dates');
+    const data = await response.json();
+    availableDates.value = data.data;
 
-    const now = new Date()
+    const now = new Date();
     if (props.config.useEasternTime) {
-      const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }))
-      today.value = `${etDate.getFullYear()}-${String(etDate.getMonth() + 1).padStart(2, '0')}-${String(etDate.getDate()).padStart(2, '0')}`
+        const etDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        today.value = `${etDate.getFullYear()}-${String(etDate.getMonth() + 1).padStart(2, '0')}-${String(etDate.getDate()).padStart(2, '0')}`;
     } else {
-      today.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        today.value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     }
 
     if (availableDates.value.includes(today.value)) {
-      selectedDate.value = today.value
+        selectedDate.value = today.value;
     } else if (availableDates.value.length > 0) {
-      const futureDates = availableDates.value.filter(d => d > today.value)
-      const pastDates = availableDates.value.filter(d => d < today.value)
-      selectedDate.value = futureDates.length > 0 ? futureDates[0] : pastDates[pastDates.length - 1]
+        const futureDates = availableDates.value.filter((d) => d > today.value);
+        const pastDates = availableDates.value.filter((d) => d < today.value);
+        selectedDate.value = futureDates.length > 0 ? futureDates[0] : pastDates[pastDates.length - 1];
     }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'An error occurred'
-  }
-}
-
-const fetchPredictions = async (page = 1) => {
-  if (!selectedDate.value) return
-
-  try {
-    loading.value = true
-    error.value = null
-
-    const params = new URLSearchParams({ page: page.toString() })
-    params.append('from_date', selectedDate.value)
-    params.append('to_date', selectedDate.value)
-
-    const response = await fetch(`/api/v1/${props.config.sport}/predictions?${params}`)
-    if (!response.ok) throw new Error('Failed to fetch predictions')
-
-    const data = await response.json()
-    predictions.value = data.data
-    meta.value = data.meta
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : 'An error occurred'
-  } finally {
-    loading.value = false
-  }
-}
+};
 
 watch(selectedDate, () => {
-  fetchPredictions(1)
-})
+    if (filterMode.value === 'date') fetchPredictions(1);
+});
 
-const formatSpread = (spread: number) => {
-  return spread > 0 ? `+${spread}` : spread.toString()
-}
+watch(seasonType, () => {
+    week.value = '';
+});
 
-const formatDate = (dateString: string, timeString?: string) => {
-  if (props.config.showGameTime) {
-    const [y, m, d] = dateString.split('-').map(Number)
-    const date = timeString
-      ? new Date(`${dateString}T${timeString}`)
-      : new Date(y, m - 1, d)
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit'
-    }).format(date)
-  }
-  const [y, m, d] = dateString.split('-').map(Number)
-  const date = new Date(y, m - 1, d)
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric'
-  }).format(date)
-}
+const applyFilters = () => {
+    fetchPredictions(1);
+};
+
+const clearFilters = () => {
+    seasonType.value = '';
+    week.value = '';
+    fetchPredictions(1);
+};
+
+const formatDate = (dateString: string, timeString?: string) =>
+    formatDateShort(dateString, timeString, props.config.showGameTime);
 
 const formatConfidence = (score: number) => {
-  if (props.config.confidenceIsDecimal) {
-    return `${(score * 100).toFixed(props.config.confidenceDecimals)}%`
-  }
-  return `${score}%`
-}
+    if (props.config.confidenceIsDecimal) {
+        return `${(score * 100).toFixed(props.config.confidenceDecimals)}%`;
+    }
+    return `${score}%`;
+};
 
 const confidenceBarWidth = (score: number) => {
-  if (props.config.confidenceIsDecimal) {
-    return `${score * 100}%`
-  }
-  return `${score}%`
-}
+    if (props.config.confidenceIsDecimal) {
+        return `${score * 100}%`;
+    }
+    return `${score}%`;
+};
 
-const formatOdds = (odds: number) => {
-  return odds > 0 ? `+${odds}` : odds.toString()
-}
+const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : odds.toString());
 
 const getBetTypeLabel = (type: string) => {
-  const labels: Record<string, string> = {
-    'spread': 'Spread',
-    'total': 'Total',
-    'moneyline': 'Moneyline'
-  }
-  return labels[type] || type
-}
+    const labels: Record<string, string> = {
+        spread: 'Spread',
+        total: 'Total',
+        moneyline: 'Moneyline',
+    };
+    return labels[type] || type;
+};
 
 const getBetTypeColor = (type: string) => {
-  const colors: Record<string, string> = {
-    'spread': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
-    'total': 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-    'moneyline': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200'
-  }
-  return colors[type] || 'bg-gray-100 text-gray-800'
-}
+    const colors: Record<string, string> = {
+        spread: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
+        total: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
+        moneyline: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    };
+    return colors[type] || 'bg-gray-100 text-gray-800';
+};
 
-const teamDescription = (team: Prediction['game']['home_team']) => {
-  if (team.school && team.mascot) {
-    return `${team.school} ${team.mascot}`
-  }
-  if (team.location && team.name) {
-    return `${team.location} ${team.name}`
-  }
-  return team.abbreviation
-}
+const teamDescription = (team: PredictionListItem['game']['home_team']) => {
+    if (team.school && team.mascot) {
+        return `${team.school} ${team.mascot}`;
+    }
+    if (team.location && team.name) {
+        return `${team.location} ${team.name}`;
+    }
+    return team.abbreviation;
+};
 
-onMounted(() => {
-  fetchAvailableDates()
-})
+const gameHref = (prediction: PredictionListItem): string => {
+    const gameId = prediction.game?.id ?? prediction.game_id;
+    return `/${props.config.sport}/games/${gameId}`;
+};
+
+onMounted(async () => {
+    try {
+        if (filterMode.value === 'date') {
+            await fetchAvailableDates();
+            if (!selectedDate.value) {
+                await fetchPredictions(1);
+            }
+            return;
+        }
+
+        await fetchPredictions(1);
+    } catch (e) {
+        error.value = e instanceof Error ? e.message : 'An error occurred';
+    }
+});
 </script>
 
 <template>
@@ -253,11 +197,10 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Date Filter -->
-    <Card>
+    <Card v-if="filterMode !== 'none'">
       <CardContent class="pt-6">
         <div class="flex flex-wrap items-end gap-4">
-          <div class="flex-1 min-w-[200px]">
+          <div v-if="filterMode === 'date'" class="flex-1 min-w-[200px]">
             <Label for="game-date">Game Date</Label>
             <select
               id="game-date"
@@ -271,6 +214,46 @@ onMounted(() => {
               </option>
             </select>
           </div>
+          <template v-else-if="filterMode === 'seasonWeek'">
+            <div class="flex-1 min-w-[200px]">
+              <Label for="season-type">Season Type</Label>
+              <select
+                id="season-type"
+                v-model="seasonType"
+                class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">All Season Types</option>
+                <option value="Regular Season">Regular Season</option>
+                <option value="Postseason">Postseason</option>
+              </select>
+            </div>
+            <div class="flex-1 min-w-[200px]">
+              <Label for="week">Week</Label>
+              <select
+                id="week"
+                v-model="week"
+                :disabled="!seasonType"
+                class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <option value="">All Weeks</option>
+                <option
+                  v-for="option in weekOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div class="flex gap-2">
+              <Button @click="applyFilters" :disabled="loading">
+                Apply Filters
+              </Button>
+              <Button @click="clearFilters" variant="outline" :disabled="loading">
+                Clear
+              </Button>
+            </div>
+          </template>
         </div>
       </CardContent>
     </Card>
@@ -292,7 +275,18 @@ onMounted(() => {
     </div>
 
     <div v-else class="grid gap-4">
-      <Link v-for="prediction in predictions" :key="prediction.id" :href="`/${config.sport}/games/${prediction.game.id}`" class="block">
+      <template v-for="prediction in predictions" :key="prediction.id">
+        <NFLPredictionCard
+          v-if="cardVariant === 'nfl'"
+          :prediction="prediction"
+          :href="gameHref(prediction)"
+          :format-date="formatDate"
+          :format-spread="formatSpread"
+          :format-odds="formatOdds"
+          :get-bet-type-label="getBetTypeLabel"
+          :get-bet-type-color="getBetTypeColor"
+        />
+      <Link v-else :href="gameHref(prediction)" class="block">
         <Card class="cursor-pointer transition-colors hover:bg-muted/50">
           <CardHeader>
             <CardTitle class="flex items-center justify-between">
@@ -327,6 +321,9 @@ onMounted(() => {
             <CardDescription v-if="prediction.game.away_team.school || prediction.game.away_team.location">
               {{ teamDescription(prediction.game.away_team) }} at
               {{ teamDescription(prediction.game.home_team) }}
+              <span v-if="prediction.game.week && prediction.game.season_type" class="ml-2 text-xs">
+                - {{ prediction.game.season_type === 'Regular Season' ? `Week ${prediction.game.week}` : 'Postseason' }}
+              </span>
             </CardDescription>
           </CardHeader>
           <CardContent class="space-y-4">
@@ -554,6 +551,7 @@ onMounted(() => {
           </CardContent>
         </Card>
       </Link>
+      </template>
     </div>
 
     <!-- Pagination -->

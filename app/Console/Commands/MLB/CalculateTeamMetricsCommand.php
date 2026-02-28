@@ -2,88 +2,50 @@
 
 namespace App\Console\Commands\MLB;
 
-use App\Actions\MLB\CalculateTeamMetrics;
-use App\Console\Commands\Concerns\DisplaysTeamMetrics;
-use App\Models\MLB\Team;
+use App\Console\Commands\Sports\AbstractCalculateTeamMetricsCommand;
 use App\Models\MLB\TeamMetric;
-use Illuminate\Console\Command;
 
-class CalculateTeamMetricsCommand extends Command
+class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
 {
-    use DisplaysTeamMetrics;
+    protected const COMMAND_NAME = 'mlb:calculate-team-metrics';
 
-    protected $signature = 'mlb:calculate-team-metrics
-                            {--season= : Calculate metrics for a specific season (defaults to current year)}
-                            {--team= : Calculate metrics for a specific team ID}';
+    protected const COMMAND_DESCRIPTION = 'Calculate MLB team metrics (offensive, pitching, defensive ratings, ERA, batting average)';
 
-    protected $description = 'Calculate MLB team metrics (offensive, pitching, defensive ratings, ERA, batting average)';
+    protected const CALCULATE_METRICS_ACTION_CLASS = \App\Actions\MLB\CalculateTeamMetrics::class;
 
-    public function handle(): int
+    protected const TEAM_MODEL_CLASS = \App\Models\MLB\Team::class;
+
+    protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
+
+    protected const TEAM_DISPLAY_FIELDS = ['location', 'name'];
+
+    protected function topTeamsTitle(): string
     {
-        $calculateMetrics = new CalculateTeamMetrics;
+        return 'Top 10 Teams by Offensive Rating:';
+    }
 
-        $season = $this->option('season') ?? date('Y');
+    protected function topRatingColumn(): string
+    {
+        return 'offensive_rating';
+    }
 
-        if ($teamId = $this->option('team')) {
-            $team = Team::find($teamId);
+    protected function topTableHeaders(): array
+    {
+        return ['Rank', 'Team', 'Off Rtg', 'Pitch Rtg', 'Def Rtg', 'R/G', 'RA/G', 'AVG', 'ERA', 'SOS'];
+    }
 
-            if (! $team) {
-                $this->error("Team with ID {$teamId} not found.");
-
-                return Command::FAILURE;
-            }
-
-            $this->info("Calculating metrics for {$team->location} {$team->name} ({$season})...");
-
-            $metric = $calculateMetrics->execute($team, $season);
-
-            if (! $metric) {
-                $this->warn('No completed games found for this team in this season.');
-
-                return Command::SUCCESS;
-            }
-
-            $this->displayTeamMetric($metric);
-
-            return Command::SUCCESS;
-        }
-
-        // Calculate for all teams
-        $this->info("Calculating metrics for all teams ({$season})...");
-
-        $teams = Team::all();
-        $calculated = $this->runWithProgressBar(
-            $teams,
-            fn ($team) => $calculateMetrics->execute($team, $season)
-        );
-
-        $this->info("Calculated metrics for {$calculated} teams.");
-
-        // Show top teams by offensive rating
-        $this->newLine();
-        $this->info('Top 10 Teams by Offensive Rating:');
-
-        $this->displayTopTeamsByRating(
-            $season,
-            TeamMetric::class,
-            'offensive_rating',
-            10,
-            [
-                'headers' => ['Rank', 'Team', 'Off Rtg', 'Pitch Rtg', 'Def Rtg', 'R/G', 'RA/G', 'AVG', 'ERA', 'SOS'],
-                'fields' => [
-                    'offensive_rating' => 2,
-                    'pitching_rating' => 2,
-                    'defensive_rating' => 2,
-                    'runs_per_game' => 2,
-                    'runs_allowed_per_game' => 2,
-                    'batting_average' => 3,
-                    'team_era' => 2,
-                    'strength_of_schedule' => 3,
-                ],
-            ]
-        );
-
-        return Command::SUCCESS;
+    protected function topTableFields(): array
+    {
+        return [
+            'offensive_rating' => 2,
+            'pitching_rating' => 2,
+            'defensive_rating' => 2,
+            'runs_per_game' => 2,
+            'runs_allowed_per_game' => 2,
+            'batting_average' => 3,
+            'team_era' => 2,
+            'strength_of_schedule' => 3,
+        ];
     }
 
     protected function displayTeamMetric(TeamMetric $metric): void

@@ -2,65 +2,17 @@
 
 namespace App\Actions\ESPN\WNBA;
 
-use App\DataTransferObjects\ESPN\BasketballPlayData;
-use App\Models\WNBA\Game;
-use App\Models\WNBA\Play;
-use App\Models\WNBA\Team;
-use App\Services\ESPN\WNBA\EspnService;
+use App\Actions\ESPN\AbstractSyncPlays;
 
-class SyncPlays
+class SyncPlays extends AbstractSyncPlays
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const GAME_MODEL_CLASS = \App\Models\WNBA\Game::class;
 
-    public function execute(string $eventId): int
-    {
-        $game = Game::query()->where('espn_id', $eventId)->first();
+    protected const PLAY_MODEL_CLASS = \App\Models\WNBA\Play::class;
 
-        if (! $game) {
-            return 0;
-        }
+    protected const TEAM_MODEL_CLASS = \App\Models\WNBA\Team::class;
 
-        // Get the first competition ID from the game
-        $gameData = $this->espnService->getGame($eventId);
+    protected const PLAY_DTO_CLASS = \App\DataTransferObjects\ESPN\BasketballPlayData::class;
 
-        if (! $gameData || ! isset($gameData['competitions'][0]['id'])) {
-            return 0;
-        }
-
-        $competitionId = $gameData['competitions'][0]['id'];
-
-        $response = $this->espnService->getPlays($eventId, $competitionId);
-
-        if (! $response || ! isset($response['items'])) {
-            return 0;
-        }
-
-        // Delete existing plays for this game to avoid duplicates
-        Play::query()->where('game_id', $game->id)->delete();
-
-        $synced = 0;
-
-        foreach ($response['items'] as $index => $playData) {
-            $dto = BasketballPlayData::fromEspnResponse($playData, $index);
-
-            $playAttributes = $dto->toArray();
-            $playAttributes['game_id'] = $game->id;
-
-            // Set possession team if available
-            if ($dto->possessionTeamEspnId) {
-                $possessionTeam = Team::query()->where('espn_id', $dto->possessionTeamEspnId)->first();
-                if ($possessionTeam) {
-                    $playAttributes['possession_team_id'] = $possessionTeam->id;
-                }
-            }
-
-            Play::create($playAttributes);
-
-            $synced++;
-        }
-
-        return $synced;
-    }
+    protected const GAME_LOOKUP_COLUMN = 'espn_id';
 }

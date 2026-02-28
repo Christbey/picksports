@@ -4,6 +4,7 @@ use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Services\AlertService;
 use Illuminate\Support\Facades\Notification;
+use Spatie\Permission\Models\Permission;
 
 test('edit renders alert preferences page for authenticated user', function () {
     $user = User::factory()->create();
@@ -184,6 +185,29 @@ test('check alerts returns 403 for non admin users', function () {
         ->post(route('alert-preferences.check'));
 
     $response->assertForbidden();
+});
+
+test('check alerts allows non admin users with trigger-alerts permission', function () {
+    $user = User::factory()->create();
+
+    Permission::findOrCreate('trigger-alerts', 'web');
+    $user->givePermissionTo('trigger-alerts');
+
+    $alertService = Mockery::mock(AlertService::class);
+    $alertService->shouldReceive('checkForValueOpportunities')
+        ->with('nfl')
+        ->once()
+        ->andReturn(2);
+
+    $this->app->instance(AlertService::class, $alertService);
+
+    $response = $this->actingAs($user)
+        ->post(route('alert-preferences.check'), [
+            'sport' => 'nfl',
+        ]);
+
+    $response->assertRedirect();
+    $response->assertSessionHas('flash.data.message', 'Checked nfl - sent 2 alert(s)');
 });
 
 test('check alerts processes all sports when no sport specified', function () {

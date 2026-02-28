@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue'
 import { Head, Link } from '@inertiajs/vue3'
-import { dashboard, login, register, performance, terms, privacy, responsibleGambling } from '@/routes'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { dashboard, login, register, performance, terms, privacy, responsibleGambling } from '@/routes'
 
 interface OverallStats {
   total_predictions: number

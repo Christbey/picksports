@@ -2,61 +2,24 @@
 
 namespace App\Http\Controllers\Api\MLB;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\Sports\AbstractPlayerStatController;
 use App\Http\Resources\MLB\PlayerStatResource;
 use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
 
-class PlayerStatController extends Controller
+class PlayerStatController extends AbstractPlayerStatController
 {
-    /**
-     * Display a listing of MLB player stats.
-     */
-    public function index()
+    protected const PLAYER_STAT_MODEL = PlayerStat::class;
+
+    protected const PLAYER_MODEL = Player::class;
+
+    protected const GAME_MODEL = Game::class;
+
+    protected const PLAYER_STAT_RESOURCE = PlayerStatResource::class;
+
+    protected function getByGameRelations(): array
     {
-        $stats = PlayerStat::query()
-            ->with(['player', 'game'])
-            ->orderByDesc('id')
-            ->paginate(15);
-
-        return PlayerStatResource::collection($stats);
-    }
-
-    /**
-     * Display the specified MLB player stat.
-     */
-    public function show(PlayerStat $playerStat)
-    {
-        $playerStat->load(['player', 'game']);
-
-        return new PlayerStatResource($playerStat);
-    }
-
-    /**
-     * Display player stats for a specific game.
-     */
-    public function byGame(Game $game)
-    {
-        $stats = PlayerStat::query()
-            ->with(['player', 'team'])
-            ->where('game_id', $game->id)
-            ->paginate(15);
-
-        return PlayerStatResource::collection($stats);
-    }
-
-    /**
-     * Display stats for a specific player.
-     */
-    public function byPlayer(Player $player)
-    {
-        $stats = PlayerStat::query()
-            ->with(['game'])
-            ->where('player_id', $player->id)
-            ->orderByDesc('id')
-            ->paginate(15);
-
-        return PlayerStatResource::collection($stats);
+        return ['player', 'team'];
     }
 }

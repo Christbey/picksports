@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
 import { Head } from '@inertiajs/vue3';
-import AppLayout from '@/layouts/AppLayout.vue';
-import { useOnboarding } from '@/composables/useOnboarding';
-import type { BreadcrumbItem } from '@/types';
-import OnboardingWizard from '@/components/onboarding/OnboardingWizard.vue';
+import { ref, onMounted } from 'vue';
 import OnboardingChecklist from '@/components/onboarding/OnboardingChecklist.vue';
 import OnboardingProgressBar from '@/components/onboarding/OnboardingProgressBar.vue';
+import OnboardingWizard from '@/components/onboarding/OnboardingWizard.vue';
+import Button from '@/components/ui/button/Button.vue';
 import Card from '@/components/ui/card/Card.vue';
+import CardContent from '@/components/ui/card/CardContent.vue';
+import CardDescription from '@/components/ui/card/CardDescription.vue';
 import CardHeader from '@/components/ui/card/CardHeader.vue';
 import CardTitle from '@/components/ui/card/CardTitle.vue';
-import CardDescription from '@/components/ui/card/CardDescription.vue';
-import CardContent from '@/components/ui/card/CardContent.vue';
-import Button from '@/components/ui/button/Button.vue';
+import { useOnboarding } from '@/composables/useOnboarding';
+import AppLayout from '@/layouts/AppLayout.vue';
+import type { BreadcrumbItem } from '@/types';
 
 const breadcrumbs: BreadcrumbItem[] = [
     {

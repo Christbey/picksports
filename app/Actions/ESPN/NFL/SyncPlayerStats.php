@@ -2,164 +2,87 @@
 
 namespace App\Actions\ESPN\NFL;
 
-use App\Models\NFL\Game;
-use App\Models\NFL\Player;
-use App\Models\NFL\PlayerStat;
-use App\Models\NFL\Team;
+use App\Actions\ESPN\AbstractFootballSyncPlayerStats;
 
-class SyncPlayerStats
+class SyncPlayerStats extends AbstractFootballSyncPlayerStats
 {
-    public function execute(array $gameData, Game $game): int
+    protected const TEAM_MODEL_CLASS = \App\Models\NFL\Team::class;
+
+    protected const PLAYER_MODEL_CLASS = \App\Models\NFL\Player::class;
+
+    protected const PLAYER_STAT_MODEL_CLASS = \App\Models\NFL\PlayerStat::class;
+
+    protected function parseCategoryUpdates(string $category, array $mappedStats): array
     {
-        if (! isset($gameData['boxscore']['players'])) {
-            return 0;
-        }
-
-        // Delete existing stats for this game to avoid duplicates
-        PlayerStat::query()->where('game_id', $game->id)->delete();
-
-        $synced = 0;
-
-        foreach ($gameData['boxscore']['players'] as $teamData) {
-            $teamEspnId = $teamData['team']['id'] ?? null;
-
-            if (! $teamEspnId) {
-                continue;
-            }
-
-            $team = Team::query()->where('espn_id', $teamEspnId)->first();
-
-            if (! $team) {
-                continue;
-            }
-
-            // Process each stat category (passing, rushing, receiving, defensive, kicking, etc.)
-            if (! isset($teamData['statistics'])) {
-                continue;
-            }
-
-            foreach ($teamData['statistics'] as $statCategory) {
-                $categoryName = $statCategory['name'] ?? '';
-                $athletes = $statCategory['athletes'] ?? [];
-
-                foreach ($athletes as $athleteData) {
-                    $playerEspnId = $athleteData['athlete']['id'] ?? null;
-
-                    if (! $playerEspnId) {
-                        continue;
-                    }
-
-                    $player = Player::query()->where('espn_id', $playerEspnId)->first();
-
-                    if (! $player) {
-                        continue;
-                    }
-
-                    // Check if player stat record exists for this game
-                    $playerStat = PlayerStat::query()
-                        ->where('player_id', $player->id)
-                        ->where('game_id', $game->id)
-                        ->first();
-
-                    if (! $playerStat) {
-                        $playerStat = PlayerStat::create([
-                            'player_id' => $player->id,
-                            'game_id' => $game->id,
-                            'team_id' => $team->id,
-                        ]);
-                    }
-
-                    // Parse stats based on category
-                    $stats = $athleteData['stats'] ?? [];
-                    $this->updatePlayerStats($playerStat, $categoryName, $stats, $statCategory['labels'] ?? []);
-
-                    $synced++;
-                }
-            }
-        }
-
-        return $synced;
+        return match ($category) {
+            'passing' => $this->parsePassingStats($mappedStats),
+            'rushing' => $this->parseRushingStats($mappedStats),
+            'receiving' => $this->parseReceivingStats($mappedStats),
+            'defensive', 'defense' => $this->parseDefensiveStats($mappedStats),
+            'kicking' => $this->parseKickingStats($mappedStats),
+            default => [],
+        };
     }
 
-    protected function updatePlayerStats(PlayerStat $playerStat, string $category, array $stats, array $labels): void
+    protected function passingCompletionsField(): string
     {
-        $updates = [];
+        return 'passing_completions';
+    }
 
-        // Map labels to stat values
-        $mappedStats = [];
-        foreach ($labels as $index => $label) {
-            if (isset($stats[$index])) {
-                $mappedStats[$label] = $stats[$index];
-            }
-        }
+    protected function passingAttemptsField(): string
+    {
+        return 'passing_attempts';
+    }
 
-        // Parse stats based on category
-        switch (strtolower($category)) {
-            case 'passing':
-                $updates = $this->parsePassingStats($mappedStats);
-                break;
-            case 'rushing':
-                $updates = $this->parseRushingStats($mappedStats);
-                break;
-            case 'receiving':
-                $updates = $this->parseReceivingStats($mappedStats);
-                break;
-            case 'defensive':
-            case 'defense':
-                $updates = $this->parseDefensiveStats($mappedStats);
-                break;
-            case 'kicking':
-                $updates = $this->parseKickingStats($mappedStats);
-                break;
-        }
+    protected function interceptionsField(): string
+    {
+        return 'interceptions_thrown';
+    }
 
-        if (! empty($updates)) {
-            $playerStat->update($updates);
-        }
+    protected function rushingAttemptsField(): string
+    {
+        return 'rushing_attempts';
+    }
+
+    protected function receptionsField(): string
+    {
+        return 'receptions';
+    }
+
+    protected function receivingTargetsField(): string
+    {
+        return 'receiving_targets';
     }
 
     protected function parsePassingStats(array $stats): array
     {
-        $updates = [];
+        $updates = parent::parsePassingStats($stats);
 
-        // Parse C/ATT format (e.g., "15/25")
-        if (isset($stats['C/ATT'])) {
-            $parts = explode('/', $stats['C/ATT']);
-            if (count($parts) === 2) {
-                $updates['passing_completions'] = (int) $parts[0];
-                $updates['passing_attempts'] = (int) $parts[1];
-            }
-        }
-
-        $updates['passing_yards'] = isset($stats['YDS']) ? (int) $stats['YDS'] : null;
-        $updates['passing_touchdowns'] = isset($stats['TD']) ? (int) $stats['TD'] : null;
-        $updates['interceptions_thrown'] = isset($stats['INT']) ? (int) $stats['INT'] : null;
-        $updates['sacks_taken'] = isset($stats['SACKS']) || isset($stats['SACK']) ? (int) ($stats['SACKS'] ?? $stats['SACK'] ?? 0) : null;
+        $updates['sacks_taken'] = isset($stats['SACKS']) || isset($stats['SACK'])
+            ? (int) ($stats['SACKS'] ?? $stats['SACK'] ?? 0)
+            : null;
 
         return array_filter($updates, fn ($value) => $value !== null);
     }
 
     protected function parseRushingStats(array $stats): array
     {
-        $updates = [];
+        $updates = parent::parseRushingStats($stats);
 
-        $updates['rushing_attempts'] = isset($stats['CAR']) || isset($stats['ATT']) ? (int) ($stats['CAR'] ?? $stats['ATT'] ?? 0) : null;
-        $updates['rushing_yards'] = isset($stats['YDS']) ? (int) $stats['YDS'] : null;
-        $updates['rushing_touchdowns'] = isset($stats['TD']) ? (int) $stats['TD'] : null;
-        $updates['rushing_long'] = isset($stats['LONG']) || isset($stats['LNG']) ? (int) ($stats['LONG'] ?? $stats['LNG'] ?? 0) : null;
+        $updates['rushing_long'] = isset($stats['LONG']) || isset($stats['LNG'])
+            ? (int) ($stats['LONG'] ?? $stats['LNG'] ?? 0)
+            : null;
 
         return array_filter($updates, fn ($value) => $value !== null);
     }
 
     protected function parseReceivingStats(array $stats): array
     {
-        $updates = [];
+        $updates = parent::parseReceivingStats($stats);
 
-        $updates['receptions'] = isset($stats['REC']) ? (int) $stats['REC'] : null;
-        $updates['receiving_yards'] = isset($stats['YDS']) ? (int) $stats['YDS'] : null;
-        $updates['receiving_touchdowns'] = isset($stats['TD']) ? (int) $stats['TD'] : null;
-        $updates['receiving_targets'] = isset($stats['TAR']) || isset($stats['TGTS']) ? (int) ($stats['TAR'] ?? $stats['TGTS'] ?? 0) : null;
-        $updates['receiving_long'] = isset($stats['LONG']) || isset($stats['LNG']) ? (int) ($stats['LONG'] ?? $stats['LNG'] ?? 0) : null;
+        $updates['receiving_long'] = isset($stats['LONG']) || isset($stats['LNG'])
+            ? (int) ($stats['LONG'] ?? $stats['LNG'] ?? 0)
+            : null;
 
         return array_filter($updates, fn ($value) => $value !== null);
     }
@@ -184,18 +107,16 @@ class SyncPlayerStats
     {
         $updates = [];
 
-        // Parse FG format (e.g., "2/3")
         if (isset($stats['FG'])) {
-            $parts = explode('/', $stats['FG']);
+            $parts = explode('/', (string) $stats['FG']);
             if (count($parts) === 2) {
                 $updates['field_goals_made'] = (int) $parts[0];
                 $updates['field_goals_attempted'] = (int) $parts[1];
             }
         }
 
-        // Parse XP format (e.g., "3/3")
         if (isset($stats['XP']) || isset($stats['PAT'])) {
-            $xpStat = $stats['XP'] ?? $stats['PAT'] ?? '';
+            $xpStat = (string) ($stats['XP'] ?? $stats['PAT'] ?? '');
             $parts = explode('/', $xpStat);
             if (count($parts) === 2) {
                 $updates['extra_points_made'] = (int) $parts[0];
@@ -205,4 +126,5 @@ class SyncPlayerStats
 
         return array_filter($updates, fn ($value) => $value !== null);
     }
+
 }

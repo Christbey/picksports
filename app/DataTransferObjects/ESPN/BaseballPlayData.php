@@ -2,7 +2,7 @@
 
 namespace App\DataTransferObjects\ESPN;
 
-class BaseballPlayData
+class BaseballPlayData extends AbstractPlayData
 {
     public function __construct(
         public ?string $espnPlayId,
@@ -24,41 +24,37 @@ class BaseballPlayData
         public ?string $pitchingTeamEspnId,
     ) {}
 
-    public static function fromEspnResponse(array $play, int $index): self
+    protected static function fromCommonAndRaw(array $common, array $play): static
     {
         $inningData = $play['period'] ?? [];
         $atBatData = $play['atBat'] ?? [];
 
-        return new self(
-            espnPlayId: isset($play['id']) ? (string) $play['id'] : null,
-            sequenceNumber: $index + 1,
-            inning: (int) ($inningData['number'] ?? 1),
-            inningHalf: strtolower($inningData['displayValue'] ?? 'bottom'),
-            playType: $play['type']['text'] ?? null,
-            playText: $play['text'] ?? '',
-            scoreValue: isset($play['scoreValue']) ? (int) $play['scoreValue'] : null,
-            isAtBat: $play['atBat'] ?? false,
-            isScoringPlay: $play['scoringPlay'] ?? false,
-            isOut: isset($play['type']['id']) && in_array($play['type']['id'], ['23', '24', '25', '26', '27', '28']),
-            balls: isset($atBatData['balls']) ? (int) $atBatData['balls'] : null,
-            strikes: isset($atBatData['strikes']) ? (int) $atBatData['strikes'] : null,
-            outs: isset($atBatData['outs']) ? (int) $atBatData['outs'] : null,
-            homeScore: (int) ($play['homeScore'] ?? 0),
-            awayScore: (int) ($play['awayScore'] ?? 0),
-            battingTeamEspnId: isset($play['team']['id']) ? (string) $play['team']['id'] : null,
-            pitchingTeamEspnId: isset($play['pitchingTeam']['id']) ? (string) $play['pitchingTeam']['id'] : null,
+        return new static(
+            espnPlayId: $common['espnPlayId'],
+            sequenceNumber: $common['sequenceNumber'],
+            inning: self::intOrZero($inningData['number'] ?? 1),
+            inningHalf: strtolower(self::stringOrEmpty($inningData['displayValue'] ?? 'bottom')),
+            playType: $common['playType'],
+            playText: $common['playText'],
+            scoreValue: self::intOrNull($play['scoreValue'] ?? null),
+            isAtBat: self::boolOrFalse($play['atBat'] ?? null),
+            isScoringPlay: self::boolOrFalse($play['scoringPlay'] ?? null),
+            isOut: self::playTypeIn($play, ['23', '24', '25', '26', '27', '28']),
+            balls: self::intOrNull($atBatData['balls'] ?? null),
+            strikes: self::intOrNull($atBatData['strikes'] ?? null),
+            outs: self::intOrNull($atBatData['outs'] ?? null),
+            homeScore: $common['homeScore'],
+            awayScore: $common['awayScore'],
+            battingTeamEspnId: self::stringOrNull($play['team']['id'] ?? null),
+            pitchingTeamEspnId: self::stringOrNull($play['pitchingTeam']['id'] ?? null),
         );
     }
 
-    public function toArray(): array
+    protected function extraPlayFields(): array
     {
         return [
-            'espn_play_id' => $this->espnPlayId,
-            'sequence_number' => $this->sequenceNumber,
             'inning' => $this->inning,
             'inning_half' => $this->inningHalf,
-            'play_type' => $this->playType,
-            'play_text' => $this->playText,
             'score_value' => $this->scoreValue,
             'is_at_bat' => $this->isAtBat,
             'is_scoring_play' => $this->isScoringPlay,
@@ -66,8 +62,6 @@ class BaseballPlayData
             'balls' => $this->balls,
             'strikes' => $this->strikes,
             'outs' => $this->outs,
-            'home_score' => $this->homeScore,
-            'away_score' => $this->awayScore,
         ];
     }
 }

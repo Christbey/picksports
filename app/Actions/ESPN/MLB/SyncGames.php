@@ -2,77 +2,46 @@
 
 namespace App\Actions\ESPN\MLB;
 
+use App\Actions\ESPN\AbstractSyncGames;
 use App\DataTransferObjects\ESPN\GameData;
-use App\Models\MLB\Game;
-use App\Models\MLB\Team;
-use App\Services\ESPN\MLB\EspnService;
+use Illuminate\Database\Eloquent\Model;
 
-class SyncGames
+class SyncGames extends AbstractSyncGames
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const GAME_MODEL_CLASS = \App\Models\MLB\Game::class;
 
-    public function execute(int $season, int $seasonType, int $week): int
+    protected const TEAM_MODEL_CLASS = \App\Models\MLB\Team::class;
+
+    protected function buildGameAttributes(GameData $dto, array $gameData, Model $homeTeam, Model $awayTeam): array
     {
-        $response = $this->espnService->getGames($season, $seasonType, $week);
+        $dateParts = GameData::extractDateParts($gameData['date'] ?? null);
 
-        if (! $response || ! isset($response['items'])) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        foreach ($response['items'] as $game) {
-            if (empty($game['id'])) {
-                continue;
-            }
-
-            $dto = GameData::fromEspnResponse($game);
-
-            $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
-            $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
-
-            if (! $homeTeam || ! $awayTeam) {
-                continue;
-            }
-
-            $gameAttributes = [
-                'espn_event_id' => $dto->espnEventId,
-                'espn_uid' => $game['uid'] ?? null,
-                'season' => $dto->season,
-                'week' => $dto->week,
-                'season_type' => $dto->seasonType,
-                'game_date' => $game['date'] ? date('Y-m-d', strtotime($game['date'])) : null,
-                'game_time' => $game['date'] ? date('H:i:s', strtotime($game['date'])) : null,
-                'name' => $dto->name,
-                'short_name' => $dto->shortName,
-                'home_team_id' => $homeTeam->id,
-                'away_team_id' => $awayTeam->id,
-                'home_score' => $dto->homeScore,
-                'away_score' => $dto->awayScore,
-                'home_linescores' => $dto->homeLinescores,
-                'away_linescores' => $dto->awayLinescores,
-                'status' => $dto->status,
-                'inning' => $dto->period,
-                'inning_half' => null, // Will be populated from game details
-                'balls' => null, // Will be populated from game details
-                'strikes' => null, // Will be populated from game details
-                'outs' => null, // Will be populated from game details
-                'venue_name' => $dto->venueName,
-                'venue_city' => $dto->venueCity,
-                'venue_state' => $dto->venueState,
-                'broadcast_networks' => $dto->broadcastNetworks,
-            ];
-
-            Game::updateOrCreate(
-                ['espn_event_id' => $dto->espnEventId],
-                $gameAttributes
-            );
-
-            $synced++;
-        }
-
-        return $synced;
+        return [
+            'espn_event_id' => $dto->espnEventId,
+            'espn_uid' => $gameData['uid'] ?? null,
+            'season' => $dto->season,
+            'week' => $dto->week,
+            'season_type' => $dto->seasonType,
+            'game_date' => $dateParts['game_date'],
+            'game_time' => $dateParts['game_time'],
+            'name' => $dto->name,
+            'short_name' => $dto->shortName,
+            'home_team_id' => $homeTeam->getKey(),
+            'away_team_id' => $awayTeam->getKey(),
+            'home_score' => $dto->homeScore,
+            'away_score' => $dto->awayScore,
+            'home_linescores' => $dto->homeLinescores,
+            'away_linescores' => $dto->awayLinescores,
+            'status' => $dto->status,
+            'inning' => $dto->period,
+            'inning_half' => null,
+            'balls' => null,
+            'strikes' => null,
+            'outs' => null,
+            'venue_name' => $dto->venueName,
+            'venue_city' => $dto->venueCity,
+            'venue_state' => $dto->venueState,
+            'broadcast_networks' => $dto->broadcastNetworks,
+        ];
     }
 }

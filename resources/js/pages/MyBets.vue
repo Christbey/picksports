@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
 import axios from 'axios';
-import AppLayout from '@/layouts/AppLayout.vue';
+import { Download, Plus, Trash2, Check, X } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Download, Plus, Trash2, Check, X } from 'lucide-vue-next';
+import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 interface Bet {

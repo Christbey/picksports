@@ -72,9 +72,9 @@ class PlayerPropAnalyzer
         $last5Avg = $this->calculateRecentAverage($player->id, $statField, 5, $sportConfig['player_stat_model']);
 
         // Advanced stats
-        $vsOpponentAvg = $this->calculateVsOpponentAverage($player->id, $opponentId, $statField, $sportConfig['player_stat_model'], $sportConfig['game_model']);
-        $homeAwayAvg = $this->calculateHomeAwayAverage($player->id, $isHome, $statField, $sportConfig['player_stat_model'], $sportConfig['game_model']);
-        $hitRate = $this->calculateHitRateVsOpponent($player->id, $opponentId, $statField, $prop->line, $sportConfig['player_stat_model'], $sportConfig['game_model']);
+        $vsOpponentAvg = $this->calculateVsOpponentAverage($player->id, $opponentId, $statField, $sportConfig['player_stat_model']);
+        $homeAwayAvg = $this->calculateHomeAwayAverage($player->id, $isHome, $statField, $sportConfig['player_stat_model']);
+        $hitRate = $this->calculateHitRateVsOpponent($player->id, $opponentId, $statField, $prop->line, $sportConfig['player_stat_model']);
         $timesCoveredLast5 = $this->calculateTimesCovered($player->id, $statField, $prop->line, 5, $sportConfig['player_stat_model']);
         $timesCoveredSeason = $this->calculateTimesCovered($player->id, $statField, $prop->line, 82, $sportConfig['player_stat_model']);
         $consistency = $this->calculateConsistency($player->id, $statField, 10, $sportConfig['player_stat_model']);
@@ -255,9 +255,7 @@ class PlayerPropAnalyzer
      */
     protected function calculateSeasonAverage(int $playerId, string $statField, int $minGames, string $playerStatModel): ?float
     {
-        $stats = $playerStatModel::where('player_id', $playerId)
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->orderBy('id', 'desc')
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->take(82) // Full season
             ->get();
 
@@ -273,9 +271,7 @@ class PlayerPropAnalyzer
      */
     protected function calculateRecentAverage(int $playerId, string $statField, int $games, string $playerStatModel): ?float
     {
-        $stats = $playerStatModel::where('player_id', $playerId)
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->orderBy('id', 'desc')
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->take($games)
             ->get();
 
@@ -293,18 +289,15 @@ class PlayerPropAnalyzer
         int $playerId,
         int $opponentId,
         string $statField,
-        string $playerStatModel,
-        string $gameModel
+        string $playerStatModel
     ): ?float {
-        $stats = $playerStatModel::where('player_id', $playerId)
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->whereHas('game', function ($q) use ($opponentId) {
-                $q->where('status', 'STATUS_FINAL')
-                    ->where(function ($query) use ($opponentId) {
-                        $query->where('home_team_id', $opponentId)
-                            ->orWhere('away_team_id', $opponentId);
-                    });
+                $q->where(function ($query) use ($opponentId) {
+                    $query->where('home_team_id', $opponentId)
+                        ->orWhere('away_team_id', $opponentId);
+                });
             })
-            ->orderBy('id', 'desc')
             ->take(10) // Last 10 games vs this opponent
             ->get();
 
@@ -322,8 +315,7 @@ class PlayerPropAnalyzer
         int $playerId,
         bool $isHome,
         string $statField,
-        string $playerStatModel,
-        string $gameModel
+        string $playerStatModel
     ): ?float {
         // Get player's team ID first
         $playerStat = $playerStatModel::where('player_id', $playerId)->first();
@@ -333,17 +325,14 @@ class PlayerPropAnalyzer
 
         $teamId = $playerStat->player->team_id;
 
-        $stats = $playerStatModel::where('player_id', $playerId)
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->whereHas('game', function ($q) use ($isHome, $teamId) {
-                $q->where('status', 'STATUS_FINAL');
-
                 if ($isHome) {
                     $q->where('home_team_id', $teamId);
                 } else {
                     $q->where('away_team_id', $teamId);
                 }
             })
-            ->orderBy('id', 'desc')
             ->take(20) // Last 20 home or away games
             ->get();
 
@@ -362,18 +351,15 @@ class PlayerPropAnalyzer
         int $opponentId,
         string $statField,
         float $line,
-        string $playerStatModel,
-        string $gameModel
+        string $playerStatModel
     ): ?array {
-        $stats = $playerStatModel::where('player_id', $playerId)
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->whereHas('game', function ($q) use ($opponentId) {
-                $q->where('status', 'STATUS_FINAL')
-                    ->where(function ($query) use ($opponentId) {
-                        $query->where('home_team_id', $opponentId)
-                            ->orWhere('away_team_id', $opponentId);
-                    });
+                $q->where(function ($query) use ($opponentId) {
+                    $query->where('home_team_id', $opponentId)
+                        ->orWhere('away_team_id', $opponentId);
+                });
             })
-            ->orderBy('id', 'desc')
             ->take(10) // Last 10 games vs this opponent
             ->get();
 
@@ -399,9 +385,7 @@ class PlayerPropAnalyzer
         int $games,
         string $playerStatModel
     ): ?array {
-        $stats = $playerStatModel::where('player_id', $playerId)
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->orderBy('id', 'desc')
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->take($games)
             ->get();
 
@@ -426,9 +410,7 @@ class PlayerPropAnalyzer
         int $games,
         string $playerStatModel
     ): ?array {
-        $stats = $playerStatModel::where('player_id', $playerId)
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->orderBy('id', 'desc')
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->take($games)
             ->get();
 
@@ -469,9 +451,7 @@ class PlayerPropAnalyzer
         float $line,
         string $playerStatModel
     ): ?array {
-        $stats = $playerStatModel::where('player_id', $playerId)
-            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->orderBy('id', 'desc')
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->take(10)
             ->get();
 
@@ -511,6 +491,13 @@ class PlayerPropAnalyzer
             'type' => $streakType, // 'over' or 'under'
             'status' => $streakType === 'over' ? 'hot' : 'cold',
         ];
+    }
+
+    protected function finalizedPlayerStatsQuery(int $playerId, string $playerStatModel)
+    {
+        return $playerStatModel::where('player_id', $playerId)
+            ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
+            ->orderBy('id', 'desc');
     }
 
     /**

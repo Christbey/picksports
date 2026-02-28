@@ -66,8 +66,10 @@ class SubscriptionController extends Controller
 
         $user->subscription()->cancel();
 
-        return redirect()->route('subscription.manage')
-            ->with('success', 'Your subscription has been cancelled and will end at the end of your billing period.');
+        return $this->redirectSuccess(
+            'subscription.manage',
+            'Your subscription has been cancelled and will end at the end of your billing period.'
+        );
     }
 
     public function resume(Request $request)
@@ -80,7 +82,6 @@ class SubscriptionController extends Controller
 
         $user->subscription()->resume();
 
-        return redirect()->route('subscription.manage')
-            ->with('success', 'Your subscription has been resumed successfully.');
+        return $this->redirectSuccess('subscription.manage', 'Your subscription has been resumed successfully.');
     }
 }

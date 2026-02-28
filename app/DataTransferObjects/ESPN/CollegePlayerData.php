@@ -2,7 +2,7 @@
 
 namespace App\DataTransferObjects\ESPN;
 
-class CollegePlayerData
+class CollegePlayerData extends AbstractPlayerData
 {
     public function __construct(
         public string $espnId,
@@ -18,37 +18,28 @@ class CollegePlayerData
         public ?string $headshotUrl,
     ) {}
 
-    public static function fromEspnResponse(array $player): self
+    protected static function fromCommonAndRaw(array $common, array $player): static
     {
-        return new self(
-            espnId: (string) $player['id'],
-            firstName: $player['firstName'] ?? '',
-            lastName: $player['lastName'] ?? '',
-            fullName: $player['fullName'] ?? $player['displayName'] ?? '',
-            jerseyNumber: isset($player['jersey']) ? (string) $player['jersey'] : null,
-            position: $player['position']['abbreviation'] ?? null,
-            height: $player['height'] ?? null,
-            weight: isset($player['weight']) ? (int) $player['weight'] : null,
+        return new static(
+            espnId: $common['espnId'],
+            firstName: $common['firstName'],
+            lastName: $common['lastName'],
+            fullName: $common['fullName'],
+            jerseyNumber: $common['jerseyNumber'],
+            position: $common['position'],
+            height: $common['height'],
+            weight: $common['weight'],
             year: $player['year'] ?? $player['class'] ?? null,
             hometown: $player['hometown'] ?? null,
-            headshotUrl: $player['headshot']['href'] ?? null,
+            headshotUrl: $common['headshotUrl'],
         );
     }
 
-    public function toArray(): array
+    protected function extraPlayerFields(): array
     {
         return [
-            'espn_id' => $this->espnId,
-            'first_name' => $this->firstName,
-            'last_name' => $this->lastName,
-            'full_name' => $this->fullName,
-            'jersey_number' => $this->jerseyNumber,
-            'position' => $this->position,
-            'height' => $this->height,
-            'weight' => $this->weight,
             'year' => $this->year,
             'hometown' => $this->hometown,
-            'headshot_url' => $this->headshotUrl,
         ];
     }
 }

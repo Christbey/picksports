@@ -35,7 +35,7 @@ class EnsureUserIsSubscribed
 
     protected function redirectToSubscriptionPage(Request $request): Response
     {
-        if ($request->expectsJson()) {
+        if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
                 'message' => 'An active subscription is required to access this resource.',
             ], 403);
@@ -46,7 +46,7 @@ class EnsureUserIsSubscribed
 
     protected function redirectToUpgradePage(Request $request, string $requiredTier): Response
     {
-        if ($request->expectsJson()) {
+        if ($request->expectsJson() || $request->is('api/*')) {
             return response()->json([
                 'message' => "This feature requires a {$requiredTier} subscription or higher.",
             ], 403);

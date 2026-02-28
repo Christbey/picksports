@@ -2,30 +2,12 @@
 
 namespace App\Console\Commands\ESPN\NBA;
 
+use App\Console\Commands\ESPN\AbstractSyncGamesCommand;
 use App\Jobs\ESPN\NBA\FetchGames;
-use Illuminate\Console\Command;
 
-class SyncGamesCommand extends Command
+class SyncGamesCommand extends AbstractSyncGamesCommand
 {
-    protected $signature = 'espn:sync-nba-games
-                            {season : The season year}
-                            {week : The week number}
-                            {seasonType=2 : The season type (1=preseason, 2=regular, 3=postseason)}';
-
-    protected $description = 'Sync NBA games from ESPN API for a specific week';
-
-    public function handle(): int
-    {
-        $season = (int) $this->argument('season');
-        $seasonType = (int) $this->argument('seasonType');
-        $week = (int) $this->argument('week');
-
-        $this->info("Dispatching NBA games sync job for Season {$season}, Week {$week}...");
-
-        FetchGames::dispatch($season, $seasonType, $week);
-
-        $this->info('NBA games sync job dispatched successfully.');
-
-        return Command::SUCCESS;
-    }
+    protected const COMMAND_NAME = 'espn:sync-nba-games';
+    protected const SPORT_CODE = 'NBA';
+    protected const GAMES_SYNC_JOB_CLASS = FetchGames::class;
 }

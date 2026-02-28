@@ -2,53 +2,12 @@
 
 namespace App\Actions\ESPN\WNBA;
 
-use App\DataTransferObjects\ESPN\GameData;
-use App\Models\WNBA\Game;
-use App\Models\WNBA\Team;
-use App\Services\ESPN\WNBA\EspnService;
+use App\Actions\ESPN\AbstractSyncGames;
 
-class SyncGames
+class SyncGames extends AbstractSyncGames
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const GAME_MODEL_CLASS = \App\Models\WNBA\Game::class;
 
-    public function execute(int $season, int $seasonType, int $week): int
-    {
-        $response = $this->espnService->getGames($season, $seasonType, $week);
-
-        if (! $response || ! isset($response['items'])) {
-            return 0;
-        }
-
-        $synced = 0;
-
-        foreach ($response['items'] as $gameData) {
-            if (empty($gameData['id'])) {
-                continue;
-            }
-
-            $dto = GameData::fromEspnResponse($gameData);
-
-            $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
-            $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
-
-            if (! $homeTeam || ! $awayTeam) {
-                continue;
-            }
-
-            $gameAttributes = $dto->toArray();
-            $gameAttributes['home_team_id'] = $homeTeam->id;
-            $gameAttributes['away_team_id'] = $awayTeam->id;
-
-            Game::updateOrCreate(
-                ['espn_id' => $dto->espnEventId],
-                $gameAttributes
-            );
-
-            $synced++;
-        }
-
-        return $synced;
-    }
+    protected const TEAM_MODEL_CLASS = \App\Models\WNBA\Team::class;
+    protected const UNIQUE_GAME_KEY = 'espn_id';
 }

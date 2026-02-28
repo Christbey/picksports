@@ -2,55 +2,26 @@
 
 namespace App\Actions\ESPN\MLB;
 
-use App\DataTransferObjects\ESPN\TeamData;
-use App\Models\MLB\Team;
-use App\Services\ESPN\MLB\EspnService;
+use App\Actions\ESPN\AbstractSyncTeams;
 
-class SyncTeams
+class SyncTeams extends AbstractSyncTeams
 {
-    public function __construct(
-        protected EspnService $espnService
-    ) {}
+    protected const TEAM_MODEL_CLASS = \App\Models\MLB\Team::class;
 
-    public function execute(): int
+    protected const TEAM_DTO_CLASS = \App\DataTransferObjects\ESPN\TeamData::class;
+
+    protected function mapTeamAttributes(object $dto, array $resolvedTeam, array $rawTeam): array
     {
-        $response = $this->espnService->getTeams();
-
-        if (! $response || ! isset($response['sports'][0]['leagues'][0]['teams'])) {
-            return 0;
-        }
-
-        $teams = $response['sports'][0]['leagues'][0]['teams'];
-        $synced = 0;
-
-        foreach ($teams as $teamData) {
-            $team = $teamData['team'] ?? [];
-
-            if (empty($team['id'])) {
-                continue;
-            }
-
-            $dto = TeamData::fromEspnResponse($team);
-
-            // MLB uses location, name, and nickname structure
-            Team::updateOrCreate(
-                ['espn_id' => $dto->espnId],
-                [
-                    'espn_id' => $dto->espnId,
-                    'abbreviation' => $dto->abbreviation,
-                    'location' => $dto->location,
-                    'name' => $dto->name,
-                    'nickname' => $dto->name, // MLB nickname is same as name typically
-                    'league' => $dto->conference, // ESPN's conference maps to MLB's league (AL/NL)
-                    'division' => $dto->division,
-                    'color' => $dto->color,
-                    'logo_url' => $dto->logoUrl,
-                ]
-            );
-
-            $synced++;
-        }
-
-        return $synced;
+        return [
+            'espn_id' => $dto->espnId,
+            'abbreviation' => $dto->abbreviation,
+            'location' => $dto->location,
+            'name' => $dto->name,
+            'nickname' => $dto->name,
+            'league' => $dto->conference,
+            'division' => $dto->division,
+            'color' => $dto->color,
+            'logo_url' => $dto->logoUrl,
+        ];
     }
 }

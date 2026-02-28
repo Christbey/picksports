@@ -6,6 +6,7 @@ use App\Http\Controllers\Settings\OddsApiTeamMappingController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
+use App\Http\Controllers\Settings\WebPushSubscriptionController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -60,6 +61,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::post('settings/alert-preferences/check-alerts', [AlertPreferenceController::class, 'checkAlerts'])
         ->name('alert-preferences.check');
+
+    Route::get('settings/web-push/config', [WebPushSubscriptionController::class, 'config'])
+        ->name('web-push.config');
+    Route::post('settings/web-push/subscriptions', [WebPushSubscriptionController::class, 'store'])
+        ->name('web-push.subscriptions.store');
+    Route::delete('settings/web-push/subscriptions', [WebPushSubscriptionController::class, 'destroy'])
+        ->name('web-push.subscriptions.destroy');
+    Route::post('settings/web-push/test', [WebPushSubscriptionController::class, 'sendTest'])
+        ->name('web-push.test');
 
     Route::get('settings/onboarding', OnboardingController::class)->name('settings.onboarding');
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, router, usePage } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
@@ -39,10 +39,17 @@ interface AdminStats {
     users_by_sport: Record<string, number>;
 }
 
+interface WebPushState {
+    configured: boolean;
+    publicKey: string | null;
+    hasSubscription: boolean;
+}
+
 const props = defineProps<{
     preference: Preference | null;
     availableTemplates: AvailableTemplate[];
     adminStats?: AdminStats;
+    webPush: WebPushState;
 }>();
 
 const page = usePage();
@@ -142,6 +149,13 @@ function isTemplateSelected(templateId: number): boolean {
 
 const checkingAlerts = ref(false);
 const lastCheckResult = ref<string | null>(null);
+const webPushSupported = ref(false);
+const webPushPermission = ref<NotificationPermission>('default');
+const webPushHasSubscription = ref<boolean>(props.webPush?.hasSubscription ?? false);
+const webPushBusy = ref(false);
+const webPushMessage = ref<string | null>(null);
+const webPushError = ref<string | null>(null);
+const iosStandalone = ref(false);
 
 function checkAlerts(sport?: string) {
     checkingAlerts.value = true;
@@ -173,6 +187,157 @@ function checkAlerts(sport?: string) {
         },
     });
 }
+
+function getCsrfToken(): string {
+    const el = document.querySelector('meta[name="csrf-token"]');
+    return el?.getAttribute('content') ?? '';
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+
+    return outputArray;
+}
+
+async function enableWebPush() {
+    webPushBusy.value = true;
+    webPushError.value = null;
+    webPushMessage.value = null;
+
+    try {
+        if (!webPushSupported.value) {
+            throw new Error('This browser does not support push notifications.');
+        }
+
+        if (!props.webPush.configured || !props.webPush.publicKey) {
+            throw new Error('Push notifications are not configured on the server yet.');
+        }
+
+        const registration = await navigator.serviceWorker.register('/sw.js');
+        const permission = await Notification.requestPermission();
+        webPushPermission.value = permission;
+
+        if (permission !== 'granted') {
+            throw new Error('Notification permission was not granted.');
+        }
+
+        let subscription = await registration.pushManager.getSubscription();
+        if (!subscription) {
+            subscription = await registration.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: urlBase64ToUint8Array(props.webPush.publicKey),
+            });
+        }
+
+        const response = await fetch('/settings/web-push/subscriptions', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': getCsrfToken(),
+                'Accept': 'application/json',
+            },
+            body: JSON.stringify(subscription.toJSON()),
+        });
+
+        if (!response.ok) {
+            throw new Error('Could not save push subscription on the server.');
+        }
+
+        webPushHasSubscription.value = true;
+        webPushMessage.value = 'Push notifications are enabled for this device.';
+
+        if (!selectedNotificationTypes.value.includes('push')) {
+            selectedNotificationTypes.value.push('push');
+        }
+    } catch (error) {
+        webPushError.value = error instanceof Error ? error.message : 'Failed to enable push notifications.';
+    } finally {
+        webPushBusy.value = false;
+    }
+}
+
+async function disableWebPush() {
+    webPushBusy.value = true;
+    webPushError.value = null;
+    webPushMessage.value = null;
+
+    try {
+        if ('serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.ready;
+            const subscription = await registration.pushManager.getSubscription();
+
+            if (subscription) {
+                await subscription.unsubscribe();
+                await fetch('/settings/web-push/subscriptions', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': getCsrfToken(),
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify({ endpoint: subscription.endpoint }),
+                });
+            }
+        }
+
+        webPushHasSubscription.value = false;
+        webPushMessage.value = 'Push notifications were disabled for this device.';
+    } catch (error) {
+        webPushError.value = error instanceof Error ? error.message : 'Failed to disable push notifications.';
+    } finally {
+        webPushBusy.value = false;
+    }
+}
+
+async function sendTestPush() {
+    webPushBusy.value = true;
+    webPushError.value = null;
+    webPushMessage.value = null;
+
+    try {
+        const response = await fetch('/settings/web-push/test', {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': getCsrfToken(),
+                'Accept': 'application/json',
+            },
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+            throw new Error(data.message ?? 'Failed to send test push notification.');
+        }
+
+        webPushMessage.value = data.message ?? 'Test push sent.';
+    } catch (error) {
+        webPushError.value = error instanceof Error ? error.message : 'Failed to send test notification.';
+    } finally {
+        webPushBusy.value = false;
+    }
+}
+
+onMounted(() => {
+    webPushSupported.value =
+        'serviceWorker' in navigator &&
+        'PushManager' in window &&
+        'Notification' in window;
+
+    if ('Notification' in window) {
+        webPushPermission.value = Notification.permission;
+    }
+
+    iosStandalone.value =
+        window.matchMedia('(display-mode: standalone)').matches ||
+        (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
+});
 </script>
 
 <template>
@@ -302,6 +467,77 @@ function checkAlerts(sport?: string) {
                         />
 
                         <InputError class="mt-2" :message="errors.notification_types" />
+                    </div>
+
+                    <!-- Web Push Setup -->
+                    <div class="space-y-3 rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
+                        <div>
+                            <Label class="text-base">Web Push Setup (iOS Home Screen)</Label>
+                            <p class="text-sm text-muted-foreground">
+                                Enable browser push for this device. On iPhone/iPad, install this app to the Home Screen first.
+                            </p>
+                        </div>
+
+                        <div class="space-y-1 text-sm text-muted-foreground">
+                            <p>
+                                Browser support:
+                                <span class="font-medium text-foreground">
+                                    {{ webPushSupported ? 'Available' : 'Not available on this browser' }}
+                                </span>
+                            </p>
+                            <p>
+                                Permission:
+                                <span class="font-medium text-foreground">{{ webPushPermission }}</span>
+                            </p>
+                            <p>
+                                Installed mode:
+                                <span class="font-medium text-foreground">
+                                    {{ iosStandalone ? 'Home Screen app' : 'Browser tab' }}
+                                </span>
+                            </p>
+                            <p>
+                                Device subscription:
+                                <span class="font-medium text-foreground">
+                                    {{ webPushHasSubscription ? 'Active' : 'Not active' }}
+                                </span>
+                            </p>
+                        </div>
+
+                        <div class="flex flex-wrap gap-2">
+                            <Button
+                                type="button"
+                                :disabled="webPushBusy || !webPushSupported || !props.webPush.configured"
+                                @click="enableWebPush"
+                            >
+                                Enable Push On This Device
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                :disabled="webPushBusy || !webPushHasSubscription"
+                                @click="sendTestPush"
+                            >
+                                Send Test Push
+                            </Button>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                :disabled="webPushBusy || !webPushHasSubscription"
+                                @click="disableWebPush"
+                            >
+                                Disable Push
+                            </Button>
+                        </div>
+
+                        <p v-if="!props.webPush.configured" class="text-sm text-amber-600 dark:text-amber-400">
+                            Push notifications are not configured on the server yet. Add VAPID keys in environment settings.
+                        </p>
+                        <p v-if="webPushMessage" class="text-sm text-emerald-600 dark:text-emerald-400">
+                            {{ webPushMessage }}
+                        </p>
+                        <p v-if="webPushError" class="text-sm text-red-600 dark:text-red-400">
+                            {{ webPushError }}
+                        </p>
                     </div>
 
                     <!-- Notification Templates -->

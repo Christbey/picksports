@@ -3,6 +3,7 @@
 namespace App\Notifications;
 
 use App\Models\NotificationTemplate;
+use App\Notifications\Channels\WebPushChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;
@@ -32,6 +33,7 @@ class BettingValueAlert extends Notification implements ShouldQueue
 
         if ($notifiable->alertPreference?->shouldReceivePushNotifications()) {
             $channels[] = 'database';
+            $channels[] = WebPushChannel::class;
         }
 
         return $channels;
@@ -95,6 +97,38 @@ class BettingValueAlert extends Notification implements ShouldQueue
         }
 
         return $baseData;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function toWebPush(object $notifiable): array
+    {
+        $game = $this->prediction->game;
+        $homeTeam = $game->homeTeam->name ?? $game->homeTeam->school ?? 'Home Team';
+        $awayTeam = $game->awayTeam->name ?? $game->awayTeam->school ?? 'Away Team';
+        $title = "Value Alert: {$awayTeam} @ {$homeTeam}";
+        $body = "Recommendation: {$this->recommendation}";
+
+        if ($this->template) {
+            $data = $this->buildTemplateData($notifiable);
+            $title = $this->template->renderPushTitle($data) ?: $title;
+            $body = $this->template->renderPushBody($data) ?: $body;
+        }
+
+        return [
+            'title' => $title,
+            'body' => $body,
+            'icon' => '/apple-touch-icon.png',
+            'badge' => '/icon-192.png',
+            'tag' => 'betting-value-alert',
+            'url' => $this->getPredictionUrl(),
+            'data' => [
+                'sport' => strtolower($this->sport),
+                'game_id' => $game->id,
+                'url' => $this->getPredictionUrl(),
+            ],
+        ];
     }
 
     protected function buildTemplateData(object $notifiable): array

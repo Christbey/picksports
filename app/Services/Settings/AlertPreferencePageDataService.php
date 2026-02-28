@@ -6,10 +6,13 @@ use App\Models\NotificationTemplate;
 use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Support\SportCatalog;
+use App\Services\WebPushService;
 
 class AlertPreferencePageDataService
 {
     public const SPORTS = SportCatalog::ALL;
+
+    public function __construct(private readonly WebPushService $webPushService) {}
 
     /**
      * @return array<string, mixed>
@@ -19,6 +22,11 @@ class AlertPreferencePageDataService
         $data = [
             'preference' => $this->preferenceForUser($user),
             'availableTemplates' => $this->availableTemplates(),
+            'webPush' => [
+                'configured' => $this->webPushService->isConfigured(),
+                'publicKey' => $this->webPushService->publicKey(),
+                'hasSubscription' => $user->webPushSubscriptions()->active()->exists(),
+            ],
         ];
 
         if ($user->isAdmin() || $user->can('view-alert-stats')) {

@@ -1,11 +1,17 @@
 <?php
 
+use App\Http\Controllers\Api\SecurityReportController;
 use Illuminate\Support\Facades\Route;
 
 // Load generic sport route definer
 $registerSportRoutes = require base_path('routes/api/sports.php');
 
 Route::prefix('v1')->group(function () use ($registerSportRoutes) {
+    Route::post('/security/reports/csp', [SecurityReportController::class, 'csp'])
+        ->middleware('throttle:60,1');
+    Route::post('/security/reports/integrity', [SecurityReportController::class, 'integrity'])
+        ->middleware('throttle:60,1');
+
     // Sport Routes (using generic route definer)
     foreach ([
         'nfl' => 'NFL',

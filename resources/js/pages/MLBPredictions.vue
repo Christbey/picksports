@@ -11,6 +11,7 @@ import { mlbPredictions } from '@/routes';
         breadcrumb-title="MLB Predictions"
         :breadcrumb-href="mlbPredictions().url"
         banner-storage-key="mlb-predictions-banner-dismissed"
+        seo-description="MLB predictions and betting edges across moneyline, run line, and totals using PickSports models."
     >
         <SportPredictions :config="mlbPredictionsConfig" />
     </PredictionsPageShell>

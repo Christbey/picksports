@@ -94,11 +94,28 @@ withDefaults(defineProps<{
     homeTrends: null,
     trendsEmptyText: 'No trends available for this matchup',
 });
+
+const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
+    team?.display_name
+    || `${team?.location || ''} ${team?.name || ''}`.trim()
+    || team?.name
+    || team?.abbreviation
+    || fallback;
 </script>
 
 <template>
     <GamePageErrorBoundary>
-        <GamePageShell :title="title" :breadcrumbs="breadcrumbs" :loading="loading" :error="error">
+        <GamePageShell
+            :title="title"
+            :breadcrumbs="breadcrumbs"
+            :loading="loading"
+            :error="error"
+            :game-status-code="game.status"
+            :start-date="game.game_date || null"
+            :home-team-name="resolveTeamName(homeTeam, 'Home Team')"
+            :away-team-name="resolveTeamName(awayTeam, 'Away Team')"
+            :venue-name="venueLabel || null"
+        >
             <MatchupHero
                 :away-team="awayTeam"
                 :home-team="homeTeam"

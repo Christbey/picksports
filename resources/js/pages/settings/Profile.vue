@@ -4,6 +4,7 @@ import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileCo
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
+import { signalCurrentUserDetails } from '@/composables/useWebAuthnSignal';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,6 +30,14 @@ const breadcrumbItems: BreadcrumbItem[] = [
 
 const page = usePage();
 const user = page.props.auth.user;
+
+async function handleProfileUpdateSuccess() {
+    try {
+        await signalCurrentUserDetails(String(user.id), String(user.email));
+    } catch {
+        // Signal API is best-effort and should never block profile updates.
+    }
+}
 </script>
 
 <template>
@@ -48,6 +57,7 @@ const user = page.props.auth.user;
                 <Form
                     v-bind="ProfileController.update.form()"
                     class="space-y-6"
+                    @success="handleProfileUpdateSuccess"
                     v-slot="{ errors, processing, recentlySuccessful }"
                 >
                     <div class="grid gap-2">

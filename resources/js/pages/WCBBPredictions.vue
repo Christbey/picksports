@@ -11,6 +11,7 @@ import { wcbbPredictions } from '@/routes';
         breadcrumb-title="WCBB Predictions"
         :breadcrumb-href="wcbbPredictions().url"
         banner-storage-key="wcbb-predictions-banner-dismissed"
+        seo-description="Women's college basketball predictions and confidence-based picks from PickSports analytics."
     >
         <SportPredictions :config="wcbbPredictionsConfig" />
     </PredictionsPageShell>

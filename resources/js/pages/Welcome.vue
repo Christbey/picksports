@@ -91,7 +91,18 @@ const getROIColor = (roi: number | undefined) => {
 </script>
 
 <template>
-  <Head title="Beat the Books - Advanced Sports Betting Analytics" />
+  <Head title="Beat the Books - Advanced Sports Betting Analytics">
+    <meta head-key="description" name="description" content="PickSports provides transparent, data-driven sports predictions across major leagues with verified performance and ROI." />
+    <meta head-key="og:title" property="og:title" content="Beat the Books - Advanced Sports Betting Analytics" />
+    <meta head-key="og:description" property="og:description" content="Data-driven sports betting analytics, transparent results, and live predictions across major sports." />
+    <meta head-key="twitter:title" name="twitter:title" content="Beat the Books - Advanced Sports Betting Analytics" />
+    <meta head-key="twitter:description" name="twitter:description" content="Data-driven sports betting analytics, transparent results, and live predictions across major sports." />
+    <script
+      head-key="schema-webpage-home"
+      type="application/ld+json"
+      v-html='JSON.stringify({"@context":"https://schema.org","@type":"WebPage","name":"PickSports Home","url":"https://picksports.app/","description":"Data-driven sports betting analytics and predictions."})'
+    />
+  </Head>
 
   <div class="min-h-screen bg-white dark:bg-gray-950">
     <!-- Navigation -->

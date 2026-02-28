@@ -11,6 +11,7 @@ import { nflPredictions } from '@/routes';
         breadcrumb-title="NFL Predictions"
         :breadcrumb-href="nflPredictions().url"
         banner-storage-key="nfl-predictions-banner-dismissed"
+        seo-description="NFL predictions, spreads, totals, and confidence picks powered by PickSports analytics."
     >
         <SportPredictions :config="nflPredictionsConfig" />
     </PredictionsPageShell>

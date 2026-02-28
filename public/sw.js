@@ -30,21 +30,28 @@ self.addEventListener('push', (event) => {
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
     const targetUrl = event.notification?.data?.url || '/';
+    const absoluteTargetUrl = new URL(targetUrl, self.location.origin).toString();
 
     event.waitUntil((async () => {
         const allClients = await clients.matchAll({
             type: 'window',
             includeUncontrolled: true,
         });
+        const targetPattern = 'URLPattern' in self
+            ? new URLPattern({ pathname: new URL(absoluteTargetUrl).pathname })
+            : null;
 
         for (const client of allClients) {
-            const url = new URL(client.url);
-            if (url.pathname === new URL(targetUrl, self.location.origin).pathname && 'focus' in client) {
+            const samePath = targetPattern
+                ? targetPattern.test(client.url)
+                : new URL(client.url).pathname === new URL(absoluteTargetUrl).pathname;
+
+            if (samePath && 'focus' in client) {
                 await client.focus();
                 return;
             }
         }
 
-        await clients.openWindow(targetUrl);
+        await clients.openWindow(absoluteTargetUrl);
     })());
 });

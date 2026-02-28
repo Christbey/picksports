@@ -69,7 +69,18 @@ const getROIColor = (roi: number) => {
 
 <template>
   <AppLayout>
-    <Head title="Performance Dashboard" />
+    <Head title="Performance Dashboard">
+      <meta head-key="description" name="description" content="Track PickSports prediction accuracy, ROI, and sport-by-sport performance with transparent historical results." />
+      <meta head-key="og:title" property="og:title" content="Performance Dashboard" />
+      <meta head-key="og:description" property="og:description" content="View prediction accuracy, win record, and ROI performance across all supported sports." />
+      <meta head-key="twitter:title" name="twitter:title" content="Performance Dashboard" />
+      <meta head-key="twitter:description" name="twitter:description" content="View prediction accuracy, win record, and ROI performance across all supported sports." />
+      <script
+        head-key="schema-webpage-performance"
+        type="application/ld+json"
+        v-html='JSON.stringify({"@context":"https://schema.org","@type":"WebPage","name":"PickSports Performance Dashboard","url":"https://picksports.app/performance","description":"Transparent PickSports model performance and ROI history."})'
+      />
+    </Head>
 
     <div class="py-12">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">

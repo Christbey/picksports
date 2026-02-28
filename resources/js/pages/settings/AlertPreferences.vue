@@ -495,6 +495,9 @@ onMounted(() => {
                                     {{ iosStandalone ? 'Home Screen app' : 'Browser tab' }}
                                 </span>
                             </p>
+                            <p v-if="!iosStandalone" class="text-amber-600 dark:text-amber-400">
+                                iOS push only works for the installed Home Screen app, not Safari tabs.
+                            </p>
                             <p>
                                 Device subscription:
                                 <span class="font-medium text-foreground">

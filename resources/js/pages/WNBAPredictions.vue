@@ -11,6 +11,7 @@ import { wnbaPredictions } from '@/routes';
         breadcrumb-title="WNBA Predictions"
         :breadcrumb-href="wnbaPredictions().url"
         banner-storage-key="wnba-predictions-banner-dismissed"
+        seo-description="WNBA predictions and betting insights with spread, total, and confidence model outputs."
     >
         <SportPredictions :config="wnbaPredictionsConfig" />
     </PredictionsPageShell>

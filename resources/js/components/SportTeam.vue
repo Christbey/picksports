@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import TeamGamesCard from '@/components/sport-team/TeamGamesCard.vue';
 import TeamHeader from '@/components/sport-team/TeamHeader.vue';
 import TeamMetricsCard from '@/components/sport-team/TeamMetricsCard.vue';
@@ -52,10 +53,68 @@ const {
     displayUpcomingGames,
     overviewSeasonStatTiles,
 } = useSportTeamData(props);
+
+const page = usePage();
+const pageTitle = computed(() => (teamData.value ? props.config.headTitle(teamData.value) : 'Team'));
+const teamName = computed(() => (teamData.value ? props.config.teamDisplayName(teamData.value) : 'Team'));
+const pageDescription = computed(() =>
+    teamData.value
+        ? `${teamName.value} ${props.config.sportLabel} team profile, recent form, schedule, and analytics from PickSports.`
+        : `${props.config.sportLabel} team profile and analytics from PickSports.`,
+);
+const canonicalUrl = computed(() => {
+    const path = (page.url ?? '/').split('?')[0] || '/';
+    if (typeof window !== 'undefined') {
+        return `${window.location.origin}${path}`;
+    }
+    return `https://picksports.app${path}`;
+});
+const imageUrl = computed(() => props.config.teamLogo(teamData.value) || 'https://picksports.app/icon-512.png?v=ps-gradient-2');
+const webPageSchema = computed(() =>
+    JSON.stringify(
+        {
+            '@context': 'https://schema.org',
+            '@type': 'WebPage',
+            name: pageTitle.value,
+            description: pageDescription.value,
+            url: canonicalUrl.value,
+        },
+        null,
+        0,
+    ),
+);
+const sportsTeamSchema = computed(() =>
+    teamData.value
+        ? JSON.stringify(
+            {
+                '@context': 'https://schema.org',
+                '@type': 'SportsTeam',
+                name: teamName.value,
+                sport: props.config.sportLabel,
+                url: canonicalUrl.value,
+                logo: imageUrl.value,
+            },
+            null,
+            0,
+        )
+        : '',
+);
 </script>
 
 <template>
-    <Head :title="teamData ? config.headTitle(teamData) : 'Team'" />
+    <Head :title="pageTitle">
+        <meta head-key="description" name="description" :content="pageDescription" />
+        <link head-key="canonical" rel="canonical" :href="canonicalUrl" />
+        <meta head-key="og:title" property="og:title" :content="pageTitle" />
+        <meta head-key="og:description" property="og:description" :content="pageDescription" />
+        <meta head-key="og:url" property="og:url" :content="canonicalUrl" />
+        <meta head-key="og:image" property="og:image" :content="imageUrl" />
+        <meta head-key="twitter:title" name="twitter:title" :content="pageTitle" />
+        <meta head-key="twitter:description" name="twitter:description" :content="pageDescription" />
+        <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
+        <script head-key="schema-webpage-team" type="application/ld+json" v-html="webPageSchema" />
+        <script v-if="sportsTeamSchema" head-key="schema-sportsteam" type="application/ld+json" v-html="sportsTeamSchema" />
+    </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div v-if="!teamData && loading" class="flex h-full flex-1 flex-col gap-4 p-4">

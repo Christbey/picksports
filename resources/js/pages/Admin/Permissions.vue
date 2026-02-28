@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { Head, router } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 
@@ -9,15 +9,17 @@ interface Permission {
     name: string;
 }
 
-interface Role {
+interface Tier {
     id: number;
     name: string;
+    slug: string;
     users_count: number;
     permissions: string[];
 }
 
 const props = defineProps<{
-    roles: Role[];
+    roles: Array<{ id: number; name: string; users_count: number; permissions: string[] }>;
+    tiers: Tier[];
     permissions: Permission[];
 }>();
 
@@ -32,15 +34,14 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const expandedRoles = ref<Set<number>>(new Set());
+const savingTierId = ref<number | null>(null);
 
-function toggleRole(roleId: number) {
-    if (expandedRoles.value.has(roleId)) {
-        expandedRoles.value.delete(roleId);
-    } else {
-        expandedRoles.value.add(roleId);
-    }
-}
+const selectedPermissionsByTier = ref<Record<number, string[]>>(
+    props.tiers.reduce<Record<number, string[]>>((acc, tier) => {
+        acc[tier.id] = [...tier.permissions].sort();
+        return acc;
+    }, {}),
+);
 
 function getRoleBadgeColor(roleName: string): string {
     switch (roleName) {
@@ -65,16 +66,18 @@ function formatPermissionName(permission: string): string {
 }
 
 function getPermissionCategory(permission: string): string {
+    if (permission.startsWith('view-prediction-')) return 'Prediction Data';
     if (permission.startsWith('view-')) return 'View Access';
     if (permission.startsWith('access-')) return 'Feature Access';
     if (permission.startsWith('receive-')) return 'Notifications';
+    if (permission.startsWith('export-')) return 'Exports';
     return 'Other';
 }
 
-function groupPermissionsByCategory(permissions: Permission[]): Record<string, Permission[]> {
+const groupedPermissions = computed<Record<string, Permission[]>>(() => {
     const grouped: Record<string, Permission[]> = {};
 
-    permissions.forEach(permission => {
+    props.permissions.forEach(permission => {
         const category = getPermissionCategory(permission.name);
         if (!grouped[category]) {
             grouped[category] = [];
@@ -83,9 +86,35 @@ function groupPermissionsByCategory(permissions: Permission[]): Record<string, P
     });
 
     return grouped;
+});
+
+function hasPermission(tierId: number, permissionName: string): boolean {
+    return (selectedPermissionsByTier.value[tierId] ?? []).includes(permissionName);
 }
 
-const groupedPermissions = groupPermissionsByCategory(props.permissions);
+function togglePermission(tierId: number, permissionName: string): void {
+    const currentPermissions = selectedPermissionsByTier.value[tierId] ?? [];
+
+    if (currentPermissions.includes(permissionName)) {
+        selectedPermissionsByTier.value[tierId] = currentPermissions.filter(permission => permission !== permissionName);
+        return;
+    }
+
+    selectedPermissionsByTier.value[tierId] = [...currentPermissions, permissionName].sort();
+}
+
+function saveTierPermissions(tier: Tier): void {
+    savingTierId.value = tier.id;
+
+    router.patch(`/admin/permissions/tiers/${tier.id}`, {
+        permissions: selectedPermissionsByTier.value[tier.id] ?? [],
+    }, {
+        preserveScroll: true,
+        onFinish: () => {
+            savingTierId.value = null;
+        },
+    });
+}
 </script>
 
 <template>
@@ -93,113 +122,63 @@ const groupedPermissions = groupPermissionsByCategory(props.permissions);
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-2xl font-bold">Manage Permissions</h1>
-                    <p class="mt-1 text-muted-foreground">
-                        View roles and permissions across the application
-                    </p>
-                </div>
+            <div>
+                <h1 class="text-2xl font-bold">Manage Tier Permissions</h1>
+                <p class="mt-1 text-muted-foreground">
+                    Edit tier permissions directly. Saving a tier updates and syncs its matching role automatically.
+                </p>
             </div>
 
-            <div class="grid gap-6 lg:grid-cols-2">
-                <!-- Roles Section -->
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6">
-                    <h2 class="mb-4 text-lg font-semibold">Roles</h2>
-                    <p class="mb-4 text-sm text-muted-foreground">
-                        Roles are automatically synced from subscription tiers. Each role is assigned specific permissions.
-                    </p>
-
-                    <div class="space-y-3">
-                        <div
-                            v-for="role in roles"
-                            :key="role.id"
-                            class="rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
-                        >
-                            <button
-                                @click="toggleRole(role.id)"
-                                class="flex w-full items-center justify-between text-left"
+            <div class="space-y-4">
+                <div
+                    v-for="tier in tiers"
+                    :key="tier.id"
+                    class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                >
+                    <div class="mb-4 flex items-center justify-between gap-4">
+                        <div class="flex items-center gap-3">
+                            <span
+                                :class="['inline-block rounded-full px-3 py-1 text-sm font-medium capitalize', getRoleBadgeColor(tier.slug)]"
                             >
-                                <div class="flex items-center gap-3">
-                                    <span
-                                        :class="['inline-block rounded-full px-3 py-1 text-sm font-medium capitalize', getRoleBadgeColor(role.name)]"
-                                    >
-                                        {{ role.name }}
-                                    </span>
-                                    <span class="text-sm text-muted-foreground">
-                                        {{ role.users_count }} {{ role.users_count === 1 ? 'user' : 'users' }}
-                                    </span>
-                                </div>
-                                <svg
-                                    :class="['h-5 w-5 transition-transform', expandedRoles.has(role.id) ? 'rotate-180' : '']"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    viewBox="0 0 24 24"
-                                >
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                                </svg>
-                            </button>
-
-                            <div
-                                v-if="expandedRoles.has(role.id)"
-                                class="mt-3 space-y-2 border-t border-sidebar-border pt-3"
-                            >
-                                <p class="text-sm font-medium">Permissions ({{ role.permissions.length }}):</p>
-                                <div class="flex flex-wrap gap-2">
-                                    <span
-                                        v-for="permission in role.permissions"
-                                        :key="permission"
-                                        class="inline-block rounded-md bg-white dark:bg-sidebar px-2 py-1 text-xs"
-                                    >
-                                        {{ formatPermissionName(permission) }}
-                                    </span>
-                                </div>
-                            </div>
+                                {{ tier.name }}
+                            </span>
+                            <span class="text-sm text-muted-foreground">
+                                {{ tier.users_count }} {{ tier.users_count === 1 ? 'user' : 'users' }}
+                            </span>
                         </div>
+                        <button
+                            type="button"
+                            :disabled="savingTierId === tier.id"
+                            class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                            @click="saveTierPermissions(tier)"
+                        >
+                            {{ savingTierId === tier.id ? 'Saving...' : 'Save Tier Permissions' }}
+                        </button>
                     </div>
-                </div>
-
-                <!-- Permissions Section -->
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6">
-                    <h2 class="mb-4 text-lg font-semibold">All Permissions</h2>
-                    <p class="mb-4 text-sm text-muted-foreground">
-                        All available permissions in the system, grouped by category.
-                    </p>
 
                     <div class="space-y-4">
                         <div
                             v-for="(categoryPermissions, category) in groupedPermissions"
-                            :key="category"
+                            :key="`${tier.id}-${category}`"
                             class="rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
                         >
                             <h3 class="mb-3 text-sm font-semibold">{{ category }}</h3>
-                            <div class="space-y-1">
-                                <div
+                            <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                                <label
                                     v-for="permission in categoryPermissions"
                                     :key="permission.id"
-                                    class="flex items-center justify-between rounded-md bg-white dark:bg-sidebar px-3 py-2 text-sm"
+                                    class="flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-sm dark:bg-sidebar"
                                 >
+                                    <input
+                                        type="checkbox"
+                                        :checked="hasPermission(tier.id, permission.name)"
+                                        class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                        @change="togglePermission(tier.id, permission.name)"
+                                    >
                                     <span>{{ formatPermissionName(permission.name) }}</span>
-                                    <span class="font-mono text-xs text-muted-foreground">{{ permission.name }}</span>
-                                </div>
+                                </label>
                             </div>
                         </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Info Box -->
-            <div class="rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950 p-4">
-                <div class="flex gap-3">
-                    <svg class="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div class="text-sm text-blue-900 dark:text-blue-100">
-                        <p class="font-medium">How Permissions Work</p>
-                        <p class="mt-1">
-                            Roles are automatically created from subscription tiers. When users subscribe or change their subscription,
-                            their role is automatically updated via Stripe webhooks. Permissions are assigned to roles based on the tier's features.
-                        </p>
                     </div>
                 </div>
             </div>

@@ -9,6 +9,8 @@ use Illuminate\Database\Eloquent\Factories\Factory;
  */
 class WcbbPredictionFactory extends Factory
 {
+    protected $model = \App\Models\WCBB\Prediction::class;
+
     /**
      * Define the model's default state.
      *

@@ -20,8 +20,8 @@ class ScoringPatternTrendCollector extends TrendCollector
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            $teamFirstHalf = ($team[0] ?? 0) + ($team[1] ?? 0);
-            $oppFirstHalf = ($opp[0] ?? 0) + ($opp[1] ?? 0);
+            $teamFirstHalf = $this->firstHalfTotal($team);
+            $oppFirstHalf = $this->firstHalfTotal($opp);
 
             return $teamFirstHalf < $oppFirstHalf && $this->won($game);
         });
@@ -34,8 +34,8 @@ class ScoringPatternTrendCollector extends TrendCollector
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            $teamFirstHalf = ($team[0] ?? 0) + ($team[1] ?? 0);
-            $oppFirstHalf = ($opp[0] ?? 0) + ($opp[1] ?? 0);
+            $teamFirstHalf = $this->firstHalfTotal($team);
+            $oppFirstHalf = $this->firstHalfTotal($opp);
 
             return $teamFirstHalf > $oppFirstHalf && ! $this->won($game);
         });
@@ -47,15 +47,22 @@ class ScoringPatternTrendCollector extends TrendCollector
         $scoredEveryQuarter = $this->countWhere(function ($game) {
             $team = $this->teamLinescores($game);
 
-            return count($team) >= 4 &&
-                   ($team[0] ?? 0) > 0 &&
-                   ($team[1] ?? 0) > 0 &&
-                   ($team[2] ?? 0) > 0 &&
-                   ($team[3] ?? 0) > 0;
+            if ($this->isCollegeBasketball()) {
+                return count($team) >= 2
+                    && ($team[0] ?? 0) > 0
+                    && ($team[1] ?? 0) > 0;
+            }
+
+            return count($team) >= 4
+                && ($team[0] ?? 0) > 0
+                && ($team[1] ?? 0) > 0
+                && ($team[2] ?? 0) > 0
+                && ($team[3] ?? 0) > 0;
         });
 
         if ($this->isSignificant($scoredEveryQuarter)) {
-            $messages[] = "The {$this->teamAbbr} have scored in every quarter in {$scoredEveryQuarter} of their last {$count} games";
+            $periodTerm = $this->isCollegeBasketball() ? 'half' : 'quarter';
+            $messages[] = "The {$this->teamAbbr} have scored in every {$periodTerm} in {$scoredEveryQuarter} of their last {$count} games";
         }
 
         $fastStarts = $this->countWhere(function ($game) {
@@ -66,9 +73,22 @@ class ScoringPatternTrendCollector extends TrendCollector
         });
 
         if ($fastStarts >= 3) {
-            $messages[] = "The {$this->teamAbbr} have started fast (dominating Q1) in {$fastStarts} of their last {$count} games";
+            $periodLabel = $this->isCollegeBasketball() ? '1H' : 'Q1';
+            $messages[] = "The {$this->teamAbbr} have started fast (dominating {$periodLabel}) in {$fastStarts} of their last {$count} games";
         }
 
         return $messages;
+    }
+
+    /**
+     * @param  array<int, int>  $lines
+     */
+    private function firstHalfTotal(array $lines): int
+    {
+        if ($this->isCollegeBasketball()) {
+            return (int) ($lines[0] ?? 0);
+        }
+
+        return (int) (($lines[0] ?? 0) + ($lines[1] ?? 0));
     }
 }

@@ -8,7 +8,6 @@ use App\Models\NFL\Team;
 uses()->group('nfl', 'live-predictions');
 
 beforeEach(function () {
-    $this->refreshDatabase();
     $this->action = new UpdateLivePrediction;
     $this->homeTeam = Team::factory()->create();
     $this->awayTeam = Team::factory()->create();
@@ -44,6 +43,38 @@ test('returns null for completed game', function () {
     $result = $this->action->execute($game->fresh());
 
     expect($result)->toBeNull();
+});
+
+test('clears stale live data when game is no longer in progress', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'period' => 4,
+        'home_score' => 28,
+        'away_score' => 21,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'live_predicted_spread' => 6.5,
+        'live_win_probability' => 0.910,
+        'live_predicted_total' => 49.5,
+        'live_seconds_remaining' => 180,
+        'live_updated_at' => now(),
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    expect($result)->toBeNull();
+
+    $prediction->refresh();
+
+    expect($prediction->live_predicted_spread)->toBeNull()
+        ->and($prediction->live_win_probability)->toBeNull()
+        ->and($prediction->live_predicted_total)->toBeNull()
+        ->and($prediction->live_seconds_remaining)->toBeNull()
+        ->and($prediction->live_updated_at)->toBeNull();
 });
 
 test('returns null for game without prediction', function () {
@@ -171,6 +202,17 @@ test('handles overtime correctly', function () {
 
     // OT capped at 10 min (600 sec), 5:00 remaining = 300 sec
     expect($result['live_seconds_remaining'])->toBe(300);
+});
+
+test('uses regulation elapsed baseline at overtime start', function () {
+    $reflection = new ReflectionClass($this->action);
+    $method = $reflection->getMethod('calculateActualSecondsElapsed');
+    $method->setAccessible(true);
+
+    $elapsedAtOtStart = $method->invoke($this->action, 5, '10:00');
+
+    // At OT start, elapsed time should be full regulation (3600 seconds), not less.
+    expect($elapsedAtOtStart)->toBe(3600);
 });
 
 test('handles halftime status', function () {

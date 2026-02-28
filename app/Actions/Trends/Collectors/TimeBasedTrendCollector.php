@@ -50,7 +50,9 @@ class TimeBasedTrendCollector extends TrendCollector
         }
 
         try {
-            $time = Carbon::parse($game->game_time);
+            $sourceTimezone = config("trends.timezones.{$this->league}.source", 'UTC');
+            $displayTimezone = config("trends.timezones.{$this->league}.display", $sourceTimezone);
+            $time = Carbon::parse($game->game_time, $sourceTimezone)->setTimezone($displayTimezone);
 
             return $time->hour;
         } catch (\Exception) {

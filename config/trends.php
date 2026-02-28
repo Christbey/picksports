@@ -78,6 +78,35 @@ return [
             'early_game_hour' => 12,
             'late_game_hour' => 20,
         ],
+        'mlb' => [
+            'scoring' => [3, 4, 5, 6],
+            'margin' => [1, 2, 3, 4],
+            'win_percentage' => 0.6,
+            'close_game_margin' => 2,
+            'short_rest_days' => 1,
+            'primetime_networks' => ['ESPN', 'FOX', 'FS1', 'MLB Network', 'TBS'],
+            'early_game_hour' => 13,
+            'late_game_hour' => 22,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Timezone Normalization For Time-Based Trends
+    |--------------------------------------------------------------------------
+    |
+    | Normalize stored game_time values from source timezone to display timezone
+    | before classifying as early/late.
+    |
+    */
+    'timezones' => [
+        'nfl' => ['source' => 'UTC', 'display' => 'America/New_York'],
+        'cfb' => ['source' => 'UTC', 'display' => 'America/New_York'],
+        'nba' => ['source' => 'UTC', 'display' => 'America/New_York'],
+        'wnba' => ['source' => 'UTC', 'display' => 'America/New_York'],
+        'cbb' => ['source' => 'UTC', 'display' => 'America/New_York'],
+        'wcbb' => ['source' => 'UTC', 'display' => 'America/New_York'],
+        'mlb' => ['source' => 'UTC', 'display' => 'America/New_York'],
     ],
 
     /*

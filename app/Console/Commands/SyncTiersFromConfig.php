@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\SubscriptionTier;
+use App\Services\Admin\TierPermissionSyncService;
 use Illuminate\Console\Command;
 
 class SyncTiersFromConfig extends Command
@@ -10,6 +11,11 @@ class SyncTiersFromConfig extends Command
     protected $signature = 'tiers:sync';
 
     protected $description = 'Sync subscription tiers from config to database';
+
+    public function __construct(private readonly TierPermissionSyncService $tierPermissionSyncService)
+    {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -21,7 +27,7 @@ class SyncTiersFromConfig extends Command
         foreach ($configTiers as $slug => $tierData) {
             $this->info("Processing tier: {$tierData['name']}");
 
-            SubscriptionTier::updateOrCreate(
+            $tier = SubscriptionTier::updateOrCreate(
                 ['slug' => $slug],
                 [
                     'name' => $tierData['name'],
@@ -39,6 +45,7 @@ class SyncTiersFromConfig extends Command
                     'sort_order' => $sortOrder++,
                 ]
             );
+            $this->tierPermissionSyncService->syncTierRolePermissions($tier);
 
             $this->line("  ✓ {$tierData['name']} synced");
         }

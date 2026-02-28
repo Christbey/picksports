@@ -3,6 +3,8 @@
 namespace Database\Seeders;
 
 use App\Models\SubscriptionTier;
+use App\Services\Admin\TierPermissionSyncService;
+use App\Support\PredictionDataPermissions;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -20,7 +22,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
     protected function createPermissions(): void
     {
-        $permissions = [
+        $permissions = array_merge([
             'view-nba-predictions',
             'view-nfl-predictions',
             'view-cbb-predictions',
@@ -35,7 +37,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-priority-support',
             'trigger-alerts',
             'view-alert-stats',
-        ];
+        ], PredictionDataPermissions::allPermissionNames());
 
         foreach ($permissions as $permission) {
             Permission::firstOrCreate(['name' => $permission]);
@@ -46,50 +48,15 @@ class RolesAndPermissionsSeeder extends Seeder
 
     protected function createRolesFromTiers(): void
     {
+        $tierPermissionSyncService = app(TierPermissionSyncService::class);
         $tiers = SubscriptionTier::active()->orderBy('sort_order')->get();
 
         foreach ($tiers as $tier) {
-            $role = Role::firstOrCreate(['name' => $tier->slug]);
-
-            $permissions = $this->getPermissionsForTier($tier);
-
-            $role->syncPermissions($permissions);
+            $role = $tierPermissionSyncService->syncTierRolePermissions($tier);
+            $permissions = $role->permissions->pluck('name')->values()->all();
 
             $this->command->info("Role '{$tier->slug}' created with ".count($permissions).' permissions');
         }
-    }
-
-    protected function getPermissionsForTier(SubscriptionTier $tier): array
-    {
-        $permissions = [];
-
-        if (isset($tier->features['sports_access']) && is_array($tier->features['sports_access'])) {
-            foreach ($tier->features['sports_access'] as $sport) {
-                $permissions[] = 'view-'.strtolower($sport).'-predictions';
-            }
-        }
-
-        if ($tier->features['export_predictions'] ?? false) {
-            $permissions[] = 'export-predictions';
-        }
-
-        if ($tier->features['api_access'] ?? false) {
-            $permissions[] = 'access-api';
-        }
-
-        if ($tier->features['advanced_analytics'] ?? false) {
-            $permissions[] = 'access-advanced-analytics';
-        }
-
-        if ($tier->features['email_alerts'] ?? false) {
-            $permissions[] = 'receive-email-alerts';
-        }
-
-        if ($tier->features['priority_support'] ?? false) {
-            $permissions[] = 'access-priority-support';
-        }
-
-        return $permissions;
     }
 
     protected function createAdminRole(): void

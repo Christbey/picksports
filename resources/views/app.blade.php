@@ -33,8 +33,19 @@
 
         <title inertia>{{ config('app.name', 'Laravel') }}</title>
 
-        <link rel="icon" href="/favicon.ico" sizes="any">
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+        <meta name="application-name" content="{{ config('app.name', 'Laravel') }}">
+        <meta name="mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-title" content="{{ config('app.name', 'Laravel') }}">
+        <meta name="apple-mobile-web-app-status-bar-style" content="default">
+        <meta name="format-detection" content="telephone=no">
+        <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+        <meta name="theme-color" content="#0b0f19" media="(prefers-color-scheme: dark)">
+
+        <link rel="icon" href="/favicon.svg?v=ps-gradient-1" type="image/svg+xml">
+        <link rel="shortcut icon" href="/favicon.svg?v=ps-gradient-1" type="image/svg+xml">
+        <link rel="alternate icon" href="/favicon.ico?v=ps-gradient-1" type="image/x-icon" sizes="32x32">
+        <link rel="manifest" href="/site.webmanifest">
         <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 
         <link rel="preconnect" href="https://fonts.bunny.net">

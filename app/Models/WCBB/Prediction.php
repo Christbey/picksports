@@ -91,4 +91,9 @@ class Prediction extends Model
     {
         return $this->belongsTo(Game::class, 'game_id');
     }
+
+    protected static function newFactory(): \Database\Factories\WcbbPredictionFactory
+    {
+        return \Database\Factories\WcbbPredictionFactory::new();
+    }
 }

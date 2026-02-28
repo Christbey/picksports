@@ -29,6 +29,11 @@ abstract class AbstractFootballUpdateLivePrediction
     public function execute(object $game): ?array
     {
         if (! $this->isGameInProgress($game)) {
+            $prediction = $game->prediction;
+            if ($prediction && $prediction->live_seconds_remaining !== null) {
+                $this->clearLivePrediction($prediction);
+            }
+
             return null;
         }
 
@@ -39,26 +44,31 @@ abstract class AbstractFootballUpdateLivePrediction
         }
 
         $secondsRemaining = $this->calculateSecondsRemaining($game->period, $game->game_clock);
-        $secondsElapsed = self::TOTAL_GAME_SECONDS - $secondsRemaining;
+        $actualSecondsElapsed = $this->calculateActualSecondsElapsed($game->period, $game->game_clock);
+        $effectiveGameLength = $this->calculateEffectiveGameLength($game->period);
+        $timeElapsedFraction = min(1.0, $actualSecondsElapsed / $effectiveGameLength);
         $margin = ($game->home_score ?? 0) - ($game->away_score ?? 0);
         $totalPoints = ($game->home_score ?? 0) + ($game->away_score ?? 0);
 
         $liveWinProbability = $this->calculateLiveWinProbability(
             $margin,
             $secondsRemaining,
+            $timeElapsedFraction,
             $prediction->win_probability ?? 0.5
         );
 
         $livePredictedSpread = $this->calculateLiveSpread(
             $margin,
             $secondsRemaining,
+            $timeElapsedFraction,
             $prediction->predicted_spread ?? 0
         );
 
         $livePredictedTotal = $this->calculateLiveTotal(
             $totalPoints,
-            $secondsElapsed,
+            $actualSecondsElapsed,
             $secondsRemaining,
+            $effectiveGameLength,
             $prediction->predicted_total ?? self::DEFAULT_PRE_GAME_TOTAL
         );
 
@@ -94,23 +104,69 @@ abstract class AbstractFootballUpdateLivePrediction
         );
     }
 
-    protected function calculateLiveWinProbability(int $margin, int $secondsRemaining, float $preGameProbability): float
+    protected function calculateActualSecondsElapsed(int $period, ?string $gameClock): int
     {
-        return $this->footballLiveWinProbability(
-            $margin,
-            $secondsRemaining,
-            $preGameProbability,
-            self::TOTAL_GAME_SECONDS
-        );
+        if ($period < 1) {
+            return 0;
+        }
+
+        $clockSeconds = $this->parseGameClock($gameClock);
+
+        if ($period <= 4) {
+            $completedQuarters = $period - 1;
+            $elapsedInCurrentQuarter = self::SECONDS_PER_QUARTER - $clockSeconds;
+
+            return ($completedQuarters * self::SECONDS_PER_QUARTER) + $elapsedInCurrentQuarter;
+        }
+
+        $completedOtPeriods = $period - 5;
+        $elapsedInCurrentOt = self::MAX_OVERTIME_SECONDS - min($clockSeconds, self::MAX_OVERTIME_SECONDS);
+
+        return self::TOTAL_GAME_SECONDS + ($completedOtPeriods * self::MAX_OVERTIME_SECONDS) + $elapsedInCurrentOt;
     }
 
-    protected function calculateLiveSpread(int $currentMargin, int $secondsRemaining, float $preGameSpread): float
+    protected function calculateEffectiveGameLength(int $period): int
+    {
+        if ($period <= 4) {
+            return self::TOTAL_GAME_SECONDS;
+        }
+
+        $otPeriods = $period - 4;
+
+        return self::TOTAL_GAME_SECONDS + ($otPeriods * self::MAX_OVERTIME_SECONDS);
+    }
+
+    protected function calculateLiveWinProbability(int $margin, int $secondsRemaining, float $timeElapsedFraction, float $preGameProbability): float
+    {
+        if ($secondsRemaining <= 0) {
+            if ($margin > 0) {
+                return 0.999;
+            }
+            if ($margin < 0) {
+                return 0.001;
+            }
+
+            return 0.5;
+        }
+
+        $pointValue = 0.02 + (0.15 * pow($timeElapsedFraction, 2));
+        $marginAdjustment = $margin * $pointValue;
+
+        $preGameProbability = max(0.01, min(0.99, $preGameProbability));
+        $preGameLogOdds = log($preGameProbability / (1 - $preGameProbability));
+        $preGameWeight = 1 - pow($timeElapsedFraction, 0.5);
+        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment;
+        $probability = 1 / (1 + exp(-$combinedLogOdds));
+
+        return max(0.001, min(0.999, $probability));
+    }
+
+    protected function calculateLiveSpread(int $currentMargin, int $secondsRemaining, float $timeElapsedFraction, float $preGameSpread): float
     {
         if ($secondsRemaining <= 0) {
             return (float) $currentMargin;
         }
 
-        $timeElapsedFraction = 1 - ($secondsRemaining / self::TOTAL_GAME_SECONDS);
         $remainingPreGameContribution = $preGameSpread * (1 - $timeElapsedFraction);
         $currentPaceMargin = $timeElapsedFraction > 0
             ? ($currentMargin / $timeElapsedFraction) * (1 - $timeElapsedFraction)
@@ -124,19 +180,24 @@ abstract class AbstractFootballUpdateLivePrediction
         return ($liveSpread * (1 - $regressionWeight)) + ($currentMargin * $regressionWeight);
     }
 
-    protected function calculateLiveTotal(int $currentTotal, int $secondsElapsed, int $secondsRemaining, float $preGameTotal): float
-    {
+    protected function calculateLiveTotal(
+        int $currentTotal,
+        int $actualSecondsElapsed,
+        int $secondsRemaining,
+        int $effectiveGameLength,
+        float $preGameTotal
+    ): float {
         if ($secondsRemaining <= 0) {
             return (float) $currentTotal;
         }
 
-        if ($secondsElapsed <= 0) {
+        if ($actualSecondsElapsed <= 0) {
             return $preGameTotal;
         }
 
-        $timeElapsedFraction = $secondsElapsed / self::TOTAL_GAME_SECONDS;
-        $currentPace = $currentTotal / $secondsElapsed;
-        $pacePredictedTotal = $currentPace * self::TOTAL_GAME_SECONDS;
+        $timeElapsedFraction = $actualSecondsElapsed / $effectiveGameLength;
+        $currentPace = $currentTotal / $actualSecondsElapsed;
+        $pacePredictedTotal = $currentPace * $effectiveGameLength;
         $remainingPreGamePoints = $preGameTotal * (1 - $timeElapsedFraction);
         $paceWeight = pow($timeElapsedFraction, 0.7);
 

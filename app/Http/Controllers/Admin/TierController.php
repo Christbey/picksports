@@ -8,6 +8,7 @@ use App\Http\Resources\Admin\NotificationTemplateAdminResource;
 use App\Http\Resources\Admin\SubscriptionTierAdminResource;
 use App\Models\NotificationTemplate;
 use App\Models\SubscriptionTier;
+use App\Services\Admin\TierPermissionSyncService;
 use Illuminate\Http\RedirectResponse;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -15,6 +16,8 @@ use Inertia\Response;
 class TierController extends Controller
 {
     private const INDEX_ROUTE = 'admin.tiers.index';
+
+    public function __construct(private readonly TierPermissionSyncService $tierPermissionSyncService) {}
 
     public function index(): Response
     {
@@ -44,6 +47,7 @@ class TierController extends Controller
     public function store(TierRequest $request): RedirectResponse
     {
         $tier = SubscriptionTier::create($request->validated());
+        $this->tierPermissionSyncService->syncTierRolePermissions($tier);
 
         return $this->redirectSuccess(self::INDEX_ROUTE, $this->successMessage('created', $tier->name));
     }
@@ -60,6 +64,7 @@ class TierController extends Controller
     public function update(TierRequest $request, SubscriptionTier $tier): RedirectResponse
     {
         $tier->update($request->validated());
+        $this->tierPermissionSyncService->syncTierRolePermissions($tier);
 
         return $this->redirectSuccess(self::INDEX_ROUTE, $this->successMessage('updated', $tier->name));
     }

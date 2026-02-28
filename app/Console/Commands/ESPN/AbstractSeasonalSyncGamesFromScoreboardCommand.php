@@ -13,7 +13,7 @@ abstract class AbstractSeasonalSyncGamesFromScoreboardCommand extends AbstractSy
     protected function seasonOptionSegment(): string
     {
         return sprintf(
-            '--season= : Sync entire season (e.g., %s)',
+            '{--season= : Sync entire season (e.g., %s)}',
             $this->seasonSyncExample()
         );
     }

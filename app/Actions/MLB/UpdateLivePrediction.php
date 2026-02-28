@@ -22,6 +22,11 @@ class UpdateLivePrediction
     public function execute(Game $game): ?array
     {
         if (! $this->isGameInProgress($game)) {
+            $prediction = $game->prediction;
+            if ($prediction && $prediction->live_outs_remaining !== null) {
+                $this->clearLivePrediction($prediction);
+            }
+
             return null;
         }
 

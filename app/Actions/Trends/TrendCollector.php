@@ -142,20 +142,33 @@ abstract class TrendCollector
             ];
         }
 
-        // Check if it's an array of objects with 'period' and 'value' keys
-        if (isset($data[0]) && is_array($data[0]) && array_key_exists('value', $data[0])) {
+        // Check if it's an array of period objects (ESPN shapes like value/displayValue)
+        if (isset($data[0]) && is_array($data[0])) {
             $result = [];
-            foreach ($data as $period) {
-                $periodIndex = ($period['period'] ?? 1) - 1;
-                $result[$periodIndex] = (int) ($period['value'] ?? 0);
-            }
-            ksort($result);
+            foreach ($data as $index => $period) {
+                if (! array_key_exists('value', $period) && ! array_key_exists('displayValue', $period)) {
+                    continue;
+                }
 
-            return array_values($result);
+                $rawValue = $period['value'] ?? $period['displayValue'] ?? 0;
+                $periodIndex = isset($period['period']) && is_numeric($period['period'])
+                    ? max(0, ((int) $period['period']) - 1)
+                    : $index;
+
+                $result[$periodIndex] = (int) $rawValue;
+            }
+            if (! empty($result)) {
+                ksort($result);
+
+                return array_values($result);
+            }
         }
 
         // Already a simple indexed array
-        return array_map('intval', $data);
+        return array_map(
+            static fn ($value) => is_scalar($value) ? (int) $value : 0,
+            $data
+        );
     }
 
     /**
@@ -276,6 +289,21 @@ abstract class TrendCollector
     protected function isBaseball(): bool
     {
         return $this->league === 'mlb';
+    }
+
+    protected function isBasketball(): bool
+    {
+        return in_array($this->league, ['nba', 'wnba', 'cbb', 'wcbb'], true);
+    }
+
+    protected function isCollegeBasketball(): bool
+    {
+        return in_array($this->league, ['cbb', 'wcbb'], true);
+    }
+
+    protected function isFootball(): bool
+    {
+        return in_array($this->league, ['nfl', 'cfb'], true);
     }
 
     /**

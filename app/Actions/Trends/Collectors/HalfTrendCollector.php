@@ -14,46 +14,54 @@ class HalfTrendCollector extends TrendCollector
     public function collect(): array
     {
         $messages = [];
-        $count = $this->games->count();
+        $gamesWithLinescores = $this->games->filter(function ($game) {
+            return ! empty($this->teamLinescores($game)) && ! empty($this->opponentLinescores($game));
+        });
 
-        $firstHalfWins = $this->countWhere(function ($game) {
+        if ($gamesWithLinescores->isEmpty()) {
+            return $messages;
+        }
+
+        $count = $gamesWithLinescores->count();
+
+        $firstHalfWins = $gamesWithLinescores->filter(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            $teamFirstHalf = ($team[0] ?? 0) + ($team[1] ?? 0);
-            $oppFirstHalf = ($opp[0] ?? 0) + ($opp[1] ?? 0);
+            $teamFirstHalf = $this->firstHalfScore($team);
+            $oppFirstHalf = $this->firstHalfScore($opp);
 
             return $teamFirstHalf > $oppFirstHalf;
-        });
+        })->count();
 
-        if ($this->isSignificant($firstHalfWins)) {
+        if ($this->isSignificant($firstHalfWins, $count)) {
             $messages[] = "The {$this->teamAbbr} have won the first half in {$firstHalfWins} of their last {$count} games";
         }
 
-        $secondHalfWins = $this->countWhere(function ($game) {
+        $secondHalfWins = $gamesWithLinescores->filter(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            $teamSecondHalf = ($team[2] ?? 0) + ($team[3] ?? 0);
-            $oppSecondHalf = ($opp[2] ?? 0) + ($opp[3] ?? 0);
+            $teamSecondHalf = $this->secondHalfScore($team);
+            $oppSecondHalf = $this->secondHalfScore($opp);
 
             return $teamSecondHalf > $oppSecondHalf;
-        });
+        })->count();
 
-        if ($this->isSignificant($secondHalfWins)) {
+        if ($this->isSignificant($secondHalfWins, $count)) {
             $messages[] = "The {$this->teamAbbr} have won the second half in {$secondHalfWins} of their last {$count} games";
         }
 
-        $avgFirstHalf = $this->games->avg(function ($game) {
+        $avgFirstHalf = $gamesWithLinescores->avg(function ($game) {
             $team = $this->teamLinescores($game);
 
-            return ($team[0] ?? 0) + ($team[1] ?? 0);
+            return $this->firstHalfScore($team);
         });
 
-        $avgSecondHalf = $this->games->avg(function ($game) {
+        $avgSecondHalf = $gamesWithLinescores->avg(function ($game) {
             $team = $this->teamLinescores($game);
 
-            return ($team[2] ?? 0) + ($team[3] ?? 0);
+            return $this->secondHalfScore($team);
         });
 
         if ($avgSecondHalf > $avgFirstHalf * 1.2) {
@@ -63,5 +71,29 @@ class HalfTrendCollector extends TrendCollector
         }
 
         return $messages;
+    }
+
+    /**
+     * @param  array<int, int>  $lines
+     */
+    private function firstHalfScore(array $lines): int
+    {
+        if ($this->isCollegeBasketball()) {
+            return (int) ($lines[0] ?? 0);
+        }
+
+        return (int) (($lines[0] ?? 0) + ($lines[1] ?? 0));
+    }
+
+    /**
+     * @param  array<int, int>  $lines
+     */
+    private function secondHalfScore(array $lines): int
+    {
+        if ($this->isCollegeBasketball()) {
+            return (int) ($lines[1] ?? 0);
+        }
+
+        return (int) (($lines[2] ?? 0) + ($lines[3] ?? 0));
     }
 }

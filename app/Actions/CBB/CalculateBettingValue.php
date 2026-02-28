@@ -57,12 +57,14 @@ class CalculateBettingValue
         // Find home team spread
         $homeSpread = null;
         $homePrice = null;
+        $awayPrice = null;
 
         foreach ($market['outcomes'] as $outcome) {
             if (str_contains($outcome['name'], $homeTeam) || $outcome['name'] === $game->odds_data['home_team']) {
                 $homeSpread = $outcome['point'] ?? null;
                 $homePrice = $outcome['price'] ?? -110;
-                break;
+            } else {
+                $awayPrice = $outcome['price'] ?? -110;
             }
         }
 
@@ -85,16 +87,18 @@ class CalculateBettingValue
 
         // Determine which side to bet
         $betHome = $prediction->predicted_spread > $marketSpreadModelConvention;
+        $selectedOdds = $betHome ? ($homePrice ?? -110) : ($awayPrice ?? -110);
+        $betLine = $betHome ? (float) $homeSpread : (float) (-$homeSpread);
 
         return [
             'type' => 'spread',
             'game_id' => $game->id,
-            'recommendation' => $betHome ? "Bet {$homeTeam}" : "Bet {$awayTeam}",
+            'recommendation' => ($betHome ? "Bet {$homeTeam}" : "Bet {$awayTeam}").' '.$this->formatLine($betLine),
             'bet_team' => $betHome ? $homeTeam : $awayTeam,
             'model_line' => round($prediction->predicted_spread, 1),
             'market_line' => round($marketSpreadModelConvention, 1),
             'edge' => round($edge, 1),
-            'odds' => $homePrice,
+            'odds' => $selectedOdds,
             'confidence' => round($prediction->confidence_score, 2),
             'reasoning' => $this->getSpreadReasoning($prediction->predicted_spread, $marketSpreadModelConvention, $betHome, $homeTeam, $awayTeam),
         ];
@@ -250,17 +254,13 @@ class CalculateBettingValue
     protected function getSpreadReasoning(float $modelSpread, float $marketSpread, bool $betHome, string $homeTeam, string $awayTeam): string
     {
         $diff = round(abs($modelSpread - $marketSpread), 1);
+        $betTeam = $betHome ? $homeTeam : $awayTeam;
 
-        $modelFavors = $modelSpread >= 0 ? $homeTeam : $awayTeam;
-        $marketFavors = $marketSpread >= 0 ? $homeTeam : $awayTeam;
+        return "Model has {$diff}-point value on {$betTeam}";
+    }
 
-        return sprintf(
-            'Model has %s by %.1f, market has %s by %.1f (%.1f point edge)',
-            $modelFavors,
-            abs($modelSpread),
-            $marketFavors,
-            abs($marketSpread),
-            $diff
-        );
+    protected function formatLine(float $line): string
+    {
+        return $line > 0 ? '+'.number_format($line, 1) : number_format($line, 1);
     }
 }

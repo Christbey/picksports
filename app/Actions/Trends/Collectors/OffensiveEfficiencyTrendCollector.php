@@ -13,6 +13,26 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
 
     public function collect(): array
     {
+        if ($this->isBasketball()) {
+            return $this->collectBasketball();
+        }
+
+        if ($this->isFootball()) {
+            return $this->collectFootball();
+        }
+
+        if ($this->isBaseball()) {
+            return $this->collectBaseball();
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function collectFootball(): array
+    {
         $messages = [];
 
         $gamesWithStats = $this->games->filter(fn ($g) => $this->teamStats($g) !== null);
@@ -44,13 +64,102 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
 
         $turnoversLow = $gamesWithStats->filter(function ($g) {
             $stats = $this->teamStats($g);
-            $turnovers = ($stats->fumbles_lost ?? 0) + ($stats->interceptions_thrown ?? 0);
+            $interceptions = $stats->interceptions_thrown ?? $stats->interceptions ?? 0;
+            $turnovers = ($stats->fumbles_lost ?? 0) + $interceptions;
 
             return $turnovers <= 1;
         })->count();
 
         if ($this->isSignificant($turnoversLow, $gamesWithStats->count())) {
             $messages[] = "The {$this->teamAbbr} have had 1 or fewer turnovers in {$turnoversLow} of their last {$gamesWithStats->count()} games";
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function collectBasketball(): array
+    {
+        $messages = [];
+
+        $gamesWithStats = $this->games->filter(fn ($g) => $this->teamStats($g) !== null);
+
+        if ($gamesWithStats->isEmpty()) {
+            return $messages;
+        }
+
+        $efficiencyValues = $gamesWithStats->map(function ($game) {
+            $stats = $this->teamStats($game);
+            $points = (float) ($stats->points ?? 0);
+            $possessions = (float) ($stats->possessions ?? 0);
+
+            if ($possessions <= 0) {
+                return null;
+            }
+
+            return ($points / $possessions) * 100;
+        })->filter(fn ($value) => $value !== null);
+
+        if ($efficiencyValues->isNotEmpty()) {
+            $avgOffEff = $efficiencyValues->avg();
+            $messages[] = "The {$this->teamAbbr} average ".number_format($avgOffEff, 1).' offensive rating (points per 100 possessions)';
+        }
+
+        $turnoversLow = $gamesWithStats->filter(function ($game) {
+            $stats = $this->teamStats($game);
+            $turnovers = (int) ($stats->turnovers ?? 0);
+
+            return $turnovers > 0 && $turnovers <= 12;
+        })->count();
+
+        if ($this->isSignificant($turnoversLow, $gamesWithStats->count())) {
+            $messages[] = "The {$this->teamAbbr} have committed 12 or fewer turnovers in {$turnoversLow} of their last {$gamesWithStats->count()} games";
+        }
+
+        $assistTurnoverRatios = $gamesWithStats->map(function ($game) {
+            $stats = $this->teamStats($game);
+            $assists = (float) ($stats->assists ?? 0);
+            $turnovers = (float) ($stats->turnovers ?? 0);
+
+            if ($turnovers <= 0) {
+                return null;
+            }
+
+            return $assists / $turnovers;
+        })->filter(fn ($ratio) => $ratio !== null);
+
+        if ($assistTurnoverRatios->isNotEmpty()) {
+            $avgAstTo = $assistTurnoverRatios->avg();
+            if ($avgAstTo >= 1.4) {
+                $messages[] = "The {$this->teamAbbr} are taking care of the ball with a ".number_format($avgAstTo, 2).' assist-to-turnover ratio';
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function collectBaseball(): array
+    {
+        $messages = [];
+        $gamesWithStats = $this->games->filter(fn ($g) => $this->teamStats($g) !== null);
+
+        if ($gamesWithStats->isEmpty()) {
+            return $messages;
+        }
+
+        $avgRuns = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->runs ?? 0);
+        if ($avgRuns > 0) {
+            $messages[] = "The {$this->teamAbbr} average ".number_format($avgRuns, 1).' runs per game';
+        }
+
+        $avgHits = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->hits ?? 0);
+        if ($avgHits >= 8) {
+            $messages[] = "The {$this->teamAbbr} average ".number_format($avgHits, 1).' hits per game';
         }
 
         return $messages;

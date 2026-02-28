@@ -4,6 +4,7 @@ namespace App\Jobs\ESPN\NBA;
 
 use App\Actions\ESPN\NBA\SyncGameDetails;
 use App\Actions\ESPN\NBA\SyncPlayerStats;
+use App\Actions\ESPN\NBA\SyncPlays;
 use App\Actions\ESPN\NBA\SyncTeamStats;
 use App\Services\ESPN\NBA\EspnService;
 use Illuminate\Bus\Queueable;
@@ -32,7 +33,8 @@ class FetchGameDetails implements ShouldBeUnique, ShouldQueue
         $service = new EspnService;
         $syncPlayerStats = new SyncPlayerStats;
         $syncTeamStats = new SyncTeamStats;
-        $action = new SyncGameDetails($service, $syncPlayerStats, $syncTeamStats);
+        $syncPlays = new SyncPlays($service);
+        $action = new SyncGameDetails($service, $syncPlayerStats, $syncTeamStats, $syncPlays);
 
         $result = $action->execute($this->eventId);
 

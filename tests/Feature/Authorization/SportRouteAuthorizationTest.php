@@ -77,6 +77,28 @@ it('allows team metrics pages with sport permission', function () {
         ->assertOk();
 });
 
+it('requires auth for player props routes', function () {
+    $this->get('/nba-player-props')
+        ->assertRedirect(route('login'));
+});
+
+it('denies player props routes without sport permission', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get('/nfl-player-props')
+        ->assertRedirect(route('subscription.plans'));
+});
+
+it('allows player props routes with sport permission', function () {
+    $user = User::factory()->create();
+    grantPermission($user, 'view-nfl-predictions');
+
+    $this->actingAs($user)
+        ->get('/nfl-player-props')
+        ->assertOk();
+});
+
 dataset('sport_api_paths', [
     ['nba', '/api/v1/nba/teams'],
     ['cbb', '/api/v1/cbb/teams'],

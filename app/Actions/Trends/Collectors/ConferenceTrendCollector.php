@@ -41,7 +41,7 @@ class ConferenceTrendCollector extends TrendCollector
             }
         }
 
-        if ($teamDivision) {
+        if ($teamDivision && ! $this->isCollegeBasketball()) {
             $divisionGames = $this->games->filter(function ($game) use ($teamDivision) {
                 $opponent = $this->isHome($game) ? $game->awayTeam : $game->homeTeam;
 

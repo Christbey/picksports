@@ -26,7 +26,6 @@ interface Tier {
     stripe_price_id_yearly: string | null;
     features: TierFeatures | null;
     permissions: string[] | null;
-    data_permissions: string[] | null;
     predictions_limit: number | null;
     team_metrics_limit: number | null;
     is_default: boolean;
@@ -55,17 +54,6 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const availableSports = ['NBA', 'NFL', 'CBB', 'WCBB', 'MLB', 'CFB', 'WNBA'];
-const availableDataPermissions = [
-    { key: 'spread', label: 'Spread & Total' },
-    { key: 'win_probability', label: 'Win Probability' },
-    { key: 'confidence_score', label: 'Confidence Score' },
-    { key: 'elo_diff', label: 'Elo Difference' },
-    { key: 'away_elo', label: 'Away Elo / Efficiency' },
-    { key: 'home_elo', label: 'Home Elo / Efficiency' },
-    { key: 'betting_value', label: 'Betting Value' },
-];
-
 const form = useForm({
     name: props.tier?.name || '',
     slug: props.tier?.slug || '',
@@ -84,16 +72,12 @@ const form = useForm({
         email_alerts: props.tier?.features?.email_alerts ?? false,
         priority_support: props.tier?.features?.priority_support ?? false,
     },
-    permissions: props.tier?.permissions || [],
-    data_permissions: props.tier?.data_permissions || [],
     predictions_limit: props.tier?.predictions_limit ?? null,
     team_metrics_limit: props.tier?.team_metrics_limit ?? null,
     is_default: props.tier?.is_default || false,
     is_active: props.tier?.is_active ?? true,
     sort_order: props.tier?.sort_order || 0,
 });
-
-const newPermission = ref('');
 
 const unlimitedPredictions = ref(form.features.predictions_per_day === null);
 const unlimitedHistory = ref(form.features.historical_data_days === null);
@@ -124,41 +108,12 @@ function toggleUnlimitedPredictionsLimit() {
     }
 }
 
-function toggleDataPermission(key: string) {
-    const index = form.data_permissions.indexOf(key);
-    if (index > -1) {
-        form.data_permissions.splice(index, 1);
-    } else {
-        form.data_permissions.push(key);
-    }
-}
-
 function toggleUnlimitedTeamMetrics() {
     if (unlimitedTeamMetrics.value) {
         form.team_metrics_limit = null;
     } else if (form.team_metrics_limit === null) {
         form.team_metrics_limit = 10;
     }
-}
-
-function toggleSport(sport: string) {
-    const index = form.features.sports_access.indexOf(sport);
-    if (index > -1) {
-        form.features.sports_access.splice(index, 1);
-    } else {
-        form.features.sports_access.push(sport);
-    }
-}
-
-function addPermission() {
-    if (newPermission.value.trim()) {
-        form.permissions.push(newPermission.value.trim());
-        newPermission.value = '';
-    }
-}
-
-function removePermission(index: number) {
-    form.permissions.splice(index, 1);
 }
 
 function submit() {
@@ -390,133 +345,6 @@ function submit() {
                             <p class="mt-1 text-xs text-muted-foreground">Max predictions returned per API request</p>
                         </div>
 
-                        <!-- Data Permissions -->
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Data Permissions</label>
-                            <p class="mb-3 text-xs text-muted-foreground">Controls which prediction fields are visible to users on this tier</p>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <label
-                                    v-for="perm in availableDataPermissions"
-                                    :key="perm.key"
-                                    class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 hover:bg-sidebar-accent transition-colors"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        :checked="form.data_permissions.includes(perm.key)"
-                                        @change="toggleDataPermission(perm.key)"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">{{ perm.label }}</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Sports Access -->
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Sports Access</label>
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                <label
-                                    v-for="sport in availableSports"
-                                    :key="sport"
-                                    class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 hover:bg-sidebar-accent transition-colors"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        :checked="form.features.sports_access.includes(sport)"
-                                        @change="toggleSport(sport)"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">{{ sport }}</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Boolean Features -->
-                        <div>
-                            <label class="block text-sm font-medium mb-3">Additional Features</label>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <label class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-3 hover:bg-sidebar-accent transition-colors">
-                                    <input
-                                        v-model="form.features.export_predictions"
-                                        type="checkbox"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">Export Predictions</span>
-                                </label>
-
-                                <label class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-3 hover:bg-sidebar-accent transition-colors">
-                                    <input
-                                        v-model="form.features.api_access"
-                                        type="checkbox"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">API Access</span>
-                                </label>
-
-                                <label class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-3 hover:bg-sidebar-accent transition-colors">
-                                    <input
-                                        v-model="form.features.advanced_analytics"
-                                        type="checkbox"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">Advanced Analytics</span>
-                                </label>
-
-                                <label class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-3 hover:bg-sidebar-accent transition-colors">
-                                    <input
-                                        v-model="form.features.email_alerts"
-                                        type="checkbox"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">Email Alerts</span>
-                                </label>
-
-                                <label class="flex items-center cursor-pointer rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-3 hover:bg-sidebar-accent transition-colors">
-                                    <input
-                                        v-model="form.features.priority_support"
-                                        type="checkbox"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm font-medium">Priority Support</span>
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label class="block text-sm font-medium mb-2">Permissions</label>
-                        <div class="space-y-2">
-                            <div v-for="(permission, index) in form.permissions" :key="index" class="flex gap-2">
-                                <input
-                                    v-model="form.permissions[index]"
-                                    type="text"
-                                    class="flex-1 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                />
-                                <button
-                                    type="button"
-                                    @click="removePermission(index)"
-                                    class="rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 transition-colors"
-                                >
-                                    Remove
-                                </button>
-                            </div>
-                            <div class="flex gap-2">
-                                <input
-                                    v-model="newPermission"
-                                    type="text"
-                                    placeholder="Add a new permission..."
-                                    @keyup.enter="addPermission"
-                                    class="flex-1 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                />
-                                <button
-                                    type="button"
-                                    @click="addPermission"
-                                    class="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                                >
-                                    Add
-                                </button>
-                            </div>
-                        </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-6">

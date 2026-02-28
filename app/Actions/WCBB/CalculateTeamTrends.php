@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Actions\MLB;
+namespace App\Actions\WCBB;
 
 use App\Actions\Trends\AbstractCalculateTeamTrends;
 use App\Actions\Trends\Collectors\AdvancedTrendCollector;
@@ -8,6 +8,7 @@ use App\Actions\Trends\Collectors\ClutchPerformanceTrendCollector;
 use App\Actions\Trends\Collectors\ConferenceTrendCollector;
 use App\Actions\Trends\Collectors\DefensivePerformanceTrendCollector;
 use App\Actions\Trends\Collectors\FirstScoreTrendCollector;
+use App\Actions\Trends\Collectors\HalfTrendCollector;
 use App\Actions\Trends\Collectors\MarginTrendCollector;
 use App\Actions\Trends\Collectors\MomentumTrendCollector;
 use App\Actions\Trends\Collectors\OffensiveEfficiencyTrendCollector;
@@ -19,25 +20,22 @@ use App\Actions\Trends\Collectors\SituationalTrendCollector;
 use App\Actions\Trends\Collectors\StreakTrendCollector;
 use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
-use App\Models\MLB\Game;
+use App\Models\WCBB\Game;
 
 class CalculateTeamTrends extends AbstractCalculateTeamTrends
 {
-    protected const SPORT_KEY = 'mlb';
+    protected const SPORT_KEY = 'wcbb';
 
     protected const GAME_MODEL = Game::class;
 
-    protected const GAME_RELATIONS = ['homeTeam', 'awayTeam', 'teamStats'];
-
-    protected const USES_ANALYTICS_SEASON_TYPES = false;
-
     /**
-     * Baseball-appropriate collectors (excludes quarters, halves, and drives).
+     * Basketball-appropriate collectors (excludes quarter-based and drive efficiency).
      *
      * @var array<int, class-string>
      */
     protected const COLLECTORS = [
         ScoringTrendCollector::class,
+        HalfTrendCollector::class,
         MarginTrendCollector::class,
         TotalsTrendCollector::class,
         FirstScoreTrendCollector::class,
@@ -55,3 +53,4 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
         ClutchPerformanceTrendCollector::class,
     ];
 }
+

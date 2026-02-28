@@ -30,7 +30,7 @@ abstract class AbstractSyncGamesFromScoreboardCommand extends Command
 
     public function handle(): int
     {
-        if ($this->supportsSeasonSync() && $this->option('season')) {
+        if ($this->supportsSeasonSync() && $this->hasOption('season') && $this->option('season')) {
             return $this->syncSeason((int) $this->option('season'));
         }
 

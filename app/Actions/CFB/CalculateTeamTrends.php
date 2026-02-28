@@ -1,17 +1,20 @@
 <?php
 
-namespace App\Actions\MLB;
+namespace App\Actions\CFB;
 
 use App\Actions\Trends\AbstractCalculateTeamTrends;
 use App\Actions\Trends\Collectors\AdvancedTrendCollector;
 use App\Actions\Trends\Collectors\ClutchPerformanceTrendCollector;
 use App\Actions\Trends\Collectors\ConferenceTrendCollector;
 use App\Actions\Trends\Collectors\DefensivePerformanceTrendCollector;
+use App\Actions\Trends\Collectors\DriveEfficiencyTrendCollector;
 use App\Actions\Trends\Collectors\FirstScoreTrendCollector;
+use App\Actions\Trends\Collectors\HalfTrendCollector;
 use App\Actions\Trends\Collectors\MarginTrendCollector;
 use App\Actions\Trends\Collectors\MomentumTrendCollector;
 use App\Actions\Trends\Collectors\OffensiveEfficiencyTrendCollector;
 use App\Actions\Trends\Collectors\OpponentStrengthTrendCollector;
+use App\Actions\Trends\Collectors\QuarterTrendCollector;
 use App\Actions\Trends\Collectors\RestScheduleTrendCollector;
 use App\Actions\Trends\Collectors\ScoringPatternTrendCollector;
 use App\Actions\Trends\Collectors\ScoringTrendCollector;
@@ -19,25 +22,23 @@ use App\Actions\Trends\Collectors\SituationalTrendCollector;
 use App\Actions\Trends\Collectors\StreakTrendCollector;
 use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
-use App\Models\MLB\Game;
+use App\Models\CFB\Game;
 
 class CalculateTeamTrends extends AbstractCalculateTeamTrends
 {
-    protected const SPORT_KEY = 'mlb';
+    protected const SPORT_KEY = 'cfb';
 
     protected const GAME_MODEL = Game::class;
 
-    protected const GAME_RELATIONS = ['homeTeam', 'awayTeam', 'teamStats'];
-
-    protected const USES_ANALYTICS_SEASON_TYPES = false;
+    protected const DEFAULT_GAME_COUNT = 16;
 
     /**
-     * Baseball-appropriate collectors (excludes quarters, halves, and drives).
-     *
      * @var array<int, class-string>
      */
     protected const COLLECTORS = [
         ScoringTrendCollector::class,
+        QuarterTrendCollector::class,
+        HalfTrendCollector::class,
         MarginTrendCollector::class,
         TotalsTrendCollector::class,
         FirstScoreTrendCollector::class,
@@ -49,9 +50,11 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
         OpponentStrengthTrendCollector::class,
         ConferenceTrendCollector::class,
         ScoringPatternTrendCollector::class,
+        DriveEfficiencyTrendCollector::class,
         OffensiveEfficiencyTrendCollector::class,
         DefensivePerformanceTrendCollector::class,
         MomentumTrendCollector::class,
         ClutchPerformanceTrendCollector::class,
     ];
 }
+

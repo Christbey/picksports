@@ -15,9 +15,10 @@ class DefensivePerformanceTrendCollector extends TrendCollector
     {
         $messages = [];
         $count = $this->games->count();
+        $unit = $this->scoringUnit();
 
         $avgAllowed = $this->games->avg(fn ($g) => $this->opponentScore($g));
-        $messages[] = "The {$this->teamAbbr} defense allows ".number_format($avgAllowed, 1).' points per game';
+        $messages[] = "The {$this->teamAbbr} defense allows ".number_format($avgAllowed, 1)." {$unit} per game";
 
         $scoringThresholds = $this->config('scoring', [21, 24, 28, 35]);
         $lowThreshold = $scoringThresholds[0] ?? 21;
@@ -25,10 +26,10 @@ class DefensivePerformanceTrendCollector extends TrendCollector
         $heldUnder = $this->countWhere(fn ($g) => $this->opponentScore($g) < $lowThreshold);
 
         if ($this->isSignificant($heldUnder)) {
-            $messages[] = "The {$this->teamAbbr} have held opponents under {$lowThreshold} points in {$heldUnder} of their last {$count} games";
+            $messages[] = "The {$this->teamAbbr} have held opponents under {$lowThreshold} {$unit} in {$heldUnder} of their last {$count} games";
         }
 
-        $shutoutQuarters = $this->games->sum(function ($game) {
+        $shutoutPeriods = $this->games->sum(function ($game) {
             $opp = $this->opponentLinescores($game);
             $shutouts = 0;
             foreach ($opp as $score) {
@@ -40,8 +41,13 @@ class DefensivePerformanceTrendCollector extends TrendCollector
             return $shutouts;
         });
 
-        if ($shutoutQuarters >= $count) {
-            $messages[] = "The {$this->teamAbbr} defense has recorded {$shutoutQuarters} shutout quarters in their last {$count} games";
+        if ($shutoutPeriods >= $count) {
+            $periodLabel = $this->isBaseball() ? 'innings' : 'quarters';
+            $messages[] = "The {$this->teamAbbr} defense has recorded {$shutoutPeriods} shutout {$periodLabel} in their last {$count} games";
+        }
+
+        if (! $this->isFootball()) {
+            return $messages;
         }
 
         $gamesWithStats = $this->games->filter(fn ($g) => $this->opponentStats($g) !== null);

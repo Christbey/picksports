@@ -73,4 +73,9 @@ class Prediction extends Model
     {
         return $this->belongsTo(Team::class, 'away_team_id');
     }
+
+    protected static function newFactory(): \Database\Factories\NflPredictionFactory
+    {
+        return \Database\Factories\NflPredictionFactory::new();
+    }
 }

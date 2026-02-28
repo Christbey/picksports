@@ -77,6 +77,7 @@ Route::get('performance', PerformanceController::class)->name('performance');
 // Player Props - Betting Recommendations by Sport
 foreach (['nba', 'mlb', 'nfl', 'cbb'] as $sport) {
     Route::get("{$sport}-player-props", [BettingRecommendationsController::class, $sport])
+        ->middleware(['auth', 'verified', "permission:view-{$sport}-predictions"])
         ->name("{$sport}.player-props");
 }
 
@@ -186,6 +187,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         ['post', '/subscriptions/{user}/assign-tier', [AdminSubscriptionController::class, 'assignTier'], 'subscriptions.assign-tier'],
         ['post', '/subscriptions/sync-all', [AdminSubscriptionController::class, 'syncAll'], 'subscriptions.sync-all'],
         ['get', '/permissions', [AdminPermissionController::class, 'index'], 'permissions'],
+        ['patch', '/permissions/tiers/{tier}', [AdminPermissionController::class, 'updateTierPermissions'], 'permissions.tiers.update'],
         ['get', '/healthchecks', [AdminHealthcheckController::class, 'index'], 'healthchecks'],
         ['post', '/healthchecks/run', [AdminHealthcheckController::class, 'run'], 'healthchecks.run'],
         ['post', '/healthchecks/sync', [AdminHealthcheckController::class, 'sync'], 'healthchecks.sync'],

@@ -199,7 +199,7 @@ function buildLivePredictionData(prediction: Prediction): LivePredictionData | u
             <!-- No Predictions Message -->
             <div
                 v-if="sports.length === 0"
-                class="relative min-h-[100vh] flex-1 rounded-xl border border-sidebar-border/70 bg-white p-6 md:min-h-min dark:border-sidebar-border dark:bg-sidebar"
+                class="relative min-h-svh flex-1 rounded-xl border border-sidebar-border/70 bg-white p-6 md:min-h-min dark:border-sidebar-border dark:bg-sidebar"
             >
                 <h2 class="mb-4 text-xl font-semibold">Today's Predictions</h2>
                 <div class="py-12 text-center">

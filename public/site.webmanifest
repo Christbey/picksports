@@ -1,13 +1,18 @@
 {
   "name": "PickSports",
   "short_name": "PickSports",
+  "id": "/",
+  "lang": "en-US",
+  "dir": "ltr",
   "description": "Sports predictions, analytics, and live game insights.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "browser"],
   "orientation": "portrait",
   "background_color": "#ffffff",
   "theme_color": "#0b0f19",
+  "prefer_related_applications": false,
   "icons": [
     {
       "src": "/icon-192.png",

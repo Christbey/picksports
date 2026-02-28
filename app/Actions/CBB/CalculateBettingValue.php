@@ -153,20 +153,32 @@ class CalculateBettingValue
     {
         $homeTeam = $game->homeTeam->school;
         $awayTeam = $game->awayTeam->school;
+        $oddsHomeTeam = (string) ($game->odds_data['home_team'] ?? '');
+        $oddsAwayTeam = (string) ($game->odds_data['away_team'] ?? '');
 
         // Find home and away moneyline prices
         $homePrice = null;
         $awayPrice = null;
 
         foreach ($market['outcomes'] as $outcome) {
-            if (str_contains($outcome['name'], $homeTeam) || $outcome['name'] === $game->odds_data['home_team']) {
-                $homePrice = $outcome['price'];
-            } else {
-                $awayPrice = $outcome['price'];
+            $outcomeName = (string) ($outcome['name'] ?? '');
+            $price = $outcome['price'] ?? null;
+
+            if (! is_numeric($price)) {
+                continue;
+            }
+
+            $price = (float) $price;
+
+            if (str_contains($outcomeName, $homeTeam) || $outcomeName === $oddsHomeTeam) {
+                $homePrice = $price;
+            } elseif (str_contains($outcomeName, $awayTeam) || $outcomeName === $oddsAwayTeam) {
+                $awayPrice = $price;
             }
         }
 
-        if ($homePrice === null) {
+        // Moneyline recommendation requires valid prices for both sides.
+        if ($homePrice === null || $awayPrice === null) {
             return null;
         }
 

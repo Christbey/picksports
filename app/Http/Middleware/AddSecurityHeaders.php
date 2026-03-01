@@ -20,16 +20,29 @@ class AddSecurityHeaders
         $reportingEndpoints = 'csp="/api/v1/security/reports/csp", integrity="/api/v1/security/reports/integrity"';
         $response->headers->set('Reporting-Endpoints', $reportingEndpoints);
 
-        $cspReportOnly = implode('; ', [
+        $cspDirectives = [
             "default-src 'self'",
             "base-uri 'self'",
             "form-action 'self'",
             "object-src 'none'",
             "frame-ancestors 'self'",
-            "upgrade-insecure-requests",
-            "require-trusted-types-for 'script'",
-            "trusted-types default",
+            // Inline bootstrap scripts/styles still exist in app.blade.php; keep allowed while in report-only.
+            "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com",
+            "script-src-elem 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com",
+            "style-src 'self' 'unsafe-inline' https://fonts.bunny.net",
+            "style-src-elem 'self' 'unsafe-inline' https://fonts.bunny.net",
+            "font-src 'self' data: https://fonts.bunny.net",
+            "img-src 'self' data: https:",
+            "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://*.cloudflareinsights.com",
+            "manifest-src 'self'",
+            "worker-src 'self' blob:",
+            // Allow known policy names created by Vue and gtag to prevent Trusted Types report noise.
+            "trusted-types default vue goog#html",
             'report-to csp',
+        ];
+
+        $cspReportOnly = implode('; ', [
+            ...$cspDirectives,
         ]);
         $response->headers->set('Content-Security-Policy-Report-Only', $cspReportOnly);
 

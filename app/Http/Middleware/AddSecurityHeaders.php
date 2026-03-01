@@ -28,7 +28,7 @@ class AddSecurityHeaders
             "frame-ancestors 'self'",
             // Inline bootstrap scripts/styles still exist in app.blade.php; keep allowed while in report-only.
             "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com",
-            "script-src-elem 'self' https://www.googletagmanager.com https://static.cloudflareinsights.com",
+            "script-src-elem 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com",
             "style-src 'self' 'unsafe-inline' https://fonts.bunny.net",
             "style-src-elem 'self' 'unsafe-inline' https://fonts.bunny.net",
             "font-src 'self' data: https://fonts.bunny.net",

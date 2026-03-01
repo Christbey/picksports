@@ -177,7 +177,7 @@ const getROIColor = (roi: number | undefined) => {
                 Start Winning Today
               </Button>
             </Link>
-            <Link :href="performance()">
+            <Link :href="performanceRoute()">
               <Button size="lg" variant="outline" class="text-lg px-8 h-14 border-2">
                 See Our Track Record →
               </Button>
@@ -291,7 +291,7 @@ const getROIColor = (roi: number | undefined) => {
 
         <!-- CTA -->
         <div class="text-center">
-          <Link :href="performance()">
+          <Link :href="performanceRoute()">
             <Button variant="outline" size="lg" class="gap-2 border-2 text-base">
               View Complete Track Record
               <svg xmlns="http://www.w3.org/2000/svg" class="size-5" viewBox="0 0 20 20" fill="currentColor">
@@ -462,7 +462,7 @@ const getROIColor = (roi: number | undefined) => {
               Go to Dashboard
             </Button>
           </Link>
-          <Link :href="performance()">
+          <Link :href="performanceRoute()">
             <Button size="lg" variant="outline" class="text-lg px-10 h-14 border-2 border-white text-white hover:bg-white/10">
               View Track Record
             </Button>
@@ -514,7 +514,7 @@ const getROIColor = (roi: number | undefined) => {
           </div>
 
           <div class="flex flex-wrap items-center justify-center gap-6 text-sm">
-            <Link :href="performance()" class="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white font-medium transition-colors">
+            <Link :href="performanceRoute()" class="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white font-medium transition-colors">
               Performance
             </Link>
             <Link :href="terms()" class="text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white font-medium transition-colors">

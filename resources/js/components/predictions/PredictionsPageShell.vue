@@ -61,7 +61,7 @@ const breadcrumbs: BreadcrumbItem[] = [
         <meta head-key="twitter:title" name="twitter:title" :content="title" />
         <meta head-key="twitter:description" name="twitter:description" :content="description" />
         <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
-        <script head-key="schema-webpage" type="application/ld+json" v-html="webPageSchema" />
+        <component :is="'script'" head-key="schema-webpage" type="application/ld+json" v-html="webPageSchema" />
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">

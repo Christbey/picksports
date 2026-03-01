@@ -104,8 +104,8 @@ const sportsEventSchema = computed(() =>
         <meta head-key="twitter:title" name="twitter:title" :content="title" />
         <meta head-key="twitter:description" name="twitter:description" :content="pageDescription" />
         <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
-        <script head-key="schema-webpage-game" type="application/ld+json" v-html="webPageSchema" />
-        <script head-key="schema-sportsevent-game" type="application/ld+json" v-html="sportsEventSchema" />
+        <component :is="'script'" head-key="schema-webpage-game" type="application/ld+json" v-html="webPageSchema" />
+        <component :is="'script'" head-key="schema-sportsevent-game" type="application/ld+json" v-html="sportsEventSchema" />
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">

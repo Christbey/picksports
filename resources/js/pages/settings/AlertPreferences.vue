@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Form, Head, router, usePage } from '@inertiajs/vue3';
+import { Form, Head } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { update } from '@/routes/alert-preferences';
@@ -18,25 +17,13 @@ interface Preference {
     enabled: boolean;
     sports: string[];
     notification_types: string[];
-    enabled_template_ids: number[];
-    minimum_edge: number;
+    enabled_template_ids: number[]; // legacy field, hidden from UI
+    minimum_edge: number | string;
     time_window_start: string;
     time_window_end: string;
     digest_mode: string;
     digest_time: string | null;
     phone_number: string | null;
-}
-
-interface AvailableTemplate {
-    id: number;
-    name: string;
-    description: string | null;
-}
-
-interface AdminStats {
-    total_users_with_alerts: number;
-    total_preferences: number;
-    users_by_sport: Record<string, number>;
 }
 
 interface WebPushState {
@@ -47,13 +34,8 @@ interface WebPushState {
 
 const props = defineProps<{
     preference: Preference | null;
-    availableTemplates: AvailableTemplate[];
-    adminStats?: AdminStats;
     webPush: WebPushState;
 }>();
-
-const page = usePage();
-const isAdmin = computed(() => page.props.auth.user?.is_admin);
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -76,16 +58,6 @@ const defaultPreference: Preference = {
 };
 
 const currentPreference = computed(() => props.preference || defaultPreference);
-const usersBySport = computed<Record<string, number>>(() => props.adminStats?.users_by_sport ?? {});
-const mostPopularSport = computed(() => {
-    const entries = Object.entries(usersBySport.value);
-    if (entries.length === 0) return 'N/A';
-    return entries.reduce((maxEntry, entry) => (entry[1] > maxEntry[1] ? entry : maxEntry))[0].toUpperCase();
-});
-const maxUsersBySport = computed(() => {
-    const counts = Object.values(usersBySport.value);
-    return counts.length ? Math.max(...counts) : 0;
-});
 
 const availableSports = [
     { value: 'nfl', label: 'NFL' },
@@ -103,35 +75,53 @@ const availableNotificationTypes = [
     { value: 'sms', label: 'SMS (Coming Soon)', disabled: true },
 ];
 
-const selectedSports = ref<string[]>(currentPreference.value.sports);
-const selectedNotificationTypes = ref<string[]>(currentPreference.value.notification_types);
-const selectedTemplateIds = ref<number[]>(currentPreference.value.enabled_template_ids);
-const selectedDigestMode = ref<string>(currentPreference.value.digest_mode);
+function normalizeStringArray(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    return value
+        .map((item) => String(item).trim().toLowerCase())
+        .filter((item) => item.length > 0);
+}
 
-function toggleSport(sport: string) {
+const selectedSports = ref<string[]>(normalizeStringArray(currentPreference.value.sports));
+const selectedNotificationTypes = ref<string[]>(normalizeStringArray(currentPreference.value.notification_types));
+const alertsEnabled = ref<boolean>(currentPreference.value.enabled);
+
+const sportLabelMap = computed<Record<string, string>>(() =>
+    Object.fromEntries(availableSports.map((sport) => [sport.value, sport.label])),
+);
+const notificationLabelMap = computed<Record<string, string>>(() =>
+    Object.fromEntries(availableNotificationTypes.map((type) => [type.value, type.label.replace(' (Coming Soon)', '')])),
+);
+const selectedSportLabels = computed(() => selectedSports.value.map((sport) => sportLabelMap.value[sport] ?? sport.toUpperCase()));
+const selectedNotificationLabels = computed(() =>
+    selectedNotificationTypes.value.map((type) => notificationLabelMap.value[type] ?? type.toUpperCase()),
+);
+const autoDigestMode = computed(() => (selectedNotificationTypes.value.includes('push') ? 'realtime' : 'daily_summary'));
+const digestModeLabel = computed(() => (autoDigestMode.value === 'daily_summary' ? 'Daily Summary' : 'Real-time'));
+
+function onEnabledChange(checked: boolean | 'indeterminate') {
+    alertsEnabled.value = checked === true;
+}
+
+function toggleSport(sport: string, checked: boolean | 'indeterminate') {
+    const shouldEnable = checked === true;
     const index = selectedSports.value.indexOf(sport);
-    if (index === -1) {
+    if (shouldEnable && index === -1) {
         selectedSports.value.push(sport);
-    } else {
+    }
+    if (!shouldEnable && index !== -1) {
         selectedSports.value.splice(index, 1);
     }
 }
 
-function toggleNotificationType(type: string) {
+function toggleNotificationType(type: string, checked: boolean | 'indeterminate') {
+    const shouldEnable = checked === true;
     const index = selectedNotificationTypes.value.indexOf(type);
-    if (index === -1) {
+    if (shouldEnable && index === -1) {
         selectedNotificationTypes.value.push(type);
-    } else {
-        selectedNotificationTypes.value.splice(index, 1);
     }
-}
-
-function toggleTemplate(templateId: number) {
-    const index = selectedTemplateIds.value.indexOf(templateId);
-    if (index === -1) {
-        selectedTemplateIds.value.push(templateId);
-    } else {
-        selectedTemplateIds.value.splice(index, 1);
+    if (!shouldEnable && index !== -1) {
+        selectedNotificationTypes.value.splice(index, 1);
     }
 }
 
@@ -143,12 +133,6 @@ function isNotificationTypeSelected(type: string): boolean {
     return selectedNotificationTypes.value.includes(type);
 }
 
-function isTemplateSelected(templateId: number): boolean {
-    return selectedTemplateIds.value.includes(templateId);
-}
-
-const checkingAlerts = ref(false);
-const lastCheckResult = ref<string | null>(null);
 const webPushSupported = ref(false);
 const webPushPermission = ref<NotificationPermission>('default');
 const webPushHasSubscription = ref<boolean>(props.webPush?.hasSubscription ?? false);
@@ -156,37 +140,6 @@ const webPushBusy = ref(false);
 const webPushMessage = ref<string | null>(null);
 const webPushError = ref<string | null>(null);
 const iosStandalone = ref(false);
-
-function checkAlerts(sport?: string) {
-    checkingAlerts.value = true;
-    lastCheckResult.value = null;
-
-    const data = sport ? { sport } : {};
-
-    router.post('/settings/alert-preferences/check-alerts', data, {
-        preserveScroll: true,
-        onSuccess: (response: any) => {
-            const data = response.props.flash?.data || response.props?.data;
-            if (data) {
-                lastCheckResult.value = data.message;
-            } else {
-                lastCheckResult.value = 'Alert check completed';
-            }
-            setTimeout(() => {
-                lastCheckResult.value = null;
-            }, 5000);
-        },
-        onError: () => {
-            lastCheckResult.value = 'Error checking alerts';
-            setTimeout(() => {
-                lastCheckResult.value = null;
-            }, 5000);
-        },
-        onFinish: () => {
-            checkingAlerts.value = false;
-        },
-    });
-}
 
 function getCsrfToken(): string {
     const el = document.querySelector('meta[name="csrf-token"]');
@@ -363,11 +316,13 @@ onMounted(() => {
                     <!-- Enable Alerts Toggle -->
                     <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
                         <div class="flex items-start gap-3">
+                            <input type="hidden" name="enabled" value="0" />
                             <Checkbox
-                                name="enabled"
-                                :default-checked="currentPreference.enabled"
                                 id="enabled"
+                                :model-value="alertsEnabled"
+                                @update:model-value="onEnabledChange"
                             />
+                            <input v-if="alertsEnabled" type="hidden" name="enabled" value="1" />
                             <div class="grid gap-1.5 leading-none">
                                 <Label
                                     for="enabled"
@@ -383,8 +338,18 @@ onMounted(() => {
                         <InputError class="mt-2" :message="errors.enabled" />
                     </div>
 
+                    <div class="rounded-xl border border-sidebar-border bg-sidebar-accent/40 p-4">
+                        <p class="text-sm font-medium">Current Setup</p>
+                        <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                            <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Alerts: {{ alertsEnabled ? 'On' : 'Off' }}</span>
+                            <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Sports: {{ selectedSportLabels.length }}</span>
+                            <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Channels: {{ selectedNotificationLabels.join(', ') || 'None' }}</span>
+                            <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Delivery: {{ digestModeLabel }}</span>
+                        </div>
+                    </div>
+
                     <!-- Sports Selection -->
-                    <div class="space-y-3">
+                    <div class="space-y-3 rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
                         <div>
                             <Label class="text-base">Sports</Label>
                             <p class="text-sm text-muted-foreground">
@@ -397,13 +362,14 @@ onMounted(() => {
                                 v-for="sport in availableSports"
                                 :key="sport.value"
                                 class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar"
+                                :class="isSportSelected(sport.value) ? 'border-primary bg-primary/5 dark:bg-primary/10' : ''"
                             >
                                 <Checkbox
                                     :name="`sports[${sport.value}]`"
                                     :value="sport.value"
                                     :id="`sport-${sport.value}`"
-                                    :checked="isSportSelected(sport.value)"
-                                    @update:checked="() => toggleSport(sport.value)"
+                                    :model-value="isSportSelected(sport.value)"
+                                    @update:model-value="(checked) => toggleSport(sport.value, checked)"
                                 />
                                 <Label
                                     :for="`sport-${sport.value}`"
@@ -426,7 +392,7 @@ onMounted(() => {
                     </div>
 
                     <!-- Notification Types -->
-                    <div class="space-y-3">
+                    <div class="space-y-3 rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
                         <div>
                             <Label class="text-base">Notification Methods</Label>
                             <p class="text-sm text-muted-foreground">
@@ -439,15 +405,18 @@ onMounted(() => {
                                 v-for="type in availableNotificationTypes"
                                 :key="type.value"
                                 class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar"
-                                :class="{ 'opacity-50': type.disabled }"
+                                :class="[
+                                    type.disabled ? 'opacity-50' : '',
+                                    isNotificationTypeSelected(type.value) ? 'border-primary bg-primary/5 dark:bg-primary/10' : '',
+                                ]"
                             >
                                 <Checkbox
                                     :name="`notification_types[${type.value}]`"
                                     :value="type.value"
                                     :id="`notification-${type.value}`"
-                                    :checked="isNotificationTypeSelected(type.value)"
+                                    :model-value="isNotificationTypeSelected(type.value)"
                                     :disabled="type.disabled"
-                                    @update:checked="() => toggleNotificationType(type.value)"
+                                    @update:model-value="(checked) => toggleNotificationType(type.value, checked)"
                                 />
                                 <Label
                                     :for="`notification-${type.value}`"
@@ -455,6 +424,9 @@ onMounted(() => {
                                 >
                                     {{ type.label }}
                                 </Label>
+                                <span v-if="type.disabled" class="ml-auto rounded bg-sidebar-accent px-2 py-1 text-xs text-muted-foreground">
+                                    Soon
+                                </span>
                             </div>
                         </div>
 
@@ -543,174 +515,12 @@ onMounted(() => {
                         </p>
                     </div>
 
-                    <!-- Notification Templates -->
-                    <div v-if="availableTemplates.length > 0" class="space-y-3">
-                        <div>
-                            <Label class="text-base">Notification Templates</Label>
-                            <p class="text-sm text-muted-foreground">
-                                Choose which types of alerts you want to receive. Leave all unchecked to receive all template types.
-                            </p>
-                        </div>
+                    <input type="hidden" name="minimum_edge" :value="String(currentPreference.minimum_edge ?? '0')" />
 
-                        <div class="grid grid-cols-1 gap-3">
-                            <div
-                                v-for="template in availableTemplates"
-                                :key="template.id"
-                                class="flex items-start gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar"
-                            >
-                                <Checkbox
-                                    :name="`enabled_template_ids[${template.id}]`"
-                                    :value="template.id"
-                                    :id="`template-${template.id}`"
-                                    :checked="isTemplateSelected(template.id)"
-                                    @update:checked="() => toggleTemplate(template.id)"
-                                />
-                                <div class="flex-1">
-                                    <Label
-                                        :for="`template-${template.id}`"
-                                        class="text-sm font-medium cursor-pointer"
-                                    >
-                                        {{ template.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) }}
-                                    </Label>
-                                    <p v-if="template.description" class="mt-0.5 text-xs text-muted-foreground">
-                                        {{ template.description }}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <input
-                            v-for="templateId in selectedTemplateIds"
-                            :key="templateId"
-                            type="hidden"
-                            name="enabled_template_ids[]"
-                            :value="templateId"
-                        />
-
-                        <InputError class="mt-2" :message="errors.enabled_template_ids" />
-                    </div>
-
-                    <!-- Minimum Edge -->
-                    <div class="space-y-3">
-                        <div>
-                            <Label for="minimum_edge" class="text-base">Minimum Expected Value (%)</Label>
-                            <p class="text-sm text-muted-foreground">
-                                Only receive alerts for bets with at least this much expected value
-                            </p>
-                        </div>
-
-                        <Input
-                            id="minimum_edge"
-                            name="minimum_edge"
-                            type="number"
-                            min="0"
-                            max="100"
-                            step="0.1"
-                            :default-value="currentPreference.minimum_edge"
-                            class="max-w-xs"
-                            placeholder="5.0"
-                        />
-                        <InputError class="mt-2" :message="errors.minimum_edge" />
-                    </div>
-
-                    <!-- Time Window -->
-                    <div class="space-y-3">
-                        <div>
-                            <Label class="text-base">Notification Time Window</Label>
-                            <p class="text-sm text-muted-foreground">
-                                Set quiet hours when you don't want to receive alerts
-                            </p>
-                        </div>
-
-                        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 max-w-md">
-                            <div class="grid gap-2">
-                                <Label for="time_window_start">Start Time</Label>
-                                <Input
-                                    id="time_window_start"
-                                    name="time_window_start"
-                                    type="time"
-                                    :default-value="currentPreference.time_window_start"
-                                />
-                                <InputError :message="errors.time_window_start" />
-                            </div>
-
-                            <div class="grid gap-2">
-                                <Label for="time_window_end">End Time</Label>
-                                <Input
-                                    id="time_window_end"
-                                    name="time_window_end"
-                                    type="time"
-                                    :default-value="currentPreference.time_window_end"
-                                />
-                                <InputError :message="errors.time_window_end" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Digest Mode -->
-                    <div class="space-y-3">
-                        <div>
-                            <Label for="digest_mode" class="text-base">Delivery Mode</Label>
-                            <p class="text-sm text-muted-foreground">
-                                Choose when to receive alerts
-                            </p>
-                        </div>
-
-                        <div class="space-y-3">
-                            <div class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                                <input
-                                    type="radio"
-                                    name="digest_mode"
-                                    value="realtime"
-                                    id="digest-realtime"
-                                    :checked="selectedDigestMode === 'realtime'"
-                                    @change="selectedDigestMode = 'realtime'"
-                                    class="size-4 border-input text-primary focus:ring-primary"
-                                />
-                                <Label for="digest-realtime" class="cursor-pointer">
-                                    <div class="font-medium">Real-time</div>
-                                    <div class="text-sm text-muted-foreground">
-                                        Get notified immediately when high-value opportunities are found
-                                    </div>
-                                </Label>
-                            </div>
-
-                            <div class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                                <input
-                                    type="radio"
-                                    name="digest_mode"
-                                    value="daily_summary"
-                                    id="digest-daily"
-                                    :checked="selectedDigestMode === 'daily_summary'"
-                                    @change="selectedDigestMode = 'daily_summary'"
-                                    class="size-4 border-input text-primary focus:ring-primary"
-                                />
-                                <Label for="digest-daily" class="cursor-pointer">
-                                    <div class="font-medium">Daily Summary</div>
-                                    <div class="text-sm text-muted-foreground">
-                                        Receive one consolidated email per day with the top betting opportunities
-                                    </div>
-                                </Label>
-                            </div>
-                        </div>
-
-                        <InputError :message="errors.digest_mode" />
-
-                        <!-- Digest Time Picker (only for daily_summary mode) -->
-                        <div v-if="selectedDigestMode === 'daily_summary'" class="mt-4 grid gap-2 max-w-xs">
-                            <Label for="digest_time">Digest Delivery Time</Label>
-                            <Input
-                                id="digest_time"
-                                name="digest_time"
-                                type="time"
-                                :default-value="currentPreference.digest_time || '10:00'"
-                            />
-                            <p class="text-xs text-muted-foreground">
-                                Receive your daily digest at this time (your local timezone)
-                            </p>
-                            <InputError :message="errors.digest_time" />
-                        </div>
-                    </div>
+                    <input type="hidden" name="time_window_start" :value="currentPreference.time_window_start" />
+                    <input type="hidden" name="time_window_end" :value="currentPreference.time_window_end" />
+                    <input type="hidden" name="digest_mode" :value="autoDigestMode" />
+                    <input type="hidden" name="digest_time" :value="currentPreference.digest_time || '10:00'" />
 
                     <!-- Phone Number (for future SMS) -->
                     <div class="space-y-3 opacity-50">
@@ -758,81 +568,6 @@ onMounted(() => {
                     </div>
                 </Form>
 
-                <!-- Admin Section -->
-                <div v-if="isAdmin && adminStats" class="space-y-6 mt-12">
-                    <Separator />
-
-                    <Heading
-                        variant="small"
-                        title="Admin Controls"
-                        description="Manage alert system and view statistics"
-                    />
-
-                    <!-- Stats Cards -->
-                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                        <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                            <div class="text-sm font-medium text-muted-foreground">Total Users with Alerts</div>
-                            <div class="mt-2 text-3xl font-bold">{{ adminStats.total_users_with_alerts }}</div>
-                            <div class="mt-1 text-xs text-muted-foreground">
-                                out of {{ adminStats.total_preferences }} total preferences
-                            </div>
-                        </div>
-
-                        <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                            <div class="text-sm font-medium text-muted-foreground">Most Popular Sport</div>
-                            <div class="mt-2 text-3xl font-bold">
-                                {{ mostPopularSport }}
-                            </div>
-                            <div class="mt-1 text-xs text-muted-foreground">
-                                {{ maxUsersBySport }} users subscribed
-                            </div>
-                        </div>
-
-                        <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                            <div class="text-sm font-medium text-muted-foreground">Sport Coverage</div>
-                            <div class="mt-2 space-y-1">
-                                <div v-for="(count, sport) in adminStats.users_by_sport" :key="sport" class="flex justify-between text-sm">
-                                    <span class="font-medium">{{ sport.toUpperCase() }}</span>
-                                    <span class="text-muted-foreground">{{ count }}</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Manual Alert Trigger -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <h3 class="text-sm font-semibold mb-4">Manual Alert Check</h3>
-                        <p class="text-sm text-muted-foreground mb-4">
-                            Manually trigger the alert system to check for betting opportunities across all sports or a specific sport.
-                        </p>
-
-                        <div class="flex flex-wrap gap-2">
-                            <Button
-                                @click="checkAlerts()"
-                                :disabled="checkingAlerts"
-                                variant="default"
-                            >
-                                {{ checkingAlerts ? 'Checking...' : 'Check All Sports' }}
-                            </Button>
-
-                            <Button
-                                v-for="sport in availableSports"
-                                :key="sport.value"
-                                @click="checkAlerts(sport.value)"
-                                :disabled="checkingAlerts"
-                                variant="outline"
-                            >
-                                {{ sport.value.toUpperCase() }}
-                            </Button>
-                        </div>
-
-                        <div v-if="lastCheckResult" class="mt-4 rounded-lg bg-green-50 p-3 dark:bg-green-900/20">
-                            <p class="text-sm text-green-800 dark:text-green-200">
-                                {{ lastCheckResult }}
-                            </p>
-                        </div>
-                    </div>
-                </div>
                 </div>
             </RenderErrorBoundary>
         </SettingsLayout>

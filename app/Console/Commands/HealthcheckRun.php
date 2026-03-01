@@ -2,117 +2,278 @@
 
 namespace App\Console\Commands;
 
+use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
 use App\Support\SportCatalog;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 
 class HealthcheckRun extends Command
 {
-    protected $signature = 'healthcheck:run {--sport= : Specific sport to check (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}';
+    protected $signature = 'healthcheck:run
+        {--sport= : Specific sport to check (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}
+        {--include-validation : Reserved for future deep data validation checks}';
 
-    protected $description = 'Run healthchecks to monitor data sync across all sports';
+    protected $description = 'Run heartbeat-first healthchecks to verify command pipelines are running';
 
     public function handle(): int
     {
-        $this->info('Running healthchecks...');
+        $this->info('Running heartbeat healthchecks...');
 
-        $sports = $this->option('sport') ? [$this->option('sport')] : SportCatalog::ALL;
+        if ((bool) $this->option('include-validation')) {
+            $this->warn('Data validation checks are not enabled yet. Running heartbeat checks only.');
+        }
+
+        $sports = $this->option('sport') ? [(string) $this->option('sport')] : SportCatalog::ALL;
 
         foreach ($sports as $sport) {
-            $this->line("Checking {$sport}...");
+            $this->line("Checking {$sport} heartbeat...");
 
-            $this->checkDataFreshness($sport);
-            $this->checkMissingGames($sport);
-            $this->checkTeamSchedules($sport);
-            $this->checkStalePredictions($sport);
-            $this->checkEloStatus($sport);
-            $this->checkTeamMetrics($sport);
-            $this->checkLiveScoreboardSync($sport);
+            $this->checkSyncHeartbeat($sport);
+            $this->checkLiveScoreboardHeartbeat($sport);
+            $this->checkPredictionPipelineHeartbeat($sport);
+            $this->checkModelPipelineHeartbeat($sport);
+            $this->checkOddsHeartbeat($sport);
         }
 
         return $this->displayResults();
     }
 
-    protected function checkDataFreshness(string $sport): void
+    protected function checkSyncHeartbeat(string $sport): void
     {
-        $table = "{$sport}_games";
+        $inSeason = $this->isActiveSeason($sport);
 
-        // Check total games to detect zero-data scenario
-        $totalGames = DB::table($table)->count();
+        $patterns = [
+            "espn:sync-{$sport}-current%",
+            "espn:sync-{$sport}-games-scoreboard%",
+            "espn:sync-{$sport}-games%",
+        ];
 
-        if ($totalGames === 0) {
-            $this->recordCheck($sport, 'data_freshness', 'failing', 'No games found in database. Data sync may have failed.', [
-                'total_games' => 0,
-                'recent_games' => 0,
-                'stale_games' => 0,
-            ]);
+        $thresholds = $inSeason
+            ? ['warning' => 180, 'failing' => 360]
+            : ['warning' => 1440, 'failing' => 4320];
+
+        $this->evaluateCommandFreshness(
+            sport: $sport,
+            checkType: 'heartbeat_sync',
+            commandPatterns: $patterns,
+            warningAfterMinutes: $thresholds['warning'],
+            failingAfterMinutes: $thresholds['failing'],
+            label: 'sync pipeline',
+            context: ['in_season' => $inSeason]
+        );
+    }
+
+    protected function checkLiveScoreboardHeartbeat(string $sport): void
+    {
+        $inSeason = $this->isActiveSeason($sport);
+
+        if (! $inSeason) {
+            $this->recordCheck(
+                $sport,
+                'heartbeat_live_scoreboard',
+                'passing',
+                'Off-season. Live scoreboard heartbeat is not strictly required.',
+                ['in_season' => false]
+            );
 
             return;
         }
 
-        // Check if any games have been updated in the last 24 hours
-        $recentGames = DB::table($table)
-            ->where('updated_at', '>=', now()->subHours(24))
-            ->count();
+        $gameHours = $this->gameHoursForSport($sport);
+        $currentHour = (int) now()->format('H');
+        $isDuringGameHours = $gameHours['end'] < $gameHours['start']
+            ? ($currentHour >= $gameHours['start'] || $currentHour < $gameHours['end'])
+            : ($currentHour >= $gameHours['start'] && $currentHour < $gameHours['end']);
 
-        // Check if there are scheduled or in-progress games that haven't been updated recently
-        // Only check today and future games, not historical games
-        $staleGames = DB::table($table)
-            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS'])
-            ->where('game_date', '>=', now()->startOfDay())
-            ->where('game_date', '<=', now()->addDays(7))
-            ->where('updated_at', '<', now()->subHours(24))
-            ->count();
+        $warningThreshold = $isDuringGameHours ? 15 : 120;
+        $failingThreshold = $isDuringGameHours ? 30 : 240;
 
-        $status = 'passing';
-        $message = "Data is fresh. {$recentGames} games updated in last 24 hours.";
-
-        if ($staleGames > 5) {
-            $status = 'failing';
-            $message = "{$staleGames} upcoming games haven't been updated in 24 hours.";
-        } elseif ($staleGames > 0) {
-            $status = 'warning';
-            $message = "{$staleGames} upcoming games haven't been updated in 24 hours.";
-        }
-
-        $this->recordCheck($sport, 'data_freshness', $status, $message, [
-            'total_games' => $totalGames,
-            'recent_games' => $recentGames,
-            'stale_games' => $staleGames,
-        ]);
+        $this->evaluateCommandFreshness(
+            sport: $sport,
+            checkType: 'heartbeat_live_scoreboard',
+            commandPatterns: ["espn:sync-{$sport}-games-scoreboard%"],
+            warningAfterMinutes: $warningThreshold,
+            failingAfterMinutes: $failingThreshold,
+            label: 'live scoreboard sync',
+            context: [
+                'in_season' => true,
+                'is_during_game_hours' => $isDuringGameHours,
+                'game_hours' => $gameHours,
+                'current_hour' => $currentHour,
+            ]
+        );
     }
 
-    protected function checkMissingGames(string $sport): void
+    protected function checkPredictionPipelineHeartbeat(string $sport): void
     {
-        $table = "{$sport}_games";
+        if (! in_array($sport, SportCatalog::STALE_PREDICTIONS, true)) {
+            $this->recordCheck(
+                $sport,
+                'heartbeat_prediction_pipeline',
+                'passing',
+                'Prediction pipeline heartbeat is not applicable for this sport.',
+                ['applicable' => false]
+            );
 
-        // Count scheduled games for next 7 days
-        $upcomingGames = DB::table($table)
-            ->where('game_date', '>=', now()->startOfDay())
-            ->where('game_date', '<=', now()->addDays(7))
-            ->where('status', 'STATUS_SCHEDULED')
-            ->count();
+            return;
+        }
 
-        // Expected minimum games per day (rough estimates per sport)
-        $expectedGamesPerDay = match ($sport) {
-            'mlb' => 10, // 30 teams, ~15 games per day
-            'nba' => 5,  // 30 teams, typically 5-15 games per day
-            'nfl' => 1,  // 32 teams, varies by day (Sunday has most)
-            'cbb', 'wcbb' => 20, // Hundreds of teams, many games
-            'cfb' => 10, // Games mostly on Saturdays
-            'wnba' => 2, // 12 teams, 2-6 games per day
-            default => 5,
-        };
+        $inSeason = $this->isActiveSeason($sport);
+        $thresholds = $inSeason
+            ? ['warning' => 1440, 'failing' => 2880] // 24h / 48h
+            : ['warning' => 4320, 'failing' => 10080]; // 3d / 7d
 
-        // Expected total for 7 days
-        $expectedTotal = $expectedGamesPerDay * 7;
+        $this->evaluateCommandFreshness(
+            sport: $sport,
+            checkType: 'heartbeat_prediction_pipeline',
+            commandPatterns: ["{$sport}:generate-predictions%", "{$sport}:grade-predictions%"],
+            warningAfterMinutes: $thresholds['warning'],
+            failingAfterMinutes: $thresholds['failing'],
+            label: 'prediction pipeline',
+            context: ['in_season' => $inSeason, 'applicable' => true]
+        );
+    }
+
+    protected function checkModelPipelineHeartbeat(string $sport): void
+    {
+        $patterns = ["{$sport}:calculate-elo%"];
+
+        if (in_array($sport, SportCatalog::TEAM_METRICS, true)) {
+            $patterns[] = "{$sport}:calculate-team-metrics%";
+        }
+
+        $inSeason = $this->isActiveSeason($sport);
+        $thresholds = $inSeason
+            ? ['warning' => 1440, 'failing' => 4320] // 24h / 72h
+            : ['warning' => 4320, 'failing' => 10080]; // 3d / 7d
+
+        $this->evaluateCommandFreshness(
+            sport: $sport,
+            checkType: 'heartbeat_model_pipeline',
+            commandPatterns: $patterns,
+            warningAfterMinutes: $thresholds['warning'],
+            failingAfterMinutes: $thresholds['failing'],
+            label: 'model pipeline',
+            context: ['in_season' => $inSeason]
+        );
+    }
+
+    protected function checkOddsHeartbeat(string $sport): void
+    {
+        $inSeason = $this->isActiveSeason($sport);
+        $thresholds = $inSeason
+            ? ['warning' => 480, 'failing' => 720] // 8h / 12h
+            : ['warning' => 1440, 'failing' => 4320]; // 1d / 3d
+
+        $this->evaluateCommandFreshness(
+            sport: $sport,
+            checkType: 'heartbeat_odds',
+            commandPatterns: ["{$sport}:sync-odds%"],
+            warningAfterMinutes: $thresholds['warning'],
+            failingAfterMinutes: $thresholds['failing'],
+            label: 'odds sync',
+            context: ['in_season' => $inSeason]
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $commandPatterns
+     * @param  array<string, mixed>  $context
+     */
+    protected function evaluateCommandFreshness(
+        string $sport,
+        string $checkType,
+        array $commandPatterns,
+        int $warningAfterMinutes,
+        int $failingAfterMinutes,
+        string $label,
+        array $context = []
+    ): void {
+        $latestSuccess = $this->latestHeartbeat($sport, $commandPatterns, 'success');
+        $latestFailure = $this->latestHeartbeat($sport, $commandPatterns, 'failure');
+
+        if (! $latestSuccess) {
+            $failureSuffix = $latestFailure
+                ? " Last failure: {$latestFailure->ran_at?->toDateTimeString()}."
+                : '';
+
+            $this->recordCheck(
+                $sport,
+                $checkType,
+                'failing',
+                "No successful {$label} heartbeat recorded.{$failureSuffix}",
+                array_merge($context, [
+                    'command_patterns' => $commandPatterns,
+                    'last_success_at' => null,
+                    'last_failure_at' => $latestFailure?->ran_at?->toDateTimeString(),
+                    'last_failure_error' => $latestFailure?->error,
+                    'warning_after_minutes' => $warningAfterMinutes,
+                    'failing_after_minutes' => $failingAfterMinutes,
+                ])
+            );
+
+            return;
+        }
+
+        $ageMinutes = now()->diffInMinutes($latestSuccess->ran_at);
 
         $status = 'passing';
-        $message = "{$upcomingGames} upcoming games scheduled for next 7 days.";
+        if ($ageMinutes > $failingAfterMinutes) {
+            $status = 'failing';
+        } elseif ($ageMinutes > $warningAfterMinutes) {
+            $status = 'warning';
+        }
 
-        // Only check during active season (rough heuristic)
-        $isActiveSeason = match ($sport) {
+        $message = match ($status) {
+            'passing' => ucfirst($label)." heartbeat is healthy. Last success {$ageMinutes} min ago.",
+            'warning' => ucfirst($label)." heartbeat is stale. Last success {$ageMinutes} min ago.",
+            'failing' => ucfirst($label)." heartbeat is overdue. Last success {$ageMinutes} min ago.",
+            default => ucfirst($label)." heartbeat status unknown.",
+        };
+
+        $this->recordCheck(
+            $sport,
+            $checkType,
+            $status,
+            $message,
+            array_merge($context, [
+                'command_patterns' => $commandPatterns,
+                'last_success_at' => $latestSuccess->ran_at?->toDateTimeString(),
+                'age_minutes' => $ageMinutes,
+                'last_failure_at' => $latestFailure?->ran_at?->toDateTimeString(),
+                'last_failure_error' => $latestFailure?->error,
+                'warning_after_minutes' => $warningAfterMinutes,
+                'failing_after_minutes' => $failingAfterMinutes,
+            ])
+        );
+    }
+
+    /**
+     * @param  array<int, string>  $commandPatterns
+     */
+    protected function latestHeartbeat(string $sport, array $commandPatterns, string $status): ?CommandHeartbeat
+    {
+        return CommandHeartbeat::query()
+            ->where('sport', $sport)
+            ->where('status', $status)
+            ->where(function (Builder $query) use ($commandPatterns) {
+                foreach ($commandPatterns as $index => $pattern) {
+                    if ($index === 0) {
+                        $query->where('command', 'like', $pattern);
+                    } else {
+                        $query->orWhere('command', 'like', $pattern);
+                    }
+                }
+            })
+            ->latest('ran_at')
+            ->first();
+    }
+
+    protected function isActiveSeason(string $sport): bool
+    {
+        return match ($sport) {
             'mlb' => now()->month >= 3 && now()->month <= 10,
             'nba' => now()->month >= 10 || now()->month <= 6,
             'nfl' => now()->month >= 9 || now()->month <= 2,
@@ -121,321 +282,14 @@ class HealthcheckRun extends Command
             'wnba' => now()->month >= 5 && now()->month <= 9,
             default => true,
         };
-
-        if ($isActiveSeason) {
-            if ($upcomingGames === 0) {
-                $status = 'failing';
-                $message = "No upcoming games found during active season. Expected at least {$expectedTotal} games over 7 days.";
-            } elseif ($upcomingGames < $expectedTotal * 0.5) {
-                $status = 'failing';
-                $message = "Only {$upcomingGames} upcoming games. Expected at least {$expectedTotal} over 7 days during active season.";
-            } elseif ($upcomingGames < $expectedTotal) {
-                $status = 'warning';
-                $message = "Only {$upcomingGames} upcoming games. Expected around {$expectedTotal} over 7 days during active season.";
-            }
-        }
-
-        $this->recordCheck($sport, 'missing_games', $status, $message, [
-            'upcoming_games' => $upcomingGames,
-            'expected_per_day' => $expectedGamesPerDay,
-            'expected_total' => $expectedTotal,
-            'is_active_season' => $isActiveSeason,
-        ]);
     }
 
-    protected function checkTeamSchedules(string $sport): void
+    /**
+     * @return array{start:int,end:int}
+     */
+    protected function gameHoursForSport(string $sport): array
     {
-        $gamesTable = "{$sport}_games";
-        $teamsTable = "{$sport}_teams";
-
-        // Get total teams
-        $totalTeams = DB::table($teamsTable)->count();
-
-        if ($totalTeams === 0) {
-            $this->recordCheck($sport, 'team_schedules', 'failing', 'No teams found in database. Cannot check team schedules.', [
-                'total_teams' => 0,
-                'teams_with_no_games' => 0,
-                'outliers' => [],
-            ]);
-
-            return;
-        }
-
-        // Get games per team for current season
-        $season = now()->year;
-
-        // Count games per team (both home and away)
-        $homeGames = DB::table($gamesTable)
-            ->select('home_team_id as team_id', DB::raw('count(*) as game_count'))
-            ->where('season', $season)
-            ->groupBy('home_team_id');
-
-        $awayGames = DB::table($gamesTable)
-            ->select('away_team_id as team_id', DB::raw('count(*) as game_count'))
-            ->where('season', $season)
-            ->groupBy('away_team_id');
-
-        $gamesCounts = DB::table(DB::raw("({$homeGames->toSql()} UNION ALL {$awayGames->toSql()}) as games"))
-            ->mergeBindings($homeGames)
-            ->mergeBindings($awayGames)
-            ->select('team_id', DB::raw('SUM(game_count) as total_games'))
-            ->groupBy('team_id')
-            ->get();
-
-        // Calculate statistics
-        $counts = $gamesCounts->pluck('total_games')->toArray();
-
-        if (empty($counts)) {
-            $this->recordCheck($sport, 'team_schedules', 'failing', "No games found for season {$season}. Team schedules may not be synced.", [
-                'total_teams' => $totalTeams,
-                'teams_with_games' => 0,
-                'teams_with_no_games' => $totalTeams,
-                'outliers' => [],
-            ]);
-
-            return;
-        }
-
-        $average = array_sum($counts) / count($counts);
-        $variance = array_sum(array_map(fn ($x) => ($x - $average) ** 2, $counts)) / count($counts);
-        $stdDev = sqrt($variance);
-
-        // Find teams with no games
-        $teamsWithGames = $gamesCounts->pluck('team_id')->toArray();
-        $teamsWithNoGames = DB::table($teamsTable)
-            ->whereNotIn('id', $teamsWithGames)
-            ->get(['id', 'school', 'mascot', 'espn_id']);
-
-        // Find outliers (teams with game counts > 2 standard deviations from mean)
-        $outliers = [];
-        foreach ($gamesCounts as $teamGames) {
-            $deviation = abs($teamGames->total_games - $average);
-
-            if ($deviation > 2 * $stdDev) {
-                $team = DB::table($teamsTable)->where('id', $teamGames->team_id)->first(['school', 'mascot', 'espn_id']);
-
-                $outliers[] = [
-                    'team' => $team ? "{$team->school} {$team->mascot}" : "Team ID {$teamGames->team_id}",
-                    'espn_id' => $team->espn_id ?? null,
-                    'games' => $teamGames->total_games,
-                    'deviation_from_avg' => round($teamGames->total_games - $average, 1),
-                    'type' => $teamGames->total_games < $average ? 'too_few' : 'too_many',
-                ];
-            }
-        }
-
-        // Add teams with zero games as outliers
-        foreach ($teamsWithNoGames as $team) {
-            $outliers[] = [
-                'team' => "{$team->school} {$team->mascot}",
-                'espn_id' => $team->espn_id,
-                'games' => 0,
-                'deviation_from_avg' => round(0 - $average, 1),
-                'type' => 'no_games',
-            ];
-        }
-
-        // Determine status
-        $status = 'passing';
-        $message = 'Team schedules look good. Average: '.round($average, 1)." games/team. {$teamsWithNoGames->count()} teams with no games, ".count($outliers).' outliers detected.';
-
-        if ($teamsWithNoGames->count() > $totalTeams * 0.1 || count($outliers) > $totalTeams * 0.15) {
-            $status = 'failing';
-            $message = "Significant schedule issues. {$teamsWithNoGames->count()} teams with no games, ".count($outliers).' outliers (>2 std dev from avg '.round($average, 1).' games).';
-        } elseif ($teamsWithNoGames->count() > 0 || count($outliers) > 0) {
-            $status = 'warning';
-            $message = "Some schedule issues. {$teamsWithNoGames->count()} teams with no games, ".count($outliers).' outliers (>2 std dev from avg '.round($average, 1).' games).';
-        }
-
-        $this->recordCheck($sport, 'team_schedules', $status, $message, [
-            'total_teams' => $totalTeams,
-            'teams_with_games' => count($counts),
-            'teams_with_no_games' => $teamsWithNoGames->count(),
-            'average_games' => round($average, 2),
-            'std_dev' => round($stdDev, 2),
-            'min_games' => min($counts),
-            'max_games' => max($counts),
-            'outliers' => $outliers,
-            'season' => $season,
-        ]);
-    }
-
-    protected function checkStalePredictions(string $sport): void
-    {
-        // Only sports with predictions
-        if (! in_array($sport, SportCatalog::STALE_PREDICTIONS, true)) {
-            return;
-        }
-
-        $gamesTable = "{$sport}_games";
-        $predictionsTable = "{$sport}_predictions";
-
-        // Check if there are any games at all
-        $totalGames = DB::table($gamesTable)->count();
-
-        if ($totalGames === 0) {
-            $this->recordCheck($sport, 'stale_predictions', 'failing', 'No games found in database. Cannot check predictions.', [
-                'total_games' => 0,
-                'stale_count' => 0,
-                'missing_predictions' => 0,
-            ]);
-
-            return;
-        }
-
-        // Find completed games without predictions or with outdated predictions
-        $staleCount = DB::table($gamesTable)
-            ->leftJoin($predictionsTable, "{$gamesTable}.id", '=', "{$predictionsTable}.game_id")
-            ->where("{$gamesTable}.status", 'STATUS_FINAL')
-            ->where("{$gamesTable}.game_date", '>=', now()->subDays(7))
-            ->where(function ($query) use ($predictionsTable, $gamesTable) {
-                $query->whereNull("{$predictionsTable}.id")
-                    ->orWhere("{$predictionsTable}.updated_at", '<', DB::raw("{$gamesTable}.updated_at"));
-            })
-            ->count();
-
-        // Find scheduled games without predictions
-        $missingPredictions = DB::table($gamesTable)
-            ->leftJoin($predictionsTable, "{$gamesTable}.id", '=', "{$predictionsTable}.game_id")
-            ->where("{$gamesTable}.status", 'STATUS_SCHEDULED')
-            ->where("{$gamesTable}.game_date", '>=', now())
-            ->where("{$gamesTable}.game_date", '<=', now()->addDays(3))
-            ->whereNull("{$predictionsTable}.id")
-            ->count();
-
-        $status = 'passing';
-        $message = 'Predictions are up to date.';
-
-        if ($staleCount > 10 || $missingPredictions > 20) {
-            $status = 'failing';
-            $message = "{$staleCount} completed games with stale predictions, {$missingPredictions} upcoming games missing predictions.";
-        } elseif ($staleCount > 0 || $missingPredictions > 0) {
-            $status = 'warning';
-            $message = "{$staleCount} completed games with stale predictions, {$missingPredictions} upcoming games missing predictions.";
-        }
-
-        $this->recordCheck($sport, 'stale_predictions', $status, $message, [
-            'total_games' => $totalGames,
-            'stale_count' => $staleCount,
-            'missing_predictions' => $missingPredictions,
-        ]);
-    }
-
-    protected function checkEloStatus(string $sport): void
-    {
-        $teamsTable = "{$sport}_teams";
-
-        // Check how many teams have Elo ratings
-        $teamsWithElo = DB::table($teamsTable)
-            ->whereNotNull('elo_rating')
-            ->where('elo_rating', '>', 0)
-            ->count();
-
-        $totalTeams = DB::table($teamsTable)->count();
-
-        // Check when teams were last updated
-        $recentlyUpdated = DB::table($teamsTable)
-            ->where('updated_at', '>=', now()->subDays(2))
-            ->count();
-
-        // Handle zero-data scenario
-        if ($totalTeams === 0) {
-            $this->recordCheck($sport, 'elo_status', 'failing', 'No teams found in database. Data sync may have failed.', [
-                'teams_with_elo' => 0,
-                'total_teams' => 0,
-                'recently_updated' => 0,
-            ]);
-
-            return;
-        }
-
-        $status = 'passing';
-        $message = "{$teamsWithElo}/{$totalTeams} teams have Elo ratings. {$recentlyUpdated} updated in last 2 days.";
-
-        if ($teamsWithElo < $totalTeams * 0.5) {
-            $status = 'failing';
-            $message = "Only {$teamsWithElo}/{$totalTeams} teams have Elo ratings.";
-        } elseif ($teamsWithElo < $totalTeams) {
-            $status = 'warning';
-            $missingTeams = $totalTeams - $teamsWithElo;
-            $message = "{$teamsWithElo}/{$totalTeams} teams have Elo ratings. {$missingTeams} teams missing.";
-        }
-
-        $this->recordCheck($sport, 'elo_status', $status, $message, [
-            'teams_with_elo' => $teamsWithElo,
-            'total_teams' => $totalTeams,
-            'recently_updated' => $recentlyUpdated,
-        ]);
-    }
-
-    protected function checkTeamMetrics(string $sport): void
-    {
-        // Only sports with team metrics
-        if (! in_array($sport, SportCatalog::TEAM_METRICS, true)) {
-            return;
-        }
-
-        $metricsTable = "{$sport}_team_metrics";
-        $teamsTable = "{$sport}_teams";
-
-        $totalTeams = DB::table($teamsTable)->count();
-
-        if ($totalTeams === 0) {
-            $this->recordCheck($sport, 'team_metrics', 'failing', 'No teams found in database. Cannot check team metrics.', [
-                'total_teams' => 0,
-                'teams_with_metrics' => 0,
-                'recently_updated' => 0,
-            ]);
-
-            return;
-        }
-
-        // Check how many teams have metrics calculated
-        $teamsWithMetrics = DB::table($metricsTable)->distinct('team_id')->count();
-
-        // Check when metrics were last updated
-        $recentlyUpdated = DB::table($metricsTable)
-            ->where('updated_at', '>=', now()->subDays(3))
-            ->distinct('team_id')
-            ->count();
-
-        $status = 'passing';
-        $message = "{$teamsWithMetrics}/{$totalTeams} teams have metrics calculated. {$recentlyUpdated} updated in last 3 days.";
-
-        if ($teamsWithMetrics === 0) {
-            $status = 'failing';
-            $message = "No team metrics found. Run {$sport}:calculate-team-metrics to generate metrics.";
-        } elseif ($teamsWithMetrics < $totalTeams * 0.5) {
-            $status = 'failing';
-            $message = "Only {$teamsWithMetrics}/{$totalTeams} teams have metrics calculated.";
-        } elseif ($teamsWithMetrics < $totalTeams) {
-            $status = 'warning';
-            $missingTeams = $totalTeams - $teamsWithMetrics;
-            $message = "{$teamsWithMetrics}/{$totalTeams} teams have metrics. {$missingTeams} teams missing.";
-        } elseif ($recentlyUpdated < $totalTeams * 0.5) {
-            $status = 'warning';
-            $message = "Metrics exist but may be stale. Only {$recentlyUpdated}/{$totalTeams} updated in last 3 days.";
-        }
-
-        $this->recordCheck($sport, 'team_metrics', $status, $message, [
-            'total_teams' => $totalTeams,
-            'teams_with_metrics' => $teamsWithMetrics,
-            'recently_updated' => $recentlyUpdated,
-        ]);
-    }
-
-    protected function checkLiveScoreboardSync(string $sport): void
-    {
-        $gamesTable = "{$sport}_games";
-        $predictionsTable = "{$sport}_predictions";
-
-        // Only check sports that have predictions
-        if (! in_array($sport, SportCatalog::ALL, true)) {
-            return;
-        }
-
-        // Determine game hours for this sport
-        $gameHours = match ($sport) {
+        return match ($sport) {
             'nba' => ['start' => 18, 'end' => 3],
             'cbb', 'wcbb', 'cfb' => ['start' => 12, 'end' => 1],
             'mlb' => ['start' => 13, 'end' => 4],
@@ -443,72 +297,6 @@ class HealthcheckRun extends Command
             'nfl' => ['start' => 17, 'end' => 2],
             default => ['start' => 12, 'end' => 2],
         };
-
-        $currentHour = (int) now()->format('H');
-        $isDuringGameHours = $gameHours['end'] < $gameHours['start']
-            ? ($currentHour >= $gameHours['start'] || $currentHour < $gameHours['end'])
-            : ($currentHour >= $gameHours['start'] && $currentHour < $gameHours['end']);
-
-        // Count in-progress games right now
-        $inProgressGames = DB::table($gamesTable)
-            ->whereIn('status', ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
-            ->count();
-
-        // Check how recently in-progress games were updated
-        $staleInProgressGames = DB::table($gamesTable)
-            ->whereIn('status', ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
-            ->where('updated_at', '<', now()->subMinutes(10))
-            ->count();
-
-        // Check live prediction freshness for in-progress games
-        $hasPredictions = DB::table("{$predictionsTable}")->exists();
-        $gamesWithStaleLivePredictions = 0;
-        $gamesWithoutLivePredictions = 0;
-
-        if ($hasPredictions && $inProgressGames > 0) {
-            $gamesWithoutLivePredictions = DB::table($gamesTable)
-                ->join($predictionsTable, "{$gamesTable}.id", '=', "{$predictionsTable}.game_id")
-                ->whereIn("{$gamesTable}.status", ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
-                ->whereNull("{$predictionsTable}.live_seconds_remaining")
-                ->count();
-
-            $gamesWithStaleLivePredictions = DB::table($gamesTable)
-                ->join($predictionsTable, "{$gamesTable}.id", '=', "{$predictionsTable}.game_id")
-                ->whereIn("{$gamesTable}.status", ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
-                ->whereNotNull("{$predictionsTable}.live_updated_at")
-                ->where("{$predictionsTable}.live_updated_at", '<', now()->subMinutes(10))
-                ->count();
-        }
-
-        // Determine status
-        $status = 'passing';
-        $message = $inProgressGames > 0
-            ? "{$inProgressGames} games in progress. Scoreboard sync is active."
-            : 'No games currently in progress.';
-
-        if ($inProgressGames > 0 && $staleInProgressGames > 0) {
-            $status = 'failing';
-            $message = "{$staleInProgressGames}/{$inProgressGames} in-progress games not updated in 10+ min. Scoreboard sync may be down.";
-        } elseif ($inProgressGames > 0 && $gamesWithoutLivePredictions > 0) {
-            $status = 'warning';
-            $message = "{$gamesWithoutLivePredictions}/{$inProgressGames} in-progress games missing live predictions.";
-        } elseif ($inProgressGames > 0 && $gamesWithStaleLivePredictions > 0) {
-            $status = 'warning';
-            $message = "{$gamesWithStaleLivePredictions}/{$inProgressGames} in-progress games have stale live predictions (10+ min old).";
-        } elseif ($isDuringGameHours && $inProgressGames === 0) {
-            $status = 'passing';
-            $message = 'During game hours but no games currently in progress. Sync is idle.';
-        }
-
-        $this->recordCheck($sport, 'live_scoreboard_sync', $status, $message, [
-            'in_progress_games' => $inProgressGames,
-            'stale_in_progress_games' => $staleInProgressGames,
-            'games_without_live_predictions' => $gamesWithoutLivePredictions,
-            'games_with_stale_live_predictions' => $gamesWithStaleLivePredictions,
-            'is_during_game_hours' => $isDuringGameHours,
-            'current_hour' => $currentHour,
-            'game_hours' => $gameHours,
-        ]);
     }
 
     protected function recordCheck(string $sport, string $checkType, string $status, string $message, array $metadata = []): void

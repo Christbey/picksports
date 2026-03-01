@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Head, router, useForm } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { computed, ref, watch } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { type BreadcrumbItem } from '@/types';
+import SettingsLayout from '@/layouts/settings/Layout.vue';
+import { type AppPageProps, type BreadcrumbItem } from '@/types';
 
 interface Subscription {
     stripe_id: string;
@@ -58,6 +59,10 @@ const search = ref(props.filters.search || '');
 const isSyncing = ref(false);
 const syncingUserId = ref<number | null>(null);
 const assigningTierUserId = ref<number | null>(null);
+const impersonatingUserId = ref<number | null>(null);
+
+const page = usePage<AppPageProps>();
+const currentUserId = computed(() => page.props.auth.user.id);
 
 watch(search, (value) => {
     router.get('/admin/subscriptions', { search: value }, {
@@ -137,13 +142,31 @@ function assignTier(userId: number, tierSlug: string) {
         },
     });
 }
+
+function impersonateUser(user: User) {
+    if (user.id === currentUserId.value) {
+        return;
+    }
+
+    if (!confirm(`Impersonate ${user.name} (${user.email})?`)) {
+        return;
+    }
+
+    impersonatingUserId.value = user.id;
+    router.post(`/admin/impersonation/${user.id}`, {}, {
+        onFinish: () => {
+            impersonatingUserId.value = null;
+        },
+    });
+}
 </script>
 
 <template>
     <Head title="Manage Subscriptions" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <SettingsLayout :full-width="true">
+            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-2xl font-bold">Manage Subscriptions</h1>
@@ -241,15 +264,25 @@ function assignTier(userId: number, tierSlug: string) {
                                 <span v-else class="text-muted-foreground">-</span>
                             </td>
                             <td class="p-4">
-                                <button
-                                    v-if="user.subscription"
-                                    @click="syncUser(user.id)"
-                                    :disabled="syncingUserId === user.id"
-                                    class="rounded-lg bg-sidebar-accent px-3 py-1 text-sm font-medium hover:bg-sidebar-accent/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {{ syncingUserId === user.id ? 'Syncing...' : 'Sync' }}
-                                </button>
-                                <span v-else class="text-muted-foreground text-sm">-</span>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        v-if="user.subscription"
+                                        @click="syncUser(user.id)"
+                                        :disabled="syncingUserId === user.id"
+                                        class="rounded-lg bg-sidebar-accent px-3 py-1 text-sm font-medium transition-colors hover:bg-sidebar-accent/80 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {{ syncingUserId === user.id ? 'Syncing...' : 'Sync' }}
+                                    </button>
+                                    <button
+                                        v-if="user.id !== currentUserId"
+                                        @click="impersonateUser(user)"
+                                        :disabled="impersonatingUserId === user.id"
+                                        class="rounded-lg bg-amber-100 px-3 py-1 text-sm font-medium text-amber-900 transition-colors hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                        {{ impersonatingUserId === user.id ? 'Starting...' : 'Impersonate' }}
+                                    </button>
+                                    <span v-else class="text-muted-foreground text-sm">Current user</span>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -276,6 +309,7 @@ function assignTier(userId: number, tierSlug: string) {
                     </button>
                 </div>
             </div>
-        </div>
+            </div>
+        </SettingsLayout>
     </AppLayout>
 </template>

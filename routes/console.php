@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use App\Services\CommandHeartbeatService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -44,14 +45,33 @@ $fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
 */
 
 $heartbeatUrl = config('services.heartbeat.live_scoreboard_url');
+$attachCommandHeartbeat = function ($event, string $command, string $sourceName): void {
+    $service = app(CommandHeartbeatService::class);
+    $sport = $service->inferSportFromCommand($command);
+
+    $event->onSuccess(function () use ($service, $command, $sport, $sourceName) {
+        $service->recordSuccess($command, $sport, 'schedule', [
+            'scheduled_name' => $sourceName,
+        ]);
+    });
+
+    $event->onFailure(function () use ($service, $command, $sport, $sourceName) {
+        $service->recordFailure($command, $sport, 'schedule', null, [
+            'scheduled_name' => $sourceName,
+        ]);
+    });
+};
+
 $scheduleLiveScoreboardSync = function (
     string $command,
     string $betweenStart,
     string $betweenEnd,
     callable $inSeason,
     string $name
-) use ($heartbeatUrl) {
-    $event = Schedule::command("{$command} ".date('Ymd'))
+) use ($heartbeatUrl, $attachCommandHeartbeat) {
+    $resolvedCommand = "{$command} ".date('Ymd');
+
+    $event = Schedule::command($resolvedCommand)
         ->everyFiveMinutes()
         ->between($betweenStart, $betweenEnd)
         ->when($inSeason)
@@ -62,6 +82,8 @@ $scheduleLiveScoreboardSync = function (
     if ($heartbeatUrl) {
         $event->pingOnSuccess($heartbeatUrl);
     }
+
+    $attachCommandHeartbeat($event, $resolvedCommand, $name);
 };
 
 $scheduleDailySeasonJob = function (
@@ -69,13 +91,15 @@ $scheduleDailySeasonJob = function (
     string $time,
     callable $inSeason,
     string $name
-) {
-    Schedule::command($command)
+) use ($attachCommandHeartbeat) {
+    $event = Schedule::command($command)
         ->dailyAt($time)
         ->when($inSeason)
         ->name($name)
         ->withoutOverlapping()
         ->runInBackground();
+
+    $attachCommandHeartbeat($event, $command, $name);
 };
 
 $scheduleHalfHourlyWindowJob = function (
@@ -84,28 +108,32 @@ $scheduleHalfHourlyWindowJob = function (
     string $betweenEnd,
     callable $inSeason,
     string $name
-) {
-    Schedule::command($command)
+) use ($attachCommandHeartbeat) {
+    $event = Schedule::command($command)
         ->everyThirtyMinutes()
         ->between($betweenStart, $betweenEnd)
         ->when($inSeason)
         ->name($name)
         ->withoutOverlapping()
         ->runInBackground();
+
+    $attachCommandHeartbeat($event, $command, $name);
 };
 
 $scheduleOddsSyncWindow = function (
     string $command,
     callable $inSeason,
     string $name
-) {
-    Schedule::command($command)
+) use ($attachCommandHeartbeat) {
+    $event = Schedule::command($command)
         ->everyFourHours()
         ->between('08:00', '23:00')
         ->when($inSeason)
         ->name($name)
         ->withoutOverlapping()
         ->runInBackground();
+
+    $attachCommandHeartbeat($event, $command, $name);
 };
 
 $schedulePlayerPropsWindow = function (
@@ -114,13 +142,15 @@ $schedulePlayerPropsWindow = function (
     int $secondHour,
     callable $inSeason,
     string $name
-) {
-    Schedule::command($command)
+) use ($attachCommandHeartbeat) {
+    $event = Schedule::command($command)
         ->twiceDaily($firstHour, $secondHour)
         ->when($inSeason)
         ->name($name)
         ->withoutOverlapping()
         ->runInBackground();
+
+    $attachCommandHeartbeat($event, $command, $name);
 };
 
 $schedulePredictionPipeline = function (
@@ -250,12 +280,13 @@ $scheduleSportPipeline(
 );
 
 // CBB
-Schedule::command('espn:sync-cbb-all-team-schedules')
+$cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
     ->weeklyOn(0, '01:30')
     ->when($cbbInSeason)
     ->name('CBB: Sync All Team Schedules')
     ->withoutOverlapping()
     ->runInBackground();
+$attachCommandHeartbeat($cbbTeamSchedulesEvent, 'espn:sync-cbb-all-team-schedules', 'CBB: Sync All Team Schedules');
 
 $scheduleSportPipeline(
     'espn:sync-cbb-current',
@@ -287,13 +318,13 @@ $scheduleSportPipeline(
     'CBB: Sync Player Props'
 );
 
-Schedule::command('alerts:send-daily-digests --sport=cbb')
+$dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
     ->hourly()
     ->between('06:00', '22:00')
-    ->when($cbbInSeason)
-    ->name('CBB: Send Daily Digests')
+    ->name('Alerts: Send Daily Digests')
     ->withoutOverlapping()
     ->runInBackground();
+$attachCommandHeartbeat($dailyDigestsEvent, 'alerts:send-daily-digests --sport=all', 'Alerts: Send Daily Digests');
 
 // WCBB
 $scheduleDailySeasonJob('espn:sync-wcbb-game-details', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');

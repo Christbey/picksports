@@ -15,8 +15,13 @@ import { type NavItem } from '@/types';
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
+const props = withDefaults(defineProps<{
+    fullWidth?: boolean;
+}>(), {
+    fullWidth: false,
+});
 
-const sidebarNavItems = computed(() => {
+const userNavItems = computed(() => {
     const items: NavItem[] = [
         {
             title: 'Profile',
@@ -48,21 +53,32 @@ const sidebarNavItems = computed(() => {
         },
     ];
 
-    if (user.value.is_admin) {
-        items.push({
-            title: 'Admin',
-            href: '/settings/admin',
-        });
-        items.push({
-            title: 'Team Mappings',
-            href: '/settings/team-mappings',
-        });
-    }
-
     return items;
 });
 
-const { isCurrentUrl } = useCurrentUrl();
+const adminNavItems = computed(() => {
+    if (!user.value.is_admin) {
+        return [] as NavItem[];
+    }
+
+    return [
+        {
+            title: 'Admin Settings',
+            href: '/settings/admin',
+        },
+    ] satisfies NavItem[];
+});
+
+const { currentUrl, isCurrentUrl } = useCurrentUrl();
+
+function isSettingsItemActive(href: NavItem['href']): boolean {
+    const target = toUrl(href);
+    const path = target.startsWith('http')
+        ? new URL(target, window.location.origin).pathname
+        : target;
+
+    return isCurrentUrl(href) || currentUrl.value.startsWith(`${path}/`);
+}
 </script>
 
 <template>
@@ -73,33 +89,62 @@ const { isCurrentUrl } = useCurrentUrl();
         />
 
         <div class="flex flex-col lg:flex-row lg:space-x-12">
-            <aside class="w-full max-w-xl lg:w-48">
-                <nav
-                    class="flex flex-col space-y-1 space-x-0"
-                    aria-label="Settings"
-                >
-                    <Button
-                        v-for="item in sidebarNavItems"
-                        :key="toUrl(item.href)"
-                        variant="ghost"
-                        :class="[
-                            'w-full justify-start',
-                            { 'bg-muted': isCurrentUrl(item.href) },
-                        ]"
-                        as-child
-                    >
-                        <Link :href="item.href">
-                            <component :is="item.icon" class="h-4 w-4" />
-                            {{ item.title }}
-                        </Link>
-                    </Button>
-                </nav>
+            <aside class="w-full max-w-xl lg:w-56">
+                <div class="space-y-4">
+                    <div class="rounded-lg border border-sidebar-border p-2">
+                        <p class="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account</p>
+                        <nav
+                            class="flex flex-col space-y-1 space-x-0"
+                            aria-label="Account settings"
+                        >
+                            <Button
+                                v-for="item in userNavItems"
+                                :key="toUrl(item.href)"
+                                variant="ghost"
+                                :class="[
+                                    'w-full justify-start',
+                                    { 'bg-muted': isSettingsItemActive(item.href) },
+                                ]"
+                                as-child
+                            >
+                                <Link :href="item.href">
+                                    <component :is="item.icon" class="h-4 w-4" />
+                                    {{ item.title }}
+                                </Link>
+                            </Button>
+                        </nav>
+                    </div>
+
+                    <div v-if="adminNavItems.length > 0" class="rounded-lg border border-sidebar-border p-2">
+                        <p class="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Admin</p>
+                        <nav
+                            class="flex flex-col space-y-1 space-x-0"
+                            aria-label="Admin settings"
+                        >
+                            <Button
+                                v-for="item in adminNavItems"
+                                :key="toUrl(item.href)"
+                                variant="ghost"
+                                :class="[
+                                    'w-full justify-start',
+                                    { 'bg-muted': isSettingsItemActive(item.href) },
+                                ]"
+                                as-child
+                            >
+                                <Link :href="item.href">
+                                    <component :is="item.icon" class="h-4 w-4" />
+                                    {{ item.title }}
+                                </Link>
+                            </Button>
+                        </nav>
+                    </div>
+                </div>
             </aside>
 
             <Separator class="my-6 lg:hidden" />
 
-            <div class="flex-1 md:max-w-2xl">
-                <section class="max-w-xl space-y-12">
+            <div :class="props.fullWidth ? 'min-w-0 flex-1' : 'min-w-0 flex-1 md:max-w-2xl'">
+                <section :class="props.fullWidth ? 'space-y-12' : 'max-w-xl space-y-12'">
                     <slot />
                 </section>
             </div>

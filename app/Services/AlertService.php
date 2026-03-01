@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use App\Models\NotificationTemplate;
 use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
@@ -20,9 +19,7 @@ class AlertService
         'wnba' => ['game' => \App\Models\WNBA\Game::class, 'prediction' => \App\Models\WNBA\Prediction::class],
     ];
 
-    protected const TEMPLATE_NAMES = [
-        'betting_value_alert' => 'Betting Value Alert',
-    ];
+    public function __construct(private readonly NotificationTemplateDefaultService $templateDefaultService) {}
 
     public function checkForValueOpportunities(string $sport): int
     {
@@ -233,10 +230,7 @@ class AlertService
     protected function sendAlertsToUsers(Model $prediction, string $sport, float $expectedValue, string $recommendation): int
     {
         // Find the notification template
-        $template = NotificationTemplate::query()
-            ->where('name', self::TEMPLATE_NAMES['betting_value_alert'])
-            ->active()
-            ->first();
+        $template = $this->templateDefaultService->resolve('betting_value_alert');
 
         $users = User::query()
             ->with('alertPreference')

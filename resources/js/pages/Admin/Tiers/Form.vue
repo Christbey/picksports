@@ -2,6 +2,7 @@
 import { Head, router, useForm } from '@inertiajs/vue3';
 import { ref, computed } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 interface TierFeatures {
@@ -129,7 +130,8 @@ function submit() {
     <Head :title="isEditing ? 'Edit Tier' : 'Create Tier'" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <SettingsLayout :full-width="true">
+            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
             <div>
                 <h1 class="text-2xl font-bold">{{ isEditing ? 'Edit' : 'Create' }} Subscription Tier</h1>
                 <p class="mt-1 text-muted-foreground">
@@ -404,6 +406,7 @@ function submit() {
                     </button>
                 </div>
             </form>
-        </div>
+            </div>
+        </SettingsLayout>
     </AppLayout>
 </template>

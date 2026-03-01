@@ -75,7 +75,8 @@ const getROIColor = (roi: number) => {
       <meta head-key="og:description" property="og:description" content="View prediction accuracy, win record, and ROI performance across all supported sports." />
       <meta head-key="twitter:title" name="twitter:title" content="Performance Dashboard" />
       <meta head-key="twitter:description" name="twitter:description" content="View prediction accuracy, win record, and ROI performance across all supported sports." />
-      <script
+      <component
+        :is="'script'"
         head-key="schema-webpage-performance"
         type="application/ld+json"
         v-html='JSON.stringify({"@context":"https://schema.org","@type":"WebPage","name":"PickSports Performance Dashboard","url":"https://picksports.app/performance","description":"Transparent PickSports model performance and ROI history."})'

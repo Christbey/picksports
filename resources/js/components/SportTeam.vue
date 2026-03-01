@@ -112,8 +112,8 @@ const sportsTeamSchema = computed(() =>
         <meta head-key="twitter:title" name="twitter:title" :content="pageTitle" />
         <meta head-key="twitter:description" name="twitter:description" :content="pageDescription" />
         <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
-        <script head-key="schema-webpage-team" type="application/ld+json" v-html="webPageSchema" />
-        <script v-if="sportsTeamSchema" head-key="schema-sportsteam" type="application/ld+json" v-html="sportsTeamSchema" />
+        <component :is="'script'" head-key="schema-webpage-team" type="application/ld+json" v-html="webPageSchema" />
+        <component :is="'script'" v-if="sportsTeamSchema" head-key="schema-sportsteam" type="application/ld+json" v-html="sportsTeamSchema" />
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">

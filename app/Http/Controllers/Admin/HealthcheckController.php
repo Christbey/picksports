@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\HealthcheckSummaryResource;
+use App\Services\CommandHeartbeatService;
 use App\Models\Healthcheck;
 use App\Support\SportCatalog;
 use Illuminate\Http\Request;
@@ -18,39 +19,43 @@ class HealthcheckController extends Controller
      * @var array<string, array<string, string|null>>
      */
     private const CHECK_COMMANDS = [
-        'sync_current' => [
+        'heartbeat_sync' => [
             'nba' => 'espn:sync-nba-current',
             'nfl' => 'espn:sync-nfl-current',
             'cbb' => 'espn:sync-cbb-current',
             'wcbb' => 'espn:sync-wcbb-current',
             'cfb' => 'espn:sync-cfb-current',
             'wnba' => 'espn:sync-wnba-current',
-            'mlb' => null,
+            'mlb' => 'espn:sync-mlb-games-scoreboard',
         ],
-        'generate_predictions' => [
+        'heartbeat_prediction_pipeline' => [
             'nba' => 'nba:generate-predictions',
             'nfl' => 'nfl:generate-predictions',
             'cbb' => 'cbb:generate-predictions',
             'wcbb' => 'wcbb:generate-predictions',
             'mlb' => 'mlb:generate-predictions',
+            'cfb' => null,
+            'wnba' => null,
         ],
-        'calculate_elo' => [
+        'heartbeat_model_pipeline' => [
             'nba' => 'nba:calculate-elo',
             'nfl' => 'nfl:calculate-elo',
             'cbb' => 'cbb:calculate-elo',
             'wcbb' => 'wcbb:calculate-elo',
             'mlb' => 'mlb:calculate-elo',
+            'cfb' => 'cfb:calculate-elo',
+            'wnba' => 'wnba:calculate-elo',
         ],
-        'calculate_team_metrics' => [
-            'nba' => 'nba:calculate-team-metrics',
-            'cbb' => 'cbb:calculate-team-metrics',
-            'wcbb' => 'wcbb:calculate-team-metrics',
-            'mlb' => 'mlb:calculate-team-metrics',
+        'heartbeat_odds' => [
+            'nba' => 'nba:sync-odds',
+            'nfl' => 'nfl:sync-odds',
+            'cbb' => 'cbb:sync-odds',
+            'wcbb' => 'wcbb:sync-odds',
+            'cfb' => 'cfb:sync-odds',
+            'wnba' => 'wnba:sync-odds',
+            'mlb' => 'mlb:sync-odds',
         ],
-        'sync_team_schedules' => [
-            'cbb' => 'espn:sync-cbb-all-team-schedules',
-        ],
-        'live_scoreboard_sync' => [
+        'heartbeat_live_scoreboard' => [
             'nba' => 'espn:sync-nba-games-scoreboard',
             'cbb' => 'espn:sync-cbb-games-scoreboard',
             'wcbb' => 'espn:sync-wcbb-games-scoreboard',
@@ -64,6 +69,8 @@ class HealthcheckController extends Controller
     public function index(Request $request): Response
     {
         $sport = $request->input('sport');
+        $view = $request->input('view', 'heartbeat');
+        $prefix = $view === 'validation' ? 'validation_' : 'heartbeat_';
 
         // Get the latest check for each sport/check_type combination
         $latestChecks = Healthcheck::query()
@@ -73,6 +80,7 @@ class HealthcheckController extends Controller
                     ->from('healthchecks')
                     ->groupBy('sport', 'check_type');
             })
+            ->where('check_type', 'like', "{$prefix}%")
             ->when($sport, fn ($q) => $q->where('sport', $sport))
             ->orderBy('sport')
             ->orderBy('check_type')
@@ -94,6 +102,7 @@ class HealthcheckController extends Controller
             'sports' => $sports,
             'filters' => [
                 'sport' => $sport,
+                'view' => $view,
             ],
         ]);
     }
@@ -101,21 +110,25 @@ class HealthcheckController extends Controller
     public function run(Request $request): \Illuminate\Http\RedirectResponse
     {
         $sport = $request->input('sport');
+        $mode = $request->input('mode', 'heartbeat');
+        $command = $mode === 'validation' ? 'healthcheck:validate-data' : 'healthcheck:run';
 
         try {
-            $exitCode = Artisan::call('healthcheck:run', [
+            $exitCode = Artisan::call($command, [
                 '--sport' => $sport,
             ]);
 
             if ($exitCode === 0) {
-                return $this->backSuccess('Health checks completed successfully.');
+                return $this->backSuccess(ucfirst($mode).' checks completed successfully.');
             }
 
-            return $this->backWarning('Health checks completed with warnings or failures. Check the results below.');
+            return $this->backWarning(ucfirst($mode).' checks completed with warnings or failures. Check the results below.');
         } catch (\Exception $e) {
-            return $this->backError('Failed to run health checks: '.$e->getMessage());
+            return $this->backError("Failed to run {$mode} checks: ".$e->getMessage());
         }
     }
+
+    public function __construct(private readonly CommandHeartbeatService $commandHeartbeatService) {}
 
     public function sync(Request $request): \Illuminate\Http\RedirectResponse
     {
@@ -134,35 +147,30 @@ class HealthcheckController extends Controller
             }
 
             Artisan::call($command);
+            $this->commandHeartbeatService->recordSuccess($command, $sport, 'manual');
 
             return $this->backSuccess("Successfully ran {$command}. Re-run health checks to see updated status.");
         } catch (\Exception $e) {
+            if ($sport) {
+                $this->commandHeartbeatService->recordFailure('manual:'.$checkType, $sport, 'manual', $e->getMessage());
+            }
+
             return $this->backError('Failed to sync data: '.$e->getMessage());
         }
     }
 
     protected function getCommandForCheck(string $sport, string $checkType): ?string
     {
-        $commandType = match ($checkType) {
-            'data_freshness', 'missing_games' => 'sync_current',
-            'stale_predictions' => 'generate_predictions',
-            'elo_status' => 'calculate_elo',
-            'team_metrics' => 'calculate_team_metrics',
-            'team_schedules' => 'sync_team_schedules',
-            'live_scoreboard_sync' => 'live_scoreboard_sync',
-            default => null,
-        };
-
-        if (! $commandType) {
+        if (! isset(self::CHECK_COMMANDS[$checkType])) {
             return null;
         }
 
-        $command = self::CHECK_COMMANDS[$commandType][$sport] ?? null;
+        $command = self::CHECK_COMMANDS[$checkType][$sport] ?? null;
         if (! $command) {
             return null;
         }
 
-        if ($commandType === 'live_scoreboard_sync') {
+        if ($checkType === 'heartbeat_live_scoreboard' || ($checkType === 'heartbeat_sync' && str_contains($command, 'scoreboard'))) {
             return $command.' '.now()->format('Ymd');
         }
 

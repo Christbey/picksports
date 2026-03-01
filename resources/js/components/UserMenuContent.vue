@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
-import { LogOut, Settings } from 'lucide-vue-next';
+import { Link, router, usePage } from '@inertiajs/vue3';
+import { LogOut, Settings, UserCheck } from 'lucide-vue-next';
+import { computed } from 'vue';
 import {
     DropdownMenuGroup,
     DropdownMenuItem,
@@ -10,7 +11,7 @@ import {
 import UserInfo from '@/components/UserInfo.vue';
 import { logout } from '@/routes';
 import { edit } from '@/routes/profile';
-import type { User } from '@/types';
+import type { AppPageProps, User } from '@/types';
 
 type Props = {
     user: User;
@@ -18,6 +19,13 @@ type Props = {
 
 const handleLogout = () => {
     router.flushAll();
+};
+
+const page = usePage<AppPageProps>();
+const impersonation = computed(() => page.props.impersonation);
+
+const stopImpersonation = () => {
+    router.post('/impersonation/stop');
 };
 
 defineProps<Props>();
@@ -38,6 +46,18 @@ defineProps<Props>();
             </Link>
         </DropdownMenuItem>
     </DropdownMenuGroup>
+    <template v-if="impersonation.active">
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+            <DropdownMenuItem
+                class="cursor-pointer text-amber-700 focus:text-amber-800"
+                @click="stopImpersonation"
+            >
+                <UserCheck class="mr-2 h-4 w-4" />
+                Stop impersonating
+            </DropdownMenuItem>
+        </DropdownMenuGroup>
+    </template>
     <DropdownMenuSeparator />
     <DropdownMenuItem :as-child="true">
         <Link

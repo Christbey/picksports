@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, useForm } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 interface NotificationTemplate {
@@ -16,8 +18,10 @@ interface NotificationTemplate {
     active: boolean;
 }
 
-defineProps<{
+const props = defineProps<{
     templates: NotificationTemplate[];
+    alertTypes: Record<string, string>;
+    defaultAssignments: Record<string, number | null>;
 }>();
 
 const breadcrumbs: BreadcrumbItem[] = [
@@ -42,13 +46,94 @@ function deleteTemplate(template: NotificationTemplate) {
 
     router.delete(`/admin/notification-templates/${template.id}`);
 }
+
+const defaultsForm = useForm({
+    defaults: { ...props.defaultAssignments } as Record<string, number | null>,
+});
+
+const templateOptions = computed(() =>
+    props.templates.map((template) => ({
+        id: template.id,
+        name: template.name,
+        active: template.active,
+    })),
+);
+
+const hasDailySummaryTemplate = computed(() =>
+    props.templates.some((template) => template.name.toLowerCase() === 'daily betting digest'),
+);
+
+const templateDefaultUsage = computed(() => {
+    const usage: Record<number, string[]> = {};
+
+    Object.entries(defaultsForm.defaults).forEach(([alertType, templateId]) => {
+        if (!templateId) return;
+        if (!usage[templateId]) {
+            usage[templateId] = [];
+        }
+        usage[templateId].push(props.alertTypes[alertType] ?? alertType);
+    });
+
+    return usage;
+});
+
+function saveDefaults() {
+    defaultsForm.patch('/admin/notification-templates/defaults', {
+        preserveScroll: true,
+    });
+}
+
+function ensureDailySummaryTemplate() {
+    router.post('/admin/notification-templates/ensure-daily-summary', {}, {
+        preserveScroll: true,
+    });
+}
 </script>
 
 <template>
     <Head title="Notification Templates" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <SettingsLayout :full-width="true">
+            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+            <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
+                <div class="flex items-start justify-between gap-4">
+                    <div>
+                        <h2 class="text-lg font-semibold">Default Templates</h2>
+                        <p class="mt-1 text-sm text-muted-foreground">
+                            Select which template is used by default for each admin-managed alert type.
+                        </p>
+                    </div>
+                    <button
+                        @click="saveDefaults"
+                        :disabled="defaultsForm.processing"
+                        class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                    >
+                        {{ defaultsForm.processing ? 'Saving...' : 'Save Defaults' }}
+                    </button>
+                </div>
+
+                <div class="mt-4 grid gap-4 md:grid-cols-2">
+                    <div v-for="(label, typeKey) in alertTypes" :key="typeKey" class="space-y-2">
+                        <label :for="`default-${typeKey}`" class="text-sm font-medium">{{ label }}</label>
+                        <select
+                            :id="`default-${typeKey}`"
+                            v-model="defaultsForm.defaults[typeKey]"
+                            class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar-accent focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                            <option :value="null">Use name-based fallback</option>
+                            <option
+                                v-for="option in templateOptions"
+                                :key="option.id"
+                                :value="option.id"
+                            >
+                                {{ option.name }}{{ option.active ? '' : ' (inactive)' }}
+                            </option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-2xl font-bold">Notification Templates</h1>
@@ -56,12 +141,21 @@ function deleteTemplate(template: NotificationTemplate) {
                         Manage email, SMS, and push notification templates
                     </p>
                 </div>
-                <button
-                    @click="router.get('/admin/notification-templates/create')"
-                    class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                >
-                    Create New Template
-                </button>
+                <div class="flex items-center gap-2">
+                    <button
+                        v-if="!hasDailySummaryTemplate"
+                        @click="ensureDailySummaryTemplate"
+                        class="rounded-lg border border-sidebar-border bg-white px-4 py-2 text-sm font-medium hover:bg-sidebar-accent transition-colors dark:bg-sidebar"
+                    >
+                        Add Daily Summary Template
+                    </button>
+                    <button
+                        @click="router.get('/admin/notification-templates/create')"
+                        class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+                    >
+                        Create New Template
+                    </button>
+                </div>
             </div>
 
             <div class="overflow-x-auto rounded-xl border border-sidebar-border bg-white dark:bg-sidebar">
@@ -91,6 +185,15 @@ function deleteTemplate(template: NotificationTemplate) {
                         >
                             <td class="p-4">
                                 <div class="font-medium">{{ template.name }}</div>
+                                <div v-if="templateDefaultUsage[template.id]?.length" class="mt-1 flex flex-wrap gap-1">
+                                    <span
+                                        v-for="usage in templateDefaultUsage[template.id]"
+                                        :key="usage"
+                                        class="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                    >
+                                        Default: {{ usage }}
+                                    </span>
+                                </div>
                             </td>
                             <td class="p-4">
                                 <div class="text-sm text-muted-foreground">
@@ -151,6 +254,7 @@ function deleteTemplate(template: NotificationTemplate) {
                     </tbody>
                 </table>
             </div>
-        </div>
+            </div>
+        </SettingsLayout>
     </AppLayout>
 </template>

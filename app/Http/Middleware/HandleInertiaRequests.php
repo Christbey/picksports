@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,12 +38,27 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user();
         $tier = $user?->subscriptionTier();
+        $impersonatorId = $request->session()->get('impersonator_id');
+        $isImpersonating = $user !== null && $impersonatorId !== null && (int) $impersonatorId !== (int) $user->id;
+        $impersonator = $isImpersonating
+            ? User::query()->select(['id', 'name', 'email'])->find($impersonatorId)
+            : null;
 
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
                 'user' => $user,
+            ],
+            'impersonation' => [
+                'active' => $isImpersonating,
+                'impersonator' => $impersonator
+                    ? [
+                        'id' => $impersonator->id,
+                        'name' => $impersonator->name,
+                        'email' => $impersonator->email,
+                    ]
+                    : null,
             ],
             'subscription' => [
                 'tier' => $tier?->slug ?? 'free',

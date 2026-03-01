@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import AppLayout from '@/layouts/AppLayout.vue';
+import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 interface TierFeatures {
@@ -93,7 +94,8 @@ function deleteTemplate(template: NotificationTemplate) {
     <Head title="Subscription Tiers" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <SettingsLayout :full-width="true">
+            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-2xl font-bold">Subscription Tiers</h1>
@@ -285,6 +287,7 @@ function deleteTemplate(template: NotificationTemplate) {
                     </tbody>
                 </table>
             </div>
-        </div>
+            </div>
+        </SettingsLayout>
     </AppLayout>
 </template>

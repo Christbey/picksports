@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -10,6 +10,39 @@ const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Admin settings',
         href: '/settings/admin',
+    },
+];
+
+const adminAreas = [
+    {
+        title: 'Subscriptions',
+        description: 'Manage user plans and billing access.',
+        href: '/admin/subscriptions',
+    },
+    {
+        title: 'Tiers',
+        description: 'Configure subscription tiers and feature flags.',
+        href: '/admin/tiers',
+    },
+    {
+        title: 'Permissions',
+        description: 'Control role capabilities and overrides.',
+        href: '/admin/permissions',
+    },
+    {
+        title: 'Notification Templates',
+        description: 'Edit alert template content and defaults.',
+        href: '/admin/notification-templates',
+    },
+    {
+        title: 'Healthchecks',
+        description: 'Monitor heartbeat and data validation status.',
+        href: '/admin/healthchecks',
+    },
+    {
+        title: 'Team Mappings',
+        description: 'Resolve odds provider and internal team mapping gaps.',
+        href: '/settings/team-mappings',
     },
 ];
 </script>
@@ -24,93 +57,21 @@ const breadcrumbs: BreadcrumbItem[] = [
             <div class="flex flex-col space-y-6">
                 <Heading
                     variant="small"
-                    title="Admin"
-                    description="Manage administrative features and settings"
+                    title="Admin Settings"
+                    description="Use this panel to access all admin configuration areas"
                 />
 
-                <div class="space-y-6">
-                    <!-- Subscription Management -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <h3 class="mb-4 text-sm font-semibold">Subscription Management</h3>
-
-                        <div class="space-y-3">
-                            <p class="text-sm text-muted-foreground">
-                                View and manage user subscriptions, sync subscription data with Stripe.
-                            </p>
-
-                            <Button
-                                as-child
-                                class="w-full"
-                                variant="default"
-                            >
-                                <a href="/admin/subscriptions">
-                                    View All Subscriptions
-                                </a>
-                            </Button>
-                        </div>
-                    </div>
-
-                    <!-- Tier Management -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <h3 class="mb-4 text-sm font-semibold">Tier Management</h3>
-
-                        <div class="space-y-3">
-                            <p class="text-sm text-muted-foreground">
-                                Create, edit, and manage subscription tiers and their features.
-                            </p>
-
-                            <Button
-                                as-child
-                                class="w-full"
-                                variant="default"
-                            >
-                                <a href="/admin/tiers">
-                                    Manage Tiers
-                                </a>
-                            </Button>
-                        </div>
-                    </div>
-
-                    <!-- Permission Management -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <h3 class="mb-4 text-sm font-semibold">Permission Management</h3>
-
-                        <div class="space-y-3">
-                            <p class="text-sm text-muted-foreground">
-                                View and manage roles, permissions, and user access control.
-                            </p>
-
-                            <Button
-                                as-child
-                                class="w-full"
-                                variant="default"
-                            >
-                                <a href="/admin/permissions">
-                                    Manage Permissions
-                                </a>
-                            </Button>
-                        </div>
-                    </div>
-
-                    <!-- Health Checks -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <h3 class="mb-4 text-sm font-semibold">Health Checks</h3>
-
-                        <div class="space-y-3">
-                            <p class="text-sm text-muted-foreground">
-                                Monitor system health and data sync status across all sports.
-                            </p>
-
-                            <Button
-                                as-child
-                                class="w-full"
-                                variant="default"
-                            >
-                                <a href="/admin/healthchecks">
-                                    View Health Checks
-                                </a>
-                            </Button>
-                        </div>
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div
+                        v-for="area in adminAreas"
+                        :key="area.href"
+                        class="rounded-xl border border-sidebar-border bg-white p-5 dark:bg-sidebar"
+                    >
+                        <h3 class="text-sm font-semibold">{{ area.title }}</h3>
+                        <p class="mt-2 text-sm text-muted-foreground">{{ area.description }}</p>
+                        <Button as-child variant="outline" class="mt-4">
+                            <Link :href="area.href">Open</Link>
+                        </Button>
                     </div>
                 </div>
             </div>

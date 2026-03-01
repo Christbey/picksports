@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\NotificationTemplate;
+use App\Models\NotificationTemplateDefault;
 use App\Models\User;
 
 use function Pest\Laravel\actingAs;
@@ -258,4 +259,98 @@ test('non-admin cannot delete notification template', function () {
         ->delete("/admin/notification-templates/{$template->id}");
 
     $response->assertForbidden();
+});
+
+test('admin can update default notification template assignments', function () {
+    $admin = User::factory()->admin()->create();
+    $valueTemplate = NotificationTemplate::factory()->create(['name' => 'Value A']);
+    $digestTemplate = NotificationTemplate::factory()->create(['name' => 'Digest A']);
+
+    $response = $this
+        ->actingAs($admin)
+        ->patch('/admin/notification-templates/defaults', [
+            'defaults' => [
+                'betting_value_alert' => $valueTemplate->id,
+                'daily_betting_digest' => $digestTemplate->id,
+            ],
+        ]);
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('admin.notification-templates.index'));
+
+    expect(NotificationTemplateDefault::query()->where('alert_type', 'betting_value_alert')->value('template_id'))
+        ->toBe($valueTemplate->id);
+    expect(NotificationTemplateDefault::query()->where('alert_type', 'daily_betting_digest')->value('template_id'))
+        ->toBe($digestTemplate->id);
+});
+
+test('notification templates index includes default assignment payload', function () {
+    $admin = User::factory()->admin()->create();
+    $template = NotificationTemplate::factory()->create();
+    NotificationTemplateDefault::query()->create([
+        'alert_type' => 'betting_value_alert',
+        'template_id' => $template->id,
+    ]);
+
+    $response = $this
+        ->actingAs($admin)
+        ->get('/admin/notification-templates');
+
+    $response->assertOk();
+    $response->assertInertia(fn ($page) => $page
+        ->component('Admin/NotificationTemplates/Index')
+        ->has('defaultAssignments')
+        ->where('defaultAssignments.betting_value_alert', $template->id)
+        ->where('alertTypes.betting_value_alert', 'Betting Value Alert')
+    );
+});
+
+test('admin can provision daily summary template from admin templates page', function () {
+    $admin = User::factory()->admin()->create();
+    NotificationTemplate::query()->where('name', 'Daily Betting Digest')->delete();
+
+    $response = $this
+        ->actingAs($admin)
+        ->post('/admin/notification-templates/ensure-daily-summary');
+
+    $response
+        ->assertSessionHasNoErrors()
+        ->assertRedirect(route('admin.notification-templates.index'));
+
+    $template = NotificationTemplate::query()->where('name', 'Daily Betting Digest')->first();
+    expect($template)->not->toBeNull();
+    expect($template?->active)->toBeTrue();
+    expect($template?->subject)->toContain('{digest.bets_count}');
+});
+
+test('admin can generate notification template preview payload', function () {
+    $admin = User::factory()->admin()->create();
+
+    $response = $this
+        ->actingAs($admin)
+        ->postJson('/admin/notification-templates/preview', [
+            'name' => 'Daily Betting Digest',
+            'subject' => 'Digest for {digest.date}',
+            'email_body' => 'Top bets: {digest.bets_count}',
+            'context' => 'daily_betting_digest',
+            'sport' => 'cbb',
+            'date' => now()->toDateString(),
+        ]);
+
+    $response->assertOk();
+    $response->assertJsonPath('ok', true);
+    $response->assertJsonStructure([
+        'ok',
+        'preview' => [
+            'context',
+            'subject',
+            'email_body',
+            'sms_body',
+            'push_title',
+            'push_body',
+            'data',
+            'meta',
+        ],
+    ]);
 });

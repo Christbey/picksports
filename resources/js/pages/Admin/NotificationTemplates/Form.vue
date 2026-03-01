@@ -3,6 +3,7 @@ import { Head, router, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 interface NotificationTemplate {
@@ -37,8 +38,8 @@ const breadcrumbs: BreadcrumbItem[] = [
         href: '/admin/subscriptions',
     },
     {
-        title: 'Subscription Tiers',
-        href: '/admin/tiers',
+        title: 'Notification Templates',
+        href: '/admin/notification-templates',
     },
     {
         title: isEditing.value ? 'Edit Template' : 'Create Template',
@@ -123,28 +124,104 @@ function submit() {
         form.put(`/admin/notification-templates/${props.template?.id}`, {
             preserveScroll: true,
             onSuccess: () => {
-                router.visit('/admin/tiers');
+                router.visit('/admin/notification-templates');
             },
         });
     } else {
         form.post('/admin/notification-templates', {
             preserveScroll: true,
             onSuccess: () => {
-                router.visit('/admin/tiers');
+                router.visit('/admin/notification-templates');
             },
         });
     }
 }
 
 const smsCharCount = computed(() => form.sms_body?.length || 0);
+const previewContext = ref<'betting_value_alert' | 'daily_betting_digest'>(
+    (props.template?.name || '').toLowerCase().includes('digest') ? 'daily_betting_digest' : 'betting_value_alert',
+);
+const previewDate = ref<string>(new Date().toISOString().slice(0, 10));
+const previewSport = ref<string>('all');
+const previewSports = [
+    { value: 'all', label: 'All Sports' },
+    { value: 'mlb', label: 'MLB' },
+    { value: 'nba', label: 'NBA' },
+    { value: 'nfl', label: 'NFL' },
+    { value: 'cbb', label: 'CBB' },
+    { value: 'cfb', label: 'CFB' },
+    { value: 'wcbb', label: 'WCBB' },
+    { value: 'wnba', label: 'WNBA' },
+];
+const previewLoading = ref(false);
+const previewError = ref<string | null>(null);
+const previewData = ref<any | null>(null);
+const sanitizedEmailHtml = computed(() => {
+    const html = String(previewData.value?.email_html || '');
+    if (!html) return '';
+
+    return html
+        .replace(/https:\/\/laravel\.com\/img\/notification-logo[^"'\s>]*/gi, '/favicon.svg')
+        .replace(/https:\/\/laravel\.com/gi, '/')
+        .replace(/Laravel Logo/gi, 'PickSports')
+        .replace(/>Laravel</gi, '>PickSports<');
+});
+
+function variableToken(name: string): string {
+    return `{${name}}`;
+}
+
+function csrfToken(): string {
+    const el = document.querySelector('meta[name="csrf-token"]');
+    return el?.getAttribute('content') ?? '';
+}
+
+async function generatePreview() {
+    previewLoading.value = true;
+    previewError.value = null;
+
+    try {
+        const response = await fetch('/admin/notification-templates/preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': csrfToken(),
+                Accept: 'application/json',
+            },
+            body: JSON.stringify({
+                name: form.name,
+                subject: form.subject,
+                email_body: form.email_body,
+                sms_body: form.sms_body,
+                push_title: form.push_title,
+                push_body: form.push_body,
+                context: previewContext.value,
+                sport: previewSport.value,
+                date: previewDate.value,
+            }),
+        });
+
+        const payload = await response.json();
+        if (!response.ok || !payload?.ok) {
+            throw new Error(payload?.message ?? 'Could not generate preview.');
+        }
+
+        previewData.value = payload.preview;
+    } catch (error) {
+        previewError.value = error instanceof Error ? error.message : 'Could not generate preview.';
+    } finally {
+        previewLoading.value = false;
+    }
+}
 </script>
 
 <template>
     <Head :title="isEditing ? 'Edit Notification Template' : 'Create Notification Template'" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <RenderErrorBoundary title="Template Form Render Error">
-            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <SettingsLayout :full-width="true">
+            <RenderErrorBoundary title="Template Form Render Error">
+                <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
                 <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6 space-y-6">
                     <div>
                         <h1 class="text-2xl font-bold">
@@ -302,7 +379,7 @@ const smsCharCount = computed(() => form.sms_body?.length || 0);
                         <div class="border-t border-sidebar-border pt-6">
                             <h2 class="text-lg font-semibold mb-4">Available Variables</h2>
                             <p class="text-sm text-muted-foreground mb-4">
-                                Click any variable below to insert it at your cursor position. Variables use the format <code class="bg-sidebar-accent px-1.5 py-0.5 rounded text-xs">{`{category.variable}`}</code>
+                                Click any variable below to insert it at your cursor position. Variables use the format <code class="bg-sidebar-accent px-1.5 py-0.5 rounded text-xs">{{ variableToken('category.variable') }}</code>
                             </p>
 
                             <div class="space-y-6">
@@ -317,7 +394,7 @@ const smsCharCount = computed(() => form.sms_body?.length || 0);
                                             class="text-left rounded-lg border border-sidebar-border bg-white dark:bg-sidebar-accent px-3 py-2 hover:border-primary hover:bg-primary/5 transition-all group"
                                         >
                                             <div class="font-mono text-xs font-semibold text-primary group-hover:text-primary">
-                                                {`{${variable.name}}`}
+                                                {{ variableToken(variable.name) }}
                                             </div>
                                             <div class="text-xs text-muted-foreground mt-0.5">
                                                 {{ variable.description }}
@@ -335,16 +412,120 @@ const smsCharCount = computed(() => form.sms_body?.length || 0);
                                         :key="index"
                                         class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1 text-xs font-mono font-medium text-primary"
                                     >
-                                        {`{${variable}}`}
+                                        {{ variableToken(variable) }}
                                     </span>
                                 </div>
+                            </div>
+                        </div>
+
+                        <div class="border-t border-sidebar-border pt-6">
+                            <div class="flex flex-wrap items-end justify-between gap-4">
+                                <div>
+                                    <h2 class="text-lg font-semibold">Template Preview</h2>
+                                    <p class="mt-1 text-sm text-muted-foreground">
+                                        Render this template with live sample data to see exactly what users receive.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    @click="generatePreview"
+                                    :disabled="previewLoading"
+                                    class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50"
+                                >
+                                    {{ previewLoading ? 'Generating...' : 'Generate Preview' }}
+                                </button>
+                            </div>
+
+                            <div class="mt-4 grid gap-3 sm:grid-cols-3">
+                                <div>
+                                    <label class="mb-1 block text-xs font-medium text-muted-foreground">Context</label>
+                                    <select
+                                        v-model="previewContext"
+                                        class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar-accent focus:outline-none focus:ring-2 focus:ring-primary"
+                                    >
+                                        <option value="betting_value_alert">Betting Value Alert</option>
+                                        <option value="daily_betting_digest">Daily Betting Digest</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-xs font-medium text-muted-foreground">Sport</label>
+                                    <select
+                                        v-model="previewSport"
+                                        class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar-accent focus:outline-none focus:ring-2 focus:ring-primary"
+                                    >
+                                        <option v-for="sport in previewSports" :key="sport.value" :value="sport.value">
+                                            {{ sport.label }}
+                                        </option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="mb-1 block text-xs font-medium text-muted-foreground">Date</label>
+                                    <input
+                                        v-model="previewDate"
+                                        type="date"
+                                        class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar-accent focus:outline-none focus:ring-2 focus:ring-primary"
+                                    />
+                                </div>
+                            </div>
+
+                            <p v-if="previewError" class="mt-3 text-sm text-red-600">{{ previewError }}</p>
+
+                            <div v-if="previewData" class="mt-4 space-y-4">
+                                <div class="rounded-lg border border-sidebar-border bg-sidebar-accent/40 p-4">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email Subject</p>
+                                    <p class="mt-2 text-sm font-medium">{{ previewData.subject || '(empty)' }}</p>
+                                </div>
+
+                                <div class="rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Email Preview</p>
+                                    <iframe
+                                        v-if="sanitizedEmailHtml"
+                                        :srcdoc="sanitizedEmailHtml"
+                                        class="mt-2 h-[560px] w-full rounded-md border border-sidebar-border bg-white"
+                                        title="Email Preview"
+                                    />
+                                    <pre v-else class="mt-2 whitespace-pre-wrap rounded-md border border-sidebar-border bg-white p-4 text-sm leading-relaxed text-black">{{ previewData.email_body || '(empty)' }}</pre>
+                                </div>
+
+                                <div class="grid gap-4 sm:grid-cols-2">
+                                    <div class="rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
+                                        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SMS Preview</p>
+                                        <p class="mt-2 text-sm">{{ previewData.sms_body || '(empty)' }}</p>
+                                    </div>
+                                    <div class="rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
+                                        <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Push Preview</p>
+                                        <p class="mt-2 text-sm font-medium">{{ previewData.push_title || '(empty title)' }}</p>
+                                        <p class="mt-1 text-sm text-muted-foreground">{{ previewData.push_body || '(empty body)' }}</p>
+                                    </div>
+                                </div>
+
+                                <div v-if="previewData?.meta?.top_bets?.length" class="rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bets Included In Preview</p>
+                                    <div class="mt-3 space-y-2">
+                                        <div
+                                            v-for="(bet, idx) in previewData.meta.top_bets"
+                                            :key="idx"
+                                            class="rounded border border-sidebar-border bg-sidebar-accent/30 p-3 text-sm"
+                                        >
+                                            <p class="font-medium">{{ bet.recommendation }}</p>
+                                            <p class="mt-1 text-xs text-muted-foreground">
+                                                Type: {{ bet.type }} | Edge: {{ bet.edge }} | Confidence: {{ bet.confidence }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <details class="rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar">
+                                    <summary class="cursor-pointer text-xs font-semibold uppercase tracking-wide text-muted-foreground">Raw Preview Data</summary>
+                                    <pre class="mt-3 whitespace-pre-wrap text-xs leading-relaxed">{{ JSON.stringify(previewData.data, null, 2) }}</pre>
+                                </details>
                             </div>
                         </div>
 
                         <div class="flex gap-4 justify-end">
                             <button
                                 type="button"
-                                @click="router.visit('/admin/tiers')"
+                                @click="router.visit('/admin/notification-templates')"
                                 class="rounded-lg bg-sidebar-accent px-6 py-2 font-medium hover:bg-sidebar-accent/80 transition-colors"
                             >
                                 Cancel
@@ -359,7 +540,8 @@ const smsCharCount = computed(() => form.sms_body?.length || 0);
                         </div>
                     </form>
                 </div>
-            </div>
-        </RenderErrorBoundary>
+                </div>
+            </RenderErrorBoundary>
+        </SettingsLayout>
     </AppLayout>
 </template>

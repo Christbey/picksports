@@ -35,11 +35,14 @@ export interface LivePredictionData {
 
 import { computed } from 'vue';
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     bettingValue?: BettingRecommendation[];
     livePrediction?: LivePredictionData;
     showDraftKingsLabel?: boolean;
-}>();
+    compact?: boolean;
+}>(), {
+    compact: false,
+});
 
 const fallbackLivePrediction: LivePredictionData = {
     isLive: false,
@@ -165,11 +168,11 @@ function getBetTypeColor(type: string): string {
                             </template>
                         </span>
                     </div>
-                    <div class="text-xs text-muted-foreground">
+                    <div v-if="!props.compact" class="text-xs text-muted-foreground">
                         Real-time prediction updates based on current game state
                     </div>
-                    <div class="flex flex-wrap gap-4 text-xs">
-                        <div>
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <div class="rounded-full bg-red-100/70 px-2 py-1 dark:bg-red-900/30">
                             <span class="text-muted-foreground">Win Prob:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
@@ -180,10 +183,10 @@ function getBetTypeColor(type: string): string {
                                 }}%
                             </span>
                             <span class="text-muted-foreground">
-                                (was {{ formatNumber(livePrediction.preGameWinProbability * 100, 1) }}%)
+                                {{ props.compact ? `(${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)` : `(was ${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)` }}
                             </span>
                         </div>
-                        <div>
+                        <div class="rounded-full bg-red-100/70 px-2 py-1 dark:bg-red-900/30">
                             <span class="text-muted-foreground">Spread:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
@@ -193,10 +196,10 @@ function getBetTypeColor(type: string): string {
                                 }}
                             </span>
                             <span class="text-muted-foreground">
-                                (was {{ formatSpread(livePrediction.preGamePredictedSpread) }})
+                                {{ props.compact ? `(${formatSpread(livePrediction.preGamePredictedSpread)})` : `(was ${formatSpread(livePrediction.preGamePredictedSpread)})` }}
                             </span>
                         </div>
-                        <div>
+                        <div class="rounded-full bg-red-100/70 px-2 py-1 dark:bg-red-900/30">
                             <span class="text-muted-foreground">Total:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
@@ -206,7 +209,7 @@ function getBetTypeColor(type: string): string {
                                 }}
                             </span>
                             <span class="text-muted-foreground">
-                                (was {{ formatNumber(livePrediction.preGamePredictedTotal) }})
+                                {{ props.compact ? `(${formatNumber(livePrediction.preGamePredictedTotal)})` : `(was ${formatNumber(livePrediction.preGamePredictedTotal)})` }}
                             </span>
                         </div>
                     </div>
@@ -233,35 +236,35 @@ function getBetTypeColor(type: string): string {
                             {{ bet.recommendation }}
                         </span>
                     </div>
-                    <div class="text-xs text-muted-foreground">
+                    <div v-if="!props.compact" class="text-xs text-muted-foreground">
                         {{ bet.reasoning }}
                     </div>
-                    <div class="flex flex-wrap gap-4 text-xs">
-                        <div v-if="bet.model_line !== undefined">
+                    <div class="flex flex-wrap gap-2 text-xs">
+                        <div v-if="bet.model_line !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Model:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.type === 'total' ? formatNumber(bet.model_line) : formatSpread(bet.model_line) }}
                             </span>
                         </div>
-                        <div v-if="bet.market_line !== undefined">
+                        <div v-if="bet.market_line !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Market:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.type === 'total' ? formatNumber(bet.market_line) : formatSpread(bet.market_line) }}
                             </span>
                         </div>
-                        <div v-if="bet.model_probability !== undefined">
+                        <div v-if="bet.model_probability !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Model:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.model_probability }}%
                             </span>
                         </div>
-                        <div v-if="bet.implied_probability !== undefined">
+                        <div v-if="bet.implied_probability !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Implied:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.implied_probability }}%
                             </span>
                         </div>
-                        <div>
+                        <div class="rounded-full bg-emerald-100/80 px-2 py-1 dark:bg-emerald-900/30">
                             <span class="text-muted-foreground">Edge:</span>
                             <span class="ml-1 font-semibold text-green-600">
                                 {{
@@ -271,13 +274,13 @@ function getBetTypeColor(type: string): string {
                                 }}
                             </span>
                         </div>
-                        <div>
+                        <div class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Odds:</span>
                             <span class="ml-1 font-medium">
                                 {{ formatOdds(bet.odds) }}
                             </span>
                         </div>
-                        <div v-if="bet.kelly_bet_size_percent !== undefined">
+                        <div v-if="bet.kelly_bet_size_percent !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Kelly:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.kelly_bet_size_percent }}%

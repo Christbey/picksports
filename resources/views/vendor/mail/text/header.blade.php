@@ -1,0 +1,4 @@
+@props(['url'])
+PickSports
+{{ $url }}
+

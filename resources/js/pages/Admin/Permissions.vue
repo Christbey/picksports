@@ -2,6 +2,7 @@
 import { Head, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
 interface Permission {
@@ -121,7 +122,8 @@ function saveTierPermissions(tier: Tier): void {
     <Head title="Manage Permissions" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <SettingsLayout :full-width="true">
+            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
             <div>
                 <h1 class="text-2xl font-bold">Manage Tier Permissions</h1>
                 <p class="mt-1 text-muted-foreground">
@@ -182,6 +184,7 @@ function saveTierPermissions(tier: Tier): void {
                     </div>
                 </div>
             </div>
-        </div>
+            </div>
+        </SettingsLayout>
     </AppLayout>
 </template>

@@ -48,7 +48,7 @@ class DailyBettingDigest extends Notification implements ShouldQueue
 
             // Add action button if bets are available
             if ($this->topBets->isNotEmpty()) {
-                $mailMessage->action('View All Predictions', url("/{$this->sport}/predictions"));
+                $mailMessage->action('View All Predictions', url('/dashboard'));
             }
 
             return $mailMessage->line('Manage your alert preferences in your account settings.');
@@ -66,6 +66,7 @@ class DailyBettingDigest extends Notification implements ShouldQueue
             'total_games' => $this->totalGamesAnalyzed,
             'bets_count' => $this->topBets->count(),
             'top_bets' => $this->topBets->map(fn ($bet) => [
+                'sport' => $bet['sport'] ?? $this->sport,
                 'type' => $bet['type'],
                 'recommendation' => $bet['recommendation'],
                 'edge' => $bet['edge'],
@@ -111,16 +112,17 @@ class DailyBettingDigest extends Notification implements ShouldQueue
             $gameTime = $game->game_date->format('g:i A');
 
             $matchup = "{$awayTeam} @ {$homeTeam}";
+            $sport = strtoupper((string) ($bet['sport'] ?? $this->sport));
             $betType = ucfirst($bet['type']);
             $pick = $bet['recommendation'];
             $edge = $this->formatEdge($bet);
             $confidence = round($bet['confidence'], 0).'%';
 
-            $rows[] = "| {$matchup} | {$gameTime} | {$betType} | {$pick} | {$edge} | {$confidence} |";
+            $rows[] = "| {$sport} | {$matchup} | {$gameTime} | {$betType} | {$pick} | {$edge} | {$confidence} |";
         }
 
-        $header = "| Game | Time | Type | Pick | Edge | Confidence |\n";
-        $separator = "|------|------|------|------|------|------------|\n";
+        $header = "| Sport | Game | Time | Type | Pick | Edge | Confidence |\n";
+        $separator = "|-------|------|------|------|------|------|------------|\n";
 
         return $header.$separator.implode("\n", $rows);
     }
@@ -137,7 +139,7 @@ class DailyBettingDigest extends Notification implements ShouldQueue
     protected function getEmptyMessage(): string
     {
         return sprintf(
-            'We analyzed %d games but found no opportunities meeting your criteria today. Check back tomorrow!',
+            'We analyzed %d games but found no qualifying model edges today. Check back tomorrow!',
             $this->totalGamesAnalyzed
         );
     }
@@ -167,7 +169,7 @@ class DailyBettingDigest extends Notification implements ShouldQueue
             ->line($this->buildBetsTable())
             ->line('')
             ->line("These picks were selected from {$this->totalGamesAnalyzed} games based on our advanced analytics and your subscription tier.")
-            ->action('View All Predictions', url("/{$this->sport}/predictions"))
+            ->action('View All Predictions', url('/dashboard'))
             ->line('Manage your alert preferences in your account settings.');
 
         return $mailMessage;

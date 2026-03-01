@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { LayoutGrid, TrendingUp, BarChart3 } from 'lucide-vue-next';
+import { CircleDot, Dribbble, Goal, LayoutGrid } from 'lucide-vue-next';
 import NavCollapsible from '@/components/NavCollapsible.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -46,7 +46,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'NFL',
         href: nflPredictions(),
-        icon: TrendingUp,
+        icon: Goal,
         items: [
             {
                 title: 'Predictions',
@@ -65,7 +65,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'NBA',
         href: nbaPredictions(),
-        icon: BarChart3,
+        icon: Dribbble,
         items: [
             {
                 title: 'Predictions',
@@ -88,7 +88,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'WNBA',
         href: wnbaPredictions(),
-        icon: BarChart3,
+        icon: Dribbble,
         items: [
             {
                 title: 'Predictions',
@@ -103,7 +103,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'MLB',
         href: mlbPredictions(),
-        icon: TrendingUp,
+        icon: CircleDot,
         items: [
             {
                 title: 'Predictions',
@@ -122,7 +122,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'CFB',
         href: cfbPredictions(),
-        icon: TrendingUp,
+        icon: Goal,
         items: [
             {
                 title: 'Predictions',
@@ -133,7 +133,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'CBB',
         href: cbbPredictions(),
-        icon: BarChart3,
+        icon: Dribbble,
         items: [
             {
                 title: 'Predictions',
@@ -148,6 +148,10 @@ const sportNavItems: NavItem[] = [
                 href: cbbPlayerStats(),
             },
             {
+                title: 'Tournament Forecast',
+                href: '/cbb-tournament-forecast',
+            },
+            {
                 title: 'Player Props',
                 href: '/cbb-player-props',
             },
@@ -156,7 +160,7 @@ const sportNavItems: NavItem[] = [
     {
         title: 'WCBB',
         href: wcbbPredictions(),
-        icon: BarChart3,
+        icon: Dribbble,
         items: [
             {
                 title: 'Predictions',

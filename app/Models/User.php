@@ -91,6 +91,11 @@ class User extends Authenticatable
         return $this->hasMany(UserBet::class);
     }
 
+    public function passkeys(): HasMany
+    {
+        return $this->hasMany(Passkey::class);
+    }
+
     public function alertPreference()
     {
         return $this->hasOne(UserAlertPreference::class);

@@ -21,12 +21,15 @@ class PlayerLeaderboardResource extends JsonResource
             'points_per_game' => data_get($this->resource, 'points_per_game'),
             'rebounds_per_game' => data_get($this->resource, 'rebounds_per_game'),
             'assists_per_game' => data_get($this->resource, 'assists_per_game'),
+            'turnovers_per_game' => data_get($this->resource, 'turnovers_per_game'),
             'steals_per_game' => data_get($this->resource, 'steals_per_game'),
             'blocks_per_game' => data_get($this->resource, 'blocks_per_game'),
             'minutes_per_game' => data_get($this->resource, 'minutes_per_game'),
             'field_goal_percentage' => data_get($this->resource, 'field_goal_percentage'),
             'three_point_percentage' => data_get($this->resource, 'three_point_percentage'),
             'free_throw_percentage' => data_get($this->resource, 'free_throw_percentage'),
+            'estimated_epa_per_game' => data_get($this->resource, 'estimated_epa_per_game'),
+            'estimated_epa_per_36' => data_get($this->resource, 'estimated_epa_per_36'),
         ];
     }
 }

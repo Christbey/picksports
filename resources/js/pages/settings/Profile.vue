@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { Form, Head, Link, usePage } from '@inertiajs/vue3';
+import { onMounted, ref } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
 import { signalCurrentUserDetails } from '@/composables/useWebAuthnSignal';
+import { deletePasskey, listPasskeys, passkeyNameOrFallback, registerPasskey, toPasskeyLabelInput, type PasskeySummary } from '@/composables/usePasskeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +32,11 @@ const breadcrumbItems: BreadcrumbItem[] = [
 
 const page = usePage();
 const user = page.props.auth.user;
+const passkeys = ref<PasskeySummary[]>([]);
+const loadingPasskeys = ref(false);
+const passkeyMessage = ref<string | null>(null);
+const passkeyError = ref<string | null>(null);
+const passkeyProcessing = ref(false);
 
 async function handleProfileUpdateSuccess() {
     try {
@@ -38,6 +45,56 @@ async function handleProfileUpdateSuccess() {
         // Signal API is best-effort and should never block profile updates.
     }
 }
+
+async function loadPasskeys() {
+    loadingPasskeys.value = true;
+
+    try {
+        passkeys.value = await listPasskeys();
+    } catch (error) {
+        passkeyError.value = error instanceof Error ? error.message : 'Failed to load passkeys.';
+    } finally {
+        loadingPasskeys.value = false;
+    }
+}
+
+async function handleAddPasskey(): Promise<void> {
+    passkeyError.value = null;
+    passkeyMessage.value = null;
+    passkeyProcessing.value = true;
+
+    try {
+        const labelInput = window.prompt('Passkey label (optional)', 'My device');
+        const name = labelInput ? toPasskeyLabelInput(labelInput) : null;
+        await registerPasskey(name);
+        await loadPasskeys();
+        passkeyMessage.value = 'Passkey added successfully.';
+    } catch (error) {
+        passkeyError.value = error instanceof Error ? error.message : 'Failed to add passkey.';
+    } finally {
+        passkeyProcessing.value = false;
+    }
+}
+
+async function handleDeletePasskey(id: number): Promise<void> {
+    passkeyError.value = null;
+    passkeyMessage.value = null;
+    passkeyProcessing.value = true;
+
+    try {
+        await deletePasskey(id);
+        await loadPasskeys();
+        passkeyMessage.value = 'Passkey removed.';
+    } catch (error) {
+        passkeyError.value = error instanceof Error ? error.message : 'Failed to remove passkey.';
+    } finally {
+        passkeyProcessing.value = false;
+    }
+}
+
+onMounted(async () => {
+    await loadPasskeys();
+});
 </script>
 
 <template>
@@ -132,6 +189,61 @@ async function handleProfileUpdateSuccess() {
                         </Transition>
                     </div>
                 </Form>
+            </div>
+
+            <div class="flex flex-col space-y-6">
+                <Heading
+                    variant="small"
+                    title="Passkeys"
+                    description="Use a passkey to sign in without a password."
+                />
+
+                <div class="space-y-3">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        :disabled="passkeyProcessing"
+                        @click="handleAddPasskey"
+                    >
+                        Add passkey
+                    </Button>
+
+                    <p v-if="passkeyMessage" class="text-sm text-green-600">{{ passkeyMessage }}</p>
+                    <p v-if="passkeyError" class="text-sm text-red-600">{{ passkeyError }}</p>
+
+                    <p v-if="loadingPasskeys" class="text-sm text-muted-foreground">Loading passkeys...</p>
+
+                    <ul v-else class="space-y-2">
+                        <li
+                            v-for="passkey in passkeys"
+                            :key="passkey.id"
+                            class="flex items-center justify-between rounded-md border p-3"
+                        >
+                            <div class="min-w-0">
+                                <p class="truncate text-sm font-medium">
+                                    {{ passkeyNameOrFallback(passkey.name, passkey.created_at) }}
+                                </p>
+                                <p class="text-xs text-muted-foreground">
+                                    Last used:
+                                    {{ passkey.last_used_at ? new Date(passkey.last_used_at).toLocaleString() : 'Never' }}
+                                </p>
+                            </div>
+
+                            <Button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                :disabled="passkeyProcessing"
+                                @click="handleDeletePasskey(passkey.id)"
+                            >
+                                Remove
+                            </Button>
+                        </li>
+                        <li v-if="passkeys.length === 0" class="text-sm text-muted-foreground">
+                            No passkeys added yet.
+                        </li>
+                    </ul>
+                </div>
             </div>
 
             <DeleteUser />

@@ -3,6 +3,7 @@
 use App\Http\Controllers\BettingRecommendationsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\Auth\PasskeyController;
 use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
 use App\Http\Controllers\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Admin\NotificationTemplateController as AdminNotificationTemplateController;
@@ -152,13 +153,13 @@ Route::get('my-bets', function () {
 })->middleware(['auth', 'verified'])->name('my-bets');
 
 foreach ([
-    'nba' => 'NBAPredictions',
-    'cbb' => 'CBBPredictions',
-    'wcbb' => 'WCBBPredictions',
-    'nfl' => 'NFLPredictions',
-    'mlb' => 'MLBPredictions',
-    'cfb' => 'CFBPredictions',
-    'wnba' => 'WNBAPredictions',
+    'nba' => 'NBA/Predictions',
+    'cbb' => 'CBB/Predictions',
+    'wcbb' => 'WCBB/Predictions',
+    'nfl' => 'NFL/Predictions',
+    'mlb' => 'MLB/Predictions',
+    'cfb' => 'CFB/Predictions',
+    'wnba' => 'WNBA/Predictions',
 ] as $sport => $page) {
     Route::get("{$sport}-predictions", fn () => Inertia::render($page))
         ->middleware(['auth', 'verified', "permission:view-{$sport}-predictions"])
@@ -166,14 +167,15 @@ foreach ([
 }
 
 foreach ([
-    'cbb-team-metrics' => ['page' => 'CBBTeamMetrics', 'sport' => 'cbb'],
-    'cbb-player-stats' => ['page' => 'CBBPlayerStats', 'sport' => 'cbb'],
-    'wcbb-team-metrics' => ['page' => 'WCBBTeamMetrics', 'sport' => 'wcbb'],
-    'nba-team-metrics' => ['page' => 'NBATeamMetrics', 'sport' => 'nba'],
-    'nba-player-stats' => ['page' => 'NBAPlayerStats', 'sport' => 'nba'],
-    'wnba-team-metrics' => ['page' => 'WNBATeamMetrics', 'sport' => 'wnba'],
-    'mlb-team-metrics' => ['page' => 'MLBTeamMetrics', 'sport' => 'mlb'],
-    'nfl-team-metrics' => ['page' => 'NFLTeamMetrics', 'sport' => 'nfl'],
+    'cbb-team-metrics' => ['page' => 'CBB/TeamMetrics', 'sport' => 'cbb'],
+    'cbb-player-stats' => ['page' => 'CBB/PlayerStats', 'sport' => 'cbb'],
+    'cbb-tournament-forecast' => ['page' => 'CBB/TournamentForecast', 'sport' => 'cbb'],
+    'wcbb-team-metrics' => ['page' => 'WCBB/TeamMetrics', 'sport' => 'wcbb'],
+    'nba-team-metrics' => ['page' => 'NBA/TeamMetrics', 'sport' => 'nba'],
+    'nba-player-stats' => ['page' => 'NBA/PlayerStats', 'sport' => 'nba'],
+    'wnba-team-metrics' => ['page' => 'WNBA/TeamMetrics', 'sport' => 'wnba'],
+    'mlb-team-metrics' => ['page' => 'MLB/TeamMetrics', 'sport' => 'mlb'],
+    'nfl-team-metrics' => ['page' => 'NFL/TeamMetrics', 'sport' => 'nfl'],
 ] as $path => $config) {
     Route::get($path, fn () => Inertia::render($config['page']))
         ->middleware(['auth', 'verified', "permission:view-{$config['sport']}-predictions"])
@@ -193,6 +195,7 @@ foreach ([
     'cbb' => [
         'team' => \App\Http\Controllers\CBB\TeamController::class,
         'game' => \App\Http\Controllers\CBB\GameController::class,
+        'player' => \App\Http\Controllers\CBB\PlayerController::class,
     ],
     'wcbb' => [
         'team' => \App\Http\Controllers\WCBB\TeamController::class,
@@ -261,5 +264,21 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 });
 
 Route::post('/stripe/webhook', [WebhookController::class, 'handleWebhook'])->name('cashier.webhook');
+
+Route::middleware('guest')->prefix('passkeys')->name('passkeys.')->group(function () {
+    Route::post('/authentication/options', [PasskeyController::class, 'authenticationOptions'])
+        ->name('authentication.options');
+    Route::post('/authentication/verify', [PasskeyController::class, 'authenticate'])
+        ->name('authentication.verify');
+});
+
+Route::middleware(['auth'])->prefix('passkeys')->name('passkeys.')->group(function () {
+    Route::get('/', [PasskeyController::class, 'index'])->name('index');
+    Route::post('/registration/options', [PasskeyController::class, 'registrationOptions'])
+        ->name('registration.options');
+    Route::post('/registration/verify', [PasskeyController::class, 'register'])
+        ->name('registration.verify');
+    Route::delete('/{passkey}', [PasskeyController::class, 'destroy'])->name('destroy');
+});
 
 require __DIR__.'/settings.php';

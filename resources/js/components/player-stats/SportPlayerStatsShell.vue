@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, computed } from 'vue';
-import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
+import { computed, onMounted, ref } from 'vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -9,7 +8,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { type BreadcrumbItem } from '@/types';
+import type { BreadcrumbItem } from '@/types';
+
+type HrefLike = string | Record<string, unknown>;
 
 interface PlayerLeaderboardEntry {
     player_id: number;
@@ -36,11 +37,25 @@ interface PlayerLeaderboardEntry {
     field_goal_percentage: number;
     three_point_percentage: number;
     free_throw_percentage: number;
+    estimated_epa_per_game?: number;
+    estimated_epa_per_36?: number;
 }
 
-const breadcrumbs: BreadcrumbItem[] = [
-    { title: 'CBB Player Stats', href: '/cbb-player-stats' },
-];
+interface SportPlayerStatsShellConfig {
+    pageTitle: string;
+    heading: string;
+    description: string;
+    breadcrumb: BreadcrumbItem;
+    bannerStorageKey: string;
+    leaderboardEndpoint: string;
+    showEpaColumns?: boolean;
+    playerLink?: (id: number) => HrefLike;
+    teamLink?: (id: number) => HrefLike;
+}
+
+const props = defineProps<{
+    config: SportPlayerStatsShellConfig;
+}>();
 
 const players = ref<PlayerLeaderboardEntry[]>([]);
 const loading = ref(true);
@@ -49,16 +64,28 @@ const searchQuery = ref('');
 const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
 
-const sortOptions = [
-    { key: 'points_per_game', label: 'PPG' },
-    { key: 'rebounds_per_game', label: 'RPG' },
-    { key: 'assists_per_game', label: 'APG' },
-];
+const sortOptions = computed(() => {
+    const options = [
+        { key: 'points_per_game', label: 'PPG' },
+        { key: 'rebounds_per_game', label: 'RPG' },
+        { key: 'assists_per_game', label: 'APG' },
+    ];
+
+    if (props.config.showEpaColumns) {
+        options.push(
+            { key: 'estimated_epa_per_game', label: 'EPA/G' },
+            { key: 'estimated_epa_per_36', label: 'EPA/36' },
+        );
+    }
+
+    return options;
+});
 
 const filteredPlayers = computed(() => {
     if (!searchQuery.value) {
         return players.value;
     }
+
     const query = searchQuery.value.toLowerCase();
     return players.value.filter(
         (p) =>
@@ -83,8 +110,10 @@ const fetchPlayers = async () => {
         loading.value = true;
         error.value = null;
 
-        const response = await fetch('/api/v1/cbb/player-stats/leaderboard');
-        if (!response.ok) throw new Error('Failed to fetch player stats');
+        const response = await fetch(props.config.leaderboardEndpoint);
+        if (!response.ok) {
+            throw new Error('Failed to fetch player stats');
+        }
 
         const data = await response.json();
         players.value = data.data;
@@ -98,10 +127,15 @@ const fetchPlayers = async () => {
 const toggleSort = (key: string) => {
     if (sortBy.value === key) {
         sortDesc.value = !sortDesc.value;
-    } else {
-        sortBy.value = key;
-        sortDesc.value = true;
+        return;
     }
+
+    sortBy.value = key;
+    sortDesc.value = true;
+};
+
+const formatEpa = (value: number | undefined) => {
+    return Number(value ?? 0).toFixed(2);
 };
 
 onMounted(() => {
@@ -110,18 +144,18 @@ onMounted(() => {
 </script>
 
 <template>
-    <Head title="CBB Player Stats" />
+    <Head :title="config.pageTitle" />
 
-    <AppLayout :breadcrumbs="breadcrumbs">
+    <AppLayout :breadcrumbs="[config.breadcrumb]">
         <div class="flex h-full flex-1 flex-col gap-4 p-4">
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-2xl font-bold">CBB Player Stats</h1>
-                    <p class="text-sm text-muted-foreground">Season averages leaderboard for college basketball players</p>
+                    <h1 class="text-2xl font-bold">{{ config.heading }}</h1>
+                    <p class="text-sm text-muted-foreground">{{ config.description }}</p>
                 </div>
             </div>
 
-            <SubscriptionBanner variant="subtle" storage-key="cbb-player-stats-banner-dismissed" />
+            <SubscriptionBanner variant="subtle" :storage-key="config.bannerStorageKey" />
 
             <Card>
                 <CardContent class="pt-6">
@@ -175,6 +209,18 @@ onMounted(() => {
                                     <th class="hidden p-2 text-right font-medium lg:table-cell">3P%</th>
                                     <th class="hidden p-2 text-right font-medium lg:table-cell">FT%</th>
                                     <th class="hidden p-2 text-right font-medium lg:table-cell">MPG</th>
+                                    <th
+                                        v-if="config.showEpaColumns"
+                                        class="hidden p-2 text-right font-medium lg:table-cell"
+                                    >
+                                        EPA/G
+                                    </th>
+                                    <th
+                                        v-if="config.showEpaColumns"
+                                        class="hidden p-2 text-right font-medium lg:table-cell"
+                                    >
+                                        EPA/36
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -185,7 +231,26 @@ onMounted(() => {
                                 >
                                     <td class="p-2 text-muted-foreground">{{ index + 1 }}</td>
                                     <td class="p-2 font-medium">
-                                        <div v-if="entry.player" class="flex items-center gap-2">
+                                        <Link
+                                            v-if="entry.player && config.playerLink"
+                                            :href="config.playerLink(entry.player.id)"
+                                            class="flex items-center gap-2 transition-colors hover:text-primary"
+                                        >
+                                            <img
+                                                v-if="entry.player.headshot_url"
+                                                :src="entry.player.headshot_url"
+                                                :alt="entry.player.full_name"
+                                                class="h-8 w-8 rounded-full object-cover"
+                                            />
+                                            <div
+                                                v-else
+                                                class="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground"
+                                            >
+                                                {{ entry.player.full_name?.charAt(0) }}
+                                            </div>
+                                            <span>{{ entry.player.full_name }}</span>
+                                        </Link>
+                                        <div v-else-if="entry.player" class="flex items-center gap-2">
                                             <img
                                                 v-if="entry.player.headshot_url"
                                                 :src="entry.player.headshot_url"
@@ -203,13 +268,13 @@ onMounted(() => {
                                     </td>
                                     <td class="p-2 text-right text-muted-foreground">
                                         <Link
-                                            v-if="entry.player?.team"
-                                            :href="CBBTeamController(entry.player.team.id)"
+                                            v-if="entry.player?.team && config.teamLink"
+                                            :href="config.teamLink(entry.player.team.id)"
                                             class="transition-colors hover:text-primary"
                                         >
                                             {{ entry.player.team.abbreviation }}
                                         </Link>
-                                        <span v-else>-</span>
+                                        <span v-else>{{ entry.player?.team?.abbreviation ?? '-' }}</span>
                                     </td>
                                     <td class="p-2 text-right text-muted-foreground">{{ entry.games_played }}</td>
                                     <td class="p-2 text-right font-medium">{{ entry.points_per_game }}</td>
@@ -221,6 +286,18 @@ onMounted(() => {
                                     <td class="hidden p-2 text-right lg:table-cell">{{ entry.three_point_percentage }}%</td>
                                     <td class="hidden p-2 text-right lg:table-cell">{{ entry.free_throw_percentage }}%</td>
                                     <td class="hidden p-2 text-right text-muted-foreground lg:table-cell">{{ entry.minutes_per_game }}</td>
+                                    <td
+                                        v-if="config.showEpaColumns"
+                                        class="hidden p-2 text-right font-medium lg:table-cell"
+                                    >
+                                        {{ formatEpa(entry.estimated_epa_per_game) }}
+                                    </td>
+                                    <td
+                                        v-if="config.showEpaColumns"
+                                        class="hidden p-2 text-right lg:table-cell"
+                                    >
+                                        {{ formatEpa(entry.estimated_epa_per_36) }}
+                                    </td>
                                 </tr>
                             </tbody>
                         </table>

@@ -116,5 +116,9 @@ return function (string $sport, string $namespace) {
         Route::get('predictions/available-dates', [$controllers['prediction'], 'availableDates']);
         Route::apiResource('predictions', $controllers['prediction'])->only(['index', 'show']);
         Route::get('games/{game}/prediction', [$controllers['prediction'], 'byGame']);
+
+        if ($controllers['prediction'] === "App\\Http\\Controllers\\Api\\CBB\\PredictionController") {
+            Route::get('tournament-forecasts', [\App\Http\Controllers\Api\CBB\TournamentForecastController::class, 'index']);
+        }
     });
 };

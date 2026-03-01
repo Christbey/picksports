@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Form, Head } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import InputError from '@/components/InputError.vue';
 import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import { signInWithPasskey } from '@/composables/usePasskeys';
 import AuthBase from '@/layouts/AuthLayout.vue';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
@@ -17,6 +19,23 @@ defineProps<{
     canResetPassword: boolean;
     canRegister: boolean;
 }>();
+
+const email = ref('');
+const passkeyError = ref<string | null>(null);
+const passkeyProcessing = ref(false);
+
+async function handlePasskeySignIn(): Promise<void> {
+    passkeyError.value = null;
+    passkeyProcessing.value = true;
+
+    try {
+        await signInWithPasskey(email.value);
+    } catch (error) {
+        passkeyError.value = error instanceof Error ? error.message : 'Passkey sign-in failed.';
+    } finally {
+        passkeyProcessing.value = false;
+    }
+}
 </script>
 
 <template>
@@ -46,6 +65,7 @@ defineProps<{
                         id="email"
                         type="email"
                         name="email"
+                        v-model="email"
                         required
                         autofocus
                         :tabindex="1"
@@ -96,6 +116,19 @@ defineProps<{
                     <Spinner v-if="processing" />
                     Log in
                 </Button>
+
+                <Button
+                    type="button"
+                    variant="outline"
+                    class="w-full"
+                    :disabled="passkeyProcessing"
+                    @click="handlePasskeySignIn"
+                >
+                    <Spinner v-if="passkeyProcessing" />
+                    Sign in with passkey
+                </Button>
+
+                <p v-if="passkeyError" class="text-sm text-red-600">{{ passkeyError }}</p>
             </div>
 
             <div

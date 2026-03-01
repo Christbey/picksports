@@ -17,7 +17,7 @@ interface Preference {
     enabled: boolean;
     sports: string[];
     notification_types: string[];
-    enabled_template_ids: number[]; // legacy field, hidden from UI
+    enabled_template_ids: number[]; // managed by server-side template-selection flow
     minimum_edge: number | string;
     time_window_start: string;
     time_window_end: string;

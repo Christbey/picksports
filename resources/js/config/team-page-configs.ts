@@ -132,6 +132,7 @@ export const createNflTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     sport: 'nfl',
     sportLabel: 'NFL',
     predictionsHref: '/nfl-predictions',
+    metricsHref: '/nfl-team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
     teamLogo: (t) => t.logo,

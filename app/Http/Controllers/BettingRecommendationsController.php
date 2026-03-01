@@ -16,28 +16,33 @@ class BettingRecommendationsController extends Controller
 
     public function nba(Request $request): Response
     {
-        return $this->renderPlayerProps('NBA', $request);
+        return $this->renderPlayerProps('NBA', $request, 'NBA/PlayerProps');
     }
 
     public function mlb(Request $request): Response
     {
-        return $this->renderPlayerProps('MLB', $request);
+        return $this->renderPlayerProps('MLB', $request, 'MLB/PlayerProps');
     }
 
     public function nfl(Request $request): Response
     {
-        return $this->renderPlayerProps('NFL', $request);
+        return $this->renderPlayerProps('NFL', $request, 'NFL/PlayerProps');
     }
 
     public function cbb(Request $request): Response
     {
-        return $this->renderPlayerProps('CBB', $request);
+        return $this->renderPlayerProps('CBB', $request, 'CBB/PlayerProps');
     }
 
-    protected function renderPlayerProps(string $sport, Request $request): Response
+    protected function renderPlayerProps(string $sport, Request $request, string $component): Response
     {
-        $dateFilter = $request->get('date');
-        $gameFilter = $request->get('game');
+        $validated = $request->validate([
+            'date' => ['nullable', 'date'],
+            'game' => ['nullable', 'integer'],
+        ]);
+
+        $dateFilter = $validated['date'] ?? null;
+        $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
 
         // Use lower minimum games threshold since we have limited historical data
         $recommendations = $this->analyzer->analyzeProps(
@@ -51,7 +56,7 @@ class BettingRecommendationsController extends Controller
         $dates = $this->analyzer->getAvailableDatesForSport($sport);
         $games = $this->analyzer->getAvailableGamesForSport($sport, $dateFilter);
 
-        return Inertia::render('PlayerProps', [
+        return Inertia::render($component, [
             'sport' => $sport,
             'recommendations' => BettingRecommendationResource::collection($recommendations)->resolve(),
             'dates' => $dates,

@@ -88,4 +88,9 @@ class Team extends Model
     {
         return $this->hasMany(Prediction::class, 'team_id');
     }
+
+    public function tournamentForecasts(): HasMany
+    {
+        return $this->hasMany(TournamentForecast::class, 'team_id');
+    }
 }

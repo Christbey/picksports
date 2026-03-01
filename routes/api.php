@@ -7,10 +7,14 @@ use Illuminate\Support\Facades\Route;
 $registerSportRoutes = require base_path('routes/api/sports.php');
 
 Route::prefix('v1')->group(function () use ($registerSportRoutes) {
+    $securityReportThrottle = app()->environment(['local', 'testing'])
+        ? 'throttle:10000,1'
+        : 'throttle:1000,1';
+
     Route::post('/security/reports/csp', [SecurityReportController::class, 'csp'])
-        ->middleware('throttle:60,1');
+        ->middleware($securityReportThrottle);
     Route::post('/security/reports/integrity', [SecurityReportController::class, 'integrity'])
-        ->middleware('throttle:60,1');
+        ->middleware($securityReportThrottle);
 
     // Sport Routes (using generic route definer)
     foreach ([

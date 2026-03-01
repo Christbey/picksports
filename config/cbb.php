@@ -299,6 +299,52 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tournament Forecast Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Parameters for projecting NCAA tournament bids and championship odds.
+    | This model is intentionally lightweight and designed for iterative tuning.
+    |
+    */
+    'tournament_forecast' => [
+        // Selection settings
+        'field_size' => 68,
+        'auto_bids' => 31,
+        'bubble_steepness' => 2.5,
+        'selection_zscore_boost' => 1.5,
+        'auto_bid_probability_floor' => 0.96,
+        'in_field_probability_floor' => 0.55,
+        'outside_field_probability_ceiling' => 0.45,
+
+        // Monte Carlo simulation
+        'simulations' => 5000,
+        'selection_sampling_exponent' => 1.35,
+        'random_seed' => env('CBB_TOURNAMENT_RANDOM_SEED'),
+        'at_large_noise_stddev' => 0.35,
+        'conference_tournament_upset_factor' => 0.45,
+        'enable_first_four' => true,
+
+        // Selection score weights
+        'selection_weights' => [
+            'adj_net_rating' => 0.30,
+            'rolling_net_rating' => 0.20,
+            'strength_of_schedule' => 0.20,
+            'elo_rating' => 0.15,
+            'win_pct' => 0.15,
+        ],
+
+        // Head-to-head game simulation weights
+        'champion_weights' => [
+            'elo_rating' => 0.45,
+            'adj_net_rating' => 0.25,
+            'rolling_net_rating' => 0.10,
+            'win_pct' => 0.10,
+            'strength_of_schedule' => 0.10,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Betting Value Configuration
     |--------------------------------------------------------------------------
     |

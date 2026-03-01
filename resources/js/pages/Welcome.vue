@@ -3,8 +3,7 @@ import { Head, Link } from '@inertiajs/vue3'
 import { computed } from 'vue'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { dashboard, login, register, performance, terms, privacy, responsibleGambling } from '@/routes'
+import { dashboard, login, register, performance as performanceRoute, terms, privacy, responsibleGambling } from '@/routes'
 
 interface OverallStats {
   total_predictions: number
@@ -97,12 +96,6 @@ const getROIColor = (roi: number | undefined) => {
     <meta head-key="og:description" property="og:description" content="Data-driven sports betting analytics, transparent results, and live predictions across major sports." />
     <meta head-key="twitter:title" name="twitter:title" content="Beat the Books - Advanced Sports Betting Analytics" />
     <meta head-key="twitter:description" name="twitter:description" content="Data-driven sports betting analytics, transparent results, and live predictions across major sports." />
-    <component
-      :is="'script'"
-      head-key="schema-webpage-home"
-      type="application/ld+json"
-      v-html='JSON.stringify({"@context":"https://schema.org","@type":"WebPage","name":"PickSports Home","url":"https://picksports.app/","description":"Data-driven sports betting analytics and predictions."})'
-    />
   </Head>
 
   <div class="min-h-screen bg-white dark:bg-gray-950">
@@ -120,7 +113,7 @@ const getROIColor = (roi: number | undefined) => {
           </div>
           <div class="flex items-center gap-4">
             <Link
-              :href="performance()"
+              :href="performanceRoute()"
               class="text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
             >
               Track Record

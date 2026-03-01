@@ -9,7 +9,7 @@ beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
 });
 
-test('legacy data_permissions are mapped to real permission names when resolving tier permissions', function () {
+test('data_permissions are mapped to real permission names when resolving tier permissions', function () {
     foreach ([
         'view-nba-predictions',
         'view-prediction-spread',
@@ -29,4 +29,3 @@ test('legacy data_permissions are mapped to real permission names when resolving
     expect($resolved)->toContain('view-prediction-spread');
     expect($resolved)->toContain('view-prediction-win-probability');
 });
-

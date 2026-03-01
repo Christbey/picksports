@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\CBB;
 
+use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -14,6 +15,21 @@ class PlayerStatResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $epaCalculator = app(NbaPlayerEpaCalculator::class);
+        $estimatedEpa = $epaCalculator->estimateFromBoxScore(
+            $this->points,
+            $this->assists,
+            $this->rebounds_total,
+            $this->steals,
+            $this->blocks,
+            $this->turnovers,
+            $this->field_goals_made,
+            $this->field_goals_attempted,
+            $this->free_throws_made,
+            $this->free_throws_attempted,
+            NbaPlayerEpaCalculator::PROFILE_CBB
+        );
+
         return [
             'id' => $this->id,
             'player_id' => $this->player_id,
@@ -36,6 +52,8 @@ class PlayerStatResource extends JsonResource
             'blocks' => $this->blocks,
             'fouls' => $this->fouls,
             'points' => $this->points,
+            'estimated_epa' => $estimatedEpa,
+            'estimated_epa_per_36' => $epaCalculator->estimatePer36($estimatedEpa, $this->minutes_played),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'player' => PlayerResource::make($this->whenLoaded('player')),

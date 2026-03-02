@@ -80,6 +80,10 @@ const sportNavItems: NavItem[] = [
                 href: nbaPlayerStats(),
             },
             {
+                title: 'Futures',
+                href: '/nba-futures',
+            },
+            {
                 title: 'Player Props',
                 href: '/nba-player-props',
             },
@@ -112,6 +116,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: mlbTeamMetrics(),
+            },
+            {
+                title: 'Futures',
+                href: '/mlb-futures',
             },
             {
                 title: 'Player Props',
@@ -169,6 +177,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: wcbbTeamMetrics(),
+            },
+            {
+                title: 'Tournament Forecast',
+                href: '/wcbb-tournament-forecast',
             },
         ],
     },

@@ -42,7 +42,7 @@ defineProps<{
                 <div class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-center">
                     <div class="text-sm text-muted-foreground">Spread</div>
                     <div class="text-2xl font-bold text-primary">{{ prediction.predicted_spread !== undefined ? formatSpread(prediction.predicted_spread) : '-' }}</div>
-                    <div class="mt-0.5 text-xs text-muted-foreground">{{ Number(prediction.predicted_spread) < 0 ? (homeLabel || 'Home') : (awayLabel || 'Away') }} favored</div>
+                    <div class="mt-0.5 text-xs text-muted-foreground">{{ Number(prediction.predicted_spread) > 0 ? (homeLabel || 'Home') : (awayLabel || 'Away') }} favored</div>
                 </div>
                 <div class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-center">
                     <div class="text-sm text-muted-foreground">Win Prob</div>

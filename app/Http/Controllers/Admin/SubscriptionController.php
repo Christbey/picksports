@@ -7,6 +7,7 @@ use App\Http\Resources\Admin\AdminUserSubscriptionResource;
 use App\Http\Resources\Admin\SubscriptionTierOptionResource;
 use App\Models\SubscriptionTier;
 use App\Models\User;
+use App\Services\Admin\TierPermissionSyncService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -16,6 +17,8 @@ use Laravel\Cashier\Subscription;
 class SubscriptionController extends Controller
 {
     private const USERS_PER_PAGE = 20;
+
+    public function __construct(private readonly TierPermissionSyncService $tierPermissionSyncService) {}
 
     public function index(Request $request): Response
     {
@@ -91,8 +94,8 @@ class SubscriptionController extends Controller
         }
 
         try {
-            // Sync the user's role based on the tier
-            $user->syncRoles([$tier->slug]);
+            $role = $this->tierPermissionSyncService->syncTierRolePermissions($tier);
+            $user->syncRoles([$role->name]);
 
             return $this->backSuccess("Successfully assigned {$tier->name} tier to {$user->name}.");
         } catch (\Exception $e) {
@@ -114,6 +117,11 @@ class SubscriptionController extends Controller
             ? Carbon::createFromTimestamp($stripeSubscription->cancel_at)
             : null;
         $subscription->save();
+
+        $user = $subscription->owner;
+        if ($user instanceof User) {
+            $user->syncRoleFromTier();
+        }
     }
 
     private function usersQuery(?string $search): \Illuminate\Database\Eloquent\Builder

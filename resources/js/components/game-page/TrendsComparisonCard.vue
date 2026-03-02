@@ -7,6 +7,7 @@ defineProps<{
     title: string;
     subtitle?: string;
     trendsLoading: boolean;
+    topMatchupEdges?: string[];
     allTrendCategories: string[];
     formatCategoryName: (category: string) => string;
     isLockedCategory: (category: string) => boolean;
@@ -34,6 +35,16 @@ defineProps<{
             </div>
 
             <div v-else-if="allTrendCategories.length > 0" class="space-y-6">
+                <div v-if="topMatchupEdges && topMatchupEdges.length > 0" class="rounded-lg border bg-muted/20 p-3">
+                    <h4 class="mb-2 text-sm font-semibold">Top Matchup Edges</h4>
+                    <ul class="space-y-1 text-sm">
+                        <li v-for="(edge, idx) in topMatchupEdges" :key="idx" class="flex items-start gap-2">
+                            <span class="text-muted-foreground">•</span>
+                            <span>{{ edge }}</span>
+                        </li>
+                    </ul>
+                </div>
+
                 <div v-for="category in allTrendCategories" :key="category" class="border-b pb-4 last:border-b-0">
                     <h4 class="font-medium mb-3">{{ formatCategoryName(category) }}</h4>
 

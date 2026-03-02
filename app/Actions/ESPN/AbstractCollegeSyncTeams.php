@@ -56,7 +56,9 @@ abstract class AbstractCollegeSyncTeams extends AbstractSyncTeams
             return null;
         }
 
-        $detailedTeam = is_array($teamDetail['team'] ?? null) ? $teamDetail['team'] : $team;
+        $detailedTeam = is_array($teamDetail['team'] ?? null)
+            ? array_replace_recursive($team, $teamDetail['team'])
+            : $team;
         [$conferenceName, $divisionName] = $this->resolveConferenceDivision($detailedTeam);
         $detailedTeam['__conference_name'] = $conferenceName;
         $detailedTeam['__division_name'] = $divisionName;
@@ -89,14 +91,27 @@ abstract class AbstractCollegeSyncTeams extends AbstractSyncTeams
      */
     protected function resolveConferenceDivision(array $team): array
     {
-        $conferenceName = null;
-        $divisionName = null;
+        $conferenceName = $team['conference']['name']
+            ?? $team['groups']['name']
+            ?? $team['group']['name']
+            ?? null;
+        $divisionName = $team['division']['name']
+            ?? $team['groups']['parent']['name']
+            ?? $team['group']['parent']['name']
+            ?? null;
 
-        if (! isset($team['groups']['id'])) {
+        $group = is_array($team['groups'] ?? null)
+            ? $team['groups']
+            : (is_array($team['group'] ?? null) ? $team['group'] : null);
+
+        if (! is_array($group)) {
             return [$conferenceName, $divisionName];
         }
 
-        $conferenceId = (string) $team['groups']['id'];
+        $conferenceId = $this->resolveGroupId($group);
+        if ($conferenceId === null) {
+            return [$conferenceName, $divisionName];
+        }
 
         if (isset($this->conferenceCache[$conferenceId])) {
             return [
@@ -105,13 +120,21 @@ abstract class AbstractCollegeSyncTeams extends AbstractSyncTeams
             ];
         }
 
-        $conferenceName = $this->fetchGroupName($conferenceId);
-        if (isset($team['groups']['parent']['id'])) {
-            $divisionId = (string) $team['groups']['parent']['id'];
-            if (array_key_exists($divisionId, $this->divisionCache)) {
+        if ($conferenceName === null) {
+            $conferenceName = $this->fetchGroupName($conferenceId);
+        }
+
+        $parentGroup = is_array($group['parent'] ?? null) ? $group['parent'] : null;
+        if ($parentGroup !== null) {
+            $divisionId = $this->resolveGroupId($parentGroup);
+            if ($divisionId === null) {
+                $divisionName = $divisionName ?? ($parentGroup['name'] ?? null);
+            } elseif (array_key_exists($divisionId, $this->divisionCache)) {
                 $divisionName = $this->divisionCache[$divisionId];
-            } else {
+            } elseif ($divisionName === null) {
                 $divisionName = $this->fetchGroupName($divisionId);
+                $this->divisionCache[$divisionId] = $divisionName;
+            } else {
                 $this->divisionCache[$divisionId] = $divisionName;
             }
         }
@@ -122,6 +145,27 @@ abstract class AbstractCollegeSyncTeams extends AbstractSyncTeams
         ];
 
         return [$conferenceName, $divisionName];
+    }
+
+    /**
+     * @param  array<string,mixed>  $group
+     */
+    protected function resolveGroupId(array $group): ?string
+    {
+        $id = $group['id'] ?? null;
+        if (is_scalar($id) && (string) $id !== '') {
+            return (string) $id;
+        }
+
+        $ref = $group['$ref'] ?? null;
+        if (! is_string($ref) || $ref === '') {
+            return null;
+        }
+
+        $trimmed = rtrim($ref, '/');
+        $segment = basename($trimmed);
+
+        return $segment !== '' ? $segment : null;
     }
 
     protected function fetchGroupName(string $groupId): ?string

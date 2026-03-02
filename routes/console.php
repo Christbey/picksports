@@ -278,6 +278,12 @@ $scheduleSportPipeline(
     18,
     'NBA: Sync Player Props'
 );
+$scheduleDailySeasonJob(
+    "nba:generate-playoff-forecast --season={$currentYear}",
+    '05:15',
+    $nbaInSeason,
+    'NBA: Generate Playoff Forecast'
+);
 
 // CBB
 $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
@@ -317,6 +323,12 @@ $scheduleSportPipeline(
     17,
     'CBB: Sync Player Props'
 );
+$scheduleDailySeasonJob(
+    "cbb:generate-tournament-forecast --season={$currentYear}",
+    '07:00',
+    $cbbInSeason,
+    'CBB: Generate Tournament Forecast'
+);
 
 $dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
     ->hourly()
@@ -327,6 +339,7 @@ $dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
 $attachCommandHeartbeat($dailyDigestsEvent, 'alerts:send-daily-digests --sport=all', 'Alerts: Send Daily Digests');
 
 // WCBB
+$scheduleDailySeasonJob('espn:sync-wcbb-teams', '02:45', $wcbbInSeason, 'WCBB: Sync Teams (Daily)');
 $scheduleDailySeasonJob('espn:sync-wcbb-game-details', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');
 
 $scheduleSportPipeline(
@@ -353,6 +366,12 @@ $scheduleSportPipeline(
     ],
     'wcbb:sync-odds',
     'WCBB: Sync Odds'
+);
+$scheduleDailySeasonJob(
+    "wcbb:generate-tournament-forecast --season={$currentYear}",
+    '05:15',
+    $wcbbInSeason,
+    'WCBB: Generate Tournament Forecast'
 );
 
 // MLB
@@ -384,6 +403,12 @@ $scheduleSportPipeline(
     11,
     16,
     'MLB: Sync Player Props'
+);
+$scheduleDailySeasonJob(
+    "mlb:generate-playoff-forecast --season={$currentYear}",
+    '06:15',
+    $mlbInSeason,
+    'MLB: Generate Playoff Forecast'
 );
 
 // WNBA

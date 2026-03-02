@@ -36,16 +36,9 @@ class TierPermissionSyncService
         $sourcePermissions = $storedPermissions->intersect($availablePermissions)->values();
 
         $mappedDataPermissions = collect(PredictionDataPermissions::permissionsForFields($tier->data_permissions ?? []));
-        $hasManagedDataPermissions = $sourcePermissions
-            ->intersect(PredictionDataPermissions::allPermissionNames())
-            ->isNotEmpty();
-
-        $effectiveDataPermissions = $hasManagedDataPermissions
-            ? collect()
-            : $mappedDataPermissions;
 
         return $sourcePermissions
-            ->concat($effectiveDataPermissions)
+            ->concat($mappedDataPermissions)
             ->unique()
             ->values()
             ->all();

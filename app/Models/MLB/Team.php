@@ -77,6 +77,11 @@ class Team extends Model
         return $this->hasMany(EloRating::class, 'team_id');
     }
 
+    public function playoffForecasts(): HasMany
+    {
+        return $this->hasMany(PlayoffForecast::class, 'team_id');
+    }
+
     public function getDisplayNameAttribute(): string
     {
         return $this->location.' '.$this->name;

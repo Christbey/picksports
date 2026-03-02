@@ -21,6 +21,8 @@ class DashboardPredictionResource extends JsonResource
 
     protected mixed $bettingValue = null;
 
+    protected ?string $bettingValueDebug = null;
+
     public function sport(string $sport): self
     {
         $this->sport = $sport;
@@ -54,6 +56,13 @@ class DashboardPredictionResource extends JsonResource
     {
         $this->includeBettingValue = true;
         $this->bettingValue = $bettingValue;
+
+        return $this;
+    }
+
+    public function bettingValueDebug(?string $reason): self
+    {
+        $this->bettingValueDebug = $reason;
 
         return $this;
     }
@@ -102,6 +111,7 @@ class DashboardPredictionResource extends JsonResource
 
         if ($this->includeBettingValue) {
             $data['betting_value'] = $this->bettingValue;
+            $data['betting_value_debug'] = $this->bettingValueDebug;
         }
 
         return $data;

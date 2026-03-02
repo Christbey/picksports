@@ -42,26 +42,13 @@ abstract class AbstractCalculateTeamTrends
         }
 
         $trends = [];
-        $locked = [];
         $enabledCollectors = config('trends.collectors', []);
-        $tierRequirements = config('trends.tier_requirements', []);
-        $tierLevels = config('trends.tier_levels', []);
-        $userTierLevel = $tierLevels[$userTier] ?? 0;
 
         foreach ($this->collectors() as $collectorClass) {
             $collector = app($collectorClass);
             $key = $collector->key();
 
             if (! ($enabledCollectors[$key] ?? true)) {
-                continue;
-            }
-
-            $requiredTier = $tierRequirements[$key] ?? 'free';
-            $requiredLevel = $tierLevels[$requiredTier] ?? 0;
-
-            if ($userTierLevel < $requiredLevel) {
-                $locked[$key] = $requiredTier;
-
                 continue;
             }
 
@@ -73,7 +60,33 @@ abstract class AbstractCalculateTeamTrends
             }
         }
 
-        return ['trends' => $trends, 'locked' => $locked];
+        $trends = $this->normalizeTrendOutput($trends);
+
+        return ['trends' => $trends, 'locked' => []];
+    }
+
+    /**
+     * @param  array<string, array<int, string>>  $trends
+     * @return array<string, array<int, string>>
+     */
+    protected function normalizeTrendOutput(array $trends): array
+    {
+        if (
+            config('trends.defaults.dedupe_first_score_when_quarters_present', true)
+            && array_key_exists('quarters', $trends)
+            && array_key_exists('first_score', $trends)
+        ) {
+            unset($trends['first_score']);
+        }
+
+        $maxPerCategory = (int) config('trends.defaults.max_messages_per_category', 4);
+        if ($maxPerCategory > 0) {
+            foreach ($trends as $category => $messages) {
+                $trends[$category] = array_slice($messages, 0, $maxPerCategory);
+            }
+        }
+
+        return $trends;
     }
 
     protected function fetchRecentGames(object $team, int $count, ?int $season = null, ?string $beforeDate = null): Collection

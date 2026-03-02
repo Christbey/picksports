@@ -15,5 +15,7 @@ class TeamMetricController extends AbstractTeamMetricController
 
     protected const TEAM_METRIC_RESOURCE = TeamMetricResource::class;
 
-    protected const BY_TEAM_ORDER_BY_COLUMN = 'year';
+    protected const BY_TEAM_ORDER_BY_COLUMN = 'season';
+
+    protected const BY_TEAM_RETURNS_LATEST_ONLY = true;
 }

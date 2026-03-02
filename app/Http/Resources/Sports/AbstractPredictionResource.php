@@ -2,11 +2,9 @@
 
 namespace App\Http\Resources\Sports;
 
-use App\Support\PredictionDataPermissions;
+use App\Support\PredictionFieldAccess;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use Spatie\Permission\Exceptions\GuardDoesNotMatch;
-use Spatie\Permission\Exceptions\PermissionDoesNotExist;
 
 abstract class AbstractPredictionResource extends JsonResource
 {
@@ -29,13 +27,7 @@ abstract class AbstractPredictionResource extends JsonResource
             return false;
         }
 
-        $permissionName = PredictionDataPermissions::permissionForField($permission) ?? $permission;
-
-        try {
-            return $user->hasPermissionTo($permissionName);
-        } catch (PermissionDoesNotExist|GuardDoesNotMatch) {
-            return false;
-        }
+        return app(PredictionFieldAccess::class)->canViewField($user, $permission);
     }
 
     /**

@@ -10,6 +10,8 @@ return [
         'sample_size' => 16,
         'min_sample' => 5,
         'max_sample' => 50,
+        'max_messages_per_category' => 4,
+        'dedupe_first_score_when_quarters_present' => true,
     ],
 
     /*

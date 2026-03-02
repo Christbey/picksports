@@ -176,32 +176,34 @@ class AlertService
     protected function calculateMoneylineExpectedValue(Model $prediction, Model $game, array $market): array
     {
         $outcomes = $market['outcomes'] ?? [];
-        $homeOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['home_team']);
+        $homeOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['home_team'] ?? null);
+        $awayOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['away_team'] ?? null);
 
-        if (! $homeOutcome) {
+        if (! $homeOutcome || ! $awayOutcome) {
             return ['expected_value' => 0];
         }
 
-        $predictedWinProb = (float) $prediction->win_probability;
-        $impliedProb = $this->americanOddsToProb($homeOutcome['price']);
+        $homeModelProb = (float) $prediction->win_probability;
+        $awayModelProb = 1 - $homeModelProb;
+
+        // Safe side = team with higher model win probability.
+        $betHome = $homeModelProb >= $awayModelProb;
+        $selectedOutcome = $betHome ? $homeOutcome : $awayOutcome;
+        $modelProb = $betHome ? $homeModelProb : $awayModelProb;
+        $impliedProb = $this->americanOddsToProb((int) $selectedOutcome['price']);
+        $edge = $modelProb - $impliedProb;
+
+        if ($edge < 0.05) {
+            return ['expected_value' => 0];
+        }
+
         $confidence = (float) $prediction->confidence_score;
+        $expectedValue = ($edge * $confidence) / 10;
 
-        $probDifference = abs($predictedWinProb - $impliedProb);
-
-        if ($probDifference < 0.05) {
-            return ['expected_value' => 0];
-        }
-
-        $expectedValue = (($predictedWinProb - $impliedProb) * $confidence) / 10;
-
-        if ($predictedWinProb > $impliedProb) {
-            $homeTeamName = $this->teamName($game->homeTeam);
-            $priceSign = $homeOutcome['price'] > 0 ? '+' : '';
-            $recommendation = "Bet HOME ({$homeTeamName}) ML at {$priceSign}{$homeOutcome['price']}";
-        } else {
-            $awayTeamName = $this->teamName($game->awayTeam);
-            $recommendation = "Bet AWAY ({$awayTeamName}) ML";
-        }
+        $teamName = $betHome ? $this->teamName($game->homeTeam) : $this->teamName($game->awayTeam);
+        $price = (int) $selectedOutcome['price'];
+        $priceSign = $price > 0 ? '+' : '';
+        $recommendation = "Bet {$teamName} ML at {$priceSign}{$price}";
 
         return [
             'expected_value' => $expectedValue,

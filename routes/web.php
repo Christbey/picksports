@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\BettingRecommendationsController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\Debug\PredictionAccessController as DebugPredictionAccessController;
 use App\Http\Controllers\PerformanceController;
 use App\Http\Controllers\Auth\PasskeyController;
 use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
@@ -152,6 +153,10 @@ Route::get('my-bets', function () {
     return Inertia::render('MyBets');
 })->middleware(['auth', 'verified'])->name('my-bets');
 
+Route::get('debug/prediction-access', DebugPredictionAccessController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('debug.prediction-access');
+
 foreach ([
     'nba' => 'NBA/Predictions',
     'cbb' => 'CBB/Predictions',
@@ -170,11 +175,14 @@ foreach ([
     'cbb-team-metrics' => ['page' => 'CBB/TeamMetrics', 'sport' => 'cbb'],
     'cbb-player-stats' => ['page' => 'CBB/PlayerStats', 'sport' => 'cbb'],
     'cbb-tournament-forecast' => ['page' => 'CBB/TournamentForecast', 'sport' => 'cbb'],
+    'wcbb-tournament-forecast' => ['page' => 'WCBB/TournamentForecast', 'sport' => 'wcbb'],
     'wcbb-team-metrics' => ['page' => 'WCBB/TeamMetrics', 'sport' => 'wcbb'],
     'nba-team-metrics' => ['page' => 'NBA/TeamMetrics', 'sport' => 'nba'],
     'nba-player-stats' => ['page' => 'NBA/PlayerStats', 'sport' => 'nba'],
+    'nba-futures' => ['page' => 'NBA/Futures', 'sport' => 'nba'],
     'wnba-team-metrics' => ['page' => 'WNBA/TeamMetrics', 'sport' => 'wnba'],
     'mlb-team-metrics' => ['page' => 'MLB/TeamMetrics', 'sport' => 'mlb'],
+    'mlb-futures' => ['page' => 'MLB/Futures', 'sport' => 'mlb'],
     'nfl-team-metrics' => ['page' => 'NFL/TeamMetrics', 'sport' => 'nfl'],
 ] as $path => $config) {
     Route::get($path, fn () => Inertia::render($config['page']))

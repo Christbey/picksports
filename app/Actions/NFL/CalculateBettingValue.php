@@ -174,22 +174,22 @@ class CalculateBettingValue
         $impliedHomeProb = $this->americanToImplied($homePrice);
         $impliedAwayProb = $this->americanToImplied($awayPrice);
 
-        // Calculate edge: our probability vs market probability
-        $homeEdge = $prediction->win_probability - $impliedHomeProb;
-        $awayEdge = (1 - $prediction->win_probability) - $impliedAwayProb;
+        $homeModelProb = (float) $prediction->win_probability;
+        $awayModelProb = 1 - $homeModelProb;
 
-        // Need sufficient edge for a recommendation
+        // Safe side = team with higher model win probability.
+        $betHome = $homeModelProb >= $awayModelProb;
+        $modelProb = $betHome ? $homeModelProb : $awayModelProb;
+        $impliedProb = $betHome ? $impliedHomeProb : $impliedAwayProb;
+        $edge = $modelProb - $impliedProb;
+
+        // Need sufficient positive edge for a recommendation.
         $minEdge = config('nfl.betting.edge_thresholds.moneyline');
-
-        if (abs($homeEdge) < $minEdge && abs($awayEdge) < $minEdge) {
+        if ($edge < $minEdge) {
             return null;
         }
 
-        $betHome = $homeEdge > $awayEdge;
-        $edge = $betHome ? $homeEdge : $awayEdge;
         $price = $betHome ? $homePrice : $awayPrice;
-        $modelProb = $betHome ? $prediction->win_probability : (1 - $prediction->win_probability);
-        $impliedProb = $betHome ? $impliedHomeProb : $impliedAwayProb;
 
         // Calculate Kelly Criterion bet size
         $kellyConfig = config('nfl.betting.kelly');
@@ -207,7 +207,7 @@ class CalculateBettingValue
             'kelly_bet_size_percent' => max(0, min($maxKelly, round($kellySizePercent, 1))),
             'confidence' => round($prediction->confidence_score, 2),
             'reasoning' => sprintf(
-                'Model gives %d%% chance vs market implied %d%% (%+d%% edge)',
+                'Safe side: model gives %d%% chance vs market implied %d%% (%+d%% edge)',
                 round($modelProb * 100),
                 round($impliedProb * 100),
                 round($edge * 100)

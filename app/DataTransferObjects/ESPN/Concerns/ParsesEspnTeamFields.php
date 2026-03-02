@@ -19,11 +19,21 @@ trait ParsesEspnTeamFields
      */
     protected static function parseCommonTeamFields(array $team): array
     {
+        $conference = $team['conference']['name']
+            ?? $team['groups']['name']
+            ?? $team['group']['name']
+            ?? null;
+
+        $division = $team['division']['name']
+            ?? $team['groups']['parent']['name']
+            ?? $team['group']['parent']['name']
+            ?? null;
+
         return [
             'espnId' => self::stringOrEmpty($team['id'] ?? null),
             'abbreviation' => self::stringOrEmpty($team['abbreviation'] ?? null),
-            'conference' => $team['conference']['name'] ?? null,
-            'division' => $team['division']['name'] ?? null,
+            'conference' => $conference,
+            'division' => $division,
             'color' => $team['color'] ?? null,
             'logoUrl' => $team['logos'][0]['href'] ?? null,
         ];

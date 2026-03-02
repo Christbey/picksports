@@ -131,7 +131,7 @@ function winProbPercent(prediction: DashboardPrediction): number {
                         </div>
 
                         <div
-                            v-if="(prediction.betting_value && prediction.betting_value.length > 0) || hasLiveData(prediction)"
+                            v-if="(prediction.betting_value && prediction.betting_value.length > 0) || hasLiveData(prediction) || prediction.betting_value_debug"
                             class="mt-4 border-t border-sidebar-border/70 pt-4"
                         >
                             <div class="mb-2 flex items-center gap-2">
@@ -146,7 +146,20 @@ function winProbPercent(prediction: DashboardPrediction): number {
                                     Vegas
                                 </div>
                             </div>
+                            <div
+                                v-if="!hasLiveData(prediction) && (!prediction.betting_value || prediction.betting_value.length === 0)"
+                                class="rounded-md border border-dashed border-sidebar-border/80 bg-sidebar/30 p-3 text-sm text-muted-foreground"
+                            >
+                                No qualifying value signal
+                                <span
+                                    v-if="prediction.betting_value_debug"
+                                    class="ml-2 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-foreground/80"
+                                >
+                                    {{ prediction.betting_value_debug }}
+                                </span>
+                            </div>
                             <BettingAnalysisCard
+                                v-else
                                 :betting-value="prediction.betting_value"
                                 :live-prediction="toLivePredictionData(prediction)"
                                 :compact="true"

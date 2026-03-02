@@ -40,6 +40,11 @@ const adminAreas = [
         href: '/admin/healthchecks',
     },
     {
+        title: 'Prediction Access Debug',
+        description: 'Inspect tier and permission-based prediction field access.',
+        href: '/debug/prediction-access',
+    },
+    {
         title: 'Team Mappings',
         description: 'Resolve odds provider and internal team mapping gaps.',
         href: '/settings/team-mappings',

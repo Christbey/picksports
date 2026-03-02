@@ -14,4 +14,6 @@ class TeamController extends AbstractTeamController
     protected const TEAM_RESOURCE = TeamResource::class;
 
     protected const TRENDS_CALCULATOR = CalculateTeamTrends::class;
+
+    protected const ORDER_BY_COLUMN = 'school';
 }

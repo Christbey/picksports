@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Actions\CBB\CalculateBettingValue as CBBCalculateBettingValue;
 use App\Actions\NBA\CalculateBettingValue as NBACalculateBettingValue;
 use App\Actions\NFL\CalculateBettingValue as NFLCalculateBettingValue;
+use App\Actions\Sports\CalculateBettingValue as GenericCalculateBettingValue;
 use App\Http\Resources\DashboardPredictionResource;
 use App\Models\CBB\Game as CBBGame;
 use App\Models\CBB\Prediction as CBBPrediction;
@@ -113,7 +114,8 @@ class DashboardController extends Controller
                 fullName: "Women's College Basketball",
                 color: 'purple',
                 predictionModel: WCBBPrediction::class,
-                gameModel: WCBBGame::class
+                gameModel: WCBBGame::class,
+                bettingCalculator: GenericCalculateBettingValue::class
             ),
             'NFL' => $this->sportConfig(
                 fullName: 'National Football League',
@@ -127,6 +129,7 @@ class DashboardController extends Controller
                 color: 'orange',
                 predictionModel: MLBPrediction::class,
                 gameModel: MLBGame::class,
+                bettingCalculator: GenericCalculateBettingValue::class,
                 liveStatuses: ['STATUS_IN_PROGRESS', 'STATUS_DELAYED'],
                 liveRemainingField: 'live_outs_remaining',
                 includeInning: true
@@ -135,13 +138,15 @@ class DashboardController extends Controller
                 fullName: 'College Football',
                 color: 'blue',
                 predictionModel: CFBPrediction::class,
-                gameModel: CFBGame::class
+                gameModel: CFBGame::class,
+                bettingCalculator: GenericCalculateBettingValue::class
             ),
             'WNBA' => $this->sportConfig(
                 fullName: "Women's National Basketball Association",
                 color: 'purple',
                 predictionModel: WNBAPrediction::class,
-                gameModel: WNBAGame::class
+                gameModel: WNBAGame::class,
+                bettingCalculator: GenericCalculateBettingValue::class
             ),
         ];
     }
@@ -197,10 +202,58 @@ class DashboardController extends Controller
                 ->liveRemainingField($config['live_remaining_field']);
 
             if ($config['betting_calculator']) {
-                $resource->bettingValue(app($config['betting_calculator'])->execute($prediction->game));
+                $analysis = $this->analyzeBettingValue($prediction->game, $config['betting_calculator'], strtolower($sport));
+                $resource
+                    ->bettingValue($analysis['recommendations'])
+                    ->bettingValueDebug($analysis['debug']);
             }
 
             return $resource->resolve();
         });
+    }
+
+    /**
+     * @return array{recommendations:array<int,mixed>|null,debug:string|null}
+     */
+    private function analyzeBettingValue(object $game, string $calculatorClass, string $sportKey): array
+    {
+        $oddsData = $game->odds_data ?? null;
+        $bookmakers = is_array($oddsData) ? ($oddsData['bookmakers'] ?? null) : null;
+        $hasBookmakers = is_array($bookmakers) && $bookmakers !== [];
+
+        if (! $hasBookmakers) {
+            return [
+                'recommendations' => null,
+                'debug' => 'No odds',
+            ];
+        }
+
+        $hasMarketData = collect($bookmakers)
+            ->flatMap(fn ($bookmaker) => is_array($bookmaker) ? ($bookmaker['markets'] ?? []) : [])
+            ->contains(fn ($market) => in_array(($market['key'] ?? null), ['spreads', 'totals', 'h2h'], true));
+
+        if (! $hasMarketData) {
+            return [
+                'recommendations' => null,
+                'debug' => 'No odds',
+            ];
+        }
+
+        $calculator = app($calculatorClass);
+        $recommendations = $calculatorClass === GenericCalculateBettingValue::class
+            ? $calculator->execute($game, $sportKey)
+            : $calculator->execute($game);
+
+        if (is_array($recommendations) && $recommendations !== []) {
+            return [
+                'recommendations' => $recommendations,
+                'debug' => null,
+            ];
+        }
+
+        return [
+            'recommendations' => null,
+            'debug' => 'Below threshold',
+        ];
     }
 }

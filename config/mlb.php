@@ -220,4 +220,36 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Playoff Forecast Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Lightweight projection settings for MLB postseason futures.
+    |
+    */
+
+    'playoff_forecast' => [
+        'simulations' => 1,
+        'playoff_spots_per_league' => 6,
+        'bubble_steepness' => 1.1,
+        'league_championship_base' => 0.44,
+        'league_champ_seed_penalty' => 0.07,
+        'regression' => [
+            'enabled' => true,
+            'metric_factor' => 0.45,
+            'win_pct_factor' => 0.45,
+            'sos_factor' => 0.35,
+            'elo_factor' => env('MLB_OFFSEASON_ELO_REGRESSION', 0.33),
+        ],
+        'selection_weights' => [
+            'offensive_rating' => 0.22,
+            'pitching_rating' => 0.22,
+            'defensive_rating' => 0.14,
+            'elo_rating' => 0.18,
+            'win_pct' => 0.18,
+            'strength_of_schedule' => 0.06,
+        ],
+    ],
+
 ];

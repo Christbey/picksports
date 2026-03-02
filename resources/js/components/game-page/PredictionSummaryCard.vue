@@ -37,7 +37,7 @@ defineProps<{
                     <div class="text-2xl font-bold">
                         {{ prediction.predicted_spread > 0 ? '+' : '' }}{{ formatNumber(prediction.predicted_spread) }}
                     </div>
-                    <div class="mt-1 text-xs text-muted-foreground">{{ prediction.predicted_spread < 0 ? (homeLabel || 'Home') : (awayLabel || 'Away') }} favored</div>
+                    <div class="mt-1 text-xs text-muted-foreground">{{ prediction.predicted_spread > 0 ? (homeLabel || 'Home') : (awayLabel || 'Away') }} favored</div>
                 </div>
                 <div class="rounded-lg border p-4 text-center">
                     <div class="text-sm text-muted-foreground">Total</div>

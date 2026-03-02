@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Services\Admin\TierPermissionSyncService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -82,7 +83,8 @@ class User extends Authenticatable
         $tier = $this->subscriptionTier();
 
         if ($tier) {
-            $this->syncRoles([$tier->slug]);
+            $role = app(TierPermissionSyncService::class)->syncTierRolePermissions($tier);
+            $this->syncRoles([$role->name]);
         }
     }
 

@@ -221,20 +221,22 @@ class SelectTopBetsForDigest
             if ($homePrice !== null && $awayPrice !== null) {
                 $homeModelProb = (float) $prediction->win_probability;
                 $awayModelProb = 1 - $homeModelProb;
-                $homeEdge = $homeModelProb - $this->americanToImplied($homePrice);
-                $awayEdge = $awayModelProb - $this->americanToImplied($awayPrice);
-                $betHome = $homeEdge >= $awayEdge;
-                $edge = $betHome ? $homeEdge : $awayEdge;
+                $betHome = $homeModelProb >= $awayModelProb;
+                $edge = $betHome
+                    ? ($homeModelProb - $this->americanToImplied($homePrice))
+                    : ($awayModelProb - $this->americanToImplied($awayPrice));
                 $price = $betHome ? $homePrice : $awayPrice;
 
-                $recommendations[] = [
-                    'type' => 'moneyline',
-                    'recommendation' => $betHome ? "Bet {$homeName} ML" : "Bet {$awayName} ML",
-                    'edge' => round($edge * 100, 1),
-                    'odds' => $price,
-                    'confidence' => round((float) ($prediction->confidence_score ?? 50), 2),
-                    'reasoning' => 'Digest fallback ranking by model-vs-implied win probability',
-                ];
+                if ($edge > 0) {
+                    $recommendations[] = [
+                        'type' => 'moneyline',
+                        'recommendation' => $betHome ? "Bet {$homeName} ML" : "Bet {$awayName} ML",
+                        'edge' => round($edge * 100, 1),
+                        'odds' => $price,
+                        'confidence' => round((float) ($prediction->confidence_score ?? 50), 2),
+                        'reasoning' => 'Digest fallback using safer side by model win probability',
+                    ];
+                }
             }
         }
 

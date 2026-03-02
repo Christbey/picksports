@@ -143,6 +143,17 @@ export interface PredictionSummary {
     predicted_total: number;
     confidence_level: string;
     confidence_score?: number | null;
+    narrative?: {
+        summary: string;
+        key_points: string[];
+        risk_note: string;
+        generated_by: string;
+        social_caption?: string | null;
+        betting_plan?: {
+            bet_pick: string;
+            reasoning: string;
+        } | null;
+    } | null;
 }
 
 export interface TeamMetricsData {

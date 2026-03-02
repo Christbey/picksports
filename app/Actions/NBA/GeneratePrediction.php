@@ -3,6 +3,7 @@
 namespace App\Actions\NBA;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Jobs\NBA\GeneratePredictionNarrative as GeneratePredictionNarrativeJob;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -20,6 +21,17 @@ class GeneratePrediction extends AbstractPredictionGenerator
     protected const TEAM_METRIC_MODEL = TeamMetric::class;
 
     protected const PREDICTION_MODEL = Prediction::class;
+
+    public function execute(Model $game): ?Model
+    {
+        $prediction = parent::execute($game);
+
+        if ($prediction instanceof Prediction) {
+            GeneratePredictionNarrativeJob::dispatch($prediction->id);
+        }
+
+        return $prediction;
+    }
 
     protected function calculatePredictedSpread(
         int $homeElo,

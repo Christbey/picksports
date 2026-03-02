@@ -47,6 +47,7 @@ withDefaults(defineProps<{
     trendsTitle?: string;
     trendsSubtitle?: string;
     trendsLoading?: boolean;
+    topMatchupEdges?: string[];
     allTrendCategories?: string[];
     formatCategoryName?: (value: string) => string;
     isLockedCategory?: (category: string) => boolean;
@@ -85,6 +86,7 @@ withDefaults(defineProps<{
     trendsTitle: 'Team Trends',
     trendsSubtitle: undefined,
     trendsLoading: false,
+    topMatchupEdges: () => [],
     allTrendCategories: () => [],
     formatCategoryName: undefined,
     isLockedCategory: undefined,
@@ -171,6 +173,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :title="trendsTitle"
                 :subtitle="trendsSubtitle"
                 :trends-loading="trendsLoading"
+                :top-matchup-edges="topMatchupEdges"
                 :all-trend-categories="allTrendCategories"
                 :format-category-name="formatCategoryName"
                 :is-locked-category="isLockedCategory"

@@ -13,6 +13,7 @@ export interface DashboardPrediction {
     home_logo: string;
     away_logo: string;
     betting_value?: BettingRecommendation[];
+    betting_value_debug?: string | null;
     // Live game data
     is_live?: boolean;
     is_final?: boolean;

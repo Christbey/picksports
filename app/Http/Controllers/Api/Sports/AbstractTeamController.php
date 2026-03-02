@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\UserTierResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -108,8 +109,7 @@ abstract class AbstractTeamController extends AbstractSportsApiController
         $season = $request->integer('season') ?: null;
         $beforeDate = $request->string('before_date')->toString() ?: null;
 
-        $user = $request->user();
-        $userTier = $user?->subscriptionTier()?->slug ?? config('subscriptions.default_tier', 'free');
+        $userTier = app(UserTierResolver::class)->resolveTierSlug($request->user());
 
         $result = $calculator->execute($team, $gameCount, $season, $beforeDate, $userTier);
 

@@ -69,7 +69,9 @@ const canonicalUrl = computed(() => {
     }
     return `https://picksports.app${path}`;
 });
-const imageUrl = computed(() => props.config.teamLogo(teamData.value) || 'https://picksports.app/icon-512.png?v=ps-gradient-2');
+const imageUrl = computed(() =>
+    (teamData.value ? props.config.teamLogo(teamData.value) : null) || 'https://picksports.app/icon-512.png?v=ps-gradient-2',
+);
 const webPageSchema = computed(() =>
     JSON.stringify(
         {

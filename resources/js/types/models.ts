@@ -82,6 +82,17 @@ export interface Prediction {
     home_expected_score: number
     away_expected_score: number
     confidence_level: string
+    narrative?: {
+        summary: string
+        key_points: string[]
+        risk_note: string
+        generated_by: string
+        social_caption?: string | null
+        betting_plan?: {
+            bet_pick: string
+            reasoning: string
+        } | null
+    } | null
     model_version: string | null
     created_at: string | null
     updated_at: string | null

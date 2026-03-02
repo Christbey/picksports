@@ -22,6 +22,13 @@ class PredictionDataPermissions
         return self::FIELD_PERMISSION_MAP[$field] ?? null;
     }
 
+    public static function fieldForPermission(string $permission): ?string
+    {
+        $field = array_search($permission, self::FIELD_PERMISSION_MAP, true);
+
+        return $field === false ? null : $field;
+    }
+
     /**
      * @param  array<int, mixed>  $fields
      * @return array<int, string>
@@ -44,5 +51,12 @@ class PredictionDataPermissions
     {
         return array_values(self::FIELD_PERMISSION_MAP);
     }
-}
 
+    /**
+     * @return array<int, string>
+     */
+    public static function allFields(): array
+    {
+        return array_keys(self::FIELD_PERMISSION_MAP);
+    }
+}

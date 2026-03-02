@@ -11,6 +11,12 @@ class GameController extends Controller
 {
     public function __invoke(Game $game): Response
     {
-        return $this->renderResourcePage('NBA/Game', 'game', $game, GameResource::class, ['homeTeam', 'awayTeam', 'prediction']);
+        return $this->renderResourcePage(
+            'NBA/Game',
+            'game',
+            $game,
+            GameResource::class,
+            ['homeTeam', 'awayTeam', 'prediction.game.homeTeam', 'prediction.game.awayTeam']
+        );
     }
 }

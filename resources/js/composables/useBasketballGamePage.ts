@@ -67,13 +67,82 @@ const normalizePrediction = (rawPrediction: unknown): PredictionSummary | null =
     const source = rawPrediction as Record<string, unknown>;
     if (source.home_win_probability === undefined || source.away_win_probability === undefined) return null;
 
+    const confidenceScore = toOptionalNumber(source.confidence_score);
+    const confidenceLevel = typeof source.confidence_level === 'string'
+        ? source.confidence_level
+        : confidenceScore === null
+            ? 'unavailable'
+            : confidenceScore >= 75
+                ? 'high'
+                : confidenceScore >= 60
+                    ? 'medium'
+                    : 'low';
+
+    const rawNarrative = source.narrative;
+    const narrative = rawNarrative && typeof rawNarrative === 'object'
+        ? {
+            summary: typeof (rawNarrative as Record<string, unknown>).summary === 'string'
+                ? (rawNarrative as Record<string, unknown>).summary as string
+                : '',
+            key_points: Array.isArray((rawNarrative as Record<string, unknown>).key_points)
+                ? ((rawNarrative as Record<string, unknown>).key_points as unknown[])
+                    .map((point) => String(point))
+                    .filter((point) => point.length > 0)
+                : [],
+            risk_note: typeof (rawNarrative as Record<string, unknown>).risk_note === 'string'
+                ? (rawNarrative as Record<string, unknown>).risk_note as string
+                : '',
+            generated_by: typeof (rawNarrative as Record<string, unknown>).generated_by === 'string'
+                ? (rawNarrative as Record<string, unknown>).generated_by as string
+                : '',
+            social_caption: typeof (rawNarrative as Record<string, unknown>).social_caption === 'string'
+                ? (rawNarrative as Record<string, unknown>).social_caption as string
+                : null,
+            betting_plan: (() => {
+                const plan = (rawNarrative as Record<string, unknown>).betting_plan;
+                if (!plan || typeof plan !== 'object') return null;
+
+                const betPick = typeof (plan as Record<string, unknown>).bet_pick === 'string'
+                    ? (plan as Record<string, unknown>).bet_pick as string
+                    : '';
+                const reasoning = typeof (plan as Record<string, unknown>).reasoning === 'string'
+                    ? (plan as Record<string, unknown>).reasoning as string
+                    : '';
+
+                if (betPick !== '' && reasoning !== '') {
+                    return {
+                        bet_pick: betPick,
+                        reasoning,
+                    };
+                }
+
+                const legacySpreadLean = typeof (plan as Record<string, unknown>).spread_lean === 'string'
+                    ? (plan as Record<string, unknown>).spread_lean as string
+                    : '';
+                const legacyMoneylineHedge = typeof (plan as Record<string, unknown>).moneyline_hedge === 'string'
+                    ? (plan as Record<string, unknown>).moneyline_hedge as string
+                    : '';
+
+                if (legacySpreadLean === '' || legacyMoneylineHedge === '') {
+                    return null;
+                }
+
+                return {
+                    bet_pick: legacySpreadLean,
+                    reasoning: legacyMoneylineHedge,
+                };
+            })(),
+        }
+        : null;
+
     return {
         home_win_probability: toNumber(source.home_win_probability),
         away_win_probability: toNumber(source.away_win_probability),
         predicted_spread: toNumber(source.predicted_spread),
         predicted_total: toNumber(source.predicted_total),
-        confidence_level: typeof source.confidence_level === 'string' ? source.confidence_level : 'medium',
-        confidence_score: toOptionalNumber(source.confidence_score),
+        confidence_level: confidenceLevel,
+        confidence_score: confidenceScore,
+        narrative,
     };
 };
 
@@ -102,6 +171,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
     });
 
     const {
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,
@@ -138,6 +208,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         trendsLoading,
         loading,
         error,
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,

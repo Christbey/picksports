@@ -200,6 +200,39 @@ return [
 
         // Home court (efficiency-based)
         'home_court_points' => 3.0,
+
+        // Narrative generation settings for prediction summaries.
+        'narrative' => [
+            'provider' => env('NBA_PREDICTION_NARRATIVE_PROVIDER', 'template'),
+            'model' => env('NBA_PREDICTION_NARRATIVE_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+            'temperature' => env('NBA_PREDICTION_NARRATIVE_TEMPERATURE', 0.2),
+            'max_tokens' => env('NBA_PREDICTION_NARRATIVE_MAX_TOKENS', 220),
+            'timeout_seconds' => env('NBA_PREDICTION_NARRATIVE_TIMEOUT_SECONDS', 8),
+            'trends_sample_size' => env('NBA_PREDICTION_NARRATIVE_TRENDS_SAMPLE_SIZE', 16),
+            'trends_tier' => env('NBA_PREDICTION_NARRATIVE_TRENDS_TIER', 'basic'),
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Playoff Forecast Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Lightweight projection settings for NBA postseason futures.
+    |
+    */
+
+    'playoff_forecast' => [
+        'simulations' => 1,
+        'bubble_steepness' => 1.2,
+        'conference_finals_base' => 0.42,
+        'finals_seed_penalty' => 0.06,
+        'selection_weights' => [
+            'net_rating' => 0.40,
+            'elo_rating' => 0.30,
+            'win_pct' => 0.20,
+            'strength_of_schedule' => 0.10,
+        ],
     ],
 
     /*

@@ -70,6 +70,11 @@ class Team extends Model
         return $this->hasMany(Prediction::class, 'team_id');
     }
 
+    public function playoffForecasts(): HasMany
+    {
+        return $this->hasMany(PlayoffForecast::class, 'team_id');
+    }
+
     protected static function newFactory(): \Database\Factories\NbaTeamFactory
     {
         return \Database\Factories\NbaTeamFactory::new();

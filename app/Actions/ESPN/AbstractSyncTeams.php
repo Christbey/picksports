@@ -3,6 +3,8 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Log;
 
 abstract class AbstractSyncTeams
 {
@@ -17,7 +19,39 @@ abstract class AbstractSyncTeams
      */
     protected function resolveTeam(array $team): ?array
     {
-        return $team;
+        $hasConference = ! empty($team['conference']['name'])
+            || ! empty($team['groups']['name'])
+            || ! empty($team['group']['name']);
+        $hasDivision = ! empty($team['division']['name'])
+            || ! empty($team['groups']['parent']['name'])
+            || ! empty($team['group']['parent']['name']);
+
+        if ($hasConference || $hasDivision) {
+            return $team;
+        }
+
+        $teamId = (string) ($team['id'] ?? '');
+        if ($teamId === '') {
+            return $team;
+        }
+
+        try {
+            $teamDetail = $this->espnService->getTeam($teamId);
+        } catch (ConnectionException $e) {
+            Log::warning("ESPN: Team detail fallback timed out for team {$teamId}", [
+                'team_id' => $teamId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $team;
+        }
+
+        $detailedTeam = is_array($teamDetail['team'] ?? null) ? $teamDetail['team'] : null;
+        if (! is_array($detailedTeam) || $detailedTeam === []) {
+            return $team;
+        }
+
+        return array_replace_recursive($team, $detailedTeam);
     }
 
     /**

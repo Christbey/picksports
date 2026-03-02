@@ -40,6 +40,11 @@ return [
         'base_url' => 'https://api.the-odds-api.com/v4',
     ],
 
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+        'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Schedule Heartbeat Ping URLs

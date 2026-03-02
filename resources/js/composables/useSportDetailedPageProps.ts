@@ -48,6 +48,7 @@ export interface UseSportDetailedPagePropsOptions {
     trendsTitle?: MaybeRefOrGetter<string>;
     trendsSubtitle?: MaybeRefOrGetter<string | undefined>;
     trendsLoading?: MaybeRefOrGetter<boolean>;
+    topMatchupEdges?: MaybeRefOrGetter<string[]>;
     allTrendCategories?: MaybeRefOrGetter<string[]>;
     formatCategoryName?: MaybeRefOrGetter<(value: string) => string>;
     isLockedCategory?: MaybeRefOrGetter<(category: string) => boolean>;
@@ -111,6 +112,7 @@ export function useSportDetailedPageProps(options: UseSportDetailedPagePropsOpti
             trendsTitle: options.trendsTitle ? toValue(options.trendsTitle) : config.trendsTitle || 'Team Trends',
             trendsSubtitle: options.trendsSubtitle ? toValue(options.trendsSubtitle) : undefined,
             trendsLoading: options.trendsLoading ? toValue(options.trendsLoading) : false,
+            topMatchupEdges: options.topMatchupEdges ? toValue(options.topMatchupEdges) : [],
             allTrendCategories: options.allTrendCategories ? toValue(options.allTrendCategories) : [],
             formatCategoryName: resolveFn(options.formatCategoryName),
             isLockedCategory: resolveFn(options.isLockedCategory),

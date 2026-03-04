@@ -93,6 +93,11 @@ class BaseEspnService
         return $this->get($this->buildUrl('site', 'summary', ['eventId' => $eventId]));
     }
 
+    public function getStandings(): ?array
+    {
+        return $this->get($this->buildUrl('site', 'standings'));
+    }
+
     public function getPlays(string $eventId, string $competitionId): ?array
     {
         if (! $this->supportsPlays()) {

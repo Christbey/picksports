@@ -100,14 +100,20 @@ abstract class AbstractTeamController extends AbstractSportsApiController
         $team = $teamModel::findOrFail($teamId);
         $calculator = app($calculatorClass);
 
-        $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));
-        $gameCount = min(
-            max($gameCount, config('trends.defaults.min_sample', 5)),
-            config('trends.defaults.max_sample', 50)
-        );
-
         $season = $request->integer('season') ?: null;
         $beforeDate = $request->string('before_date')->toString() ?: null;
+        $gamesParam = strtolower(trim((string) $request->query('games', '')));
+
+        $isSeasonSample = in_array($gamesParam, ['season', 'all'], true);
+        if ($isSeasonSample && method_exists($calculator, 'countAvailableGames')) {
+            $gameCount = max(1, (int) $calculator->countAvailableGames($team, $season, $beforeDate));
+        } else {
+            $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));
+            $gameCount = min(
+                max($gameCount, config('trends.defaults.min_sample', 5)),
+                config('trends.defaults.max_sample', 50)
+            );
+        }
 
         $userTier = app(UserTierResolver::class)->resolveTierSlug($request->user());
 

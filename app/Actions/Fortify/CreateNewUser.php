@@ -5,6 +5,7 @@ namespace App\Actions\Fortify;
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
 use App\Models\User;
+use App\Services\Auth\FoundingUserAccessService;
 use Illuminate\Support\Facades\Validator;
 use Laravel\Fortify\Contracts\CreatesNewUsers;
 
@@ -31,8 +32,12 @@ class CreateNewUser implements CreatesNewUsers
             'password' => $input['password'],
         ]);
 
-        // Assign free tier role to new user
-        $user->syncRoleFromTier();
+        $grantedFoundingRole = app(FoundingUserAccessService::class)
+            ->assignFoundingRoleIfEligible($user);
+
+        if (! $grantedFoundingRole) {
+            $user->syncRoleFromTier();
+        }
 
         return $user;
     }

@@ -87,7 +87,7 @@ const error = ref<string | null>(null);
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => {
     const items: BreadcrumbItem[] = [{ title: props.config.sportLabel, href: props.config.predictionsHref }];
-    if (props.player.team) {
+    if (props.player.team?.id != null) {
         items.push({ title: props.player.team.name, href: String(props.config.teamLink(props.player.team.id)) });
     }
     items.push({ title: props.player.name, href: '#' });
@@ -174,7 +174,7 @@ onMounted(async () => {
                         <span v-if="player.jersey_number && player.position">·</span>
                         <span v-if="player.position">{{ player.position }}</span>
                     </div>
-                    <div v-if="player.team" class="mt-1">
+                    <div v-if="player.team && player.team.id != null" class="mt-1">
                         <Link :href="config.teamLink(player.team.id)" class="text-sm text-primary hover:underline">
                             {{ player.team.name }}
                         </Link>

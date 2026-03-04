@@ -7,6 +7,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractPredictionController extends AbstractSportsApiController
 {
@@ -48,6 +49,12 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
      */
     protected function applyIndexFilters($query): void
     {
+        if (request('season') && $this->hasGameSeasonColumn()) {
+            $query->whereHas('game', function ($q) {
+                $q->where($this->getGameSeasonColumn(), request('season'));
+            });
+        }
+
         // Default: date range filtering
         if (request('from_date')) {
             $query->whereHas('game', function ($q) {
@@ -68,6 +75,18 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     protected function getGameDateColumn(): string
     {
         return 'game_date';
+    }
+
+    protected function getGameSeasonColumn(): string
+    {
+        return 'season';
+    }
+
+    protected function hasGameSeasonColumn(): bool
+    {
+        $gameInstance = new ($this->getGameModel());
+
+        return Schema::hasColumn($gameInstance->getTable(), $this->getGameSeasonColumn());
     }
 
     /**
@@ -124,18 +143,49 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
         $gameInstance = new ($this->getGameModel());
         $predictionInstance = new $predictionModel();
 
-        $dates = $predictionModel::query()
+        $query = $predictionModel::query()
             ->join(
                 $gameInstance->getTable(),
                 "{$gameInstance->getTable()}.id",
                 '=',
                 "{$predictionInstance->getTable()}.game_id"
             )
-            ->select(DB::raw("DISTINCT DATE({$gameInstance->getTable()}.{$this->getGameDateColumn()}) as game_date"))
+            ->select(DB::raw("DISTINCT DATE({$gameInstance->getTable()}.{$this->getGameDateColumn()}) as game_date"));
+
+        if (request('season') && $this->hasGameSeasonColumn()) {
+            $query->where("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}", request('season'));
+        }
+
+        $dates = $query
             ->orderBy('game_date')
             ->pluck('game_date');
 
         return response()->json(['data' => $dates]);
+    }
+
+    public function availableSeasons(): JsonResponse
+    {
+        if (! $this->hasGameSeasonColumn()) {
+            return response()->json(['data' => []]);
+        }
+
+        $predictionModel = $this->getPredictionModel();
+        $gameInstance = new ($this->getGameModel());
+        $predictionInstance = new $predictionModel();
+
+        $seasons = $predictionModel::query()
+            ->join(
+                $gameInstance->getTable(),
+                "{$gameInstance->getTable()}.id",
+                '=',
+                "{$predictionInstance->getTable()}.game_id"
+            )
+            ->whereNotNull("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}")
+            ->select(DB::raw("DISTINCT {$gameInstance->getTable()}.{$this->getGameSeasonColumn()} as season"))
+            ->orderByDesc('season')
+            ->pluck('season');
+
+        return response()->json(['data' => $seasons]);
     }
 
     /**

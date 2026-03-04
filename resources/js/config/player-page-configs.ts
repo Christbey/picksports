@@ -4,8 +4,8 @@ import NBATeamController from '@/actions/App/Http/Controllers/NBA/TeamController
 export const nbaPlayerPageConfig = {
     sportLabel: 'NBA',
     predictionsHref: '/nba-predictions',
-    teamLink: (id: number) => NBATeamController(id),
-    gameLink: (id: number) => NBAGameController(id),
+    teamLink: (id: number) => NBATeamController.url(id),
+    gameLink: (id: number) => NBAGameController.url(id),
     statsEndpoint: (playerId: number) => `/api/v1/nba/players/${playerId}/stats`,
 };
 

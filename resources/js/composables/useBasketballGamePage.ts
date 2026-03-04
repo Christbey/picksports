@@ -191,7 +191,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
     const awayRecentForm = computed(() => (awayTeam.value ? getRecentForm(awayRecentGames.value, awayTeam.value.id) : ''));
     const trendsSubtitle = computed(() => {
         const sampleSize = homeTrends.value?.sample_size || awayTrends.value?.sample_size || 20;
-        return options.subtitleText ? options.subtitleText(sampleSize) : `Based on last ${sampleSize} games before this matchup`;
+        return options.subtitleText ? options.subtitleText(sampleSize) : `Based on current season form (${sampleSize} games before this matchup)`;
     });
 
     return {

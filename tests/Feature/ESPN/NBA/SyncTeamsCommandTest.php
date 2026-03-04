@@ -68,14 +68,14 @@ it('syncs teams from ESPN API', function () {
     $atl = Team::where('espn_id', '1')->first();
     expect($atl)->not->toBeNull()
         ->abbreviation->toBe('ATL')
-        ->school->toBe('Atlanta')
-        ->mascot->toBe('Hawks');
+        ->location->toBe('Atlanta')
+        ->name->toBe('Hawks');
 
     $bos = Team::where('espn_id', '2')->first();
     expect($bos)->not->toBeNull()
         ->abbreviation->toBe('BOS')
-        ->school->toBe('Boston')
-        ->mascot->toBe('Celtics');
+        ->location->toBe('Boston')
+        ->name->toBe('Celtics');
 });
 
 it('handles empty teams response', function () {
@@ -128,8 +128,8 @@ it('updates existing teams instead of creating duplicates', function () {
     Team::factory()->create([
         'espn_id' => '1',
         'abbreviation' => 'ATL',
-        'school' => 'Old Atlanta',
-        'mascot' => 'Old Hawks',
+        'location' => 'Old Atlanta',
+        'name' => 'Old Hawks',
     ]);
 
     Http::fake([
@@ -166,8 +166,8 @@ it('updates existing teams instead of creating duplicates', function () {
     $this->artisan('queue:work', ['--stop-when-empty' => true]);
 
     expect(Team::count())->toBe(1);
-    expect(Team::first()->school)->toBe('Atlanta');
-    expect(Team::first()->mascot)->toBe('Hawks');
+    expect(Team::first()->location)->toBe('Atlanta');
+    expect(Team::first()->name)->toBe('Hawks');
 });
 
 it('skips teams without an id', function () {
@@ -214,4 +214,102 @@ it('skips teams without an id', function () {
 
     expect(Team::count())->toBe(1);
     expect(Team::first()->abbreviation)->toBe('ATL');
+});
+
+it('backfills conference and division from standings when team payload omits them', function () {
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/teams*' => Http::response([
+            'sports' => [
+                [
+                    'leagues' => [
+                        [
+                            'teams' => [
+                                [
+                                    'team' => [
+                                        'id' => '1',
+                                        'abbreviation' => 'ATL',
+                                        'location' => 'Atlanta',
+                                        'name' => 'Hawks',
+                                    ],
+                                ],
+                                [
+                                    'team' => [
+                                        'id' => '2',
+                                        'abbreviation' => 'DEN',
+                                        'location' => 'Denver',
+                                        'name' => 'Nuggets',
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ]),
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/1*' => Http::response([
+            'team' => [
+                'id' => '1',
+                'abbreviation' => 'ATL',
+                'location' => 'Atlanta',
+                'name' => 'Hawks',
+            ],
+        ]),
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/2*' => Http::response([
+            'team' => [
+                'id' => '2',
+                'abbreviation' => 'DEN',
+                'location' => 'Denver',
+                'name' => 'Nuggets',
+            ],
+        ]),
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/standings*' => Http::response([
+            'sports' => [[
+                'leagues' => [[
+                    'name' => 'NBA',
+                    'groups' => [
+                        [
+                            'name' => 'Eastern',
+                            'children' => [
+                                [
+                                    'name' => 'Southeast',
+                                    'standings' => [
+                                        'entries' => [
+                                            ['team' => ['id' => '1']],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                        [
+                            'name' => 'Western',
+                            'children' => [
+                                [
+                                    'name' => 'Northwest',
+                                    'standings' => [
+                                        'entries' => [
+                                            ['team' => ['id' => '2']],
+                                        ],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ]],
+            ]],
+        ]),
+    ]);
+
+    artisan('espn:sync-nba-teams')->assertSuccessful();
+    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+
+    $atl = Team::where('espn_id', '1')->first();
+    $den = Team::where('espn_id', '2')->first();
+
+    expect($atl)->not->toBeNull()
+        ->conference->toBe('Eastern')
+        ->division->toBe('Southeast');
+
+    expect($den)->not->toBeNull()
+        ->conference->toBe('Western')
+        ->division->toBe('Northwest');
 });

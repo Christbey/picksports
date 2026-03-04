@@ -61,8 +61,9 @@ class PlayoffForecastController extends Controller
             'meta' => [
                 'season' => $season,
                 'available_seasons' => $seasons,
+                'playoff_teams_per_conference' => (int) config('nba.playoff_forecast.playoff_teams_per_conference', 8),
+                'play_in_teams_per_conference' => (int) config('nba.playoff_forecast.play_in_teams_per_conference', 10),
             ],
         ]);
     }
 }
-

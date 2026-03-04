@@ -19,6 +19,12 @@ class SyncUserRoles extends Command
         $synced = 0;
 
         foreach ($users as $user) {
+            if ($user->hasFoundingAccess()) {
+                $this->line("  ↷ User {$user->id} ({$user->email}) is a founding user, skipping tier role sync");
+
+                continue;
+            }
+
             $tier = $user->subscriptionTier();
 
             if (! $tier) {
@@ -27,7 +33,7 @@ class SyncUserRoles extends Command
                 continue;
             }
 
-            $user->syncRoles([$tier->slug]);
+            $user->syncRoleFromTier();
 
             $synced++;
 

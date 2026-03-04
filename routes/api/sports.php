@@ -78,6 +78,7 @@ return function (string $sport, string $namespace) {
     // Sport-specific: Registered before apiResource to avoid route conflicts with {wildcard} params
     if (($capabilities['player_stats_leaderboard'] ?? false) === true) {
         Route::get('player-stats/leaderboard', [$controllers['player_stat'], 'leaderboard']);
+        Route::get('player-stats/available-seasons', [$controllers['player_stat'], 'availableSeasons']);
     }
 
     if (($capabilities['team_stats_all_season_averages'] ?? false) === true) {
@@ -115,11 +116,13 @@ return function (string $sport, string $namespace) {
             ->defaults('sport', $sport);
 
         // Team Metrics
+        Route::get('team-metrics/available-seasons', [$controllers['team_metric'], 'availableSeasons']);
         Route::apiResource('team-metrics', $controllers['team_metric'])->only(['index', 'show']);
         Route::get('teams/{team}/metrics', [$controllers['team_metric'], 'byTeam']);
 
         // Predictions
         Route::get('predictions/available-dates', [$controllers['prediction'], 'availableDates']);
+        Route::get('predictions/available-seasons', [$controllers['prediction'], 'availableSeasons']);
         Route::apiResource('predictions', $controllers['prediction'])->only(['index', 'show']);
         Route::get('games/{game}/prediction', [$controllers['prediction'], 'byGame']);
 

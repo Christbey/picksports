@@ -274,8 +274,8 @@ $scheduleSportPipeline(
     'nba:sync-odds',
     'NBA: Sync Odds',
     'nba:sync-player-props',
+    10,
     14,
-    18,
     'NBA: Sync Player Props'
 );
 $scheduleDailySeasonJob(

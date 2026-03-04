@@ -88,5 +88,4 @@ export const nflPredictionsConfig: SportPredictionsConfig = {
             { value: '5', label: 'Super Bowl' },
         ],
     },
-    cardVariant: 'nfl',
 };

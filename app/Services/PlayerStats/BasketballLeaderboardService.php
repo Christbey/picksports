@@ -11,9 +11,15 @@ class BasketballLeaderboardService
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playerStatModel
      * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playerModel
      */
-    public function execute(string $playerStatModel, string $playerModel, int $minGames = 10): Collection
+    public function execute(
+        string $playerStatModel,
+        string $playerModel,
+        int $minGames = 10,
+        ?string $gameModel = null,
+        ?int $season = null
+    ): Collection
     {
-        $stats = $playerStatModel::query()
+        $query = $playerStatModel::query()
             ->selectRaw('
                 player_id,
                 COUNT(*) as games_played,
@@ -34,7 +40,20 @@ class BasketballLeaderboardService
                 SUM(three_point_attempted) as total_3p_attempted,
                 SUM(free_throws_made) as total_ft_made,
                 SUM(free_throws_attempted) as total_ft_attempted
-            ')
+            ');
+
+        if ($gameModel !== null && $season !== null) {
+            $gameInstance = new $gameModel();
+            $playerStatInstance = new $playerStatModel();
+            $query->join(
+                $gameInstance->getTable(),
+                "{$gameInstance->getTable()}.id",
+                '=',
+                "{$playerStatInstance->getTable()}.game_id"
+            )->where("{$gameInstance->getTable()}.season", $season);
+        }
+
+        $stats = $query
             ->groupBy('player_id')
             ->havingRaw('COUNT(*) >= ?', [$minGames])
             ->get();

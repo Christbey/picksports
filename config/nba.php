@@ -223,8 +223,11 @@ return [
     */
 
     'playoff_forecast' => [
-        'simulations' => 1,
-        'bubble_steepness' => 1.2,
+        'simulations' => 500,
+        'playoff_teams_per_conference' => 8,
+        'play_in_teams_per_conference' => 10,
+        'division_winner_bonus' => 0.20,
+        'rank_noise_std' => 0.35,
         'conference_finals_base' => 0.42,
         'finals_seed_penalty' => 0.06,
         'selection_weights' => [

@@ -9,4 +9,6 @@ class SportCatalog
     public const STALE_PREDICTIONS = ['mlb', 'nba', 'nfl', 'cbb', 'wcbb'];
 
     public const TEAM_METRICS = ['mlb', 'nba', 'cbb', 'wcbb', 'wnba'];
+
+    public const PLAYER_PROPS = ['mlb', 'nba', 'nfl', 'cbb'];
 }

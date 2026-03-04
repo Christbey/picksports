@@ -105,7 +105,6 @@ export interface SportPredictionsConfig {
     confidenceDecimals: number;
     filterMode?: 'date' | 'seasonWeek' | 'none';
     seasonWeekConfig?: SeasonWeekConfig;
-    cardVariant?: 'default' | 'nfl';
 }
 
 export interface ApiEnvelope<T> {

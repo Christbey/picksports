@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import SeasonSelect from '@/components/SeasonSelect.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSeasonFilter } from '@/composables/useSeasonFilter';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 
@@ -48,6 +50,7 @@ interface SportPlayerStatsShellConfig {
     breadcrumb: BreadcrumbItem;
     bannerStorageKey: string;
     leaderboardEndpoint: string;
+    availableSeasonsEndpoint?: string;
     showEpaColumns?: boolean;
     playerLink?: (id: number) => HrefLike;
     teamLink?: (id: number) => HrefLike;
@@ -63,6 +66,14 @@ const error = ref<string | null>(null);
 const searchQuery = ref('');
 const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
+const {
+    availableSeasons,
+    selectedSeason,
+    fetchAvailableSeasons,
+} = useSeasonFilter(() => {
+    return props.config.availableSeasonsEndpoint
+        ?? props.config.leaderboardEndpoint.replace(/\/leaderboard$/, '/available-seasons');
+});
 
 const sortOptions = computed(() => {
     const options = [
@@ -110,7 +121,10 @@ const fetchPlayers = async () => {
         loading.value = true;
         error.value = null;
 
-        const response = await fetch(props.config.leaderboardEndpoint);
+        const seasonQuery = selectedSeason.value
+            ? `?season=${encodeURIComponent(selectedSeason.value)}`
+            : '';
+        const response = await fetch(`${props.config.leaderboardEndpoint}${seasonQuery}`);
         if (!response.ok) {
             throw new Error('Failed to fetch player stats');
         }
@@ -139,6 +153,16 @@ const formatEpa = (value: number | undefined) => {
 };
 
 onMounted(() => {
+    fetchAvailableSeasons().catch(() => {
+        availableSeasons.value = [];
+    }).then(() => {
+        if (!selectedSeason.value) {
+            fetchPlayers();
+        }
+    });
+});
+
+watch(selectedSeason, () => {
     fetchPlayers();
 });
 </script>
@@ -160,6 +184,11 @@ onMounted(() => {
             <Card>
                 <CardContent class="pt-6">
                     <div class="flex flex-wrap items-end gap-4">
+                        <SeasonSelect
+                            id="player-stats-season"
+                            v-model="selectedSeason"
+                            :options="availableSeasons"
+                        />
                         <div class="min-w-[200px] flex-1">
                             <Input v-model="searchQuery" placeholder="Search by player or team name..." class="w-full" />
                         </div>
@@ -268,7 +297,7 @@ onMounted(() => {
                                     </td>
                                     <td class="p-2 text-right text-muted-foreground">
                                         <Link
-                                            v-if="entry.player?.team && config.teamLink"
+                                            v-if="entry.player?.team?.id != null && config.teamLink"
                                             :href="config.teamLink(entry.player.team.id)"
                                             class="transition-colors hover:text-primary"
                                         >

@@ -38,13 +38,24 @@ class SubscriptionController extends Controller
     public function manage(Request $request): Response
     {
         $user = $request->user();
+        $tier = $user->subscriptionTier();
+
+        if ($user->hasFoundingAccess()) {
+            return Inertia::render('Subscription/Manage', [
+                'subscription' => [
+                    'tier' => $tier?->name,
+                    'status' => 'founding_access',
+                    'current_period_end' => null,
+                    'cancel_at_period_end' => false,
+                ],
+            ]);
+        }
 
         if (! $user->subscribed()) {
             return redirect()->route('subscription.plans');
         }
 
         $subscription = $user->subscription();
-        $tier = $user->subscriptionTier();
 
         return Inertia::render('Subscription/Manage', [
             'subscription' => [
@@ -59,6 +70,10 @@ class SubscriptionController extends Controller
     public function cancel(Request $request)
     {
         $user = $request->user();
+
+        if ($user->hasFoundingAccess()) {
+            return $this->redirectSuccess('subscription.manage', 'Founding accounts do not require billing.');
+        }
 
         if (! $user->subscribed()) {
             return redirect()->route('subscription.plans');
@@ -75,6 +90,10 @@ class SubscriptionController extends Controller
     public function resume(Request $request)
     {
         $user = $request->user();
+
+        if ($user->hasFoundingAccess()) {
+            return $this->redirectSuccess('subscription.manage', 'Founding accounts do not require billing.');
+        }
 
         if (! $user->subscribed() || ! $user->subscription()->cancelled()) {
             return redirect()->route('subscription.plans');

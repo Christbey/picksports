@@ -22,7 +22,7 @@ class EnsureUserIsSubscribed
             return redirect()->route('login');
         }
 
-        if (! $user->subscribed()) {
+        if (! $user->subscribed() && ! $user->hasFoundingAccess()) {
             return $this->redirectToSubscriptionPage($request);
         }
 
@@ -68,6 +68,10 @@ class EnsureUserIsSubscribed
 
     protected function getUserTier($user): string
     {
+        if ($user->hasFoundingAccess()) {
+            return (string) config('founding_users.tier_slug', config('subscriptions.default_tier'));
+        }
+
         if (! $user->subscribed()) {
             return config('subscriptions.default_tier');
         }

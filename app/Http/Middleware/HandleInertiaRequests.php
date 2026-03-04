@@ -63,7 +63,8 @@ class HandleInertiaRequests extends Middleware
             'subscription' => [
                 'tier' => $tier?->slug ?? 'free',
                 'tier_name' => $tier?->name ?? 'Free',
-                'is_subscribed' => $user?->subscribed() ?? false,
+                'is_subscribed' => ($user?->subscribed() ?? false) || ($user?->hasFoundingAccess() ?? false),
+                'is_founding_user' => $user?->hasFoundingAccess() ?? false,
                 'features' => $tier?->features ?? [],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',

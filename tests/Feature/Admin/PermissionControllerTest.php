@@ -77,6 +77,40 @@ test('admin can update tier permissions and role syncs', function () {
     expect($role->hasPermissionTo('receive-email-alerts'))->toBeFalse();
 });
 
+test('updating founding tier permissions also syncs founding role permissions', function () {
+    config()->set('founding_users.role', 'founding_user');
+    config()->set('founding_users.tier_slug', 'pro');
+
+    $admin = User::factory()->admin()->create();
+
+    Permission::findOrCreate('view-nba-predictions', 'web');
+    Permission::findOrCreate('access-api', 'web');
+    Permission::findOrCreate('receive-email-alerts', 'web');
+
+    $tier = SubscriptionTier::query()->create([
+        'name' => 'Pro',
+        'slug' => 'pro',
+        'sort_order' => 2,
+        'is_active' => true,
+        'permissions' => ['receive-email-alerts'],
+    ]);
+
+    Role::query()->firstOrCreate(['name' => 'founding_user', 'guard_name' => 'web'])
+        ->syncPermissions(['receive-email-alerts']);
+
+    $this->actingAs($admin)
+        ->from(route('admin.permissions'))
+        ->patch(route('admin.permissions.tiers.update', $tier), [
+            'permissions' => ['view-nba-predictions', 'access-api'],
+        ])
+        ->assertRedirect(route('admin.permissions'));
+
+    $foundingRole = Role::query()->where('name', 'founding_user')->where('guard_name', 'web')->firstOrFail();
+    expect($foundingRole->hasPermissionTo('view-nba-predictions'))->toBeTrue();
+    expect($foundingRole->hasPermissionTo('access-api'))->toBeTrue();
+    expect($foundingRole->hasPermissionTo('receive-email-alerts'))->toBeFalse();
+});
+
 test('non-admin cannot update tier permissions', function () {
     $user = User::factory()->create();
     Permission::findOrCreate('view-nba-predictions', 'web');

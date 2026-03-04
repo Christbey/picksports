@@ -95,7 +95,13 @@ class SubscriptionController extends Controller
 
         try {
             $role = $this->tierPermissionSyncService->syncTierRolePermissions($tier);
-            $user->syncRoles([$role->name]);
+            $tierSlugs = SubscriptionTier::query()->pluck('slug')->all();
+            $nonTierRoles = $user->getRoleNames()
+                ->reject(fn ($name) => in_array($name, $tierSlugs, true))
+                ->values()
+                ->all();
+
+            $user->syncRoles(array_values(array_unique([...$nonTierRoles, $role->name])));
 
             return $this->backSuccess("Successfully assigned {$tier->name} tier to {$user->name}.");
         } catch (\Exception $e) {

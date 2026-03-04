@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractTeamMetricController extends AbstractSportsApiController
 {
@@ -69,6 +70,19 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         // Hook for sport-specific enrichment.
     }
 
+    protected function getSeasonColumn(): string
+    {
+        return 'season';
+    }
+
+    protected function hasSeasonColumn(): bool
+    {
+        $model = $this->getTeamMetricModel();
+        $instance = new $model();
+
+        return Schema::hasColumn($instance->getTable(), $this->getSeasonColumn());
+    }
+
     public function index(): AnonymousResourceCollection
     {
         $model = $this->getTeamMetricModel();
@@ -80,6 +94,10 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         $query = $model::query()
             ->with(['team'])
             ->orderByDesc($this->getIndexOrderByColumn());
+
+        if (request('season') && $this->hasSeasonColumn()) {
+            $query->where($this->getSeasonColumn(), request('season'));
+        }
 
         if ($tierLimit !== null) {
             $query->limit($tierLimit);
@@ -118,6 +136,10 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
             ->where('team_id', $teamId)
             ->orderByDesc($this->getByTeamOrderByColumn());
 
+        if ($request->filled('season') && $this->hasSeasonColumn()) {
+            $query->where($this->getSeasonColumn(), $request->input('season'));
+        }
+
         if ($this->byTeamReturnsLatestOnly()) {
             $metric = $query->first();
 
@@ -129,5 +151,22 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         }
 
         return $resource::collection($query->paginate($this->getPerPage($request)));
+    }
+
+    public function availableSeasons(): JsonResponse
+    {
+        if (! $this->hasSeasonColumn()) {
+            return response()->json(['data' => []]);
+        }
+
+        $model = $this->getTeamMetricModel();
+        $seasons = $model::query()
+            ->whereNotNull($this->getSeasonColumn())
+            ->select($this->getSeasonColumn())
+            ->distinct()
+            ->orderByDesc($this->getSeasonColumn())
+            ->pluck($this->getSeasonColumn());
+
+        return response()->json(['data' => $seasons]);
     }
 }

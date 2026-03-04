@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\BettingRecommendationResource;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -41,8 +42,27 @@ class BettingRecommendationsController extends Controller
             'game' => ['nullable', 'integer'],
         ]);
 
-        $dateFilter = $validated['date'] ?? null;
+        $requestedDate = $validated['date'] ?? null;
+        $dateFilter = $requestedDate;
         $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
+
+        // NBA page default: load today's board first when no explicit date filter is provided.
+        $dates = $this->analyzer->getAvailableDatesForSport($sport);
+        if ($sport === 'NBA' && $dateFilter === null && $dates->isNotEmpty()) {
+            $today = Carbon::today()->toDateString();
+            $dateValues = $dates->pluck('value');
+
+            if ($dateValues->contains($today)) {
+                $dateFilter = $today;
+            } else {
+                $futureDates = $dateValues->filter(fn ($d) => is_string($d) && $d > $today)->values();
+                if ($futureDates->isNotEmpty()) {
+                    $dateFilter = (string) $futureDates->first();
+                } else {
+                    $dateFilter = (string) $dateValues->last();
+                }
+            }
+        }
 
         // Use lower minimum games threshold since we have limited historical data
         $recommendations = $this->analyzer->analyzeProps(
@@ -52,8 +72,7 @@ class BettingRecommendationsController extends Controller
             gameFilter: $gameFilter
         );
 
-        // Get available dates and games for filter dropdowns
-        $dates = $this->analyzer->getAvailableDatesForSport($sport);
+        // Get available games for selected date
         $games = $this->analyzer->getAvailableGamesForSport($sport, $dateFilter);
 
         return Inertia::render($component, [

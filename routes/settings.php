@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Settings\AlertPreferenceController;
+use App\Http\Controllers\Settings\AdminSettingsController;
 use App\Http\Controllers\Settings\OnboardingController;
 use App\Http\Controllers\Settings\OddsApiTeamMappingController;
 use App\Http\Controllers\Settings\PasswordController;
@@ -35,13 +36,24 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('settings/subscription', function () {
         $user = request()->user();
+        $tier = $user->subscriptionTier();
+
+        if ($user->hasFoundingAccess()) {
+            return Inertia::render('settings/Subscription', [
+                'subscription' => [
+                    'tier' => $tier?->name,
+                    'status' => 'founding_access',
+                    'current_period_end' => null,
+                    'cancel_at_period_end' => false,
+                ],
+            ]);
+        }
 
         if (! $user->subscribed()) {
             return redirect()->route('subscription.plans');
         }
 
         $subscription = $user->subscription();
-        $tier = $user->subscriptionTier();
 
         return Inertia::render('settings/Subscription', [
             'subscription' => [
@@ -73,17 +85,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('settings/onboarding', OnboardingController::class)->name('settings.onboarding');
 
-    Route::get('settings/admin', function () {
-        $user = request()->user();
-
-        if (! $user->isAdmin()) {
-            abort(403);
-        }
-
-        return Inertia::render('settings/Admin');
-    })->name('admin.settings');
+    Route::get('settings/admin', AdminSettingsController::class)->middleware(['admin'])->name('admin.settings');
 
     Route::middleware(['admin'])->group(function () {
+        Route::get('settings/admin/founding-users/search', [AdminSettingsController::class, 'searchUsers'])
+            ->name('admin.settings.founding-users.search');
+        Route::post('settings/admin/founding-users/limit', [AdminSettingsController::class, 'updateFoundingLimit'])
+            ->name('admin.settings.founding-users.limit');
+        Route::post('settings/admin/founding-users/grant', [AdminSettingsController::class, 'grantFoundingAccess'])
+            ->name('admin.settings.founding-users.grant');
+        Route::post('settings/admin/founding-users/revoke', [AdminSettingsController::class, 'revokeFoundingAccess'])
+            ->name('admin.settings.founding-users.revoke');
         Route::get('settings/team-mappings', [OddsApiTeamMappingController::class, 'index'])->name('team-mappings.index');
         Route::patch('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'update'])->name('team-mappings.update');
         Route::delete('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'destroy'])->name('team-mappings.destroy');

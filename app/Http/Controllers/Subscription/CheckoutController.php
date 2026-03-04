@@ -22,6 +22,10 @@ class CheckoutController extends Controller
         $tierSlug = $request->input('tier');
         $billingPeriod = $request->input('billing_period');
 
+        if ($user->hasFoundingAccess()) {
+            return $this->backError('Your account already has founding access and does not require a paid subscription.');
+        }
+
         $tier = SubscriptionTier::where('slug', $tierSlug)->first();
 
         if (! $tier || $tier->is_default) {

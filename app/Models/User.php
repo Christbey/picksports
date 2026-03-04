@@ -59,6 +59,13 @@ class User extends Authenticatable
 
     public function subscriptionTier(): ?SubscriptionTier
     {
+        if ($this->hasFoundingAccess()) {
+            $foundingTier = $this->foundingTier();
+            if ($foundingTier) {
+                return $foundingTier;
+            }
+        }
+
         if (! $this->subscribed()) {
             return SubscriptionTier::default()->first();
         }
@@ -80,12 +87,49 @@ class User extends Authenticatable
 
     public function syncRoleFromTier(): void
     {
+        if ($this->hasFoundingAccess()) {
+            return;
+        }
+
         $tier = $this->subscriptionTier();
 
         if ($tier) {
             $role = app(TierPermissionSyncService::class)->syncTierRolePermissions($tier);
-            $this->syncRoles([$role->name]);
+            $tierSlugs = array_keys(config('subscriptions.tiers', []));
+            $nonTierRoles = $this->getRoleNames()
+                ->reject(fn ($name) => in_array($name, $tierSlugs, true))
+                ->values()
+                ->all();
+
+            $this->syncRoles(array_values(array_unique([...$nonTierRoles, $role->name])));
         }
+    }
+
+    public function hasFoundingAccess(): bool
+    {
+        if (! config('founding_users.enabled', false)) {
+            return false;
+        }
+
+        $roleName = (string) config('founding_users.role', 'founding_user');
+        if ($roleName === '') {
+            return false;
+        }
+
+        return $this->hasRole($roleName);
+    }
+
+    public function foundingTier(): ?SubscriptionTier
+    {
+        $foundingTierSlug = (string) config('founding_users.tier_slug', 'premium');
+        if ($foundingTierSlug === '') {
+            return null;
+        }
+
+        return SubscriptionTier::query()
+            ->where('slug', $foundingTierSlug)
+            ->active()
+            ->first();
     }
 
     public function bets(): HasMany

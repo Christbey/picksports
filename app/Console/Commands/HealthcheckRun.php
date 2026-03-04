@@ -35,6 +35,7 @@ class HealthcheckRun extends Command
             $this->checkPredictionPipelineHeartbeat($sport);
             $this->checkModelPipelineHeartbeat($sport);
             $this->checkOddsHeartbeat($sport);
+            $this->checkPlayerPropsHeartbeat($sport);
         }
 
         return $this->displayResults();
@@ -175,6 +176,39 @@ class HealthcheckRun extends Command
             failingAfterMinutes: $thresholds['failing'],
             label: 'odds sync',
             context: ['in_season' => $inSeason]
+        );
+    }
+
+    protected function checkPlayerPropsHeartbeat(string $sport): void
+    {
+        if (! in_array($sport, SportCatalog::PLAYER_PROPS, true)) {
+            $this->recordCheck(
+                $sport,
+                'heartbeat_player_props',
+                'passing',
+                'Player props heartbeat is not applicable for this sport.',
+                ['applicable' => false]
+            );
+
+            return;
+        }
+
+        $inSeason = $this->isActiveSeason($sport);
+        $thresholds = $inSeason
+            ? ['warning' => 1080, 'failing' => 2160] // 18h / 36h
+            : ['warning' => 4320, 'failing' => 10080]; // 3d / 7d
+
+        $this->evaluateCommandFreshness(
+            sport: $sport,
+            checkType: 'heartbeat_player_props',
+            commandPatterns: ["{$sport}:sync-player-props%"],
+            warningAfterMinutes: $thresholds['warning'],
+            failingAfterMinutes: $thresholds['failing'],
+            label: 'player props sync',
+            context: [
+                'in_season' => $inSeason,
+                'applicable' => true,
+            ]
         );
     }
 

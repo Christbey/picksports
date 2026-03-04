@@ -99,6 +99,7 @@ function canSync(sport: string, checkType: string): boolean {
         'heartbeat_prediction_pipeline',
         'heartbeat_model_pipeline',
         'heartbeat_odds',
+        'heartbeat_player_props',
     ].includes(checkType);
 }
 
@@ -114,6 +115,8 @@ function getSyncLabel(checkType: string): string {
             return 'Run Model Jobs';
         case 'heartbeat_odds':
             return 'Sync Odds';
+        case 'heartbeat_player_props':
+            return 'Sync Player Props';
         default:
             return 'Run Command';
     }
@@ -156,6 +159,7 @@ function formatCheckType(type: string): string {
         heartbeat_prediction_pipeline: 'Prediction Pipeline',
         heartbeat_model_pipeline: 'Model Pipeline',
         heartbeat_odds: 'Odds Sync',
+        heartbeat_player_props: 'Player Props Sync',
         validation_game_coverage: 'Game Coverage',
         validation_team_stat_coverage: 'Team Stat Coverage',
     };

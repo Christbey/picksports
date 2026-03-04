@@ -31,7 +31,7 @@ export function useMlbGamePage(game: MlbPageGame) {
     const awayRecentForm = computed(() => (awayTeam.value ? getRecentForm(awayRecentGames.value, awayTeam.value.id) : ''));
     const trendsSubtitle = computed(() => {
         const sampleSize = homeTrends.value?.sample_size || awayTrends.value?.sample_size || 20;
-        return `Based on last ${sampleSize} games before this matchup`;
+        return `Based on current season form (${sampleSize} games before this matchup)`;
     });
     const homeMatchupTeam = computed<MlbMatchupTeam | null>(() => (
         homeTeam.value
@@ -107,7 +107,7 @@ export function useMlbGamePage(game: MlbPageGame) {
 
                 if (homeTeam.value?.id) {
                     teamRequests.push(
-                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${homeTeam.value.id}/trends?before_date=${beforeDate}`)
+                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${homeTeam.value.id}/trends?games=season&season=${game.season}&before_date=${beforeDate}`)
                             .then((data) => { homeTrends.value = data; })
                             .catch(() => { homeTrends.value = null; }),
                     );
@@ -115,7 +115,7 @@ export function useMlbGamePage(game: MlbPageGame) {
 
                 if (awayTeam.value?.id) {
                     teamRequests.push(
-                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${awayTeam.value.id}/trends?before_date=${beforeDate}`)
+                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${awayTeam.value.id}/trends?games=season&season=${game.season}&before_date=${beforeDate}`)
                             .then((data) => { awayTrends.value = data; })
                             .catch(() => { awayTrends.value = null; }),
                     );

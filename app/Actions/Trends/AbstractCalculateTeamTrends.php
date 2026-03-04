@@ -2,6 +2,7 @@
 
 namespace App\Actions\Trends;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 abstract class AbstractCalculateTeamTrends
@@ -91,6 +92,21 @@ abstract class AbstractCalculateTeamTrends
 
     protected function fetchRecentGames(object $team, int $count, ?int $season = null, ?string $beforeDate = null): Collection
     {
+        $query = $this->baseGamesQuery($team, $season, $beforeDate)
+            ->with($this->gameRelations())
+            ->orderByDesc('game_date')
+            ->limit($count);
+
+        return $query->get();
+    }
+
+    public function countAvailableGames(object $team, ?int $season = null, ?string $beforeDate = null): int
+    {
+        return (int) $this->baseGamesQuery($team, $season, $beforeDate)->count();
+    }
+
+    protected function baseGamesQuery(object $team, ?int $season = null, ?string $beforeDate = null): Builder
+    {
         $model = $this->gameModel();
         $query = $model::query()
             ->where('status', 'STATUS_FINAL')
@@ -98,10 +114,7 @@ abstract class AbstractCalculateTeamTrends
                 ->where('home_team_id', $team->id)
                 ->orWhere('away_team_id', $team->id))
             ->when($season, fn ($q) => $q->where('season', $season))
-            ->when($beforeDate, fn ($q) => $q->where('game_date', '<', $beforeDate))
-            ->with($this->gameRelations())
-            ->orderByDesc('game_date')
-            ->limit($count);
+            ->when($beforeDate, fn ($q) => $q->where('game_date', '<', $beforeDate));
 
         if ($this->usesAnalyticsSeasonTypes()) {
             $query->when(
@@ -110,7 +123,7 @@ abstract class AbstractCalculateTeamTrends
             );
         }
 
-        return $query->get();
+        return $query;
     }
 
     /**

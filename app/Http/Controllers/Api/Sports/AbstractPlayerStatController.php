@@ -8,6 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractPlayerStatController extends AbstractSportsApiController
 {
@@ -79,6 +80,19 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
     protected function supportsLeaderboard(): bool
     {
         return false;
+    }
+
+    protected function getGameSeasonColumn(): string
+    {
+        return 'season';
+    }
+
+    protected function hasGameSeasonColumn(): bool
+    {
+        $gameModel = $this->getGameModel();
+        $instance = new $gameModel();
+
+        return Schema::hasColumn($instance->getTable(), $this->getGameSeasonColumn());
     }
 
     protected function getLeaderboardData(Request $request): Collection
@@ -154,6 +168,31 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
         }
 
         return PlayerLeaderboardResource::collection($this->getLeaderboardData($request));
+    }
+
+    public function availableSeasons(): JsonResponse
+    {
+        if (! $this->hasGameSeasonColumn()) {
+            return response()->json(['data' => []]);
+        }
+
+        $playerStatModel = $this->getPlayerStatModel();
+        $gameModel = $this->getGameModel();
+        $playerStatInstance = new $playerStatModel();
+        $gameInstance = new $gameModel();
+        $gameTable = $gameInstance->getTable();
+        $playerStatTable = $playerStatInstance->getTable();
+        $seasonColumn = $this->getGameSeasonColumn();
+
+        $seasons = $playerStatModel::query()
+            ->join($gameTable, "{$gameTable}.id", '=', "{$playerStatTable}.game_id")
+            ->whereNotNull("{$gameTable}.{$seasonColumn}")
+            ->select("{$gameTable}.{$seasonColumn}")
+            ->distinct()
+            ->orderByDesc("{$gameTable}.{$seasonColumn}")
+            ->pluck("{$gameTable}.{$seasonColumn}");
+
+        return response()->json(['data' => $seasons]);
     }
 
 }

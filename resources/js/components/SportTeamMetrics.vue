@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
+import SeasonSelect from '@/components/SeasonSelect.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useSeasonFilter } from '@/composables/useSeasonFilter';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 
@@ -35,6 +37,7 @@ export interface MetricsConfig {
     defaultSort: string;
     columns: Column[];
     hasMeetsMinimum?: boolean;
+    availableSeasonsEndpoint?: string;
 }
 
 const props = defineProps<{
@@ -56,6 +59,14 @@ const sortBy = ref(props.config.defaultSort);
 const sortDesc = ref(true);
 const tierLimit = ref<number | null>(null);
 const tierName = ref<string | null>(null);
+const {
+    availableSeasons,
+    selectedSeason,
+    fetchAvailableSeasons,
+} = useSeasonFilter(() => {
+    return props.config.availableSeasonsEndpoint
+        ?? `${props.config.apiEndpoint}/available-seasons`;
+});
 
 const currentSortOption = computed(() => {
     return props.config.sortOptions.find((o) => o.key === sortBy.value);
@@ -100,7 +111,10 @@ const fetchMetrics = async () => {
         loading.value = true;
         error.value = null;
 
-        const response = await fetch(props.config.apiEndpoint);
+        const seasonQuery = selectedSeason.value
+            ? `?season=${encodeURIComponent(selectedSeason.value)}`
+            : '';
+        const response = await fetch(`${props.config.apiEndpoint}${seasonQuery}`);
         if (!response.ok) throw new Error('Failed to fetch team metrics');
 
         const data = await response.json();
@@ -124,8 +138,20 @@ const toggleSort = (key: string) => {
     }
 };
 
-onMounted(() => {
+watch(selectedSeason, () => {
     fetchMetrics();
+});
+
+onMounted(async () => {
+    try {
+        await fetchAvailableSeasons();
+    } catch {
+        availableSeasons.value = [];
+    }
+
+    if (!selectedSeason.value) {
+        await fetchMetrics();
+    }
 });
 </script>
 
@@ -149,6 +175,11 @@ onMounted(() => {
                 <Card>
                     <CardContent class="pt-6">
                         <div class="flex flex-wrap items-end gap-4">
+                            <SeasonSelect
+                                id="metrics-season"
+                                v-model="selectedSeason"
+                                :options="availableSeasons"
+                            />
                             <div class="min-w-[200px] flex-1">
                                 <Input v-model="searchQuery" placeholder="Search by team name..." class="w-full" />
                             </div>
@@ -202,12 +233,14 @@ onMounted(() => {
                                         <td class="p-2 text-muted-foreground">{{ index + 1 }}</td>
                                         <td class="p-2 font-medium">
                                             <Link
+                                                v-if="metric.team?.id != null"
                                                 :href="config.teamLink(metric.team.id)"
                                                 class="flex items-center gap-2 transition-colors hover:text-primary"
                                             >
-                                                <span>{{ metric.team.display_name }}</span>
-                                                <span class="text-xs text-muted-foreground">({{ metric.team.abbreviation }})</span>
+                                                <span>{{ metric.team.display_name ?? metric.team.name }}</span>
+                                                <span class="text-xs text-muted-foreground">({{ metric.team.abbreviation ?? '-' }})</span>
                                             </Link>
+                                            <span v-else>-</span>
                                         </td>
                                         <td
                                             v-for="col in config.columns"

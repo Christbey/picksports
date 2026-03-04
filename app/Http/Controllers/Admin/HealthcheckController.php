@@ -55,6 +55,15 @@ class HealthcheckController extends Controller
             'wnba' => 'wnba:sync-odds',
             'mlb' => 'mlb:sync-odds',
         ],
+        'heartbeat_player_props' => [
+            'nba' => 'nba:sync-player-props',
+            'nfl' => 'nfl:sync-player-props',
+            'cbb' => 'cbb:sync-player-props',
+            'mlb' => 'mlb:sync-player-props',
+            'wcbb' => null,
+            'cfb' => null,
+            'wnba' => null,
+        ],
         'heartbeat_live_scoreboard' => [
             'nba' => 'espn:sync-nba-games-scoreboard',
             'cbb' => 'espn:sync-cbb-games-scoreboard',

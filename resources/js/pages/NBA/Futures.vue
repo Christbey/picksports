@@ -34,6 +34,8 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const selectedSeason = ref<number | null>(null);
 const availableSeasons = ref<number[]>([]);
+const playoffTeamsPerConference = ref(8);
+const playInTeamsPerConference = ref(10);
 
 const availableSeasonOptions = computed(() =>
     availableSeasons.value.length > 0 ? availableSeasons.value : [selectedSeason.value ?? new Date().getFullYear()],
@@ -62,24 +64,61 @@ const conferenceBreakdown = computed(() => {
         teamsTracked: number;
         projectedIn: number;
         expectedBids: number;
+        projectedPlayIn: number;
+        divisionLeadersProjectedIn: number;
         predictedWinner: string;
         winnerFinalsProbability: number;
     }>();
 
+    const divisionLeaders = new Set<string>();
+    const byConferenceDivision = new Map<string, PlayoffForecast[]>();
     for (const row of forecasts.value) {
         const conference = (row.conference ?? row.team?.conference ?? 'Unknown').trim() || 'Unknown';
+        const divisionName = row.team?.division ?? 'Unknown';
+        const key = `${conference}::${divisionName}`;
+        const current = byConferenceDivision.get(key) ?? [];
+        current.push(row);
+        byConferenceDivision.set(key, current);
+    }
+
+    for (const [key, rows] of byConferenceDivision.entries()) {
+        const leader = [...rows].sort((a, b) => {
+            if (b.playoff_make_probability !== a.playoff_make_probability) {
+                return b.playoff_make_probability - a.playoff_make_probability;
+            }
+            const aRank = a.conference_rank ?? 99;
+            const bRank = b.conference_rank ?? 99;
+            return aRank - bRank;
+        })[0];
+        if (leader) {
+            divisionLeaders.add(`${key}::${leader.team_id}`);
+        }
+    }
+
+    for (const row of forecasts.value) {
+        const conference = (row.conference ?? row.team?.conference ?? 'Unknown').trim() || 'Unknown';
+        const divisionName = row.team?.division ?? 'Unknown';
         const current = byConference.get(conference) ?? {
             conference,
             teamsTracked: 0,
             projectedIn: 0,
             expectedBids: 0,
+            projectedPlayIn: 0,
+            divisionLeadersProjectedIn: 0,
             predictedWinner: formatTeam(row.team, row.team_id),
             winnerFinalsProbability: row.nba_finals_probability,
         };
 
         current.teamsTracked += 1;
         current.projectedIn += row.playoff_make_probability >= 0.5 ? 1 : 0;
+        current.projectedPlayIn += row.playoff_make_probability >= 0.35 ? 1 : 0;
         current.expectedBids += row.playoff_make_probability;
+        if (
+            row.playoff_make_probability >= 0.5
+            && divisionLeaders.has(`${conference}::${divisionName}::${row.team_id}`)
+        ) {
+            current.divisionLeadersProjectedIn += 1;
+        }
 
         if (row.nba_finals_probability > current.winnerFinalsProbability) {
             current.predictedWinner = formatTeam(row.team, row.team_id);
@@ -140,6 +179,8 @@ const fetchForecasts = async () => {
         const payload = await response.json();
         forecasts.value = payload?.data ?? [];
         availableSeasons.value = payload?.meta?.available_seasons ?? [];
+        playoffTeamsPerConference.value = payload?.meta?.playoff_teams_per_conference ?? 8;
+        playInTeamsPerConference.value = payload?.meta?.play_in_teams_per_conference ?? 10;
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred while loading NBA futures.';
         forecasts.value = [];
@@ -205,7 +246,7 @@ onMounted(async () => {
                         <CardContent class="pt-5">
                             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Projected Playoff Teams</p>
                             <p class="mt-2 text-3xl font-bold">{{ projectedInCount }}</p>
-                            <p class="mt-1 text-xs text-muted-foreground">Teams with playoff make probability 50%+</p>
+                            <p class="mt-1 text-xs text-muted-foreground">Threshold: 50%+ ({{ playoffTeamsPerConference }} spots per conference)</p>
                         </CardContent>
                     </Card>
                     <Card>
@@ -244,6 +285,8 @@ onMounted(async () => {
                                         <th class="p-2 font-medium">Predicted Winner</th>
                                         <th class="p-2 text-right font-medium">Teams Tracked</th>
                                         <th class="p-2 text-right font-medium">Projected In</th>
+                                        <th class="p-2 text-right font-medium">Projected Play-In</th>
+                                        <th class="p-2 text-right font-medium">Division Leaders In</th>
                                         <th class="p-2 text-right font-medium">Expected Bids</th>
                                     </tr>
                                 </thead>
@@ -257,7 +300,9 @@ onMounted(async () => {
                                             </div>
                                         </td>
                                         <td class="p-2 text-right">{{ row.teamsTracked }}</td>
-                                        <td class="p-2 text-right font-semibold">{{ row.projectedIn }}</td>
+                                        <td class="p-2 text-right font-semibold">{{ row.projectedIn }} / {{ playoffTeamsPerConference }}</td>
+                                        <td class="p-2 text-right">{{ row.projectedPlayIn }} / {{ playInTeamsPerConference }}</td>
+                                        <td class="p-2 text-right">{{ row.divisionLeadersProjectedIn }} / 3</td>
                                         <td class="p-2 text-right">{{ row.expectedBids.toFixed(2) }}</td>
                                     </tr>
                                 </tbody>
@@ -351,4 +396,3 @@ onMounted(async () => {
         </div>
     </PredictionsPageShell>
 </template>
-

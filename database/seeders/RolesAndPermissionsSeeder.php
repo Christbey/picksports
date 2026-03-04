@@ -17,6 +17,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
         $this->createPermissions();
         $this->createRolesFromTiers();
+        $this->createFoundingUserRole();
         $this->createAdminRole();
     }
 
@@ -66,5 +67,32 @@ class RolesAndPermissionsSeeder extends Seeder
         $adminRole->givePermissionTo(['trigger-alerts', 'view-alert-stats']);
 
         $this->command->info('Admin role created with alert permissions');
+    }
+
+    protected function createFoundingUserRole(): void
+    {
+        if (! config('founding_users.enabled', false) || (int) config('founding_users.limit', 0) < 1) {
+            return;
+        }
+
+        $roleName = (string) config('founding_users.role', 'founding_user');
+        $tierSlug = (string) config('founding_users.tier_slug', 'premium');
+        $guardName = config('auth.defaults.guard', 'web');
+
+        $tier = SubscriptionTier::query()->where('slug', $tierSlug)->first();
+        if (! $tier) {
+            $this->command->warn("Founding role skipped: tier '{$tierSlug}' not found.");
+
+            return;
+        }
+
+        $tierPermissionSyncService = app(TierPermissionSyncService::class);
+        $foundingRole = Role::firstOrCreate([
+            'name' => $roleName,
+            'guard_name' => $guardName,
+        ]);
+        $foundingRole->syncPermissions($tierPermissionSyncService->resolvePermissionNamesForTier($tier));
+
+        $this->command->info("Founding role '{$roleName}' created from '{$tierSlug}' tier permissions.");
     }
 }

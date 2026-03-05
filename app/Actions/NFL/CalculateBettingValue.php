@@ -77,6 +77,7 @@ class CalculateBettingValue
         // Market uses negative = favored, positive = underdog (standard betting convention)
         // Convert market spread to model's convention: negate the market spread
         $marketSpreadModelConvention = -$homeSpread;
+        $modelSpreadMarketConvention = -(float) $prediction->predicted_spread;
 
         $edge = abs($prediction->predicted_spread - $marketSpreadModelConvention);
 
@@ -95,8 +96,9 @@ class CalculateBettingValue
             'game_id' => $game->id,
             'recommendation' => ($betHome ? "Bet {$homeTeam}" : "Bet {$awayTeam}").' '.$this->formatLine($betLine),
             'bet_team' => $betHome ? $homeTeam : $awayTeam,
-            'model_line' => round($prediction->predicted_spread, 1),
-            'market_line' => round($marketSpreadModelConvention, 1),
+            // Display both lines in sportsbook convention (favorite negative, underdog positive)
+            'model_line' => round($modelSpreadMarketConvention, 1),
+            'market_line' => round((float) $homeSpread, 1),
             'edge' => round($edge, 1),
             'odds' => $selectedOdds,
             'confidence' => round($prediction->confidence_score, 2),

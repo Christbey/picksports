@@ -70,6 +70,7 @@ class CalculateBettingValue
         }
 
         $marketSpreadModelConvention = -$homeSpread;
+        $modelSpreadMarketConvention = -(float) $prediction->predicted_spread;
         $edge = abs((float) $prediction->predicted_spread - (float) $marketSpreadModelConvention);
         if ($edge < $this->spreadThreshold($sportKey)) {
             return null;
@@ -84,8 +85,9 @@ class CalculateBettingValue
             'game_id' => $game->id,
             'recommendation' => ($betHome ? "Bet {$homeTeam}" : "Bet {$awayTeam}").' '.$this->formatLine($betLine),
             'bet_team' => $betHome ? $homeTeam : $awayTeam,
-            'model_line' => round((float) $prediction->predicted_spread, 1),
-            'market_line' => round((float) $marketSpreadModelConvention, 1),
+            // Display both lines in sportsbook convention (favorite negative, underdog positive)
+            'model_line' => round($modelSpreadMarketConvention, 1),
+            'market_line' => round((float) $homeSpread, 1),
             'edge' => round($edge, 1),
             'odds' => (float) $selectedOdds,
             'confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
@@ -259,4 +261,3 @@ class CalculateBettingValue
         return $line > 0 ? '+'.number_format($line, 1) : number_format($line, 1);
     }
 }
-

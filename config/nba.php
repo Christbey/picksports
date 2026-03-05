@@ -172,7 +172,7 @@ return [
 
         // Logistic function coefficient for win probability
         // Calibrated so 7-point spread ≈ 70% win probability
-        'spread_to_probability_coefficient' => 4,
+        'spread_to_probability_coefficient' => 3.6,
 
         // Ensemble weights (must sum to 1.0)
         'elo_weight' => 0.30,
@@ -195,8 +195,8 @@ return [
         'rebound_margin_weight' => 0.3,
 
         // Vegas integration
-        'vegas_weight' => 0.25,
-        'model_weight_with_vegas' => 0.75,
+        'vegas_weight' => 0.15,
+        'model_weight_with_vegas' => 0.85,
 
         // Home court (efficiency-based)
         'home_court_points' => 3.0,
@@ -263,9 +263,9 @@ return [
     'betting' => [
         // Minimum edge required to generate a recommendation
         'edge_thresholds' => [
-            'spread' => 2.0,      // Points
-            'total' => 4.0,       // Points
-            'moneyline' => 0.05,  // Probability (5%)
+            'spread' => 1.5,      // Points
+            'total' => 3.0,       // Points
+            'moneyline' => 0.035, // Probability (3.5%)
         ],
 
         // Kelly Criterion bet sizing

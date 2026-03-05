@@ -86,6 +86,8 @@ const props = withDefaults(defineProps<{
             :has-live-prediction="hasLivePrediction"
             :betting-value="prediction?.betting_value"
             :live-prediction="livePredictionData"
+            :winner-correct="prediction?.winner_correct ?? null"
+            :actual-total="prediction?.actual_total != null ? Number(prediction.actual_total) : null"
             sportsbook-label="DraftKings"
         />
     </template>

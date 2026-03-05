@@ -201,6 +201,19 @@ return [
         // Home court (efficiency-based)
         'home_court_points' => 3.0,
 
+        // Injury adjustments
+        'injury_out_spread_penalty' => 0.75,
+        'injury_questionable_spread_penalty' => 0.30,
+        'injury_out_total_penalty' => 0.40,
+        'injury_questionable_total_penalty' => 0.15,
+        'injury_epa_weighting_enabled' => true,
+        'injury_epa_profile' => 'nba',
+        'injury_epa_lookback_games' => 10,
+        'injury_epa_baseline' => 12.0,
+        'injury_epa_min_multiplier' => 0.50,
+        'injury_epa_max_multiplier' => 2.00,
+        'injury_epa_fallback_multiplier' => 1.00,
+
         // Narrative generation settings for prediction summaries.
         'narrative' => [
             'provider' => env('NBA_PREDICTION_NARRATIVE_PROVIDER', 'template'),

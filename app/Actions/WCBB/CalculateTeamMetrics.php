@@ -69,12 +69,17 @@ class CalculateTeamMetrics
             return null;
         }
 
+        $record = $this->calculateWinLossRecord($games, $team);
+
         // Calculate season-long metrics
         $offensiveEfficiency = $this->calculateOffensiveEfficiency($teamStats);
         $defensiveEfficiency = $this->calculateDefensiveEfficiency($opponentStats);
         $netRating = $offensiveEfficiency - $defensiveEfficiency;
         $tempo = $this->calculateTempo($teamStats);
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
+        $recentFormRating = $this->calculateRecentFormRating($games, $team);
+        $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'wcbb', (float) ($team->elo_rating ?? 1500));
+        $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
 
         // Calculate rolling window metrics (last N games)
         $rollingMetrics = $this->calculateRollingMetrics($teamStats, $opponentStats);
@@ -116,12 +121,17 @@ class CalculateTeamMetrics
             ],
             [
                 // Season-long metrics - Efficiency/Rating: 1 decimal
+                'wins' => $record['wins'],
+                'losses' => $record['losses'],
                 'offensive_efficiency' => round($offensiveEfficiency, 1),
                 'defensive_efficiency' => round($defensiveEfficiency, 1),
                 'net_rating' => round($netRating, 1),
                 'tempo' => round($tempo, 1),
                 // Strength of Schedule: 3 decimals
                 'strength_of_schedule' => round($strengthOfSchedule, 3),
+                'recent_form_rating' => $recentFormRating,
+                'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
+                'rest_travel_fatigue' => $restTravelFatigue,
                 'games_played' => $gamesPlayed,
                 'meets_minimum' => $meetsMinimum,
                 'possession_coefficient' => config('wcbb.metrics.possession_coefficient'),

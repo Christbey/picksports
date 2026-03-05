@@ -73,6 +73,18 @@ class Team extends Model
         return $this->hasMany(TeamMetric::class, 'team_id');
     }
 
+    public function playerInjuries(): HasMany
+    {
+        return $this->hasMany(PlayerInjury::class, 'team_id');
+    }
+
+    public function activePlayerInjuries(): HasMany
+    {
+        return $this->playerInjuries()
+            ->where('is_active', true)
+            ->orderByDesc('updated_at');
+    }
+
     protected static function newFactory(): \Database\Factories\NflTeamFactory
     {
         return \Database\Factories\NflTeamFactory::new();

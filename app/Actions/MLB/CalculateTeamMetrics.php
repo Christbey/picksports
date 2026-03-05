@@ -34,6 +34,8 @@ class CalculateTeamMetrics
             return null;
         }
 
+        $record = $this->calculateWinLossRecord($games, $team);
+
         // Calculate baseball-specific metrics
         $offensiveRating = $this->calculateOffensiveRating($teamStats);
         $pitchingRating = $this->calculatePitchingRating($teamStats);
@@ -43,6 +45,9 @@ class CalculateTeamMetrics
         $battingAverage = $this->calculateBattingAverage($teamStats);
         $teamEra = $this->calculateTeamEra($teamStats);
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
+        $recentFormRating = $this->calculateRecentFormRating($games, $team);
+        $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'mlb', (float) ($team->elo_rating ?? 1500));
+        $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
 
         Log::info('Team metrics calculated', [
             'team_id' => $team->id,
@@ -76,6 +81,8 @@ class CalculateTeamMetrics
             ],
             [
                 // Rating metrics: 1 decimal
+                'wins' => $record['wins'],
+                'losses' => $record['losses'],
                 'offensive_rating' => round($offensiveRating, 1),
                 'pitching_rating' => round($pitchingRating, 1),
                 'defensive_rating' => round($defensiveRating, 1),
@@ -87,6 +94,9 @@ class CalculateTeamMetrics
                 'team_era' => round($teamEra, 2),
                 // Strength of Schedule: 3 decimals
                 'strength_of_schedule' => round($strengthOfSchedule, 3),
+                'recent_form_rating' => $recentFormRating,
+                'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
+                'rest_travel_fatigue' => $restTravelFatigue,
                 'calculation_date' => now()->toDateString(),
             ]
         );

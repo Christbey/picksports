@@ -26,6 +26,9 @@ class TeamMetricResource extends JsonResource
             'tempo' => $this->tempo,
             'pace' => $this->tempo,
             'strength_of_schedule' => $this->strength_of_schedule,
+            'recent_form_rating' => $this->recent_form_rating,
+            'injury_adjusted_team_rating' => $this->injury_adjusted_team_rating,
+            'rest_travel_fatigue' => $this->rest_travel_fatigue,
             'calculation_date' => $this->calculation_date,
             // Minimum games tracking
             'games_played' => $this->games_played,

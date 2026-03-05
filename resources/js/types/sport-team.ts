@@ -6,6 +6,7 @@ export interface MetricTile {
     label: string;
     value: (metrics: any) => string;
     class?: (metrics: any) => string;
+    rankingKey?: string;
 }
 
 export interface StatTile {
@@ -49,6 +50,7 @@ export interface TeamPageConfig {
     headerInfo?: (team: any, computed: { record: { wins: number; losses: number } }) => { label: string; value: string }[];
 
     statRankingKeys?: { key: string; descending?: boolean }[];
+    metricRankingKeys?: { key: string; descending?: boolean }[];
 
     showRoster?: boolean;
     playerLink?: (playerId: number) => HrefLike;

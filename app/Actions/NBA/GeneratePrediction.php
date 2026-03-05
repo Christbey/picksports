@@ -5,6 +5,7 @@ namespace App\Actions\NBA;
 use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Jobs\NBA\GeneratePredictionNarrative as GeneratePredictionNarrativeJob;
 use App\Models\NBA\Game;
+use App\Models\NBA\PlayerInjury;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
@@ -71,12 +72,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $reboundAdj = $this->calculateReboundAdjustment($game, $config);
 
         $situationalAdj = $restAdj + $turnoverAdj + $reboundAdj;
+        $injuryContext = $this->buildInjuryContext($game);
+        $injurySpreadAdj = $injuryContext['spread_adj'];
 
         // 5. Ensemble blend
         $modelSpread = ($config['elo_weight'] * $eloSpread)
             + ($config['efficiency_weight'] * $efficiencySpread)
             + ($config['form_weight'] * $formSpread)
-            + $situationalAdj;
+            + $situationalAdj
+            + $injurySpreadAdj;
 
         // 6. Vegas blend (if available)
         $vegasSpread = $this->getVegasSpread($game);
@@ -101,6 +105,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'elo_spread_component' => round($eloSpread, 2),
             'efficiency_spread_component' => round($efficiencySpread, 2),
             'form_spread_component' => round($formSpread, 2),
+            'home_injuries_out' => $injuryContext['home_out'],
+            'away_injuries_out' => $injuryContext['away_out'],
+            'home_injuries_questionable' => $injuryContext['home_questionable'],
+            'away_injuries_questionable' => $injuryContext['away_questionable'],
+            'injury_spread_adj' => round($injurySpreadAdj, 2),
+            'injury_total_adj' => round($injuryContext['total_adj'], 2),
         ];
 
         return round($finalSpread, 1);
@@ -144,8 +154,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
             $paceAdj -= 1.0;
         }
         $pace += $paceAdj;
+        $injuryTotalAdj = (float) ($this->metadata['injury_total_adj'] ?? 0.0);
 
-        return round(($homePredictedScore + $awayPredictedScore) * ($pace / 100), 1);
+        return round((($homePredictedScore + $awayPredictedScore) * ($pace / 100)) + $injuryTotalAdj, 1);
     }
 
     protected function buildPredictionData(
@@ -579,5 +590,101 @@ class GeneratePrediction extends AbstractPredictionGenerator
         }
 
         return $query->pluck('id')->toArray();
+    }
+
+    /**
+     * @return array{
+     *   home_out:int,
+     *   away_out:int,
+     *   home_questionable:int,
+     *   away_questionable:int,
+     *   spread_adj:float,
+     *   total_adj:float
+     * }
+     */
+    private function buildInjuryContext(Model $game): array
+    {
+        $config = config('nba.prediction');
+        $homeRaw = $this->nbaRawInjuryCountsForTeam((int) $game->home_team_id);
+        $awayRaw = $this->nbaRawInjuryCountsForTeam((int) $game->away_team_id);
+        $homeWeighted = $this->nbaWeightedInjuryCountsForTeam((int) $game->home_team_id);
+        $awayWeighted = $this->nbaWeightedInjuryCountsForTeam((int) $game->away_team_id);
+
+        $outSpreadPenalty = (float) ($config['injury_out_spread_penalty'] ?? 0.75);
+        $questionableSpreadPenalty = (float) ($config['injury_questionable_spread_penalty'] ?? 0.30);
+        $outTotalPenalty = (float) ($config['injury_out_total_penalty'] ?? 0.40);
+        $questionableTotalPenalty = (float) ($config['injury_questionable_total_penalty'] ?? 0.15);
+
+        $homePenalty = ($homeWeighted['out'] * $outSpreadPenalty) + ($homeWeighted['questionable'] * $questionableSpreadPenalty);
+        $awayPenalty = ($awayWeighted['out'] * $outSpreadPenalty) + ($awayWeighted['questionable'] * $questionableSpreadPenalty);
+
+        // Positive favors home, negative favors away.
+        $spreadAdj = $awayPenalty - $homePenalty;
+        $totalAdj = -(
+            (($homeWeighted['out'] + $awayWeighted['out']) * $outTotalPenalty)
+            + (($homeWeighted['questionable'] + $awayWeighted['questionable']) * $questionableTotalPenalty)
+        );
+
+        return [
+            'home_out' => $homeRaw['out'],
+            'away_out' => $awayRaw['out'],
+            'home_questionable' => $homeRaw['questionable'],
+            'away_questionable' => $awayRaw['questionable'],
+            'spread_adj' => round($spreadAdj, 2),
+            'total_adj' => round($totalAdj, 2),
+        ];
+    }
+
+    /**
+     * @return array{out:float, questionable:float}
+     */
+    private function nbaWeightedInjuryCountsForTeam(int $teamId): array
+    {
+        $counts = ['out' => 0, 'questionable' => 0];
+        if ($teamId <= 0) {
+            return $counts;
+        }
+
+        $injuries = PlayerInjury::query()
+            ->where('team_id', $teamId)
+            ->where('is_active', true)
+            ->get(['player_id', 'status']);
+
+        foreach ($injuries as $injury) {
+            $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
+            if ($bucket !== null) {
+                $counts[$bucket] += $this->injuryImpactMultiplier('nba', (int) ($injury->player_id ?? 0));
+            }
+        }
+
+        $counts['out'] = round((float) $counts['out'], 2);
+        $counts['questionable'] = round((float) $counts['questionable'], 2);
+
+        return $counts;
+    }
+
+    /**
+     * @return array{out:int, questionable:int}
+     */
+    private function nbaRawInjuryCountsForTeam(int $teamId): array
+    {
+        $counts = ['out' => 0, 'questionable' => 0];
+        if ($teamId <= 0) {
+            return $counts;
+        }
+
+        $statuses = PlayerInjury::query()
+            ->where('team_id', $teamId)
+            ->where('is_active', true)
+            ->pluck('status');
+
+        foreach ($statuses as $status) {
+            $bucket = $this->injuryStatusBucket((string) $status);
+            if ($bucket !== null) {
+                $counts[$bucket]++;
+            }
+        }
+
+        return $counts;
     }
 }

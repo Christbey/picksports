@@ -16,11 +16,16 @@ class TeamMetric extends Model
     protected $fillable = [
         'team_id',
         'season',
+        'wins',
+        'losses',
         'offensive_efficiency',
         'defensive_efficiency',
         'net_rating',
         'tempo',
         'strength_of_schedule',
+        'recent_form_rating',
+        'injury_adjusted_team_rating',
+        'rest_travel_fatigue',
         'calculation_date',
     ];
 
@@ -30,8 +35,13 @@ class TeamMetric extends Model
             'offensive_efficiency' => 'decimal:1',
             'defensive_efficiency' => 'decimal:1',
             'net_rating' => 'decimal:1',
+            'wins' => 'integer',
+            'losses' => 'integer',
             'tempo' => 'decimal:1',
             'strength_of_schedule' => 'decimal:3',
+            'recent_form_rating' => 'decimal:3',
+            'injury_adjusted_team_rating' => 'decimal:3',
+            'rest_travel_fatigue' => 'decimal:3',
             'calculation_date' => 'date',
         ];
     }

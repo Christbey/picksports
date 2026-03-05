@@ -125,6 +125,25 @@ export interface GamePageTeam {
     location?: string | null;
     logo?: string | null;
     color?: string | null;
+    active_injuries_count?: number;
+    active_injuries?: Array<{
+        id: number;
+        player_id: number;
+        player_name?: string | null;
+        player_headshot?: string | null;
+        status?: string | null;
+        detail?: string | null;
+        type?: string | null;
+        impact_score?: number | null;
+        impact_label?: string | null;
+        impact_spread?: number | null;
+        impact_total?: number | null;
+        impact_multiplier?: number | null;
+        return_date?: string | null;
+        source_updated_at?: string | null;
+        is_active?: boolean;
+        updated_at?: string | null;
+    }>;
 }
 
 export interface GamePageGame {
@@ -142,6 +161,9 @@ export interface PredictionSummary {
     predicted_total: number;
     confidence_level: string;
     confidence_score?: number | null;
+    actual_total?: number | null;
+    winner_correct?: boolean | null;
+    betting_value?: BettingRecommendation[];
     narrative?: {
         summary: string;
         key_points: string[];
@@ -236,6 +258,8 @@ export interface NflPagePrediction {
     win_probability: number | string;
     confidence_score: number | string;
     betting_value?: BettingRecommendation[];
+    winner_correct?: boolean | null;
+    actual_total?: number | string | null;
     live_predicted_spread?: number | string | null;
     live_win_probability?: number | string | null;
     live_predicted_total?: number | string | null;
@@ -290,6 +314,25 @@ export interface MlbPageTeam {
     logo_url: string | null;
     league: string;
     division: string;
+    active_injuries_count?: number;
+    active_injuries?: Array<{
+        id: number;
+        player_id: number;
+        player_name?: string | null;
+        player_headshot?: string | null;
+        status?: string | null;
+        detail?: string | null;
+        type?: string | null;
+        impact_score?: number | null;
+        impact_label?: string | null;
+        impact_spread?: number | null;
+        impact_total?: number | null;
+        impact_multiplier?: number | null;
+        return_date?: string | null;
+        source_updated_at?: string | null;
+        is_active?: boolean;
+        updated_at?: string | null;
+    }>;
 }
 
 export interface MlbPageGame extends GamePageGame {

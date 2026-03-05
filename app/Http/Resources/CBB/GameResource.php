@@ -44,6 +44,7 @@ class GameResource extends JsonResource
             'updated_at' => $this->updated_at?->toIso8601String(),
             'home_team' => TeamResource::make($this->whenLoaded('homeTeam')),
             'away_team' => TeamResource::make($this->whenLoaded('awayTeam')),
+            'team_stats' => TeamStatResource::collection($this->whenLoaded('teamStats')),
         ];
     }
 }

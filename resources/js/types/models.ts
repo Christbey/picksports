@@ -11,7 +11,28 @@ export interface Team {
     color: string | null
     alternate_color: string | null
     logo: string | null
+    active_injuries_count?: number
+    active_injuries?: PlayerInjury[]
     created_at: string | null
+    updated_at: string | null
+}
+
+export interface PlayerInjury {
+    id: number
+    player_id: number
+    player_name?: string | null
+    player_headshot?: string | null
+    status: string | null
+    detail: string | null
+    type: string | null
+    impact_score?: number | null
+    impact_label?: string | null
+    impact_spread?: number | null
+    impact_total?: number | null
+    impact_multiplier?: number | null
+    return_date: string | null
+    source_updated_at: string | null
+    is_active: boolean
     updated_at: string | null
 }
 
@@ -42,6 +63,7 @@ export interface Game {
     updated_at: string | null
     home_team?: Team
     away_team?: Team
+    team_stats?: Array<Record<string, unknown>>
     prediction?: Prediction
 }
 

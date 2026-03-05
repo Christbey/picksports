@@ -29,6 +29,14 @@ class PlayerResource extends JsonResource
             'year' => $this->year,
             'hometown' => $this->hometown,
             'headshot_url' => $this->headshot_url,
+            'active_injuries_count' => $this->when(
+                $this->relationLoaded('activeInjuries'),
+                fn () => $this->activeInjuries->count()
+            ),
+            'active_injuries' => $this->when(
+                $this->relationLoaded('activeInjuries'),
+                fn () => PlayerInjuryResource::collection($this->activeInjuries)
+            ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'team' => TeamResource::make($this->whenLoaded('team')),

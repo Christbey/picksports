@@ -17,21 +17,38 @@ class PlayerStat extends Model
         'player_id',
         'game_id',
         'team_id',
-        'stat_type',
-        'completions',
-        'attempts',
+        // Passing
+        'passing_completions',
+        'passing_attempts',
         'passing_yards',
         'passing_touchdowns',
-        'interceptions',
-        'carries',
+        'interceptions_thrown',
+        'sacks_taken',
+        // Rushing
+        'rushing_attempts',
         'rushing_yards',
         'rushing_touchdowns',
+        'rushing_long',
+        // Receiving
         'receptions',
         'receiving_yards',
         'receiving_touchdowns',
-        'targets',
-        'fumbles',
-        'fumbles_lost',
+        'receiving_targets',
+        'receiving_long',
+        // Defense
+        'tackles_total',
+        'tackles_solo',
+        'tackles_assists',
+        'sacks',
+        'interceptions',
+        'passes_defended',
+        'fumbles_forced',
+        'fumbles_recovered',
+        // Kicking
+        'field_goals_made',
+        'field_goals_attempted',
+        'extra_points_made',
+        'extra_points_attempted',
     ];
 
     public function player(): BelongsTo

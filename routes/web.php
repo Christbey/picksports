@@ -177,13 +177,23 @@ foreach ([
     'cbb-tournament-forecast' => ['page' => 'CBB/TournamentForecast', 'sport' => 'cbb'],
     'wcbb-tournament-forecast' => ['page' => 'WCBB/TournamentForecast', 'sport' => 'wcbb'],
     'wcbb-team-metrics' => ['page' => 'WCBB/TeamMetrics', 'sport' => 'wcbb'],
+    'wcbb-injuries' => ['page' => 'WCBB/Injuries', 'sport' => 'wcbb'],
     'nba-team-metrics' => ['page' => 'NBA/TeamMetrics', 'sport' => 'nba'],
+    'nba-injuries' => ['page' => 'NBA/Injuries', 'sport' => 'nba'],
     'nba-player-stats' => ['page' => 'NBA/PlayerStats', 'sport' => 'nba'],
     'nba-futures' => ['page' => 'NBA/Futures', 'sport' => 'nba'],
     'wnba-team-metrics' => ['page' => 'WNBA/TeamMetrics', 'sport' => 'wnba'],
+    'wnba-injuries' => ['page' => 'WNBA/Injuries', 'sport' => 'wnba'],
     'mlb-team-metrics' => ['page' => 'MLB/TeamMetrics', 'sport' => 'mlb'],
+    'mlb-injuries' => ['page' => 'MLB/Injuries', 'sport' => 'mlb'],
+    'mlb-player-stats' => ['page' => 'MLB/PlayerStats', 'sport' => 'mlb'],
     'mlb-futures' => ['page' => 'MLB/Futures', 'sport' => 'mlb'],
     'nfl-team-metrics' => ['page' => 'NFL/TeamMetrics', 'sport' => 'nfl'],
+    'nfl-player-stats' => ['page' => 'NFL/PlayerStats', 'sport' => 'nfl'],
+    'nfl-injuries' => ['page' => 'NFL/Injuries', 'sport' => 'nfl'],
+    'cfb-player-stats' => ['page' => 'CFB/PlayerStats', 'sport' => 'cfb'],
+    'cfb-injuries' => ['page' => 'CFB/Injuries', 'sport' => 'cfb'],
+    'cbb-injuries' => ['page' => 'CBB/Injuries', 'sport' => 'cbb'],
 ] as $path => $config) {
     Route::get($path, fn () => Inertia::render($config['page']))
         ->middleware(['auth', 'verified', "permission:view-{$config['sport']}-predictions"])
@@ -212,10 +222,12 @@ foreach ([
     'nfl' => [
         'team' => \App\Http\Controllers\NFL\TeamController::class,
         'game' => \App\Http\Controllers\NFL\GameController::class,
+        'player' => \App\Http\Controllers\NFL\PlayerController::class,
     ],
     'mlb' => [
         'team' => \App\Http\Controllers\MLB\TeamController::class,
         'game' => \App\Http\Controllers\MLB\GameController::class,
+        'player' => \App\Http\Controllers\MLB\PlayerController::class,
     ],
 ] as $sport => $controllers) {
     $sportDetailMiddleware = ['auth', 'verified', "permission:view-{$sport}-predictions"];
@@ -229,6 +241,10 @@ foreach ([
             ->name("{$sport}.player.show");
     }
 }
+
+Route::get('/cfb/players/{player}', \App\Http\Controllers\CFB\PlayerController::class)
+    ->middleware(['auth', 'verified', 'permission:view-cfb-predictions'])
+    ->name('cfb.player.show');
 
 Route::middleware(['auth'])->prefix('subscription')->name('subscription.')->group(function () {
     foreach ([

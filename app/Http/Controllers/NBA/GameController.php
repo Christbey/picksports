@@ -16,7 +16,12 @@ class GameController extends Controller
             'game',
             $game,
             GameResource::class,
-            ['homeTeam', 'awayTeam', 'prediction.game.homeTeam', 'prediction.game.awayTeam']
+            [
+                'homeTeam.activePlayerInjuries.player',
+                'awayTeam.activePlayerInjuries.player',
+                'prediction.game.homeTeam.activePlayerInjuries.player',
+                'prediction.game.awayTeam.activePlayerInjuries.player',
+            ]
         );
     }
 }

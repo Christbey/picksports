@@ -16,4 +16,9 @@ class PlayerController extends AbstractPlayerController
     protected const PLAYER_RESOURCE = PlayerResource::class;
 
     protected const BY_TEAM_PAGINATED = false;
+
+    protected function additionalPlayerRelations(): array
+    {
+        return ['activeInjuries.player'];
+    }
 }

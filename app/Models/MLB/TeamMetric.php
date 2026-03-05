@@ -12,6 +12,8 @@ class TeamMetric extends Model
     protected $fillable = [
         'team_id',
         'season',
+        'wins',
+        'losses',
         'offensive_rating',
         'pitching_rating',
         'defensive_rating',
@@ -20,6 +22,9 @@ class TeamMetric extends Model
         'batting_average',
         'team_era',
         'strength_of_schedule',
+        'recent_form_rating',
+        'injury_adjusted_team_rating',
+        'rest_travel_fatigue',
         'calculation_date',
     ];
 
@@ -29,11 +34,16 @@ class TeamMetric extends Model
             'offensive_rating' => 'float',
             'pitching_rating' => 'float',
             'defensive_rating' => 'float',
+            'wins' => 'integer',
+            'losses' => 'integer',
             'runs_per_game' => 'float',
             'runs_allowed_per_game' => 'float',
             'batting_average' => 'float',
             'team_era' => 'float',
-            'strength_of_schedule' => 'float',
+            'strength_of_schedule' => 'decimal:3',
+            'recent_form_rating' => 'decimal:3',
+            'injury_adjusted_team_rating' => 'decimal:3',
+            'rest_travel_fatigue' => 'decimal:3',
             'calculation_date' => 'date',
         ];
     }

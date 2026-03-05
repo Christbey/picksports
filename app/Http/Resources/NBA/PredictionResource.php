@@ -23,6 +23,12 @@ class PredictionResource extends AbstractPredictionResource
         if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = (float) $this->predicted_spread;
             $data['predicted_total'] = (float) $this->predicted_total;
+            $data['injury_spread_adj'] = (float) ($this->injury_spread_adj ?? 0);
+            $data['injury_total_adj'] = (float) ($this->injury_total_adj ?? 0);
+            $data['home_injuries_out'] = (int) ($this->home_injuries_out ?? 0);
+            $data['away_injuries_out'] = (int) ($this->away_injuries_out ?? 0);
+            $data['home_injuries_questionable'] = (int) ($this->home_injuries_questionable ?? 0);
+            $data['away_injuries_questionable'] = (int) ($this->away_injuries_questionable ?? 0);
         }
 
         // Win Probability

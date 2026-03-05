@@ -2,11 +2,11 @@ import { formatBattingAverage, formatNumber, ratingClass } from '@/components/sp
 import type { TeamPageConfig } from '@/types'
 
 const basketballMetricTiles = [
-    { label: 'ORtg', value: (m: any) => formatNumber(m.offensive_rating) },
-    { label: 'DRtg', value: (m: any) => formatNumber(m.defensive_rating) },
-    { label: 'Net Rating', value: (m: any) => formatNumber(m.net_rating), class: (m: any) => ratingClass(m.net_rating) },
-    { label: 'Pace', value: (m: any) => formatNumber(m.pace) },
-    { label: 'SOS', value: (m: any) => formatNumber(m.strength_of_schedule, 3) },
+    { label: 'ORtg', value: (m: any) => formatNumber(m.offensive_rating), rankingKey: 'offensive_rating' },
+    { label: 'DRtg', value: (m: any) => formatNumber(m.defensive_rating), rankingKey: 'defensive_rating', },
+    { label: 'Net Rating', value: (m: any) => formatNumber(m.net_rating), class: (m: any) => ratingClass(m.net_rating), rankingKey: 'net_rating' },
+    { label: 'Pace', value: (m: any) => formatNumber(m.pace), rankingKey: 'pace' },
+    { label: 'SOS', value: (m: any) => formatNumber(m.strength_of_schedule, 3), rankingKey: 'strength_of_schedule' },
 ]
 
 const basketballSeasonStatTiles = [
@@ -39,6 +39,14 @@ const basketballRankingKeys = [
     { key: 'turnovers_per_game', descending: false },
 ]
 
+const basketballMetricRankingKeys = [
+    { key: 'offensive_rating' },
+    { key: 'defensive_rating', descending: false },
+    { key: 'net_rating' },
+    { key: 'pace' },
+    { key: 'strength_of_schedule' },
+]
+
 type GameLink = (id: number) => any
 
 export const createNbaTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
@@ -65,6 +73,7 @@ export const createNbaTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     overviewStatCount: 6,
     seasonStatsGridCols: 'md:grid-cols-4 lg:grid-cols-6',
     metricTiles: basketballMetricTiles,
+    metricRankingKeys: basketballMetricRankingKeys,
     seasonStatTiles: basketballSeasonStatTiles,
     statRankingKeys: basketballRankingKeys,
 })
@@ -91,6 +100,7 @@ export const createCbbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     overviewStatCount: 6,
     seasonStatsGridCols: 'md:grid-cols-4 lg:grid-cols-6',
     metricTiles: basketballMetricTiles,
+    metricRankingKeys: basketballMetricRankingKeys,
     seasonStatTiles: basketballSeasonStatTiles,
 })
 
@@ -120,6 +130,7 @@ const createSimpleBasketballConfig = (
     recentGamesLimit: 5,
     upcomingGamesLimit: 5,
     metricTiles: basketballMetricTiles,
+    metricRankingKeys: basketballMetricRankingKeys,
 })
 
 export const createWnbaTeamConfig = (gameLink: GameLink): TeamPageConfig =>
@@ -158,20 +169,33 @@ export const createNflTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
         return items
     },
     metricTiles: [
-        { label: 'Off Rating', value: (m) => formatNumber(m.offensive_rating) },
-        { label: 'Def Rating', value: (m) => formatNumber(m.defensive_rating) },
-        { label: 'Net Rating', value: (m) => formatNumber(m.net_rating), class: (m) => ratingClass(m.net_rating) },
-        { label: 'PPG', value: (m) => formatNumber(m.points_per_game) },
-        { label: 'Pts Allowed', value: (m) => formatNumber(m.points_allowed_per_game) },
-        { label: 'Yards/Game', value: (m) => formatNumber(m.yards_per_game, 0) },
-        { label: 'Yards Allowed', value: (m) => formatNumber(m.yards_allowed_per_game, 0) },
-        { label: 'Pass Yds/G', value: (m) => formatNumber(m.passing_yards_per_game, 0) },
-        { label: 'Rush Yds/G', value: (m) => formatNumber(m.rushing_yards_per_game, 0) },
+        { label: 'Off Rating', value: (m) => formatNumber(m.offensive_rating), rankingKey: 'offensive_rating' },
+        { label: 'Def Rating', value: (m) => formatNumber(m.defensive_rating), rankingKey: 'defensive_rating' },
+        { label: 'Net Rating', value: (m) => formatNumber(m.net_rating), class: (m) => ratingClass(m.net_rating), rankingKey: 'net_rating' },
+        { label: 'PPG', value: (m) => formatNumber(m.points_per_game), rankingKey: 'points_per_game' },
+        { label: 'Pts Allowed', value: (m) => formatNumber(m.points_allowed_per_game), rankingKey: 'points_allowed_per_game' },
+        { label: 'Yards/Game', value: (m) => formatNumber(m.yards_per_game, 0), rankingKey: 'yards_per_game' },
+        { label: 'Yards Allowed', value: (m) => formatNumber(m.yards_allowed_per_game, 0), rankingKey: 'yards_allowed_per_game' },
+        { label: 'Pass Yds/G', value: (m) => formatNumber(m.passing_yards_per_game, 0), rankingKey: 'passing_yards_per_game' },
+        { label: 'Rush Yds/G', value: (m) => formatNumber(m.rushing_yards_per_game, 0), rankingKey: 'rushing_yards_per_game' },
         {
             label: 'TO Diff',
             value: (m) => `${m.turnover_differential > 0 ? '+' : ''}${formatNumber(m.turnover_differential, 0)}`,
             class: (m) => ratingClass(m.turnover_differential),
+            rankingKey: 'turnover_differential',
         },
+    ],
+    metricRankingKeys: [
+        { key: 'offensive_rating' },
+        { key: 'defensive_rating', descending: false },
+        { key: 'net_rating' },
+        { key: 'points_per_game' },
+        { key: 'points_allowed_per_game', descending: false },
+        { key: 'yards_per_game' },
+        { key: 'yards_allowed_per_game', descending: false },
+        { key: 'passing_yards_per_game' },
+        { key: 'rushing_yards_per_game' },
+        { key: 'turnover_differential' },
     ],
 })
 
@@ -219,14 +243,24 @@ export const createMlbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
         return items
     },
     metricTiles: [
-        { label: 'R/G', value: (m) => formatNumber(m.runs_per_game, 2), class: (m) => rpgClass(m.runs_per_game) },
-        { label: 'RA/G', value: (m) => formatNumber(m.runs_allowed_per_game, 2), class: (m) => eraClass(m.runs_allowed_per_game) },
-        { label: 'AVG', value: (m) => formatBattingAverage(m.batting_average) },
-        { label: 'ERA', value: (m) => formatNumber(m.team_era, 2), class: (m) => eraClass(m.team_era) },
-        { label: 'ORtg', value: (m) => formatNumber(m.offensive_rating) },
-        { label: 'PRtg', value: (m) => formatNumber(m.pitching_rating) },
-        { label: 'DRtg', value: (m) => formatNumber(m.defensive_rating) },
-        { label: 'SOS', value: (m) => formatNumber(m.strength_of_schedule, 3) },
+        { label: 'R/G', value: (m) => formatNumber(m.runs_per_game, 2), class: (m) => rpgClass(m.runs_per_game), rankingKey: 'runs_per_game' },
+        { label: 'RA/G', value: (m) => formatNumber(m.runs_allowed_per_game, 2), class: (m) => eraClass(m.runs_allowed_per_game), rankingKey: 'runs_allowed_per_game' },
+        { label: 'AVG', value: (m) => formatBattingAverage(m.batting_average), rankingKey: 'batting_average' },
+        { label: 'ERA', value: (m) => formatNumber(m.team_era, 2), class: (m) => eraClass(m.team_era), rankingKey: 'team_era' },
+        { label: 'ORtg', value: (m) => formatNumber(m.offensive_rating), rankingKey: 'offensive_rating' },
+        { label: 'PRtg', value: (m) => formatNumber(m.pitching_rating), rankingKey: 'pitching_rating' },
+        { label: 'DRtg', value: (m) => formatNumber(m.defensive_rating), rankingKey: 'defensive_rating' },
+        { label: 'SOS', value: (m) => formatNumber(m.strength_of_schedule, 3), rankingKey: 'strength_of_schedule' },
+    ],
+    metricRankingKeys: [
+        { key: 'runs_per_game' },
+        { key: 'runs_allowed_per_game', descending: false },
+        { key: 'batting_average' },
+        { key: 'team_era', descending: false },
+        { key: 'offensive_rating' },
+        { key: 'pitching_rating' },
+        { key: 'defensive_rating' },
+        { key: 'strength_of_schedule' },
     ],
     seasonStatTiles: [
         { label: 'Runs', value: (s) => formatNumber(s.runs_per_game, 2) },

@@ -229,12 +229,65 @@ function livePredictionData() {
         preGamePredictedTotal: props.prediction.predicted_total ?? 0,
     };
 }
+
+function winnerCorrect(): boolean | null {
+    const value = props.prediction.winner_correct;
+    return typeof value === 'boolean' ? value : null;
+}
+
+function finalResultClass(): string {
+    if (!isFinal()) {
+        return '';
+    }
+
+    const correct = winnerCorrect();
+    if (correct === true) {
+        return 'text-green-600 dark:text-green-400';
+    }
+
+    if (correct === false) {
+        return 'text-red-600 dark:text-red-400';
+    }
+
+    return '';
+}
+
+function finalResultBadgeClass(): string {
+    const correct = winnerCorrect();
+    if (correct === true) {
+        return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
+    }
+
+    if (correct === false) {
+        return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
+    }
+
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
+}
+
+function finalResultLabel(): string {
+    const correct = winnerCorrect();
+    if (correct === true) return 'WIN';
+    if (correct === false) return 'LOSS';
+    return 'FINAL';
+}
+
+function finalCardClass(): string {
+    if (!isFinal()) return '';
+
+    const correct = winnerCorrect();
+    if (correct === true) return 'border-green-300/80 dark:border-green-700/60';
+    if (correct === false) return 'border-red-300/80 dark:border-red-700/60';
+
+    return '';
+}
 </script>
 
 <template>
     <Link
         :href="href"
         class="block rounded-lg border border-sidebar-border/70 bg-sidebar-accent/30 p-3 transition-all hover:border-sidebar-border hover:bg-sidebar-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 md:p-4 dark:border-sidebar-border"
+        :class="finalCardClass()"
     >
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div class="flex flex-col gap-2">
@@ -250,6 +303,12 @@ function livePredictionData() {
                     class="flex items-center gap-1.5 self-start rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800"
                 >
                     <span class="text-xs font-semibold text-gray-600 dark:text-gray-400">FINAL</span>
+                    <span
+                        class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                        :class="finalResultBadgeClass()"
+                    >
+                        {{ finalResultLabel() }}
+                    </span>
                 </div>
 
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
@@ -314,7 +373,13 @@ function livePredictionData() {
                         <Target class="h-3.5 w-3.5" />
                         Win %
                     </div>
-                    <div class="text-base font-bold" :class="{ 'text-red-500': hasLiveData() }">
+                    <div
+                        class="text-base font-bold"
+                        :class="[
+                            hasLiveData() ? 'text-red-500' : '',
+                            finalResultClass(),
+                        ]"
+                    >
                         {{ winProbPercent().toFixed(1) }}%
                     </div>
                     <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-sidebar-accent">
@@ -377,6 +442,8 @@ function livePredictionData() {
                 v-else
                 :betting-value="prediction.betting_value"
                 :live-prediction="livePredictionData()"
+                :winner-correct="isFinal() ? winnerCorrect() : null"
+                :actual-total="isFinal() ? (prediction.actual_total ?? null) : null"
                 :compact="true"
             />
         </div>

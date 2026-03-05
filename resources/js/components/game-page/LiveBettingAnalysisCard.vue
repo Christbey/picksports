@@ -9,6 +9,8 @@ defineProps<{
     hasLivePrediction: boolean;
     bettingValue?: BettingRecommendation[];
     livePrediction?: LivePredictionData;
+    winnerCorrect?: boolean | null;
+    actualTotal?: number | null;
     sportsbookLabel?: string;
 }>();
 </script>
@@ -42,6 +44,8 @@ defineProps<{
             <BettingAnalysisCard
                 :betting-value="bettingValue"
                 :live-prediction="livePrediction"
+                :winner-correct="winnerCorrect"
+                :actual-total="actualTotal"
             />
         </CardContent>
     </Card>

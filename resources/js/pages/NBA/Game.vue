@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import NBATeamController from '@/actions/App/Http/Controllers/NBA/TeamController';
 import BasketballGameInsights from '@/components/game-page/BasketballGameInsights.vue';
+import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
+import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
 import { type Game, type TopPerformer } from '@/types';
@@ -15,11 +18,21 @@ const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     sortTopPerformers: (players: TopPerformer[]) => players.slice(0, 10),
     teamLink: (id: number) => NBATeamController(id),
 });
+
+const awayInjuries = computed(() => pageProps.value.awayTeam?.active_injuries ?? []);
+const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ?? []);
 </script>
 
 <template>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
+            <LiveBettingAnalysisCard
+                :has-live-prediction="false"
+                :betting-value="pageProps.prediction?.betting_value"
+                :winner-correct="pageProps.prediction?.winner_correct ?? null"
+                :actual-total="pageProps.prediction?.actual_total ?? null"
+                sportsbook-label="Vegas"
+            />
             <div
                 v-if="pageProps.prediction?.narrative?.betting_plan"
                 class="rounded-2xl border bg-white/95 p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90"
@@ -53,6 +66,12 @@ const { pageProps, insightsProps } = useBasketballDetailedGamePage({
             <BasketballGameInsights
                 v-bind="insightsProps"
                 box-score-layout="grid"
+            />
+            <InjuryReportCard
+                :away-team-abbr="pageProps.awayTeam?.abbreviation"
+                :home-team-abbr="pageProps.homeTeam?.abbreviation"
+                :away-injuries="awayInjuries"
+                :home-injuries="homeInjuries"
             />
         </template>
     </SportDetailedGamePage>

@@ -28,6 +28,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     const upcomingGames = ref<Game[]>((props.preloadedUpcomingGames as Game[]) || []);
     const powerRanking = ref<{ rank: number; total_teams: number } | null>(null);
     const statRankings = ref<Record<string, number>>({});
+    const metricRankings = ref<Record<string, number>>({});
+    const metricRankingTotalTeams = ref(0);
     const rosterPlayers = ref<any[]>([]);
     const rosterLoading = ref(false);
     const trendsData = ref<Record<string, string[]> | null>(null);
@@ -139,6 +141,15 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
         return props.config.seasonStatTiles;
     });
 
+    const toNumber = (value: unknown): number | null => {
+        if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+        if (typeof value === 'string' && value.trim() !== '') {
+            const parsed = Number(value);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+        return null;
+    };
+
     onMounted(async () => {
         if (hasPreloadedData() && !props.config.showTrends && !props.config.showPowerRanking) return;
 
@@ -163,7 +174,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             }
 
             if (props.preloadedRecentGames === undefined) {
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/games`));
+                // Pull enough rows to cover the full team schedule/game log for the season.
+                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/games?per_page=500`));
                 fetchKeys.push('games');
             }
 
@@ -172,7 +184,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                 fetchKeys.push('team');
             }
 
-            if (props.config.showPowerRanking) {
+            if (props.config.showPowerRanking || props.config.metricRankingKeys) {
                 fetches.push(fetch(`${props.config.apiBase}/team-metrics`));
                 fetchKeys.push('allMetrics');
             }
@@ -222,31 +234,62 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                     if (props.config.sortRecentByDate) {
                         recentGames.value = games
                             .filter((g: Game) => g.status === 'STATUS_FINAL')
-                            .sort((a: Game, b: Game) => new Date(b.game_date!).getTime() - new Date(a.game_date!).getTime())
-                            .slice(0, props.config.recentGamesLimit ?? 10);
+                            .sort((a: Game, b: Game) => new Date(b.game_date!).getTime() - new Date(a.game_date!).getTime());
 
                         const now = new Date();
                         upcomingGames.value = games
                             .filter((g: Game) => g.status !== 'STATUS_FINAL' && new Date(g.game_date!) >= now)
-                            .sort((a: Game, b: Game) => new Date(a.game_date!).getTime() - new Date(b.game_date!).getTime())
-                            .slice(0, props.config.upcomingGamesLimit ?? 10);
+                            .sort((a: Game, b: Game) => new Date(a.game_date!).getTime() - new Date(b.game_date!).getTime());
                     } else {
                         recentGames.value = games
                             .filter((g: Game) => g.status === 'STATUS_FINAL')
-                            .slice(0, props.config.recentGamesLimit ?? 10);
+                            .sort((a: Game, b: Game) => new Date(b.game_date!).getTime() - new Date(a.game_date!).getTime());
 
                         upcomingGames.value = games
                             .filter((g: Game) => g.status === 'STATUS_SCHEDULED' || g.status === 'STATUS_IN_PROGRESS')
-                            .slice(0, props.config.upcomingGamesLimit ?? 5);
+                            .sort((a: Game, b: Game) => new Date(a.game_date!).getTime() - new Date(b.game_date!).getTime());
                     }
                 }
 
                 if (key === 'allMetrics' && res.ok) {
                     const data = await res.json();
-                    const allMetrics = data.data || [];
-                    const idx = allMetrics.findIndex((m: any) => m.team_id === teamId.value);
-                    if (idx !== -1) {
-                        powerRanking.value = { rank: idx + 1, total_teams: allMetrics.length };
+                    const allMetricsRaw = data.data || [];
+                    const season = toNumber(teamMetrics.value?.season);
+                    const seasonMetrics = season !== null
+                        ? allMetricsRaw.filter((m: any) => toNumber(m.season) === season)
+                        : allMetricsRaw;
+                    const baseMetrics = seasonMetrics.length > 0 ? seasonMetrics : allMetricsRaw;
+                    const byTeam = Array.from(
+                        new Map(baseMetrics.map((m: any) => [Number(m.team_id), m])).values(),
+                    );
+
+                    metricRankingTotalTeams.value = byTeam.length;
+
+                    if (props.config.showPowerRanking) {
+                        const sortedByNet = [...byTeam].sort(
+                            (a: any, b: any) => (toNumber(b.net_rating) ?? -Infinity) - (toNumber(a.net_rating) ?? -Infinity),
+                        );
+                        const idx = sortedByNet.findIndex((m: any) => Number(m.team_id) === Number(teamId.value));
+                        if (idx !== -1) {
+                            powerRanking.value = { rank: idx + 1, total_teams: byTeam.length };
+                        }
+                    }
+
+                    if (props.config.metricRankingKeys) {
+                        const rankings: Record<string, number> = {};
+                        for (const { key: metricKey, descending } of props.config.metricRankingKeys) {
+                            const desc = descending ?? true;
+                            const sorted = [...byTeam]
+                                .filter((row: any) => toNumber(row[metricKey]) !== null)
+                                .sort((a: any, b: any) => {
+                                    const av = toNumber(a[metricKey]) ?? 0;
+                                    const bv = toNumber(b[metricKey]) ?? 0;
+                                    return desc ? bv - av : av - bv;
+                                });
+                            const idx = sorted.findIndex((row: any) => Number(row.team_id) === Number(teamId.value));
+                            rankings[metricKey] = idx !== -1 ? idx + 1 : 0;
+                        }
+                        metricRankings.value = rankings;
                     }
                 }
 
@@ -293,6 +336,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
         upcomingGames,
         powerRanking,
         statRankings,
+        metricRankings,
+        metricRankingTotalTeams,
         rosterPlayers,
         rosterLoading,
         trendsData,

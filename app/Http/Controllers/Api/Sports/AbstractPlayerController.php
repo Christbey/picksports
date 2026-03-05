@@ -55,13 +55,32 @@ abstract class AbstractPlayerController extends AbstractSportsApiController
         return static::BY_TEAM_PAGINATED;
     }
 
+    /**
+     * @return array<int, string>
+     */
+    protected function additionalPlayerRelations(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function playerRelations(): array
+    {
+        return array_values(array_unique(array_merge(
+            ['team'],
+            $this->additionalPlayerRelations()
+        )));
+    }
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $model = $this->getPlayerModel();
         $resource = $this->getPlayerResource();
 
         $players = $model::query()
-            ->with('team')
+            ->with($this->playerRelations())
             ->orderBy($this->getOrderByColumn())
             ->paginate($this->getPerPage($request));
 
@@ -75,7 +94,7 @@ abstract class AbstractPlayerController extends AbstractSportsApiController
         $playerId = $this->requireNumericId($player);
 
         $player = $model::query()
-            ->with('team')
+            ->with($this->playerRelations())
             ->findOrFail($playerId);
 
         return new $resource($player);
@@ -91,6 +110,7 @@ abstract class AbstractPlayerController extends AbstractSportsApiController
         $teamModel::query()->findOrFail($teamId);
 
         $query = $model::query()
+            ->with($this->playerRelations())
             ->where('team_id', $teamId)
             ->orderBy($this->getOrderByColumn());
 

@@ -42,6 +42,39 @@ abstract class AbstractGameController extends AbstractSportsApiController
     }
 
     /**
+     * @return array<int, string>
+     */
+    protected function defaultGameRelations(bool $includePrediction = true): array
+    {
+        $relations = ['homeTeam', 'awayTeam'];
+
+        if ($includePrediction) {
+            $relations[] = 'prediction';
+        }
+
+        return $relations;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function additionalGameRelations(): array
+    {
+        return [];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function gameRelations(bool $includePrediction = true): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->defaultGameRelations($includePrediction),
+            $this->additionalGameRelations()
+        )));
+    }
+
+    /**
      * Display a listing of games
      */
     public function index(Request $request): AnonymousResourceCollection
@@ -50,7 +83,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $resourceClass = $this->getGameResource();
 
         $games = $gameModel::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction'])
+            ->with($this->gameRelations(true))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->when($request->season, fn ($q, $season) => $q->where('season', $season))
             ->orderByDesc('game_date')
@@ -68,7 +101,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $resourceClass = $this->getGameResource();
         $gameId = $this->requireNumericId($game);
 
-        $game = $gameModel::query()->with(['homeTeam', 'awayTeam', 'prediction'])->findOrFail($gameId);
+        $game = $gameModel::query()->with($this->gameRelations(true))->findOrFail($gameId);
 
         return new $resourceClass($game);
     }
@@ -83,7 +116,10 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $teamId = $this->requireNumericId($team);
 
         $games = $gameModel::query()
-            ->with(['homeTeam', 'awayTeam'])
+            ->with(array_values(array_unique(array_merge(
+                $this->gameRelations(false),
+                ['teamStats']
+            ))))
             ->where(function ($query) use ($teamId) {
                 $query->where('home_team_id', $teamId)
                     ->orWhere('away_team_id', $teamId);
@@ -104,7 +140,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $seasonValue = $this->requireNumericId($season);
 
         $games = $gameModel::query()
-            ->with(['homeTeam', 'awayTeam'])
+            ->with($this->gameRelations(false))
             ->where('season', $seasonValue)
             ->orderByDesc('game_date')
             ->paginate($request->per_page ?? 50);
@@ -123,7 +159,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $weekValue = $this->requireNumericId($week);
 
         $games = $gameModel::query()
-            ->with(['homeTeam', 'awayTeam', 'prediction'])
+            ->with($this->gameRelations(true))
             ->where('season', $seasonValue)
             ->where('week', $weekValue)
             ->oldest('game_date')

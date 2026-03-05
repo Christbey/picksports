@@ -62,6 +62,24 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // Calculate predicted total (runs)
         $predictedTotal = $this->calculateTotal($homeCombinedElo, $awayCombinedElo);
 
+        [$homeMetrics, $awayMetrics] = $this->teamMetricsForGame($game, $homeTeam->id, $awayTeam->id);
+        [$contextSpreadAdj, $contextTotalAdj] = $this->applyContextMetricAdjustments(
+            $homeMetrics,
+            $awayMetrics,
+            (int) round($homeTeamElo),
+            (int) round($awayTeamElo)
+        );
+        $predictedSpread = round($predictedSpread + $contextSpreadAdj, 1);
+        $predictedTotal = round($predictedTotal + $contextTotalAdj, 1);
+
+        if (! $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics)) {
+            [$predictedSpread, $predictedTotal] = $this->applyInjuryAdjustments(
+                $game,
+                $predictedSpread,
+                $predictedTotal
+            );
+        }
+
         // Calculate confidence score based on pitcher data availability
         $confidenceScore = $this->calculatePitcherConfidence(
             $homePitcherResult['confidence'],

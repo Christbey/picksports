@@ -49,20 +49,32 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
      */
     protected function applyIndexFilters($query): void
     {
-        if (request('season') && $this->hasGameSeasonColumn()) {
+        if (request()->filled('season') && $this->hasGameSeasonColumn()) {
             $query->whereHas('game', function ($q) {
                 $q->where($this->getGameSeasonColumn(), request('season'));
             });
         }
 
+        if (request()->filled('season_type') && $this->hasGameSeasonTypeColumn()) {
+            $query->whereHas('game', function ($q) {
+                $q->where($this->getGameSeasonTypeColumn(), request('season_type'));
+            });
+        }
+
+        if (request()->filled('week') && $this->hasGameWeekColumn()) {
+            $query->whereHas('game', function ($q) {
+                $q->where($this->getGameWeekColumn(), request('week'));
+            });
+        }
+
         // Default: date range filtering
-        if (request('from_date')) {
+        if (request()->filled('from_date')) {
             $query->whereHas('game', function ($q) {
                 $q->whereDate($this->getGameDateColumn(), '>=', request('from_date'));
             });
         }
 
-        if (request('to_date')) {
+        if (request()->filled('to_date')) {
             $query->whereHas('game', function ($q) {
                 $q->whereDate($this->getGameDateColumn(), '<=', request('to_date'));
             });
@@ -82,11 +94,36 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
         return 'season';
     }
 
+    protected function getGameSeasonTypeColumn(): string
+    {
+        return 'season_type';
+    }
+
+    protected function getGameWeekColumn(): string
+    {
+        return 'week';
+    }
+
     protected function hasGameSeasonColumn(): bool
+    {
+        return $this->hasGameColumn($this->getGameSeasonColumn());
+    }
+
+    protected function hasGameSeasonTypeColumn(): bool
+    {
+        return $this->hasGameColumn($this->getGameSeasonTypeColumn());
+    }
+
+    protected function hasGameWeekColumn(): bool
+    {
+        return $this->hasGameColumn($this->getGameWeekColumn());
+    }
+
+    protected function hasGameColumn(string $column): bool
     {
         $gameInstance = new ($this->getGameModel());
 
-        return Schema::hasColumn($gameInstance->getTable(), $this->getGameSeasonColumn());
+        return Schema::hasColumn($gameInstance->getTable(), $column);
     }
 
     /**

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { Badge } from '@/components/ui/badge';
-import type { GamePageGame, GamePageHrefLike, GamePageTeam } from '@/types';
+import type { BettingRecommendation, GamePageGame, GamePageHrefLike, GamePageTeam } from '@/types';
 
 const props = withDefaults(defineProps<{
     awayTeam: GamePageTeam | null;
@@ -20,13 +20,82 @@ const props = withDefaults(defineProps<{
     badgePulseStatuses?: string[];
     linkTeams?: boolean;
     useTeamColorGlow?: boolean;
+    winnerCorrect?: boolean | null;
+    actualTotal?: number | null;
+    bettingValue?: BettingRecommendation[];
 }>(), {
     extraInfoItems: () => [],
     showScoreStatuses: () => ['STATUS_FINAL'],
     badgePulseStatuses: () => [],
     linkTeams: true,
     useTeamColorGlow: false,
+    winnerCorrect: null,
+    actualTotal: null,
+    bettingValue: () => [],
 });
+
+function winnerLabel(): string | null {
+    if (props.winnerCorrect === true) return 'WIN';
+    if (props.winnerCorrect === false) return 'LOSS';
+
+    return null;
+}
+
+function winnerClass(): string {
+    if (props.winnerCorrect === true) {
+        return '!bg-green-600 !border-green-500 !text-white';
+    }
+
+    if (props.winnerCorrect === false) {
+        return '!bg-red-600 !border-red-500 !text-white';
+    }
+
+    return '';
+}
+
+function parseTotalDirection(recommendation: string): 'over' | 'under' | null {
+    const normalized = recommendation.toLowerCase();
+    if (normalized.includes('over')) return 'over';
+    if (normalized.includes('under')) return 'under';
+
+    return null;
+}
+
+function totalLabel(): string | null {
+    const totalBet = props.bettingValue?.find((bet) => bet.type === 'total');
+    if (!totalBet) return null;
+    if (props.actualTotal === null || props.actualTotal === undefined) return null;
+    if (totalBet.market_line === null || totalBet.market_line === undefined) return null;
+
+    const direction = parseTotalDirection(totalBet.recommendation);
+    if (!direction) return null;
+
+    const actual = Number(props.actualTotal);
+    const line = Number(totalBet.market_line);
+    if (!Number.isFinite(actual) || !Number.isFinite(line)) return null;
+
+    if (actual === line) return 'O/U PUSH';
+    const correct = direction === 'over' ? actual > line : actual < line;
+
+    return correct ? 'O/U WIN' : 'O/U LOSS';
+}
+
+function totalClass(): string {
+    const label = totalLabel();
+    if (label === 'O/U WIN') {
+        return '!bg-green-600 !border-green-500 !text-white';
+    }
+
+    if (label === 'O/U LOSS') {
+        return '!bg-red-600 !border-red-500 !text-white';
+    }
+
+    if (label === 'O/U PUSH') {
+        return '!bg-zinc-600 !border-zinc-500 !text-white';
+    }
+
+    return '';
+}
 </script>
 
 <template>
@@ -66,7 +135,23 @@ const props = withDefaults(defineProps<{
                     <div v-else class="text-2xl md:text-3xl font-bold text-white/70">
                         vs
                     </div>
-                    <Badge class="mt-2 bg-white/20 text-white border-white/30 hover:bg-white/30" :class="{ 'animate-pulse !bg-red-600 !border-red-500': props.badgePulseStatuses.includes(game.status) }">{{ gameStatus }}</Badge>
+                    <div class="mt-2 flex items-center justify-center gap-2">
+                        <Badge class="bg-white/20 text-white border-white/30 hover:bg-white/30" :class="{ 'animate-pulse !bg-red-600 !border-red-500': props.badgePulseStatuses.includes(game.status) }">{{ gameStatus }}</Badge>
+                        <Badge
+                            v-if="winnerLabel()"
+                            class="bg-white/20 text-white border-white/30 hover:bg-white/30"
+                            :class="winnerClass()"
+                        >
+                            {{ winnerLabel() }}
+                        </Badge>
+                        <Badge
+                            v-if="totalLabel()"
+                            class="bg-white/20 text-white border-white/30 hover:bg-white/30"
+                            :class="totalClass()"
+                        >
+                            {{ totalLabel() }}
+                        </Badge>
+                    </div>
                 </div>
 
                 <component

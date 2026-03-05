@@ -127,6 +127,15 @@ class BaseEspnService
         return $this->get($url);
     }
 
+    public function getTeamInjuries(string $teamId): ?array
+    {
+        if (! isset($this->config['core']['team_injuries'])) {
+            return null;
+        }
+
+        return $this->get($this->buildUrl('core', 'team_injuries', ['teamId' => $teamId]));
+    }
+
     protected function buildUrl(string $base, string $endpoint, array $params = []): string
     {
         // Replace placeholders in base URL

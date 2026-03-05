@@ -74,6 +74,13 @@ const turnoverClass = (value: number | null): string => {
     return '';
 };
 
+const fatigueClass = (value: number | null): string => {
+    if (value === null) return '';
+    if (value <= 2) return 'text-green-600 dark:text-green-400';
+    if (value >= 6) return 'text-red-600 dark:text-red-400 font-semibold';
+    return 'text-muted-foreground';
+};
+
 export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'nba',
     title: 'NBA Team Metrics',
@@ -114,6 +121,21 @@ export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => formatNumber(m.strength_of_schedule, 3),
             class: () => 'text-muted-foreground',
         },
+        {
+            label: 'Form',
+            value: (m: any) => formatNumber(m.recent_form_rating, 2),
+            class: (m: any) => ratingClass(m.recent_form_rating, 3),
+        },
+        {
+            label: 'InjAdj',
+            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Fatigue',
+            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
+            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
+        },
     ],
 });
 
@@ -130,6 +152,11 @@ export const wnbaTeamMetricsConfig = createSportTeamMetricsConfig({
         { key: 'true_shooting_percentage', label: 'TS%', getValue: (m: any) => m.true_shooting_percentage },
     ],
     columns: [
+        {
+            label: 'Record',
+            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            class: () => 'text-muted-foreground',
+        },
         {
             label: 'ORtg',
             value: (m: any) => formatNumber(m.offensive_rating),
@@ -168,6 +195,21 @@ export const wnbaTeamMetricsConfig = createSportTeamMetricsConfig({
             label: 'TS%',
             value: (m: any) => formatPercent(m.true_shooting_percentage),
             class: () => 'font-medium',
+        },
+        {
+            label: 'Form',
+            value: (m: any) => formatNumber(m.recent_form_rating, 2),
+            class: (m: any) => ratingClass(m.recent_form_rating, 3),
+        },
+        {
+            label: 'InjAdj',
+            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Fatigue',
+            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
+            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
         },
     ],
 });
@@ -244,6 +286,21 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
                 return `${net}${count}`;
             },
         },
+        {
+            label: 'Form',
+            value: (m: any) => formatNumber(m.recent_form_rating, 2),
+            class: (m: any) => ratingClass(m.recent_form_rating, 3),
+        },
+        {
+            label: 'InjAdj',
+            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Fatigue',
+            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
+            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
+        },
     ],
 });
 
@@ -261,8 +318,8 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
     ],
     columns: [
         {
-            label: 'GP',
-            value: (m: any) => `${m.games_played}`,
+            label: 'Record',
+            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`),
             class: () => 'text-muted-foreground',
         },
         {
@@ -319,6 +376,21 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
                 return `${net}${count}`;
             },
         },
+        {
+            label: 'Form',
+            value: (m: any) => formatNumber(m.recent_form_rating, 2),
+            class: (m: any) => ratingClass(m.recent_form_rating, 3),
+        },
+        {
+            label: 'InjAdj',
+            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Fatigue',
+            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
+            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
+        },
     ],
 });
 
@@ -334,6 +406,11 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
         { key: 'defensive_rating', label: 'Defense', getValue: (m: any) => m.defensive_rating, lowerIsBetter: true },
     ],
     columns: [
+        {
+            label: 'Record',
+            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            class: () => 'text-muted-foreground',
+        },
         {
             label: 'PPG',
             value: (m: any) => formatNumber(m.points_per_game),
@@ -367,6 +444,21 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => formatNumber(m.strength_of_schedule, 3),
             class: () => 'text-muted-foreground',
         },
+        {
+            label: 'Form',
+            value: (m: any) => formatNumber(m.recent_form_rating, 2),
+            class: (m: any) => ratingClass(m.recent_form_rating, 2),
+        },
+        {
+            label: 'InjAdj',
+            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Fatigue',
+            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
+            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
+        },
     ],
 });
 
@@ -382,6 +474,11 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
         { key: 'runs_per_game', label: 'R/G', getValue: (m: any) => m.runs_per_game },
     ],
     columns: [
+        {
+            label: 'Record',
+            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            class: () => 'text-muted-foreground',
+        },
         {
             label: 'R/G',
             value: (m: any) => formatNumber(m.runs_per_game, 2),
@@ -415,6 +512,21 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
             label: 'SOS',
             value: (m: any) => formatNumber(m.strength_of_schedule, 3),
             class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Form',
+            value: (m: any) => formatNumber(m.recent_form_rating, 2),
+            class: (m: any) => ratingClass(m.recent_form_rating, 2),
+        },
+        {
+            label: 'InjAdj',
+            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'Fatigue',
+            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
+            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
         },
     ],
 });

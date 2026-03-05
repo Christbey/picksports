@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\Sports\AbstractTeamMetricController;
 use App\Http\Resources\WCBB\TeamMetricResource;
 use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
+use App\Services\TeamMetrics\TeamRecordService;
+use Illuminate\Support\Collection;
 
 class TeamMetricController extends AbstractTeamMetricController
 {
@@ -18,4 +20,13 @@ class TeamMetricController extends AbstractTeamMetricController
     protected const BY_TEAM_ORDER_BY_COLUMN = 'season';
 
     protected const BY_TEAM_RETURNS_LATEST_ONLY = true;
+
+    public function __construct(
+        protected TeamRecordService $teamRecordService
+    ) {}
+
+    protected function mutateIndexMetrics(Collection $metrics): void
+    {
+        $this->teamRecordService->applyRecords($metrics, 'wcbb_games');
+    }
 }

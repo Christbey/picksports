@@ -284,6 +284,13 @@ $scheduleDailySeasonJob(
     $nbaInSeason,
     'NBA: Generate Playoff Forecast'
 );
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-nba-injuries',
+    '08:00',
+    '23:00',
+    $nbaInSeason,
+    'NBA: Sync Injuries'
+);
 
 // CBB
 $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
@@ -329,6 +336,13 @@ $scheduleDailySeasonJob(
     $cbbInSeason,
     'CBB: Generate Tournament Forecast'
 );
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-cbb-injuries',
+    '08:00',
+    '23:00',
+    $cbbInSeason,
+    'CBB: Sync Injuries'
+);
 
 $dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
     ->hourly()
@@ -373,6 +387,13 @@ $scheduleDailySeasonJob(
     $wcbbInSeason,
     'WCBB: Generate Tournament Forecast'
 );
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-wcbb-injuries',
+    '08:00',
+    '23:00',
+    $wcbbInSeason,
+    'WCBB: Sync Injuries'
+);
 
 // MLB
 $scheduleSportPipeline(
@@ -410,6 +431,13 @@ $scheduleDailySeasonJob(
     $mlbInSeason,
     'MLB: Generate Playoff Forecast'
 );
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-mlb-injuries',
+    '08:00',
+    '23:00',
+    $mlbInSeason,
+    'MLB: Sync Injuries'
+);
 
 // WNBA
 $scheduleSportPipeline(
@@ -436,6 +464,13 @@ $scheduleSportPipeline(
     ],
     'wnba:sync-odds',
     'WNBA: Sync Odds'
+);
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-wnba-injuries',
+    '08:00',
+    '23:00',
+    $wnbaInSeason,
+    'WNBA: Sync Injuries'
 );
 
 // NFL
@@ -468,6 +503,13 @@ $scheduleSportPipeline(
     15,
     'NFL: Sync Player Props'
 );
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-nfl-injuries',
+    '08:00',
+    '23:00',
+    $nflInSeason,
+    'NFL: Sync Injuries'
+);
 
 // CFB
 $scheduleSportPipeline(
@@ -494,4 +536,11 @@ $scheduleSportPipeline(
     ],
     'cfb:sync-odds',
     'CFB: Sync Odds'
+);
+$scheduleHalfHourlyWindowJob(
+    'espn:sync-cfb-injuries',
+    '08:00',
+    '23:00',
+    $cfbInSeason,
+    'CFB: Sync Injuries'
 );

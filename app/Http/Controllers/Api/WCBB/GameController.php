@@ -14,4 +14,12 @@ class GameController extends AbstractGameController
     protected const TEAM_MODEL = Team::class;
 
     protected const GAME_RESOURCE = GameResource::class;
+
+    protected function additionalGameRelations(): array
+    {
+        return [
+            'homeTeam.activePlayerInjuries.player',
+            'awayTeam.activePlayerInjuries.player',
+        ];
+    }
 }

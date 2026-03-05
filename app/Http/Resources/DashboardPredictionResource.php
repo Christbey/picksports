@@ -85,6 +85,8 @@ class DashboardPredictionResource extends JsonResource
             'win_probability' => (float) $prediction->win_probability,
             'predicted_spread' => (float) $prediction->predicted_spread,
             'predicted_total' => (float) $prediction->predicted_total,
+            'actual_total' => $prediction->actual_total !== null ? (float) $prediction->actual_total : null,
+            'winner_correct' => $prediction->winner_correct,
             'home_logo' => $game->homeTeam?->logo_url,
             'away_logo' => $game->awayTeam?->logo_url,
             'is_live' => $isLive,

@@ -38,6 +38,8 @@ import { computed } from 'vue';
 const props = withDefaults(defineProps<{
     bettingValue?: BettingRecommendation[];
     livePrediction?: LivePredictionData;
+    winnerCorrect?: boolean | null;
+    actualTotal?: number | null;
     showDraftKingsLabel?: boolean;
     compact?: boolean;
 }>(), {
@@ -124,6 +126,67 @@ function getBetTypeColor(type: string): string {
         moneyline: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     };
     return colors[type] || 'bg-gray-100 text-gray-800';
+}
+
+function winnerResultLabel(): string {
+    if (props.winnerCorrect === true) return 'Correct';
+    if (props.winnerCorrect === false) return 'Incorrect';
+    return '';
+}
+
+function winnerResultClass(): string {
+    if (props.winnerCorrect === true) {
+        return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
+    }
+
+    if (props.winnerCorrect === false) {
+        return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
+    }
+
+    return '';
+}
+
+function parseTotalPickDirection(recommendation: string): 'over' | 'under' | null {
+    const normalized = recommendation.toLowerCase();
+    if (normalized.includes('over')) return 'over';
+    if (normalized.includes('under')) return 'under';
+
+    return null;
+}
+
+function totalResultLabel(bet: BettingRecommendation): string | null {
+    if (bet.type !== 'total') return null;
+    if (props.actualTotal === null || props.actualTotal === undefined) return null;
+    if (bet.market_line === null || bet.market_line === undefined) return null;
+
+    const direction = parseTotalPickDirection(bet.recommendation);
+    if (!direction) return null;
+
+    const actual = Number(props.actualTotal);
+    const line = Number(bet.market_line);
+    if (!Number.isFinite(actual) || !Number.isFinite(line)) return null;
+
+    if (actual === line) return 'Push';
+    const correct = direction === 'over' ? actual > line : actual < line;
+
+    return correct ? 'Correct' : 'Incorrect';
+}
+
+function totalResultClass(bet: BettingRecommendation): string {
+    const label = totalResultLabel(bet);
+    if (label === 'Correct') {
+        return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
+    }
+
+    if (label === 'Incorrect') {
+        return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
+    }
+
+    if (label === 'Push') {
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+    }
+
+    return '';
 }
 </script>
 
@@ -231,6 +294,20 @@ function getBetTypeColor(type: string): string {
                             :class="getBetTypeColor(bet.type)"
                         >
                             {{ getBetTypeLabel(bet.type) }}
+                        </span>
+                        <span
+                            v-if="props.winnerCorrect !== null && props.winnerCorrect !== undefined"
+                            class="rounded px-2 py-0.5 text-xs font-semibold"
+                            :class="winnerResultClass()"
+                        >
+                            Winner Pick: {{ winnerResultLabel() }}
+                        </span>
+                        <span
+                            v-if="totalResultLabel(bet)"
+                            class="rounded px-2 py-0.5 text-xs font-semibold"
+                            :class="totalResultClass(bet)"
+                        >
+                            O/U: {{ totalResultLabel(bet) }}
                         </span>
                         <span class="text-sm font-semibold">
                             {{ bet.recommendation }}

@@ -96,7 +96,7 @@ class ImportGamesFromJsonCommand extends Command
             'week' => $data['game_week'] ?? null,
             'season_type' => $this->mapSeasonType($data['season_type'] ?? null),
             'game_date' => $data['game_date'] ?? null,
-            'game_time' => $data['game_time'] ?? null,
+            'game_time' => $this->normalizeGameTime($data['game_time'] ?? null),
             'name' => $data['name'] ?? null,
             'short_name' => $data['short_name'] ?? null,
             'home_team_id' => $data['home_team_id'] ?? null,
@@ -154,6 +154,25 @@ class ImportGamesFromJsonCommand extends Command
         $decoded = json_decode($networks, true);
 
         return is_array($decoded) ? $decoded : null;
+    }
+
+    protected function normalizeGameTime(?string $time): ?string
+    {
+        if ($time === null || $time === '') {
+            return $time;
+        }
+
+        if (preg_match('/^\d{1,2}:\d{2}[ap]$/i', $time) === 1) {
+            $meridiem = str_ends_with(strtolower($time), 'p') ? 'pm' : 'am';
+            $base = substr($time, 0, -1);
+            $timestamp = strtotime($base.$meridiem);
+
+            if ($timestamp !== false) {
+                return date('H:i:s', $timestamp);
+            }
+        }
+
+        return $time;
     }
 
     protected function count(array $games): int

@@ -28,6 +28,26 @@ class PlayerResource extends JsonResource
             'experience' => $this->experience,
             'college' => $this->college,
             'headshot' => $this->headshot,
+            'active_injuries_count' => $this->when(
+                $this->relationLoaded('activeInjuries'),
+                fn () => $this->activeInjuries->count()
+            ),
+            'active_injuries' => $this->when(
+                $this->relationLoaded('activeInjuries'),
+                fn () => $this->activeInjuries->map(fn ($injury) => [
+                    'id' => $injury->id,
+                    'player_id' => $injury->player_id,
+                    'player_name' => $injury->player?->full_name ?? $injury->player?->display_name ?? $injury->player?->name,
+                    'status' => $injury->status,
+                    'detail' => $injury->detail,
+                    'type' => $injury->type,
+                    'injury_date' => $injury->injury_date?->toDateString(),
+                    'return_date' => $injury->return_date?->toDateString(),
+                    'source_updated_at' => $injury->source_updated_at?->toIso8601String(),
+                    'is_active' => (bool) $injury->is_active,
+                    'updated_at' => $injury->updated_at?->toIso8601String(),
+                ])->values()
+            ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'team' => TeamResource::make($this->whenLoaded('team')),

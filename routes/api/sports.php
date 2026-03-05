@@ -36,7 +36,14 @@ return function (string $sport, string $namespace) {
             'team_stats_all_season_averages' => true,
             'team_stats_team_season_averages' => true,
         ],
+        'cfb' => [
+            'player_stats_leaderboard' => true,
+        ],
+        'nfl' => [
+            'player_stats_leaderboard' => true,
+        ],
         'mlb' => [
+            'player_stats_leaderboard' => true,
             'team_stats_team_season_averages' => true,
         ],
     ];
@@ -112,6 +119,10 @@ return function (string $sport, string $namespace) {
 
     // Protected endpoints (requires authentication for tier limits)
     Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport) {
+        Route::get('injuries', [\App\Http\Controllers\Api\Sports\InjuryController::class, 'index'])
+            ->defaults('sport', $sport)
+            ->middleware(["permission:view-{$sport}-predictions"]);
+
         Route::get('debug/prediction-access', [\App\Http\Controllers\Api\Sports\PredictionAccessDebugController::class, 'show'])
             ->defaults('sport', $sport);
 

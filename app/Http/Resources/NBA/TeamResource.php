@@ -30,6 +30,14 @@ class TeamResource extends JsonResource
             'color' => $this->color,
             'alternate_color' => $this->alternate_color ?? null,
             'logo' => $this->logo_url,
+            'active_injuries_count' => $this->when(
+                $this->relationLoaded('activePlayerInjuries'),
+                fn () => $this->activePlayerInjuries->count()
+            ),
+            'active_injuries' => $this->when(
+                $this->relationLoaded('activePlayerInjuries'),
+                fn () => PlayerInjuryResource::collection($this->activePlayerInjuries)
+            ),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

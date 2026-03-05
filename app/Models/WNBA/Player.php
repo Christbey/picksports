@@ -38,4 +38,16 @@ class Player extends Model
     {
         return $this->hasMany(PlayerStat::class, 'player_id');
     }
+
+    public function injuries(): HasMany
+    {
+        return $this->hasMany(PlayerInjury::class, 'player_id');
+    }
+
+    public function activeInjuries(): HasMany
+    {
+        return $this->injuries()
+            ->where('is_active', true)
+            ->orderByDesc('updated_at');
+    }
 }

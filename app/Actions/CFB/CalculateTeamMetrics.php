@@ -41,6 +41,8 @@ class CalculateTeamMetrics
             return null;
         }
 
+        $record = $this->calculateWinLossRecord($games, $team);
+
         // Calculate metrics
         $pointsPerGame = $this->calculateAverage($pointsScored);
         $pointsAllowedPerGame = $this->calculateAverage($pointsAllowed);
@@ -54,6 +56,9 @@ class CalculateTeamMetrics
         $rushingYardsPerGame = $this->calculateAverageRushingYards($teamStats);
         $turnoverDifferential = $this->calculateTurnoverDifferential($teamStats, $opponentStats);
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
+        $recentFormRating = $this->calculateRecentFormRating($games, $team);
+        $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'cfb', (float) ($team->elo_rating ?? 1500));
+        $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
 
         // Update or create team metric
         return TeamMetric::updateOrCreate(
@@ -63,6 +68,8 @@ class CalculateTeamMetrics
             ],
             [
                 // Rating metrics: 1 decimal
+                'wins' => $record['wins'],
+                'losses' => $record['losses'],
                 'offensive_rating' => round($offensiveRating, 1),
                 'defensive_rating' => round($defensiveRating, 1),
                 'net_rating' => round($netRating, 1),
@@ -75,6 +82,9 @@ class CalculateTeamMetrics
                 'turnover_differential' => round($turnoverDifferential, 1),
                 // Strength of Schedule: 3 decimals
                 'strength_of_schedule' => round($strengthOfSchedule, 3),
+                'recent_form_rating' => $recentFormRating,
+                'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
+                'rest_travel_fatigue' => $restTravelFatigue,
                 'calculation_date' => now()->toDateString(),
             ]
         );

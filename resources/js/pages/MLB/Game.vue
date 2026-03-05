@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue'
 import MlbGameInsights from '@/components/game-page/MlbGameInsights.vue'
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue'
 import { useMlbDetailedGamePage } from '@/composables/useMlbDetailedGamePage'
@@ -9,10 +11,20 @@ const props = defineProps<{
 }>()
 
 const { pageProps, recentSectionProps } = useMlbDetailedGamePage(props.game)
+const awayInjuries = computed(() => pageProps.value.awayTeam?.active_injuries ?? [])
+const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ?? [])
 </script>
 
 <template>
     <SportDetailedGamePage v-bind="pageProps">
+        <template #afterHero>
+            <InjuryReportCard
+                :away-team-abbr="pageProps.awayTeam?.abbreviation"
+                :home-team-abbr="pageProps.homeTeam?.abbreviation"
+                :away-injuries="awayInjuries"
+                :home-injuries="homeInjuries"
+            />
+        </template>
         <template #afterTrends>
             <MlbGameInsights v-bind="recentSectionProps" />
         </template>

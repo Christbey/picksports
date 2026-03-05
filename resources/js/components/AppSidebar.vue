@@ -57,6 +57,14 @@ const sportNavItems: NavItem[] = [
                 href: nflTeamMetrics(),
             },
             {
+                title: 'Injuries',
+                href: '/nfl-injuries',
+            },
+            {
+                title: 'Player Stats',
+                href: '/nfl-player-stats',
+            },
+            {
                 title: 'Player Props',
                 href: '/nfl-player-props',
             },
@@ -74,6 +82,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: nbaTeamMetrics(),
+            },
+            {
+                title: 'Injuries',
+                href: '/nba-injuries',
             },
             {
                 title: 'Player Stats',
@@ -102,6 +114,10 @@ const sportNavItems: NavItem[] = [
                 title: 'Team Metrics',
                 href: wnbaTeamMetrics(),
             },
+            {
+                title: 'Injuries',
+                href: '/wnba-injuries',
+            },
         ],
     },
     {
@@ -116,6 +132,14 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: mlbTeamMetrics(),
+            },
+            {
+                title: 'Injuries',
+                href: '/mlb-injuries',
+            },
+            {
+                title: 'Player Stats',
+                href: '/mlb-player-stats',
             },
             {
                 title: 'Futures',
@@ -136,6 +160,14 @@ const sportNavItems: NavItem[] = [
                 title: 'Predictions',
                 href: cfbPredictions(),
             },
+            {
+                title: 'Player Stats',
+                href: '/cfb-player-stats',
+            },
+            {
+                title: 'Injuries',
+                href: '/cfb-injuries',
+            },
         ],
     },
     {
@@ -150,6 +182,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: cbbTeamMetrics(),
+            },
+            {
+                title: 'Injuries',
+                href: '/cbb-injuries',
             },
             {
                 title: 'Player Stats',
@@ -177,6 +213,10 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Team Metrics',
                 href: wcbbTeamMetrics(),
+            },
+            {
+                title: 'Injuries',
+                href: '/wcbb-injuries',
             },
             {
                 title: 'Tournament Forecast',

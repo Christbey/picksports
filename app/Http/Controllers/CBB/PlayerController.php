@@ -14,7 +14,7 @@ class PlayerController extends Controller
 {
     public function __invoke(Player $player): Response
     {
-        $player->load('team');
+        $player->load(['team', 'activeInjuries.player']);
 
         $playerProps = PlayerProp::query()
             ->where('sport', 'basketball_ncaab')

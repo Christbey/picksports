@@ -134,6 +134,9 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :show-score-statuses="showScoreStatuses"
                 :badge-pulse-statuses="badgePulseStatuses"
                 :use-team-color-glow="useTeamColorGlow"
+                :winner-correct="prediction?.winner_correct ?? null"
+                :actual-total="prediction?.actual_total ?? null"
+                :betting-value="prediction?.betting_value ?? []"
             />
 
             <slot name="afterHero" />

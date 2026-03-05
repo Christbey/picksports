@@ -41,6 +41,48 @@ interface PlayerLeaderboardEntry {
     free_throw_percentage: number;
     estimated_epa_per_game?: number;
     estimated_epa_per_36?: number;
+    passing_yards_per_game?: number;
+    passing_touchdowns_per_game?: number;
+    completion_percentage?: number;
+    interceptions_thrown_per_game?: number;
+    rushing_yards_per_game?: number;
+    rushing_touchdowns_per_game?: number;
+    yards_per_carry?: number;
+    receptions_per_game?: number;
+    receiving_yards_per_game?: number;
+    tackles_per_game?: number;
+    sacks_per_game?: number;
+    def_interceptions_per_game?: number;
+    passes_defended_per_game?: number;
+    fumbles_recovered_per_game?: number;
+    field_goals_made_per_game?: number;
+    extra_points_made_per_game?: number;
+    field_goal_percentage_special?: number;
+    extra_point_percentage?: number;
+}
+
+interface SortOption {
+    key: string;
+    label: string;
+}
+
+interface StatColumn {
+    key: string;
+    label: string;
+    cellClass?: string;
+    format?: (
+        value: number | undefined,
+        entry: PlayerLeaderboardEntry,
+    ) => string;
+}
+
+interface StatCategoryOption {
+    key: string;
+    label: string;
+    defaultSortBy?: string;
+    sortOptions?: SortOption[];
+    statColumns?: StatColumn[];
+    match?: (entry: PlayerLeaderboardEntry) => boolean;
 }
 
 interface SportPlayerStatsShellConfig {
@@ -52,6 +94,9 @@ interface SportPlayerStatsShellConfig {
     leaderboardEndpoint: string;
     availableSeasonsEndpoint?: string;
     showEpaColumns?: boolean;
+    sortOptions?: SortOption[];
+    statColumns?: StatColumn[];
+    statCategoryOptions?: StatCategoryOption[];
     playerLink?: (id: number) => HrefLike;
     teamLink?: (id: number) => HrefLike;
 }
@@ -66,23 +111,40 @@ const error = ref<string | null>(null);
 const searchQuery = ref('');
 const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
-const {
-    availableSeasons,
-    selectedSeason,
-    fetchAvailableSeasons,
-} = useSeasonFilter(() => {
-    return props.config.availableSeasonsEndpoint
-        ?? props.config.leaderboardEndpoint.replace(/\/leaderboard$/, '/available-seasons');
-});
+const selectedCategory = ref<string>('all');
+const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
+    useSeasonFilter(() => {
+        return (
+            props.config.availableSeasonsEndpoint ??
+            props.config.leaderboardEndpoint.replace(
+                /\/leaderboard$/,
+                '/available-seasons',
+            )
+        );
+    });
+
+const categoryOptions = computed(() => props.config.statCategoryOptions ?? []);
+
+const activeCategory = computed(
+    () =>
+        categoryOptions.value.find(
+            (category) => category.key === selectedCategory.value,
+        ) ?? null,
+);
 
 const sortOptions = computed(() => {
-    const options = [
-        { key: 'points_per_game', label: 'PPG' },
-        { key: 'rebounds_per_game', label: 'RPG' },
-        { key: 'assists_per_game', label: 'APG' },
-    ];
+    const options = activeCategory.value?.sortOptions ??
+        props.config.sortOptions ?? [
+            { key: 'points_per_game', label: 'PPG' },
+            { key: 'rebounds_per_game', label: 'RPG' },
+            { key: 'assists_per_game', label: 'APG' },
+        ];
 
-    if (props.config.showEpaColumns) {
+    if (
+        !activeCategory.value?.sortOptions &&
+        !props.config.sortOptions &&
+        props.config.showEpaColumns
+    ) {
         options.push(
             { key: 'estimated_epa_per_game', label: 'EPA/G' },
             { key: 'estimated_epa_per_36', label: 'EPA/36' },
@@ -93,12 +155,18 @@ const sortOptions = computed(() => {
 });
 
 const filteredPlayers = computed(() => {
+    const categoryFilteredPlayers = activeCategory.value?.match
+        ? players.value.filter(
+              (player) => activeCategory.value?.match?.(player) ?? true,
+          )
+        : players.value;
+
     if (!searchQuery.value) {
-        return players.value;
+        return categoryFilteredPlayers;
     }
 
     const query = searchQuery.value.toLowerCase();
-    return players.value.filter(
+    return categoryFilteredPlayers.filter(
         (p) =>
             p.player?.full_name?.toLowerCase().includes(query) ||
             p.player?.team?.display_name?.toLowerCase().includes(query) ||
@@ -124,7 +192,9 @@ const fetchPlayers = async () => {
         const seasonQuery = selectedSeason.value
             ? `?season=${encodeURIComponent(selectedSeason.value)}`
             : '';
-        const response = await fetch(`${props.config.leaderboardEndpoint}${seasonQuery}`);
+        const response = await fetch(
+            `${props.config.leaderboardEndpoint}${seasonQuery}`,
+        );
         if (!response.ok) {
             throw new Error('Failed to fetch player stats');
         }
@@ -152,18 +222,113 @@ const formatEpa = (value: number | undefined) => {
     return Number(value ?? 0).toFixed(2);
 };
 
+const defaultStatColumns = computed(() => {
+    const columns: NonNullable<SportPlayerStatsShellConfig['statColumns']> = [
+        {
+            key: 'points_per_game',
+            label: 'PPG',
+            cellClass: 'p-2 text-right font-medium',
+        },
+        { key: 'rebounds_per_game', label: 'RPG', cellClass: 'p-2 text-right' },
+        { key: 'assists_per_game', label: 'APG', cellClass: 'p-2 text-right' },
+        {
+            key: 'steals_per_game',
+            label: 'SPG',
+            cellClass: 'hidden p-2 text-right md:table-cell',
+        },
+        {
+            key: 'blocks_per_game',
+            label: 'BPG',
+            cellClass: 'hidden p-2 text-right md:table-cell',
+        },
+        {
+            key: 'field_goal_percentage',
+            label: 'FG%',
+            cellClass: 'hidden p-2 text-right lg:table-cell',
+            format: (value) => `${Number(value ?? 0).toFixed(1)}%`,
+        },
+        {
+            key: 'three_point_percentage',
+            label: '3P%',
+            cellClass: 'hidden p-2 text-right lg:table-cell',
+            format: (value) => `${Number(value ?? 0).toFixed(1)}%`,
+        },
+        {
+            key: 'free_throw_percentage',
+            label: 'FT%',
+            cellClass: 'hidden p-2 text-right lg:table-cell',
+            format: (value) => `${Number(value ?? 0).toFixed(1)}%`,
+        },
+        {
+            key: 'minutes_per_game',
+            label: 'MPG',
+            cellClass:
+                'hidden p-2 text-right text-muted-foreground lg:table-cell',
+        },
+    ];
+
+    if (props.config.showEpaColumns) {
+        columns.push(
+            {
+                key: 'estimated_epa_per_game',
+                label: 'EPA/G',
+                cellClass: 'hidden p-2 text-right font-medium lg:table-cell',
+                format: (value) => formatEpa(value),
+            },
+            {
+                key: 'estimated_epa_per_36',
+                label: 'EPA/36',
+                cellClass: 'hidden p-2 text-right lg:table-cell',
+                format: (value) => formatEpa(value),
+            },
+        );
+    }
+
+    return columns;
+});
+
+const statColumns = computed(
+    () =>
+        activeCategory.value?.statColumns ??
+        props.config.statColumns ??
+        defaultStatColumns.value,
+);
+
+const formatColumnValue = (
+    entry: PlayerLeaderboardEntry,
+    column: StatColumn,
+) => {
+    const value = (entry as Record<string, number | undefined>)[column.key];
+    if (column.format) return column.format(value, entry);
+    return Number(value ?? 0).toFixed(1);
+};
+
 onMounted(() => {
-    fetchAvailableSeasons().catch(() => {
-        availableSeasons.value = [];
-    }).then(() => {
-        if (!selectedSeason.value) {
-            fetchPlayers();
-        }
-    });
+    if (categoryOptions.value.length > 0) {
+        selectedCategory.value = categoryOptions.value[0]?.key ?? 'all';
+    }
+
+    fetchAvailableSeasons()
+        .catch(() => {
+            availableSeasons.value = [];
+        })
+        .then(() => {
+            if (!selectedSeason.value) {
+                fetchPlayers();
+            }
+        });
 });
 
 watch(selectedSeason, () => {
     fetchPlayers();
+});
+
+watch(activeCategory, (category) => {
+    const categorySort = category?.defaultSortBy ?? sortOptions.value[0]?.key;
+    if (categorySort) {
+        sortBy.value = categorySort;
+        sortDesc.value = true;
+    }
 });
 </script>
 
@@ -175,11 +340,16 @@ watch(selectedSeason, () => {
             <div class="flex items-center justify-between">
                 <div>
                     <h1 class="text-2xl font-bold">{{ config.heading }}</h1>
-                    <p class="text-sm text-muted-foreground">{{ config.description }}</p>
+                    <p class="text-sm text-muted-foreground">
+                        {{ config.description }}
+                    </p>
                 </div>
             </div>
 
-            <SubscriptionBanner variant="subtle" :storage-key="config.bannerStorageKey" />
+            <SubscriptionBanner
+                variant="subtle"
+                :storage-key="config.bannerStorageKey"
+            />
 
             <Card>
                 <CardContent class="pt-6">
@@ -190,18 +360,50 @@ watch(selectedSeason, () => {
                             :options="availableSeasons"
                         />
                         <div class="min-w-[200px] flex-1">
-                            <Input v-model="searchQuery" placeholder="Search by player or team name..." class="w-full" />
+                            <Input
+                                v-model="searchQuery"
+                                placeholder="Search by player or team name..."
+                                class="w-full"
+                            />
                         </div>
-                        <div class="flex gap-2">
+                        <div
+                            v-if="categoryOptions.length > 0"
+                            class="flex flex-wrap gap-2"
+                        >
+                            <Button
+                                v-for="category in categoryOptions"
+                                :key="category.key"
+                                :variant="
+                                    selectedCategory === category.key
+                                        ? 'default'
+                                        : 'outline'
+                                "
+                                size="sm"
+                                @click="selectedCategory = category.key"
+                            >
+                                {{ category.label }}
+                            </Button>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
                             <Button
                                 v-for="option in sortOptions"
                                 :key="option.key"
-                                :variant="sortBy === option.key ? 'default' : 'outline'"
+                                :variant="
+                                    sortBy === option.key
+                                        ? 'default'
+                                        : 'outline'
+                                "
                                 size="sm"
                                 @click="toggleSort(option.key)"
                             >
                                 {{ option.label }}
-                                {{ sortBy === option.key ? (sortDesc ? '↓' : '↑') : '' }}
+                                {{
+                                    sortBy === option.key
+                                        ? sortDesc
+                                            ? '↓'
+                                            : '↑'
+                                        : ''
+                                }}
                             </Button>
                         </div>
                     </div>
@@ -227,28 +429,21 @@ watch(selectedSeason, () => {
                                 <tr class="border-b text-left">
                                     <th class="p-2 font-medium">#</th>
                                     <th class="p-2 font-medium">Player</th>
-                                    <th class="p-2 text-right font-medium">Team</th>
-                                    <th class="p-2 text-right font-medium">GP</th>
-                                    <th class="p-2 text-right font-medium">PPG</th>
-                                    <th class="p-2 text-right font-medium">RPG</th>
-                                    <th class="p-2 text-right font-medium">APG</th>
-                                    <th class="hidden p-2 text-right font-medium md:table-cell">SPG</th>
-                                    <th class="hidden p-2 text-right font-medium md:table-cell">BPG</th>
-                                    <th class="hidden p-2 text-right font-medium lg:table-cell">FG%</th>
-                                    <th class="hidden p-2 text-right font-medium lg:table-cell">3P%</th>
-                                    <th class="hidden p-2 text-right font-medium lg:table-cell">FT%</th>
-                                    <th class="hidden p-2 text-right font-medium lg:table-cell">MPG</th>
-                                    <th
-                                        v-if="config.showEpaColumns"
-                                        class="hidden p-2 text-right font-medium lg:table-cell"
-                                    >
-                                        EPA/G
+                                    <th class="p-2 text-right font-medium">
+                                        Team
+                                    </th>
+                                    <th class="p-2 text-right font-medium">
+                                        GP
                                     </th>
                                     <th
-                                        v-if="config.showEpaColumns"
-                                        class="hidden p-2 text-right font-medium lg:table-cell"
+                                        v-for="column in statColumns"
+                                        :key="column.key as string"
+                                        class="p-2 text-right font-medium"
+                                        :class="
+                                            column.cellClass?.replace('p-2', '')
+                                        "
                                     >
-                                        EPA/36
+                                        {{ column.label }}
                                     </th>
                                 </tr>
                             </thead>
@@ -258,11 +453,20 @@ watch(selectedSeason, () => {
                                     :key="entry.player_id"
                                     class="border-b hover:bg-muted/50"
                                 >
-                                    <td class="p-2 text-muted-foreground">{{ index + 1 }}</td>
+                                    <td class="p-2 text-muted-foreground">
+                                        {{ index + 1 }}
+                                    </td>
                                     <td class="p-2 font-medium">
                                         <Link
-                                            v-if="entry.player && config.playerLink"
-                                            :href="config.playerLink(entry.player.id)"
+                                            v-if="
+                                                entry.player &&
+                                                config.playerLink
+                                            "
+                                            :href="
+                                                config.playerLink(
+                                                    entry.player.id,
+                                                )
+                                            "
                                             class="flex items-center gap-2 transition-colors hover:text-primary"
                                         >
                                             <img
@@ -275,11 +479,20 @@ watch(selectedSeason, () => {
                                                 v-else
                                                 class="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground"
                                             >
-                                                {{ entry.player.full_name?.charAt(0) }}
+                                                {{
+                                                    entry.player.full_name?.charAt(
+                                                        0,
+                                                    )
+                                                }}
                                             </div>
-                                            <span>{{ entry.player.full_name }}</span>
+                                            <span>{{
+                                                entry.player.full_name
+                                            }}</span>
                                         </Link>
-                                        <div v-else-if="entry.player" class="flex items-center gap-2">
+                                        <div
+                                            v-else-if="entry.player"
+                                            class="flex items-center gap-2"
+                                        >
                                             <img
                                                 v-if="entry.player.headshot_url"
                                                 :src="entry.player.headshot_url"
@@ -290,50 +503,64 @@ watch(selectedSeason, () => {
                                                 v-else
                                                 class="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground"
                                             >
-                                                {{ entry.player.full_name?.charAt(0) }}
+                                                {{
+                                                    entry.player.full_name?.charAt(
+                                                        0,
+                                                    )
+                                                }}
                                             </div>
-                                            <span>{{ entry.player.full_name }}</span>
+                                            <span>{{
+                                                entry.player.full_name
+                                            }}</span>
                                         </div>
                                     </td>
-                                    <td class="p-2 text-right text-muted-foreground">
+                                    <td
+                                        class="p-2 text-right text-muted-foreground"
+                                    >
                                         <Link
-                                            v-if="entry.player?.team?.id != null && config.teamLink"
-                                            :href="config.teamLink(entry.player.team.id)"
+                                            v-if="
+                                                entry.player?.team?.id !=
+                                                    null && config.teamLink
+                                            "
+                                            :href="
+                                                config.teamLink(
+                                                    entry.player.team.id,
+                                                )
+                                            "
                                             class="transition-colors hover:text-primary"
                                         >
                                             {{ entry.player.team.abbreviation }}
                                         </Link>
-                                        <span v-else>{{ entry.player?.team?.abbreviation ?? '-' }}</span>
-                                    </td>
-                                    <td class="p-2 text-right text-muted-foreground">{{ entry.games_played }}</td>
-                                    <td class="p-2 text-right font-medium">{{ entry.points_per_game }}</td>
-                                    <td class="p-2 text-right">{{ entry.rebounds_per_game }}</td>
-                                    <td class="p-2 text-right">{{ entry.assists_per_game }}</td>
-                                    <td class="hidden p-2 text-right md:table-cell">{{ entry.steals_per_game }}</td>
-                                    <td class="hidden p-2 text-right md:table-cell">{{ entry.blocks_per_game }}</td>
-                                    <td class="hidden p-2 text-right lg:table-cell">{{ entry.field_goal_percentage }}%</td>
-                                    <td class="hidden p-2 text-right lg:table-cell">{{ entry.three_point_percentage }}%</td>
-                                    <td class="hidden p-2 text-right lg:table-cell">{{ entry.free_throw_percentage }}%</td>
-                                    <td class="hidden p-2 text-right text-muted-foreground lg:table-cell">{{ entry.minutes_per_game }}</td>
-                                    <td
-                                        v-if="config.showEpaColumns"
-                                        class="hidden p-2 text-right font-medium lg:table-cell"
-                                    >
-                                        {{ formatEpa(entry.estimated_epa_per_game) }}
+                                        <span v-else>{{
+                                            entry.player?.team?.abbreviation ??
+                                            '-'
+                                        }}</span>
                                     </td>
                                     <td
-                                        v-if="config.showEpaColumns"
-                                        class="hidden p-2 text-right lg:table-cell"
+                                        class="p-2 text-right text-muted-foreground"
                                     >
-                                        {{ formatEpa(entry.estimated_epa_per_36) }}
+                                        {{ entry.games_played }}
+                                    </td>
+                                    <td
+                                        v-for="column in statColumns"
+                                        :key="column.key as string"
+                                        class="p-2 text-right"
+                                        :class="column.cellClass ?? ''"
+                                    >
+                                        {{ formatColumnValue(entry, column) }}
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
 
-                    <div v-if="sortedPlayers.length === 0 && !loading" class="py-8 text-center text-muted-foreground">
-                        <p v-if="searchQuery">No players found matching "{{ searchQuery }}"</p>
+                    <div
+                        v-if="sortedPlayers.length === 0 && !loading"
+                        class="py-8 text-center text-muted-foreground"
+                    >
+                        <p v-if="searchQuery">
+                            No players found matching "{{ searchQuery }}"
+                        </p>
                         <p v-else>No player stats available.</p>
                     </div>
                 </CardContent>

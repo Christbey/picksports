@@ -95,8 +95,12 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
         $updates['tackles_solo'] = isset($stats['SOLO']) ? (int) $stats['SOLO'] : null;
         $updates['tackles_assists'] = isset($stats['AST']) ? (int) $stats['AST'] : null;
         $updates['sacks'] = isset($stats['SACKS']) || isset($stats['SACK']) ? (float) ($stats['SACKS'] ?? $stats['SACK'] ?? 0) : null;
-        $updates['interceptions'] = isset($stats['INT']) ? (int) $stats['INT'] : null;
-        $updates['passes_defended'] = isset($stats['PD']) ? (int) $stats['PD'] : null;
+        $updates['interceptions'] = isset($stats['INT']) || isset($stats['INTS'])
+            ? (int) ($stats['INT'] ?? $stats['INTS'] ?? 0)
+            : null;
+        $updates['passes_defended'] = isset($stats['PD']) || isset($stats['PDEF'])
+            ? (int) ($stats['PD'] ?? $stats['PDEF'] ?? 0)
+            : null;
         $updates['fumbles_forced'] = isset($stats['FF']) ? (int) $stats['FF'] : null;
         $updates['fumbles_recovered'] = isset($stats['FR']) || isset($stats['REC']) ? (int) ($stats['FR'] ?? $stats['REC'] ?? 0) : null;
 
@@ -107,24 +111,75 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
     {
         $updates = [];
 
-        if (isset($stats['FG'])) {
-            $parts = explode('/', (string) $stats['FG']);
-            if (count($parts) === 2) {
-                $updates['field_goals_made'] = (int) $parts[0];
-                $updates['field_goals_attempted'] = (int) $parts[1];
-            }
+        [$fgm, $fga] = $this->resolveMadeAttemptPair($stats, [
+            ['FG', '/'],
+            ['FGM/FGA', '/'],
+        ], ['FGM', 'FGA']);
+        if ($fgm !== null) {
+            $updates['field_goals_made'] = $fgm;
+        }
+        if ($fga !== null) {
+            $updates['field_goals_attempted'] = $fga;
         }
 
-        if (isset($stats['XP']) || isset($stats['PAT'])) {
-            $xpStat = (string) ($stats['XP'] ?? $stats['PAT'] ?? '');
-            $parts = explode('/', $xpStat);
-            if (count($parts) === 2) {
-                $updates['extra_points_made'] = (int) $parts[0];
-                $updates['extra_points_attempted'] = (int) $parts[1];
-            }
+        [$xpm, $xpa] = $this->resolveMadeAttemptPair($stats, [
+            ['XP', '/'],
+            ['PAT', '/'],
+            ['XP/PAT', '/'],
+            ['XPM/XPA', '/'],
+            ['PATM/PATA', '/'],
+        ], ['XPM', 'XPA', 'PATM', 'PATA']);
+        if ($xpm !== null) {
+            $updates['extra_points_made'] = $xpm;
+        }
+        if ($xpa !== null) {
+            $updates['extra_points_attempted'] = $xpa;
         }
 
         return array_filter($updates, fn ($value) => $value !== null);
+    }
+
+    /**
+     * @param  array<string,mixed>  $stats
+     * @param  array<int,array{0:string,1:string}>  $compoundKeys
+     * @param  array<int,string>  $simpleKeys
+     * @return array{0:?int,1:?int}
+     */
+    protected function resolveMadeAttemptPair(array $stats, array $compoundKeys, array $simpleKeys): array
+    {
+        foreach ($compoundKeys as [$key, $separator]) {
+            $value = isset($stats[$key]) ? (string) $stats[$key] : '';
+            if ($value === '' || ! str_contains($value, $separator)) {
+                continue;
+            }
+
+            $parts = explode($separator, $value);
+            if (count($parts) !== 2) {
+                continue;
+            }
+
+            return [(int) trim($parts[0]), (int) trim($parts[1])];
+        }
+
+        $madeKey = null;
+        $attemptKey = null;
+        foreach ($simpleKeys as $key) {
+            if (str_ends_with($key, 'M') && isset($stats[$key])) {
+                $madeKey = $key;
+            }
+            if (str_ends_with($key, 'A') && isset($stats[$key])) {
+                $attemptKey = $key;
+            }
+        }
+
+        if ($madeKey !== null || $attemptKey !== null) {
+            return [
+                $madeKey !== null ? (int) $stats[$madeKey] : null,
+                $attemptKey !== null ? (int) $stats[$attemptKey] : null,
+            ];
+        }
+
+        return [null, null];
     }
 
 }

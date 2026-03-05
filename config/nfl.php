@@ -189,6 +189,14 @@ return [
          * Used as baseline for over/under predictions
          */
         'average_total' => 44.5,
+
+        /**
+         * Injury adjustments
+         */
+        'injury_out_spread_penalty' => 0.50,
+        'injury_questionable_spread_penalty' => 0.20,
+        'injury_out_total_penalty' => 0.30,
+        'injury_questionable_total_penalty' => 0.10,
     ],
 
     /*

@@ -32,8 +32,11 @@ const {
     teamMetrics,
     seasonStats,
     recentGames,
+    upcomingGames,
     powerRanking,
     statRankings,
+    metricRankings,
+    metricRankingTotalTeams,
     rosterPlayers,
     trendsData,
     lockedTrends,
@@ -176,6 +179,8 @@ const sportsTeamSchema = computed(() =>
                                 <TeamMetricsCard
                                     :tiles="config.metricTiles"
                                     :metrics="teamMetrics"
+                                    :metric-rankings="metricRankings"
+                                    :ranking-total-teams="metricRankingTotalTeams"
                                     :grid-class="config.metricsGridCols || 'md:grid-cols-5'"
                                 />
 
@@ -229,8 +234,8 @@ const sportsTeamSchema = computed(() =>
                         <TabsContent value="schedule">
                             <div class="space-y-4">
                                 <TeamGamesCard
-                                    title="Recent Games"
-                                    :games="displayRecentGames"
+                                    title="Team Game Log"
+                                    :games="recentGames"
                                     :team-id="teamId"
                                     :game-link="config.gameLink"
                                     :get-game-result="getGameResult"
@@ -240,8 +245,8 @@ const sportsTeamSchema = computed(() =>
                                 />
 
                                 <TeamGamesCard
-                                    title="Upcoming Games"
-                                    :games="displayUpcomingGames"
+                                    title="Upcoming Schedule"
+                                    :games="upcomingGames"
                                     :team-id="teamId"
                                     :game-link="config.gameLink"
                                     :get-opponent="getOpponent"
@@ -257,6 +262,8 @@ const sportsTeamSchema = computed(() =>
                     <TeamMetricsCard
                         :tiles="config.metricTiles"
                         :metrics="teamMetrics"
+                        :metric-rankings="metricRankings"
+                        :ranking-total-teams="metricRankingTotalTeams"
                         :grid-class="config.metricsGridCols || 'md:grid-cols-5'"
                     />
 

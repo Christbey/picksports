@@ -10,6 +10,8 @@ export interface DashboardPrediction {
     win_probability: number;
     predicted_spread: number;
     predicted_total: number;
+    actual_total?: number | null;
+    winner_correct?: boolean | null;
     home_logo: string;
     away_logo: string;
     betting_value?: BettingRecommendation[];

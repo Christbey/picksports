@@ -6,6 +6,8 @@ defineProps<{
     title?: string;
     tiles: MetricTile[];
     metrics: any;
+    metricRankings?: Record<string, number>;
+    rankingTotalTeams?: number;
     gridClass?: string;
 }>();
 </script>
@@ -21,6 +23,12 @@ defineProps<{
                     <div class="text-sm text-muted-foreground">{{ tile.label }}</div>
                     <div class="text-2xl font-bold" :class="tile.class?.(metrics)">
                         {{ tile.value(metrics) }}
+                    </div>
+                    <div
+                        v-if="tile.rankingKey && metricRankings && metricRankings[tile.rankingKey] && rankingTotalTeams"
+                        class="text-xs text-muted-foreground mt-1"
+                    >
+                        Rank {{ metricRankings[tile.rankingKey] }} / {{ rankingTotalTeams }}
                     </div>
                 </div>
             </div>

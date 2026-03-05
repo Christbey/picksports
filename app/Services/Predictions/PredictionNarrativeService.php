@@ -79,6 +79,12 @@ class PredictionNarrativeService
             'away_def_eff' => (float) ($prediction->away_def_eff ?? 0),
             'rest_days_home' => (int) ($prediction->rest_days_home ?? 0),
             'rest_days_away' => (int) ($prediction->rest_days_away ?? 0),
+            'home_injuries_out' => (int) ($prediction->home_injuries_out ?? 0),
+            'away_injuries_out' => (int) ($prediction->away_injuries_out ?? 0),
+            'home_injuries_questionable' => (int) ($prediction->home_injuries_questionable ?? 0),
+            'away_injuries_questionable' => (int) ($prediction->away_injuries_questionable ?? 0),
+            'injury_spread_adj' => (float) ($prediction->injury_spread_adj ?? 0),
+            'injury_total_adj' => (float) ($prediction->injury_total_adj ?? 0),
             'home_away_split_adj' => (float) ($prediction->home_away_split_adj ?? 0),
             'turnover_diff_adj' => (float) ($prediction->turnover_diff_adj ?? 0),
             'rebound_margin_adj' => (float) ($prediction->rebound_margin_adj ?? 0),
@@ -167,6 +173,11 @@ class PredictionNarrativeService
         $awayDefEff = (float) ($prediction->away_def_eff ?? 0);
         $homeRest = (int) ($prediction->rest_days_home ?? 0);
         $awayRest = (int) ($prediction->rest_days_away ?? 0);
+        $homeOut = (int) ($prediction->home_injuries_out ?? 0);
+        $awayOut = (int) ($prediction->away_injuries_out ?? 0);
+        $homeQuestionable = (int) ($prediction->home_injuries_questionable ?? 0);
+        $awayQuestionable = (int) ($prediction->away_injuries_questionable ?? 0);
+        $injurySpreadAdj = (float) ($prediction->injury_spread_adj ?? 0);
         $vegasSpread = $prediction->vegas_spread !== null ? (float) $prediction->vegas_spread : null;
         $eloComponent = (float) ($prediction->elo_spread_component ?? 0);
         $efficiencyComponent = (float) ($prediction->efficiency_spread_component ?? 0);
@@ -229,6 +240,16 @@ class PredictionNarrativeService
         $restSentence = $restLeader
             ? sprintf('%s also carries a rest edge (%d vs %d days).', $restLeader, max($homeRest, $awayRest), min($homeRest, $awayRest))
             : 'Rest is neutral, so model edge comes mostly from efficiency and form.';
+        $injurySentence = sprintf(
+            'Availability: %s %d out/%d questionable, %s %d out/%d questionable (spread impact %.1f to home).',
+            $homeName,
+            $homeOut,
+            $homeQuestionable,
+            $awayName,
+            $awayOut,
+            $awayQuestionable,
+            $injurySpreadAdj
+        );
 
         $trendSentence = sprintf(
             'Trend engine scanned %d categories (%d signals) for %s and %d categories (%d signals) for %s.',
@@ -273,7 +294,7 @@ class PredictionNarrativeService
                 $dominantDriver,
                 $profileSentence,
                 $restSentence,
-                $hasTrendSignals ? ' '.$trendSentence : ''
+                $injurySentence.($hasTrendSignals ? ' '.$trendSentence : '')
             );
 
         $keyPoints = [
@@ -297,6 +318,7 @@ class PredictionNarrativeService
                 $awayName,
                 $this->percent($awayWinProb)
             ),
+            $injurySentence,
             $bestBet
                 ? sprintf('Reasoning: %s.', $bestBet['reasoning'])
                 : ($vegasSpread !== null && $marketEdge !== null && $modelVsMarketEdgeTeam !== null

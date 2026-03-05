@@ -17,7 +17,7 @@ class PlayerController extends Controller
      */
     public function __invoke(Player $player): Response
     {
-        $player->load('team');
+        $player->load(['team', 'activeInjuries.player']);
 
         // Get upcoming player props for this player
         $playerProps = PlayerProp::query()

@@ -43,6 +43,7 @@ it('infers possession from player names in play text', function () {
         'walker' => $homeTeamId,
         'stafford' => $awayTeamId,
         'myers' => $homeTeamId,
+        'williams' => $awayTeamId,
     ];
 
     $rushPossession = $service->inferPossessionFromPlayText(
@@ -61,6 +62,15 @@ it('infers possession from player names in play text', function () {
         $awayTeamId
     );
 
+    $kickoffReturnPossession = $service->inferPossessionFromPlayText(
+        'C.Williams returns kickoff to LA 25.',
+        'Kickoff',
+        $map,
+        $homeTeamId,
+        $awayTeamId
+    );
+
     expect($rushPossession)->toBe($homeTeamId)
-        ->and($kickoffPossession)->toBe($awayTeamId);
+        ->and($kickoffPossession)->toBe($awayTeamId)
+        ->and($kickoffReturnPossession)->toBe($awayTeamId);
 });

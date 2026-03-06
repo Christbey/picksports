@@ -4,9 +4,8 @@ namespace App\Http\Controllers\CBB;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\CBB\PlayerResource;
-use App\Models\CBB\Game;
 use App\Models\CBB\Player;
-use App\Models\PlayerProp;
+use App\Models\CBB\PlayerProp;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,17 +16,15 @@ class PlayerController extends Controller
         $player->load(['team', 'activeInjuries.player']);
 
         $playerProps = PlayerProp::query()
-            ->where('sport', 'basketball_ncaab')
-            ->where('gameable_type', Game::class)
+            ->whereHas('game', function ($query) {
+                $query->where('status', 'STATUS_SCHEDULED')
+                    ->whereDate('game_date', '>=', now());
+            })
             ->where(function ($query) use ($player) {
                 $query->where('player_id', $player->id)
                     ->orWhere('player_name', 'like', '%'.$player->last_name.'%');
             })
-            ->whereHas('gameable', function ($query) {
-                $query->where('status', 'STATUS_SCHEDULED')
-                    ->whereDate('game_date', '>=', now());
-            })
-            ->with(['gameable.homeTeam', 'gameable.awayTeam'])
+            ->with(['game.homeTeam', 'game.awayTeam'])
             ->orderBy('fetched_at', 'desc')
             ->get()
             ->groupBy('market')
@@ -45,11 +42,11 @@ class PlayerController extends Controller
                     'under_price' => $prop->under_price,
                     'bookmaker' => $prop->bookmaker,
                     'game' => [
-                        'id' => $prop->gameable->id,
-                        'home_team' => $prop->gameable->homeTeam?->abbreviation,
-                        'away_team' => $prop->gameable->awayTeam?->abbreviation,
-                        'date' => $prop->gameable->game_date,
-                        'time' => $prop->gameable->game_time,
+                        'id' => $prop->game->id,
+                        'home_team' => $prop->game->homeTeam?->abbreviation,
+                        'away_team' => $prop->game->awayTeam?->abbreviation,
+                        'date' => $prop->game->game_date,
+                        'time' => $prop->game->game_time,
                     ],
                 ];
             }),

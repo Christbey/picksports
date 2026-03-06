@@ -116,6 +116,12 @@ class PlayEpaDataService
 
         $type = strtolower(trim($playType));
         if (str_contains($type, 'kickoff')) {
+            $normalizedText = strtolower($playText);
+            if (str_contains($normalizedText, ' return') || str_contains($normalizedText, 'returns')) {
+                // If the actor appears on a return description, they are typically the receiving team.
+                return $actorTeamId;
+            }
+
             return $actorTeamId === $homeTeamId ? $awayTeamId : $homeTeamId;
         }
 
@@ -154,4 +160,3 @@ class PlayEpaDataService
         return $normalized;
     }
 }
-

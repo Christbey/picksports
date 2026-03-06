@@ -2,7 +2,7 @@
 
 namespace App\Actions;
 
-use App\Models\PlayerProp;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class GradePlayerProps
@@ -10,28 +10,28 @@ class GradePlayerProps
     /**
      * Sport-specific game/stat mapping used for grading and seasonal filtering.
      *
-     * @var array<string, array{games_table:string, gameable_type:class-string, player_stat_model:class-string}>
+     * @var array<string, array{game_model:class-string<Model>, player_stat_model:class-string<Model>, player_prop_model:class-string<Model>}>
      */
     private const SPORT_CONFIG = [
         'basketball_nba' => [
-            'games_table' => 'nba_games',
-            'gameable_type' => \App\Models\NBA\Game::class,
+            'game_model' => \App\Models\NBA\Game::class,
             'player_stat_model' => \App\Models\NBA\PlayerStat::class,
+            'player_prop_model' => \App\Models\NBA\PlayerProp::class,
         ],
         'basketball_ncaab' => [
-            'games_table' => 'cbb_games',
-            'gameable_type' => \App\Models\CBB\Game::class,
+            'game_model' => \App\Models\CBB\Game::class,
             'player_stat_model' => \App\Models\CBB\PlayerStat::class,
+            'player_prop_model' => \App\Models\CBB\PlayerProp::class,
         ],
         'americanfootball_nfl' => [
-            'games_table' => 'nfl_games',
-            'gameable_type' => \App\Models\NFL\Game::class,
+            'game_model' => \App\Models\NFL\Game::class,
             'player_stat_model' => \App\Models\NFL\PlayerStat::class,
+            'player_prop_model' => \App\Models\NFL\PlayerProp::class,
         ],
         'baseball_mlb' => [
-            'games_table' => 'mlb_games',
-            'gameable_type' => \App\Models\MLB\Game::class,
+            'game_model' => \App\Models\MLB\Game::class,
             'player_stat_model' => \App\Models\MLB\PlayerStat::class,
+            'player_prop_model' => \App\Models\MLB\PlayerProp::class,
         ],
     ];
 
@@ -107,31 +107,28 @@ class GradePlayerProps
 
     protected function getUngradedProps(string $sport, ?int $season = null): Collection
     {
-        $query = PlayerProp::query()
-            ->whereNull('graded_at')
-            ->where('sport', $sport);
-
         $sportConfig = $this->sportConfig($sport);
-        if ($sportConfig !== null) {
-            $gamesTable = $sportConfig['games_table'];
-
-            $query->join($gamesTable, function ($join) use ($gamesTable, $sportConfig) {
-                $join->on('player_props.gameable_id', '=', $gamesTable.'.id')
-                    ->where('player_props.gameable_type', '=', $sportConfig['gameable_type']);
-            })
-                ->where($gamesTable.'.status', 'STATUS_FINAL')
-                ->whereNotNull($gamesTable.'.home_score')
-                ->whereNotNull($gamesTable.'.away_score');
-
-            if ($season !== null) {
-                $query->where($gamesTable.'.season', $season);
-            }
+        if ($sportConfig === null) {
+            return collect();
         }
 
-        return $query->select('player_props.*')->get();
+        $playerPropModel = $sportConfig['player_prop_model'];
+
+        return $playerPropModel::query()
+            ->whereNull('graded_at')
+            ->whereHas('game', function ($query) use ($season) {
+                $query->where('status', 'STATUS_FINAL')
+                    ->whereNotNull('home_score')
+                    ->whereNotNull('away_score');
+
+                if ($season !== null) {
+                    $query->where('season', $season);
+                }
+            })
+            ->get();
     }
 
-    protected function getActualValue(PlayerProp $prop): ?float
+    protected function getActualValue(Model $prop): ?float
     {
         // Get the stat column name from market
         $statColumn = $this->getStatColumn($prop->market);
@@ -156,7 +153,7 @@ class GradePlayerProps
         return $this->marketToStatMap[$market] ?? null;
     }
 
-    protected function getCalculatedValue(PlayerProp $prop): ?float
+    protected function getCalculatedValue(Model $prop): ?float
     {
         $playerStat = $this->findPlayerStat($prop);
 
@@ -174,11 +171,11 @@ class GradePlayerProps
         };
     }
 
-    protected function findPlayerStat(PlayerProp $prop)
+    protected function findPlayerStat(Model $prop)
     {
-        $gameId = $prop->gameable_id;
+        $gameId = $prop->game_id;
 
-        $sportConfig = $this->sportConfig($prop->sport);
+        $sportConfig = $this->sportConfig($this->sportFromProp($prop));
         if ($sportConfig === null) {
             return null;
         }
@@ -228,22 +225,18 @@ class GradePlayerProps
 
     public function getStatsByMarket(string $sport, ?int $season = null): Collection
     {
-        $query = PlayerProp::query()
-            ->whereNotNull('graded_at')
-            ->where('sport', $sport);
+        $sportConfig = $this->sportConfig($sport);
+        if ($sportConfig === null) {
+            return collect();
+        }
+
+        $playerPropModel = $sportConfig['player_prop_model'];
+
+        $query = $playerPropModel::query()
+            ->whereNotNull('graded_at');
 
         if ($season !== null) {
-            $sportConfig = $this->sportConfig($sport);
-            if ($sportConfig !== null) {
-                $gamesTable = $sportConfig['games_table'];
-
-                $query->join($gamesTable, function ($join) use ($gamesTable, $sportConfig) {
-                    $join->on('player_props.gameable_id', '=', $gamesTable.'.id')
-                        ->where('player_props.gameable_type', '=', $sportConfig['gameable_type']);
-                })
-                    ->where($gamesTable.'.season', $season)
-                    ->select('player_props.*');
-            }
+            $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', $season));
         }
 
         return $query->get()->groupBy('market')->map(function ($props, $market) {
@@ -262,10 +255,21 @@ class GradePlayerProps
     }
 
     /**
-     * @return array{games_table:string, gameable_type:class-string, player_stat_model:class-string}|null
+     * @return array{game_model:class-string<Model>, player_stat_model:class-string<Model>, player_prop_model:class-string<Model>}|null
      */
     protected function sportConfig(string $sport): ?array
     {
         return self::SPORT_CONFIG[$sport] ?? null;
+    }
+
+    protected function sportFromProp(Model $prop): string
+    {
+        return match ($prop::class) {
+            \App\Models\NBA\PlayerProp::class => 'basketball_nba',
+            \App\Models\CBB\PlayerProp::class => 'basketball_ncaab',
+            \App\Models\NFL\PlayerProp::class => 'americanfootball_nfl',
+            \App\Models\MLB\PlayerProp::class => 'baseball_mlb',
+            default => '',
+        };
     }
 }

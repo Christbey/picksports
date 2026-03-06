@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+use Illuminate\Support\Str;
 use App\Services\CommandHeartbeatService;
 
 Artisan::command('inspire', function () {
@@ -35,19 +36,52 @@ $fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
 
 /*
 |--------------------------------------------------------------------------
-| Heartbeat Ping URL
+| External Heartbeat Ping URLs
 |--------------------------------------------------------------------------
 |
-| External monitoring URL (e.g. BetterStack, OhDear) pinged on each
-| successful live scoreboard sync. Set HEARTBEAT_LIVE_SCOREBOARD_URL
-| in .env to enable.
+| If a Forge heartbeat URL exists for the scheduled name, ping it on
+| success so Forge can alert when jobs stop running.
+|
+| Name-to-env mapping:
+|   Scheduled name "NBA: Live Scoreboard Sync"
+|   -> FORGE_HEARTBEAT_NBA_LIVE_SCOREBOARD_SYNC_URL
+|
+| Legacy fallback:
+|   HEARTBEAT_LIVE_SCOREBOARD_URL still applies to "*Live Scoreboard*"
+|   jobs when no Forge-specific URL is configured.
 |
 */
 
-$heartbeatUrl = config('services.heartbeat.live_scoreboard_url');
-$attachCommandHeartbeat = function ($event, string $command, string $sourceName): void {
+$legacyLiveScoreboardHeartbeatUrl = config('services.heartbeat.live_scoreboard_url');
+$resolveExternalHeartbeatUrl = function (string $sourceName) use ($legacyLiveScoreboardHeartbeatUrl): ?string {
+    $slug = (string) Str::of($sourceName)
+        ->lower()
+        ->replaceMatches('/[^a-z0-9]+/', '_')
+        ->trim('_');
+
+    $forgeUrl = config("services.forge.heartbeats.{$slug}");
+    if (is_string($forgeUrl) && $forgeUrl !== '') {
+        return $forgeUrl;
+    }
+
+    if (
+        str_contains($sourceName, 'Live Scoreboard')
+        && is_string($legacyLiveScoreboardHeartbeatUrl)
+        && $legacyLiveScoreboardHeartbeatUrl !== ''
+    ) {
+        return $legacyLiveScoreboardHeartbeatUrl;
+    }
+
+    return null;
+};
+
+$attachCommandHeartbeat = function ($event, string $command, string $sourceName) use ($resolveExternalHeartbeatUrl): void {
     $service = app(CommandHeartbeatService::class);
     $sport = $service->inferSportFromCommand($command);
+
+    if ($externalHeartbeatUrl = $resolveExternalHeartbeatUrl($sourceName)) {
+        $event->pingOnSuccess($externalHeartbeatUrl);
+    }
 
     $event->onSuccess(function () use ($service, $command, $sport, $sourceName) {
         $service->recordSuccess($command, $sport, 'schedule', [
@@ -68,7 +102,7 @@ $scheduleLiveScoreboardSync = function (
     string $betweenEnd,
     callable $inSeason,
     string $name
-) use ($heartbeatUrl, $attachCommandHeartbeat) {
+) use ($attachCommandHeartbeat) {
     $resolvedCommand = "{$command} ".date('Ymd');
 
     $event = Schedule::command($resolvedCommand)
@@ -78,10 +112,6 @@ $scheduleLiveScoreboardSync = function (
         ->name($name)
         ->withoutOverlapping()
         ->runInBackground();
-
-    if ($heartbeatUrl) {
-        $event->pingOnSuccess($heartbeatUrl);
-    }
 
     $attachCommandHeartbeat($event, $resolvedCommand, $name);
 };
@@ -175,6 +205,48 @@ $schedulePredictionPipeline = function (
             "{$sportLabel}: {$jobLabel}"
         );
     }
+};
+
+$scheduleWeeklySeasonJob = function (
+    string $command,
+    int $dayOfWeek,
+    string $time,
+    callable $inSeason,
+    string $name
+) use ($attachCommandHeartbeat) {
+    $event = Schedule::command($command)
+        ->weeklyOn($dayOfWeek, $time)
+        ->when($inSeason)
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+
+    $attachCommandHeartbeat($event, $command, $name);
+};
+
+$scheduleEpaLifecycle = function (
+    string $sport,
+    string $label,
+    callable $seasonResolver,
+    callable $inSeason
+) use ($scheduleDailySeasonJob, $scheduleWeeklySeasonJob) {
+    $season = (int) $seasonResolver();
+    $fromSeason = $season - 1;
+
+    $scheduleDailySeasonJob(
+        "sports:build-epa-state-baseline {$sport} --season={$season} --from-season={$fromSeason}",
+        '02:20',
+        $inSeason,
+        "{$label}: Build EPA State Baseline"
+    );
+
+    $scheduleWeeklySeasonJob(
+        "sports:report-epa-blend-calibration {$sport} --season={$season}",
+        1,
+        '02:50',
+        $inSeason,
+        "{$label}: Report EPA Blend Calibration"
+    );
 };
 
 $scheduleSportPipeline = function (
@@ -291,6 +363,7 @@ $scheduleHalfHourlyWindowJob(
     $nbaInSeason,
     'NBA: Sync Injuries'
 );
+$scheduleEpaLifecycle('nba', 'NBA', fn () => $currentYear, $nbaInSeason);
 
 // CBB
 $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
@@ -343,6 +416,7 @@ $scheduleHalfHourlyWindowJob(
     $cbbInSeason,
     'CBB: Sync Injuries'
 );
+$scheduleEpaLifecycle('cbb', 'CBB', fn () => $currentYear, $cbbInSeason);
 
 $dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
     ->hourly()
@@ -394,6 +468,7 @@ $scheduleHalfHourlyWindowJob(
     $wcbbInSeason,
     'WCBB: Sync Injuries'
 );
+$scheduleEpaLifecycle('wcbb', 'WCBB', fn () => $currentYear, $wcbbInSeason);
 
 // MLB
 $scheduleSportPipeline(
@@ -510,6 +585,7 @@ $scheduleHalfHourlyWindowJob(
     $nflInSeason,
     'NFL: Sync Injuries'
 );
+$scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
 
 // CFB
 $scheduleSportPipeline(
@@ -551,8 +627,9 @@ $scheduleHalfHourlyWindowJob(
 |--------------------------------------------------------------------------
 */
 
-Schedule::command('queue:prune-failed --hours=168')
+$pruneFailedJobsEvent = Schedule::command('queue:prune-failed --hours=168')
     ->dailyAt('03:20')
     ->name('Queue: Prune Failed Jobs')
     ->withoutOverlapping()
     ->runInBackground();
+$attachCommandHeartbeat($pruneFailedJobsEvent, 'queue:prune-failed --hours=168', 'Queue: Prune Failed Jobs');

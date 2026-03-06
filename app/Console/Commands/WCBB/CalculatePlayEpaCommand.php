@@ -8,6 +8,11 @@ use App\Models\WCBB\Play;
 
 class CalculatePlayEpaCommand extends AbstractBasketballCalculatePlayEpaCommand
 {
+    protected function sportKey(): string
+    {
+        return 'wcbb';
+    }
+
     protected $signature = 'wcbb:calculate-play-epa
         {--season= : Limit to season (e.g. 2025)}
         {--game_id= : Limit to a single wcbb_games.id}

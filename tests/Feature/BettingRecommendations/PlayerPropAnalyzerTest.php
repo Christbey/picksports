@@ -2,9 +2,9 @@
 
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
+use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
 use App\Models\NBA\Team;
-use App\Models\PlayerProp;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 
 test('analyzes props for completed games', function () {
@@ -46,10 +46,8 @@ test('analyzes props for completed games', function () {
     }
 
     PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'LeBron James',
         'market' => 'player_points',
         'line' => 20.5,
@@ -106,10 +104,8 @@ test('analyzes props regardless of game status', function () {
         ]);
 
         PlayerProp::create([
-            'gameable_type' => Game::class,
-            'gameable_id' => $game->id,
+            'game_id' => $game->id,
             'player_id' => $player->id,
-            'sport' => 'basketball_nba',
             'player_name' => 'Test Player',
             'market' => 'player_points',
             'line' => 20.5,
@@ -173,10 +169,8 @@ test('filters props by date', function () {
     ]);
 
     PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game1->id,
+        'game_id' => $game1->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'Date Filter Player',
         'market' => 'player_points',
         'line' => 20.5,
@@ -185,10 +179,8 @@ test('filters props by date', function () {
     ]);
 
     PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game2->id,
+        'game_id' => $game2->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'Date Filter Player',
         'market' => 'player_points',
         'line' => 20.5,
@@ -231,9 +223,7 @@ test('returns available dates for all games with props', function () {
 
     foreach ([$pastGame, $futureGame] as $game) {
         PlayerProp::create([
-            'gameable_type' => Game::class,
-            'gameable_id' => $game->id,
-            'sport' => 'basketball_nba',
+            'game_id' => $game->id,
             'player_name' => 'Test Player',
             'market' => 'player_points',
             'line' => 25.5,
@@ -274,9 +264,7 @@ test('returns available games for all statuses', function () {
 
     foreach ([$finalGame, $scheduledGame] as $game) {
         PlayerProp::create([
-            'gameable_type' => Game::class,
-            'gameable_id' => $game->id,
-            'sport' => 'basketball_nba',
+            'game_id' => $game->id,
             'player_name' => 'Test Player',
             'market' => 'player_points',
             'line' => 25.5,

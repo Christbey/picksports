@@ -26,8 +26,20 @@ trait CalculatesTeamTrueEpaFromPlays
             return $this->emptyTrueEpaMetrics();
         }
 
+        $validTeamIds = $games->flatMap(function ($game) {
+            return [
+                (int) ($game->home_team_id ?? 0),
+                (int) ($game->away_team_id ?? 0),
+            ];
+        })->filter(fn (int $id) => $id > 0)->unique()->values()->all();
+
+        if ($validTeamIds === []) {
+            return $this->emptyTrueEpaMetrics();
+        }
+
         $query = $playModelClass::query()
             ->whereIn('game_id', $games->pluck('id')->all())
+            ->whereIn('possession_team_id', $validTeamIds)
             ->whereNotNull('true_epa')
             ->whereNotNull('possession_team_id')
             ->select(['possession_team_id', 'true_epa']);

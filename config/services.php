@@ -1,5 +1,22 @@
 <?php
 
+$forgeHeartbeats = [];
+
+foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
+    if (!is_string($key) || !is_string($value)) {
+        continue;
+    }
+
+    if (!str_starts_with($key, 'FORGE_HEARTBEAT_') || !str_ends_with($key, '_URL')) {
+        continue;
+    }
+
+    $normalizedKey = strtolower(substr($key, strlen('FORGE_HEARTBEAT_'), -strlen('_URL')));
+    if ($normalizedKey !== '') {
+        $forgeHeartbeats[$normalizedKey] = $value;
+    }
+}
+
 return [
 
     /*
@@ -58,6 +75,23 @@ return [
 
     'heartbeat' => [
         'live_scoreboard_url' => env('HEARTBEAT_LIVE_SCOREBOARD_URL'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Forge Heartbeat Ping URLs
+    |--------------------------------------------------------------------------
+    |
+    | Automatically loads env vars matching FORGE_HEARTBEAT_*_URL, where the
+    | * is a snake_case scheduled task name.
+    |
+    | Example:
+    |   Schedule name: NBA: Live Scoreboard Sync
+    |   Env var: FORGE_HEARTBEAT_NBA_LIVE_SCOREBOARD_SYNC_URL
+    |
+    */
+    'forge' => [
+        'heartbeats' => $forgeHeartbeats,
     ],
 
     'web_push' => [

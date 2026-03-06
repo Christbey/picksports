@@ -7,6 +7,8 @@ use Illuminate\Console\Command;
 
 abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
 {
+    abstract protected function sportKey(): string;
+
     /**
      * @return class-string<\Illuminate\Database\Eloquent\Model>
      */
@@ -63,7 +65,7 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
             $query->limit($limit);
         }
 
-        $games = $query->get(['id', 'home_team_id', 'away_team_id']);
+        $games = $query->get(['id', 'home_team_id', 'away_team_id', 'season']);
         if ($games->isEmpty()) {
             $this->warn('No matching games found.');
 
@@ -89,7 +91,13 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
                 continue;
             }
 
-            $results = $calculator->calculateForGame($plays, (int) $game->home_team_id, (int) $game->away_team_id);
+            $results = $calculator->calculateForGame(
+                $plays,
+                (int) $game->home_team_id,
+                (int) $game->away_team_id,
+                isset($game->season) ? (int) $game->season : null,
+                $this->sportKey()
+            );
 
             foreach ($plays as $play) {
                 $result = $results[(int) $play->id] ?? null;

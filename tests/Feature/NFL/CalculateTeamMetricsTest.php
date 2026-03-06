@@ -897,6 +897,13 @@ it('calculates true epa per play team metrics from nfl plays', function () {
         'is_epa_eligible' => true,
         'true_epa' => null,
     ]);
+    $unrelatedTeam = Team::factory()->create();
+    Play::factory()->create([
+        'game_id' => $game1->id,
+        'possession_team_id' => $unrelatedTeam->id,
+        'is_epa_eligible' => true,
+        'true_epa' => 9.99,
+    ]);
 
     $action = new CalculateTeamMetrics;
     $metric = $action->execute($this->team, 2025);

@@ -8,6 +8,11 @@ use App\Models\NBA\Play;
 
 class CalculatePlayEpaCommand extends AbstractBasketballCalculatePlayEpaCommand
 {
+    protected function sportKey(): string
+    {
+        return 'nba';
+    }
+
     protected $signature = 'nba:calculate-play-epa
         {--season= : Limit to season (e.g. 2025)}
         {--game_id= : Limit to a single nba_games.id}

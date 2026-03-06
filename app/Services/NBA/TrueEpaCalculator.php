@@ -2,27 +2,37 @@
 
 namespace App\Services\NBA;
 
+use App\Services\Epa\StateBaselineService;
 use Illuminate\Support\Collection;
 
 class TrueEpaCalculator
 {
     public function __construct(
-        protected PlayEpaDataService $playDataService
+        protected PlayEpaDataService $playDataService,
+        protected StateBaselineService $stateBaselineService
     ) {}
 
     /**
      * @param  Collection<int,object>  $plays
      * @return array<int,array{eligible:bool,ep_before:?float,ep_after:?float,epa:?float}>
      */
-    public function calculateForGame(Collection $plays, int $homeTeamId, int $awayTeamId): array
+    public function calculateForGame(
+        Collection $plays,
+        int $homeTeamId,
+        int $awayTeamId,
+        ?int $season = null,
+        string $sport = 'nba'
+    ): array
     {
         if ($plays->isEmpty()) {
             return [];
         }
 
         $rows = $plays->values()->all();
+        [$halfMode, $periodDurationSeconds] = $this->derivePeriodContext($rows);
         $realizedFuturePoints = $this->buildRealizedFuturePoints($rows, $homeTeamId, $awayTeamId);
-        $stateMap = $this->buildExpectedPointsStateMap($rows, $realizedFuturePoints);
+        $stateMap = $this->buildExpectedPointsStateMap($rows, $realizedFuturePoints, $halfMode, $periodDurationSeconds);
+        $baselineMap = $this->resolveBaselineMap($sport, $season);
 
         $results = [];
         $count = count($rows);
@@ -43,15 +53,15 @@ class TrueEpaCalculator
             }
 
             $offenseTeamId = (int) $play->possession_team_id;
-            $stateKey = $this->stateKey($play);
-            $epBefore = $stateMap[$stateKey] ?? 0.0;
+            $stateKey = $this->stateKeyForPlay($play, $halfMode, $periodDurationSeconds);
+            $epBefore = $baselineMap[$stateKey] ?? $stateMap[$stateKey] ?? 0.0;
 
             $nextEligible = $this->findNextEligiblePlay($rows, $i + 1);
             if ($nextEligible === null) {
                 $epAfter = 0.0;
             } else {
-                $nextKey = $this->stateKey($nextEligible);
-                $nextEp = $stateMap[$nextKey] ?? 0.0;
+                $nextKey = $this->stateKeyForPlay($nextEligible, $halfMode, $periodDurationSeconds);
+                $nextEp = $baselineMap[$nextKey] ?? $stateMap[$nextKey] ?? 0.0;
                 $nextOffenseTeamId = (int) $nextEligible->possession_team_id;
                 $epAfter = $nextOffenseTeamId === $offenseTeamId ? $nextEp : -$nextEp;
             }
@@ -111,7 +121,12 @@ class TrueEpaCalculator
      * @param  array<int,float>  $realizedFuturePoints
      * @return array<string,float>
      */
-    private function buildExpectedPointsStateMap(array $rows, array $realizedFuturePoints): array
+    private function buildExpectedPointsStateMap(
+        array $rows,
+        array $realizedFuturePoints,
+        bool $halfMode,
+        int $periodDurationSeconds
+    ): array
     {
         $stateBuckets = [];
 
@@ -120,7 +135,7 @@ class TrueEpaCalculator
                 continue;
             }
 
-            $key = $this->stateKey($play);
+            $key = $this->stateKeyForPlay($play, $halfMode, $periodDurationSeconds);
             $value = (float) ($realizedFuturePoints[(int) $play->id] ?? 0.0);
 
             if (! isset($stateBuckets[$key])) {
@@ -189,7 +204,7 @@ class TrueEpaCalculator
         return 0.0;
     }
 
-    private function stateKey(object $play): string
+    public function stateKeyForPlay(object $play, bool $halfMode, int $periodDurationSeconds): string
     {
         $period = is_numeric($play->period ?? null) ? (int) $play->period : 0;
         $clock = (string) ($play->clock ?? '');
@@ -197,14 +212,25 @@ class TrueEpaCalculator
         $away = (int) ($play->away_score ?? 0);
 
         return implode('|', [
-            $this->periodBucket($period),
-            $this->clockBucket($clock),
+            $this->periodBucket($period, $halfMode),
+            $this->clockBucket($clock, $periodDurationSeconds),
             $this->scoreMarginBucket($home - $away),
         ]);
     }
 
-    private function periodBucket(int $period): string
+    private function periodBucket(int $period, bool $halfMode): string
     {
+        if ($halfMode) {
+            if ($period <= 1) {
+                return 'H1';
+            }
+            if ($period === 2) {
+                return 'H2';
+            }
+
+            return 'OT';
+        }
+
         if ($period <= 1) {
             return 'Q1';
         }
@@ -221,24 +247,79 @@ class TrueEpaCalculator
         return 'OT';
     }
 
-    private function clockBucket(string $clock): string
+    private function clockBucket(string $clock, int $periodDurationSeconds): string
     {
         $parts = explode(':', trim($clock));
         $minutes = isset($parts[0]) && is_numeric($parts[0]) ? (int) $parts[0] : 0;
         $seconds = isset($parts[1]) && is_numeric($parts[1]) ? (int) $parts[1] : 0;
-        $remaining = max(0, min(12 * 60, ($minutes * 60) + $seconds));
+        $remaining = max(0, min($periodDurationSeconds, ($minutes * 60) + $seconds));
+        $step = max(1, (int) floor($periodDurationSeconds / 4));
 
-        if ($remaining >= 9 * 60) {
-            return '12-9';
+        if ($remaining >= ($step * 3)) {
+            return 'q4';
         }
-        if ($remaining >= 6 * 60) {
-            return '9-6';
+        if ($remaining >= ($step * 2)) {
+            return 'q3';
         }
-        if ($remaining >= 3 * 60) {
-            return '6-3';
+        if ($remaining >= $step) {
+            return 'q2';
         }
 
-        return '3-0';
+        return 'q1';
+    }
+
+    /**
+     * @param  array<int,object>|Collection<int,object>  $rows
+     * @return array{0:bool,1:int}
+     */
+    public function derivePeriodContext(array|Collection $rows): array
+    {
+        $rows = $rows instanceof Collection ? $rows->values()->all() : $rows;
+
+        $maxMinutes = 0;
+        $maxPeriod = 0;
+
+        foreach ($rows as $play) {
+            $period = is_numeric($play->period ?? null) ? (int) $play->period : 0;
+            $maxPeriod = max($maxPeriod, $period);
+
+            $clock = trim((string) ($play->clock ?? ''));
+            if ($clock === '' || ! str_contains($clock, ':')) {
+                continue;
+            }
+
+            [$mins] = array_pad(explode(':', $clock, 2), 2, '0');
+            if (is_numeric($mins)) {
+                $maxMinutes = max($maxMinutes, (int) $mins);
+            }
+        }
+
+        $halfMode = $maxPeriod <= 2 || $maxMinutes > 12;
+        $periodDurationSeconds = $halfMode ? (20 * 60) : (12 * 60);
+
+        return [$halfMode, $periodDurationSeconds];
+    }
+
+    /**
+     * @return array<string,float>
+     */
+    private function resolveBaselineMap(string $sport, ?int $season): array
+    {
+        if ($season === null || $season <= 0) {
+            return [];
+        }
+
+        try {
+            $enabled = (bool) config('epa.state_baseline.enabled', false);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if (! $enabled) {
+            return [];
+        }
+
+        return $this->stateBaselineService->getMap($sport, $season);
     }
 
     private function scoreMarginBucket(int $margin): string

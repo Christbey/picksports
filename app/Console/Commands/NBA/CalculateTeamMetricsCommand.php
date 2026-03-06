@@ -17,5 +17,5 @@ class CalculateTeamMetricsCommand extends AbstractProBasketballTeamMetricsComman
 
     protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
 
-    protected const TEAM_DISPLAY_FIELDS = ['school', 'mascot'];
+    protected const TEAM_DISPLAY_FIELDS = ['city', 'name'];
 }

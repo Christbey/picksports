@@ -9,4 +9,5 @@ class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
     protected const SPORT_KEY = 'basketball_nba';
     protected const DEFAULT_MARKETS = self::MARKETS_BASKETBALL;
     protected const GAME_MODEL_CLASS = \App\Models\NBA\Game::class;
+    protected const PLAYER_PROP_MODEL_CLASS = \App\Models\NBA\PlayerProp::class;
 }

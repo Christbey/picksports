@@ -2,7 +2,7 @@
 
 namespace App\Services\BettingRecommendations;
 
-use App\Models\PlayerProp;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class PlayerPropAnalyzer
@@ -14,11 +14,11 @@ class PlayerPropAnalyzer
     {
         $sportConfig = $this->getSportConfig($sport);
 
+        $playerPropModel = $sportConfig['player_prop_model'];
+
         // Get player props filtered by date/game selection
-        $props = PlayerProp::query()
-            ->where('sport', $sportConfig['odds_api_key'])
-            ->where('gameable_type', $sportConfig['game_model'])
-            ->whereHas('gameable', function ($q) use ($dateFilter, $gameFilter) {
+        $props = $playerPropModel::query()
+            ->whereHas('game', function ($q) use ($dateFilter, $gameFilter) {
                 if ($dateFilter) {
                     $q->whereDate('game_date', $dateFilter);
                 }
@@ -27,7 +27,7 @@ class PlayerPropAnalyzer
                     $q->where('id', $gameFilter);
                 }
             })
-            ->with(['gameable.homeTeam', 'gameable.awayTeam'])
+            ->with(['game.homeTeam', 'game.awayTeam'])
             ->get();
 
         $recommendations = collect();
@@ -46,7 +46,7 @@ class PlayerPropAnalyzer
     /**
      * Analyze a single prop and generate recommendation
      */
-    protected function analyzeProp(PlayerProp $prop, int $minGames, array $sportConfig): ?array
+    protected function analyzeProp(Model $prop, int $minGames, array $sportConfig): ?array
     {
         // Try to find player by name fuzzy matching
         $player = $this->findPlayerByName($prop->player_name, $sportConfig['player_model']);
@@ -62,7 +62,7 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        $game = $prop->gameable;
+        $game = $prop->game;
         $opponentId = $game->home_team_id === $player->team_id ? $game->away_team_id : $game->home_team_id;
         $isHome = $game->home_team_id === $player->team_id;
 
@@ -103,7 +103,7 @@ class PlayerPropAnalyzer
         return [
             'prop' => $prop,
             'player' => $player,
-            'game' => $prop->gameable,
+            'game' => $prop->game,
             'market' => $this->formatMarketName($prop->market),
             'line' => $prop->line,
             'recommendation' => $analysis['recommendation'],
@@ -128,7 +128,7 @@ class PlayerPropAnalyzer
      * Calculate edge and generate recommendation
      */
     protected function calculateEdge(
-        PlayerProp $prop,
+        Model $prop,
         float $seasonAvg,
         ?float $recentAvg,
         ?float $last5Avg,
@@ -563,32 +563,32 @@ class PlayerPropAnalyzer
     {
         return match ($sport) {
             'NBA' => [
-                'odds_api_key' => 'basketball_nba',
                 'game_model' => 'App\\Models\\NBA\\Game',
                 'player_model' => 'App\\Models\\NBA\\Player',
                 'player_stat_model' => 'App\\Models\\NBA\\PlayerStat',
                 'team_model' => 'App\\Models\\NBA\\Team',
+                'player_prop_model' => 'App\\Models\\NBA\\PlayerProp',
             ],
             'MLB' => [
-                'odds_api_key' => 'baseball_mlb',
                 'game_model' => 'App\\Models\\MLB\\Game',
                 'player_model' => 'App\\Models\\MLB\\Player',
                 'player_stat_model' => 'App\\Models\\MLB\\PlayerStat',
                 'team_model' => 'App\\Models\\MLB\\Team',
+                'player_prop_model' => 'App\\Models\\MLB\\PlayerProp',
             ],
             'NFL' => [
-                'odds_api_key' => 'americanfootball_nfl',
                 'game_model' => 'App\\Models\\NFL\\Game',
                 'player_model' => 'App\\Models\\NFL\\Player',
                 'player_stat_model' => 'App\\Models\\NFL\\PlayerStat',
                 'team_model' => 'App\\Models\\NFL\\Team',
+                'player_prop_model' => 'App\\Models\\NFL\\PlayerProp',
             ],
             'CBB' => [
-                'odds_api_key' => 'basketball_ncaab',
                 'game_model' => 'App\\Models\\CBB\\Game',
                 'player_model' => 'App\\Models\\CBB\\Player',
                 'player_stat_model' => 'App\\Models\\CBB\\PlayerStat',
                 'team_model' => 'App\\Models\\CBB\\Team',
+                'player_prop_model' => 'App\\Models\\CBB\\PlayerProp',
             ],
             default => throw new \InvalidArgumentException("Unsupported sport: {$sport}"),
         };
@@ -603,7 +603,7 @@ class PlayerPropAnalyzer
         $gameModel = $sportConfig['game_model'];
 
         return $gameModel::query()
-            ->whereHas('playerProps', fn ($q) => $q->where('sport', $sportConfig['odds_api_key']))
+            ->whereHas('playerProps')
             ->selectRaw('DATE(game_date) as date')
             ->groupBy('date')
             ->orderBy('date')
@@ -627,7 +627,7 @@ class PlayerPropAnalyzer
         $gameModel = $sportConfig['game_model'];
 
         $query = $gameModel::query()
-            ->whereHas('playerProps', fn ($q) => $q->where('sport', $sportConfig['odds_api_key']))
+            ->whereHas('playerProps')
             ->with(['homeTeam', 'awayTeam']);
 
         if ($date) {

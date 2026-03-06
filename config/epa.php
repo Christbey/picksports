@@ -1,6 +1,11 @@
 <?php
 
 return [
+    'state_baseline' => [
+        'enabled' => env('EPA_STATE_BASELINE_ENABLED', false),
+        'min_sample_size' => env('EPA_STATE_BASELINE_MIN_SAMPLE_SIZE', 25),
+    ],
+
     'profiles' => [
         'nba' => [
             'points' => 0.70,

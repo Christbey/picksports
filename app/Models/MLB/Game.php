@@ -16,9 +16,9 @@ class Game extends Model
 
     protected $table = 'mlb_games';
 
-    public function playerProps(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    public function playerProps(): HasMany
     {
-        return $this->morphMany(\App\Models\PlayerProp::class, 'gameable');
+        return $this->hasMany(\App\Models\MLB\PlayerProp::class, 'game_id');
     }
 
     protected static function newFactory(): MlbGameFactory

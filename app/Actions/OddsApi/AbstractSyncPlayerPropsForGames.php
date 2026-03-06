@@ -2,7 +2,6 @@
 
 namespace App\Actions\OddsApi;
 
-use App\Models\PlayerProp;
 use App\Services\OddsApi\OddsApiService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -11,6 +10,8 @@ abstract class AbstractSyncPlayerPropsForGames
     protected const SPORT_KEY = '';
 
     protected const GAME_MODEL_CLASS = Model::class;
+
+    protected const PLAYER_PROP_MODEL_CLASS = Model::class;
 
     protected const DEFAULT_MARKETS = [];
 
@@ -55,8 +56,9 @@ abstract class AbstractSyncPlayerPropsForGames
                 continue;
             }
 
-            PlayerProp::where('gameable_type', get_class($game))
-                ->where('gameable_id', $game->id)
+            $playerPropModel = $this->playerPropModelClass();
+            $playerPropModel::query()
+                ->where('game_id', $game->id)
                 ->delete();
 
             if (isset($propsData['bookmakers']) && is_array($propsData['bookmakers'])) {
@@ -72,6 +74,7 @@ abstract class AbstractSyncPlayerPropsForGames
     protected function storeBookmakerProps(Model $game, array $bookmaker, string $eventId): int
     {
         $stored = 0;
+        $playerPropModel = $this->playerPropModelClass();
 
         if (! isset($bookmaker['markets']) || ! is_array($bookmaker['markets'])) {
             return 0;
@@ -109,11 +112,9 @@ abstract class AbstractSyncPlayerPropsForGames
             }
 
             foreach ($playerProps as $playerName => $propData) {
-                PlayerProp::create([
-                    'gameable_type' => get_class($game),
-                    'gameable_id' => $game->id,
+                $playerPropModel::query()->create([
+                    'game_id' => $game->id,
                     'player_id' => $this->resolvePlayerId($playerName, $game),
-                    'sport' => $this->sportKey(),
                     'odds_api_event_id' => $eventId,
                     'player_name' => $playerName,
                     'market' => $marketKey,
@@ -204,6 +205,18 @@ abstract class AbstractSyncPlayerPropsForGames
         }
 
         return static::GAME_MODEL_CLASS;
+    }
+
+    /**
+     * @return class-string<Model>
+     */
+    protected function playerPropModelClass(): string
+    {
+        if (static::PLAYER_PROP_MODEL_CLASS === Model::class) {
+            throw new \RuntimeException('PLAYER_PROP_MODEL_CLASS must be defined on player-props sync action.');
+        }
+
+        return static::PLAYER_PROP_MODEL_CLASS;
     }
 
     /**

@@ -86,9 +86,9 @@ class Game extends Model
         return $this->hasOne(Prediction::class, 'game_id');
     }
 
-    public function playerProps(): \Illuminate\Database\Eloquent\Relations\MorphMany
+    public function playerProps(): HasMany
     {
-        return $this->morphMany(\App\Models\PlayerProp::class, 'gameable');
+        return $this->hasMany(\App\Models\NBA\PlayerProp::class, 'game_id');
     }
 
     protected static function newFactory(): \Database\Factories\NbaGameFactory

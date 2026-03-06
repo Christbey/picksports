@@ -2,20 +2,26 @@
 
 namespace App\Services\NFL;
 
-use App\Models\NFL\Play;
+use App\Services\Epa\StateBaselineService;
 use Illuminate\Support\Collection;
 
 class TrueEpaCalculator
 {
     public function __construct(
-        protected PlayEpaDataService $playDataService
+        protected PlayEpaDataService $playDataService,
+        protected StateBaselineService $stateBaselineService
     ) {}
 
     /**
      * @param  Collection<int,object>  $plays
      * @return array<int,array{eligible:bool,ep_before:?float,ep_after:?float,epa:?float}>
      */
-    public function calculateForGame(Collection $plays, int $homeTeamId, int $awayTeamId): array
+    public function calculateForGame(
+        Collection $plays,
+        int $homeTeamId,
+        int $awayTeamId,
+        ?int $season = null
+    ): array
     {
         if ($plays->isEmpty()) {
             return [];
@@ -24,6 +30,7 @@ class TrueEpaCalculator
         $rows = $plays->values()->all();
         $realizedFuturePoints = $this->buildRealizedFuturePoints($rows, $homeTeamId, $awayTeamId);
         $stateMap = $this->buildExpectedPointsStateMap($rows, $realizedFuturePoints);
+        $baselineMap = $this->resolveBaselineMap($season);
 
         $results = [];
         $count = count($rows);
@@ -43,15 +50,15 @@ class TrueEpaCalculator
             }
 
             $offenseTeamId = (int) $play->possession_team_id;
-            $stateKey = $this->stateKey($play);
-            $epBefore = $stateMap[$stateKey] ?? 0.0;
+            $stateKey = $this->stateKeyForPlay($play);
+            $epBefore = $baselineMap[$stateKey] ?? $stateMap[$stateKey] ?? 0.0;
 
             $nextEligible = $this->findNextEligiblePlay($rows, $i + 1);
             if ($nextEligible === null) {
                 $epAfter = 0.0;
             } else {
-                $nextStateKey = $this->stateKey($nextEligible);
-                $nextEp = $stateMap[$nextStateKey] ?? 0.0;
+                $nextStateKey = $this->stateKeyForPlay($nextEligible);
+                $nextEp = $baselineMap[$nextStateKey] ?? $stateMap[$nextStateKey] ?? 0.0;
                 $nextOffenseTeamId = (int) $nextEligible->possession_team_id;
                 $epAfter = $nextOffenseTeamId === $offenseTeamId ? $nextEp : -$nextEp;
             }
@@ -119,7 +126,7 @@ class TrueEpaCalculator
                 continue;
             }
 
-            $key = $this->stateKey($play);
+            $key = $this->stateKeyForPlay($play);
             $value = (float) ($realizedFuturePoints[(int) $play->id] ?? 0.0);
             if (! isset($stateBuckets[$key])) {
                 $stateBuckets[$key] = ['sum' => 0.0, 'count' => 0];
@@ -187,7 +194,7 @@ class TrueEpaCalculator
         return 0.0;
     }
 
-    private function stateKey(object $play): string
+    public function stateKeyForPlay(object $play): string
     {
         $down = (int) ($play->down ?? 0);
         $distance = (int) ($play->distance ?? 0);
@@ -229,5 +236,26 @@ class TrueEpaCalculator
 
         return "{$start}-{$end}";
     }
-}
 
+    /**
+     * @return array<string,float>
+     */
+    private function resolveBaselineMap(?int $season): array
+    {
+        if ($season === null || $season <= 0) {
+            return [];
+        }
+
+        try {
+            $enabled = (bool) config('epa.state_baseline.enabled', false);
+        } catch (\Throwable) {
+            return [];
+        }
+
+        if (! $enabled) {
+            return [];
+        }
+
+        return $this->stateBaselineService->getMap('nfl', $season);
+    }
+}

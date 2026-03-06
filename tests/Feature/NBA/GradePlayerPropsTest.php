@@ -3,9 +3,9 @@
 use App\Actions\GradePlayerProps;
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
+use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
 use App\Models\NBA\Team;
-use App\Models\PlayerProp;
 
 test('grades player props correctly for completed games', function () {
     // Create teams
@@ -44,10 +44,8 @@ test('grades player props correctly for completed games', function () {
 
     // Create player props for different markets
     $pointsProp = PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'LeBron James',
         'market' => 'player_points',
         'line' => 25.5, // Line was 25.5, actual was 28 (OVER hit)
@@ -56,10 +54,8 @@ test('grades player props correctly for completed games', function () {
     ]);
 
     $reboundsProp = PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'LeBron James',
         'market' => 'player_rebounds',
         'line' => 9.5, // Line was 9.5, actual was 8 (UNDER hit)
@@ -68,10 +64,8 @@ test('grades player props correctly for completed games', function () {
     ]);
 
     $assistsProp = PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'LeBron James',
         'market' => 'player_assists',
         'line' => 12.5, // Line was 12.5, actual was 12 (UNDER hit)
@@ -89,21 +83,21 @@ test('grades player props correctly for completed games', function () {
 
     // Refresh props and check individual results
     $pointsProp->refresh();
-    expect($pointsProp->actual_value)->toBe(28.0);
+    expect((float) $pointsProp->actual_value)->toBe(28.0);
     expect($pointsProp->hit_over)->toBeTrue();
-    expect($pointsProp->error)->toBe(2.5); // |28 - 25.5| = 2.5
+    expect((float) $pointsProp->error)->toBe(2.5); // |28 - 25.5| = 2.5
     expect($pointsProp->graded_at)->not->toBeNull();
 
     $reboundsProp->refresh();
-    expect($reboundsProp->actual_value)->toBe(8.0);
+    expect((float) $reboundsProp->actual_value)->toBe(8.0);
     expect($reboundsProp->hit_over)->toBeFalse();
-    expect($reboundsProp->error)->toBe(1.5); // |8 - 9.5| = 1.5
+    expect((float) $reboundsProp->error)->toBe(1.5); // |8 - 9.5| = 1.5
     expect($reboundsProp->graded_at)->not->toBeNull();
 
     $assistsProp->refresh();
-    expect($assistsProp->actual_value)->toBe(12.0);
+    expect((float) $assistsProp->actual_value)->toBe(12.0);
     expect($assistsProp->hit_over)->toBeFalse();
-    expect($assistsProp->error)->toBe(0.5); // |12 - 12.5| = 0.5
+    expect((float) $assistsProp->error)->toBe(0.5); // |12 - 12.5| = 0.5
     expect($assistsProp->graded_at)->not->toBeNull();
 });
 
@@ -141,10 +135,8 @@ test('handles combined stat markets correctly', function () {
 
     // Test points + rebounds + assists (30 + 5 + 10 = 45)
     $praProp = PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'Stephen Curry',
         'market' => 'player_points_rebounds_assists',
         'line' => 42.5,
@@ -154,10 +146,8 @@ test('handles combined stat markets correctly', function () {
 
     // Test blocks + steals (0 + 3 = 3)
     $bsProp = PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'Stephen Curry',
         'market' => 'player_blocks_steals',
         'line' => 2.5,
@@ -171,17 +161,22 @@ test('handles combined stat markets correctly', function () {
 
     // Check results
     $praProp->refresh();
-    expect($praProp->actual_value)->toBe(45.0);
+    expect((float) $praProp->actual_value)->toBe(45.0);
     expect($praProp->hit_over)->toBeTrue();
 
     $bsProp->refresh();
-    expect($bsProp->actual_value)->toBe(3.0);
+    expect((float) $bsProp->actual_value)->toBe(3.0);
     expect($bsProp->hit_over)->toBeTrue();
 });
 
 test('skips props without matching player stats', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
     // Create game
     $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
         'status' => 'STATUS_FINAL',
         'home_score' => 110,
         'away_score' => 105,
@@ -190,9 +185,7 @@ test('skips props without matching player stats', function () {
 
     // Create prop without corresponding player stat
     PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
-        'sport' => 'basketball_nba',
+        'game_id' => $game->id,
         'player_name' => 'Non Existent Player',
         'market' => 'player_points',
         'line' => 25.5,
@@ -208,8 +201,13 @@ test('skips props without matching player stats', function () {
 });
 
 test('does not regrade already graded props', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
     // Create game, player, and stats
     $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
         'status' => 'STATUS_FINAL',
         'home_score' => 110,
         'away_score' => 105,
@@ -221,15 +219,14 @@ test('does not regrade already graded props', function () {
     PlayerStat::factory()->create([
         'game_id' => $game->id,
         'player_id' => $player->id,
+        'team_id' => $homeTeam->id,
         'points' => 28,
     ]);
 
     // Create already graded prop
     PlayerProp::create([
-        'gameable_type' => Game::class,
-        'gameable_id' => $game->id,
+        'game_id' => $game->id,
         'player_id' => $player->id,
-        'sport' => 'basketball_nba',
         'player_name' => 'Test Player',
         'market' => 'player_points',
         'line' => 25.5,

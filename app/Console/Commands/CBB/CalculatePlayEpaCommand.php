@@ -8,6 +8,11 @@ use App\Models\CBB\Play;
 
 class CalculatePlayEpaCommand extends AbstractBasketballCalculatePlayEpaCommand
 {
+    protected function sportKey(): string
+    {
+        return 'cbb';
+    }
+
     protected $signature = 'cbb:calculate-play-epa
         {--season= : Limit to season (e.g. 2025)}
         {--game_id= : Limit to a single cbb_games.id}

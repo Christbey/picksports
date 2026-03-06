@@ -33,7 +33,7 @@ test('leaderboard endpoint returns player season averages', function () {
             'player_id' => $player->id,
             'game_id' => $game->id,
             'team_id' => $team->id,
-            'minutes_played' => '30',
+            'minutes_played' => '30:30',
             'points' => 20,
             'rebounds_total' => 5,
             'assists' => 8,
@@ -76,13 +76,14 @@ test('leaderboard endpoint returns player season averages', function () {
     expect($entry)->not->toBeNull()
         ->and($entry['games_played'])->toBe(12)
         ->and((float) $entry['points_per_game'])->toBe(20.0)
+        ->and((float) $entry['minutes_per_game'])->toBe(30.5)
         ->and((float) $entry['rebounds_per_game'])->toBe(5.0)
         ->and((float) $entry['assists_per_game'])->toBe(8.0)
         ->and((float) $entry['turnovers_per_game'])->toBe(3.0)
         ->and($entry['player']['full_name'])->toBe($player->full_name);
 
     expect((float) $entry['estimated_epa_per_game'])->toBe(15.89)
-        ->and((float) $entry['estimated_epa_per_36'])->toBe(19.07);
+        ->and((float) $entry['estimated_epa_per_36'])->toBe(18.76);
 });
 
 test('leaderboard excludes players with fewer than 10 games', function () {

@@ -51,6 +51,9 @@ class TeamMetric extends Model
         // Possession coefficient tracking
         'possession_coefficient',
         'iteration_count',
+        'offensive_true_epa_per_play',
+        'defensive_true_epa_per_play',
+        'net_true_epa_per_play',
     ];
 
     protected function casts(): array
@@ -91,6 +94,9 @@ class TeamMetric extends Model
             // Possession coefficient tracking
             'possession_coefficient' => 'decimal:3',
             'iteration_count' => 'integer',
+            'offensive_true_epa_per_play' => 'decimal:3',
+            'defensive_true_epa_per_play' => 'decimal:3',
+            'net_true_epa_per_play' => 'decimal:3',
         ];
     }
 

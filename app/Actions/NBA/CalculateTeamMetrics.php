@@ -2,8 +2,10 @@
 
 namespace App\Actions\NBA;
 
+use App\Actions\Sports\Concerns\CalculatesTeamTrueEpaFromPlays;
 use App\Concerns\FiltersTeamGames;
 use App\Models\NBA\Game;
+use App\Models\NBA\Play;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
@@ -12,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 
 class CalculateTeamMetrics
 {
+    use CalculatesTeamTrueEpaFromPlays;
     use FiltersTeamGames;
 
     public function execute(Team $team, int $season): ?TeamMetric
@@ -46,6 +49,7 @@ class CalculateTeamMetrics
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
         $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'nba', (float) ($team->elo_rating ?? 1500));
         $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
+        $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games);
 
         Log::info('Team metrics calculated', [
             'team_id' => $team->id,
@@ -89,6 +93,9 @@ class CalculateTeamMetrics
                 'recent_form_rating' => $recentFormRating,
                 'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
                 'rest_travel_fatigue' => $restTravelFatigue,
+                'offensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['offensive_true_epa_per_play'], 3),
+                'defensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['defensive_true_epa_per_play'], 3),
+                'net_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['net_true_epa_per_play'], 3),
                 'calculation_date' => now()->toDateString(),
             ]
         );
@@ -234,4 +241,5 @@ class CalculateTeamMetrics
 
         return $calculated;
     }
+
 }

@@ -79,6 +79,7 @@ export const nflPlayerStatsPageConfig = {
     leaderboardEndpoint: '/api/v1/nfl/player-stats/leaderboard',
     showEpaColumns: false,
     sortOptions: [
+        { key: 'estimated_epa_per_game', label: 'EPA/G' },
         { key: 'points_per_game', label: 'Yds/G' },
         { key: 'rebounds_per_game', label: 'TD/G' },
         { key: 'assists_per_game', label: 'Rec/G' },
@@ -136,24 +137,109 @@ export const nflPlayerStatsPageConfig = {
             cellClass:
                 'hidden p-2 text-right text-muted-foreground lg:table-cell',
         },
+        {
+            key: 'estimated_epa_per_game',
+            label: 'EPA/G',
+            cellClass: 'p-2 text-right font-medium',
+            format: (value: number | undefined) =>
+                Number(value ?? 0).toFixed(2),
+        },
+        {
+            key: 'estimated_epa_per_opportunity',
+            label: 'EPA/Opp',
+            cellClass: 'hidden p-2 text-right xl:table-cell',
+            format: (value: number | undefined) =>
+                Number(value ?? 0).toFixed(3),
+        },
     ],
     statCategoryOptions: [
         {
-            key: 'passing',
-            label: 'Passing',
-            defaultSortBy: 'passing_yards_per_game',
+            key: 'impact',
+            label: 'Impact',
+            defaultSortBy: 'estimated_epa_per_game',
             sortOptions: [
-                { key: 'passing_yards_per_game', label: 'Pass Yds/G' },
-                { key: 'passing_yards_total', label: 'Pass Yds' },
-                { key: 'passing_touchdowns_per_game', label: 'Pass TD/G' },
-                { key: 'passing_touchdowns_total', label: 'Pass TD' },
-                { key: 'qbr', label: 'QBR' },
+                { key: 'estimated_epa_per_game', label: 'EPA/G' },
+                { key: 'estimated_epa_total', label: 'EPA Total' },
+                { key: 'estimated_epa_per_opportunity', label: 'EPA/Opp' },
+                { key: 'points_per_game', label: 'Yds/G' },
+                { key: 'rebounds_per_game', label: 'TD/G' },
             ],
             statColumns: [
                 {
-                    key: 'passing_yards_per_game',
-                    label: 'Pass Yds/G',
+                    key: 'estimated_epa_per_game',
+                    label: 'EPA/G',
                     cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) =>
+                        Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'estimated_epa_total',
+                    label: 'EPA Total',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) =>
+                        Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'estimated_epa_per_opportunity',
+                    label: 'EPA/Opp',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) =>
+                        Number(v ?? 0).toFixed(3),
+                },
+                {
+                    key: 'points_per_game',
+                    label: 'Yds/G',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                },
+                {
+                    key: 'rebounds_per_game',
+                    label: 'TD/G',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                },
+                {
+                    key: 'assists_per_game',
+                    label: 'Rec/G',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                },
+            ],
+            match: () => true,
+        },
+        {
+            key: 'passing',
+            label: 'Passing',
+            defaultSortBy: 'passing_yards_total',
+            sortOptions: [
+                { key: 'passing_completions_total', label: 'Comp' },
+                { key: 'passing_attempts_total', label: 'Att' },
+                { key: 'passing_yards_total', label: 'Pass Yds' },
+                { key: 'passing_touchdowns_total', label: 'Pass TD' },
+                { key: 'passing_touchdown_percentage', label: 'TD%' },
+                { key: 'interceptions_thrown_total', label: 'INT' },
+                { key: 'interception_percentage', label: 'INT%' },
+                { key: 'games_with_interception', label: 'G w/ INT' },
+                { key: 'completion_percentage', label: 'Comp%' },
+                { key: 'yards_per_pass_thrown', label: 'Yds/Att' },
+                { key: 'passing_long_total', label: 'Long' },
+                { key: 'sacks_taken_total', label: 'Sacked' },
+                { key: 'sack_yards_lost_total', label: 'Sack Yds Lost' },
+                { key: 'passing_yards_net_total', label: 'Net Pass Yds' },
+                { key: 'net_yards_per_passing_play', label: 'Net Yds/Play' },
+                { key: 'qb_rating', label: 'QB Rating' },
+                { key: 'passing_two_point_conversions_total', label: '2PT Pass' },
+                { key: 'passing_rushing_yards_total', label: 'Pass+Rush Yds' },
+            ],
+            statColumns: [
+                {
+                    key: 'passing_completions_total',
+                    label: 'Comp',
+                    cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'passing_attempts_total',
+                    label: 'Att',
+                    cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
                 },
                 {
                     key: 'passing_yards_total',
@@ -161,35 +247,105 @@ export const nflPlayerStatsPageConfig = {
                     cellClass: 'p-2 text-right',
                 },
                 {
-                    key: 'passing_touchdowns_per_game',
-                    label: 'Pass TD/G',
-                    cellClass: 'p-2 text-right',
-                },
-                {
                     key: 'passing_touchdowns_total',
                     label: 'Pass TD',
                     cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
                 },
                 {
-                    key: 'qbr',
-                    label: 'QBR',
+                    key: 'passing_touchdown_percentage',
+                    label: 'TD%',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => `${Number(v ?? 0).toFixed(2)}%`,
+                },
+                {
+                    key: 'interceptions_thrown_total',
+                    label: 'INT',
                     cellClass: 'p-2 text-right',
                     format: (v: number | undefined) =>
-                        Number(v ?? 0).toFixed(1),
+                        Number(v ?? 0).toFixed(0),
                 },
                 {
-                    key: 'completion_percentage',
-                    label: 'Comp%',
+                    key: 'interception_percentage',
+                    label: 'INT%',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) =>
+                        `${Number(v ?? 0).toFixed(2)}%`,
+                },
+                {
+                    key: 'games_with_interception',
+                    label: 'G w/ INT',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'games_with_interception_percentage',
+                    label: 'G w/ INT%',
                     cellClass: 'hidden p-2 text-right md:table-cell',
                     format: (v: number | undefined) =>
                         `${Number(v ?? 0).toFixed(1)}%`,
                 },
                 {
-                    key: 'interceptions_thrown_total',
-                    label: 'INT',
-                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    key: 'completion_percentage',
+                    label: 'Comp%',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
                     format: (v: number | undefined) =>
-                        Number(v ?? 0).toFixed(0),
+                        `${Number(v ?? 0).toFixed(1)}%`,
+                },
+                {
+                    key: 'yards_per_pass_thrown',
+                    label: 'Yds/Att',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'passing_long_total',
+                    label: 'Long',
+                    cellClass: 'hidden p-2 text-right xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'sacks_taken_total',
+                    label: 'Sacked',
+                    cellClass: 'hidden p-2 text-right xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'sack_yards_lost_total',
+                    label: 'Sack Yds Lost',
+                    cellClass: 'hidden p-2 text-right xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'passing_yards_net_total',
+                    label: 'Net Pass Yds',
+                    cellClass: 'hidden p-2 text-right 2xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'net_yards_per_passing_play',
+                    label: 'Net Yds/Play',
+                    cellClass: 'hidden p-2 text-right 2xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'qb_rating',
+                    label: 'QB Rating',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) =>
+                        v == null ? '-' : Number(v).toFixed(1),
+                },
+                {
+                    key: 'passing_two_point_conversions_total',
+                    label: '2PT Pass',
+                    cellClass: 'hidden p-2 text-right 2xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'passing_rushing_yards_total',
+                    label: 'Pass+Rush Yds',
+                    cellClass: 'hidden p-2 text-right 2xl:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
                 },
             ],
             match: isPassingEntry,
@@ -197,19 +353,23 @@ export const nflPlayerStatsPageConfig = {
         {
             key: 'rushing',
             label: 'Rushing',
-            defaultSortBy: 'rushing_yards_per_game',
+            defaultSortBy: 'rushing_yards_total',
             sortOptions: [
-                { key: 'rushing_yards_per_game', label: 'Rush Yds/G' },
+                { key: 'rushing_attempts_total', label: 'Rush Att' },
                 { key: 'rushing_yards_total', label: 'Rush Yds' },
-                { key: 'rushing_touchdowns_per_game', label: 'Rush TD/G' },
+                { key: 'yards_per_carry', label: 'Yds/Rush' },
                 { key: 'rushing_touchdowns_total', label: 'Rush TD' },
-                { key: 'yards_per_carry', label: 'Yds/Carry' },
+                { key: 'rushing_long_total', label: 'Long Rush' },
+                { key: 'rushing_two_point_conversions_total', label: 'Rush 2PT' },
+                { key: 'rushing_receiving_yards_total', label: 'Rush+Rec Yds' },
+                { key: 'rushing_receiving_touchdowns_total', label: 'Rush+Rec TD' },
             ],
             statColumns: [
                 {
-                    key: 'rushing_yards_per_game',
-                    label: 'Rush Yds/G',
+                    key: 'rushing_attempts_total',
+                    label: 'Rush Att',
                     cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
                 },
                 {
                     key: 'rushing_yards_total',
@@ -217,38 +377,215 @@ export const nflPlayerStatsPageConfig = {
                     cellClass: 'p-2 text-right',
                 },
                 {
-                    key: 'rushing_touchdowns_per_game',
-                    label: 'Rush TD/G',
+                    key: 'yards_per_carry',
+                    label: 'Yds/Rush',
                     cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) =>
+                        Number(v ?? 0).toFixed(2),
                 },
                 {
                     key: 'rushing_touchdowns_total',
                     label: 'Rush TD',
                     cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
                 },
                 {
-                    key: 'yards_per_carry',
-                    label: 'Yds/Carry',
-                    cellClass: 'p-2 text-right',
-                    format: (v: number | undefined) =>
-                        Number(v ?? 0).toFixed(1),
-                },
-                {
-                    key: 'rushing_attempts_total',
-                    label: 'Att',
+                    key: 'rushing_long_total',
+                    label: 'Long Rush',
                     cellClass: 'p-2 text-right',
                     format: (v: number | undefined) =>
                         Number(v ?? 0).toFixed(0),
                 },
                 {
-                    key: 'receiving_yards_total',
-                    label: 'Rec Yds',
+                    key: 'rushing_two_point_conversions_total',
+                    label: 'Rush 2PT',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) =>
+                        Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'rushing_receiving_yards_total',
+                    label: 'Rush+Rec Yds',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) =>
+                        Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'rushing_receiving_touchdowns_total',
+                    label: 'Rush+Rec TD',
                     cellClass: 'hidden p-2 text-right md:table-cell',
                     format: (v: number | undefined) =>
                         Number(v ?? 0).toFixed(0),
                 },
             ],
             match: isRushingEntry,
+        },
+        {
+            key: 'receiving',
+            label: 'Receiving',
+            defaultSortBy: 'receiving_yards_total',
+            sortOptions: [
+                { key: 'receptions_total', label: 'Receptions' },
+                { key: 'receiving_yards_total', label: 'Rec Yds' },
+                { key: 'yards_per_reception', label: 'Yds/Catch' },
+                { key: 'receiving_touchdowns_total', label: 'Rec TD' },
+                { key: 'receiving_long_total', label: 'Long Rec' },
+                { key: 'pass_targets_total', label: 'Targets' },
+                { key: 'catch_rate', label: 'Catch Rate' },
+                { key: 'receiving_two_point_conversions_total', label: 'Rec 2PT' },
+            ],
+            statColumns: [
+                {
+                    key: 'receptions_total',
+                    label: 'Receptions',
+                    cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'receiving_yards_total',
+                    label: 'Rec Yds',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'yards_per_reception',
+                    label: 'Yds/Catch',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'receiving_touchdowns_total',
+                    label: 'Rec TD',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'receiving_long_total',
+                    label: 'Long Rec',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'pass_targets_total',
+                    label: 'Targets',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'catch_rate',
+                    label: 'Catch Rate',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => `${Number(v ?? 0).toFixed(1)}%`,
+                },
+                {
+                    key: 'receiving_two_point_conversions_total',
+                    label: 'Rec 2PT',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+            ],
+            match: (entry: Record<string, any>) =>
+                Number(entry.receptions_total ?? 0) > 0
+                || Number(entry.receiving_yards_total ?? 0) > 0
+                || Number(entry.pass_targets_total ?? 0) > 0,
+        },
+        {
+            key: 'returning',
+            label: 'Returning',
+            defaultSortBy: 'kickoff_return_yards_total',
+            sortOptions: [
+                { key: 'kickoff_returns_total', label: 'KR' },
+                { key: 'kickoff_return_yards_total', label: 'KR Yds' },
+                { key: 'yards_per_kickoff_return', label: 'Yds/KR' },
+                { key: 'kickoff_return_touchdowns_total', label: 'KR TD' },
+                { key: 'kickoff_return_long_total', label: 'Long KR' },
+                { key: 'kickoff_return_fair_catches_total', label: 'KR FC' },
+                { key: 'punt_returns_total', label: 'PR' },
+                { key: 'punt_return_yards_total', label: 'PR Yds' },
+                { key: 'yards_per_punt_return', label: 'Yds/PR' },
+                { key: 'punt_return_touchdowns_total', label: 'PR TD' },
+                { key: 'punt_return_long_total', label: 'Long PR' },
+                { key: 'punt_return_fair_catches_total', label: 'PR FC' },
+            ],
+            statColumns: [
+                {
+                    key: 'kickoff_returns_total',
+                    label: 'KR',
+                    cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'kickoff_return_yards_total',
+                    label: 'KR Yds',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'yards_per_kickoff_return',
+                    label: 'Yds/KR',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'kickoff_return_touchdowns_total',
+                    label: 'KR TD',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'kickoff_return_long_total',
+                    label: 'Long KR',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'kickoff_return_fair_catches_total',
+                    label: 'KR FC',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'punt_returns_total',
+                    label: 'PR',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'punt_return_yards_total',
+                    label: 'PR Yds',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'yards_per_punt_return',
+                    label: 'Yds/PR',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'punt_return_touchdowns_total',
+                    label: 'PR TD',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'punt_return_long_total',
+                    label: 'Long PR',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+                {
+                    key: 'punt_return_fair_catches_total',
+                    label: 'PR FC',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(0),
+                },
+            ],
+            match: (entry: Record<string, any>) =>
+                Number(entry.kickoff_returns_total ?? 0) > 0
+                || Number(entry.punt_returns_total ?? 0) > 0
+                || Number(entry.kickoff_return_yards_total ?? 0) > 0
+                || Number(entry.punt_return_yards_total ?? 0) > 0,
         },
         {
             key: 'defense',

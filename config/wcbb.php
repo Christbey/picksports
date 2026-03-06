@@ -284,6 +284,16 @@ return [
         'injury_epa_min_multiplier' => 0.50,
         'injury_epa_max_multiplier' => 2.00,
         'injury_epa_fallback_multiplier' => 1.00,
+
+        // Guarded rollout for true play-by-play EPA blend.
+        'true_epa' => [
+            'enabled' => env('WCBB_TRUE_EPA_ENABLED', false),
+            'blend_weight' => env('WCBB_TRUE_EPA_BLEND_WEIGHT', 0.30),
+            'spread_points_per_epa' => env('WCBB_TRUE_EPA_SPREAD_POINTS_PER_EPA', 15.0),
+            'total_points_per_epa_component' => env('WCBB_TRUE_EPA_TOTAL_POINTS_PER_COMP', 25.0),
+            'min_predicted_total' => env('WCBB_TRUE_EPA_MIN_TOTAL', 110.0),
+            'max_predicted_total' => env('WCBB_TRUE_EPA_MAX_TOTAL', 190.0),
+        ],
     ],
 
     /*

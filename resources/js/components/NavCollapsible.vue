@@ -49,7 +49,12 @@ function isGroupActive(item: NavItem): boolean {
                 <SidebarMenuItem>
                     <CollapsibleTrigger as-child>
                         <SidebarMenuButton :tooltip="item.title">
-                            <component :is="item.icon" v-if="item.icon" />
+                            <component
+                                v-if="item.icon"
+                                :is="item.icon"
+                                v-bind="item.iconProps"
+                                class="size-4 text-slate-700 dark:text-slate-200"
+                            />
                             <span>{{ item.title }}</span>
                             <ChevronRight
                                 class="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90"

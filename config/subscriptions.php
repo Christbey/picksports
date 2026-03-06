@@ -4,6 +4,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tier Enforcement
+    |--------------------------------------------------------------------------
+    |
+    | When disabled, tier/subscription permission checks are bypassed so the
+    | app can run in free-access mode. Set ENFORCE_TIERS=true to re-enable.
+    |
+    */
+    'enforce_tiers' => env('ENFORCE_TIERS', false),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Tier Bypass User IDs
+    |--------------------------------------------------------------------------
+    |
+    | Comma-separated user IDs that bypass tier/permission enforcement even
+    | when ENFORCE_TIERS is enabled (for internal/admin testing access).
+    |
+    */
+    'tier_bypass_user_ids' => array_values(array_filter(array_map(
+        static fn ($id) => is_numeric(trim((string) $id)) ? (int) trim((string) $id) : null,
+        explode(',', (string) env('ENFORCE_TIERS_BYPASS_USER_IDS', ''))
+    ))),
+
+    /*
+    |--------------------------------------------------------------------------
     | Subscription Tiers
     |--------------------------------------------------------------------------
     |

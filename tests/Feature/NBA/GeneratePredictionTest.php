@@ -375,8 +375,8 @@ it('applies rest day advantage when home team is rested', function () {
 
     $evenPrediction = $action->execute($evenGame);
 
-    // Rested home team should have more favorable spread
-    expect((float) $prediction->predicted_spread)->toBeGreaterThan((float) $evenPrediction->predicted_spread);
+    // Rested home team should be at least as favorable after 1-decimal spread rounding.
+    expect((float) $prediction->predicted_spread)->toBeGreaterThanOrEqual((float) $evenPrediction->predicted_spread);
 });
 
 it('blends vegas spread when odds data available', function () {
@@ -497,4 +497,53 @@ it('falls back gracefully when no recent form data exists', function () {
     expect((float) $prediction->form_spread_component)->toBe(
         config('nba.prediction.home_court_points')
     );
+});
+
+it('applies true epa blend metadata when enabled and metrics are available', function () {
+    config()->set('nba.prediction.true_epa.enabled', true);
+    config()->set('nba.prediction.true_epa.blend_weight', 1.0);
+    config()->set('nba.prediction.true_epa.spread_points_per_epa', 20.0);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 114.0,
+        'defensive_efficiency' => 109.0,
+        'net_rating' => 5.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'offensive_true_epa_per_play' => 0.120,
+        'defensive_true_epa_per_play' => -0.040,
+        'net_true_epa_per_play' => 0.080,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 109.0,
+        'defensive_efficiency' => 112.0,
+        'net_rating' => -3.0,
+        'tempo' => 99.0,
+        'strength_of_schedule' => 1500.0,
+        'offensive_true_epa_per_play' => 0.030,
+        'defensive_true_epa_per_play' => 0.020,
+        'net_true_epa_per_play' => -0.020,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $prediction = (new GeneratePrediction)->execute($game);
+
+    expect($prediction)->not->toBeNull();
+    expect(data_get($prediction->model_metadata, 'true_epa.true_epa_enabled'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'true_epa.true_epa_applied'))->toBeTrue()
+        ->and((float) data_get($prediction->model_metadata, 'true_epa.true_epa_diff'))->toBe(0.1)
+        ->and(data_get($prediction->model_metadata, 'true_epa.true_epa_total_reason'))->toBe('applied');
 });

@@ -197,6 +197,26 @@ return [
         'injury_questionable_spread_penalty' => 0.20,
         'injury_out_total_penalty' => 0.30,
         'injury_questionable_total_penalty' => 0.10,
+
+        /*
+        |--------------------------------------------------------------------------
+        | True EPA Guarded Rollout
+        |--------------------------------------------------------------------------
+        |
+        | Optional blend of team true EPA/play into pregame predictions.
+        | Set enabled=false for instant rollback to legacy Elo-only model.
+        |
+        */
+        'true_epa' => [
+            'enabled' => env('NFL_TRUE_EPA_ENABLED', true),
+            'blend_weight' => env('NFL_TRUE_EPA_BLEND_WEIGHT', 0.35),
+            'spread_points_per_epa' => env('NFL_TRUE_EPA_SPREAD_POINTS_PER_EPA', 14.0),
+            'win_prob_max_adjustment' => env('NFL_TRUE_EPA_WIN_PROB_MAX_ADJ', 0.12),
+            'win_prob_sensitivity' => env('NFL_TRUE_EPA_WIN_PROB_SENS', 8.0),
+            'total_points_per_epa_component' => env('NFL_TRUE_EPA_TOTAL_POINTS_PER_COMP', 20.0),
+            'min_predicted_total' => env('NFL_TRUE_EPA_MIN_TOTAL', 28.0),
+            'max_predicted_total' => env('NFL_TRUE_EPA_MAX_TOTAL', 66.0),
+        ],
     ],
 
     /*

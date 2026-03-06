@@ -6,6 +6,7 @@ import SeasonSelect from '@/components/SeasonSelect.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePredictionList } from '@/composables/usePredictionList';
@@ -22,6 +23,7 @@ const selectedDate = ref('');
 const today = ref('');
 const seasonType = ref('');
 const week = ref('');
+const searchQuery = ref('');
 const isBootstrapping = ref(true);
 const {
     availableSeasons,
@@ -158,6 +160,8 @@ const applyFilters = () => {
 };
 
 const clearFilters = () => {
+    searchQuery.value = '';
+
     if (filterMode.value === 'date') {
         if (availableDates.value.includes(today.value)) {
             selectedDate.value = today.value;
@@ -177,7 +181,40 @@ const hasAppliedSeasonWeekFilters = computed(() => {
     return seasonType.value !== '' || week.value !== '';
 });
 
+const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+
+const filteredPredictions = computed(() => {
+    if (!normalizedSearchQuery.value) {
+        return predictions.value;
+    }
+
+    return predictions.value.filter((prediction) => {
+        const game = prediction.game;
+        const haystack = [
+            game?.home_team?.abbreviation,
+            game?.home_team?.school,
+            game?.home_team?.mascot,
+            game?.home_team?.location,
+            game?.home_team?.name,
+            game?.away_team?.abbreviation,
+            game?.away_team?.school,
+            game?.away_team?.mascot,
+            game?.away_team?.location,
+            game?.away_team?.name,
+        ]
+            .filter((value): value is string => Boolean(value))
+            .join(' ')
+            .toLowerCase();
+
+        return haystack.includes(normalizedSearchQuery.value);
+    });
+});
+
 const emptyStateTitle = computed(() => {
+    if (normalizedSearchQuery.value) {
+        return 'No predictions match this search';
+    }
+
     if (filterMode.value === 'date' && availableDates.value.length === 0) {
         return 'No prediction dates available yet';
     }
@@ -190,6 +227,10 @@ const emptyStateTitle = computed(() => {
 });
 
 const emptyStateDescription = computed(() => {
+    if (normalizedSearchQuery.value) {
+        return `No games matched "${searchQuery.value}". Try team abbreviations, school names, or mascots.`;
+    }
+
     if (filterMode.value === 'date' && availableDates.value.length === 0) {
         return 'We have not generated a slate for this sport yet. Run sync + prediction jobs, then refresh.';
     }
@@ -206,6 +247,7 @@ const emptyStateDescription = computed(() => {
 });
 
 const showEmptyClearAction = computed(() => {
+    if (normalizedSearchQuery.value) return true;
     if (filterMode.value === 'seasonWeek') return hasAppliedSeasonWeekFilters.value;
     if (filterMode.value === 'date') return availableDates.value.length > 0;
     return false;
@@ -326,6 +368,15 @@ onMounted(async () => {
                             </Button>
                         </div>
                     </template>
+                    <div class="min-w-[220px] flex-1">
+                        <Label for="prediction-search">Search Matchup</Label>
+                        <Input
+                            id="prediction-search"
+                            v-model="searchQuery"
+                            placeholder="Team, school, or mascot..."
+                            class="mt-1"
+                        />
+                    </div>
                 </div>
             </CardContent>
         </Card>
@@ -346,8 +397,8 @@ onMounted(async () => {
             </Card>
         </div>
 
-        <div v-else-if="predictions.length > 0" class="grid gap-4">
-            <template v-for="prediction in predictions" :key="prediction.id">
+        <div v-else-if="filteredPredictions.length > 0" class="grid gap-4">
+            <template v-for="prediction in filteredPredictions" :key="prediction.id">
                 <UnifiedPredictionCard
                     :prediction="prediction"
                     :href="gameHref(prediction)"

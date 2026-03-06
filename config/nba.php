@@ -214,6 +214,18 @@ return [
         'injury_epa_max_multiplier' => 2.00,
         'injury_epa_fallback_multiplier' => 1.00,
 
+        // Guarded rollout for true play-by-play EPA blend.
+        'true_epa' => [
+            'enabled' => env('NBA_TRUE_EPA_ENABLED', false),
+            'blend_weight' => env('NBA_TRUE_EPA_BLEND_WEIGHT', 0.30),
+            'spread_points_per_epa' => env('NBA_TRUE_EPA_SPREAD_POINTS_PER_EPA', 20.0),
+            'win_prob_max_adjustment' => env('NBA_TRUE_EPA_WIN_PROB_MAX_ADJ', 0.10),
+            'win_prob_sensitivity' => env('NBA_TRUE_EPA_WIN_PROB_SENS', 6.0),
+            'total_points_per_epa_component' => env('NBA_TRUE_EPA_TOTAL_POINTS_PER_COMP', 35.0),
+            'min_predicted_total' => env('NBA_TRUE_EPA_MIN_TOTAL', 180.0),
+            'max_predicted_total' => env('NBA_TRUE_EPA_MAX_TOTAL', 270.0),
+        ],
+
         // Narrative generation settings for prediction summaries.
         'narrative' => [
             'provider' => env('NBA_PREDICTION_NARRATIVE_PROVIDER', 'template'),

@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Support\TierAccessBypass;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -38,6 +39,9 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user();
         $tier = $user?->subscriptionTier();
+        $tierAccessBypass = app(TierAccessBypass::class);
+        $tiersEnforced = $tierAccessBypass->tiersEnforced();
+        $tiersBypassed = $tierAccessBypass->userIsBypassed($user);
         $impersonatorId = $request->session()->get('impersonator_id');
         $isImpersonating = $user !== null && $impersonatorId !== null && (int) $impersonatorId !== (int) $user->id;
         $impersonator = $isImpersonating
@@ -63,9 +67,11 @@ class HandleInertiaRequests extends Middleware
             'subscription' => [
                 'tier' => $tier?->slug ?? 'free',
                 'tier_name' => $tier?->name ?? 'Free',
-                'is_subscribed' => ($user?->subscribed() ?? false) || ($user?->hasFoundingAccess() ?? false),
+                'is_subscribed' => ! $tiersEnforced || $tiersBypassed || ($user?->subscribed() ?? false) || ($user?->hasFoundingAccess() ?? false),
                 'is_founding_user' => $user?->hasFoundingAccess() ?? false,
                 'features' => $tier?->features ?? [],
+                'tiers_enabled' => $tiersEnforced && ! $tiersBypassed,
+                'tiers_bypassed' => $tiersBypassed,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

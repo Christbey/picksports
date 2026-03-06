@@ -136,6 +136,11 @@ class BaseEspnService
         return $this->get($this->buildUrl('core', 'team_injuries', ['teamId' => $teamId]));
     }
 
+    public function getByRef(string $url, bool $useCache = true): ?array
+    {
+        return $this->get($url, $useCache);
+    }
+
     protected function buildUrl(string $base, string $endpoint, array $params = []): string
     {
         // Replace placeholders in base URL

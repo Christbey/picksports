@@ -17,4 +17,6 @@ export interface SubscriptionInfo {
     tier_name: string;
     is_subscribed: boolean;
     features: SubscriptionFeatures;
+    tiers_enabled?: boolean;
+    tiers_bypassed?: boolean;
 }

@@ -6,6 +6,7 @@ export function useSubscription() {
     const page = usePage<AppPageProps>();
 
     const subscription = computed(() => page.props.subscription);
+    const tiersEnabled = computed(() => subscription.value?.tiers_enabled ?? true);
     const tier = computed(() => subscription.value?.tier ?? 'free');
     const tierName = computed(() => subscription.value?.tier_name ?? 'Free');
     const isSubscribed = computed(() => subscription.value?.is_subscribed ?? false);
@@ -14,7 +15,7 @@ export function useSubscription() {
     const isFree = computed(() => tier.value === 'free');
     const isBasic = computed(() => tier.value === 'basic');
     const isPro = computed(() => tier.value === 'pro');
-    const isPremium = computed(() => tier.value === 'premium');
+    const isPremium = computed(() => !tiersEnabled.value || tier.value === 'premium');
 
     const hasFeature = (feature: string): boolean => {
         const featureValue = features.value?.[feature];
@@ -69,6 +70,7 @@ export function useSubscription() {
 
     return {
         subscription,
+        tiersEnabled,
         tier,
         tierName,
         isSubscribed,

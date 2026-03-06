@@ -29,7 +29,12 @@ const { isCurrentUrl } = useCurrentUrl();
                     :tooltip="item.title"
                 >
                     <Link :href="item.href">
-                        <component :is="item.icon" />
+                        <component
+                            v-if="item.icon"
+                            :is="item.icon"
+                            v-bind="item.iconProps"
+                            class="size-4 text-slate-700 dark:text-slate-200"
+                        />
                         <span>{{ item.title }}</span>
                     </Link>
                 </SidebarMenuButton>

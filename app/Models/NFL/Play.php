@@ -29,6 +29,10 @@ class Play extends Model
         'is_scoring_play',
         'is_turnover',
         'is_penalty',
+        'is_epa_eligible',
+        'expected_points_before',
+        'expected_points_after',
+        'true_epa',
         'home_score',
         'away_score',
     ];
@@ -39,6 +43,10 @@ class Play extends Model
             'is_scoring_play' => 'boolean',
             'is_turnover' => 'boolean',
             'is_penalty' => 'boolean',
+            'is_epa_eligible' => 'boolean',
+            'expected_points_before' => 'decimal:3',
+            'expected_points_after' => 'decimal:3',
+            'true_epa' => 'decimal:3',
         ];
     }
 

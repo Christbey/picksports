@@ -41,6 +41,8 @@ interface PlayerLeaderboardEntry {
     free_throw_percentage: number;
     estimated_epa_per_game?: number;
     estimated_epa_per_36?: number;
+    estimated_epa_total?: number;
+    estimated_epa_per_opportunity?: number;
     passing_yards_per_game?: number;
     passing_touchdowns_per_game?: number;
     completion_percentage?: number;

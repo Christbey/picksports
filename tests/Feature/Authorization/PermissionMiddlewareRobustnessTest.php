@@ -71,3 +71,15 @@ it('denies api requests when permission exists under another guard', function ()
         ->assertForbidden()
         ->assertJsonPath('message', "You don't have permission to access this resource. Required permission: tests-api-wrong-guard-permission");
 });
+
+it('allows bypass user ids when tier enforcement is enabled', function () {
+    config()->set('subscriptions.enforce_tiers', true);
+
+    $user = User::factory()->create();
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+
+    $this->actingAs($user)
+        ->getJson('/__tests__/permission/web/missing')
+        ->assertOk()
+        ->assertJson(['ok' => true]);
+});

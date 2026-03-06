@@ -28,6 +28,10 @@ class Play extends Model
         'assist',
         'is_turnover',
         'is_foul',
+        'is_epa_eligible',
+        'expected_points_before',
+        'expected_points_after',
+        'true_epa',
         'home_score',
         'away_score',
     ];
@@ -40,6 +44,10 @@ class Play extends Model
             'assist' => 'boolean',
             'is_turnover' => 'boolean',
             'is_foul' => 'boolean',
+            'is_epa_eligible' => 'boolean',
+            'expected_points_before' => 'decimal:3',
+            'expected_points_after' => 'decimal:3',
+            'true_epa' => 'decimal:3',
         ];
     }
 

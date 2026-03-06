@@ -5,9 +5,15 @@ namespace App\Actions\NFL;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Models\NFL\TeamMetric;
 
 class GeneratePredictionFromHistoricalElo
 {
+    /**
+     * @var array<string,mixed>
+     */
+    protected array $lastModelMetadata = [];
+
     public function execute(Game $game): string
     {
         if (! $game->homeTeam || ! $game->awayTeam) {
@@ -20,21 +26,27 @@ class GeneratePredictionFromHistoricalElo
         $homeFieldAdvantage = config('nfl.elo.home_field_advantage');
         $adjustedHomeElo = $game->neutral_site ? $homeElo : $homeElo + $homeFieldAdvantage;
 
-        $winProbability = $this->calculateWinProbability($adjustedHomeElo, $awayElo);
+        $legacyWinProbability = $this->calculateWinProbability($adjustedHomeElo, $awayElo);
 
         $eloDiff = $adjustedHomeElo - $awayElo;
         $pointsPerElo = config('nfl.predictions.points_per_elo');
-        $predictedSpread = $eloDiff * $pointsPerElo;
+        $legacySpread = $eloDiff * $pointsPerElo;
         $minSpread = config('nfl.predictions.min_spread');
         $maxSpread = config('nfl.predictions.max_spread');
-        $predictedSpread = max($minSpread, min($maxSpread, $predictedSpread));
-
-        $confidenceScore = abs($winProbability - 0.5) * 2;
+        $legacySpread = max($minSpread, min($maxSpread, $legacySpread));
 
         $averageTotal = config('nfl.predictions.average_total');
         $defaultElo = config('nfl.elo.default_rating');
         $combinedEloBonus = (($homeElo + $awayElo) - (2 * $defaultElo)) / 100;
-        $predictedTotal = $averageTotal + $combinedEloBonus;
+        $legacyTotal = $averageTotal + $combinedEloBonus;
+
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyTrueEpaBlend(
+            game: $game,
+            legacySpread: $legacySpread,
+            legacyWinProbability: $legacyWinProbability,
+            legacyTotal: $legacyTotal
+        );
+        $confidenceScore = abs($winProbability - 0.5) * 2;
 
         $existing = Prediction::query()->where('game_id', $game->id)->first();
 
@@ -47,10 +59,186 @@ class GeneratePredictionFromHistoricalElo
                 'predicted_total' => round($predictedTotal, 1),
                 'win_probability' => round($winProbability, 3),
                 'confidence_score' => round($confidenceScore, 2),
+                'model_metadata' => $this->lastModelMetadata,
             ]
         );
 
         return $existing ? 'updated' : 'created';
+    }
+
+    /**
+     * @return array{0:float,1:float,2:float}
+     */
+    protected function applyTrueEpaBlend(
+        Game $game,
+        float $legacySpread,
+        float $legacyWinProbability,
+        float $legacyTotal
+    ): array {
+        if (! config('nfl.predictions.true_epa.enabled', false)) {
+            $this->lastModelMetadata = [
+                'model' => 'nfl_historical_elo',
+                'true_epa' => [
+                    'enabled' => false,
+                    'applied' => false,
+                    'reason' => 'feature_disabled',
+                ],
+                'legacy' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+                'blended' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+            ];
+
+            return [$legacySpread, $legacyWinProbability, $legacyTotal];
+        }
+
+        $homeMetric = TeamMetric::query()
+            ->where('team_id', $game->home_team_id)
+            ->where('season', $game->season)
+            ->first();
+        $awayMetric = TeamMetric::query()
+            ->where('team_id', $game->away_team_id)
+            ->where('season', $game->season)
+            ->first();
+
+        if (! $homeMetric || ! $awayMetric) {
+            $this->lastModelMetadata = [
+                'model' => 'nfl_historical_elo',
+                'true_epa' => [
+                    'enabled' => true,
+                    'applied' => false,
+                    'reason' => 'missing_team_metrics',
+                ],
+                'legacy' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+                'blended' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+            ];
+
+            return [$legacySpread, $legacyWinProbability, $legacyTotal];
+        }
+
+        $homeNetEpa = $homeMetric->net_true_epa_per_play;
+        $awayNetEpa = $awayMetric->net_true_epa_per_play;
+        if ($homeNetEpa === null || $awayNetEpa === null) {
+            $this->lastModelMetadata = [
+                'model' => 'nfl_historical_elo',
+                'true_epa' => [
+                    'enabled' => true,
+                    'applied' => false,
+                    'reason' => 'missing_net_true_epa',
+                ],
+                'legacy' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+                'blended' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+            ];
+
+            return [$legacySpread, $legacyWinProbability, $legacyTotal];
+        }
+
+        $weight = $this->clamp((float) config('nfl.predictions.true_epa.blend_weight', 0.35), 0.0, 1.0);
+        $epaDiff = (float) $homeNetEpa - (float) $awayNetEpa;
+
+        $epaSpread = $epaDiff * (float) config('nfl.predictions.true_epa.spread_points_per_epa', 14.0);
+        $blendedSpread = $this->blend($legacySpread, $epaSpread, $weight);
+        $blendedSpread = $this->clamp(
+            $blendedSpread,
+            (float) config('nfl.predictions.min_spread'),
+            (float) config('nfl.predictions.max_spread')
+        );
+
+        $maxAdjust = (float) config('nfl.predictions.true_epa.win_prob_max_adjustment', 0.12);
+        $sensitivity = (float) config('nfl.predictions.true_epa.win_prob_sensitivity', 8.0);
+        $epaWinAdjustment = tanh($epaDiff * $sensitivity) * $maxAdjust;
+        $epaWinProbability = $this->clamp($legacyWinProbability + $epaWinAdjustment, 0.01, 0.99);
+        $blendedWinProbability = $this->blend($legacyWinProbability, $epaWinProbability, $weight);
+        $blendedWinProbability = $this->clamp($blendedWinProbability, 0.01, 0.99);
+
+        $homeOff = $homeMetric->offensive_true_epa_per_play;
+        $homeDef = $homeMetric->defensive_true_epa_per_play;
+        $awayOff = $awayMetric->offensive_true_epa_per_play;
+        $awayDef = $awayMetric->defensive_true_epa_per_play;
+        if ($homeOff === null || $homeDef === null || $awayOff === null || $awayDef === null) {
+            $this->lastModelMetadata = [
+                'model' => 'nfl_historical_elo',
+                'true_epa' => [
+                    'enabled' => true,
+                    'applied' => true,
+                    'weight' => round($weight, 4),
+                    'reason' => 'missing_off_def_epa_for_total',
+                    'epa_diff' => round($epaDiff, 6),
+                ],
+                'legacy' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+                'blended' => [
+                    'spread' => round($blendedSpread, 4),
+                    'win_probability' => round($blendedWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+            ];
+
+            return [$blendedSpread, $blendedWinProbability, $legacyTotal];
+        }
+
+        $totalScale = (float) config('nfl.predictions.true_epa.total_points_per_epa_component', 20.0);
+        $homeExpectedDelta = ((float) $homeOff - (float) $awayDef) * $totalScale;
+        $awayExpectedDelta = ((float) $awayOff - (float) $homeDef) * $totalScale;
+        $epaTotal = $legacyTotal + $homeExpectedDelta + $awayExpectedDelta;
+        $blendedTotal = $this->blend($legacyTotal, $epaTotal, $weight);
+        $blendedTotal = $this->clamp(
+            $blendedTotal,
+            (float) config('nfl.predictions.true_epa.min_predicted_total', 28.0),
+            (float) config('nfl.predictions.true_epa.max_predicted_total', 66.0)
+        );
+
+        $this->lastModelMetadata = [
+            'model' => 'nfl_historical_elo',
+            'true_epa' => [
+                'enabled' => true,
+                'applied' => true,
+                'weight' => round($weight, 4),
+                'epa_diff' => round($epaDiff, 6),
+            ],
+            'legacy' => [
+                'spread' => round($legacySpread, 4),
+                'win_probability' => round($legacyWinProbability, 6),
+                'total' => round($legacyTotal, 4),
+            ],
+            'epa_component' => [
+                'spread' => round($epaSpread, 4),
+                'win_probability' => round($epaWinProbability, 6),
+                'total' => round($epaTotal, 4),
+            ],
+            'blended' => [
+                'spread' => round($blendedSpread, 4),
+                'win_probability' => round($blendedWinProbability, 6),
+                'total' => round($blendedTotal, 4),
+            ],
+        ];
+
+        return [$blendedSpread, $blendedWinProbability, $blendedTotal];
     }
 
     protected function getEloAtDate(int $teamId, mixed $gameDate): float
@@ -67,5 +255,15 @@ class GeneratePredictionFromHistoricalElo
     protected function calculateWinProbability(float $ratingA, float $ratingB): float
     {
         return 1 / (1 + pow(10, ($ratingB - $ratingA) / 400));
+    }
+
+    protected function blend(float $legacy, float $epaBased, float $weight): float
+    {
+        return ($legacy * (1 - $weight)) + ($epaBased * $weight);
+    }
+
+    protected function clamp(float $value, float $min, float $max): float
+    {
+        return max($min, min($max, $value));
     }
 }

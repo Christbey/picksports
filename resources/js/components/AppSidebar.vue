@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { CircleDot, Dribbble, Goal, LayoutGrid } from 'lucide-vue-next';
+import { faBaseball, faBasketball, faFootball } from '@fortawesome/free-solid-svg-icons';
+import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import { LayoutGrid } from 'lucide-vue-next';
 import NavCollapsible from '@/components/NavCollapsible.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -34,6 +36,10 @@ import {
 import { type NavItem } from '@/types';
 import AppLogo from './AppLogo.vue';
 
+const footballIconProps = { icon: faFootball };
+const basketballIconProps = { icon: faBasketball };
+const baseballIconProps = { icon: faBaseball };
+
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
@@ -46,7 +52,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'NFL',
         href: nflPredictions(),
-        icon: Goal,
+        icon: FontAwesomeIcon,
+        iconProps: footballIconProps,
         items: [
             {
                 title: 'Predictions',
@@ -73,7 +80,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'NBA',
         href: nbaPredictions(),
-        icon: Dribbble,
+        icon: FontAwesomeIcon,
+        iconProps: basketballIconProps,
         items: [
             {
                 title: 'Predictions',
@@ -104,7 +112,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'WNBA',
         href: wnbaPredictions(),
-        icon: Dribbble,
+        icon: FontAwesomeIcon,
+        iconProps: basketballIconProps,
         items: [
             {
                 title: 'Predictions',
@@ -123,7 +132,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'MLB',
         href: mlbPredictions(),
-        icon: CircleDot,
+        icon: FontAwesomeIcon,
+        iconProps: baseballIconProps,
         items: [
             {
                 title: 'Predictions',
@@ -154,7 +164,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'CFB',
         href: cfbPredictions(),
-        icon: Goal,
+        icon: FontAwesomeIcon,
+        iconProps: footballIconProps,
         items: [
             {
                 title: 'Predictions',
@@ -173,7 +184,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'CBB',
         href: cbbPredictions(),
-        icon: Dribbble,
+        icon: FontAwesomeIcon,
+        iconProps: basketballIconProps,
         items: [
             {
                 title: 'Predictions',
@@ -204,7 +216,8 @@ const sportNavItems: NavItem[] = [
     {
         title: 'WCBB',
         href: wcbbPredictions(),
-        icon: Dribbble,
+        icon: FontAwesomeIcon,
+        iconProps: basketballIconProps,
         items: [
             {
                 title: 'Predictions',

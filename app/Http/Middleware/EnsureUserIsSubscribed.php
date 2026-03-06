@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\TierAccessBypass;
 use Closure;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -20,6 +21,10 @@ class EnsureUserIsSubscribed
 
         if (! $user) {
             return redirect()->route('login');
+        }
+
+        if (app(TierAccessBypass::class)->shouldBypassTierChecks($user)) {
+            return $next($request);
         }
 
         if (! $user->subscribed() && ! $user->hasFoundingAccess()) {

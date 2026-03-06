@@ -26,12 +26,20 @@ class Play extends Model
         'score_value',
         'home_score',
         'away_score',
+        'is_epa_eligible',
+        'expected_points_before',
+        'expected_points_after',
+        'true_epa',
     ];
 
     protected function casts(): array
     {
         return [
             'scoring_play' => 'boolean',
+            'is_epa_eligible' => 'boolean',
+            'expected_points_before' => 'decimal:3',
+            'expected_points_after' => 'decimal:3',
+            'true_epa' => 'decimal:3',
         ];
     }
 

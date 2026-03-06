@@ -16,6 +16,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
 {
     /** @var array<string, mixed> Cached metadata for the current prediction */
     private array $metadata = [];
+    /** @var array<string, mixed> True EPA rollout metadata */
+    private array $trueEpaMetadata = [];
 
     protected const SPORT_KEY = 'nba';
 
@@ -41,6 +43,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ?Model $awayMetrics,
         Model $game
     ): float {
+        $this->metadata = [];
+        $this->trueEpaMetadata = [];
+
         $config = config('nba.prediction');
         $homeCourtAdvantage = config('nba.elo.home_court_advantage');
 
@@ -91,6 +96,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
         } else {
             $finalSpread = $modelSpread;
         }
+        [$finalSpread, $trueEpaSpreadMeta] = $this->applyTrueEpaSpreadBlend(
+            (float) $finalSpread,
+            $homeMetrics,
+            $awayMetrics
+        );
 
         // Cache metadata for buildPredictionData
         $this->metadata = [
@@ -112,6 +122,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'injury_spread_adj' => round($injurySpreadAdj, 2),
             'injury_total_adj' => round($injuryContext['total_adj'], 2),
         ];
+        $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaSpreadMeta];
 
         return round($finalSpread, 1);
     }
@@ -155,8 +166,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
         }
         $pace += $paceAdj;
         $injuryTotalAdj = (float) ($this->metadata['injury_total_adj'] ?? 0.0);
+        $legacyTotal = (($homePredictedScore + $awayPredictedScore) * ($pace / 100)) + $injuryTotalAdj;
+        [$blendedTotal, $trueEpaTotalMeta] = $this->applyTrueEpaTotalBlend(
+            (float) $legacyTotal,
+            $homeMetrics,
+            $awayMetrics
+        );
+        $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
 
-        return round((($homePredictedScore + $awayPredictedScore) * ($pace / 100)) + $injuryTotalAdj, 1);
+        return round($blendedTotal, 1);
     }
 
     protected function buildPredictionData(
@@ -183,7 +201,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 $confidenceScore
             ),
             $this->efficiencyPredictionData($homeMetrics, $awayMetrics, $defaultEfficiency),
-            $this->metadata
+            $this->metadata,
+            [
+                'model_metadata' => [
+                    'model' => 'nba_ensemble',
+                    'true_epa' => $this->trueEpaMetadata,
+                ],
+            ]
         );
     }
 
@@ -686,5 +710,90 @@ class GeneratePrediction extends AbstractPredictionGenerator
         }
 
         return $counts;
+    }
+
+    /**
+     * @return array{0:float,1:array<string,mixed>}
+     */
+    private function applyTrueEpaSpreadBlend(float $legacySpread, ?Model $homeMetrics, ?Model $awayMetrics): array
+    {
+        if (! config('nba.prediction.true_epa.enabled', false)) {
+            return [$legacySpread, [
+                'true_epa_enabled' => false,
+                'true_epa_applied' => false,
+                'true_epa_reason' => 'feature_disabled',
+            ]];
+        }
+
+        $homeNet = $homeMetrics?->net_true_epa_per_play;
+        $awayNet = $awayMetrics?->net_true_epa_per_play;
+        if ($homeNet === null || $awayNet === null) {
+            return [$legacySpread, [
+                'true_epa_enabled' => true,
+                'true_epa_applied' => false,
+                'true_epa_reason' => 'missing_net_true_epa',
+            ]];
+        }
+
+        $weight = $this->clamp((float) config('nba.prediction.true_epa.blend_weight', 0.30), 0.0, 1.0);
+        $epaDiff = (float) $homeNet - (float) $awayNet;
+        $epaSpread = $epaDiff * (float) config('nba.prediction.true_epa.spread_points_per_epa', 20.0);
+        $blendedSpread = $this->blend($legacySpread, $epaSpread, $weight);
+
+        return [$blendedSpread, [
+            'true_epa_enabled' => true,
+            'true_epa_applied' => true,
+            'true_epa_reason' => 'applied',
+            'true_epa_weight' => round($weight, 4),
+            'true_epa_diff' => round($epaDiff, 6),
+            'true_epa_spread_component' => round($epaSpread, 4),
+        ]];
+    }
+
+    /**
+     * @return array{0:float,1:array<string,mixed>}
+     */
+    private function applyTrueEpaTotalBlend(float $legacyTotal, ?Model $homeMetrics, ?Model $awayMetrics): array
+    {
+        if (! config('nba.prediction.true_epa.enabled', false)) {
+            return [$legacyTotal, []];
+        }
+
+        $homeOff = $homeMetrics?->offensive_true_epa_per_play;
+        $homeDef = $homeMetrics?->defensive_true_epa_per_play;
+        $awayOff = $awayMetrics?->offensive_true_epa_per_play;
+        $awayDef = $awayMetrics?->defensive_true_epa_per_play;
+
+        if ($homeOff === null || $homeDef === null || $awayOff === null || $awayDef === null) {
+            return [$legacyTotal, ['true_epa_total_reason' => 'missing_off_def_true_epa']];
+        }
+
+        $weight = $this->clamp((float) config('nba.prediction.true_epa.blend_weight', 0.30), 0.0, 1.0);
+        $scale = (float) config('nba.prediction.true_epa.total_points_per_epa_component', 35.0);
+        $homeExpectedDelta = ((float) $homeOff - (float) $awayDef) * $scale;
+        $awayExpectedDelta = ((float) $awayOff - (float) $homeDef) * $scale;
+        $epaTotal = $legacyTotal + $homeExpectedDelta + $awayExpectedDelta;
+
+        $blendedTotal = $this->blend($legacyTotal, $epaTotal, $weight);
+        $blendedTotal = $this->clamp(
+            $blendedTotal,
+            (float) config('nba.prediction.true_epa.min_predicted_total', 180.0),
+            (float) config('nba.prediction.true_epa.max_predicted_total', 270.0)
+        );
+
+        return [$blendedTotal, [
+            'true_epa_total_component' => round($epaTotal, 4),
+            'true_epa_total_reason' => 'applied',
+        ]];
+    }
+
+    private function blend(float $legacy, float $epaBased, float $weight): float
+    {
+        return ($legacy * (1 - $weight)) + ($epaBased * $weight);
+    }
+
+    private function clamp(float $value, float $min, float $max): float
+    {
+        return max($min, min($max, $value));
     }
 }

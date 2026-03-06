@@ -129,3 +129,21 @@ it('allows required tier on subscribed pro routes', function () {
         ->assertOk()
         ->assertJson(['ok' => true]);
 });
+
+it('allows bypass user ids when tier enforcement is enabled', function () {
+    config()->set('subscriptions.enforce_tiers', true);
+
+    $user = User::factory()->create();
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+
+    $this->actingAs($user)
+        ->getJson('/__tests__/subscribed/web/pro')
+        ->assertOk()
+        ->assertJson(['ok' => true]);
+
+    Sanctum::actingAs($user);
+
+    $this->getJson('/__tests__/subscribed/api/pro')
+        ->assertOk()
+        ->assertJson(['ok' => true]);
+});

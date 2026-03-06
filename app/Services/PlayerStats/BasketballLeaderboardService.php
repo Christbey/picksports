@@ -29,7 +29,6 @@ class BasketballLeaderboardService
                 AVG(turnovers) as turnovers_per_game,
                 AVG(steals) as steals_per_game,
                 AVG(blocks) as blocks_per_game,
-                AVG(minutes_played) as minutes_per_game,
                 AVG(field_goals_made) as field_goals_made_per_game,
                 AVG(field_goals_attempted) as field_goals_attempted_per_game,
                 AVG(free_throws_made) as free_throws_made_per_game,
@@ -59,14 +58,21 @@ class BasketballLeaderboardService
             ->get();
 
         $playerIds = $stats->pluck('player_id');
+        $minutesAverages = $this->averageMinutesByPlayer(
+            $playerStatModel,
+            $playerIds->all(),
+            $gameModel,
+            $season
+        );
         $players = $playerModel::query()
             ->with('team')
             ->whereIn('id', $playerIds)
             ->get()
             ->keyBy('id');
 
-        return $stats->map(function ($row) use ($players) {
+        return $stats->map(function ($row) use ($players, $minutesAverages) {
             $player = $players->get($row->player_id);
+            $minutesPerGame = $minutesAverages[(int) $row->player_id] ?? 0.0;
 
             return [
                 'player_id' => $row->player_id,
@@ -90,7 +96,7 @@ class BasketballLeaderboardService
                 'turnovers_per_game' => round($row->turnovers_per_game, 1),
                 'steals_per_game' => round($row->steals_per_game, 1),
                 'blocks_per_game' => round($row->blocks_per_game, 1),
-                'minutes_per_game' => round((float) $row->minutes_per_game, 1),
+                'minutes_per_game' => round($minutesPerGame, 1),
                 'field_goals_made_per_game' => round((float) $row->field_goals_made_per_game, 1),
                 'field_goals_attempted_per_game' => round((float) $row->field_goals_attempted_per_game, 1),
                 'free_throws_made_per_game' => round((float) $row->free_throws_made_per_game, 1),
@@ -100,5 +106,81 @@ class BasketballLeaderboardService
                 'free_throw_percentage' => StatsMath::percentage($row->total_ft_made, $row->total_ft_attempted),
             ];
         })->values();
+    }
+
+    /**
+     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playerStatModel
+     * @param  array<int,int|string>  $playerIds
+     * @return array<int,float>
+     */
+    private function averageMinutesByPlayer(
+        string $playerStatModel,
+        array $playerIds,
+        ?string $gameModel,
+        ?int $season
+    ): array {
+        if ($playerIds === []) {
+            return [];
+        }
+
+        $query = $playerStatModel::query()
+            ->select(['player_id', 'minutes_played'])
+            ->whereIn('player_id', $playerIds);
+
+        if ($gameModel !== null && $season !== null) {
+            $gameInstance = new $gameModel();
+            $playerStatInstance = new $playerStatModel();
+            $query->join(
+                $gameInstance->getTable(),
+                "{$gameInstance->getTable()}.id",
+                '=',
+                "{$playerStatInstance->getTable()}.game_id"
+            )->where("{$gameInstance->getTable()}.season", $season);
+        }
+
+        /** @var array<int,array{sum:float,count:int}> $buckets */
+        $buckets = [];
+
+        foreach ($query->get() as $row) {
+            $playerId = (int) $row->player_id;
+            $minutes = $this->minutesToDecimal($row->minutes_played);
+
+            if (! isset($buckets[$playerId])) {
+                $buckets[$playerId] = ['sum' => 0.0, 'count' => 0];
+            }
+
+            $buckets[$playerId]['sum'] += $minutes;
+            $buckets[$playerId]['count']++;
+        }
+
+        $averages = [];
+        foreach ($buckets as $playerId => $bucket) {
+            $count = max(1, $bucket['count']);
+            $averages[$playerId] = $bucket['sum'] / $count;
+        }
+
+        return $averages;
+    }
+
+    private function minutesToDecimal(string|float|int|null $minutesPlayed): float
+    {
+        if ($minutesPlayed === null || $minutesPlayed === '') {
+            return 0.0;
+        }
+
+        if (is_numeric($minutesPlayed)) {
+            return (float) $minutesPlayed;
+        }
+
+        $value = trim((string) $minutesPlayed);
+        if (! str_contains($value, ':')) {
+            return is_numeric($value) ? (float) $value : 0.0;
+        }
+
+        [$mins, $secs] = array_pad(explode(':', $value, 2), 2, '0');
+        $minutes = (float) (is_numeric($mins) ? $mins : 0);
+        $seconds = (float) (is_numeric($secs) ? $secs : 0);
+
+        return $minutes + (max(0.0, $seconds) / 60);
     }
 }

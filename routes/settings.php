@@ -8,6 +8,7 @@ use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
 use App\Http\Controllers\Settings\WebPushSubscriptionController;
+use App\Support\TierAccessBypass;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -50,6 +51,28 @@ Route::middleware(['auth', 'verified'])->group(function () {
         }
 
         if (! $user->subscribed()) {
+            if (app(TierAccessBypass::class)->userIsBypassed($user)) {
+                return Inertia::render('settings/Subscription', [
+                    'subscription' => [
+                        'tier' => $tier?->name ?? 'Free',
+                        'status' => 'tier_bypass',
+                        'current_period_end' => null,
+                        'cancel_at_period_end' => false,
+                    ],
+                ]);
+            }
+
+            if (! config('subscriptions.enforce_tiers', false)) {
+                return Inertia::render('settings/Subscription', [
+                    'subscription' => [
+                        'tier' => $tier?->name ?? 'Free',
+                        'status' => 'tiers_disabled',
+                        'current_period_end' => null,
+                        'cancel_at_period_end' => false,
+                    ],
+                ]);
+            }
+
             return redirect()->route('subscription.plans');
         }
 

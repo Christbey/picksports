@@ -544,3 +544,15 @@ $scheduleHalfHourlyWindowJob(
     $cfbInSeason,
     'CFB: Sync Injuries'
 );
+
+/*
+|--------------------------------------------------------------------------
+| Maintenance
+|--------------------------------------------------------------------------
+*/
+
+Schedule::command('queue:prune-failed --hours=168')
+    ->dailyAt('03:20')
+    ->name('Queue: Prune Failed Jobs')
+    ->withoutOverlapping()
+    ->runInBackground();

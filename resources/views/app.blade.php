@@ -3,6 +3,8 @@
     <head>
         @php
             $appName = config('app.name', 'PickSports');
+            $betaEnabled = (bool) config('app.beta_enabled', true);
+            $betaLabel = trim((string) config('app.beta_label', 'BETA'));
             $baseUrl = rtrim(config('app.url', 'https://picksports.app'), '/');
             $canonicalUrl = url()->current();
             $path = trim(request()->path(), '/');
@@ -206,6 +208,14 @@
         @inertiaHead
     </head>
     <body class="font-sans antialiased">
+        @if ($betaEnabled && $betaLabel !== '')
+            <div
+                class="pointer-events-none fixed top-3 right-3 z-[100] rounded-full border border-amber-300 bg-amber-100/95 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/90 dark:text-amber-100"
+                aria-label="Beta indicator"
+            >
+                {{ $betaLabel }}
+            </div>
+        @endif
         <noscript>
             <img
                 height="1"

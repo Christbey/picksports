@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Beta Indicator
+    |--------------------------------------------------------------------------
+    |
+    | Controls whether a global beta badge is shown in the UI and what label
+    | it displays.
+    |
+    */
+
+    'beta_enabled' => (bool) env('APP_BETA_ENABLED', true),
+    'beta_label' => env('APP_BETA_LABEL', 'BETA'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

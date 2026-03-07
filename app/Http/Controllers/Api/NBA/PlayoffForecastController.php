@@ -40,12 +40,29 @@ class PlayoffForecastController extends Controller
             ? 'asc'
             : 'desc';
 
+        $requestedSeason = $season;
+        $fallbackApplied = false;
+
         $forecasts = PlayoffForecast::query()
             ->with('team')
             ->where('season', $season)
             ->orderBy($sortBy, $direction)
             ->orderBy('playoff_make_probability', 'desc')
             ->get();
+
+        if ($forecasts->isEmpty()) {
+            $latestSeasonWithData = (int) (PlayoffForecast::query()->max('season') ?? 0);
+            if ($latestSeasonWithData > 0 && $latestSeasonWithData !== $season) {
+                $season = $latestSeasonWithData;
+                $fallbackApplied = true;
+                $forecasts = PlayoffForecast::query()
+                    ->with('team')
+                    ->where('season', $season)
+                    ->orderBy($sortBy, $direction)
+                    ->orderBy('playoff_make_probability', 'desc')
+                    ->get();
+            }
+        }
 
         $seasons = PlayoffForecast::query()
             ->select('season')
@@ -58,6 +75,8 @@ class PlayoffForecastController extends Controller
             'data' => PlayoffForecastResource::collection($forecasts),
             'meta' => [
                 'season' => $season,
+                'requested_season' => $requestedSeason,
+                'fallback_applied' => $fallbackApplied,
                 'available_seasons' => $seasons,
                 'playoff_teams_per_conference' => (int) config('nba.playoff_forecast.playoff_teams_per_conference', 8),
                 'play_in_teams_per_conference' => (int) config('nba.playoff_forecast.play_in_teams_per_conference', 10),

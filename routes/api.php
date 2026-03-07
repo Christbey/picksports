@@ -17,15 +17,13 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
         ->middleware($securityReportThrottle);
 
     // Sport Routes (using generic route definer)
-    foreach ([
-        'nfl' => 'NFL',
-        'cfb' => 'CFB',
-        'cbb' => 'CBB',
-        'wcbb' => 'WCBB',
-        'nba' => 'NBA',
-        'wnba' => 'WNBA',
-        'mlb' => 'MLB',
-    ] as $sport => $namespace) {
+    $sports = (array) config('sports.domains', []);
+    foreach ($sports as $sport => $definition) {
+        $namespace = (string) ($definition['namespace'] ?? '');
+        if ($namespace === '') {
+            continue;
+        }
+
         Route::prefix($sport)->name("{$sport}.")->group(fn () => $registerSportRoutes($sport, $namespace));
     }
 

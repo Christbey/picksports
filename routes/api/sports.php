@@ -22,32 +22,7 @@ return function (string $sport, string $namespace) {
         'team_metric' => "{$controllerNamespace}\\TeamMetricController",
         'prediction' => "{$controllerNamespace}\\PredictionController",
     ];
-    $sportCapabilities = [
-        'nba' => [
-            'player_stats_leaderboard' => true,
-            'team_stats_all_season_averages' => true,
-            'team_stats_team_season_averages' => true,
-        ],
-        'cbb' => [
-            'player_stats_leaderboard' => true,
-            'team_stats_team_season_averages' => true,
-        ],
-        'wcbb' => [
-            'team_stats_all_season_averages' => true,
-            'team_stats_team_season_averages' => true,
-        ],
-        'cfb' => [
-            'player_stats_leaderboard' => true,
-        ],
-        'nfl' => [
-            'player_stats_leaderboard' => true,
-        ],
-        'mlb' => [
-            'player_stats_leaderboard' => true,
-            'team_stats_team_season_averages' => true,
-        ],
-    ];
-    $capabilities = $sportCapabilities[$sport] ?? [];
+    $capabilities = (array) data_get(config('sports.domains'), "{$sport}.capabilities", []);
 
     $registerIndexShowResource = function (string $resource, string $controller): void {
         Route::apiResource($resource, $controller)->only(['index', 'show']);
@@ -118,7 +93,7 @@ return function (string $sport, string $namespace) {
     ]);
 
     // Protected endpoints (requires authentication for tier limits)
-    Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport) {
+    Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport, $capabilities, $namespace) {
         Route::get('injuries', [\App\Http\Controllers\Api\Sports\InjuryController::class, 'index'])
             ->defaults('sport', $sport)
             ->middleware(["permission:view-{$sport}-predictions"]);
@@ -137,19 +112,19 @@ return function (string $sport, string $namespace) {
         Route::apiResource('predictions', $controllers['prediction'])->only(['index', 'show']);
         Route::get('games/{game}/prediction', [$controllers['prediction'], 'byGame']);
 
-        if ($controllers['prediction'] === "App\\Http\\Controllers\\Api\\CBB\\PredictionController") {
+        if (($capabilities['tournament_forecasts'] ?? false) === true && $namespace === 'CBB') {
             Route::get('tournament-forecasts', [\App\Http\Controllers\Api\CBB\TournamentForecastController::class, 'index']);
         }
 
-        if ($controllers['prediction'] === "App\\Http\\Controllers\\Api\\WCBB\\PredictionController") {
+        if (($capabilities['tournament_forecasts'] ?? false) === true && $namespace === 'WCBB') {
             Route::get('tournament-forecasts', [\App\Http\Controllers\Api\WCBB\TournamentForecastController::class, 'index']);
         }
 
-        if ($controllers['prediction'] === "App\\Http\\Controllers\\Api\\NBA\\PredictionController") {
+        if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'NBA') {
             Route::get('playoff-forecasts', [\App\Http\Controllers\Api\NBA\PlayoffForecastController::class, 'index']);
         }
 
-        if ($controllers['prediction'] === "App\\Http\\Controllers\\Api\\MLB\\PredictionController") {
+        if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'MLB') {
             Route::get('playoff-forecasts', [\App\Http\Controllers\Api\MLB\PlayoffForecastController::class, 'index']);
         }
     });

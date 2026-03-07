@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
 import { faBaseball, faBasketball, faFootball } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
+import { Link } from '@inertiajs/vue3';
 import { LayoutGrid } from 'lucide-vue-next';
 import NavCollapsible from '@/components/NavCollapsible.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -18,20 +18,34 @@ import {
 import {
     dashboard,
     nflPredictions,
-    cfbPredictions,
-    nbaPredictions,
-    wnbaPredictions,
-    cbbPredictions,
-    wcbbPredictions,
-    mlbPredictions,
-    cbbTeamMetrics,
-    wcbbTeamMetrics,
-    nbaTeamMetrics,
-    nbaPlayerStats,
-    cbbPlayerStats,
-    wnbaTeamMetrics,
-    mlbTeamMetrics,
     nflTeamMetrics,
+    nflPlayerStats,
+    nflInjuries,
+    cfbPredictions,
+    cfbPlayerStats,
+    cfbInjuries,
+    nbaPredictions,
+    nbaTeamMetrics,
+    nbaInjuries,
+    nbaPlayerStats,
+    nbaFutures,
+    wnbaPredictions,
+    wnbaTeamMetrics,
+    wnbaInjuries,
+    cbbPredictions,
+    cbbTeamMetrics,
+    cbbInjuries,
+    cbbPlayerStats,
+    cbbTournamentForecast,
+    wcbbPredictions,
+    wcbbTeamMetrics,
+    wcbbInjuries,
+    wcbbTournamentForecast,
+    mlbPredictions,
+    mlbTeamMetrics,
+    mlbInjuries,
+    mlbPlayerStats,
+    mlbFutures,
 } from '@/routes';
 import { type NavItem } from '@/types';
 import AppLogo from './AppLogo.vue';
@@ -39,6 +53,7 @@ import AppLogo from './AppLogo.vue';
 const footballIconProps = { icon: faFootball };
 const basketballIconProps = { icon: faBasketball };
 const baseballIconProps = { icon: faBaseball };
+const playerPropsHref = (sport: 'nfl' | 'nba' | 'mlb' | 'cbb') => `/${sport}/player-props`;
 
 const mainNavItems: NavItem[] = [
     {
@@ -65,15 +80,15 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Injuries',
-                href: '/nfl-injuries',
+                href: nflInjuries(),
             },
             {
                 title: 'Player Stats',
-                href: '/nfl-player-stats',
+                href: nflPlayerStats(),
             },
             {
                 title: 'Player Props',
-                href: '/nfl-player-props',
+                href: playerPropsHref('nfl'),
             },
         ],
     },
@@ -93,7 +108,7 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Injuries',
-                href: '/nba-injuries',
+                href: nbaInjuries(),
             },
             {
                 title: 'Player Stats',
@@ -101,11 +116,11 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Futures',
-                href: '/nba-futures',
+                href: nbaFutures(),
             },
             {
                 title: 'Player Props',
-                href: '/nba-player-props',
+                href: playerPropsHref('nba'),
             },
         ],
     },
@@ -125,7 +140,7 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Injuries',
-                href: '/wnba-injuries',
+                href: wnbaInjuries(),
             },
         ],
     },
@@ -145,19 +160,19 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Injuries',
-                href: '/mlb-injuries',
+                href: mlbInjuries(),
             },
             {
                 title: 'Player Stats',
-                href: '/mlb-player-stats',
+                href: mlbPlayerStats(),
             },
             {
                 title: 'Futures',
-                href: '/mlb-futures',
+                href: mlbFutures(),
             },
             {
                 title: 'Player Props',
-                href: '/mlb-player-props',
+                href: playerPropsHref('mlb'),
             },
         ],
     },
@@ -173,11 +188,11 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Player Stats',
-                href: '/cfb-player-stats',
+                href: cfbPlayerStats(),
             },
             {
                 title: 'Injuries',
-                href: '/cfb-injuries',
+                href: cfbInjuries(),
             },
         ],
     },
@@ -197,7 +212,7 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Injuries',
-                href: '/cbb-injuries',
+                href: cbbInjuries(),
             },
             {
                 title: 'Player Stats',
@@ -205,11 +220,11 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Tournament Forecast',
-                href: '/cbb-tournament-forecast',
+                href: cbbTournamentForecast(),
             },
             {
                 title: 'Player Props',
-                href: '/cbb-player-props',
+                href: playerPropsHref('cbb'),
             },
         ],
     },
@@ -229,11 +244,11 @@ const sportNavItems: NavItem[] = [
             },
             {
                 title: 'Injuries',
-                href: '/wcbb-injuries',
+                href: wcbbInjuries(),
             },
             {
                 title: 'Tournament Forecast',
-                href: '/wcbb-tournament-forecast',
+                href: wcbbTournamentForecast(),
             },
         ],
     },

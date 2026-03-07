@@ -3,6 +3,7 @@
 namespace App\Console\Commands\NBA;
 
 use App\Actions\NBA\GeneratePlayoffForecast;
+use App\Models\NBA\TeamMetric;
 use Illuminate\Console\Command;
 
 class GeneratePlayoffForecastCommand extends Command
@@ -15,17 +16,42 @@ class GeneratePlayoffForecastCommand extends Command
     public function handle(GeneratePlayoffForecast $generatePlayoffForecast): int
     {
         $season = $this->option('season');
+        $requestedSeason = $season !== null ? (int) $season : null;
+        $resolvedSeason = (int) ($season ?? config('nba.season.default'));
 
         $this->info('Generating NBA playoff futures forecast...');
-        $forecasts = $generatePlayoffForecast->execute($season !== null ? (int) $season : null);
+        $forecasts = $generatePlayoffForecast->execute($requestedSeason);
 
         if ($forecasts->isEmpty()) {
+            $latestMetricsSeason = TeamMetric::query()->max('season');
+            if ($latestMetricsSeason !== null && (int) $latestMetricsSeason !== $resolvedSeason) {
+                $this->warn("No eligible NBA team metrics found for season {$resolvedSeason}. Trying latest metrics season {$latestMetricsSeason}.");
+                $forecasts = $generatePlayoffForecast->execute((int) $latestMetricsSeason);
+                $resolvedSeason = (int) $latestMetricsSeason;
+            }
+        }
+
+        if ($forecasts->isEmpty()) {
+            $availableMetricSeasons = TeamMetric::query()
+                ->select('season')
+                ->distinct()
+                ->orderByDesc('season')
+                ->pluck('season')
+                ->take(5)
+                ->values()
+                ->all();
+
             $this->warn('No eligible NBA team metrics found. Run nba:calculate-team-metrics first.');
+            if ($availableMetricSeasons !== []) {
+                $this->line('Available team metric seasons: '.implode(', ', $availableMetricSeasons));
+            }
 
             return self::SUCCESS;
         }
 
-        $resolvedSeason = (int) ($season ?? config('nba.season.default'));
+        if ($requestedSeason !== null && $requestedSeason !== $resolvedSeason) {
+            $this->warn("Requested season {$requestedSeason} had no metrics. Generated forecast for {$resolvedSeason} instead.");
+        }
         $this->info("Season: {$resolvedSeason}");
         $this->newLine();
 
@@ -56,4 +82,3 @@ class GeneratePlayoffForecastCommand extends Command
         return self::SUCCESS;
     }
 }
-

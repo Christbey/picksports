@@ -193,9 +193,22 @@ const fetchForecasts = async () => {
     try {
         const response = await fetch(`/api/v1/nba/playoff-forecasts?season=${encodeURIComponent(String(selectedSeason.value))}`, {
             signal: activeAbortController.signal,
+            credentials: 'same-origin',
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
         });
+        if (response.redirected && response.url.includes('/login')) {
+            throw new Error('Session expired while loading futures data. Please refresh and sign in again.');
+        }
         if (!response.ok) {
-            throw new Error('Failed to load NBA futures data');
+            throw new Error(`Failed to load NBA futures data (HTTP ${response.status}).`);
+        }
+
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!contentType.includes('application/json')) {
+            throw new Error('Unexpected non-JSON response from futures API. Check auth/session middleware.');
         }
         const payload = await response.json();
         if (requestId !== activeRequestId.value) {
@@ -206,9 +219,18 @@ const fetchForecasts = async () => {
         availableSeasons.value = payload?.meta?.available_seasons ?? [];
         playoffTeamsPerConference.value = payload?.meta?.playoff_teams_per_conference ?? 8;
         playInTeamsPerConference.value = payload?.meta?.play_in_teams_per_conference ?? 10;
+        const resolvedSeason = Number(payload?.meta?.season ?? selectedSeason.value);
+        const requestedSeason = Number(payload?.meta?.requested_season ?? selectedSeason.value);
+        const fallbackApplied = Boolean(payload?.meta?.fallback_applied ?? false);
 
         if (availableSeasons.value.length > 0 && !availableSeasons.value.includes(selectedSeason.value)) {
             selectedSeason.value = availableSeasons.value[0];
+        }
+
+        if (forecasts.value.length === 0) {
+            error.value = `No NBA futures rows found for season ${requestedSeason}.`;
+        } else if (fallbackApplied && resolvedSeason !== requestedSeason) {
+            error.value = `No rows for ${requestedSeason}; showing latest available season ${resolvedSeason}.`;
         }
     } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') {

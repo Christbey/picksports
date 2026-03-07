@@ -3,11 +3,11 @@
 $forgeHeartbeats = [];
 
 foreach (array_merge($_ENV, $_SERVER) as $key => $value) {
-    if (!is_string($key) || !is_string($value)) {
+    if (! is_string($key) || ! is_string($value)) {
         continue;
     }
 
-    if (!str_starts_with($key, 'FORGE_HEARTBEAT_') || !str_ends_with($key, '_URL')) {
+    if (! str_starts_with($key, 'FORGE_HEARTBEAT_') || ! str_ends_with($key, '_URL')) {
         continue;
     }
 
@@ -98,6 +98,12 @@ return [
         'subject' => env('WEB_PUSH_VAPID_SUBJECT', 'mailto:support@example.com'),
         'public_key' => env('WEB_PUSH_VAPID_PUBLIC_KEY'),
         'private_key' => env('WEB_PUSH_VAPID_PRIVATE_KEY'),
+    ],
+
+    'twilio_whatsapp' => [
+        'account_sid' => env('TWILIO_WHATSAPP_ACCOUNT_SID'),
+        'auth_token' => env('TWILIO_WHATSAPP_AUTH_TOKEN'),
+        'from' => env('TWILIO_WHATSAPP_FROM'),
     ],
 
 ];

@@ -3,7 +3,6 @@
 use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Services\AlertService;
-use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Permission;
 
 test('edit renders alert preferences page for authenticated user', function () {
@@ -124,6 +123,29 @@ test('update modifies existing preference', function () {
 
     $updated = UserAlertPreference::query()->where('user_id', $user->id)->first();
     expect($updated?->sports)->toBe(['nfl', 'nba']);
+});
+
+test('update accepts whatsapp notification type', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)
+        ->patch(route('alert-preferences.update'), [
+            'enabled' => true,
+            'notification_types' => ['email', 'whatsapp'],
+            'minimum_edge' => 10.0,
+            'time_window_start' => '10:00',
+            'time_window_end' => '22:00',
+            'digest_mode' => 'daily_summary',
+            'digest_time' => '08:00',
+            'phone_number' => '+1234567890',
+        ]);
+
+    $response->assertRedirect(route('alert-preferences.edit'));
+
+    $updated = UserAlertPreference::query()->where('user_id', $user->id)->first();
+    expect($updated)->not->toBeNull();
+    expect($updated?->notification_types)->toContain('whatsapp');
+    expect($updated?->phone_number)->toBe('+1234567890');
 });
 
 test('update validates required fields', function () {

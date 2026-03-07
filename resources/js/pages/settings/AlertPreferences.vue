@@ -62,6 +62,7 @@ const currentPreference = computed(() => props.preference || defaultPreference);
 const availableNotificationTypes = [
     { value: 'email', label: 'Email' },
     { value: 'push', label: 'Push Notifications' },
+    { value: 'whatsapp', label: 'WhatsApp' },
     { value: 'sms', label: 'SMS (Coming Soon)', disabled: true },
 ];
 
@@ -83,6 +84,9 @@ const selectedNotificationLabels = computed(() =>
 );
 const autoDigestMode = computed(() => (selectedNotificationTypes.value.includes('push') ? 'realtime' : 'daily_summary'));
 const digestModeLabel = computed(() => (autoDigestMode.value === 'daily_summary' ? 'Daily Summary' : 'Real-time'));
+const needsPhoneNumber = computed(() =>
+    selectedNotificationTypes.value.includes('whatsapp') || selectedNotificationTypes.value.includes('sms'),
+);
 
 function onEnabledChange(checked: boolean | 'indeterminate') {
     alertsEnabled.value = checked === true;
@@ -448,12 +452,12 @@ onMounted(() => {
                     <input type="hidden" name="digest_mode" :value="autoDigestMode" />
                     <input type="hidden" name="digest_time" :value="currentPreference.digest_time || '10:00'" />
 
-                    <!-- Phone Number (for future SMS) -->
-                    <div class="space-y-3 opacity-50">
+                    <!-- Phone Number -->
+                    <div class="space-y-3" :class="!needsPhoneNumber ? 'opacity-60' : ''">
                         <div>
                             <Label for="phone_number" class="text-base">Phone Number (Optional)</Label>
                             <p class="text-sm text-muted-foreground">
-                                For SMS notifications (coming soon)
+                                Required for WhatsApp alerts. Use full international format (e.g. +15551234567).
                             </p>
                         </div>
 
@@ -463,8 +467,7 @@ onMounted(() => {
                             type="tel"
                             :default-value="currentPreference.phone_number || ''"
                             class="max-w-xs"
-                            placeholder="+1 (555) 000-0000"
-                            disabled
+                            placeholder="+15550000000"
                         />
                         <InputError :message="errors.phone_number" />
                     </div>

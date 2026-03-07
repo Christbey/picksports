@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class UserAlertPreference extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'user_id',
         'enabled',
@@ -50,6 +51,11 @@ class UserAlertPreference extends Model
     public function shouldReceiveSmsNotifications(): bool
     {
         return $this->enabled && in_array('sms', $this->notification_types) && $this->phone_number !== null;
+    }
+
+    public function shouldReceiveWhatsAppNotifications(): bool
+    {
+        return $this->enabled && in_array('whatsapp', $this->notification_types) && $this->phone_number !== null;
     }
 
     public function shouldReceivePushNotifications(): bool

@@ -4,6 +4,7 @@ namespace App\Notifications;
 
 use App\Models\NotificationTemplate;
 use App\Notifications\Channels\WebPushChannel;
+use App\Notifications\Channels\WhatsAppChannel;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;
@@ -34,6 +35,10 @@ class BettingValueAlert extends Notification implements ShouldQueue
         if ($notifiable->alertPreference?->shouldReceivePushNotifications()) {
             $channels[] = 'database';
             $channels[] = WebPushChannel::class;
+        }
+
+        if ($notifiable->alertPreference?->shouldReceiveWhatsAppNotifications()) {
+            $channels[] = WhatsAppChannel::class;
         }
 
         return $channels;
@@ -99,6 +104,24 @@ class BettingValueAlert extends Notification implements ShouldQueue
         return $baseData;
     }
 
+    public function toWhatsApp(object $notifiable): string
+    {
+        $game = $this->prediction->game;
+        $homeTeam = $game->homeTeam->name ?? $game->homeTeam->school ?? 'Home Team';
+        $awayTeam = $game->awayTeam->name ?? $game->awayTeam->school ?? 'Away Team';
+        $edgePercent = round($this->expectedValue, 1);
+
+        if ($this->template) {
+            $data = $this->buildTemplateData($notifiable);
+            $body = trim($this->template->renderSmsBody($data));
+            if ($body !== '') {
+                return $body.' '.$this->getPredictionUrl();
+            }
+        }
+
+        return "Value Alert (+{$edgePercent}%): {$awayTeam} @ {$homeTeam}. {$this->recommendation}. ".$this->getPredictionUrl();
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -142,7 +165,7 @@ class BettingValueAlert extends Notification implements ShouldQueue
             'user' => [
                 'name' => $notifiable->name,
                 'email' => $notifiable->email,
-                'phone' => $notifiable->phone_number ?? '',
+                'phone' => $notifiable->alertPreference?->phone_number ?? '',
             ],
             'prediction' => [
                 'sport' => $this->getSportName(),

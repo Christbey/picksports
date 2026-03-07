@@ -2,7 +2,7 @@
 import { faBaseball, faBasketball, faFootball } from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { Link } from '@inertiajs/vue3';
-import { LayoutGrid } from 'lucide-vue-next';
+import { LayoutGrid, MessageSquare } from 'lucide-vue-next';
 import NavCollapsible from '@/components/NavCollapsible.vue';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
@@ -275,6 +275,19 @@ const sportNavItems: NavItem[] = [
         </SidebarContent>
 
         <SidebarFooter>
+            <SidebarMenu>
+                <SidebarMenuItem>
+                    <SidebarMenuButton as-child>
+                        <a
+                            href="mailto:info@picksports.com?subject=Product%20Feedback"
+                            aria-label="Send feedback"
+                        >
+                            <MessageSquare />
+                            <span>Feedback</span>
+                        </a>
+                    </SidebarMenuButton>
+                </SidebarMenuItem>
+            </SidebarMenu>
             <NavUser />
         </SidebarFooter>
     </Sidebar>

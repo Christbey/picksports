@@ -50,6 +50,20 @@ test('should receive sms notifications returns true when sms is in notification 
     expect($this->preference->shouldReceiveSmsNotifications())->toBeTrue();
 });
 
+test('should receive whatsapp notifications returns true when whatsapp is in notification types', function () {
+    $this->preference->notification_types = ['whatsapp'];
+    $this->preference->phone_number = '+1234567890';
+
+    expect($this->preference->shouldReceiveWhatsAppNotifications())->toBeTrue();
+});
+
+test('should receive whatsapp notifications returns false without phone number', function () {
+    $this->preference->notification_types = ['whatsapp'];
+    $this->preference->phone_number = null;
+
+    expect($this->preference->shouldReceiveWhatsAppNotifications())->toBeFalse();
+});
+
 test('is within time window returns true when current time is within window', function () {
     $this->travelTo(now()->setTime(12, 0));
 

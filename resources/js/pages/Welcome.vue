@@ -112,12 +112,6 @@ const getROIColor = (roi: number | undefined) => {
             </h1>
           </div>
           <div class="flex items-center gap-4">
-            <Link
-              :href="performanceRoute()"
-              class="text-sm font-medium text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white transition-colors"
-            >
-              Track Record
-            </Link>
             <template v-if="$page.props.auth.user">
               <Link :href="dashboard()">
                 <Button variant="default" size="sm">Dashboard</Button>
@@ -175,11 +169,6 @@ const getROIColor = (roi: number | undefined) => {
             <Link v-if="!$page.props.auth.user" :href="register()">
               <Button size="lg" class="text-lg px-8 h-14 bg-gradient-to-r from-orange-600 to-pink-600 hover:from-orange-700 hover:to-pink-700 shadow-lg shadow-orange-500/50 dark:shadow-orange-900/50">
                 Start Winning Today
-              </Button>
-            </Link>
-            <Link :href="performanceRoute()">
-              <Button size="lg" variant="outline" class="text-lg px-8 h-14 border-2">
-                See Our Track Record →
               </Button>
             </Link>
           </div>
@@ -263,9 +252,6 @@ const getROIColor = (roi: number | undefined) => {
                   {{ roiStats.total_profit > 0 ? '+' : '' }}${{ roiStats.total_profit.toLocaleString() }}
                 </span> profit
               </div>
-              <div class="text-xs text-gray-500 dark:text-gray-400">
-                ${{ roiStats.total_wagered.toLocaleString() }} wagered
-              </div>
             </div>
           </div>
 
@@ -291,14 +277,6 @@ const getROIColor = (roi: number | undefined) => {
 
         <!-- CTA -->
         <div class="text-center">
-          <Link :href="performanceRoute()">
-            <Button variant="outline" size="lg" class="gap-2 border-2 text-base">
-              View Complete Track Record
-              <svg xmlns="http://www.w3.org/2000/svg" class="size-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z" clip-rule="evenodd" />
-              </svg>
-            </Button>
-          </Link>
           <p class="text-sm text-gray-500 dark:text-gray-400 mt-4">
             Updated live after every game. No cherry-picking. No hiding losses.
           </p>
@@ -460,11 +438,6 @@ const getROIColor = (roi: number | undefined) => {
           <Link v-else :href="dashboard()">
             <Button size="lg" variant="secondary" class="text-lg px-10 h-14 bg-white hover:bg-gray-100 text-gray-900 font-bold shadow-2xl">
               Go to Dashboard
-            </Button>
-          </Link>
-          <Link :href="performanceRoute()">
-            <Button size="lg" variant="outline" class="text-lg px-10 h-14 border-2 border-white text-white hover:bg-white/10">
-              View Track Record
             </Button>
           </Link>
         </div>

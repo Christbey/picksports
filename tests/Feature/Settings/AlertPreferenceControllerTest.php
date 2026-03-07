@@ -73,7 +73,6 @@ test('update creates new preference for user without existing preference', funct
     $response = $this->actingAs($user)
         ->patch(route('alert-preferences.update'), [
             'enabled' => true,
-            'sports' => ['nfl', 'nba'],
             'notification_types' => ['email', 'push'],
             'minimum_edge' => 5.0,
             'time_window_start' => '09:00',
@@ -98,13 +97,13 @@ test('update modifies existing preference', function () {
     UserAlertPreference::factory()->create([
         'user_id' => $user->id,
         'enabled' => false,
+        'sports' => ['nfl', 'nba'],
         'minimum_edge' => 3.0,
     ]);
 
     $response = $this->actingAs($user)
         ->patch(route('alert-preferences.update'), [
             'enabled' => true,
-            'sports' => ['cfb'],
             'notification_types' => ['sms'],
             'minimum_edge' => 10.0,
             'time_window_start' => '10:00',
@@ -122,6 +121,9 @@ test('update modifies existing preference', function () {
         'minimum_edge' => 10.0,
         'phone_number' => '+1234567890',
     ]);
+
+    $updated = UserAlertPreference::query()->where('user_id', $user->id)->first();
+    expect($updated?->sports)->toBe(['nfl', 'nba']);
 });
 
 test('update validates required fields', function () {
@@ -133,7 +135,6 @@ test('update validates required fields', function () {
 
     $response->assertSessionHasErrors([
         'enabled',
-        'sports',
         'notification_types',
         'minimum_edge',
         'time_window_start',
@@ -142,14 +143,14 @@ test('update validates required fields', function () {
     ]);
 });
 
-test('update validates sports are valid', function () {
+test('update rejects sports payload changes', function () {
     $user = User::factory()->create();
 
     $response = $this->actingAs($user)
         ->from(route('alert-preferences.edit'))
         ->patch(route('alert-preferences.update'), [
             'enabled' => true,
-            'sports' => ['invalid_sport'],
+            'sports' => ['nfl'],
             'notification_types' => ['email'],
             'minimum_edge' => 5.0,
             'time_window_start' => '09:00',
@@ -157,7 +158,7 @@ test('update validates sports are valid', function () {
             'digest_mode' => 'realtime',
         ]);
 
-    $response->assertSessionHasErrors('sports.0');
+    $response->assertSessionHasErrors('sports');
 });
 
 test('update validates notification types are valid', function () {
@@ -167,7 +168,6 @@ test('update validates notification types are valid', function () {
         ->from(route('alert-preferences.edit'))
         ->patch(route('alert-preferences.update'), [
             'enabled' => true,
-            'sports' => ['nfl'],
             'notification_types' => ['invalid_type'],
             'minimum_edge' => 5.0,
             'time_window_start' => '09:00',

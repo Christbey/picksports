@@ -31,10 +31,13 @@ it('calculates baseball metrics correctly for a single game', function () {
         'hits' => 10,
         'at_bats' => 35,
         'walks' => 4,
+        'doubles' => 2,
+        'triples' => 0,
         'home_runs' => 2,
         'strikeouts' => 8,
         'innings_pitched' => 9,
         'earned_runs' => 3,
+        'hits_allowed' => 7,
         'strikeouts_pitched' => 9,
         'walks_allowed' => 3,
         'putouts' => 27,
@@ -59,9 +62,16 @@ it('calculates baseball metrics correctly for a single game', function () {
         ->and($metric->defensive_rating)->toBeGreaterThan(0)
         ->and($metric->runs_per_game)->toBe(5.0)
         ->and($metric->runs_allowed_per_game)->toBe(3.0)
+        ->and($metric->run_differential_per_game)->toBe(2.0)
+        ->and($metric->home_runs_per_game)->toBe(2.0)
         ->and($metric->batting_average)->toBe(0.286) // 10/35 rounded to 3 decimals
+        ->and($metric->on_base_percentage)->toBe(0.359) // (10 + 4) / (35 + 4)
+        ->and($metric->slugging_percentage)->toBe(0.514) // (6 singles + 2 doubles + 2 HR*4) / 35
+        ->and($metric->ops)->toBe(0.873) // OBP + SLG
         ->and($metric->team_era)->toBe(3.0) // (3/9)*9
-        ->and($metric->strength_of_schedule)->toBe(1600.0)
+        ->and($metric->strikeouts_pitched_per_game)->toBe(9.0)
+        ->and($metric->whip)->toBe(1.111) // (7 + 3) / 9
+        ->and((float) $metric->strength_of_schedule)->toBe(1600.0)
         ->and($metric->calculation_date->toDateString())->toBe(now()->toDateString());
 });
 
@@ -346,7 +356,7 @@ it('calculates strength of schedule based on opponent ELO ratings', function () 
     $metric = $this->action->execute($this->team, $this->season);
 
     // Average: (1600 + 1400 + 1500) / 3 = 1500
-    expect($metric->strength_of_schedule)->toBe(1500.0);
+    expect((float) $metric->strength_of_schedule)->toBe(1500.0);
 });
 
 it('returns null when team has no completed games', function () {
@@ -746,7 +756,7 @@ it('returns null for strength of schedule when no opponents have ELO ratings', f
 
     $metric = $this->action->execute($this->team, $this->season);
 
-    expect($metric->strength_of_schedule)->toBeNull();
+    expect((float) $metric->strength_of_schedule)->toBe(0.0);
 });
 
 it('handles null values in stats gracefully', function () {

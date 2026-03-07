@@ -2,13 +2,10 @@
 
 namespace App\Services;
 
-use App\Actions\Alerts\SelectTopBetsForDigest;
 use App\Models\NotificationTemplate;
 use App\Models\User;
-use App\Support\SportCatalog;
 use Carbon\Carbon;
 use Illuminate\Mail\Markdown;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\HtmlString;
 use Illuminate\Support\Str;
@@ -32,10 +29,6 @@ class NotificationTemplatePreviewService
         'cbb' => \App\Actions\CBB\CalculateBettingValue::class,
     ];
 
-    public function __construct(
-        private readonly SelectTopBetsForDigest $selectTopBetsForDigest
-    ) {}
-
     /**
      * @param  array<string, mixed>  $templateFields
      * @return array<string, mixed>
@@ -52,80 +45,16 @@ class NotificationTemplatePreviewService
             'active' => true,
         ]);
 
-        if ($context === 'daily_betting_digest') {
-            $payload = $this->dailyDigestPayload($user, $sport, $date);
-        } else {
-            $payload = $this->bettingValuePayload($sport);
-        }
+        $payload = $this->bettingValuePayload($sport);
+        $renderedEmailBody = $template->renderEmailBody($payload['data']);
 
         return [
-            'context' => $context,
+            'context' => 'betting_value_alert',
             'subject' => $template->renderSubject($payload['data']),
-            'email_body' => $template->renderEmailBody($payload['data']),
-            'email_html' => $this->renderEmailHtml($template->renderEmailBody($payload['data'])),
-            'sms_body' => $template->renderSmsBody($payload['data']),
-            'push_title' => $template->renderPushTitle($payload['data']),
-            'push_body' => $template->renderPushBody($payload['data']),
+            'email_body' => $renderedEmailBody,
+            'email_html' => $this->renderEmailHtml($renderedEmailBody),
             'data' => $payload['data'],
             'meta' => $payload['meta'],
-        ];
-    }
-
-    /**
-     * @return array{data:array<string,mixed>,meta:array<string,mixed>}
-     */
-    private function dailyDigestPayload(User $user, string $sport, Carbon $date): array
-    {
-        $sport = strtolower($sport);
-        $sports = $sport === 'all' ? SportCatalog::ALL : [$sport];
-        $topBets = $sport === 'all'
-            ? $this->selectTopBetsForDigest->executeAcrossSports($user, $sports, $date)
-            : $this->selectTopBetsForDigest->execute($user, $sport, $date);
-        $totalGames = collect($sports)->sum(
-            fn (string $sportCode): int => $this->totalGamesForDate($sportCode, $date)
-        );
-        $betsCount = $topBets->count();
-        $hasBets = $betsCount > 0;
-
-        $data = [
-            'user' => [
-                'name' => $user->name,
-                'email' => $user->email,
-            ],
-            'digest' => [
-                'date' => $date->format('F j, Y'),
-                'total_games' => $totalGames,
-                'bets_count' => $betsCount,
-                'has_bets' => $hasBets,
-                'empty_message' => $hasBets
-                    ? ''
-                    : "We analyzed {$totalGames} games but found no qualifying model edges today.",
-                'bets_table' => $hasBets ? $this->buildDigestBetsTable($topBets) : '',
-            ],
-            'system' => [
-                'app_name' => config('app.name'),
-                'app_url' => config('app.url'),
-                'support_email' => config('mail.from.address'),
-            ],
-        ];
-
-        return [
-            'data' => $data,
-            'meta' => [
-                'sport' => $sport,
-                'sports' => $sports,
-                'date' => $date->toDateString(),
-                'total_games' => $totalGames,
-                'bets_count' => $betsCount,
-                'top_bets' => $topBets->map(fn (array $bet) => [
-                    'sport' => $bet['sport'] ?? null,
-                    'type' => $bet['type'] ?? null,
-                    'recommendation' => $bet['recommendation'] ?? null,
-                    'edge' => $bet['edge'] ?? null,
-                    'confidence' => $bet['confidence'] ?? null,
-                    'composite_score' => $bet['composite_score'] ?? null,
-                ])->values()->all(),
-            ],
         ];
     }
 
@@ -204,52 +133,6 @@ class NotificationTemplatePreviewService
         ];
     }
 
-    private function totalGamesForDate(string $sport, Carbon $date): int
-    {
-        $gameModel = self::SPORT_GAME_MODELS[strtolower($sport)] ?? null;
-        if (! $gameModel) {
-            return 0;
-        }
-
-        return $gameModel::query()
-            ->whereDate('game_date', $date->toDateString())
-            ->where('status', 'STATUS_SCHEDULED')
-            ->count();
-    }
-
-    private function buildDigestBetsTable(Collection $topBets): string
-    {
-        $rows = [];
-        foreach ($topBets as $bet) {
-            $game = $bet['game'] ?? null;
-            if (! $game) {
-                continue;
-            }
-
-            $homeTeam = $this->teamDisplayName($game->homeTeam, 'Home');
-            $awayTeam = $this->teamDisplayName($game->awayTeam, 'Away');
-            $gameTime = $game->game_date->format('g:i A');
-
-            $matchup = "{$awayTeam} @ {$homeTeam}";
-            $sport = strtoupper((string) ($bet['sport'] ?? ''));
-            $betType = ucfirst((string) ($bet['type'] ?? 'pick'));
-            $pick = (string) ($bet['recommendation'] ?? 'N/A');
-            $edge = is_numeric($bet['edge'] ?? null) ? round((float) $bet['edge'], 1) : 'N/A';
-            $confidence = is_numeric($bet['confidence'] ?? null) ? round((float) $bet['confidence'], 0).'%' : 'N/A';
-
-            $rows[] = "| {$sport} | {$matchup} | {$gameTime} | {$betType} | {$pick} | {$edge} | {$confidence} |";
-        }
-
-        if (empty($rows)) {
-            return '';
-        }
-
-        $header = "| Sport | Game | Time | Type | Pick | Edge | Confidence |\n";
-        $separator = "|-------|------|------|------|------|------|------------|\n";
-
-        return $header.$separator.implode("\n", $rows);
-    }
-
     private function renderEmailHtml(string $body): string
     {
         if (trim($body) === '') {
@@ -259,19 +142,16 @@ class NotificationTemplatePreviewService
         try {
             $markdown = app(Markdown::class);
 
-            // Full native mail blade component markup provided by admin.
             if ($this->containsFullMailLayout($body)) {
                 return $this->replaceLaravelBranding(Blade::render($body));
             }
 
-            // If snippet contains Blade directives/components, render snippet first.
             if ($this->containsBladeEmailMarkup($body)) {
                 $body = Blade::render($body);
             } else {
                 $body = Str::markdown($body);
             }
 
-            // Render inside Laravel's native markdown mail template.
             $html = $markdown->render('mail::message', [
                 'slot' => new HtmlString($body),
             ])->toHtml();
@@ -320,14 +200,12 @@ class NotificationTemplatePreviewService
             $html
         );
 
-        // Catch any future Laravel notification logo variants.
         $replaced = (string) preg_replace(
             '#https://laravel\.com/img/notification-logo[^"\']*#i',
             $logo,
             $replaced
         );
 
-        // Normalize laravel.com header links.
         return str_replace('https://laravel.com', (string) config('app.url'), $replaced);
     }
 

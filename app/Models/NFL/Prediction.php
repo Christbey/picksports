@@ -66,14 +66,14 @@ class Prediction extends Model
         return $this->belongsTo(Game::class, 'game_id');
     }
 
-    public function homeTeam(): BelongsTo
+    public function getHomeTeamAttribute(): ?Team
     {
-        return $this->belongsTo(Team::class, 'home_team_id');
+        return $this->game?->homeTeam;
     }
 
-    public function awayTeam(): BelongsTo
+    public function getAwayTeamAttribute(): ?Team
     {
-        return $this->belongsTo(Team::class, 'away_team_id');
+        return $this->game?->awayTeam;
     }
 
     protected static function newFactory(): \Database\Factories\NflPredictionFactory

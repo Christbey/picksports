@@ -2,9 +2,6 @@
 
 namespace App\Support\Validation;
 
-use App\Support\SportCatalog;
-use Illuminate\Validation\Rule;
-
 class AlertPreferenceRules
 {
     /**
@@ -14,8 +11,8 @@ class AlertPreferenceRules
     {
         return [
             'enabled' => 'required|boolean',
-            'sports' => 'required|array',
-            'sports.*' => ['string', Rule::in(SportCatalog::ALL)],
+            'sports' => 'prohibited',
+            'sports.*' => 'prohibited',
             'notification_types' => 'required|array',
             'notification_types.*' => 'string|in:email,sms,push',
             'minimum_edge' => 'required|numeric|min:0|max:100',
@@ -34,8 +31,8 @@ class AlertPreferenceRules
     {
         return [
             'enabled' => 'sometimes|boolean',
-            'sports' => 'sometimes|array',
-            'sports.*' => ['string', Rule::in(SportCatalog::ALL)],
+            'sports' => 'prohibited',
+            'sports.*' => 'prohibited',
             'notification_types' => 'sometimes|array',
             'notification_types.*' => 'string|in:email,sms,push',
             'minimum_edge' => 'sometimes|numeric|min:0|max:100',
@@ -54,8 +51,8 @@ class AlertPreferenceRules
     {
         return [
             'enabled' => 'required|boolean',
-            'sports' => 'required|array',
-            'sports.*' => ['string', Rule::in(SportCatalog::ALL)],
+            'sports' => 'prohibited',
+            'sports.*' => 'prohibited',
             'notification_types' => 'required|array',
             'notification_types.*' => 'string|in:email,sms,push',
             'enabled_template_ids' => 'nullable|array',

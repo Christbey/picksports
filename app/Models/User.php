@@ -6,7 +6,6 @@ namespace App\Models;
 use App\Services\Admin\TierPermissionSyncService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Cashier\Billable;
@@ -150,11 +149,6 @@ class User extends Authenticatable
     public function alertsSent(): HasMany
     {
         return $this->hasMany(UserAlertSent::class);
-    }
-
-    public function onboardingProgress(): HasOne
-    {
-        return $this->hasOne(UserOnboardingProgress::class);
     }
 
     public function webPushSubscriptions(): HasMany

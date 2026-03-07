@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use InvalidArgumentException;
 
 class PlayerProp extends Model
 {
@@ -50,6 +51,17 @@ class PlayerProp extends Model
 
     public function player(): BelongsTo
     {
-        return $this->belongsTo(Player::class);
+        return $this->belongsTo($this->resolvePlayerModelClass(), 'player_id');
+    }
+
+    private function resolvePlayerModelClass(): string
+    {
+        return match ($this->sport) {
+            'basketball_nba' => \App\Models\NBA\Player::class,
+            'basketball_ncaab' => \App\Models\CBB\Player::class,
+            'americanfootball_nfl' => \App\Models\NFL\Player::class,
+            'baseball_mlb' => \App\Models\MLB\Player::class,
+            default => throw new InvalidArgumentException("Unsupported sport for player relation: {$this->sport}"),
+        };
     }
 }

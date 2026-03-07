@@ -46,7 +46,7 @@ class GeneratePredictionFromHistoricalElo
             legacyWinProbability: $legacyWinProbability,
             legacyTotal: $legacyTotal
         );
-        $confidenceScore = abs($winProbability - 0.5) * 2;
+        $confidenceScore = max($winProbability, 1 - $winProbability) * 100;
 
         $existing = Prediction::query()->where('game_id', $game->id)->first();
 

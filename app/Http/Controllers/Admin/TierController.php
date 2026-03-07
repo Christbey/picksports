@@ -4,9 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\TierRequest;
-use App\Http\Resources\Admin\NotificationTemplateAdminResource;
 use App\Http\Resources\Admin\SubscriptionTierAdminResource;
-use App\Models\NotificationTemplate;
 use App\Models\SubscriptionTier;
 use App\Services\Admin\TierPermissionSyncService;
 use Illuminate\Http\RedirectResponse;
@@ -27,15 +25,8 @@ class TierController extends Controller
                 ->get()
         ));
 
-        $notificationTemplates = $this->resourcePayload(NotificationTemplateAdminResource::collection(
-            NotificationTemplate::query()
-                ->orderBy('name')
-                ->get()
-        ));
-
         return Inertia::render('Admin/Tiers/Index', [
             'tiers' => $tiers,
-            'notificationTemplates' => $notificationTemplates,
         ]);
     }
 

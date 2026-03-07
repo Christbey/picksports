@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { Sparkles, Target } from 'lucide-vue-next';
+import { ref } from 'vue';
 import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
-import { formatDateShort } from '@/composables/useFormatters';
 import type { DashboardPrediction, PredictionListItem } from '@/types';
 
 const props = defineProps<{
@@ -29,6 +29,8 @@ const predictionType = isPredictionListItem(props.prediction)
 const dashboardType = isPredictionListItem(props.prediction)
     ? null
     : props.prediction;
+const awayLogoErrored = ref(false);
+const homeLogoErrored = ref(false);
 
 function awayTeamLabel(): string {
     if (dashboardType) return dashboardType.away_team;
@@ -101,16 +103,20 @@ function inningState(): string | null {
     return dashboardType?.inning_state ?? null;
 }
 
-function gameDateText(): string | null {
-    if (predictionType) {
-        return formatDateShort(
-            predictionType.game.game_date,
-            predictionType.game.game_time,
-            true,
-        );
-    }
+function showAwayLogo(): boolean {
+    return !!awayLogo() && !awayLogoErrored.value;
+}
 
-    return dashboardType?.game_time ?? null;
+function showHomeLogo(): boolean {
+    return !!homeLogo() && !homeLogoErrored.value;
+}
+
+function handleAwayLogoError(): void {
+    awayLogoErrored.value = true;
+}
+
+function handleHomeLogoError(): void {
+    homeLogoErrored.value = true;
 }
 
 function isFavorite(): boolean {
@@ -158,17 +164,6 @@ function weekLabel(): string | null {
     return `Postseason Week ${week}`;
 }
 
-function eloDiff(): number | null {
-    const homeElo = predictionType?.home_elo;
-    const awayElo = predictionType?.away_elo;
-
-    if (homeElo === undefined || awayElo === undefined) {
-        return null;
-    }
-
-    return homeElo - awayElo;
-}
-
 function preGameWinProbability(): number {
     return props.prediction.win_probability ?? 0;
 }
@@ -190,8 +185,46 @@ function winProbPercent(): number {
     return Math.max(0, Math.min(100, probability * 100));
 }
 
+function edgePercent(): number {
+    return winProbPercent() - 50;
+}
+
+function edgeSignalLabel(): string {
+    const absEdge = Math.abs(edgePercent());
+    if (absEdge < 2) return 'Toss-Up';
+    if (absEdge < 7) return 'Lean Edge';
+    if (absEdge < 14) return 'Moderate Edge';
+    return 'Strong Edge';
+}
+
+function moneylineTeamLabel(): string {
+    const home = homeTeamLabel();
+    const away = awayTeamLabel();
+
+    return winProbPercent() >= 50 ? home : away;
+}
+
+function edgeBarWidth(): number {
+    return Math.min(100, Math.abs(edgePercent()) * 2);
+}
+
 function bettingValueDebug(): string | null {
     return dashboardType?.betting_value_debug ?? null;
+}
+
+function bettingValueDebugLabel(): string | null {
+    const reason = bettingValueDebug();
+    if (!reason) return null;
+
+    if (reason.toLowerCase() === 'no odds') {
+        return 'Odds not available';
+    }
+
+    if (reason.toLowerCase() === 'below threshold') {
+        return 'Below signal threshold';
+    }
+
+    return reason;
 }
 
 function livePredictionData() {
@@ -286,10 +319,19 @@ function finalCardClass(): string {
 <template>
     <Link
         :href="href"
-        class="block rounded-lg border border-sidebar-border/70 bg-sidebar-accent/30 p-3 transition-all hover:border-sidebar-border hover:bg-sidebar-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 md:p-4 dark:border-sidebar-border"
+        class="relative block rounded-lg border border-sidebar-border/70 bg-sidebar-accent/30 p-3 transition-all hover:border-sidebar-border hover:bg-sidebar-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 md:p-4 dark:border-sidebar-border"
         :class="finalCardClass()"
     >
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <span
+            v-if="isFavorite()"
+            class="absolute left-3 top-3 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-700 dark:bg-green-900 dark:text-green-200"
+        >
+            Favorite
+        </span>
+        <div
+            class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
+            :class="isFavorite() ? 'pt-5' : ''"
+        >
             <div class="flex flex-col gap-2">
                 <div
                     v-if="isLive()"
@@ -314,10 +356,11 @@ function finalCardClass(): string {
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
                     <div class="flex items-center gap-2">
                         <img
-                            v-if="awayLogo()"
+                            v-if="showAwayLogo()"
                             :src="awayLogo()!"
                             :alt="awayTeamLabel()"
                             class="h-8 w-8 object-contain md:h-10 md:w-10"
+                            @error="handleAwayLogoError"
                         />
                         <span class="text-sm font-semibold md:text-base">{{ awayTeamLabel() }}</span>
                         <span
@@ -330,10 +373,11 @@ function finalCardClass(): string {
                     <span class="hidden text-muted-foreground sm:inline">@</span>
                     <div class="flex items-center gap-2">
                         <img
-                            v-if="homeLogo()"
+                            v-if="showHomeLogo()"
                             :src="homeLogo()!"
                             :alt="homeTeamLabel()"
                             class="h-8 w-8 object-contain md:h-10 md:w-10"
+                            @error="handleHomeLogoError"
                         />
                         <span class="text-sm font-semibold md:text-base">{{ homeTeamLabel() }}</span>
                         <span
@@ -352,59 +396,34 @@ function finalCardClass(): string {
                     >
                         {{ weekLabel() }}
                     </span>
-                    <span
-                        v-if="isFavorite()"
-                        class="rounded-full bg-green-100 px-2 py-0.5 text-green-700 dark:bg-green-900 dark:text-green-200"
-                    >
-                        Favorite
-                    </span>
-                    <span
-                        v-if="gameDateText()"
-                        class="text-muted-foreground"
-                    >
-                        {{ gameDateText() }}
-                    </span>
                 </div>
             </div>
 
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-1 md:min-w-[180px]">
                 <div class="rounded-md border border-sidebar-border/60 bg-white/70 p-2 dark:bg-sidebar/60">
-                    <div class="mb-1 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <div class="mb-1 flex items-center gap-1.5">
                         <Target class="h-3.5 w-3.5" />
-                        Win %
+                        <span class="inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/80">
+                            Moneyline: {{ moneylineTeamLabel() }}
+                        </span>
                     </div>
                     <div
                         class="text-base font-bold"
                         :class="[
-                            hasLiveData() ? 'text-red-500' : '',
+                            edgePercent() >= 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-red-600 dark:text-red-400',
                             finalResultClass(),
                         ]"
                     >
-                        {{ winProbPercent().toFixed(1) }}%
+                        {{ edgeSignalLabel() }}
                     </div>
                     <div class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-sidebar-accent">
                         <div
-                            class="h-full rounded-full bg-emerald-500 transition-all"
-                            :style="{ width: `${winProbPercent()}%` }"
+                            class="h-full rounded-full transition-all"
+                            :class="edgePercent() >= 0 ? 'bg-emerald-500' : 'bg-red-500'"
+                            :style="{ width: `${edgeBarWidth()}%` }"
                         />
-                    </div>
-                    <div
-                        v-if="eloDiff() !== null"
-                        class="mt-1 text-xs text-muted-foreground"
-                    >
-                        Elo Diff:
-                        <span
-                            :class="[
-                                'font-semibold',
-                                (eloDiff() ?? 0) > 50
-                                    ? 'text-green-600 dark:text-green-400'
-                                    : (eloDiff() ?? 0) < -50
-                                      ? 'text-red-600 dark:text-red-400'
-                                      : '',
-                            ]"
-                        >
-                            {{ (eloDiff() ?? 0).toFixed(1) }}
-                        </span>
                     </div>
                 </div>
             </div>
@@ -433,9 +452,9 @@ function finalCardClass(): string {
                 No qualifying value signal
                 <span
                     v-if="bettingValueDebug()"
-                    class="ml-2 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium uppercase tracking-wide text-foreground/80"
+                    class="ml-2 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium text-foreground/80"
                 >
-                    {{ bettingValueDebug() }}
+                    {{ bettingValueDebugLabel() }}
                 </span>
             </div>
             <BettingAnalysisCard

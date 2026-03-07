@@ -3,6 +3,7 @@
 namespace App\Models\CFB;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -76,8 +77,11 @@ class Team extends Model
         return $this->hasMany(FpiRating::class, 'team_id');
     }
 
-    public function predictions(): HasMany
+    public function predictions(): Builder
     {
-        return $this->hasMany(Prediction::class, 'team_id');
+        return Prediction::query()->whereHas('game', function (Builder $query): void {
+            $query->where('home_team_id', $this->id)
+                ->orWhere('away_team_id', $this->id);
+        });
     }
 }

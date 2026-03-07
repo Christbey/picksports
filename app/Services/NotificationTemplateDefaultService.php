@@ -9,7 +9,6 @@ class NotificationTemplateDefaultService
 {
     public const ALERT_TYPES = [
         'betting_value_alert' => 'Betting Value Alert',
-        'daily_betting_digest' => 'Daily Betting Digest',
     ];
 
     public function resolve(string $alertType): ?NotificationTemplate
@@ -71,4 +70,3 @@ class NotificationTemplateDefaultService
         }
     }
 }
-

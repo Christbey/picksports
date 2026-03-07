@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Settings\AlertPreferenceController;
 use App\Http\Controllers\Settings\AdminSettingsController;
-use App\Http\Controllers\Settings\OnboardingController;
 use App\Http\Controllers\Settings\OddsApiPlayerMappingController;
 use App\Http\Controllers\Settings\OddsApiTeamMappingController;
 use App\Http\Controllers\Settings\PasswordController;
@@ -106,8 +105,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('web-push.subscriptions.destroy');
     Route::post('settings/web-push/test', [WebPushSubscriptionController::class, 'sendTest'])
         ->name('web-push.test');
-
-    Route::get('settings/onboarding', OnboardingController::class)->name('settings.onboarding');
 
     Route::get('settings/admin', AdminSettingsController::class)->middleware(['admin'])->name('admin.settings');
 

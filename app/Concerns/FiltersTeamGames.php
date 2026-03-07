@@ -20,13 +20,14 @@ trait FiltersTeamGames
     ): Collection {
         $gameModel = "App\\Models\\{$sport}\\Game";
         $sportSlug = strtolower($sport);
+        $analyticsTypeCandidates = $this->resolveAnalyticsSeasonTypeCandidates($sportSlug);
 
         return $gameModel::query()
             ->where('season', $season)
             ->where('status', config("{$sportSlug}.statuses.final"))
             ->when(
-                config("{$sportSlug}.season.analytics_types"),
-                fn ($query, $types) => $query->whereIn('season_type', $types)
+                $analyticsTypeCandidates !== [],
+                fn ($query) => $query->whereIn('season_type', $analyticsTypeCandidates)
             )
             ->where(function ($query) use ($team) {
                 $query->where('home_team_id', $team->id)
@@ -34,6 +35,57 @@ trait FiltersTeamGames
             })
             ->with(['teamStats', 'homeTeam', 'awayTeam'])
             ->get();
+    }
+
+    /**
+     * Resolve season_type filter candidates to support numeric and label-stored values.
+     *
+     * @return array<int, int|string>
+     */
+    protected function resolveAnalyticsSeasonTypeCandidates(string $sportSlug): array
+    {
+        $configuredTypes = config("{$sportSlug}.season.analytics_types");
+        if (! is_array($configuredTypes) || $configuredTypes === []) {
+            return [];
+        }
+
+        $typeNames = config("{$sportSlug}.season.type_names", []);
+        $typesByKey = config("{$sportSlug}.season.types", []);
+        $candidates = [];
+
+        foreach ($configuredTypes as $type) {
+            if ($type === null || $type === '') {
+                continue;
+            }
+
+            $candidates[] = $type;
+            $candidates[] = (string) $type;
+
+            if (is_string($type) && isset($typeNames[$type])) {
+                $candidates[] = $typeNames[$type];
+            }
+
+            if (is_string($type) && isset($typesByKey[$type])) {
+                $resolved = $typesByKey[$type];
+                $candidates[] = $resolved;
+                $candidates[] = (string) $resolved;
+            }
+
+            if (is_numeric($type)) {
+                $code = (int) $type;
+                $matchedKey = array_search($code, $typesByKey, true);
+                if ($matchedKey !== false && isset($typeNames[$matchedKey])) {
+                    $candidates[] = $typeNames[$matchedKey];
+                }
+            }
+        }
+
+        $normalized = array_values(array_unique(array_filter(
+            $candidates,
+            fn ($value) => $value !== null && $value !== ''
+        )));
+
+        return $normalized;
     }
 
     /**

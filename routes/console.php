@@ -418,14 +418,6 @@ $scheduleHalfHourlyWindowJob(
 );
 $scheduleEpaLifecycle('cbb', 'CBB', fn () => $fallSeasonYear, $cbbInSeason);
 
-$dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
-    ->hourly()
-    ->between('06:00', '22:00')
-    ->name('Alerts: Send Daily Digests')
-    ->withoutOverlapping()
-    ->runInBackground();
-$attachCommandHeartbeat($dailyDigestsEvent, 'alerts:send-daily-digests --sport=all', 'Alerts: Send Daily Digests');
-
 // WCBB
 $scheduleDailySeasonJob('espn:sync-wcbb-teams', '02:45', $wcbbInSeason, 'WCBB: Sync Teams (Daily)');
 $scheduleDailySeasonJob('espn:sync-wcbb-game-details', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');

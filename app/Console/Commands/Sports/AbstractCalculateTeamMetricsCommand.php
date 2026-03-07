@@ -60,9 +60,29 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
             fn ($team) => $calculateMetrics->execute($team, $season)
         );
 
-        $this->info("Calculated metrics for {$calculated} teams.");
+        $totalTeams = $teams->count();
+        $skipped = max(0, $totalTeams - $calculated);
+
+        $this->info("Recalculated metrics for {$calculated} of {$totalTeams} teams.");
+        if ($skipped > 0) {
+            $this->warn("Skipped {$skipped} teams (typically no completed games matched the season/status/type filters).");
+        }
 
         $this->newLine();
+        if ($calculated === 0) {
+            $existingCount = $this->teamMetricModelClass()::query()
+                ->where('season', $season)
+                ->count();
+
+            if ($existingCount > 0) {
+                $this->warn("No team metrics were recalculated for {$season}. Showing {$existingCount} existing metric rows currently stored in DB.");
+            } else {
+                $this->warn("No team metrics are available for {$season}.");
+            }
+
+            $this->displayNoRecalculationDiagnostics($season);
+        }
+
         $this->info($this->topTeamsTitle());
 
         $this->displayTopTeamsByRating(
@@ -148,4 +168,11 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
      * @return array<string, int>
      */
     abstract protected function topTableFields(): array;
+
+    /**
+     * Hook for sport-specific diagnostics when no teams were recalculated.
+     */
+    protected function displayNoRecalculationDiagnostics(int|string $season): void
+    {
+    }
 }

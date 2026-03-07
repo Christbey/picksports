@@ -59,16 +59,6 @@ const defaultPreference: Preference = {
 
 const currentPreference = computed(() => props.preference || defaultPreference);
 
-const availableSports = [
-    { value: 'nfl', label: 'NFL' },
-    { value: 'nba', label: 'NBA' },
-    { value: 'cbb', label: 'NCAA Men\'s Basketball' },
-    { value: 'wcbb', label: 'NCAA Women\'s Basketball' },
-    { value: 'mlb', label: 'MLB' },
-    { value: 'cfb', label: 'NCAA Football' },
-    { value: 'wnba', label: 'WNBA' },
-];
-
 const availableNotificationTypes = [
     { value: 'email', label: 'Email' },
     { value: 'push', label: 'Push Notifications' },
@@ -82,17 +72,12 @@ function normalizeStringArray(value: unknown): string[] {
         .filter((item) => item.length > 0);
 }
 
-const selectedSports = ref<string[]>(normalizeStringArray(currentPreference.value.sports));
 const selectedNotificationTypes = ref<string[]>(normalizeStringArray(currentPreference.value.notification_types));
 const alertsEnabled = ref<boolean>(currentPreference.value.enabled);
 
-const sportLabelMap = computed<Record<string, string>>(() =>
-    Object.fromEntries(availableSports.map((sport) => [sport.value, sport.label])),
-);
 const notificationLabelMap = computed<Record<string, string>>(() =>
     Object.fromEntries(availableNotificationTypes.map((type) => [type.value, type.label.replace(' (Coming Soon)', '')])),
 );
-const selectedSportLabels = computed(() => selectedSports.value.map((sport) => sportLabelMap.value[sport] ?? sport.toUpperCase()));
 const selectedNotificationLabels = computed(() =>
     selectedNotificationTypes.value.map((type) => notificationLabelMap.value[type] ?? type.toUpperCase()),
 );
@@ -101,17 +86,6 @@ const digestModeLabel = computed(() => (autoDigestMode.value === 'daily_summary'
 
 function onEnabledChange(checked: boolean | 'indeterminate') {
     alertsEnabled.value = checked === true;
-}
-
-function toggleSport(sport: string, checked: boolean | 'indeterminate') {
-    const shouldEnable = checked === true;
-    const index = selectedSports.value.indexOf(sport);
-    if (shouldEnable && index === -1) {
-        selectedSports.value.push(sport);
-    }
-    if (!shouldEnable && index !== -1) {
-        selectedSports.value.splice(index, 1);
-    }
 }
 
 function toggleNotificationType(type: string, checked: boolean | 'indeterminate') {
@@ -123,10 +97,6 @@ function toggleNotificationType(type: string, checked: boolean | 'indeterminate'
     if (!shouldEnable && index !== -1) {
         selectedNotificationTypes.value.splice(index, 1);
     }
-}
-
-function isSportSelected(sport: string): boolean {
-    return selectedSports.value.includes(sport);
 }
 
 function isNotificationTypeSelected(type: string): boolean {
@@ -342,53 +312,9 @@ onMounted(() => {
                         <p class="text-sm font-medium">Current Setup</p>
                         <div class="mt-2 flex flex-wrap gap-2 text-xs">
                             <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Alerts: {{ alertsEnabled ? 'On' : 'Off' }}</span>
-                            <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Sports: {{ selectedSportLabels.length }}</span>
                             <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Channels: {{ selectedNotificationLabels.join(', ') || 'None' }}</span>
                             <span class="rounded bg-white px-2 py-1 dark:bg-sidebar">Delivery: {{ digestModeLabel }}</span>
                         </div>
-                    </div>
-
-                    <!-- Sports Selection -->
-                    <div class="space-y-3 rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <div>
-                            <Label class="text-base">Sports</Label>
-                            <p class="text-sm text-muted-foreground">
-                                Select which sports you want to receive alerts for
-                            </p>
-                        </div>
-
-                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <div
-                                v-for="sport in availableSports"
-                                :key="sport.value"
-                                class="flex items-center gap-3 rounded-lg border border-sidebar-border bg-white p-4 dark:bg-sidebar"
-                                :class="isSportSelected(sport.value) ? 'border-primary bg-primary/5 dark:bg-primary/10' : ''"
-                            >
-                                <Checkbox
-                                    :name="`sports[${sport.value}]`"
-                                    :value="sport.value"
-                                    :id="`sport-${sport.value}`"
-                                    :model-value="isSportSelected(sport.value)"
-                                    @update:model-value="(checked) => toggleSport(sport.value, checked)"
-                                />
-                                <Label
-                                    :for="`sport-${sport.value}`"
-                                    class="text-sm font-medium cursor-pointer"
-                                >
-                                    {{ sport.label }}
-                                </Label>
-                            </div>
-                        </div>
-
-                        <input
-                            v-for="sport in selectedSports"
-                            :key="sport"
-                            type="hidden"
-                            name="sports[]"
-                            :value="sport"
-                        />
-
-                        <InputError class="mt-2" :message="errors.sports" />
                     </div>
 
                     <!-- Notification Types -->

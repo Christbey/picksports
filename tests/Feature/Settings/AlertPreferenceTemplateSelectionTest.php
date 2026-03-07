@@ -32,7 +32,6 @@ test('users can save template selections in alert preferences', function () {
         ->actingAs($user)
         ->patch('/settings/alert-preferences', [
             'enabled' => true,
-            'sports' => ['nfl', 'nba'],
             'notification_types' => ['email'],
             'enabled_template_ids' => [$template1->id, $template3->id],
             'minimum_edge' => 5.0,
@@ -65,7 +64,6 @@ test('users can save empty template selection to receive all templates', functio
         ->actingAs($user)
         ->patch('/settings/alert-preferences', [
             'enabled' => true,
-            'sports' => ['nfl'],
             'notification_types' => ['email'],
             'enabled_template_ids' => [],
             'minimum_edge' => 5.0,
@@ -91,7 +89,6 @@ test('validation fails for invalid template ids', function () {
         ->actingAs($user)
         ->patch('/settings/alert-preferences', [
             'enabled' => true,
-            'sports' => ['nfl'],
             'notification_types' => ['email'],
             'enabled_template_ids' => [999999],
             'minimum_edge' => 5.0,

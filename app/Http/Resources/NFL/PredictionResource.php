@@ -50,11 +50,6 @@ class PredictionResource extends AbstractPredictionResource
             $data['home_elo'] = $this->home_elo;
         }
 
-        // Elo Diff (calculated field)
-        if ($this->hasTierPermission($request, 'elo_diff')) {
-            $data['elo_diff'] = $this->home_elo - $this->away_elo;
-        }
-
         // Betting Value
         if ($this->hasTierPermission($request, 'betting_value') && $this->game) {
             $data['betting_value'] = app(\App\Actions\NFL\CalculateBettingValue::class)->execute($this->game);

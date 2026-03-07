@@ -37,17 +37,4 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
             ->group(base_path($file));
     }
 
-    // Onboarding Routes (protected by auth)
-    Route::middleware('auth:sanctum')->prefix('onboarding')->group(function () {
-        foreach ([
-            ['get', '/', 'index'],
-            ['get', '/steps', 'steps'],
-            ['get', '/checklist', 'checklist'],
-            ['post', '/steps/complete', 'completeStep'],
-            ['post', '/personalization', 'savePersonalization'],
-            ['post', '/skip', 'skip'],
-        ] as [$method, $uri, $action]) {
-            Route::$method($uri, [\App\Http\Controllers\Api\OnboardingController::class, $action]);
-        }
-    });
 });

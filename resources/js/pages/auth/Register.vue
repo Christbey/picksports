@@ -94,7 +94,7 @@ import { store } from '@/routes/register';
                             class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                         />
                         <label for="age_verified" class="text-sm leading-5 text-muted-foreground">
-                            I confirm that I am at least 21 years of age and have read and agree to the
+                            I confirm that I am at least 18 years of age and have read and agree to the
                             <Link :href="terms()" target="_blank" class="text-primary hover:underline">Terms of Service</Link>.
                         </label>
                     </div>

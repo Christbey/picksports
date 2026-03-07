@@ -18,11 +18,12 @@ class CalculateTeamMetrics
         $games = $this->getCompletedGamesForTeam($team, $season, 'MLB');
 
         if ($games->isEmpty()) {
-            Log::info('No completed games found for team', [
+            Log::warning('No completed games found for team metrics calculation', [
                 'team_id' => $team->id,
                 'team_name' => "{$team->city} {$team->name}",
                 'season' => $season,
                 'sport' => 'mlb',
+                'diagnostics' => $this->buildNoGamesDiagnostics($team, $season),
             ]);
 
             return null;
@@ -42,8 +43,15 @@ class CalculateTeamMetrics
         $defensiveRating = $this->calculateDefensiveRating($teamStats);
         $runsPerGame = $this->calculateRunsPerGame($teamStats);
         $runsAllowedPerGame = $this->calculateRunsAllowedPerGame($opponentStats);
+        $runDifferentialPerGame = $runsPerGame - $runsAllowedPerGame;
+        $homeRunsPerGame = $this->calculateHomeRunsPerGame($teamStats);
         $battingAverage = $this->calculateBattingAverage($teamStats);
+        $onBasePercentage = $this->calculateOnBasePercentage($teamStats);
+        $sluggingPercentage = $this->calculateSluggingPercentage($teamStats);
+        $ops = $onBasePercentage + $sluggingPercentage;
         $teamEra = $this->calculateTeamEra($teamStats);
+        $strikeoutsPitchedPerGame = $this->calculateStrikeoutsPitchedPerGame($teamStats);
+        $whip = $this->calculateWhip($teamStats);
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
         $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'mlb', (float) ($team->elo_rating ?? 1500));
@@ -88,10 +96,17 @@ class CalculateTeamMetrics
                 'defensive_rating' => round($defensiveRating, 1),
                 'runs_per_game' => round($runsPerGame, 1),
                 'runs_allowed_per_game' => round($runsAllowedPerGame, 1),
+                'run_differential_per_game' => round($runDifferentialPerGame, 2),
+                'home_runs_per_game' => round($homeRunsPerGame, 2),
                 // Batting average: 3 decimals
                 'batting_average' => round($battingAverage, 3),
+                'on_base_percentage' => round($onBasePercentage, 3),
+                'slugging_percentage' => round($sluggingPercentage, 3),
+                'ops' => round($ops, 3),
                 // ERA: 2 decimals
                 'team_era' => round($teamEra, 2),
+                'strikeouts_pitched_per_game' => round($strikeoutsPitchedPerGame, 2),
+                'whip' => round($whip, 3),
                 // Strength of Schedule: 3 decimals
                 'strength_of_schedule' => round($strengthOfSchedule, 3),
                 'recent_form_rating' => $recentFormRating,
@@ -100,6 +115,61 @@ class CalculateTeamMetrics
                 'calculation_date' => now()->toDateString(),
             ]
         );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildNoGamesDiagnostics(Team $team, int $season): array
+    {
+        $finalStatus = (string) config('mlb.statuses.final');
+        $analyticsCandidates = $this->resolveAnalyticsSeasonTypeCandidates('mlb');
+        $baseQuery = Game::query()
+            ->where('season', $season)
+            ->where(function ($query) use ($team) {
+                $query->where('home_team_id', $team->id)
+                    ->orWhere('away_team_id', $team->id);
+            });
+
+        $statusBreakdown = (clone $baseQuery)
+            ->selectRaw('status, COUNT(*) as games')
+            ->groupBy('status')
+            ->orderByDesc('games')
+            ->get()
+            ->map(fn ($row) => [
+                'status' => (string) $row->status,
+                'games' => (int) $row->games,
+            ])
+            ->all();
+
+        $finalSeasonTypeBreakdown = (clone $baseQuery)
+            ->where('status', $finalStatus)
+            ->selectRaw('season_type, COUNT(*) as games')
+            ->groupBy('season_type')
+            ->orderByDesc('games')
+            ->get()
+            ->map(fn ($row) => [
+                'season_type' => (string) ($row->season_type ?? 'NULL'),
+                'games' => (int) $row->games,
+            ])
+            ->all();
+
+        return [
+            'team_games_in_season' => (clone $baseQuery)->count(),
+            'team_games_with_final_status' => (clone $baseQuery)->where('status', $finalStatus)->count(),
+            'team_games_with_final_and_analytics_type' => (clone $baseQuery)
+                ->where('status', $finalStatus)
+                ->when(
+                    $analyticsCandidates !== [],
+                    fn ($query) => $query->whereIn('season_type', $analyticsCandidates)
+                )
+                ->count(),
+            'configured_final_status' => $finalStatus,
+            'configured_analytics_types' => config('mlb.season.analytics_types', []),
+            'resolved_analytics_candidates' => $analyticsCandidates,
+            'status_breakdown' => $statusBreakdown,
+            'final_season_type_breakdown' => $finalSeasonTypeBreakdown,
+        ];
     }
 
     /**
@@ -348,6 +418,61 @@ class CalculateTeamMetrics
         return $totalAtBats > 0 ? ($totalHits / $totalAtBats) : 0;
     }
 
+    protected function calculateHomeRunsPerGame(array $teamStats): float
+    {
+        $totalHomeRuns = 0;
+        $gameCount = count($teamStats);
+
+        foreach ($teamStats as $stat) {
+            $totalHomeRuns += $stat->home_runs ?? 0;
+        }
+
+        return $gameCount > 0 ? ($totalHomeRuns / $gameCount) : 0;
+    }
+
+    protected function calculateOnBasePercentage(array $teamStats): float
+    {
+        $totalHits = 0;
+        $totalWalks = 0;
+        $totalAtBats = 0;
+
+        foreach ($teamStats as $stat) {
+            $totalHits += $stat->hits ?? 0;
+            $totalWalks += $stat->walks ?? 0;
+            $totalAtBats += $stat->at_bats ?? 0;
+        }
+
+        $plateAppearances = $totalAtBats + $totalWalks;
+
+        return $plateAppearances > 0 ? (($totalHits + $totalWalks) / $plateAppearances) : 0;
+    }
+
+    protected function calculateSluggingPercentage(array $teamStats): float
+    {
+        $totalAtBats = 0;
+        $totalHits = 0;
+        $totalDoubles = 0;
+        $totalTriples = 0;
+        $totalHomeRuns = 0;
+
+        foreach ($teamStats as $stat) {
+            $totalAtBats += $stat->at_bats ?? 0;
+            $totalHits += $stat->hits ?? 0;
+            $totalDoubles += $stat->doubles ?? 0;
+            $totalTriples += $stat->triples ?? 0;
+            $totalHomeRuns += $stat->home_runs ?? 0;
+        }
+
+        if ($totalAtBats <= 0) {
+            return 0;
+        }
+
+        $singles = max(0, $totalHits - $totalDoubles - $totalTriples - $totalHomeRuns);
+        $totalBases = $singles + (2 * $totalDoubles) + (3 * $totalTriples) + (4 * $totalHomeRuns);
+
+        return $totalBases / $totalAtBats;
+    }
+
     /**
      * Calculate team earned run average (ERA).
      *
@@ -379,6 +504,37 @@ class CalculateTeamMetrics
 
         // ERA = (Earned Runs / Innings Pitched) * 9
         return ($totalEarnedRuns / $totalInningsPitched) * 9;
+    }
+
+    protected function calculateStrikeoutsPitchedPerGame(array $teamStats): float
+    {
+        $totalStrikeouts = 0;
+        $gameCount = count($teamStats);
+
+        foreach ($teamStats as $stat) {
+            $totalStrikeouts += $stat->strikeouts_pitched ?? 0;
+        }
+
+        return $gameCount > 0 ? ($totalStrikeouts / $gameCount) : 0;
+    }
+
+    protected function calculateWhip(array $teamStats): float
+    {
+        $totalWalksAllowed = 0;
+        $totalHitsAllowed = 0;
+        $totalInningsPitched = 0;
+
+        foreach ($teamStats as $stat) {
+            $totalWalksAllowed += $stat->walks_allowed ?? 0;
+            $totalHitsAllowed += $stat->hits_allowed ?? 0;
+            $totalInningsPitched += $stat->innings_pitched ?? 0;
+        }
+
+        if ($totalInningsPitched <= 0) {
+            return 0;
+        }
+
+        return ($totalWalksAllowed + $totalHitsAllowed) / $totalInningsPitched;
     }
 
     public function executeForAllTeams(int $season): int

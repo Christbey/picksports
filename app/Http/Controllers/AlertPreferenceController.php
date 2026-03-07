@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\UserAlertPreferenceResource;
 use App\Models\UserAlertPreference;
+use App\Support\SportCatalog;
 use App\Support\Validation\AlertPreferenceRules;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -27,10 +28,17 @@ class AlertPreferenceController extends Controller
     public function store(Request $request): UserAlertPreferenceResource
     {
         $validated = $request->validate(AlertPreferenceRules::apiStore());
+        $existing = UserAlertPreference::query()
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        $sports = is_array($existing?->sports) && ! empty($existing->sports)
+            ? $existing->sports
+            : SportCatalog::ALL;
 
         $preference = UserAlertPreference::updateOrCreate(
             ['user_id' => $request->user()->id],
-            $validated
+            [...$validated, 'sports' => $sports]
         );
 
         return new UserAlertPreferenceResource($preference);
@@ -42,7 +50,11 @@ class AlertPreferenceController extends Controller
 
         $validated = $request->validate(AlertPreferenceRules::apiUpdate());
 
-        $preference->update($validated);
+        $sports = is_array($preference->sports) && ! empty($preference->sports)
+            ? $preference->sports
+            : SportCatalog::ALL;
+
+        $preference->update([...$validated, 'sports' => $sports]);
 
         return new UserAlertPreferenceResource($preference->fresh());
     }

@@ -171,11 +171,6 @@ const adminAreas = [
         href: '/admin/permissions',
     },
     {
-        title: 'Notification Templates',
-        description: 'Edit alert template content and defaults.',
-        href: '/admin/notification-templates',
-    },
-    {
         title: 'Healthchecks',
         description: 'Monitor heartbeat and data validation status.',
         href: '/admin/healthchecks',

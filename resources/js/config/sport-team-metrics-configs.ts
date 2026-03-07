@@ -612,6 +612,9 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
         { key: 'offensive_rating', label: 'Offense', getValue: (m: any) => m.offensive_rating },
         { key: 'pitching_rating', label: 'Pitching', getValue: (m: any) => m.pitching_rating },
         { key: 'runs_per_game', label: 'R/G', getValue: (m: any) => m.runs_per_game },
+        { key: 'ops', label: 'OPS', getValue: (m: any) => m.ops },
+        { key: 'whip', label: 'WHIP', getValue: (m: any) => m.whip, lowerIsBetter: true },
+        { key: 'run_differential_per_game', label: 'Run Diff', getValue: (m: any) => m.run_differential_per_game },
     ],
     columns: [
         {
@@ -630,13 +633,46 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
             class: (m: any) => eraClass(m.runs_allowed_per_game),
         },
         {
+            label: 'RunDiff',
+            value: (m: any) => formatNumber(m.run_differential_per_game, 2),
+            class: (m: any) => ratingClass(m.run_differential_per_game, 0.5),
+        },
+        {
             label: 'AVG',
             value: (m: any) => formatBattingAverage(m.batting_average),
+        },
+        {
+            label: 'OBP',
+            value: (m: any) => formatBattingAverage(m.on_base_percentage),
+        },
+        {
+            label: 'SLG',
+            value: (m: any) => formatBattingAverage(m.slugging_percentage),
+        },
+        {
+            label: 'OPS',
+            value: (m: any) => formatBattingAverage(m.ops),
+            class: () => 'font-medium',
+        },
+        {
+            label: 'HR/G',
+            value: (m: any) => formatNumber(m.home_runs_per_game, 2),
+            class: () => 'text-muted-foreground',
         },
         {
             label: 'ERA',
             value: (m: any) => formatNumber(m.team_era, 2),
             class: (m: any) => eraClass(m.team_era),
+        },
+        {
+            label: 'K/G',
+            value: (m: any) => formatNumber(m.strikeouts_pitched_per_game, 2),
+            class: () => 'text-muted-foreground',
+        },
+        {
+            label: 'WHIP',
+            value: (m: any) => formatNumber(m.whip, 3),
+            class: () => 'text-muted-foreground',
         },
         {
             label: 'ORtg',

@@ -80,11 +80,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             );
         }
 
-        // Calculate confidence score based on pitcher data availability
-        $confidenceScore = $this->calculatePitcherConfidence(
-            $homePitcherResult['confidence'],
-            $awayPitcherResult['confidence']
-        );
+        // Confidence represents model certainty in the selected side (50-100 scale).
+        $confidenceScore = $this->calculateConfidence($winProbability);
 
         // Create prediction with MLB-specific fields
         $predictionModel = $this->getPredictionModel();
@@ -101,7 +98,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'predicted_spread' => round($predictedSpread, 1),
                 'predicted_total' => round($predictedTotal, 1),
                 'win_probability' => round($winProbability, 3),
-                'confidence_score' => round($confidenceScore, 3),
+                'confidence_score' => round($confidenceScore, 2),
             ]
         );
     }
@@ -175,12 +172,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $eloAdjustment = ($avgElo - config('mlb.elo.default_rating')) / 100;
 
         return config('mlb.elo.average_runs_per_game') + $eloAdjustment;
-    }
-
-    protected function calculatePitcherConfidence(float $homeConfidence, float $awayConfidence): float
-    {
-        // Average the confidence scores from both pitchers
-        return ($homeConfidence + $awayConfidence) / 2;
     }
 
     public function executeForAllScheduledGames(int $season): int

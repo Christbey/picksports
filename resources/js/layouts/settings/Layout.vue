@@ -47,10 +47,6 @@ const userNavItems = computed(() => {
             title: 'Appearance',
             href: editAppearance(),
         },
-        {
-            title: 'Onboarding',
-            href: '/settings/onboarding',
-        },
     ];
 
     return items;

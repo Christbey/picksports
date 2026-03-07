@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
 use App\Http\Controllers\Admin\ImpersonationController as AdminImpersonationController;
-use App\Http\Controllers\Admin\NotificationTemplateController as AdminNotificationTemplateController;
 use App\Http\Controllers\Admin\PermissionController as AdminPermissionController;
 use App\Http\Controllers\Admin\SubscriptionController as AdminSubscriptionController;
 use App\Http\Controllers\Admin\TierController as AdminTierController;
@@ -24,13 +23,9 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         ['get', '/healthchecks', [AdminHealthcheckController::class, 'index'], 'healthchecks'],
         ['post', '/healthchecks/run', [AdminHealthcheckController::class, 'run'], 'healthchecks.run'],
         ['post', '/healthchecks/sync', [AdminHealthcheckController::class, 'sync'], 'healthchecks.sync'],
-        ['patch', '/notification-templates/defaults', [AdminNotificationTemplateController::class, 'updateDefaults'], 'notification-templates.defaults'],
-        ['post', '/notification-templates/ensure-daily-summary', [AdminNotificationTemplateController::class, 'ensureDailySummaryTemplate'], 'notification-templates.ensure-daily-summary'],
-        ['post', '/notification-templates/preview', [AdminNotificationTemplateController::class, 'preview'], 'notification-templates.preview'],
     ] as [$method, $uri, $action, $name]) {
         Route::$method($uri, $action)->name($name);
     }
 
     Route::resource('tiers', AdminTierController::class)->except(['show']);
-    Route::resource('notification-templates', AdminNotificationTemplateController::class)->except(['show']);
 });

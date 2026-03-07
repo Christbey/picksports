@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\UserAlertPreference;
 use App\Services\AlertService;
 use App\Services\Settings\AlertPreferencePageDataService;
+use App\Support\SportCatalog;
 use App\Support\Validation\AlertPreferenceRules;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,10 +25,17 @@ class AlertPreferenceController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $validated = $request->validate(AlertPreferenceRules::settingsUpdate());
+        $existing = UserAlertPreference::query()
+            ->where('user_id', $request->user()->id)
+            ->first();
+
+        $sports = is_array($existing?->sports) && ! empty($existing->sports)
+            ? $existing->sports
+            : SportCatalog::ALL;
 
         UserAlertPreference::updateOrCreate(
             ['user_id' => $request->user()->id],
-            $validated
+            [...$validated, 'sports' => $sports]
         );
 
         return $this->routeFlash('alert-preferences.edit', 'status', 'preferences-updated');

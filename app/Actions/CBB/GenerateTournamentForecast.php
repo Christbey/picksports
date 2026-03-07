@@ -4,102 +4,51 @@ namespace App\Actions\CBB;
 
 use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TournamentForecast;
+use App\Services\TournamentForecast\CbbTournamentForecastTuningStore;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class GenerateTournamentForecast
 {
-    public function execute(int|string|null $season = null, ?int $simulationRuns = null): Collection
+    public function __construct(
+        protected CbbTournamentForecastTuningStore $tuningStore
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $configOverrides
+     */
+    public function execute(
+        int|string|null $season = null,
+        ?int $simulationRuns = null,
+        array $configOverrides = [],
+        bool $persist = true
+    ): Collection
     {
-        $season = (int) ($season ?? config('cbb.season.default'));
-        $config = config('cbb.tournament_forecast');
-
-        $fieldSize = max(2, (int) ($config['field_size'] ?? 68));
-        $autoBids = max(0, (int) ($config['auto_bids'] ?? 31));
-        $simulationRuns = max(100, (int) ($simulationRuns ?? ($config['simulations'] ?? 5000)));
-
-        if (($randomSeed = $config['random_seed'] ?? null) !== null) {
-            mt_srand((int) $randomSeed);
-        }
-
-        $teamPool = $this->buildTeamPool($season);
-        if ($teamPool->isEmpty()) {
+        $run = $this->runForecast($season, $simulationRuns, $configOverrides);
+        if ($run['team_pool']->isEmpty()) {
             return collect();
         }
 
-        $teamPool = $this->attachSelectionScores($teamPool, (array) ($config['selection_weights'] ?? []))
-            ->sortByDesc('selection_score')
-            ->values();
+        /** @var Collection<int, array<string, mixed>> $enrichedTeamPool */
+        $enrichedTeamPool = $run['enriched_team_pool'];
+        $resolvedSeason = $run['season'];
+        $resolvedSimulationRuns = $run['simulation_runs'];
+        $simulation = $run['simulation'];
 
-        $fieldSize = min($fieldSize, $teamPool->count());
-        $autoBidConferences = $this->selectAutoBidConferences($teamPool, $autoBids);
+        if (! $persist) {
+            return $enrichedTeamPool->values();
+        }
 
-        $simulation = $this->simulateTournamentOutcomes(
-            $teamPool,
-            $autoBidConferences,
-            $fieldSize,
-            $simulationRuns,
-            $config
+        $payload = $this->buildForecastPayload(
+            $enrichedTeamPool,
+            $resolvedSeason,
+            $resolvedSimulationRuns,
+            $simulation
         );
 
-        $teamPool = $teamPool->values()->map(function (array $team, int $index) use (
-            $simulationRuns,
-            $simulation
-        ) {
-            $teamId = $team['team_id'];
-            $fieldAppearances = (int) ($simulation['field_appearances'][$teamId] ?? 0);
-            $seedSamples = (int) ($simulation['seed_line_samples'][$teamId] ?? 0);
-            $seedLineSum = (float) ($simulation['seed_line_sum'][$teamId] ?? 0.0);
-            $averageSeedLine = $seedSamples > 0 ? $seedLineSum / $seedSamples : null;
-            $makeProbability = $fieldAppearances / $simulationRuns;
-            $autoBidProbability = ((int) ($simulation['auto_bid_counts'][$teamId] ?? 0)) / $simulationRuns;
-
-            $team['selection_rank'] = $index + 1;
-            $team['auto_bid'] = $autoBidProbability >= 0.5;
-            $team['auto_bid_probability'] = $autoBidProbability;
-            $team['at_large_probability'] = ((int) ($simulation['at_large_counts'][$teamId] ?? 0)) / $simulationRuns;
-            $team['first_four_probability'] = ((int) ($simulation['first_four_counts'][$teamId] ?? 0)) / $simulationRuns;
-            $team['first_four_auto_probability'] = ((int) ($simulation['first_four_auto_counts'][$teamId] ?? 0)) / $simulationRuns;
-            $team['first_four_at_large_probability'] = ((int) ($simulation['first_four_at_large_counts'][$teamId] ?? 0)) / $simulationRuns;
-            $team['bid_thief_probability'] = ((int) ($simulation['bid_thief_counts'][$teamId] ?? 0)) / $simulationRuns;
-            $team['tournament_make_probability'] = $makeProbability;
-            $team['projected_seed'] = $makeProbability >= 0.5 && $averageSeedLine !== null
-                ? (int) round($this->clamp($averageSeedLine, 1, 16))
-                : null;
-
-            return $team;
-        });
-
-        $payload = $teamPool->map(function (array $team) use ($season, $simulationRuns, $simulation) {
-            $teamId = $team['team_id'];
-
-            return [
-                'team_id' => $teamId,
-                'season' => $season,
-                'selection_score' => round($team['selection_score'], 4),
-                'projected_seed' => $team['projected_seed'],
-                'auto_bid' => $team['auto_bid'],
-                'auto_bid_probability' => round((float) $team['auto_bid_probability'], 5),
-                'at_large_probability' => round((float) $team['at_large_probability'], 5),
-                'first_four_probability' => round((float) $team['first_four_probability'], 5),
-                'first_four_auto_probability' => round((float) $team['first_four_auto_probability'], 5),
-                'first_four_at_large_probability' => round((float) $team['first_four_at_large_probability'], 5),
-                'bid_thief_probability' => round((float) $team['bid_thief_probability'], 5),
-                'tournament_make_probability' => round((float) $team['tournament_make_probability'], 5),
-                'champion_probability' => round(($simulation['champion_probability'][$teamId] ?? 0.0), 5),
-                'final_four_probability' => round(($simulation['final_four_probability'][$teamId] ?? 0.0), 5),
-                'title_game_probability' => round(($simulation['title_game_probability'][$teamId] ?? 0.0), 5),
-                'simulated_field_appearances' => (int) ($simulation['field_appearances'][$teamId] ?? 0),
-                'simulated_titles' => (int) ($simulation['champion_counts'][$teamId] ?? 0),
-                'simulation_runs' => $simulationRuns,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-        })->values()->all();
-
         TournamentForecast::query()
-            ->where('season', $season)
-            ->whereNotIn('team_id', $teamPool->pluck('team_id')->all())
+            ->where('season', $resolvedSeason)
+            ->whereNotIn('team_id', $enrichedTeamPool->pluck('team_id')->all())
             ->delete();
 
         TournamentForecast::query()->upsert(
@@ -128,10 +77,184 @@ class GenerateTournamentForecast
 
         return TournamentForecast::query()
             ->with('team')
-            ->where('season', $season)
+            ->where('season', $resolvedSeason)
             ->orderByDesc('champion_probability')
             ->orderByDesc('tournament_make_probability')
             ->get();
+    }
+
+    /**
+     * @param  array<string, mixed>  $configOverrides
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function simulateForBacktest(
+        int|string|null $season = null,
+        ?int $simulationRuns = null,
+        array $configOverrides = []
+    ): Collection {
+        return $this->execute($season, $simulationRuns, $configOverrides, false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $configOverrides
+     * @return array{
+     *   season: int,
+     *   simulation_runs: int,
+     *   config: array<string, mixed>,
+     *   team_pool: Collection<int, array<string, mixed>>,
+     *   enriched_team_pool: Collection<int, array<string, mixed>>,
+     *   simulation: array<string, mixed>
+     * }
+     */
+    private function runForecast(
+        int|string|null $season = null,
+        ?int $simulationRuns = null,
+        array $configOverrides = []
+    ): array {
+        $resolvedSeason = (int) ($season ?? config('cbb.season.default'));
+        $config = $this->resolveForecastConfig($resolvedSeason, $configOverrides);
+
+        $fieldSize = max(2, (int) ($config['field_size'] ?? 68));
+        $autoBids = max(0, (int) ($config['auto_bids'] ?? 31));
+        $resolvedSimulationRuns = max(100, (int) ($simulationRuns ?? ($config['simulations'] ?? 5000)));
+
+        if (($randomSeed = $config['random_seed'] ?? null) !== null) {
+            mt_srand((int) $randomSeed);
+        }
+
+        $teamPool = $this->buildTeamPool($resolvedSeason);
+        if ($teamPool->isEmpty()) {
+            return [
+                'season' => $resolvedSeason,
+                'simulation_runs' => $resolvedSimulationRuns,
+                'config' => $config,
+                'team_pool' => collect(),
+                'enriched_team_pool' => collect(),
+                'simulation' => [],
+            ];
+        }
+
+        $teamPool = $this->attachSelectionScores(
+            $teamPool,
+            (array) ($config['selection_weights'] ?? []),
+            (array) ($config['champion_weights'] ?? [])
+        )->sortByDesc('selection_score')->values();
+
+        $fieldSize = min($fieldSize, $teamPool->count());
+        $autoBidConferences = $this->selectAutoBidConferences($teamPool, $autoBids);
+
+        $simulation = $this->simulateTournamentOutcomes(
+            $teamPool,
+            $autoBidConferences,
+            $fieldSize,
+            $resolvedSimulationRuns,
+            $config
+        );
+
+        $enrichedTeamPool = $this->enrichTeamPoolWithSimulationResults(
+            $teamPool,
+            $simulation,
+            $resolvedSimulationRuns
+        );
+
+        return [
+            'season' => $resolvedSeason,
+            'simulation_runs' => $resolvedSimulationRuns,
+            'config' => $config,
+            'team_pool' => $teamPool,
+            'enriched_team_pool' => $enrichedTeamPool,
+            'simulation' => $simulation,
+        ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $teamPool
+     * @param  array<string, mixed>  $simulation
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function enrichTeamPoolWithSimulationResults(
+        Collection $teamPool,
+        array $simulation,
+        int $simulationRuns
+    ): Collection {
+        return $teamPool->values()->map(function (array $team, int $index) use (
+            $simulationRuns,
+            $simulation
+        ) {
+            $teamId = $team['team_id'];
+            $fieldAppearances = (int) ($simulation['field_appearances'][$teamId] ?? 0);
+            $seedSamples = (int) ($simulation['seed_line_samples'][$teamId] ?? 0);
+            $seedLineSum = (float) ($simulation['seed_line_sum'][$teamId] ?? 0.0);
+            $averageSeedLine = $seedSamples > 0 ? $seedLineSum / $seedSamples : null;
+            $makeProbability = $fieldAppearances / $simulationRuns;
+            $autoBidProbability = ((int) ($simulation['auto_bid_counts'][$teamId] ?? 0)) / $simulationRuns;
+
+            $team['selection_rank'] = $index + 1;
+            $team['auto_bid'] = $autoBidProbability >= 0.5;
+            $team['auto_bid_probability'] = $autoBidProbability;
+            $team['at_large_probability'] = ((int) ($simulation['at_large_counts'][$teamId] ?? 0)) / $simulationRuns;
+            $team['first_four_probability'] = ((int) ($simulation['first_four_counts'][$teamId] ?? 0)) / $simulationRuns;
+            $team['first_four_auto_probability'] = ((int) ($simulation['first_four_auto_counts'][$teamId] ?? 0)) / $simulationRuns;
+            $team['first_four_at_large_probability'] = ((int) ($simulation['first_four_at_large_counts'][$teamId] ?? 0)) / $simulationRuns;
+            $team['bid_thief_probability'] = ((int) ($simulation['bid_thief_counts'][$teamId] ?? 0)) / $simulationRuns;
+            $team['tournament_make_probability'] = $makeProbability;
+            $team['projected_seed'] = $makeProbability >= 0.5 && $averageSeedLine !== null
+                ? (int) round($this->clamp($averageSeedLine, 1, 16))
+                : null;
+
+            return $team;
+        });
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $teamPool
+     * @param  array<string, mixed>  $simulation
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildForecastPayload(
+        Collection $teamPool,
+        int $season,
+        int $simulationRuns,
+        array $simulation
+    ): array {
+        return $teamPool->map(function (array $team) use ($season, $simulationRuns, $simulation) {
+            $teamId = $team['team_id'];
+
+            return [
+                'team_id' => $teamId,
+                'season' => $season,
+                'selection_score' => round($team['selection_score'], 4),
+                'projected_seed' => $team['projected_seed'],
+                'auto_bid' => $team['auto_bid'],
+                'auto_bid_probability' => round((float) $team['auto_bid_probability'], 5),
+                'at_large_probability' => round((float) $team['at_large_probability'], 5),
+                'first_four_probability' => round((float) $team['first_four_probability'], 5),
+                'first_four_auto_probability' => round((float) $team['first_four_auto_probability'], 5),
+                'first_four_at_large_probability' => round((float) $team['first_four_at_large_probability'], 5),
+                'bid_thief_probability' => round((float) $team['bid_thief_probability'], 5),
+                'tournament_make_probability' => round((float) $team['tournament_make_probability'], 5),
+                'champion_probability' => round(($simulation['champion_probability'][$teamId] ?? 0.0), 5),
+                'final_four_probability' => round(($simulation['final_four_probability'][$teamId] ?? 0.0), 5),
+                'title_game_probability' => round(($simulation['title_game_probability'][$teamId] ?? 0.0), 5),
+                'simulated_field_appearances' => (int) ($simulation['field_appearances'][$teamId] ?? 0),
+                'simulated_titles' => (int) ($simulation['champion_counts'][$teamId] ?? 0),
+                'simulation_runs' => $simulationRuns,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @param  array<string, mixed>  $configOverrides
+     * @return array<string, mixed>
+     */
+    private function resolveForecastConfig(int $season, array $configOverrides = []): array
+    {
+        $base = (array) config('cbb.tournament_forecast', []);
+        $tuned = $this->tuningStore->getForSeason($season);
+
+        return array_replace_recursive($base, $tuned, $configOverrides);
     }
 
     private function buildTeamPool(int $season): Collection
@@ -201,7 +324,11 @@ class GenerateTournamentForecast
             ->values();
     }
 
-    private function attachSelectionScores(Collection $teams, array $weights): Collection
+    private function attachSelectionScores(
+        Collection $teams,
+        array $weights,
+        array $championWeights = []
+    ): Collection
     {
         $keys = ['adj_net_rating', 'rolling_net_rating', 'strength_of_schedule', 'elo_rating', 'win_pct'];
         $normalizedWeights = $this->normalizeWeights($weights, $keys);
@@ -224,7 +351,9 @@ class GenerateTournamentForecast
             return $team;
         });
 
-        $powerWeights = (array) config('cbb.tournament_forecast.champion_weights', []);
+        $powerWeights = $championWeights !== []
+            ? $championWeights
+            : (array) config('cbb.tournament_forecast.champion_weights', []);
         $normalizedPowerWeights = $this->normalizeWeights($powerWeights, $keys);
 
         return $teams->map(function (array $team) use ($normalizedPowerWeights) {

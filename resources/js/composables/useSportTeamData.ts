@@ -67,7 +67,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     };
 
     const getGameResult = (game: Game): string | null => {
-        if (game.status !== 'STATUS_FINAL' || !game.home_score || !game.away_score) return null;
+        if (game.status !== 'STATUS_FINAL' || game.home_score == null || game.away_score == null) return null;
         const tid = teamId.value;
         const isHome = game.home_team_id === tid;
         const teamScore = isHome ? game.home_score : game.away_score;
@@ -230,22 +230,27 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                 if (key === 'games' && res.ok) {
                     const data = await res.json();
                     const games = data.data || [];
+                    const metricSeason = toNumber(teamMetrics.value?.season);
+                    const seasonScopedGames = metricSeason !== null
+                        ? games.filter((g: Game) => toNumber((g as any).season) === metricSeason)
+                        : games;
+                    const sourceGames = seasonScopedGames.length > 0 ? seasonScopedGames : games;
 
                     if (props.config.sortRecentByDate) {
-                        recentGames.value = games
+                        recentGames.value = sourceGames
                             .filter((g: Game) => g.status === 'STATUS_FINAL')
                             .sort((a: Game, b: Game) => new Date(b.game_date!).getTime() - new Date(a.game_date!).getTime());
 
                         const now = new Date();
-                        upcomingGames.value = games
+                        upcomingGames.value = sourceGames
                             .filter((g: Game) => g.status !== 'STATUS_FINAL' && new Date(g.game_date!) >= now)
                             .sort((a: Game, b: Game) => new Date(a.game_date!).getTime() - new Date(b.game_date!).getTime());
                     } else {
-                        recentGames.value = games
+                        recentGames.value = sourceGames
                             .filter((g: Game) => g.status === 'STATUS_FINAL')
                             .sort((a: Game, b: Game) => new Date(b.game_date!).getTime() - new Date(a.game_date!).getTime());
 
-                        upcomingGames.value = games
+                        upcomingGames.value = sourceGames
                             .filter((g: Game) => g.status === 'STATUS_SCHEDULED' || g.status === 'STATUS_IN_PROGRESS')
                             .sort((a: Game, b: Game) => new Date(a.game_date!).getTime() - new Date(b.game_date!).getTime());
                     }

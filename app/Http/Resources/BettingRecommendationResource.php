@@ -59,6 +59,13 @@ class BettingRecommendationResource extends JsonResource
             ],
             'streak' => $this->resource['streak'] ?? null,
             'edge' => $this->resource['edge'],
+            'model_over_probability' => $this->resource['model_over_probability'] ?? null,
+            'market_over_probability' => $this->resource['market_over_probability'] ?? null,
+            'edge_probability' => $this->resource['edge_probability'] ?? null,
+            'context' => $this->resource['context'] ?? null,
+            'data_quality_score' => $this->resource['data_quality_score'] ?? null,
+            'match_quality_score' => $this->resource['match_quality_score'] ?? null,
+            'confidence_decomposition' => $this->resource['confidence_decomposition'] ?? null,
             'reasoning' => $this->resource['reasoning'],
             'game' => [
                 'id' => $this->resource['game']->id,

@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\NBA\Game;
+use App\Models\OddsApiPlayerMapping;
 use App\Models\NBA\Player;
 use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
@@ -277,4 +278,126 @@ test('returns available games for all statuses', function () {
     $games = $analyzer->getAvailableGamesForSport('NBA', '2026-02-25');
 
     expect($games)->toHaveCount(2);
+});
+
+test('uses manual player mappings when fuzzy player name does not match', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Shai Gilgeous-Alexander',
+        'first_name' => 'Shai',
+        'last_name' => 'Gilgeous-Alexander',
+    ]);
+
+    for ($i = 0; $i < 6; $i++) {
+        $historicalGame = Game::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 3)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        PlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'points' => 29,
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-02-25',
+        'season' => 2026,
+    ]);
+
+    OddsApiPlayerMapping::query()->create([
+        'sport' => 'basketball_nba',
+        'odds_api_player_name' => 'S. Gilgeous-Alexander',
+        'espn_player_name' => 'Shai Gilgeous-Alexander',
+    ]);
+
+    PlayerProp::create([
+        'game_id' => $game->id,
+        'player_name' => 'S. Gilgeous-Alexander',
+        'market' => 'player_points',
+        'line' => 24.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $analyzer = new PlayerPropAnalyzer;
+    $recommendations = $analyzer->analyzeProps('NBA', 3, '2026-02-25');
+
+    expect($recommendations)->toHaveCount(1);
+    expect($recommendations->first()['player']->id)->toBe($player->id);
+});
+
+test('filters recommendations by prop market', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Filter Market Player',
+        'first_name' => 'Filter',
+        'last_name' => 'Player',
+    ]);
+
+    for ($i = 0; $i < 6; $i++) {
+        $historicalGame = Game::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 3)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        PlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'points' => 28,
+            'rebounds_total' => 9,
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-02-25',
+        'season' => 2026,
+    ]);
+
+    PlayerProp::create([
+        'game_id' => $game->id,
+        'player_name' => 'Filter Market Player',
+        'market' => 'player_points',
+        'line' => 24.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    PlayerProp::create([
+        'game_id' => $game->id,
+        'player_name' => 'Filter Market Player',
+        'market' => 'player_rebounds',
+        'line' => 6.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $analyzer = new PlayerPropAnalyzer;
+    $all = $analyzer->analyzeProps('NBA', 3, '2026-02-25');
+    $pointsOnly = $analyzer->analyzeProps('NBA', 3, '2026-02-25', null, 'player_points');
+
+    expect($all->count())->toBeGreaterThanOrEqual(2);
+    expect($pointsOnly)->toHaveCount(1);
+    expect($pointsOnly->first()['prop']->market)->toBe('player_points');
 });

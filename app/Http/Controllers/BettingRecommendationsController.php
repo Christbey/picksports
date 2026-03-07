@@ -40,11 +40,13 @@ class BettingRecommendationsController extends Controller
         $validated = $request->validate([
             'date' => ['nullable', 'date'],
             'game' => ['nullable', 'integer'],
+            'market' => ['nullable', 'string', 'max:100'],
         ]);
 
         $requestedDate = $validated['date'] ?? null;
         $dateFilter = $requestedDate;
         $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
+        $marketFilter = $validated['market'] ?? null;
 
         // NBA page default: load today's board first when no explicit date filter is provided.
         $dates = $this->analyzer->getAvailableDatesForSport($sport);
@@ -69,20 +71,24 @@ class BettingRecommendationsController extends Controller
             sport: $sport,
             minGames: 3,
             dateFilter: $dateFilter,
-            gameFilter: $gameFilter
+            gameFilter: $gameFilter,
+            marketFilter: $marketFilter
         );
 
         // Get available games for selected date
         $games = $this->analyzer->getAvailableGamesForSport($sport, $dateFilter);
+        $markets = $this->analyzer->getAvailableMarketsForSport($sport, $dateFilter, $gameFilter);
 
         return Inertia::render($component, [
             'sport' => $sport,
             'recommendations' => BettingRecommendationResource::collection($recommendations)->resolve(),
             'dates' => $dates,
             'games' => $games,
+            'markets' => $markets,
             'filters' => [
                 'date' => $dateFilter,
                 'game' => $gameFilter,
+                'market' => $marketFilter,
             ],
         ]);
     }

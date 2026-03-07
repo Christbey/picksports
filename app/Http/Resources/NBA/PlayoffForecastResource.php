@@ -18,6 +18,9 @@ class PlayoffForecastResource extends JsonResource
             'projected_seed' => $this->projected_seed !== null ? (int) $this->projected_seed : null,
             'selection_score' => (float) $this->selection_score,
             'playoff_make_probability' => (float) $this->playoff_make_probability,
+            'direct_playoff_probability' => (float) $this->direct_playoff_probability,
+            'play_in_tournament_probability' => (float) $this->play_in_tournament_probability,
+            'division_win_probability' => (float) $this->division_win_probability,
             'conference_finals_probability' => (float) $this->conference_finals_probability,
             'nba_finals_probability' => (float) $this->nba_finals_probability,
             'champion_probability' => (float) $this->champion_probability,
@@ -28,4 +31,3 @@ class PlayoffForecastResource extends JsonResource
         ];
     }
 }
-

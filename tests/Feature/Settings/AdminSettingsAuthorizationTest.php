@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\OddsApiTeamMapping;
+use App\Models\OddsApiPlayerMapping;
 use App\Models\User;
 use App\Services\Settings\FoundingUsersSettingsService;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -12,6 +13,7 @@ it('requires authentication for settings admin pages', function (string $path) {
 })->with([
     '/settings/admin',
     '/settings/team-mappings',
+    '/settings/player-mappings',
 ]);
 
 it('forbids non-admin users from settings admin pages', function (string $path) {
@@ -23,6 +25,7 @@ it('forbids non-admin users from settings admin pages', function (string $path) 
 })->with([
     '/settings/admin',
     '/settings/team-mappings',
+    '/settings/player-mappings',
 ]);
 
 it('allows admin users to access settings admin pages', function (string $path) {
@@ -34,6 +37,7 @@ it('allows admin users to access settings admin pages', function (string $path) 
 })->with([
     '/settings/admin',
     '/settings/team-mappings',
+    '/settings/player-mappings',
 ]);
 
 it('returns founding users panel data on admin settings page', function () {
@@ -90,6 +94,34 @@ it('forbids non-admin users from clearing team mappings', function () {
 
     $this->actingAs($user)
         ->delete("/settings/team-mappings/{$mapping->id}")
+        ->assertForbidden();
+});
+
+it('forbids non-admin users from updating player mappings', function () {
+    $user = User::factory()->create();
+    $mapping = OddsApiPlayerMapping::query()->create([
+        'sport' => 'basketball_nba',
+        'odds_api_player_name' => 'J. Brown',
+        'espn_player_name' => 'Jaylen Brown',
+    ]);
+
+    $this->actingAs($user)
+        ->patch("/settings/player-mappings/{$mapping->id}", [
+            'espn_player_name' => 'Jaylen Brown',
+        ])
+        ->assertForbidden();
+});
+
+it('forbids non-admin users from clearing player mappings', function () {
+    $user = User::factory()->create();
+    $mapping = OddsApiPlayerMapping::query()->create([
+        'sport' => 'basketball_nba',
+        'odds_api_player_name' => 'A. Edwards',
+        'espn_player_name' => 'Anthony Edwards',
+    ]);
+
+    $this->actingAs($user)
+        ->delete("/settings/player-mappings/{$mapping->id}")
         ->assertForbidden();
 });
 
@@ -177,6 +209,40 @@ it('allows admin users to clear team mappings', function () {
 
     $mapping->refresh();
     expect($mapping->espn_team_name)->toBeNull();
+});
+
+it('allows admin users to update player mappings', function () {
+    $admin = User::factory()->admin()->create();
+    $mapping = OddsApiPlayerMapping::query()->create([
+        'sport' => 'basketball_nba',
+        'odds_api_player_name' => 'S. Gilgeous-Alexander',
+        'espn_player_name' => null,
+    ]);
+
+    $this->actingAs($admin)
+        ->patch("/settings/player-mappings/{$mapping->id}", [
+            'espn_player_name' => 'Shai Gilgeous-Alexander',
+        ])
+        ->assertRedirect();
+
+    $mapping->refresh();
+    expect($mapping->espn_player_name)->toBe('Shai Gilgeous-Alexander');
+});
+
+it('allows admin users to clear player mappings', function () {
+    $admin = User::factory()->admin()->create();
+    $mapping = OddsApiPlayerMapping::query()->create([
+        'sport' => 'basketball_nba',
+        'odds_api_player_name' => 'L. Doncic',
+        'espn_player_name' => 'Luka Doncic',
+    ]);
+
+    $this->actingAs($admin)
+        ->delete("/settings/player-mappings/{$mapping->id}")
+        ->assertRedirect();
+
+    $mapping->refresh();
+    expect($mapping->espn_player_name)->toBeNull();
 });
 
 it('allows admin users to grant and revoke founding access from settings', function () {

@@ -78,6 +78,7 @@ class OddsApiTeamMappingController extends Controller
             'espnTeams' => $espnTeams,
             'currentSport' => $sport,
             'currentFilter' => $filter,
+            'entityType' => 'team',
             'stats' => $stats,
             'sports' => $sports,
         ]);

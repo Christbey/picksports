@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +12,7 @@ type ForecastTeam = {
     location?: string | null;
     name?: string | null;
     conference?: string | null;
+    division?: string | null;
 };
 
 type PlayoffForecast = {
@@ -22,6 +23,9 @@ type PlayoffForecast = {
     conference_rank: number | null;
     projected_seed: number | null;
     playoff_make_probability: number;
+    direct_playoff_probability: number;
+    play_in_tournament_probability: number;
+    division_win_probability: number;
     conference_finals_probability: number;
     nba_finals_probability: number;
     champion_probability: number;
@@ -32,13 +36,15 @@ type PlayoffForecast = {
 const forecasts = ref<PlayoffForecast[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
-const selectedSeason = ref<number | null>(null);
+const selectedSeason = ref<number>(new Date().getFullYear());
 const availableSeasons = ref<number[]>([]);
 const playoffTeamsPerConference = ref(8);
 const playInTeamsPerConference = ref(10);
+const activeRequestId = ref(0);
+let activeAbortController: AbortController | null = null;
 
 const availableSeasonOptions = computed(() =>
-    availableSeasons.value.length > 0 ? availableSeasons.value : [selectedSeason.value ?? new Date().getFullYear()],
+    availableSeasons.value.length > 0 ? availableSeasons.value : [selectedSeason.value],
 );
 
 const formatPct = (value: number, digits = 1) => `${(value * 100).toFixed(digits)}%`;
@@ -53,8 +59,13 @@ const topByMake = computed(() => [...forecasts.value].sort((a, b) => b.playoff_m
 const topByTitle = computed(() => [...forecasts.value].sort((a, b) => b.champion_probability - a.champion_probability).slice(0, 20));
 const bubbleWatch = computed(() =>
     [...forecasts.value]
-        .filter((row) => row.playoff_make_probability >= 0.25 && row.playoff_make_probability < 0.75)
-        .sort((a, b) => b.playoff_make_probability - a.playoff_make_probability)
+        .filter(
+            (row) =>
+                row.play_in_tournament_probability >= 0.15
+                && row.play_in_tournament_probability <= 0.8
+                && row.playoff_make_probability <= 0.9
+        )
+        .sort((a, b) => b.play_in_tournament_probability - a.play_in_tournament_probability)
         .slice(0, 12),
 );
 
@@ -111,7 +122,7 @@ const conferenceBreakdown = computed(() => {
 
         current.teamsTracked += 1;
         current.projectedIn += row.playoff_make_probability >= 0.5 ? 1 : 0;
-        current.projectedPlayIn += row.playoff_make_probability >= 0.35 ? 1 : 0;
+        current.projectedPlayIn += row.play_in_tournament_probability >= 0.5 ? 1 : 0;
         current.expectedBids += row.playoff_make_probability;
         if (
             row.playoff_make_probability >= 0.5
@@ -137,6 +148,7 @@ const conferenceBreakdown = computed(() => {
 });
 
 const projectedInCount = computed(() => forecasts.value.filter((f) => f.playoff_make_probability >= 0.5).length);
+const playInFieldSize = computed(() => Math.max(0, playInTeamsPerConference.value - Math.max(1, playoffTeamsPerConference.value - 2)));
 const avgTitleOdds = computed(() => {
     if (forecasts.value.length === 0) return 0;
     return forecasts.value.reduce((sum, row) => sum + row.champion_probability, 0) / forecasts.value.length;
@@ -167,39 +179,57 @@ const meterClass = (value: number) => {
 };
 
 const fetchForecasts = async () => {
-    if (!selectedSeason.value) return;
+    const requestId = activeRequestId.value + 1;
+    activeRequestId.value = requestId;
+
+    if (activeAbortController) {
+        activeAbortController.abort();
+    }
+    activeAbortController = new AbortController();
+
     loading.value = true;
     error.value = null;
 
     try {
-        const response = await fetch(`/api/v1/nba/playoff-forecasts?season=${selectedSeason.value}`);
+        const response = await fetch(`/api/v1/nba/playoff-forecasts?season=${encodeURIComponent(String(selectedSeason.value))}`, {
+            signal: activeAbortController.signal,
+        });
         if (!response.ok) {
             throw new Error('Failed to load NBA futures data');
         }
         const payload = await response.json();
+        if (requestId !== activeRequestId.value) {
+            return;
+        }
+
         forecasts.value = payload?.data ?? [];
         availableSeasons.value = payload?.meta?.available_seasons ?? [];
         playoffTeamsPerConference.value = payload?.meta?.playoff_teams_per_conference ?? 8;
         playInTeamsPerConference.value = payload?.meta?.play_in_teams_per_conference ?? 10;
+
+        if (availableSeasons.value.length > 0 && !availableSeasons.value.includes(selectedSeason.value)) {
+            selectedSeason.value = availableSeasons.value[0];
+        }
     } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') {
+            return;
+        }
+        if (requestId !== activeRequestId.value) {
+            return;
+        }
+
         error.value = e instanceof Error ? e.message : 'An error occurred while loading NBA futures.';
         forecasts.value = [];
     } finally {
-        loading.value = false;
+        if (requestId === activeRequestId.value) {
+            loading.value = false;
+        }
     }
 };
 
 watch(selectedSeason, () => {
-    fetchForecasts();
-});
-
-onMounted(async () => {
-    selectedSeason.value = new Date().getFullYear();
-    await fetchForecasts();
-    if (availableSeasons.value.length > 0 && selectedSeason.value !== null && !availableSeasons.value.includes(selectedSeason.value)) {
-        selectedSeason.value = availableSeasons.value[0];
-    }
-});
+    void fetchForecasts();
+}, { immediate: true });
 </script>
 
 <template>
@@ -253,7 +283,7 @@ onMounted(async () => {
                         <CardContent class="pt-5">
                             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Bubble Watch</p>
                             <p class="mt-2 text-3xl font-bold">{{ bubbleWatch.length }}</p>
-                            <p class="mt-1 text-xs text-muted-foreground">Teams in 25-75% range</p>
+                            <p class="mt-1 text-xs text-muted-foreground">Teams fighting for play-in spots (7-10)</p>
                         </CardContent>
                     </Card>
                     <Card>
@@ -301,7 +331,7 @@ onMounted(async () => {
                                         </td>
                                         <td class="p-2 text-right">{{ row.teamsTracked }}</td>
                                         <td class="p-2 text-right font-semibold">{{ row.projectedIn }} / {{ playoffTeamsPerConference }}</td>
-                                        <td class="p-2 text-right">{{ row.projectedPlayIn }} / {{ playInTeamsPerConference }}</td>
+                                        <td class="p-2 text-right">{{ row.projectedPlayIn }} / {{ playInFieldSize }}</td>
                                         <td class="p-2 text-right">{{ row.divisionLeadersProjectedIn }} / 3</td>
                                         <td class="p-2 text-right">{{ row.expectedBids.toFixed(2) }}</td>
                                     </tr>
@@ -325,6 +355,7 @@ onMounted(async () => {
                                         <th class="p-2 text-right font-medium">Conf Rank</th>
                                         <th class="p-2 text-right font-medium">Seed</th>
                                         <th class="p-2 font-medium">Playoff Make</th>
+                                        <th class="p-2 font-medium">Play-In Spot</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -341,6 +372,14 @@ onMounted(async () => {
                                                     <div class="h-full rounded-full transition-all" :class="meterClass(row.playoff_make_probability)" :style="{ width: `${toPct(row.playoff_make_probability)}%` }" />
                                                 </div>
                                                 <span class="text-xs font-semibold">{{ formatPct(row.playoff_make_probability, 1) }}</span>
+                                            </div>
+                                        </td>
+                                        <td class="p-2">
+                                            <div class="flex items-center gap-2">
+                                                <div class="h-2.5 w-28 overflow-hidden rounded-full bg-muted">
+                                                    <div class="h-full rounded-full bg-amber-500 transition-all" :style="{ width: `${toPct(row.play_in_tournament_probability)}%` }" />
+                                                </div>
+                                                <span class="text-xs font-semibold">{{ formatPct(row.play_in_tournament_probability, 1) }}</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -361,6 +400,15 @@ onMounted(async () => {
                                 <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="statusTagClass(row)">{{ statusTag(row) }}</span>
                             </div>
                             <div class="mt-4 space-y-2">
+                                <div>
+                                    <div class="mb-1 flex items-center justify-between text-xs">
+                                        <span class="text-muted-foreground">Win Division</span>
+                                        <span class="font-medium">{{ formatPct(row.division_win_probability, 2) }}</span>
+                                    </div>
+                                    <div class="h-2 overflow-hidden rounded-full bg-amber-500/20">
+                                        <div class="h-full rounded-full bg-amber-500" :style="{ width: `${toPct(row.division_win_probability)}%` }" />
+                                    </div>
+                                </div>
                                 <div>
                                     <div class="mb-1 flex items-center justify-between text-xs">
                                         <span class="text-muted-foreground">Conference Finals</span>

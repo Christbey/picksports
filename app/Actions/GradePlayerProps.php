@@ -64,6 +64,8 @@ class GradePlayerProps
                 'total_props' => 0,
                 'hit_rate' => 0,
                 'avg_error' => 0,
+                'brier_score' => null,
+                'calibration_sample' => 0,
             ];
         }
 
@@ -97,11 +99,15 @@ class GradePlayerProps
             $graded++;
         }
 
+        $brierStats = $this->calculateBrierScore($sport, $season);
+
         return [
             'graded' => $graded,
             'total_props' => $graded,
             'hit_rate' => $graded > 0 ? round(($hitCount / $graded) * 100, 1) : 0,
             'avg_error' => $graded > 0 ? round(array_sum($errors) / count($errors), 2) : 0,
+            'brier_score' => $brierStats['brier_score'],
+            'calibration_sample' => $brierStats['sample_size'],
         ];
     }
 
@@ -252,6 +258,87 @@ class GradePlayerProps
                 'avg_error' => round($avgError, 2),
             ];
         })->sortByDesc('total_props')->values();
+    }
+
+    /**
+     * @return array{brier_score: float|null, sample_size: int}
+     */
+    public function calculateBrierScore(string $sport, ?int $season = null): array
+    {
+        $sportConfig = $this->sportConfig($sport);
+        if ($sportConfig === null) {
+            return ['brier_score' => null, 'sample_size' => 0];
+        }
+
+        $playerPropModel = $sportConfig['player_prop_model'];
+
+        $query = $playerPropModel::query()
+            ->whereNotNull('graded_at')
+            ->whereNotNull('hit_over')
+            ->whereNotNull('predicted_over_probability');
+
+        if ($season !== null) {
+            $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', $season));
+        }
+
+        $props = $query->get();
+        if ($props->isEmpty()) {
+            return ['brier_score' => null, 'sample_size' => 0];
+        }
+
+        $total = 0.0;
+        foreach ($props as $prop) {
+            $pred = ((float) $prop->predicted_over_probability) / 100;
+            $actual = $prop->hit_over ? 1.0 : 0.0;
+            $total += (($pred - $actual) ** 2);
+        }
+
+        return [
+            'brier_score' => round($total / max(1, $props->count()), 4),
+            'sample_size' => $props->count(),
+        ];
+    }
+
+    public function getCalibrationBuckets(string $sport, ?int $season = null): Collection
+    {
+        $sportConfig = $this->sportConfig($sport);
+        if ($sportConfig === null) {
+            return collect();
+        }
+
+        $playerPropModel = $sportConfig['player_prop_model'];
+
+        $query = $playerPropModel::query()
+            ->whereNotNull('graded_at')
+            ->whereNotNull('hit_over')
+            ->whereNotNull('predicted_over_probability');
+
+        if ($season !== null) {
+            $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', $season));
+        }
+
+        return $query->get()
+            ->groupBy(function ($prop) {
+                $prob = (float) $prop->predicted_over_probability;
+                $bucketStart = (int) floor($prob / 10) * 10;
+                $bucketStart = max(0, min(90, $bucketStart));
+
+                return sprintf('%02d-%02d', $bucketStart, $bucketStart + 9);
+            })
+            ->map(function (Collection $props, string $bucket) {
+                $avgPred = (float) $props->avg('predicted_over_probability');
+                $actualOverRate = ((float) $props->where('hit_over', true)->count() / max(1, $props->count())) * 100;
+
+                return [
+                    'bucket' => $bucket,
+                    'sample_size' => $props->count(),
+                    'avg_predicted_over' => round($avgPred, 1),
+                    'actual_over_rate' => round($actualOverRate, 1),
+                    'calibration_gap' => round($actualOverRate - $avgPred, 1),
+                ];
+            })
+            ->sortBy('bucket')
+            ->values();
     }
 
     /**

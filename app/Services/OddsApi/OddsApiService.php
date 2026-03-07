@@ -2,6 +2,8 @@
 
 namespace App\Services\OddsApi;
 
+use App\Models\OddsApiPlayerMapping;
+use App\Models\OddsApiTeamMapping;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -68,7 +70,7 @@ class OddsApiService
         $this->baseUrl = config('services.odds_api.base_url', 'https://api.the-odds-api.com/v4');
     }
 
-    public function getOdds(?string $eventId = null, string $sport = 'basketball_ncaab'): ?array
+    public function getOdds(string $sport, ?string $eventId = null): ?array
     {
         $url = $this->baseUrl."/sports/{$sport}/odds/";
 
@@ -219,6 +221,16 @@ class OddsApiService
     public function clearCache(): void
     {
         Cache::flush();
+    }
+
+    public function normalizePlayerName(string $name): string
+    {
+        $name = strtolower(trim($name));
+        $name = preg_replace('/\s+/', ' ', $name);
+        $name = str_replace(['.', ',', "'", '"'], '', $name);
+        $name = preg_replace('/\b(jr|sr|ii|iii|iv)\b/', '', $name);
+
+        return trim((string) preg_replace('/\s+/', ' ', $name));
     }
 
     /**
@@ -380,7 +392,7 @@ class OddsApiService
      */
     protected function mappedEspnNamesForOddsTeam(string $sport, string $oddsApiTeamName): array
     {
-        return \App\Models\OddsApiTeamMapping::query()
+        return OddsApiTeamMapping::query()
             ->where('sport', $sport)
             ->where('odds_api_team_name', $oddsApiTeamName)
             ->whereNotNull('espn_team_name')
@@ -403,5 +415,27 @@ class OddsApiService
         }
 
         return false;
+    }
+
+    public function mappedEspnPlayerName(string $sport, string $oddsApiPlayerName): ?string
+    {
+        return OddsApiPlayerMapping::query()
+            ->where('sport', $sport)
+            ->whereRaw('LOWER(odds_api_player_name) = ?', [mb_strtolower($oddsApiPlayerName)])
+            ->whereNotNull('espn_player_name')
+            ->value('espn_player_name');
+    }
+
+    public function rememberUnmappedPlayer(string $sport, string $oddsApiPlayerName): void
+    {
+        OddsApiPlayerMapping::query()->firstOrCreate(
+            [
+                'sport' => $sport,
+                'odds_api_player_name' => $oddsApiPlayerName,
+            ],
+            [
+                'espn_player_name' => null,
+            ]
+        );
     }
 }

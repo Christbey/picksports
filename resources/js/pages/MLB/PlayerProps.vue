@@ -29,13 +29,15 @@ type Recommendation = {
 
 type DateOption = { value: string; label: string };
 type GameOption = { id: number; label: string; date: string; time: string };
+type MarketOption = { value: string; label: string };
 
 const props = defineProps<{
     sport: string;
     recommendations: Recommendation[];
     dates: DateOption[];
     games: GameOption[];
-    filters: { date: string | null; game: string | number | null };
+    markets: MarketOption[];
+    filters: { date: string | null; game: string | number | null; market: string | null };
 }>();
 
 const config = getPlayerPropsPageConfig(props.sport);
@@ -48,6 +50,7 @@ const config = getPlayerPropsPageConfig(props.sport);
         :recommendations="recommendations"
         :dates="dates"
         :games="games"
+        :markets="markets"
         :filters="filters"
         :sport-label="config.sportLabel"
         :description="config.description"

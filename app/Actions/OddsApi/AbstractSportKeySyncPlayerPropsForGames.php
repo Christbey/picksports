@@ -6,6 +6,6 @@ abstract class AbstractSportKeySyncPlayerPropsForGames extends AbstractSyncPlaye
 {
     protected function fetchEvents(): ?array
     {
-        return $this->oddsApiService->getOdds($this->sportKey());
+        return $this->oddsApiService->getOdds(sport: $this->sportKey());
     }
 }

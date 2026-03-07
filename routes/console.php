@@ -335,7 +335,7 @@ $scheduleSportPipeline(
     'NBA: Sync Game Details',
     'nba',
     'NBA',
-    $currentYear,
+    $fallSeasonYear,
     $nbaInSeason,
     [
         'grade-predictions' => '03:30',
@@ -351,7 +351,7 @@ $scheduleSportPipeline(
     'NBA: Sync Player Props'
 );
 $scheduleDailySeasonJob(
-    "nba:generate-playoff-forecast --season={$currentYear}",
+    "nba:generate-playoff-forecast --season={$fallSeasonYear}",
     '05:15',
     $nbaInSeason,
     'NBA: Generate Playoff Forecast'
@@ -363,7 +363,7 @@ $scheduleHalfHourlyWindowJob(
     $nbaInSeason,
     'NBA: Sync Injuries'
 );
-$scheduleEpaLifecycle('nba', 'NBA', fn () => $currentYear, $nbaInSeason);
+$scheduleEpaLifecycle('nba', 'NBA', fn () => $fallSeasonYear, $nbaInSeason);
 
 // CBB
 $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
@@ -388,7 +388,7 @@ $scheduleSportPipeline(
     'CBB: Sync Game Details',
     'cbb',
     'CBB',
-    $currentYear,
+    $fallSeasonYear,
     $cbbInSeason,
     [
         'grade-predictions' => '05:00',
@@ -404,7 +404,7 @@ $scheduleSportPipeline(
     'CBB: Sync Player Props'
 );
 $scheduleDailySeasonJob(
-    "cbb:generate-tournament-forecast --season={$currentYear}",
+    "cbb:generate-tournament-forecast --season={$fallSeasonYear}",
     '07:00',
     $cbbInSeason,
     'CBB: Generate Tournament Forecast'
@@ -416,7 +416,7 @@ $scheduleHalfHourlyWindowJob(
     $cbbInSeason,
     'CBB: Sync Injuries'
 );
-$scheduleEpaLifecycle('cbb', 'CBB', fn () => $currentYear, $cbbInSeason);
+$scheduleEpaLifecycle('cbb', 'CBB', fn () => $fallSeasonYear, $cbbInSeason);
 
 $dailyDigestsEvent = Schedule::command('alerts:send-daily-digests --sport=all')
     ->hourly()
@@ -444,7 +444,7 @@ $scheduleSportPipeline(
     'WCBB: Sync Game Details',
     'wcbb',
     'WCBB',
-    $currentYear,
+    $fallSeasonYear,
     $wcbbInSeason,
     [
         'grade-predictions' => '03:30',
@@ -456,7 +456,7 @@ $scheduleSportPipeline(
     'WCBB: Sync Odds'
 );
 $scheduleDailySeasonJob(
-    "wcbb:generate-tournament-forecast --season={$currentYear}",
+    "wcbb:generate-tournament-forecast --season={$fallSeasonYear}",
     '05:15',
     $wcbbInSeason,
     'WCBB: Generate Tournament Forecast'
@@ -468,7 +468,7 @@ $scheduleHalfHourlyWindowJob(
     $wcbbInSeason,
     'WCBB: Sync Injuries'
 );
-$scheduleEpaLifecycle('wcbb', 'WCBB', fn () => $currentYear, $wcbbInSeason);
+$scheduleEpaLifecycle('wcbb', 'WCBB', fn () => $fallSeasonYear, $wcbbInSeason);
 
 // MLB
 $scheduleSportPipeline(

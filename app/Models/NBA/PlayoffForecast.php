@@ -17,6 +17,9 @@ class PlayoffForecast extends Model
         'projected_seed',
         'selection_score',
         'playoff_make_probability',
+        'direct_playoff_probability',
+        'play_in_tournament_probability',
+        'division_win_probability',
         'conference_finals_probability',
         'nba_finals_probability',
         'champion_probability',
@@ -31,6 +34,9 @@ class PlayoffForecast extends Model
             'projected_seed' => 'integer',
             'selection_score' => 'decimal:4',
             'playoff_make_probability' => 'decimal:5',
+            'direct_playoff_probability' => 'decimal:5',
+            'play_in_tournament_probability' => 'decimal:5',
+            'division_win_probability' => 'decimal:5',
             'conference_finals_probability' => 'decimal:5',
             'nba_finals_probability' => 'decimal:5',
             'champion_probability' => 'decimal:5',
@@ -43,4 +49,3 @@ class PlayoffForecast extends Model
         return $this->belongsTo(Team::class, 'team_id');
     }
 }
-

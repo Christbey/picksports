@@ -55,6 +55,8 @@ abstract class AbstractGradePlayerPropsCommand extends Command
                 ['Props Graded', $results['graded']],
                 ['Hit Over Rate', $results['hit_rate'].'%'],
                 ['Avg Line Error', $results['avg_error'].' units'],
+                ['Brier Score', $results['brier_score'] !== null ? $results['brier_score'] : 'N/A'],
+                ['Calibration Sample', $results['calibration_sample'] ?? 0],
             ]
         );
 
@@ -76,6 +78,24 @@ abstract class AbstractGradePlayerPropsCommand extends Command
             );
         } else {
             $this->warn('No graded props available to show market breakdown.');
+        }
+
+        $this->newLine();
+        $this->info('Calibration by Predicted-Over Bucket:');
+        $buckets = $gradePlayerProps->getCalibrationBuckets($this->sportKey(), $season);
+        if ($buckets->isNotEmpty()) {
+            $this->table(
+                ['Bucket', 'Props', 'Avg Pred Over', 'Actual Over Rate', 'Gap'],
+                $buckets->map(fn ($bucket) => [
+                    $bucket['bucket'],
+                    $bucket['sample_size'],
+                    $bucket['avg_predicted_over'].'%',
+                    $bucket['actual_over_rate'].'%',
+                    ($bucket['calibration_gap'] > 0 ? '+' : '').$bucket['calibration_gap'].'%',
+                ])
+            );
+        } else {
+            $this->warn('No probability-tagged graded props available for calibration buckets.');
         }
 
         return self::SUCCESS;

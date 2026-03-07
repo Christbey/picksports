@@ -13,6 +13,8 @@ abstract class AbstractSyncPlayerPropsForGames
 
     protected const PLAYER_PROP_MODEL_CLASS = Model::class;
 
+    protected const PLAYER_MODEL_CLASS = Model::class;
+
     protected const DEFAULT_MARKETS = [];
 
     protected const MATCH_THRESHOLD = 80.0;
@@ -161,6 +163,75 @@ abstract class AbstractSyncPlayerPropsForGames
 
     protected function resolvePlayerId(string $playerName, Model $game): ?int
     {
+        $playerModel = $this->playerModelClass();
+        $teamIds = array_filter([
+            $game->home_team_id ?? null,
+            $game->away_team_id ?? null,
+        ]);
+
+        $mappedEspnName = $this->oddsApiService->mappedEspnPlayerName($this->sportKey(), $playerName);
+        if ($mappedEspnName) {
+            $mappedPlayer = $playerModel::query()
+                ->whereIn('team_id', $teamIds)
+                ->where(function ($query) use ($mappedEspnName) {
+                    $query->whereRaw('LOWER(full_name) = ?', [mb_strtolower($mappedEspnName)])
+                        ->orWhere('full_name', 'like', "%{$mappedEspnName}%");
+                })
+                ->first();
+
+            if ($mappedPlayer) {
+                return $mappedPlayer->id;
+            }
+        }
+
+        $directMatch = $playerModel::query()
+            ->whereIn('team_id', $teamIds)
+            ->where(function ($query) use ($playerName) {
+                $query->whereRaw('LOWER(full_name) = ?', [mb_strtolower($playerName)])
+                    ->orWhere('full_name', 'like', "%{$playerName}%");
+            })
+            ->first();
+
+        if ($directMatch) {
+            return $directMatch->id;
+        }
+
+        $normalizedInput = $this->oddsApiService->normalizePlayerName($playerName);
+        $lastName = str_contains($normalizedInput, ' ')
+            ? (string) str($normalizedInput)->afterLast(' ')
+            : $normalizedInput;
+
+        $candidate = $playerModel::query()
+            ->whereIn('team_id', $teamIds)
+            ->whereNotNull('full_name')
+            ->get()
+            ->map(function ($player) use ($normalizedInput) {
+                $normalizedCandidate = $this->oddsApiService->normalizePlayerName((string) $player->full_name);
+                similar_text($normalizedInput, $normalizedCandidate, $score);
+
+                return [
+                    'player' => $player,
+                    'score' => $score,
+                ];
+            })
+            ->sortByDesc('score')
+            ->first();
+
+        if ($candidate && $candidate['score'] >= 82.0) {
+            return $candidate['player']->id;
+        }
+
+        $lastNameMatch = $playerModel::query()
+            ->whereIn('team_id', $teamIds)
+            ->whereRaw('LOWER(last_name) = ?', [$lastName])
+            ->first();
+
+        if ($lastNameMatch) {
+            return $lastNameMatch->id;
+        }
+
+        $this->oddsApiService->rememberUnmappedPlayer($this->sportKey(), $playerName);
+
         return null;
     }
 
@@ -217,6 +288,18 @@ abstract class AbstractSyncPlayerPropsForGames
         }
 
         return static::PLAYER_PROP_MODEL_CLASS;
+    }
+
+    /**
+     * @return class-string<Model>
+     */
+    protected function playerModelClass(): string
+    {
+        if (static::PLAYER_MODEL_CLASS === Model::class) {
+            throw new \RuntimeException('PLAYER_MODEL_CLASS must be defined on player-props sync action.');
+        }
+
+        return static::PLAYER_MODEL_CLASS;
     }
 
     /**

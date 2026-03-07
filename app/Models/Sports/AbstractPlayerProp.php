@@ -21,6 +21,15 @@ abstract class AbstractPlayerProp extends Model
         'actual_value',
         'hit_over',
         'error',
+        'recommended_side',
+        'confidence_score',
+        'predicted_over_probability',
+        'market_over_probability',
+        'edge_probability',
+        'data_quality_score',
+        'match_quality_score',
+        'context_adjustment_factor',
+        'confidence_decomposition',
         'graded_at',
     ];
 
@@ -35,6 +44,14 @@ abstract class AbstractPlayerProp extends Model
             'actual_value' => 'decimal:2',
             'hit_over' => 'boolean',
             'error' => 'decimal:2',
+            'confidence_score' => 'integer',
+            'predicted_over_probability' => 'decimal:2',
+            'market_over_probability' => 'decimal:2',
+            'edge_probability' => 'decimal:2',
+            'data_quality_score' => 'integer',
+            'match_quality_score' => 'integer',
+            'context_adjustment_factor' => 'decimal:3',
+            'confidence_decomposition' => 'array',
             'graded_at' => 'datetime',
         ];
     }

@@ -253,6 +253,7 @@ return [
         'play_in_teams_per_conference' => 10,
         'division_winner_bonus' => 0.20,
         'rank_noise_std' => 0.35,
+        'remaining_sos_weight' => 0.12,
         'conference_finals_base' => 0.42,
         'finals_seed_penalty' => 0.06,
         'selection_weights' => [

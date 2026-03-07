@@ -3,6 +3,7 @@
 use App\Http\Controllers\Settings\AlertPreferenceController;
 use App\Http\Controllers\Settings\AdminSettingsController;
 use App\Http\Controllers\Settings\OnboardingController;
+use App\Http\Controllers\Settings\OddsApiPlayerMappingController;
 use App\Http\Controllers\Settings\OddsApiTeamMappingController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
@@ -122,5 +123,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('settings/team-mappings', [OddsApiTeamMappingController::class, 'index'])->name('team-mappings.index');
         Route::patch('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'update'])->name('team-mappings.update');
         Route::delete('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'destroy'])->name('team-mappings.destroy');
+        Route::get('settings/player-mappings', [OddsApiPlayerMappingController::class, 'index'])->name('player-mappings.index');
+        Route::patch('settings/player-mappings/{mapping}', [OddsApiPlayerMappingController::class, 'update'])->name('player-mappings.update');
+        Route::delete('settings/player-mappings/{mapping}', [OddsApiPlayerMappingController::class, 'destroy'])->name('player-mappings.destroy');
     });
 });

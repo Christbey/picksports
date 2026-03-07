@@ -10,4 +10,5 @@ class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
     protected const DEFAULT_MARKETS = self::MARKETS_BASKETBALL;
     protected const GAME_MODEL_CLASS = \App\Models\CBB\Game::class;
     protected const PLAYER_PROP_MODEL_CLASS = \App\Models\CBB\PlayerProp::class;
+    protected const PLAYER_MODEL_CLASS = \App\Models\CBB\Player::class;
 }

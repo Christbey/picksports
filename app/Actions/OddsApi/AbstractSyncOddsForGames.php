@@ -92,7 +92,7 @@ abstract class AbstractSyncOddsForGames
      */
     protected function fetchOddsData(): ?array
     {
-        return $this->oddsApiService->getOdds(null, $this->sportKey());
+        return $this->oddsApiService->getOdds(sport: $this->sportKey());
     }
 
     protected function sportKey(): string

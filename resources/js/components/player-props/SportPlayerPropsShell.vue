@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, router } from '@inertiajs/vue3';
-import { BarChart3, Target, TrendingDown, TrendingUp, X } from 'lucide-vue-next';
+import { BarChart3, TrendingDown, TrendingUp, X } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -35,6 +35,23 @@ type Recommendation = {
     };
     streak: { count: number; type: string; status: string } | null;
     edge: number;
+    model_over_probability?: number | null;
+    market_over_probability?: number | null;
+    edge_probability?: number | null;
+    context?: {
+        pace_factor: number;
+        opponent_factor: number;
+        minutes_factor: number;
+        combined_factor: number;
+    } | null;
+    data_quality_score?: number | null;
+    match_quality_score?: number | null;
+    confidence_decomposition?: {
+        model_edge_score: number;
+        data_quality_score: number;
+        match_quality_score: number;
+        context_factor: number;
+    } | null;
     reasoning: string[];
     game: {
         id: number;
@@ -58,14 +75,21 @@ type GameOption = {
     time: string;
 };
 
+type MarketOption = {
+    value: string;
+    label: string;
+};
+
 const props = defineProps<{
     sport: string;
     recommendations: Recommendation[];
     dates: DateOption[];
     games: GameOption[];
+    markets: MarketOption[];
     filters: {
         date: string | null;
         game: string | number | null;
+        market: string | null;
     };
     sportLabel: string;
     description: string;
@@ -73,6 +97,7 @@ const props = defineProps<{
 
 const selectedDate = ref(props.filters.date || '');
 const selectedGame = ref(props.filters.game !== null ? String(props.filters.game) : '');
+const selectedMarket = ref(props.filters.market || '');
 
 const filteredGames = computed(() => {
     if (!selectedDate.value) {
@@ -82,10 +107,20 @@ const filteredGames = computed(() => {
     return props.games.filter((game) => game.date === selectedDate.value);
 });
 
-const hasActiveFilters = computed(() => selectedDate.value !== '' || selectedGame.value !== '');
+const hasActiveFilters = computed(() =>
+    selectedDate.value !== '' || selectedGame.value !== '' || selectedMarket.value !== ''
+);
 
 const onDateChange = () => {
     selectedGame.value = '';
+    applyFilters();
+};
+
+const onGameChange = () => {
+    applyFilters();
+};
+
+const onMarketChange = () => {
     applyFilters();
 };
 
@@ -93,10 +128,12 @@ const applyFilters = () => {
     const params: Record<string, string> = {};
     if (selectedDate.value) params.date = selectedDate.value;
     if (selectedGame.value) params.game = selectedGame.value;
+    if (selectedMarket.value) params.market = selectedMarket.value;
 
     router.get(window.location.pathname, params, {
         preserveState: true,
         preserveScroll: true,
+        preserveUrl: true,
         replace: true,
     });
 };
@@ -104,9 +141,11 @@ const applyFilters = () => {
 const clearFilters = () => {
     selectedDate.value = '';
     selectedGame.value = '';
+    selectedMarket.value = '';
     router.get(window.location.pathname, {}, {
         preserveState: true,
         preserveScroll: true,
+        preserveUrl: true,
         replace: true,
     });
 };
@@ -126,6 +165,20 @@ const getConfidenceBadge = (confidence: number) => {
 
 const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : odds.toString());
 
+const getSignalBand = (confidence: number) => {
+    if (confidence >= 80) return 'Very Strong';
+    if (confidence >= 70) return 'Strong';
+    if (confidence >= 60) return 'Lean';
+    return 'Low';
+};
+
+const getSignalBandVariant = (confidence: number) => {
+    if (confidence >= 80) return 'default';
+    if (confidence >= 70) return 'secondary';
+    if (confidence >= 60) return 'outline';
+    return 'outline';
+};
+
 const getInitials = (name: string) =>
     name
         .split(' ')
@@ -133,6 +186,19 @@ const getInitials = (name: string) =>
         .map((part) => part[0])
         .join('')
         .toUpperCase();
+
+const expandedModelDetails = ref<number[]>([]);
+
+const isModelDetailsOpen = (id: number) => expandedModelDetails.value.includes(id);
+
+const toggleModelDetails = (id: number) => {
+    if (isModelDetailsOpen(id)) {
+        expandedModelDetails.value = expandedModelDetails.value.filter((item) => item !== id);
+        return;
+    }
+
+    expandedModelDetails.value = [...expandedModelDetails.value, id];
+};
 </script>
 
 <template>
@@ -166,6 +232,7 @@ const getInitials = (name: string) =>
                             <select
                                 id="game"
                                 v-model="selectedGame"
+                                @change="onGameChange"
                                 class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                                 :disabled="filteredGames.length === 0"
                             >
@@ -176,8 +243,22 @@ const getInitials = (name: string) =>
                             </select>
                         </div>
 
+                        <div class="min-w-[180px] flex-1 space-y-2">
+                            <Label for="market">Prop Type</Label>
+                            <select
+                                id="market"
+                                v-model="selectedMarket"
+                                @change="onMarketChange"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                                <option value="">All props</option>
+                                <option v-for="market in markets" :key="market.value" :value="market.value">
+                                    {{ market.label }}
+                                </option>
+                            </select>
+                        </div>
+
                         <div class="flex gap-2">
-                            <Button @click="applyFilters">Apply Filters</Button>
                             <Button v-if="hasActiveFilters" variant="outline" @click="clearFilters">
                                 <X class="mr-2 h-4 w-4" />
                                 Clear
@@ -193,8 +274,12 @@ const getInitials = (name: string) =>
                 <p class="text-muted-foreground">Check back later or sync player props to see betting recommendations.</p>
             </div>
 
-            <div v-else class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                <Card v-for="rec in recommendations" :key="rec.id" class="transition-shadow hover:shadow-lg">
+            <div v-else class="columns-1 gap-6 md:columns-2 lg:columns-3">
+                <Card
+                    v-for="rec in recommendations"
+                    :key="rec.id"
+                    class="mb-6 inline-block w-full break-inside-avoid transition-shadow hover:shadow-lg"
+                >
                     <CardHeader>
                         <div class="flex items-start justify-between gap-3">
                             <div class="flex min-w-0 flex-1 items-start gap-3">
@@ -240,9 +325,14 @@ const getInitials = (name: string) =>
                                     </CardDescription>
                                 </div>
                             </div>
-                            <Badge :variant="getConfidenceBadge(rec.confidence)" class="h-fit shrink-0">
-                                {{ rec.confidence }}%
-                            </Badge>
+                            <div class="flex flex-col items-end gap-1">
+                                <Badge :variant="getConfidenceBadge(rec.confidence)" class="h-fit shrink-0">
+                                    {{ rec.confidence }}%
+                                </Badge>
+                                <Badge :variant="getSignalBandVariant(rec.confidence)" class="h-fit shrink-0 text-[10px]">
+                                    {{ getSignalBand(rec.confidence) }}
+                                </Badge>
+                            </div>
                         </div>
                     </CardHeader>
 
@@ -266,94 +356,9 @@ const getInitials = (name: string) =>
                             </Badge>
                         </div>
 
-                        <div class="space-y-2">
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Season Avg</span>
-                                <span class="font-medium">{{ rec.stats?.season_avg ?? 0 }}</span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Last 10 Games</span>
-                                <span
-                                    :class="[
-                                        'font-medium',
-                                        (rec.stats?.recent_avg ?? 0) > (rec.stats?.season_avg ?? 0)
-                                            ? 'text-green-600 dark:text-green-400'
-                                            : 'text-red-600 dark:text-red-400',
-                                    ]"
-                                >
-                                    {{ rec.stats?.recent_avg ?? 0 }}
-                                </span>
-                            </div>
-                            <div class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Last 5 Games</span>
-                                <span
-                                    :class="[
-                                        'font-medium',
-                                        (rec.stats?.last5_avg ?? 0) > (rec.stats?.recent_avg ?? 0)
-                                            ? 'text-green-600 dark:text-green-400'
-                                            : 'text-red-600 dark:text-red-400',
-                                    ]"
-                                >
-                                    {{ rec.stats?.last5_avg ?? 0 }}
-                                </span>
-                            </div>
-                            <div v-if="rec.stats?.vs_opponent_avg !== null" class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">vs Opponent</span>
-                                <span
-                                    :class="[
-                                        'font-medium',
-                                        rec.stats.vs_opponent_avg > (rec.stats?.season_avg ?? 0)
-                                            ? 'text-green-600 dark:text-green-400'
-                                            : 'text-red-600 dark:text-red-400',
-                                    ]"
-                                >
-                                    {{ rec.stats.vs_opponent_avg }}
-                                </span>
-                            </div>
-                            <div v-if="rec.stats?.times_covered_last5" class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Hit {{ rec.recommendation }} (L5)</span>
-                                <span class="font-medium">
-                                    {{
-                                        rec.recommendation === 'Under'
-                                            ? (rec.stats.times_covered_last5.games - rec.stats.times_covered_last5.hits)
-                                            : rec.stats.times_covered_last5.hits
-                                    }}/{{ rec.stats.times_covered_last5.games }}
-                                </span>
-                            </div>
-                            <div v-if="rec.stats?.times_covered_season" class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Hit {{ rec.recommendation }} (Season)</span>
-                                <span class="font-medium">
-                                    {{
-                                        rec.recommendation === 'Under'
-                                            ? (rec.stats.times_covered_season.games - rec.stats.times_covered_season.hits)
-                                            : rec.stats.times_covered_season.hits
-                                    }}/{{ rec.stats.times_covered_season.games }}
-                                </span>
-                            </div>
-                            <div v-if="rec.stats?.consistency" class="flex justify-between text-sm">
-                                <span class="text-muted-foreground">Consistency</span>
-                                <span class="text-xs font-medium">
-                                    {{ rec.stats.consistency.level }} (±{{ rec.stats.consistency.std_dev }})
-                                </span>
-                            </div>
-                            <div class="flex justify-between border-t pt-2 text-sm">
-                                <span class="text-muted-foreground">Edge vs Line</span>
-                                <span
-                                    :class="[
-                                        'font-bold',
-                                        (rec.edge ?? 0) > 0
-                                            ? 'text-green-600 dark:text-green-400'
-                                            : 'text-red-600 dark:text-red-400',
-                                    ]"
-                                >
-                                    {{ (rec.edge ?? 0) > 0 ? '+' : '' }}{{ rec.edge ?? 0 }}
-                                </span>
-                            </div>
-                        </div>
-
                         <div class="space-y-1">
                             <div class="flex justify-between text-xs text-muted-foreground">
-                                <span>Confidence</span>
+                                <span>Signal Strength</span>
                                 <span>{{ rec.confidence }}%</span>
                             </div>
                             <div class="h-2 overflow-hidden rounded-full bg-muted">
@@ -365,14 +370,114 @@ const getInitials = (name: string) =>
                             </div>
                         </div>
 
-                        <div class="space-y-1">
-                            <p class="text-xs font-semibold text-muted-foreground">Analysis</p>
-                            <ul class="space-y-1 text-xs">
-                                <li v-for="(reason, idx) in rec.reasoning" :key="`${rec.id}-${idx}`" class="flex items-start gap-1">
-                                    <Target class="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
-                                    <span>{{ reason }}</span>
-                                </li>
-                            </ul>
+                        <div class="space-y-2">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-7 px-2 text-xs text-muted-foreground"
+                                @click="toggleModelDetails(rec.id)"
+                            >
+                                {{ isModelDetailsOpen(rec.id) ? 'Hide Stats' : 'Show Stats' }}
+                            </Button>
+
+                            <div
+                                v-if="isModelDetailsOpen(rec.id)"
+                                class="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2 text-xs"
+                            >
+                                <div class="space-y-2">
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">Season Avg</span>
+                                        <span class="font-medium">{{ rec.stats?.season_avg ?? 0 }}</span>
+                                    </div>
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">Last 10 Games</span>
+                                        <span
+                                            :class="[
+                                                'font-medium',
+                                                (rec.stats?.recent_avg ?? 0) > (rec.stats?.season_avg ?? 0)
+                                                    ? 'text-green-600 dark:text-green-400'
+                                                    : 'text-red-600 dark:text-red-400',
+                                            ]"
+                                        >
+                                            {{ rec.stats?.recent_avg ?? 0 }}
+                                        </span>
+                                    </div>
+                                    <div class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">Last 5 Games</span>
+                                        <span
+                                            :class="[
+                                                'font-medium',
+                                                (rec.stats?.last5_avg ?? 0) > (rec.stats?.recent_avg ?? 0)
+                                                    ? 'text-green-600 dark:text-green-400'
+                                                    : 'text-red-600 dark:text-red-400',
+                                            ]"
+                                        >
+                                            {{ rec.stats?.last5_avg ?? 0 }}
+                                        </span>
+                                    </div>
+                                    <div v-if="rec.stats?.vs_opponent_avg !== null" class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">vs Opponent</span>
+                                        <span
+                                            :class="[
+                                                'font-medium',
+                                                rec.stats.vs_opponent_avg > (rec.stats?.season_avg ?? 0)
+                                                    ? 'text-green-600 dark:text-green-400'
+                                                    : 'text-red-600 dark:text-red-400',
+                                            ]"
+                                        >
+                                            {{ rec.stats.vs_opponent_avg }}
+                                        </span>
+                                    </div>
+                                    <div v-if="rec.stats?.times_covered_last5" class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">Hit {{ rec.recommendation }} (L5)</span>
+                                        <span class="font-medium">
+                                            {{
+                                                rec.recommendation === 'Under'
+                                                    ? (rec.stats.times_covered_last5.games - rec.stats.times_covered_last5.hits)
+                                                    : rec.stats.times_covered_last5.hits
+                                            }}/{{ rec.stats.times_covered_last5.games }}
+                                        </span>
+                                    </div>
+                                    <div v-if="rec.stats?.times_covered_season" class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">Hit {{ rec.recommendation }} (Season)</span>
+                                        <span class="font-medium">
+                                            {{
+                                                rec.recommendation === 'Under'
+                                                    ? (rec.stats.times_covered_season.games - rec.stats.times_covered_season.hits)
+                                                    : rec.stats.times_covered_season.hits
+                                            }}/{{ rec.stats.times_covered_season.games }}
+                                        </span>
+                                    </div>
+                                    <div v-if="rec.stats?.consistency" class="flex justify-between text-sm">
+                                        <span class="text-muted-foreground">Consistency</span>
+                                        <span class="text-xs font-medium">
+                                            {{ rec.stats.consistency.level }} (±{{ rec.stats.consistency.std_dev }})
+                                        </span>
+                                    </div>
+                                    <div class="flex justify-between border-t pt-2 text-sm">
+                                        <span class="text-muted-foreground">Edge vs Line</span>
+                                        <span
+                                            :class="[
+                                                'font-bold',
+                                                (rec.edge ?? 0) > 0
+                                                    ? 'text-green-600 dark:text-green-400'
+                                                    : 'text-red-600 dark:text-red-400',
+                                            ]"
+                                        >
+                                            {{ (rec.edge ?? 0) > 0 ? '+' : '' }}{{ rec.edge ?? 0 }}
+                                        </span>
+                                    </div>
+                                    <div
+                                        v-if="rec.model_over_probability !== null && rec.market_over_probability !== null"
+                                        class="flex justify-between text-sm"
+                                    >
+                                        <span class="text-muted-foreground">Model vs Market</span>
+                                        <span class="font-medium">
+                                            {{ rec.model_over_probability?.toFixed(1) }}% vs {{ rec.market_over_probability?.toFixed(1) }}%
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </CardContent>
                 </Card>

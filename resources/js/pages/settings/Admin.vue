@@ -190,6 +190,11 @@ const adminAreas = [
         description: 'Resolve odds provider and internal team mapping gaps.',
         href: '/settings/team-mappings',
     },
+    {
+        title: 'Player Mappings',
+        description: 'Resolve odds provider player names when fuzzy matching fails.',
+        href: '/settings/player-mappings',
+    },
 ];
 </script>
 

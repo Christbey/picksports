@@ -13,7 +13,7 @@ const isActive = computed(() => activeTab?.value === props.value)
 <template>
     <div
         v-if="isActive"
-        class="mt-4 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+        class="mt-5 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
     >
         <slot />
     </div>

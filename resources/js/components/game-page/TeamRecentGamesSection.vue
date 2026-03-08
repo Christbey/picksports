@@ -16,7 +16,7 @@ defineProps<{
 </script>
 
 <template>
-    <div v-if="homeRecentGames.length > 0 || awayRecentGames.length > 0" class="grid grid-cols-1 gap-4 md:grid-cols-2">
+    <div v-if="homeRecentGames.length > 0 || awayRecentGames.length > 0" class="grid grid-cols-1 gap-5 md:grid-cols-2">
         <RecentGamesCard
             :title="`${awayLabel} Recent Games`"
             :record="awayRecord"

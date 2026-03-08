@@ -203,9 +203,10 @@ const toggleModelDetails = (id: number) => {
 
 <template>
     <AppLayout>
-        <div class="container mx-auto space-y-8 py-8">
+        <div class="mx-auto w-full max-w-7xl space-y-6 p-3 md:p-4">
             <div class="space-y-2">
-                <h1 class="text-3xl font-bold tracking-tight">{{ sportLabel }} Player Props</h1>
+                <p class="ui-kicker">Player Markets</p>
+                <h1 class="text-3xl font-semibold tracking-tight">{{ sportLabel }} Player Props</h1>
                 <p class="text-muted-foreground">{{ description }}</p>
             </div>
 
@@ -218,7 +219,7 @@ const toggleModelDetails = (id: number) => {
                                 id="date"
                                 v-model="selectedDate"
                                 @change="onDateChange"
-                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="ui-select"
                             >
                                 <option value="">All dates</option>
                                 <option v-for="date in dates" :key="date.value" :value="date.value">
@@ -233,7 +234,7 @@ const toggleModelDetails = (id: number) => {
                                 id="game"
                                 v-model="selectedGame"
                                 @change="onGameChange"
-                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                                class="ui-select"
                                 :disabled="filteredGames.length === 0"
                             >
                                 <option value="">All games</option>
@@ -249,7 +250,7 @@ const toggleModelDetails = (id: number) => {
                                 id="market"
                                 v-model="selectedMarket"
                                 @change="onMarketChange"
-                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="ui-select"
                             >
                                 <option value="">All props</option>
                                 <option v-for="market in markets" :key="market.value" :value="market.value">
@@ -270,15 +271,15 @@ const toggleModelDetails = (id: number) => {
 
             <div v-if="recommendations.length === 0" class="py-16 text-center">
                 <BarChart3 class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-                <h3 class="mb-2 text-xl font-semibold">No Recommendations Available</h3>
+                <h3 class="mb-2 text-xl font-semibold tracking-tight">No Recommendations Available</h3>
                 <p class="text-muted-foreground">Check back later or sync player props to see betting recommendations.</p>
             </div>
 
-            <div v-else class="columns-1 gap-6 md:columns-2 lg:columns-3">
+            <div v-else class="columns-1 gap-5 md:columns-2 lg:columns-3">
                 <Card
                     v-for="rec in recommendations"
                     :key="rec.id"
-                    class="mb-6 inline-block w-full break-inside-avoid transition-shadow hover:shadow-lg"
+                    class="mb-5 inline-block w-full break-inside-avoid transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                 >
                     <CardHeader>
                         <div class="flex items-start justify-between gap-3">
@@ -301,11 +302,11 @@ const toggleModelDetails = (id: number) => {
                                 <div class="min-w-0 flex-1 space-y-1">
                                     <template v-if="rec.player?.url">
                                         <Link :href="rec.player.url" class="hover:underline">
-                                            <CardTitle class="truncate text-lg">{{ rec.player.name }}</CardTitle>
+                                            <CardTitle class="truncate text-lg tracking-tight">{{ rec.player.name }}</CardTitle>
                                         </Link>
                                     </template>
                                     <template v-else>
-                                        <CardTitle class="truncate text-lg">{{ rec.player.name }}</CardTitle>
+                                        <CardTitle class="truncate text-lg tracking-tight">{{ rec.player.name }}</CardTitle>
                                     </template>
 
                                     <div class="flex flex-wrap items-center gap-2">
@@ -337,7 +338,7 @@ const toggleModelDetails = (id: number) => {
                     </CardHeader>
 
                     <CardContent class="space-y-4">
-                        <div class="flex items-center justify-between rounded-lg bg-muted p-3">
+                        <div class="ui-surface-subtle flex items-center justify-between p-3">
                             <div class="flex items-center gap-2">
                                 <component
                                     :is="rec.recommendation === 'Over' ? TrendingUp : TrendingDown"
@@ -356,7 +357,7 @@ const toggleModelDetails = (id: number) => {
                             </Badge>
                         </div>
 
-                        <div class="space-y-1">
+                        <div class="space-y-1.5">
                             <div class="flex justify-between text-xs text-muted-foreground">
                                 <span>Signal Strength</span>
                                 <span>{{ rec.confidence }}%</span>
@@ -382,7 +383,7 @@ const toggleModelDetails = (id: number) => {
 
                             <div
                                 v-if="isModelDetailsOpen(rec.id)"
-                                class="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2 text-xs"
+                                class="ui-surface-subtle space-y-2 p-2 text-xs"
                             >
                                 <div class="space-y-2">
                                     <div class="flex justify-between text-sm">

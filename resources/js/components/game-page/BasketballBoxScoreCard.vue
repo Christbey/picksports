@@ -37,13 +37,14 @@ const calculatePercentage = (made: number, attempted: number): string => {
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>Box Score</CardTitle>
+            <div class="ui-kicker">Game Data</div>
+            <CardTitle class="tracking-tight">Box Score</CardTitle>
         </CardHeader>
         <CardContent>
-            <div v-if="layout === 'table'" class="overflow-x-auto">
+            <div v-if="layout === 'table'" class="ui-table-wrap">
                 <table class="w-full">
                     <thead>
-                        <tr class="border-b">
+                        <tr class="border-b bg-muted/30">
                             <th class="p-2 text-left">Stat</th>
                             <th class="p-2 text-center">{{ awayLabel || 'Away' }}</th>
                             <th class="p-2 text-center">{{ homeLabel || 'Home' }}</th>
@@ -144,7 +145,7 @@ const calculatePercentage = (made: number, attempted: number): string => {
                 </table>
             </div>
 
-            <div v-else class="space-y-4">
+            <div v-else class="space-y-4 rounded-xl border border-border/70 p-3">
                 <div class="grid grid-cols-7 gap-2 border-b pb-2 text-sm font-medium">
                     <div class="col-span-2 text-right">{{ awayLabel }}</div>
                     <div class="col-span-3 text-center">Stat</div>

@@ -264,16 +264,16 @@ watch(selectedSeason, () => {
         banner-storage-key="nba-futures-banner-dismissed"
         seo-description="NBA postseason forecast with playoff odds, conference finals odds, Finals probability, and championship futures."
     >
-        <div class="space-y-4">
+        <div class="space-y-5">
             <Card>
                 <CardContent class="pt-6">
                     <div class="flex flex-wrap items-end gap-4">
                         <div class="min-w-[220px]">
-                            <label for="season" class="text-sm font-medium">Season</label>
+                            <p class="ui-kicker">Season</p>
                             <select
                                 id="season"
                                 v-model.number="selectedSeason"
-                                class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+                                class="ui-select mt-1"
                             >
                                 <option v-for="season in availableSeasonOptions" :key="season" :value="season">
                                     {{ season }}
@@ -326,10 +326,11 @@ watch(selectedSeason, () => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Conference Playoff Forecast</CardTitle>
+                        <div class="ui-kicker">Conference View</div>
+                        <CardTitle class="tracking-tight">Conference Playoff Forecast</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div class="overflow-x-auto rounded-md border">
+                        <div class="ui-table-wrap">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="border-b bg-muted/30 text-left">
@@ -343,7 +344,7 @@ watch(selectedSeason, () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="row in conferenceBreakdown" :key="`conf-${row.conference}`" class="border-b">
+                                    <tr v-for="row in conferenceBreakdown" :key="`conf-${row.conference}`" class="border-b odd:bg-muted/15">
                                         <td class="p-2 font-medium">{{ row.conference }}</td>
                                         <td class="p-2">
                                             <div class="flex flex-col">
@@ -365,10 +366,11 @@ watch(selectedSeason, () => {
 
                 <Card>
                     <CardHeader>
-                        <CardTitle>Top Playoff Probabilities</CardTitle>
+                        <div class="ui-kicker">Team Odds</div>
+                        <CardTitle class="tracking-tight">Top Playoff Probabilities</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div class="overflow-x-auto rounded-md border">
+                        <div class="ui-table-wrap">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr class="border-b bg-muted/30 text-left">
@@ -381,7 +383,7 @@ watch(selectedSeason, () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr v-for="row in topByMake" :key="row.id" class="border-b">
+                                    <tr v-for="row in topByMake" :key="row.id" class="border-b odd:bg-muted/15">
                                         <td class="p-2 font-medium">{{ formatTeam(row.team, row.team_id) }}</td>
                                         <td class="p-2">
                                             <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="statusTagClass(row)">{{ statusTag(row) }}</span>
@@ -416,7 +418,7 @@ watch(selectedSeason, () => {
                         <CardContent class="pt-4">
                             <div class="flex items-start justify-between gap-2">
                                 <div>
-                                    <p class="text-sm font-semibold">{{ formatTeam(row.team, row.team_id) }}</p>
+                                    <p class="text-sm font-semibold tracking-tight">{{ formatTeam(row.team, row.team_id) }}</p>
                                     <p class="text-xs text-muted-foreground">{{ row.conference ?? '-' }} · Seed {{ row.projected_seed ?? '-' }}</p>
                                 </div>
                                 <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold" :class="statusTagClass(row)">{{ statusTag(row) }}</span>

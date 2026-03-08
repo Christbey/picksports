@@ -31,13 +31,14 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>{{ title || 'Top Performers' }}</CardTitle>
+            <div class="ui-kicker">Impact Players</div>
+            <CardTitle class="tracking-tight">{{ title || 'Top Performers' }}</CardTitle>
         </CardHeader>
         <CardContent>
-            <div v-if="mode === 'table'" class="overflow-x-auto">
+            <div v-if="mode === 'table'" class="ui-table-wrap">
                 <table class="w-full">
                     <thead>
-                        <tr class="border-b text-sm">
+                        <tr class="border-b bg-muted/30 text-sm">
                             <th class="p-2 text-left">Player</th>
                             <th class="p-2 text-center">Team</th>
                             <th class="p-2 text-center">PTS</th>
@@ -60,7 +61,7 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
             </div>
 
             <div v-else class="space-y-3">
-                <div v-for="player in performers" :key="player.id" class="flex items-center justify-between rounded-lg bg-muted/50 p-3">
+                <div v-for="player in performers" :key="player.id" class="ui-surface-subtle flex items-center justify-between p-3">
                     <div class="flex-1">
                         <div class="font-medium">{{ playerName(player) }}</div>
                         <div class="text-sm text-muted-foreground">{{ teamLabel(player, homeTeamId, homeLabel, awayLabel) }}</div>

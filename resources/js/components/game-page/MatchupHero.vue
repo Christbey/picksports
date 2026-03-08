@@ -99,14 +99,14 @@ function totalClass(): string {
 </script>
 
 <template>
-    <div class="rounded-xl overflow-hidden text-white shadow-lg" :class="props.gradientClass">
-        <div class="px-6 py-8">
+    <div class="ui-surface overflow-hidden text-white" :class="props.gradientClass">
+        <div class="px-5 py-7 md:px-6 md:py-8">
             <div class="flex flex-col md:flex-row items-center justify-between gap-6">
                 <component
                     :is="props.linkTeams ? Link : 'div'"
                     v-if="awayTeam"
                     :href="props.linkTeams ? teamLink(awayTeam.id) : undefined"
-                    class="flex-1 flex flex-col items-center md:items-end gap-2 hover:opacity-80 transition-opacity"
+                    class="flex-1 flex flex-col items-center gap-2 transition-opacity hover:opacity-85 md:items-end"
                 >
                     <div class="relative">
                         <div
@@ -118,35 +118,35 @@ function totalClass(): string {
                             v-if="awayTeam.logo"
                             :src="awayTeam.logo"
                             :alt="awayTeam.name || 'Away Team'"
-                            class="relative z-10 h-20 w-20 object-contain drop-shadow-lg"
+                            class="relative z-10 h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
                         />
                     </div>
                     <div class="text-center md:text-right">
-                        <div class="text-xl md:text-2xl font-bold">{{ awayTeam.display_name || `${awayTeam.location || ''} ${awayTeam.name || ''}`.trim() || awayTeam.name || awayTeam.abbreviation || 'Away Team' }}</div>
-                        <div class="text-sm text-white/70">Away</div>
+                        <div class="text-xl font-semibold tracking-tight md:text-2xl">{{ awayTeam.display_name || `${awayTeam.location || ''} ${awayTeam.name || ''}`.trim() || awayTeam.name || awayTeam.abbreviation || 'Away Team' }}</div>
+                        <div class="text-xs uppercase tracking-wide text-white/70">Away</div>
                         <div v-if="awayRecentForm" class="text-xs text-white/60 mt-1">{{ awayRecentForm }}</div>
                     </div>
                 </component>
 
                 <div class="text-center min-w-[120px]">
-                    <div v-if="props.showScoreStatuses.includes(game.status) && game.away_score !== undefined && game.home_score !== undefined" class="text-4xl md:text-5xl font-bold tracking-tight">
+                    <div v-if="props.showScoreStatuses.includes(game.status) && game.away_score !== undefined && game.home_score !== undefined" class="text-4xl font-semibold tracking-tight md:text-5xl">
                         {{ game.away_score }} - {{ game.home_score }}
                     </div>
-                    <div v-else class="text-2xl md:text-3xl font-bold text-white/70">
+                    <div v-else class="text-2xl font-semibold text-white/70 md:text-3xl">
                         vs
                     </div>
                     <div class="mt-2 flex items-center justify-center gap-2">
                         <Badge class="bg-white/20 text-white border-white/30 hover:bg-white/30" :class="{ 'animate-pulse !bg-red-600 !border-red-500': props.badgePulseStatuses.includes(game.status) }">{{ gameStatus }}</Badge>
                         <Badge
                             v-if="winnerLabel()"
-                            class="bg-white/20 text-white border-white/30 hover:bg-white/30"
+                            class="border-white/35 bg-white/20 text-white hover:bg-white/30"
                             :class="winnerClass()"
                         >
                             {{ winnerLabel() }}
                         </Badge>
                         <Badge
                             v-if="totalLabel()"
-                            class="bg-white/20 text-white border-white/30 hover:bg-white/30"
+                            class="border-white/35 bg-white/20 text-white hover:bg-white/30"
                             :class="totalClass()"
                         >
                             {{ totalLabel() }}
@@ -158,7 +158,7 @@ function totalClass(): string {
                     :is="props.linkTeams ? Link : 'div'"
                     v-if="homeTeam"
                     :href="props.linkTeams ? teamLink(homeTeam.id) : undefined"
-                    class="flex-1 flex flex-col items-center md:items-start gap-2 hover:opacity-80 transition-opacity"
+                    class="flex-1 flex flex-col items-center gap-2 transition-opacity hover:opacity-85 md:items-start"
                 >
                     <div class="relative">
                         <div
@@ -170,19 +170,20 @@ function totalClass(): string {
                             v-if="homeTeam.logo"
                             :src="homeTeam.logo"
                             :alt="homeTeam.name || 'Home Team'"
-                            class="relative z-10 h-20 w-20 object-contain drop-shadow-lg"
+                            class="relative z-10 h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
                         />
                     </div>
                     <div class="text-center md:text-left">
-                        <div class="text-xl md:text-2xl font-bold">{{ homeTeam.display_name || `${homeTeam.location || ''} ${homeTeam.name || ''}`.trim() || homeTeam.name || homeTeam.abbreviation || 'Home Team' }}</div>
-                        <div class="text-sm text-white/70">Home</div>
+                        <div class="text-xl font-semibold tracking-tight md:text-2xl">{{ homeTeam.display_name || `${homeTeam.location || ''} ${homeTeam.name || ''}`.trim() || homeTeam.name || homeTeam.abbreviation || 'Home Team' }}</div>
+                        <div class="text-xs uppercase tracking-wide text-white/70">Home</div>
                         <div v-if="homeRecentForm" class="text-xs text-white/60 mt-1">{{ homeRecentForm }}</div>
                     </div>
                 </component>
             </div>
         </div>
 
-        <div class="bg-black/20 px-6 py-3 flex flex-wrap items-center justify-center gap-x-6 gap-y-1 text-sm text-white/80">
+        <div class="border-t border-white/15 bg-black/20 px-5 py-3 text-sm text-white/80 md:px-6">
+            <div class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1">
             <span>{{ formatDate(game.game_date) }}</span>
             <span v-for="(item, idx) in props.extraInfoItems" :key="idx">{{ item }}</span>
             <span v-if="venueLabel" class="flex items-center gap-1">
@@ -193,6 +194,7 @@ function totalClass(): string {
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zm12.553 1.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" /></svg>
                 {{ broadcastNetworks.join(', ') }}
             </span>
+            </div>
         </div>
     </div>
 </template>

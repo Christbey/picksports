@@ -35,7 +35,8 @@ const formattedScore = (game: RecentGameListItem, teamId: number): string => {
 <template>
     <Card v-if="recentGames.length > 0">
         <CardHeader>
-            <CardTitle>{{ title }}</CardTitle>
+            <div class="ui-kicker">Form Guide</div>
+            <CardTitle class="tracking-tight">{{ title }}</CardTitle>
             <div class="text-sm text-muted-foreground">{{ record }}</div>
         </CardHeader>
         <CardContent>
@@ -44,7 +45,7 @@ const formattedScore = (game: RecentGameListItem, teamId: number): string => {
                     v-for="recentGame in recentGames"
                     :key="recentGame.id"
                     :href="`${gameHrefPrefix}/${recentGame.id}`"
-                    class="block rounded-md border border-sidebar-border/70 p-3 transition-colors hover:bg-sidebar/50"
+                    class="ui-surface-subtle block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm"
                 >
                     <div class="flex items-center justify-between">
                         <div class="text-sm font-medium">

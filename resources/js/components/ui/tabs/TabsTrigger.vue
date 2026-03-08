@@ -16,10 +16,10 @@ const isActive = computed(() => activeTab?.value === props.value)
         type="button"
         @click="setActiveTab?.(value)"
         :class="[
-            'inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+            'inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-xl px-3.5 py-1.5 text-sm font-semibold tracking-tight ring-offset-background transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
             isActive
                 ? 'bg-background text-foreground shadow-sm'
-                : 'hover:bg-background/50 hover:text-foreground'
+                : 'text-muted-foreground hover:bg-background/65 hover:text-foreground'
         ]"
     >
         <slot />

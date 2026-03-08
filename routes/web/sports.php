@@ -3,6 +3,7 @@
 use App\Http\Controllers\BettingRecommendationsController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Debug\PredictionAccessController as DebugPredictionAccessController;
+use App\Http\Controllers\LiveScoreboardController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -22,6 +23,9 @@ foreach ($sportDomains as $sport => $definition) {
 Route::get('betting-recommendations', fn () => redirect()->route('nba.player-props'));
 
 Route::get('dashboard', DashboardController::class)->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('live-scoreboard', LiveScoreboardController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('live-scoreboard');
 
 Route::get('my-bets', function () {
     return Inertia::render('MyBets');

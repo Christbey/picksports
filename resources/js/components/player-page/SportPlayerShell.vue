@@ -362,22 +362,22 @@ onMounted(async () => {
     <Head :title="player.name" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-4 p-4">
-            <div class="flex items-start gap-4">
+        <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
+            <div class="ui-surface flex items-start gap-4 p-4 md:p-5">
                 <img
                     v-if="player.headshot_url"
                     :src="player.headshot_url"
                     :alt="player.name"
-                    class="h-24 w-24 rounded-lg object-cover"
+                    class="h-24 w-24 rounded-xl object-cover"
                 />
                 <div
                     v-else
-                    class="flex h-24 w-24 items-center justify-center rounded-lg bg-muted text-2xl font-bold text-muted-foreground"
+                    class="flex h-24 w-24 items-center justify-center rounded-xl bg-muted text-2xl font-bold text-muted-foreground"
                 >
                     {{ player.first_name?.[0] }}{{ player.last_name?.[0] }}
                 </div>
                 <div class="flex-1">
-                    <h1 class="text-3xl font-bold">{{ player.name }}</h1>
+                    <h1 class="text-3xl font-semibold tracking-tight">{{ player.name }}</h1>
                     <div
                         class="mt-1 flex items-center gap-2 text-muted-foreground"
                     >
@@ -478,6 +478,7 @@ onMounted(async () => {
                 <Card v-if="seasonSummaryValues">
                     <CardHeader>
                         <CardTitle
+                            class="tracking-tight"
                             >Season Averages ({{
                                 gameLogs.length
                             }}
@@ -491,7 +492,7 @@ onMounted(async () => {
                             <div
                                 v-for="card in seasonSummaryValues"
                                 :key="card.label"
-                                class="rounded-lg bg-muted/50 p-3 text-center"
+                                class="ui-surface-subtle p-3 text-center"
                             >
                                 <div class="text-sm text-muted-foreground">
                                     {{ card.label }}
@@ -519,11 +520,11 @@ onMounted(async () => {
                         <div v-if="error" class="mb-3 text-sm text-destructive">
                             {{ error }}
                         </div>
-                        <div v-if="gameLogs.length > 0" class="overflow-x-auto">
+                        <div v-if="gameLogs.length > 0" class="overflow-x-auto rounded-xl border border-border/70">
                             <table class="w-full text-sm">
                                 <thead>
                                     <tr
-                                        class="border-b text-left text-muted-foreground"
+                                        class="border-b bg-muted/35 text-left text-muted-foreground"
                                     >
                                         <th class="pr-4 pb-2 font-medium">
                                             Date
@@ -544,7 +545,7 @@ onMounted(async () => {
                                     <tr
                                         v-for="stat in gameLogs"
                                         :key="stat.id"
-                                        class="border-b transition-colors last:border-b-0 hover:bg-muted/50"
+                                        class="border-b transition-colors last:border-b-0 hover:bg-muted/40"
                                     >
                                         <td class="py-2 pr-4">
                                             <Link

@@ -17,7 +17,7 @@ defineProps<{
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>{{ title || 'Prediction' }}</CardTitle>
+            <CardTitle class="tracking-tight">{{ title || 'Prediction' }}</CardTitle>
         </CardHeader>
         <CardContent>
             <div class="mb-6">
@@ -32,23 +32,23 @@ defineProps<{
             </div>
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div class="rounded-lg border p-4 text-center">
+                <div class="ui-surface-subtle p-4 text-center">
                     <div class="text-sm text-muted-foreground">Spread</div>
-                    <div class="text-2xl font-bold">
+                    <div class="text-2xl font-semibold tracking-tight">
                         {{ prediction.predicted_spread > 0 ? '+' : '' }}{{ formatNumber(prediction.predicted_spread) }}
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground">{{ prediction.predicted_spread > 0 ? (homeLabel || 'Home') : (awayLabel || 'Away') }} favored</div>
                 </div>
-                <div class="rounded-lg border p-4 text-center">
+                <div class="ui-surface-subtle p-4 text-center">
                     <div class="text-sm text-muted-foreground">Total</div>
-                    <div class="text-2xl font-bold">
+                    <div class="text-2xl font-semibold tracking-tight">
                         {{ formatNumber(prediction.predicted_total) }}
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground">{{ projectedLabel || 'Projected points' }}</div>
                 </div>
-                <div class="rounded-lg border p-4 text-center">
+                <div class="ui-surface-subtle p-4 text-center">
                     <div class="text-sm text-muted-foreground">Confidence</div>
-                    <div class="text-2xl font-bold capitalize">
+                    <div class="text-2xl font-semibold capitalize tracking-tight">
                         {{ prediction.confidence_level }}
                     </div>
                     <div v-if="prediction.confidence_score" class="mt-1 text-xs text-muted-foreground">Score: {{ formatNumber(prediction.confidence_score) }}</div>

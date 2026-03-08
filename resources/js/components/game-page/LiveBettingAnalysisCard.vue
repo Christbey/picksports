@@ -18,6 +18,7 @@ defineProps<{
 <template>
     <Card v-if="hasLivePrediction || (bettingValue && bettingValue.length > 0)">
         <CardHeader>
+            <div class="ui-kicker">{{ hasLivePrediction ? 'Live Trading' : 'Market Edge' }}</div>
             <CardTitle class="flex items-center gap-2">
                 <span v-if="hasLivePrediction" class="relative flex h-3 w-3">
                     <span
@@ -30,7 +31,7 @@ defineProps<{
                 <span>{{
                     hasLivePrediction
                         ? 'Live Analysis'
-                        : 'Betting Value Detected'
+                        : 'Betting Signals'
                 }}</span>
                 <span
                     v-if="!hasLivePrediction && bettingValue?.length"

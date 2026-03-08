@@ -109,7 +109,7 @@ const sportsEventSchema = computed(() =>
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-4 p-4">
+        <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
             <Alert v-if="error" variant="destructive">
                 <AlertDescription>{{ error }}</AlertDescription>
             </Alert>
@@ -117,9 +117,9 @@ const sportsEventSchema = computed(() =>
             <template v-if="loading">
                 <slot name="loading">
                     <div class="space-y-4">
-                        <Skeleton class="h-32 w-full" />
-                        <Skeleton class="h-64 w-full" />
-                        <Skeleton class="h-64 w-full" />
+                        <Skeleton class="ui-surface h-32 w-full" />
+                        <Skeleton class="ui-surface h-64 w-full" />
+                        <Skeleton class="ui-surface h-64 w-full" />
                     </div>
                 </slot>
             </template>

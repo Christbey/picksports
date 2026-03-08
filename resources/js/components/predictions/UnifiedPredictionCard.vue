@@ -319,7 +319,7 @@ function finalCardClass(): string {
 <template>
     <Link
         :href="href"
-        class="relative block rounded-lg border border-sidebar-border/70 bg-sidebar-accent/30 p-3 transition-all hover:border-sidebar-border hover:bg-sidebar-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 md:p-4 dark:border-sidebar-border"
+        class="ui-surface-subtle relative block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-sidebar-border hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 md:p-4"
         :class="finalCardClass()"
     >
         <span
@@ -392,7 +392,7 @@ function finalCardClass(): string {
                 <div class="flex flex-wrap items-center gap-2 text-xs">
                     <span
                         v-if="weekLabel()"
-                        class="rounded-full border border-sidebar-border bg-sidebar px-2 py-0.5 text-sidebar-foreground"
+                        class="ui-chip text-sidebar-foreground"
                     >
                         {{ weekLabel() }}
                     </span>
@@ -400,10 +400,10 @@ function finalCardClass(): string {
             </div>
 
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-1 md:min-w-[180px]">
-                <div class="rounded-md border border-sidebar-border/60 bg-white/70 p-2 dark:bg-sidebar/60">
+                <div class="ui-surface-subtle p-2">
                     <div class="mb-1 flex items-center gap-1.5">
                         <Target class="h-3.5 w-3.5" />
-                        <span class="inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-foreground/80">
+                        <span class="ui-chip text-foreground/80">
                             Moneyline: {{ moneylineTeamLabel() }}
                         </span>
                     </div>

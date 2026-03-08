@@ -16,14 +16,14 @@ defineProps<{
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>{{ title }}</CardTitle>
+            <CardTitle class="tracking-tight">{{ title }}</CardTitle>
         </CardHeader>
         <CardContent>
-            <div class="space-y-3">
-                <div class="grid grid-cols-7 gap-2 border-b pb-2 text-sm font-medium">
-                    <div class="col-span-2 text-right">{{ awayLabel }}</div>
-                    <div class="col-span-3 text-center">Metric</div>
-                    <div class="col-span-2 text-left">{{ homeLabel }}</div>
+            <div class="space-y-3 rounded-xl border border-border/70 p-3">
+                <div class="grid grid-cols-7 gap-2 border-b pb-2 text-sm font-semibold">
+                    <div class="col-span-2 text-right text-foreground/90">{{ awayLabel }}</div>
+                    <div class="col-span-3 text-center text-muted-foreground">Metric</div>
+                    <div class="col-span-2 text-left text-foreground/90">{{ homeLabel }}</div>
                 </div>
 
                 <div class="grid grid-cols-7 items-center gap-2">

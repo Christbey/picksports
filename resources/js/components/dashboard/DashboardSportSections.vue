@@ -20,18 +20,18 @@ const {
         <div
             v-for="sport in sports"
             :key="sport.name"
-            class="overflow-hidden rounded-xl border border-sidebar-border/70 bg-white dark:border-sidebar-border dark:bg-sidebar"
+            class="ui-surface overflow-hidden"
         >
             <div
-                class="flex items-center justify-between bg-gradient-to-r p-4"
+                class="flex items-center justify-between bg-gradient-to-r p-4 md:p-5"
                 :class="getSportHeaderColor(sport.color)"
             >
                 <div>
-                    <h2 class="text-xl font-bold text-white">{{ sport.name }}</h2>
-                    <p class="text-sm text-white/80">{{ sport.fullName }}</p>
+                    <h2 class="text-xl font-semibold tracking-tight text-white">{{ sport.name }}</h2>
+                    <p class="text-sm text-white/85">{{ sport.fullName }}</p>
                 </div>
                 <div
-                    class="rounded-full bg-white/20 px-3 py-1 text-sm font-medium text-white"
+                    class="rounded-full border border-white/25 bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-white"
                 >
                     {{ sport.predictions.length }}
                     {{ sport.predictions.length === 1 ? 'game' : 'games' }}

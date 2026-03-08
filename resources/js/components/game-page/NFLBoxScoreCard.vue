@@ -15,12 +15,13 @@ defineProps<{
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>Box Score</CardTitle>
+            <div class="ui-kicker">Game Data</div>
+            <CardTitle class="tracking-tight">Box Score</CardTitle>
         </CardHeader>
         <CardContent>
-            <div class="overflow-x-auto">
+            <div class="ui-table-wrap">
                 <div class="min-w-[600px] space-y-4">
-                    <div class="grid grid-cols-7 gap-2 border-b pb-2 text-sm font-medium">
+                    <div class="grid grid-cols-7 gap-2 border-b bg-muted/30 px-2 pb-2 pt-2 text-sm font-medium">
                         <div class="col-span-2 text-right">{{ awayLabel }}</div>
                         <div class="col-span-3 text-center">Stat</div>
                         <div class="col-span-2 text-left">{{ homeLabel }}</div>

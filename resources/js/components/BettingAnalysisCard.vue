@@ -195,13 +195,13 @@ function totalResultClass(bet: BettingRecommendation): string {
         <!-- Live Prediction Card (only when actual live data exists) -->
         <div
             v-if="hasLivePredictionData"
-            class="rounded-md border border-red-200 bg-red-50/50 p-3 dark:border-red-900 dark:bg-red-950/30"
+            class="ui-surface-subtle p-3"
         >
             <div class="flex items-start justify-between gap-2">
                 <div class="flex-1 space-y-1">
                     <div class="flex items-center gap-2">
                         <span
-                            class="flex items-center gap-1 rounded bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900 dark:text-red-200"
+                            class="flex items-center gap-1 rounded-full border border-red-300/60 bg-red-500/12 px-2 py-0.5 text-xs font-semibold text-red-800 dark:border-red-600/30 dark:bg-red-500/20 dark:text-red-200"
                         >
                             <span
                                 class="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500"
@@ -235,7 +235,7 @@ function totalResultClass(bet: BettingRecommendation): string {
                         Real-time prediction updates based on current game state
                     </div>
                     <div class="flex flex-wrap gap-2 text-xs">
-                        <div class="rounded-full bg-red-100/70 px-2 py-1 dark:bg-red-900/30">
+                        <div class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16">
                             <span class="text-muted-foreground">Win Prob:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
@@ -249,7 +249,7 @@ function totalResultClass(bet: BettingRecommendation): string {
                                 {{ props.compact ? `(${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)` : `(was ${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)` }}
                             </span>
                         </div>
-                        <div class="rounded-full bg-red-100/70 px-2 py-1 dark:bg-red-900/30">
+                        <div class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16">
                             <span class="text-muted-foreground">Spread:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
@@ -262,7 +262,7 @@ function totalResultClass(bet: BettingRecommendation): string {
                                 {{ props.compact ? `(${formatSpread(livePrediction.preGamePredictedSpread)})` : `(was ${formatSpread(livePrediction.preGamePredictedSpread)})` }}
                             </span>
                         </div>
-                        <div class="rounded-full bg-red-100/70 px-2 py-1 dark:bg-red-900/30">
+                        <div class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16">
                             <span class="text-muted-foreground">Total:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
@@ -284,7 +284,7 @@ function totalResultClass(bet: BettingRecommendation): string {
         <div
             v-for="(bet, idx) in bettingValue"
             :key="idx"
-            class="rounded-md border border-sidebar-border/70 bg-sidebar/50 p-3"
+            class="ui-surface-subtle p-3"
         >
             <div class="flex items-start justify-between gap-2">
                 <div class="flex-1 space-y-1">

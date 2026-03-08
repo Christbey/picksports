@@ -35,9 +35,10 @@ const signalsForCategory = (
 </script>
 
 <template>
-    <Card class="overflow-hidden border-zinc-200/80 bg-gradient-to-b from-white to-zinc-50/30 shadow-sm dark:border-zinc-800 dark:from-zinc-950 dark:to-zinc-900/50">
+    <Card class="overflow-hidden">
         <CardHeader>
-            <CardTitle class="text-lg">{{ title }}</CardTitle>
+            <div class="ui-kicker">Pattern Signals</div>
+            <CardTitle class="text-lg tracking-tight">{{ title }}</CardTitle>
             <p v-if="subtitle" class="text-sm text-muted-foreground">{{ subtitle }}</p>
         </CardHeader>
         <CardContent>
@@ -49,21 +50,21 @@ const signalsForCategory = (
 
             <div v-else-if="allTrendCategories.length > 0" class="space-y-6">
                 <div class="grid gap-3 sm:grid-cols-3">
-                    <div class="rounded-lg border border-zinc-200/80 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/80">
+                    <div class="ui-surface-subtle px-3 py-2">
                         <p class="text-xs uppercase tracking-wide text-muted-foreground">Categories</p>
                         <p class="mt-1 text-xl font-semibold">{{ allTrendCategories.length }}</p>
                     </div>
-                    <div class="rounded-lg border border-zinc-200/80 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/80">
+                    <div class="ui-surface-subtle px-3 py-2">
                         <p class="text-xs uppercase tracking-wide text-muted-foreground">{{ awayLabel || 'Away' }} Signals</p>
                         <p class="mt-1 text-xl font-semibold">{{ signalCountForSide(awayTrends) }}</p>
                     </div>
-                    <div class="rounded-lg border border-zinc-200/80 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-900/80">
+                    <div class="ui-surface-subtle px-3 py-2">
                         <p class="text-xs uppercase tracking-wide text-muted-foreground">{{ homeLabel || 'Home' }} Signals</p>
                         <p class="mt-1 text-xl font-semibold">{{ signalCountForSide(homeTrends) }}</p>
                     </div>
                 </div>
 
-                <div v-if="topMatchupEdges && topMatchupEdges.length > 0" class="rounded-xl border border-emerald-200/70 bg-emerald-50/70 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+                <div v-if="topMatchupEdges && topMatchupEdges.length > 0" class="rounded-xl border border-emerald-300/60 bg-emerald-500/10 p-4 backdrop-blur-sm dark:border-emerald-800/50 dark:bg-emerald-500/12">
                     <h4 class="mb-2 text-sm font-semibold text-emerald-800 dark:text-emerald-300">Top Matchup Edges</h4>
                     <ul class="space-y-1 text-sm">
                         <li v-for="(edge, idx) in topMatchupEdges" :key="idx" class="flex items-start gap-2">
@@ -73,7 +74,7 @@ const signalsForCategory = (
                     </ul>
                 </div>
 
-                <div v-for="category in allTrendCategories" :key="category" class="rounded-xl border border-zinc-200/80 bg-white/95 p-4 dark:border-zinc-800 dark:bg-zinc-900/80">
+                <div v-for="category in allTrendCategories" :key="category" class="ui-surface-subtle p-4">
                     <div class="mb-3 flex items-center justify-between gap-2">
                         <h4 class="font-semibold">{{ formatCategoryName(category) }}</h4>
                         <Badge variant="outline" class="text-[11px]">
@@ -88,7 +89,7 @@ const signalsForCategory = (
                     </div>
 
                     <div v-else class="grid gap-3 md:grid-cols-2">
-                        <div class="rounded-lg border border-zinc-200/70 bg-zinc-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+                        <div class="rounded-lg border border-border/70 bg-muted/35 p-3">
                             <div class="mb-2 flex items-center justify-between">
                                 <div class="text-sm font-medium text-muted-foreground">{{ awayLabel }}</div>
                                 <span class="text-xs text-muted-foreground">{{ signalsForCategory(awayTrends, category) }} signals</span>
@@ -101,7 +102,7 @@ const signalsForCategory = (
                             </ul>
                             <p v-else class="text-sm text-muted-foreground">No trends available</p>
                         </div>
-                        <div class="rounded-lg border border-zinc-200/70 bg-zinc-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+                        <div class="rounded-lg border border-border/70 bg-muted/35 p-3">
                             <div class="mb-2 flex items-center justify-between">
                                 <div class="text-sm font-medium text-muted-foreground">{{ homeLabel }}</div>
                                 <span class="text-xs text-muted-foreground">{{ signalsForCategory(homeTrends, category) }} signals</span>

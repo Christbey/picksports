@@ -296,6 +296,12 @@ const statColumns = computed(
         defaultStatColumns.value,
 );
 
+const activeSortLabel = computed(
+    () =>
+        sortOptions.value.find((option) => option.key === sortBy.value)?.label
+        ?? sortBy.value,
+);
+
 const formatColumnValue = (
     entry: PlayerLeaderboardEntry,
     column: StatColumn,
@@ -303,6 +309,24 @@ const formatColumnValue = (
     const value = (entry as Record<string, number | undefined>)[column.key];
     if (column.format) return column.format(value, entry);
     return Number(value ?? 0).toFixed(1);
+};
+
+const rankColorClass = (rankIndex: number, total: number): string => {
+    if (total <= 2) return '';
+
+    const topCutoff = Math.max(1, Math.floor(total * 0.2));
+    const bottomCutoffStart = Math.ceil(total * 0.8);
+    const oneBasedRank = rankIndex + 1;
+
+    if (oneBasedRank <= topCutoff) {
+        return 'text-emerald-600 dark:text-emerald-400';
+    }
+
+    if (oneBasedRank >= bottomCutoffStart) {
+        return 'text-rose-600 dark:text-rose-400';
+    }
+
+    return '';
 };
 
 onMounted(() => {
@@ -338,10 +362,11 @@ watch(activeCategory, (category) => {
     <Head :title="config.pageTitle" />
 
     <AppLayout :breadcrumbs="[config.breadcrumb]">
-        <div class="flex h-full flex-1 flex-col gap-4 p-4">
+        <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
             <div class="flex items-center justify-between">
                 <div>
-                    <h1 class="text-2xl font-bold">{{ config.heading }}</h1>
+                    <p class="ui-kicker">Leaderboard</p>
+                    <h1 class="text-3xl font-semibold tracking-tight">{{ config.heading }}</h1>
                     <p class="text-sm text-muted-foreground">
                         {{ config.description }}
                     </p>
@@ -356,11 +381,14 @@ watch(activeCategory, (category) => {
             <Card>
                 <CardContent class="pt-6">
                     <div class="flex flex-wrap items-end gap-4">
-                        <SeasonSelect
-                            id="player-stats-season"
-                            v-model="selectedSeason"
-                            :options="availableSeasons"
-                        />
+                        <div class="space-y-2">
+                            <p class="ui-kicker">Season</p>
+                            <SeasonSelect
+                                id="player-stats-season"
+                                v-model="selectedSeason"
+                                :options="availableSeasons"
+                            />
+                        </div>
                         <div class="min-w-[200px] flex-1">
                             <Input
                                 v-model="searchQuery"
@@ -381,6 +409,7 @@ watch(activeCategory, (category) => {
                                         : 'outline'
                                 "
                                 size="sm"
+                                class="h-9"
                                 @click="selectedCategory = category.key"
                             >
                                 {{ category.label }}
@@ -396,6 +425,7 @@ watch(activeCategory, (category) => {
                                         : 'outline'
                                 "
                                 size="sm"
+                                class="h-9"
                                 @click="toggleSort(option.key)"
                             >
                                 {{ option.label }}
@@ -412,6 +442,21 @@ watch(activeCategory, (category) => {
                 </CardContent>
             </Card>
 
+            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span class="ui-chip text-foreground/80">
+                    {{ sortedPlayers.length }} players
+                </span>
+                <span class="ui-chip text-foreground/80">
+                    Sort: {{ activeSortLabel }} {{ sortDesc ? '↓' : '↑' }}
+                </span>
+                <span v-if="selectedSeason" class="ui-chip text-foreground/80">
+                    Season: {{ selectedSeason }}
+                </span>
+                <span v-if="searchQuery" class="ui-chip text-foreground/80">
+                    Search: "{{ searchQuery }}"
+                </span>
+            </div>
+
             <Alert v-if="error" variant="destructive">
                 <AlertDescription>{{ error }}</AlertDescription>
             </Alert>
@@ -422,13 +467,14 @@ watch(activeCategory, (category) => {
 
             <Card v-else>
                 <CardHeader>
-                    <CardTitle>Player Rankings</CardTitle>
+                    <div class="ui-kicker">Standings</div>
+                    <CardTitle class="tracking-tight">Player Rankings</CardTitle>
                 </CardHeader>
                 <CardContent>
-                    <div class="overflow-x-auto">
+                    <div class="ui-table-wrap">
                         <table class="w-full text-sm">
                             <thead>
-                                <tr class="border-b text-left">
+                                <tr class="border-b bg-muted/35 text-left">
                                     <th class="p-2 font-medium">#</th>
                                     <th class="p-2 font-medium">Player</th>
                                     <th class="p-2 text-right font-medium">
@@ -453,10 +499,12 @@ watch(activeCategory, (category) => {
                                 <tr
                                     v-for="(entry, index) in sortedPlayers"
                                     :key="entry.player_id"
-                                    class="border-b hover:bg-muted/50"
+                                    class="border-b transition-colors odd:bg-muted/15 hover:bg-muted/40"
                                 >
                                     <td class="p-2 text-muted-foreground">
-                                        {{ index + 1 }}
+                                        <span class="font-medium" :class="rankColorClass(index, sortedPlayers.length)">
+                                            {{ index + 1 }}
+                                        </span>
                                     </td>
                                     <td class="p-2 font-medium">
                                         <Link
@@ -490,6 +538,12 @@ watch(activeCategory, (category) => {
                                             <span>{{
                                                 entry.player.full_name
                                             }}</span>
+                                            <span
+                                                v-if="entry.player.position"
+                                                class="text-xs text-muted-foreground"
+                                            >
+                                                {{ entry.player.position }}
+                                            </span>
                                         </Link>
                                         <div
                                             v-else-if="entry.player"
@@ -514,6 +568,12 @@ watch(activeCategory, (category) => {
                                             <span>{{
                                                 entry.player.full_name
                                             }}</span>
+                                            <span
+                                                v-if="entry.player.position"
+                                                class="text-xs text-muted-foreground"
+                                            >
+                                                {{ entry.player.position }}
+                                            </span>
                                         </div>
                                     </td>
                                     <td
@@ -547,7 +607,10 @@ watch(activeCategory, (category) => {
                                         v-for="column in statColumns"
                                         :key="column.key as string"
                                         class="p-2 text-right"
-                                        :class="column.cellClass ?? ''"
+                                        :class="[
+                                            column.cellClass ?? '',
+                                            column.key === sortBy ? rankColorClass(index, sortedPlayers.length) : '',
+                                        ]"
                                     >
                                         {{ formatColumnValue(entry, column) }}
                                     </td>

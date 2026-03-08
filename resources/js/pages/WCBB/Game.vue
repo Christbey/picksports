@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import WCBBTeamController from '@/actions/App/Http/Controllers/WCBB/TeamController';
 import BasketballGameInsights from '@/components/game-page/BasketballGameInsights.vue';
+import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
@@ -15,7 +16,6 @@ const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     sport: 'wcbb',
     game: props.game,
     teamLink: (id: number) => WCBBTeamController(id),
-    showTrends: false,
     showLinescore: () => false,
 });
 
@@ -26,6 +26,7 @@ const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ??
 <template>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
+            <BettingPlanCard :betting-plan="pageProps.prediction?.narrative?.betting_plan" />
             <BasketballGameInsights v-bind="insightsProps" :show-recap="false" />
             <InjuryReportCard
                 :away-team-abbr="pageProps.awayTeam?.abbreviation"

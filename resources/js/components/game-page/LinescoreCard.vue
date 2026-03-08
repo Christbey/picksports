@@ -26,13 +26,13 @@ const getPeriodLabel = (period: unknown, index: number, usePeriodNumbers?: boole
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>{{ title }}</CardTitle>
+            <CardTitle class="tracking-tight">{{ title }}</CardTitle>
         </CardHeader>
         <CardContent>
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto rounded-xl border border-border/70">
                 <table class="w-full">
                     <thead>
-                        <tr class="border-b">
+                        <tr class="border-b bg-muted/35">
                             <th class="text-left p-2 text-muted-foreground font-medium">Team</th>
                             <th
                                 v-for="(period, index) in (usePeriodNumbers ? homeLinescores : Array.from({ length: Math.max(homeLinescores.length, awayLinescores.length) }))"
@@ -45,7 +45,7 @@ const getPeriodLabel = (period: unknown, index: number, usePeriodNumbers?: boole
                         </tr>
                     </thead>
                     <tbody>
-                        <tr class="border-b">
+                        <tr class="border-b transition-colors hover:bg-muted/40">
                             <td class="p-2 font-medium">
                                 <span class="flex items-center gap-2">
                                     <img v-if="awayTeam?.logo" :src="awayTeam.logo" :alt="awayTeam.abbreviation || 'Away'" class="h-5 w-5 object-contain" />
@@ -57,7 +57,7 @@ const getPeriodLabel = (period: unknown, index: number, usePeriodNumbers?: boole
                             </td>
                             <td class="text-center p-2 font-bold" :class="(awayScore ?? -1) > (homeScore ?? -1) ? 'text-green-600 dark:text-green-400' : ''">{{ awayScore ?? '-' }}</td>
                         </tr>
-                        <tr>
+                        <tr class="transition-colors hover:bg-muted/40">
                             <td class="p-2 font-medium">
                                 <span class="flex items-center gap-2">
                                     <img v-if="homeTeam?.logo" :src="homeTeam.logo" :alt="homeTeam.abbreviation || 'Home'" class="h-5 w-5 object-contain" />

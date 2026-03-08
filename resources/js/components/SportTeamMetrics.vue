@@ -72,6 +72,10 @@ const currentSortOption = computed(() => {
     return props.config.sortOptions.find((o) => o.key === sortBy.value);
 });
 
+const activeSortLabel = computed(
+    () => currentSortOption.value?.label ?? sortBy.value,
+);
+
 const filteredMetrics = computed(() => {
     if (!searchQuery.value) {
         return metrics.value;
@@ -138,6 +142,24 @@ const toggleSort = (key: string) => {
     }
 };
 
+const rankColorClass = (rankIndex: number, total: number): string => {
+    if (total <= 2) return '';
+
+    const topCutoff = Math.max(1, Math.floor(total * 0.2));
+    const bottomCutoffStart = Math.ceil(total * 0.8);
+    const oneBasedRank = rankIndex + 1;
+
+    if (oneBasedRank <= topCutoff) {
+        return 'text-emerald-600 dark:text-emerald-400';
+    }
+
+    if (oneBasedRank >= bottomCutoffStart) {
+        return 'text-rose-600 dark:text-rose-400';
+    }
+
+    return '';
+};
+
 watch(selectedSeason, () => {
     fetchMetrics();
 });
@@ -160,10 +182,11 @@ onMounted(async () => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <RenderErrorBoundary title="Team Metrics Render Error">
-            <div class="flex h-full flex-1 flex-col gap-4 p-4">
+            <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
                 <div class="flex items-center justify-between">
                     <div>
-                        <h1 class="text-2xl font-bold">{{ config.title }}</h1>
+                        <p class="ui-kicker">Rankings</p>
+                        <h1 class="text-3xl font-semibold tracking-tight">{{ config.title }}</h1>
                         <p class="text-sm text-muted-foreground">
                             {{ config.subtitle }}
                         </p>
@@ -175,11 +198,14 @@ onMounted(async () => {
                 <Card>
                     <CardContent class="pt-6">
                         <div class="flex flex-wrap items-end gap-4">
-                            <SeasonSelect
-                                id="metrics-season"
-                                v-model="selectedSeason"
-                                :options="availableSeasons"
-                            />
+                            <div class="space-y-2">
+                                <p class="ui-kicker">Season</p>
+                                <SeasonSelect
+                                    id="metrics-season"
+                                    v-model="selectedSeason"
+                                    :options="availableSeasons"
+                                />
+                            </div>
                             <div class="min-w-[200px] flex-1">
                                 <Input v-model="searchQuery" placeholder="Search by team name..." class="w-full" />
                             </div>
@@ -189,6 +215,7 @@ onMounted(async () => {
                                     :key="option.key"
                                     :variant="sortBy === option.key ? 'default' : 'outline'"
                                     size="sm"
+                                    class="h-9"
                                     @click="toggleSort(option.key)"
                                 >
                                     {{ option.label }}
@@ -198,6 +225,21 @@ onMounted(async () => {
                         </div>
                     </CardContent>
                 </Card>
+
+                <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <span class="ui-chip text-foreground/80">
+                        {{ sortedMetrics.length }} teams
+                    </span>
+                    <span class="ui-chip text-foreground/80">
+                        Sort: {{ activeSortLabel }} {{ sortDesc ? '↓' : '↑' }}
+                    </span>
+                    <span v-if="selectedSeason" class="ui-chip text-foreground/80">
+                        Season: {{ selectedSeason }}
+                    </span>
+                    <span v-if="searchQuery" class="ui-chip text-foreground/80">
+                        Search: "{{ searchQuery }}"
+                    </span>
+                </div>
 
                 <Alert v-if="error" variant="destructive">
                     <AlertDescription>{{ error }}</AlertDescription>
@@ -209,13 +251,14 @@ onMounted(async () => {
 
                 <Card v-else>
                     <CardHeader>
-                        <CardTitle>Team Rankings</CardTitle>
+                        <div class="ui-kicker">Standings</div>
+                        <CardTitle class="tracking-tight">Team Rankings</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div class="overflow-x-auto">
+                        <div class="ui-table-wrap">
                             <table class="w-full text-sm">
                                 <thead>
-                                    <tr class="border-b text-left">
+                                    <tr class="border-b bg-muted/35 text-left">
                                         <th class="p-2 font-medium">#</th>
                                         <th class="p-2 font-medium">Team</th>
                                         <th v-for="col in config.columns" :key="col.label" class="p-2 text-right font-medium">
@@ -227,11 +270,15 @@ onMounted(async () => {
                                     <tr
                                         v-for="(metric, index) in sortedMetrics"
                                         :key="metric.id"
-                                        class="border-b hover:bg-muted/50"
+                                        class="border-b transition-colors odd:bg-muted/15 hover:bg-muted/40"
                                         :class="{ 'opacity-60': config.hasMeetsMinimum && !metric.meets_minimum }"
                                     >
-                                        <td class="p-2 text-muted-foreground">{{ index + 1 }}</td>
-                                        <td class="p-2 font-medium">
+                                        <td class="p-2 text-muted-foreground">
+                                            <span class="font-medium" :class="rankColorClass(index, sortedMetrics.length)">
+                                                {{ index + 1 }}
+                                            </span>
+                                        </td>
+                                        <td class="p-2 font-medium" :class="rankColorClass(index, sortedMetrics.length)">
                                             <Link
                                                 v-if="metric.team?.id != null"
                                                 :href="config.teamLink(metric.team.id)"

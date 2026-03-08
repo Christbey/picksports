@@ -2,6 +2,7 @@
 import { Head } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import DashboardEmptyState from '@/components/dashboard/DashboardEmptyState.vue';
+import DashboardLiveStrip from '@/components/dashboard/DashboardLiveStrip.vue';
 import DashboardSportSections from '@/components/dashboard/DashboardSportSections.vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
@@ -46,20 +47,21 @@ const breadcrumbs: BreadcrumbItem[] = [
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <RenderErrorBoundary title="Dashboard Render Error">
-            <div class="flex h-full flex-1 flex-col gap-4 rounded-xl p-4">
+            <div class="flex h-full flex-1 flex-col gap-5 rounded-[1.25rem] p-3 md:p-4">
                 <!-- Subscription Banner -->
                 <SubscriptionBanner variant="gradient" />
+                <DashboardLiveStrip :sports="sports" />
 
                 <div class="grid gap-3 sm:grid-cols-3">
-                    <div class="rounded-xl border border-sidebar-border/70 bg-white p-4 dark:border-sidebar-border dark:bg-sidebar">
+                    <div class="ui-surface p-4">
                         <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Predictions Today</p>
-                        <p class="mt-1 text-2xl font-bold">{{ stats.total_predictions_today }}</p>
+                        <p class="mt-1 text-3xl font-semibold tracking-tight">{{ stats.total_predictions_today }}</p>
                     </div>
-                    <div class="rounded-xl border border-sidebar-border/70 bg-white p-4 dark:border-sidebar-border dark:bg-sidebar">
+                    <div class="ui-surface p-4">
                         <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Games Today</p>
-                        <p class="mt-1 text-2xl font-bold">{{ stats.total_games_today }}</p>
+                        <p class="mt-1 text-3xl font-semibold tracking-tight">{{ stats.total_games_today }}</p>
                     </div>
-                    <div class="rounded-xl border border-sidebar-border/70 bg-white p-4 dark:border-sidebar-border dark:bg-sidebar">
+                    <div class="ui-surface p-4">
                         <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Healthchecks</p>
                         <p class="mt-2 inline-flex rounded-full px-2.5 py-1 text-sm font-semibold capitalize" :class="healthStatusClass">
                             {{ stats.healthcheck_status }}

@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
 import BasketballGameInsights from '@/components/game-page/BasketballGameInsights.vue';
+import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
@@ -48,6 +49,9 @@ const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ??
                 :winner-correct="pageProps.prediction?.winner_correct ?? null"
                 :actual-total="pageProps.prediction?.actual_total ?? null"
                 sportsbook-label="Vegas"
+            />
+            <BettingPlanCard
+                :betting-plan="pageProps.prediction?.narrative?.betting_plan"
             />
             <BasketballGameInsights
                 v-bind="insightsProps"

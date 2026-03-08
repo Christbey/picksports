@@ -14,7 +14,8 @@ defineProps<{
 <template>
     <Card>
         <CardHeader>
-            <CardTitle>Prediction Model</CardTitle>
+            <div class="ui-kicker">Forecast</div>
+            <CardTitle class="tracking-tight">Prediction Model</CardTitle>
         </CardHeader>
         <CardContent>
             <div class="mb-6">
@@ -28,25 +29,25 @@ defineProps<{
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
-                <div class="rounded-lg border p-3 text-center">
+            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div class="ui-surface-subtle p-3 text-center">
                     <div class="text-sm text-muted-foreground">Away ELO</div>
-                    <div class="text-2xl font-bold">{{ formatNumber(prediction.away_elo, 0) }}</div>
+                    <div class="text-2xl font-semibold tracking-tight">{{ formatNumber(prediction.away_elo, 0) }}</div>
                     <div class="mt-0.5 text-xs text-muted-foreground">{{ awayLabel }}</div>
                 </div>
-                <div class="rounded-lg border p-3 text-center">
+                <div class="ui-surface-subtle p-3 text-center">
                     <div class="text-sm text-muted-foreground">Home ELO</div>
-                    <div class="text-2xl font-bold">{{ formatNumber(prediction.home_elo, 0) }}</div>
+                    <div class="text-2xl font-semibold tracking-tight">{{ formatNumber(prediction.home_elo, 0) }}</div>
                     <div class="mt-0.5 text-xs text-muted-foreground">{{ homeLabel }}</div>
                 </div>
-                <div class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-center">
+                <div class="ui-surface-subtle border-primary/25 bg-primary/8 p-3 text-center">
                     <div class="text-sm text-muted-foreground">Spread</div>
-                    <div class="text-2xl font-bold text-primary">{{ prediction.predicted_spread !== undefined ? formatSpread(prediction.predicted_spread) : '-' }}</div>
+                    <div class="text-2xl font-semibold tracking-tight text-primary">{{ prediction.predicted_spread !== undefined ? formatSpread(prediction.predicted_spread) : '-' }}</div>
                     <div class="mt-0.5 text-xs text-muted-foreground">{{ Number(prediction.predicted_spread) > 0 ? (homeLabel || 'Home') : (awayLabel || 'Away') }} favored</div>
                 </div>
-                <div class="rounded-lg border border-primary/20 bg-primary/5 p-3 text-center">
+                <div class="ui-surface-subtle border-primary/25 bg-primary/8 p-3 text-center">
                     <div class="text-sm text-muted-foreground">Win Prob</div>
-                    <div class="text-2xl font-bold text-primary">{{ formatNumber(Number(prediction.win_probability) * 100, 1) }}%</div>
+                    <div class="text-2xl font-semibold tracking-tight text-primary">{{ formatNumber(Number(prediction.win_probability) * 100, 1) }}%</div>
                     <div class="mt-0.5 text-xs text-muted-foreground">{{ homeLabel }}</div>
                 </div>
             </div>

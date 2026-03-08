@@ -77,100 +77,100 @@ const initials = (name: string | null | undefined): string => {
 </script>
 
 <template>
-    <div class="rounded-2xl border bg-white/95 p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90">
-        <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+    <div class="ui-surface p-5 md:p-6">
+        <h3 class="ui-kicker">
             Injury Report
         </h3>
         <div class="mt-4 grid gap-4 md:grid-cols-2">
             <div>
-                <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                <p class="text-sm font-semibold text-foreground/90">
                     {{ awayTeamAbbr || 'Away' }}
                 </p>
                 <ul v-if="awayInjuries.length > 0" class="mt-2 space-y-2">
                     <li
                         v-for="injury in awayInjuries"
                         :key="`away-${injury.id}`"
-                        class="rounded border border-zinc-200 p-2 dark:border-zinc-700"
+                        class="ui-surface-subtle p-2"
                     >
                         <div class="flex items-start gap-3">
                             <img
                                 v-if="injury.player_headshot"
                                 :src="injury.player_headshot"
                                 :alt="injury.player_name || 'Player'"
-                                class="h-10 w-10 rounded-full object-cover ring-1 ring-zinc-200 dark:ring-zinc-700"
+                                class="h-10 w-10 rounded-full object-cover ring-1 ring-border/70"
                             />
                             <div
                                 v-else
-                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground/80"
                             >
                                 {{ initials(injury.player_name) }}
                             </div>
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ injury.player_name || 'Player' }}</p>
+                                    <p class="font-medium text-foreground">{{ injury.player_name || 'Player' }}</p>
                                     <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', statusClass(injury.status)]">
                                         {{ injury.status || 'Injury' }}
                                     </span>
                                 </div>
-                                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                <p class="text-xs text-muted-foreground">
                                     {{ injury.detail || injury.type || 'No details' }}
                                 </p>
                                 <p class="text-xs font-medium" :class="impactInfo(injury).className">
                                     Potential game impact: {{ impactInfo(injury).label }}
                                 </p>
-                                <p v-if="injury.impact_spread || injury.impact_total" class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                <p v-if="injury.impact_spread || injury.impact_total" class="text-[11px] text-muted-foreground">
                                     Model effect: {{ Number(injury.impact_spread || 0).toFixed(2) }} spread pts, {{ Number(injury.impact_total || 0).toFixed(2) }} total pts
                                 </p>
                             </div>
                         </div>
                     </li>
                 </ul>
-                <p v-else class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">No active injuries listed.</p>
+                <p v-else class="mt-2 text-sm text-muted-foreground">No active injuries listed.</p>
             </div>
             <div>
-                <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+                <p class="text-sm font-semibold text-foreground/90">
                     {{ homeTeamAbbr || 'Home' }}
                 </p>
                 <ul v-if="homeInjuries.length > 0" class="mt-2 space-y-2">
                     <li
                         v-for="injury in homeInjuries"
                         :key="`home-${injury.id}`"
-                        class="rounded border border-zinc-200 p-2 dark:border-zinc-700"
+                        class="ui-surface-subtle p-2"
                     >
                         <div class="flex items-start gap-3">
                             <img
                                 v-if="injury.player_headshot"
                                 :src="injury.player_headshot"
                                 :alt="injury.player_name || 'Player'"
-                                class="h-10 w-10 rounded-full object-cover ring-1 ring-zinc-200 dark:ring-zinc-700"
+                                class="h-10 w-10 rounded-full object-cover ring-1 ring-border/70"
                             />
                             <div
                                 v-else
-                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-200 text-xs font-semibold text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+                                class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground/80"
                             >
                                 {{ initials(injury.player_name) }}
                             </div>
                             <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <p class="font-medium text-zinc-800 dark:text-zinc-100">{{ injury.player_name || 'Player' }}</p>
+                                    <p class="font-medium text-foreground">{{ injury.player_name || 'Player' }}</p>
                                     <span :class="['rounded-full px-2 py-0.5 text-[11px] font-medium', statusClass(injury.status)]">
                                         {{ injury.status || 'Injury' }}
                                     </span>
                                 </div>
-                                <p class="text-xs text-zinc-500 dark:text-zinc-400">
+                                <p class="text-xs text-muted-foreground">
                                     {{ injury.detail || injury.type || 'No details' }}
                                 </p>
                                 <p class="text-xs font-medium" :class="impactInfo(injury).className">
                                     Potential game impact: {{ impactInfo(injury).label }}
                                 </p>
-                                <p v-if="injury.impact_spread || injury.impact_total" class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                                <p v-if="injury.impact_spread || injury.impact_total" class="text-[11px] text-muted-foreground">
                                     Model effect: {{ Number(injury.impact_spread || 0).toFixed(2) }} spread pts, {{ Number(injury.impact_total || 0).toFixed(2) }} total pts
                                 </p>
                             </div>
                         </div>
                     </li>
                 </ul>
-                <p v-else class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">No active injuries listed.</p>
+                <p v-else class="mt-2 text-sm text-muted-foreground">No active injuries listed.</p>
             </div>
         </div>
     </div>

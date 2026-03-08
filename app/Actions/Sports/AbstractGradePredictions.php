@@ -15,20 +15,37 @@ abstract class AbstractGradePredictions
 
     public function execute(?int $season = null): array
     {
-        $query = $this->newPredictionQuery()
+        $query = $this->baseUngradedFinalPredictionsQuery();
+
+        if ($season !== null) {
+            $query->where($this->gamesTable().'.season', $season);
+        }
+
+        return $this->gradePredictionsCollection($query->get());
+    }
+
+    public function executeForGame(int $gameId): array
+    {
+        $predictions = $this->baseUngradedFinalPredictionsQuery()
+            ->where($this->predictionTable().'.game_id', $gameId)
+            ->get();
+
+        return $this->gradePredictionsCollection($predictions);
+    }
+
+    protected function baseUngradedFinalPredictionsQuery()
+    {
+        return $this->newPredictionQuery()
             ->join($this->gamesTable(), $this->predictionTable().'.game_id', '=', $this->gamesTable().'.id')
             ->where($this->gamesTable().'.status', 'STATUS_FINAL')
             ->whereNotNull($this->gamesTable().'.home_score')
             ->whereNotNull($this->gamesTable().'.away_score')
             ->whereNull($this->predictionTable().'.graded_at')
             ->select($this->predictionTable().'.*', $this->gamesTable().'.home_score', $this->gamesTable().'.away_score');
+    }
 
-        if ($season !== null) {
-            $query->where($this->gamesTable().'.season', $season);
-        }
-
-        $predictions = $query->get();
-
+    protected function gradePredictionsCollection(Collection $predictions): array
+    {
         if ($predictions->isEmpty()) {
             return $this->emptyResults();
         }

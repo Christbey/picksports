@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Services\GameFinalizationDispatcher;
 use App\Services\ESPN\BaseEspnService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -153,12 +154,15 @@ abstract class AbstractSyncGamesFromScoreboard
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
 
             if ($existingGame) {
+                $previousStatus = (string) ($existingGame->status ?? '');
                 if (! in_array($existingGame->status, GameData::finalStatuses(), true)) {
                     $existingGame->update($attributes);
                 }
-                $game = $existingGame;
+                $game = $existingGame->fresh();
+                app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus);
             } else {
                 $game = $gameModel::query()->create($attributes);
+                app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, null);
             }
 
             $this->updateLivePrediction->execute($game);
@@ -208,6 +212,8 @@ abstract class AbstractSyncGamesFromScoreboard
      */
     protected function updateGameFromSummary(array $gameData, Model $game): void
     {
+        $previousStatus = (string) ($game->status ?? '');
+
         $header = $gameData['header'] ?? [];
         $competition = $header['competitions'][0] ?? [];
         $competitors = $competition['competitors'] ?? [];
@@ -226,6 +232,8 @@ abstract class AbstractSyncGamesFromScoreboard
             'period' => isset($status['period']) ? (int) $status['period'] : $game->period,
             'game_clock' => $status['displayClock'] ?? $game->game_clock,
         ]);
+
+        app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
     }
 
     /**

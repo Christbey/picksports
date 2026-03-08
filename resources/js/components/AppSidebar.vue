@@ -53,7 +53,7 @@ import AppLogo from './AppLogo.vue';
 const footballIconProps = { icon: faFootball };
 const basketballIconProps = { icon: faBasketball };
 const baseballIconProps = { icon: faBaseball };
-const playerPropsHref = (sport: 'nfl' | 'nba' | 'mlb' | 'cbb') => `/${sport}/player-props`;
+const playerPropsHref = (sport: 'nfl' | 'nba' | 'mlb') => `/${sport}/player-props`;
 
 const openFeedbackModal = () => {
     if (typeof window === 'undefined') {
@@ -229,10 +229,6 @@ const sportNavItems: NavItem[] = [
             {
                 title: 'Tournament Forecast',
                 href: cbbTournamentForecast(),
-            },
-            {
-                title: 'Player Props',
-                href: playerPropsHref('cbb'),
             },
         ],
     },

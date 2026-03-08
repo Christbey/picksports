@@ -3,12 +3,15 @@
 namespace App\Actions\ESPN\Concerns;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Services\GameFinalizationDispatcher;
 use Illuminate\Database\Eloquent\Model;
 
 trait UpdatesGameFromSummary
 {
     protected function updateGameFromSummary(array $gameData, Model $game): bool
     {
+        $previousStatus = (string) ($game->status ?? '');
+
         $header = $gameData['header'] ?? [];
         $competitions = $header['competitions'] ?? [];
         $competition = $competitions[0] ?? [];
@@ -34,6 +37,8 @@ trait UpdatesGameFromSummary
             'game_clock' => $status['displayClock'] ?? null,
             'broadcast_networks' => ! empty($broadcastNetworks) ? $broadcastNetworks : null,
         ]);
+
+        app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
 
         return true;
     }

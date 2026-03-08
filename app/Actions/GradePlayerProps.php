@@ -55,8 +55,26 @@ class GradePlayerProps
 
     public function execute(string $sport, ?int $season = null): array
     {
-        // Find ungraded props for completed games with player stats
         $props = $this->getUngradedProps($sport, $season);
+
+        return $this->gradePropsCollection($props);
+    }
+
+    public function executeForGame(string $sport, int $gameId): array
+    {
+        $query = $this->getUngradedPropsQuery($sport);
+        if ($query === null) {
+            return $this->gradePropsCollection(collect());
+        }
+
+        $props = $query->where('game_id', $gameId)->get();
+
+        return $this->gradePropsCollection($props);
+    }
+
+    protected function gradePropsCollection(Collection $props): array
+    {
+        // Find ungraded props for completed games with player stats
 
         if ($props->isEmpty()) {
             return [
@@ -113,25 +131,34 @@ class GradePlayerProps
 
     protected function getUngradedProps(string $sport, ?int $season = null): Collection
     {
+        $query = $this->getUngradedPropsQuery($sport);
+        if ($query === null) {
+            return collect();
+        }
+
+        if ($season !== null) {
+            $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', $season));
+        }
+
+        return $query->get();
+    }
+
+    protected function getUngradedPropsQuery(string $sport)
+    {
         $sportConfig = $this->sportConfig($sport);
         if ($sportConfig === null) {
-            return collect();
+            return null;
         }
 
         $playerPropModel = $sportConfig['player_prop_model'];
 
         return $playerPropModel::query()
             ->whereNull('graded_at')
-            ->whereHas('game', function ($query) use ($season) {
+            ->whereHas('game', function ($query) {
                 $query->where('status', 'STATUS_FINAL')
                     ->whereNotNull('home_score')
                     ->whereNotNull('away_score');
-
-                if ($season !== null) {
-                    $query->where('season', $season);
-                }
-            })
-            ->get();
+            });
     }
 
     protected function getActualValue(Model $prop): ?float

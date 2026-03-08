@@ -9,7 +9,7 @@ return [
     // Leave null to derive from current request origin.
     'origin' => env('PASSKEYS_ORIGIN'),
 
-    'challenge_timeout_seconds' => (int) env('PASSKEYS_CHALLENGE_TIMEOUT', 300),
+    'challenge_timeout_seconds' => (int) env('PASSKEYS_CHALLENGE_TIMEOUT', 600),
 
     'user_verification' => env('PASSKEYS_USER_VERIFICATION', 'required'),
 

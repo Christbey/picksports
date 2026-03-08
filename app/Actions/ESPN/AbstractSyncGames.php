@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Services\GameFinalizationDispatcher;
 use App\Services\ESPN\BaseEspnService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -87,10 +88,19 @@ abstract class AbstractSyncGames
                 continue;
             }
 
-            $gameModel::updateOrCreate(
-                [$this->getUniqueGameKey() => $dto->espnEventId],
-                $this->buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam)
-            );
+            $uniqueKey = $this->getUniqueGameKey();
+            $attributes = $this->buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam);
+            $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
+            $previousStatus = $existingGame ? (string) ($existingGame->status ?? '') : null;
+
+            if ($existingGame) {
+                $existingGame->update($attributes);
+                $game = $existingGame->fresh();
+            } else {
+                $game = $gameModel::query()->create($attributes);
+            }
+
+            app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus);
 
             $synced++;
         }

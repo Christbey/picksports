@@ -298,11 +298,11 @@ function finalResultBadgeClass(): string {
     return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
 }
 
-function finalResultLabel(): string {
+function finalResultLabel(): string | null {
     const correct = winnerCorrect();
     if (correct === true) return 'WIN';
     if (correct === false) return 'LOSS';
-    return 'FINAL';
+    return null;
 }
 
 function finalCardClass(): string {
@@ -346,6 +346,7 @@ function finalCardClass(): string {
                 >
                     <span class="text-xs font-semibold text-gray-600 dark:text-gray-400">FINAL</span>
                     <span
+                        v-if="finalResultLabel()"
                         class="rounded-full px-2 py-0.5 text-xs font-semibold"
                         :class="finalResultBadgeClass()"
                     >

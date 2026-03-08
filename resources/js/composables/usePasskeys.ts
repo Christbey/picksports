@@ -84,6 +84,45 @@ function csrfToken(): string {
     return token;
 }
 
+function xsrfCookieToken(): string | null {
+    const cookie = document.cookie
+        .split('; ')
+        .find((part) => part.startsWith('XSRF-TOKEN='));
+
+    if (!cookie) {
+        return null;
+    }
+
+    return decodeURIComponent(cookie.substring('XSRF-TOKEN='.length));
+}
+
+async function refreshCsrfState(): Promise<void> {
+    await fetch('/sanctum/csrf-cookie', {
+        method: 'GET',
+        credentials: 'same-origin',
+        headers: {
+            Accept: 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    });
+}
+
+function requestHeaders(): HeadersInit {
+    const headers: Record<string, string> = {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken(),
+        'X-Requested-With': 'XMLHttpRequest',
+    };
+
+    const xsrf = xsrfCookieToken();
+    if (xsrf) {
+        headers['X-XSRF-TOKEN'] = xsrf;
+    }
+
+    return headers;
+}
+
 function ensureWebAuthnSupport(): void {
     if (!window.isSecureContext || typeof window.PublicKeyCredential === 'undefined') {
         throw new Error('Passkeys are not available in this browser/context.');
@@ -91,23 +130,30 @@ function ensureWebAuthnSupport(): void {
 }
 
 async function postJson<T>(url: string, payload: Record<string, unknown> = {}): Promise<T> {
-    const response = await fetch(url, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken(),
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-        body: JSON.stringify(payload),
-    });
+    let retriedAfterCsrfRefresh = false;
 
-    const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    while (true) {
+        const response = await fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: requestHeaders(),
+            body: JSON.stringify(payload),
+        });
 
-    if (!response.ok) {
+        const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+        if (response.ok) {
+            return json as T;
+        }
+
+        if (response.status === 419 && !retriedAfterCsrfRefresh) {
+            retriedAfterCsrfRefresh = true;
+            await refreshCsrfState();
+            continue;
+        }
+
         if (response.status === 419) {
-            throw new Error('Your session expired. Refresh the page and try passkey sign-in again.');
+            throw new Error('Your session expired. Refresh the page and try again.');
         }
 
         const message =
@@ -117,24 +163,45 @@ async function postJson<T>(url: string, payload: Record<string, unknown> = {}): 
 
         throw new Error(message);
     }
-
-    return json as T;
 }
 
 async function deleteJson(url: string): Promise<void> {
-    const response = await fetch(url, {
-        method: 'DELETE',
-        credentials: 'same-origin',
-        headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRF-TOKEN': csrfToken(),
-            'X-Requested-With': 'XMLHttpRequest',
-        },
-    });
+    let retriedAfterCsrfRefresh = false;
 
-    if (!response.ok) {
-        throw new Error('Failed to delete passkey.');
+    while (true) {
+        const response = await fetch(url, {
+            method: 'DELETE',
+            credentials: 'same-origin',
+            headers: requestHeaders(),
+        });
+
+        const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+
+        if (response.ok) {
+            return;
+        }
+
+        if (response.status === 419 && !retriedAfterCsrfRefresh) {
+            retriedAfterCsrfRefresh = true;
+            await refreshCsrfState();
+            continue;
+        }
+
+        if (response.status === 419) {
+            throw new Error('Your session expired. Refresh the page and try deleting the passkey again.');
+        }
+
+        if (response.status === 401) {
+            throw new Error('You are no longer signed in. Refresh and sign in again.');
+        }
+
+        if (response.status === 404) {
+            throw new Error('Passkey not found. Refresh the page and try again.');
+        }
+
+        const message = (json.message as string | undefined) ?? 'Failed to delete passkey.';
+
+        throw new Error(message);
     }
 }
 
@@ -215,6 +282,10 @@ export async function registerPasskey(name: string | null = null): Promise<void>
 }
 
 export async function signInWithPasskey(email?: string): Promise<void> {
+    await signInWithPasskeyAttempt(email, true);
+}
+
+async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Promise<void> {
     ensureWebAuthnSupport();
 
     const optionsResponse = await postJson<AuthenticationOptionsResponse>(
@@ -263,12 +334,27 @@ export async function signInWithPasskey(email?: string): Promise<void> {
 
     const response = credential.response as AuthenticatorAssertionResponse;
 
-    const verify = await postJson<{ redirect?: string }>('/passkeys/authentication/verify', {
-        credential_id: base64UrlEncode(credential.rawId),
-        client_data_json: base64UrlEncode(response.clientDataJSON),
-        authenticator_data: base64UrlEncode(response.authenticatorData),
-        signature: base64UrlEncode(response.signature),
-    });
+    let verify: { redirect?: string };
+
+    try {
+        verify = await postJson<{ redirect?: string }>('/passkeys/authentication/verify', {
+            credential_id: base64UrlEncode(credential.rawId),
+            client_data_json: base64UrlEncode(response.clientDataJSON),
+            authenticator_data: base64UrlEncode(response.authenticatorData),
+            signature: base64UrlEncode(response.signature),
+        });
+    } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        const challengeExpired = message.toLowerCase().includes('challenge expired');
+
+        if (allowRetry && challengeExpired) {
+            await signInWithPasskeyAttempt(email, false);
+
+            return;
+        }
+
+        throw error;
+    }
 
     window.location.assign(verify.redirect ?? '/dashboard');
 }

@@ -3,6 +3,7 @@ import type { BettingRecommendation } from './sports';
 export interface DashboardPrediction {
     sport: string;
     game_id: number;
+    season_type?: string | number | null;
     game: string;
     game_time: string;
     home_team: string;

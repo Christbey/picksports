@@ -3,6 +3,7 @@ import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCar
 import {
     useDashboardPresentation,
 } from '@/composables/useDashboardView';
+import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
 import type { DashboardSport } from '@/types';
 
 defineProps<{
@@ -13,6 +14,9 @@ const {
     getSportHeaderColor,
     getGameUrl,
 } = useDashboardPresentation();
+
+const showSpringTrainingBadge = (sport: DashboardSport): boolean =>
+    sport.name === 'MLB' && sport.predictions.some((prediction) => isMlbSpringTrainingType(prediction.season_type));
 </script>
 
 <template>
@@ -27,7 +31,15 @@ const {
                 :class="getSportHeaderColor(sport.color)"
             >
                 <div>
-                    <h2 class="text-xl font-semibold tracking-tight text-white">{{ sport.name }}</h2>
+                    <div class="flex items-center gap-2">
+                        <h2 class="text-xl font-semibold tracking-tight text-white">{{ sport.name }}</h2>
+                        <span
+                            v-if="showSpringTrainingBadge(sport)"
+                            class="rounded-full border border-white/30 bg-white/20 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white"
+                        >
+                            Spring Training
+                        </span>
+                    </div>
                     <p class="text-sm text-white/85">{{ sport.fullName }}</p>
                 </div>
                 <div

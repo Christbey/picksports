@@ -56,6 +56,7 @@ withDefaults(defineProps<{
     awayTrends?: TeamTrendData | null;
     homeTrends?: TeamTrendData | null;
     trendsEmptyText?: string;
+    contextBadgeLabel?: string | null;
 }>(), {
     error: null,
     awayRecentForm: undefined,
@@ -95,6 +96,7 @@ withDefaults(defineProps<{
     awayTrends: null,
     homeTrends: null,
     trendsEmptyText: 'No trends available for this matchup',
+    contextBadgeLabel: null,
 });
 
 const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
@@ -137,6 +139,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :winner-correct="prediction?.winner_correct ?? null"
                 :actual-total="prediction?.actual_total ?? null"
                 :betting-value="prediction?.betting_value ?? []"
+                :context-badge-label="contextBadgeLabel"
             />
 
             <slot name="afterHero" />

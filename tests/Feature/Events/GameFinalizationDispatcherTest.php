@@ -17,6 +17,8 @@ it('dispatches game finalized event when status transitions to final', function 
         'away_team_id' => $away->id,
         'season' => 2026,
         'status' => 'STATUS_FINAL',
+        'home_score' => 110,
+        'away_score' => 100,
     ]);
 
     app(GameFinalizationDispatcher::class)
@@ -28,6 +30,26 @@ it('dispatches game finalized event when status transitions to final', function 
             && $event->season === 2026
             && $event->gameModelClass === Game::class;
     });
+});
+
+it('does not dispatch game finalized event when status is final but scores are missing', function () {
+    Event::fake([GameFinalized::class]);
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'status' => 'STATUS_FINAL',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    app(GameFinalizationDispatcher::class)
+        ->dispatchIfFinalizedTransition($game, 'STATUS_IN_PROGRESS');
+
+    Event::assertNotDispatched(GameFinalized::class);
 });
 
 it('does not dispatch game finalized event when game was already final', function () {

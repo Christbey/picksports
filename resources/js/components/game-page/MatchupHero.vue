@@ -23,6 +23,7 @@ const props = withDefaults(defineProps<{
     winnerCorrect?: boolean | null;
     actualTotal?: number | null;
     bettingValue?: BettingRecommendation[];
+    contextBadgeLabel?: string | null;
 }>(), {
     extraInfoItems: () => [],
     showScoreStatuses: () => ['STATUS_FINAL'],
@@ -32,6 +33,7 @@ const props = withDefaults(defineProps<{
     winnerCorrect: null,
     actualTotal: null,
     bettingValue: () => [],
+    contextBadgeLabel: null,
 });
 
 function winnerLabel(): string | null {
@@ -137,6 +139,12 @@ function totalClass(): string {
                     </div>
                     <div class="mt-2 flex items-center justify-center gap-2">
                         <Badge class="bg-white/20 text-white border-white/30 hover:bg-white/30" :class="{ 'animate-pulse !bg-red-600 !border-red-500': props.badgePulseStatuses.includes(game.status) }">{{ gameStatus }}</Badge>
+                        <Badge
+                            v-if="props.contextBadgeLabel"
+                            class="border-white/35 bg-white/20 text-white hover:bg-white/30"
+                        >
+                            {{ props.contextBadgeLabel }}
+                        </Badge>
                         <Badge
                             v-if="winnerLabel()"
                             class="border-white/35 bg-white/20 text-white hover:bg-white/30"

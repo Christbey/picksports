@@ -11,8 +11,10 @@ use App\Actions\NFL\GradePredictions as NflGradePredictions;
 use App\Actions\WCBB\GradePredictions as WcbbGradePredictions;
 use App\Actions\WNBA\GradePredictions as WnbaGradePredictions;
 use App\Events\GameFinalized;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 
-class TriggerGameFinalizationGrading
+class TriggerGameFinalizationGrading implements ShouldQueue
 {
     /**
      * @var array<string, class-string>
@@ -36,6 +38,15 @@ class TriggerGameFinalizationGrading
         'nfl' => 'americanfootball_nfl',
         'mlb' => 'baseball_mlb',
     ];
+
+    public function middleware(GameFinalized $event): array
+    {
+        $lockKey = "grade-finalized-game:{$event->sport}:{$event->gameId}";
+
+        return [
+            (new WithoutOverlapping($lockKey))->expireAfter(180),
+        ];
+    }
 
     public function handle(GameFinalized $event): void
     {

@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePredictionList } from '@/composables/usePredictionList';
 import { useSeasonFilter } from '@/composables/useSeasonFilter';
+import { isMlbRegularSeasonType, isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
 import type { PredictionListItem, SportPredictionsConfig } from '@/types';
 
 const props = defineProps<{
@@ -210,6 +211,20 @@ const filteredPredictions = computed(() => {
     });
 });
 
+const showSpringTrainingBadge = computed(() => {
+    if (props.config.sport !== 'mlb' || predictions.value.length === 0) {
+        return false;
+    }
+
+    // Keep the badge visible until this MLB slate is regular season.
+    const hasSpringTraining = predictions.value.some((prediction) => isMlbSpringTrainingType(prediction.game?.season_type));
+    if (hasSpringTraining) {
+        return true;
+    }
+
+    return predictions.value.some((prediction) => !isMlbRegularSeasonType(prediction.game?.season_type));
+});
+
 const emptyStateTitle = computed(() => {
     if (normalizedSearchQuery.value) {
         return 'No predictions match this search';
@@ -283,7 +298,15 @@ onMounted(async () => {
     <div class="space-y-4">
         <div class="flex items-center justify-between">
             <div>
-                <h2 class="text-2xl font-bold">{{ config.title }}</h2>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-2xl font-bold">{{ config.title }}</h2>
+                    <span
+                        v-if="showSpringTrainingBadge"
+                        class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+                    >
+                        Spring Training
+                    </span>
+                </div>
                 <p class="text-sm text-muted-foreground">
                     {{ config.subtitle }}
                 </p>

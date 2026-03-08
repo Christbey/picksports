@@ -78,6 +78,7 @@ class DashboardPredictionResource extends JsonResource
         $data = [
             'sport' => $this->sport,
             'game_id' => $game->id,
+            'season_type' => $game->season_type,
             'game' => $game->name,
             'game_time' => $game->game_date,
             'home_team' => $game->homeTeam?->abbreviation,

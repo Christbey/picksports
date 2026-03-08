@@ -32,6 +32,12 @@ class GameFinalizationDispatcher
             return;
         }
 
+        // Final status occasionally arrives before box score fields are populated.
+        // Skip dispatch until both team scores are present.
+        if (! isset($game->home_score, $game->away_score)) {
+            return;
+        }
+
         $sport = self::SPORT_BY_GAME_MODEL[$game::class] ?? null;
         if ($sport === null) {
             return;

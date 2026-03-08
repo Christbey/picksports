@@ -4,6 +4,7 @@ import { formatNumber } from '@/composables/useFormatters';
 import { formatVenueLabel, getWinLossRecord } from '@/composables/useGameDataUtils';
 import { useMlbGamePage } from '@/composables/useMlbGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
+import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
 import type { MlbPageGame } from '@/types';
 
 export function useMlbDetailedGamePage(game: MlbPageGame) {
@@ -43,6 +44,9 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
     const homeRecord = computed(() =>
         getWinLossRecord(homeRecentGames.value, game.home_team_id),
     );
+    const contextBadgeLabel = computed(() =>
+        isMlbSpringTrainingType(game.season_type) ? 'Spring Training' : null,
+    );
 
     const { pageProps } = useSportGameLayout({
         sport: 'mlb',
@@ -80,6 +84,7 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
             homeLabel,
             formatNumber,
             showTrends: true,
+            contextBadgeLabel,
             trendsSubtitle,
             trendsLoading,
             allTrendCategories,

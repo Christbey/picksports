@@ -12,6 +12,7 @@ it('requires authentication for settings admin pages', function (string $path) {
         ->assertRedirect(route('login'));
 })->with([
     '/settings/admin',
+    '/settings/prop-exports',
     '/settings/team-mappings',
     '/settings/player-mappings',
 ]);
@@ -24,11 +25,14 @@ it('forbids non-admin users from settings admin pages', function (string $path) 
         ->assertForbidden();
 })->with([
     '/settings/admin',
+    '/settings/prop-exports',
     '/settings/team-mappings',
     '/settings/player-mappings',
 ]);
 
 it('allows admin users to access settings admin pages', function (string $path) {
+    $this->withoutVite();
+
     $admin = User::factory()->admin()->create();
 
     $this->actingAs($admin)
@@ -36,6 +40,7 @@ it('allows admin users to access settings admin pages', function (string $path) 
         ->assertOk();
 })->with([
     '/settings/admin',
+    '/settings/prop-exports',
     '/settings/team-mappings',
     '/settings/player-mappings',
 ]);

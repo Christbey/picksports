@@ -166,6 +166,11 @@ const adminAreas = [
         href: '/admin/users#submissions',
     },
     {
+        title: 'Prop Exports',
+        description: 'Export player prop cards optimized for Instagram and Facebook.',
+        href: '/settings/prop-exports',
+    },
+    {
         title: 'Subscriptions',
         description: 'Manage user plans and billing access.',
         href: '/admin/subscriptions',

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
 use App\Http\Controllers\Admin\ImpersonationController as AdminImpersonationController;
 use App\Http\Controllers\Admin\PermissionController as AdminPermissionController;
+use App\Http\Controllers\Admin\PlayerPropCardExportController as AdminPlayerPropCardExportController;
 use App\Http\Controllers\Admin\SubscriptionController as AdminSubscriptionController;
 use App\Http\Controllers\Admin\TierController as AdminTierController;
 use App\Http\Controllers\Admin\UserOverviewController as AdminUserOverviewController;
@@ -16,6 +17,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
     foreach ([
         ['get', '/subscriptions', [AdminSubscriptionController::class, 'index'], 'subscriptions'],
         ['get', '/users', [AdminUserOverviewController::class, 'index'], 'users'],
+        ['get', '/player-prop-exports', [AdminPlayerPropCardExportController::class, 'index'], 'player-prop-exports'],
         ['post', '/subscriptions/{user}/sync', [AdminSubscriptionController::class, 'sync'], 'subscriptions.sync'],
         ['post', '/subscriptions/{user}/assign-tier', [AdminSubscriptionController::class, 'assignTier'], 'subscriptions.assign-tier'],
         ['post', '/subscriptions/sync-all', [AdminSubscriptionController::class, 'syncAll'], 'subscriptions.sync-all'],

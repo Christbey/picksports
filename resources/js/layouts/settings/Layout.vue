@@ -67,6 +67,10 @@ const adminNavItems = computed(() => {
             href: '/admin/users#submissions',
         },
         {
+            title: 'Exports',
+            href: '/settings/prop-exports',
+        },
+        {
             title: 'Admin Settings',
             href: '/settings/admin',
         },

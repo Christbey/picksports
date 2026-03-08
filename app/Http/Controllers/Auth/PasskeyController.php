@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\Passkey;
-use App\Models\User;
+use App\Services\Auth\PasskeyAuthenticationService;
 use App\Services\Auth\PasskeyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +14,10 @@ use Illuminate\Validation\ValidationException;
 
 class PasskeyController extends Controller
 {
-    public function __construct(private readonly PasskeyService $passkeyService) {}
+    public function __construct(
+        private readonly PasskeyService $passkeyService,
+        private readonly PasskeyAuthenticationService $passkeyAuthenticationService,
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -207,45 +210,14 @@ class PasskeyController extends Controller
     {
         $this->ensurePasskeysEnabled();
 
-        $validated = $request->validate([
-            'email' => ['nullable', 'email:rfc'],
-        ]);
+        $validated = $request->validate(['email' => ['nullable', 'email:rfc']]);
 
-        $user = null;
-
-        if (! empty($validated['email'])) {
-            $user = User::query()->where('email', $validated['email'])->first();
-        }
-
-        $challenge = $this->passkeyService->generateChallenge();
-        $rpId = $this->resolveRpId($request);
-        $origin = $this->resolveOrigin($request);
-
-        $request->session()->put('passkeys.authenticate', [
-            'challenge' => $challenge,
-            'user_id' => $user?->id,
-            'rp_id' => $rpId,
-            'origin' => $origin,
-            'expires_at' => now()->addSeconds((int) config('passkeys.challenge_timeout_seconds', 300))->timestamp,
-        ]);
-
-        $allowCredentials = $user
-            ? $user->passkeys->map(fn (Passkey $passkey): array => array_filter([
-                'type' => 'public-key',
-                'id' => $passkey->credential_id,
-                'transports' => $passkey->transports,
-            ]))->values()->all()
-            : [];
-
-        return response()->json([
-            'publicKey' => [
-                'challenge' => $challenge,
-                'rpId' => $rpId,
-                'timeout' => 60000,
-                'userVerification' => (string) config('passkeys.user_verification', 'required'),
-                'allowCredentials' => $allowCredentials,
-            ],
-        ]);
+        return response()->json(
+            $this->passkeyAuthenticationService->buildAuthenticationOptions(
+                $request,
+                $validated['email'] ?? null,
+            )
+        );
     }
 
     public function authenticate(Request $request): JsonResponse
@@ -259,66 +231,9 @@ class PasskeyController extends Controller
             'signature' => ['required', 'string', 'max:4096'],
         ]);
 
-        $sessionPayload = $request->session()->pull('passkeys.authenticate');
+        $user = $this->passkeyAuthenticationService->verifyAuthentication($request, $validated);
 
-        if (! is_array($sessionPayload) || ($sessionPayload['expires_at'] ?? 0) < now()->timestamp) {
-            throw ValidationException::withMessages([
-                'credential' => 'Passkey login challenge expired. Please try again.',
-            ]);
-        }
-
-        $passkey = Passkey::query()->with('user')->where('credential_id', $validated['credential_id'])->first();
-
-        if (! $passkey) {
-            throw ValidationException::withMessages([
-                'credential' => 'Passkey not recognized.',
-            ]);
-        }
-
-        if (($sessionPayload['user_id'] ?? null) && $passkey->user_id !== $sessionPayload['user_id']) {
-            throw ValidationException::withMessages([
-                'credential' => 'Passkey does not match the requested account.',
-            ]);
-        }
-
-        $this->passkeyService->validateClientData(
-            $validated['client_data_json'],
-            (string) $sessionPayload['challenge'],
-            'webauthn.get',
-            (string) ($sessionPayload['origin'] ?? ''),
-        );
-
-        $authenticatorData = $this->passkeyService->validateAuthenticatorData(
-            $validated['authenticator_data'],
-            (string) ($sessionPayload['rp_id'] ?? ''),
-            requireUserVerification: true,
-        );
-
-        if (! $this->passkeyService->verifyAssertionSignature(
-            $passkey->public_key,
-            $validated['authenticator_data'],
-            $validated['client_data_json'],
-            $validated['signature'],
-        )) {
-            throw ValidationException::withMessages([
-                'credential' => 'Passkey signature verification failed.',
-            ]);
-        }
-
-        $nextSignCount = $authenticatorData['signCount'];
-
-        if ($nextSignCount > 0 && $passkey->sign_count > 0 && $nextSignCount < $passkey->sign_count) {
-            throw ValidationException::withMessages([
-                'credential' => 'Passkey counter check failed. Please use another sign-in method.',
-            ]);
-        }
-
-        $passkey->forceFill([
-            'sign_count' => max($passkey->sign_count, $nextSignCount),
-            'last_used_at' => now(),
-        ])->save();
-
-        Auth::login($passkey->user, remember: true);
+        Auth::login($user, remember: true);
         $request->session()->regenerate();
 
         return response()->json([

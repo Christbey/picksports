@@ -318,13 +318,16 @@ class PlayerPropAnalyzer
             ];
         }
 
-        // Scale edge into a 0-100 score without saturating too quickly.
+        // Edge drives confidence non-linearly so small edges do not bunch near the top.
         $modelEdgeScore = (int) round(max(0, min(100, ($edgeProbability / 0.20) * 100)));
+        $edgeConfidenceScore = (int) round(
+            pow(max(0, min(1, ($edgeProbability / 0.20))), 1.30) * 100
+        );
         $confidence = (int) round(
-            42
-            + ($modelEdgeScore * 0.34)
-            + ($dataQualityScore * 0.16)
-            + ($matchQualityScore * 0.10)
+            34
+            + ($edgeConfidenceScore * 0.33)
+            + ($dataQualityScore * 0.12)
+            + ($matchQualityScore * 0.08)
         );
         $reasoning[] = sprintf(
             'Model %s probability %.1f%% vs market implied %.1f%%.',
@@ -376,18 +379,29 @@ class PlayerPropAnalyzer
         }
 
         if ($odds !== null && $odds > 0) {
-            $confidence += 2;
+            $confidence += 1;
             $reasoning[] = sprintf('Positive odds (+%d) improve expected value.', $odds);
         }
 
         if ($edgeProbability < 0.06) {
-            $confidence -= 8;
+            $confidence -= 10;
+        } elseif ($edgeProbability < 0.08) {
+            $confidence -= 5;
+        }
+
+        $isOutlier = $edgeProbability >= 0.14
+            && $dataQualityScore >= 82
+            && $matchQualityScore >= 78
+            && (($context['combined_factor'] ?? 1.0) >= 0.96);
+        if ($isOutlier) {
+            $confidence += 6;
+            $reasoning[] = 'Outlier grade: edge and data quality both clear elite thresholds.';
         }
 
         return [
             'recommendation' => $recommendation,
             'odds' => $odds,
-            'confidence' => round(max(35, min(96, $confidence))),
+            'confidence' => round(max(32, min(99, $confidence))),
             'edge' => round($projectionDiff, 1),
             'model_over_probability' => round($modelOverProbability * 100, 1),
             'market_over_probability' => round($marketOverProbability * 100, 1),
@@ -395,6 +409,7 @@ class PlayerPropAnalyzer
             'reasoning' => $reasoning,
             'confidence_decomposition' => [
                 'model_edge_score' => $modelEdgeScore,
+                'edge_confidence_score' => $edgeConfidenceScore,
                 'data_quality_score' => $dataQualityScore,
                 'match_quality_score' => $matchQualityScore,
                 'context_factor' => round((float) ($context['combined_factor'] ?? 1.0), 3),

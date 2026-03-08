@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\Api\SecurityReportController;
+use App\Http\Controllers\Api\Auth\PasskeyTokenAuthController;
+use App\Http\Controllers\Api\Auth\TokenAuthController;
 use Illuminate\Support\Facades\Route;
 
 // Load generic sport route definer
@@ -15,6 +17,24 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
         ->middleware($securityReportThrottle);
     Route::post('/security/reports/integrity', [SecurityReportController::class, 'integrity'])
         ->middleware($securityReportThrottle);
+
+    Route::prefix('auth')->name('auth.')->group(function (): void {
+        Route::post('/login', [TokenAuthController::class, 'login'])
+            ->middleware('throttle:10,1')
+            ->name('login');
+        Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'options'])
+            ->middleware('throttle:20,1')
+            ->name('passkeys.options');
+        Route::post('/passkeys/verify', [PasskeyTokenAuthController::class, 'verify'])
+            ->middleware('throttle:10,1')
+            ->name('passkeys.verify');
+
+        Route::middleware('auth:sanctum')->group(function (): void {
+            Route::get('/me', [TokenAuthController::class, 'me'])->name('me');
+            Route::post('/logout', [TokenAuthController::class, 'logout'])->name('logout');
+            Route::post('/logout-all', [TokenAuthController::class, 'logoutAll'])->name('logout-all');
+        });
+    });
 
     // Sport Routes (using generic route definer)
     $sports = (array) config('sports.domains', []);

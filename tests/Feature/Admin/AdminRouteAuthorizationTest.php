@@ -8,6 +8,7 @@ it('requires authentication for representative admin pages', function (string $p
         ->assertRedirect(route('login'));
 })->with([
     '/admin/users',
+    '/admin/player-prop-exports',
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
@@ -23,6 +24,7 @@ it('forbids non-admin users from representative admin pages', function (string $
         ->assertForbidden();
 })->with([
     '/admin/users',
+    '/admin/player-prop-exports',
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
@@ -40,6 +42,7 @@ it('allows admin users to access representative admin pages', function (string $
         ->assertOk();
 })->with([
     '/admin/users',
+    '/admin/player-prop-exports',
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',

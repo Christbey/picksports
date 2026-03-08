@@ -8,6 +8,7 @@ use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
 use App\Http\Controllers\Settings\WebPushSubscriptionController;
+use App\Http\Controllers\Admin\PlayerPropCardExportController;
 use App\Support\TierAccessBypass;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -109,6 +110,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/admin', AdminSettingsController::class)->middleware(['admin'])->name('admin.settings');
 
     Route::middleware(['admin'])->group(function () {
+        Route::get('settings/prop-exports', [PlayerPropCardExportController::class, 'index'])
+            ->name('settings.prop-exports');
         Route::get('settings/admin/founding-users/search', [AdminSettingsController::class, 'searchUsers'])
             ->name('admin.settings.founding-users.search');
         Route::post('settings/admin/founding-users/limit', [AdminSettingsController::class, 'updateFoundingLimit'])

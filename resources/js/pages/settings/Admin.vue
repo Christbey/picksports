@@ -156,6 +156,16 @@ function formatDate(date: string | null): string {
 
 const adminAreas = [
     {
+        title: 'Users',
+        description: 'View total users, new users today, and submission inbox.',
+        href: '/admin/users',
+    },
+    {
+        title: 'Submissions',
+        description: 'Jump directly to form submissions in the admin users view.',
+        href: '/admin/users#submissions',
+    },
+    {
         title: 'Subscriptions',
         description: 'Manage user plans and billing access.',
         href: '/admin/subscriptions',

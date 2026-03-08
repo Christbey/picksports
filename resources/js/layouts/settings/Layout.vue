@@ -59,6 +59,14 @@ const adminNavItems = computed(() => {
 
     return [
         {
+            title: 'Users',
+            href: '/admin/users',
+        },
+        {
+            title: 'Submissions',
+            href: '/admin/users#submissions',
+        },
+        {
             title: 'Admin Settings',
             href: '/settings/admin',
         },

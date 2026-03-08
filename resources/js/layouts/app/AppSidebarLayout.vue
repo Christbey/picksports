@@ -2,6 +2,7 @@
 import { router, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppContent from '@/components/AppContent.vue';
+import FeedbackSubmissionModal from '@/components/FeedbackSubmissionModal.vue';
 import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
@@ -45,5 +46,6 @@ const stopImpersonation = () => {
             </div>
             <slot />
         </AppContent>
+        <FeedbackSubmissionModal />
     </AppShell>
 </template>

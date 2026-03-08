@@ -7,6 +7,7 @@ it('requires authentication for representative admin pages', function (string $p
     $this->get($path)
         ->assertRedirect(route('login'));
 })->with([
+    '/admin/users',
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
@@ -21,6 +22,7 @@ it('forbids non-admin users from representative admin pages', function (string $
         ->get($path)
         ->assertForbidden();
 })->with([
+    '/admin/users',
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
@@ -29,12 +31,15 @@ it('forbids non-admin users from representative admin pages', function (string $
 ]);
 
 it('allows admin users to access representative admin pages', function (string $path) {
+    $this->withoutVite();
+
     $admin = User::factory()->admin()->create();
 
     $this->actingAs($admin)
         ->get($path)
         ->assertOk();
 })->with([
+    '/admin/users',
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',

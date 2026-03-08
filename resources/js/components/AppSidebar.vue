@@ -55,6 +55,14 @@ const basketballIconProps = { icon: faBasketball };
 const baseballIconProps = { icon: faBaseball };
 const playerPropsHref = (sport: 'nfl' | 'nba' | 'mlb' | 'cbb') => `/${sport}/player-props`;
 
+const openFeedbackModal = () => {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    window.dispatchEvent(new CustomEvent('open-feedback-submission-modal'));
+};
+
 const mainNavItems: NavItem[] = [
     {
         title: 'Dashboard',
@@ -277,14 +285,13 @@ const sportNavItems: NavItem[] = [
         <SidebarFooter>
             <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton as-child>
-                        <a
-                            href="mailto:info@picksports.com?subject=Product%20Feedback"
-                            aria-label="Send feedback"
-                        >
-                            <MessageSquare />
-                            <span>Feedback</span>
-                        </a>
+                    <SidebarMenuButton
+                        type="button"
+                        aria-label="Open feedback form"
+                        @click="openFeedbackModal"
+                    >
+                        <MessageSquare />
+                        <span>Feedback</span>
                     </SidebarMenuButton>
                 </SidebarMenuItem>
             </SidebarMenu>

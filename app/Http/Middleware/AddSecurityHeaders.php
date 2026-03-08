@@ -27,13 +27,13 @@ class AddSecurityHeaders
             "object-src 'none'",
             "frame-ancestors 'self'",
             // Inline bootstrap scripts/styles still exist in app.blade.php; keep allowed while in report-only.
-            "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com",
-            "script-src-elem 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com",
+            "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net",
+            "script-src-elem 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net",
             "style-src 'self' 'unsafe-inline' https://fonts.bunny.net",
             "style-src-elem 'self' 'unsafe-inline' https://fonts.bunny.net",
             "font-src 'self' data: https://fonts.bunny.net",
             "img-src 'self' data: https:",
-            "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://*.cloudflareinsights.com",
+            "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://*.cloudflareinsights.com https://www.facebook.com https://connect.facebook.net",
             "manifest-src 'self'",
             "worker-src 'self' blob:",
             // Allow known policy names created by Vue and gtag to prevent Trusted Types report noise.

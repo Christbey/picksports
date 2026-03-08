@@ -23,6 +23,8 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
 
     protected const BY_TEAM_RETURNS_LATEST_ONLY = false;
 
+    protected const GAMES_TABLE = '';
+
     protected function getTeamMetricModel(): string
     {
         if (static::TEAM_METRIC_MODEL === '') {
@@ -65,6 +67,22 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         return static::BY_TEAM_RETURNS_LATEST_ONLY;
     }
 
+    protected function gamesTable(): ?string
+    {
+        if (static::GAMES_TABLE !== '') {
+            return static::GAMES_TABLE;
+        }
+
+        $teamModel = $this->getTeamModel();
+        $namespace = (new \ReflectionClass($teamModel))->getNamespaceName();
+        $gameModelClass = "{$namespace}\\Game";
+        if (! class_exists($gameModelClass)) {
+            return null;
+        }
+
+        return (new $gameModelClass())->getTable();
+    }
+
     protected function mutateIndexMetrics(Collection $metrics): void
     {
         // Hook for sport-specific enrichment.
@@ -90,6 +108,7 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         $tierContext = $this->resolveTierContext('getTeamMetricsLimit');
         $tierMetadata = $tierContext['metadata'];
         $tierLimit = $tierContext['limit'];
+        $metricsTable = (new $model())->getTable();
 
         $query = $model::query()
             ->with(['team'])
@@ -97,6 +116,38 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
 
         if (request('season') && $this->hasSeasonColumn()) {
             $query->where($this->getSeasonColumn(), request('season'));
+        }
+
+        if ($this->hasSeasonColumn() && request()->filled('season_type')) {
+            $gamesTable = $this->gamesTable();
+            $sportSlug = $this->sportSlugFromGamesTable($gamesTable);
+            $seasonTypeCandidates = $sportSlug
+                ? $this->resolveSeasonTypeCandidates($sportSlug, (string) request('season_type'))
+                : [];
+
+            if ($gamesTable && $sportSlug && $seasonTypeCandidates !== []) {
+                $seasonColumn = $this->getSeasonColumn();
+                $finalStatus = (string) config("{$sportSlug}.statuses.final", 'STATUS_FINAL');
+
+                $query->whereExists(function ($gameQuery) use (
+                    $gamesTable,
+                    $metricsTable,
+                    $seasonColumn,
+                    $seasonTypeCandidates,
+                    $finalStatus
+                ) {
+                    $gameQuery->selectRaw('1')
+                        ->from($gamesTable)
+                        ->where(function ($teamMatchQuery) use ($gamesTable, $metricsTable) {
+                            $teamMatchQuery
+                                ->whereColumn("{$gamesTable}.home_team_id", "{$metricsTable}.team_id")
+                                ->orWhereColumn("{$gamesTable}.away_team_id", "{$metricsTable}.team_id");
+                        })
+                        ->whereColumn("{$gamesTable}.season", "{$metricsTable}.{$seasonColumn}")
+                        ->where("{$gamesTable}.status", $finalStatus)
+                        ->whereIn("{$gamesTable}.season_type", $seasonTypeCandidates);
+                });
+            }
         }
 
         if ($tierLimit !== null) {
@@ -107,6 +158,64 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         $this->mutateIndexMetrics($metrics);
 
         return $this->withTierMetadata($resource::collection($metrics), $tierMetadata);
+    }
+
+    private function sportSlugFromGamesTable(?string $gamesTable): ?string
+    {
+        if (! $gamesTable || ! str_ends_with($gamesTable, '_games')) {
+            return null;
+        }
+
+        return (string) substr($gamesTable, 0, -strlen('_games'));
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    private function resolveSeasonTypeCandidates(string $sportSlug, string $requestedSeasonType): array
+    {
+        $requested = trim($requestedSeasonType);
+        if ($requested === '') {
+            return [];
+        }
+
+        $typeNames = config("{$sportSlug}.season.type_names", []);
+        $typesByKey = config("{$sportSlug}.season.types", []);
+        $candidates = [$requested];
+
+        if (is_numeric($requested)) {
+            $code = (int) $requested;
+            $candidates[] = $code;
+            $matchedKey = array_search($code, $typesByKey, true);
+
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = (string) $typeNames[$matchedKey];
+                }
+            }
+        } else {
+            if (isset($typesByKey[$requested])) {
+                $resolvedCode = $typesByKey[$requested];
+                $candidates[] = $resolvedCode;
+                $candidates[] = (string) $resolvedCode;
+            }
+
+            $matchedKey = array_search($requested, $typeNames, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typesByKey[$matchedKey])) {
+                    $resolvedCode = $typesByKey[$matchedKey];
+                    $candidates[] = $resolvedCode;
+                    $candidates[] = (string) $resolvedCode;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(
+            $candidates,
+            fn ($value) => $value !== null && $value !== ''
+        )));
     }
 
     public function show($teamMetric): JsonResource

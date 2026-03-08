@@ -19,6 +19,8 @@ class TeamMetricController extends AbstractTeamMetricController
 
     protected const INDEX_ORDER_BY_COLUMN = 'offensive_rating';
 
+    protected const GAMES_TABLE = 'mlb_games';
+
     public function __construct(
         protected TeamRecordService $teamRecordService
     ) {}

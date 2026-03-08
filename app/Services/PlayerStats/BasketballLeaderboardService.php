@@ -16,7 +16,8 @@ class BasketballLeaderboardService
         string $playerModel,
         int $minGames = 10,
         ?string $gameModel = null,
-        ?int $season = null
+        ?int $season = null,
+        ?array $seasonTypeCandidates = null
     ): Collection
     {
         $query = $playerStatModel::query()
@@ -41,7 +42,7 @@ class BasketballLeaderboardService
                 SUM(free_throws_attempted) as total_ft_attempted
             ');
 
-        if ($gameModel !== null && $season !== null) {
+        if ($gameModel !== null) {
             $gameInstance = new $gameModel();
             $playerStatInstance = new $playerStatModel();
             $query->join(
@@ -49,7 +50,15 @@ class BasketballLeaderboardService
                 "{$gameInstance->getTable()}.id",
                 '=',
                 "{$playerStatInstance->getTable()}.game_id"
-            )->where("{$gameInstance->getTable()}.season", $season);
+            );
+
+            if ($season !== null) {
+                $query->where("{$gameInstance->getTable()}.season", $season);
+            }
+
+            if (is_array($seasonTypeCandidates) && $seasonTypeCandidates !== []) {
+                $query->whereIn("{$gameInstance->getTable()}.season_type", $seasonTypeCandidates);
+            }
         }
 
         $stats = $query
@@ -62,7 +71,8 @@ class BasketballLeaderboardService
             $playerStatModel,
             $playerIds->all(),
             $gameModel,
-            $season
+            $season,
+            $seasonTypeCandidates
         );
         $players = $playerModel::query()
             ->with('team')
@@ -117,7 +127,8 @@ class BasketballLeaderboardService
         string $playerStatModel,
         array $playerIds,
         ?string $gameModel,
-        ?int $season
+        ?int $season,
+        ?array $seasonTypeCandidates = null
     ): array {
         if ($playerIds === []) {
             return [];
@@ -127,7 +138,7 @@ class BasketballLeaderboardService
             ->select(['player_id', 'minutes_played'])
             ->whereIn('player_id', $playerIds);
 
-        if ($gameModel !== null && $season !== null) {
+        if ($gameModel !== null) {
             $gameInstance = new $gameModel();
             $playerStatInstance = new $playerStatModel();
             $query->join(
@@ -135,7 +146,15 @@ class BasketballLeaderboardService
                 "{$gameInstance->getTable()}.id",
                 '=',
                 "{$playerStatInstance->getTable()}.game_id"
-            )->where("{$gameInstance->getTable()}.season", $season);
+            );
+
+            if ($season !== null) {
+                $query->where("{$gameInstance->getTable()}.season", $season);
+            }
+
+            if (is_array($seasonTypeCandidates) && $seasonTypeCandidates !== []) {
+                $query->whereIn("{$gameInstance->getTable()}.season_type", $seasonTypeCandidates);
+            }
         }
 
         /** @var array<int,array{sum:float,count:int}> $buckets */

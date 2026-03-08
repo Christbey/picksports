@@ -38,6 +38,7 @@ export interface MetricsConfig {
     columns: Column[];
     hasMeetsMinimum?: boolean;
     availableSeasonsEndpoint?: string;
+    seasonTypeOptions?: Array<{ value: string; label: string }>;
 }
 
 const props = defineProps<{
@@ -55,6 +56,7 @@ const metrics = ref<any[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const searchQuery = ref('');
+const selectedSeasonType = ref('');
 const sortBy = ref(props.config.defaultSort);
 const sortDesc = ref(true);
 const tierLimit = ref<number | null>(null);
@@ -118,7 +120,11 @@ const fetchMetrics = async () => {
         const seasonQuery = selectedSeason.value
             ? `?season=${encodeURIComponent(selectedSeason.value)}`
             : '';
-        const response = await fetch(`${props.config.apiEndpoint}${seasonQuery}`);
+        const params = new URLSearchParams(seasonQuery.replace(/^\?/, ''));
+        if (selectedSeasonType.value) {
+            params.set('season_type', selectedSeasonType.value);
+        }
+        const response = await fetch(`${props.config.apiEndpoint}?${params.toString()}`);
         if (!response.ok) throw new Error('Failed to fetch team metrics');
 
         const data = await response.json();
@@ -164,6 +170,10 @@ watch(selectedSeason, () => {
     fetchMetrics();
 });
 
+watch(selectedSeasonType, () => {
+    fetchMetrics();
+});
+
 onMounted(async () => {
     try {
         await fetchAvailableSeasons();
@@ -206,6 +216,23 @@ onMounted(async () => {
                                     :options="availableSeasons"
                                 />
                             </div>
+                            <div v-if="config.seasonTypeOptions?.length" class="space-y-2">
+                                <p class="ui-kicker">Season Type</p>
+                                <select
+                                    id="metrics-season-type"
+                                    v-model="selectedSeasonType"
+                                    class="flex h-10 min-w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+                                >
+                                    <option value="">All</option>
+                                    <option
+                                        v-for="option in config.seasonTypeOptions"
+                                        :key="option.value"
+                                        :value="option.value"
+                                    >
+                                        {{ option.label }}
+                                    </option>
+                                </select>
+                            </div>
                             <div class="min-w-[200px] flex-1">
                                 <Input v-model="searchQuery" placeholder="Search by team name..." class="w-full" />
                             </div>
@@ -235,6 +262,9 @@ onMounted(async () => {
                     </span>
                     <span v-if="selectedSeason" class="ui-chip text-foreground/80">
                         Season: {{ selectedSeason }}
+                    </span>
+                    <span v-if="selectedSeasonType" class="ui-chip text-foreground/80">
+                        Season Type: {{ config.seasonTypeOptions?.find((option) => option.value === selectedSeasonType)?.label ?? selectedSeasonType }}
                     </span>
                     <span v-if="searchQuery" class="ui-chip text-foreground/80">
                         Search: "{{ searchQuery }}"

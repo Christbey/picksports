@@ -25,6 +25,7 @@ interface CreateSportTeamMetricsConfigParams {
     hasMeetsMinimum?: boolean;
     apiEndpoint?: string;
     breadcrumbHref?: string;
+    seasonTypeOptions?: MetricsConfig['seasonTypeOptions'];
 }
 
 export function createSportTeamMetricsConfig(
@@ -43,6 +44,7 @@ export function createSportTeamMetricsConfig(
         defaultSort: params.defaultSort,
         columns: params.columns,
         hasMeetsMinimum: params.hasMeetsMinimum,
+        seasonTypeOptions: params.seasonTypeOptions,
     };
 }
 
@@ -85,6 +87,12 @@ export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'nba',
     title: 'NBA Team Metrics',
     subtitle: 'Advanced efficiency metrics for NBA teams',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+        { value: '4', label: 'All-Star' },
+    ],
     teamLink: (id: number) => NBATeamController.url(id),
     defaultSort: 'net_rating',
     sortOptions: [
@@ -149,6 +157,12 @@ export const wnbaTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'wnba',
     title: 'WNBA Team Metrics',
     subtitle: 'Advanced efficiency metrics for WNBA teams',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+        { value: '4', label: 'All-Star' },
+    ],
     teamLink: (id: number) => WNBATeamController.url(id),
     defaultSort: 'net_rating',
     sortOptions: [
@@ -224,6 +238,11 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'cbb',
     title: 'CBB Team Metrics',
     subtitle: 'Advanced efficiency metrics for college basketball teams',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     teamLink: (id: number) => CBBTeamController.url(id),
     defaultSort: 'adj_net_rating',
     hasMeetsMinimum: true,
@@ -320,6 +339,11 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'wcbb',
     title: 'WCBB Team Metrics',
     subtitle: "Advanced efficiency metrics for women's college basketball teams",
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     teamLink: (id: number) => WCBBTeamController.url(id),
     defaultSort: 'adj_net_rating',
     hasMeetsMinimum: true,
@@ -416,6 +440,11 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'nfl',
     title: 'NFL Team Metrics',
     subtitle: 'Advanced metrics for NFL teams',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     teamLink: (id: number) => NFLTeamController.url(id),
     defaultSort: 'net_true_epa_per_play',
     sortOptions: [
@@ -606,6 +635,11 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'mlb',
     title: 'MLB Team Metrics',
     subtitle: 'Advanced metrics for MLB teams',
+    seasonTypeOptions: [
+        { value: '1', label: 'Spring Training' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     teamLink: (id: number) => MLBTeamController.url(id),
     defaultSort: 'offensive_rating',
     sortOptions: [

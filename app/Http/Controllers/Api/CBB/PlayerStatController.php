@@ -41,9 +41,10 @@ class PlayerStatController extends AbstractPlayerStatController
     {
         $minGames = (int) ($request->integer('min_games') ?: 10);
         $season = $request->filled('season') ? (int) $request->integer('season') : null;
+        $seasonTypeCandidates = $this->requestedSeasonTypeCandidates($request);
 
         return $this->leaderboardService
-            ->execute(PlayerStat::class, Player::class, $minGames, Game::class, $season)
+            ->execute(PlayerStat::class, Player::class, $minGames, Game::class, $season, $seasonTypeCandidates)
             ->map(function (array $entry): array {
                 $estimatedEpaPerGame = $this->epaCalculator->estimateFromBoxScore(
                     $entry['points_per_game'] ?? 0,

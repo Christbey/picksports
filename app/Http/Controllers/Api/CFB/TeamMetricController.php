@@ -17,6 +17,8 @@ class TeamMetricController extends AbstractTeamMetricController
 
     protected const TEAM_METRIC_RESOURCE = TeamMetricResource::class;
 
+    protected const GAMES_TABLE = 'cfb_games';
+
     protected const BY_TEAM_ORDER_BY_COLUMN = 'year';
 
     public function __construct(

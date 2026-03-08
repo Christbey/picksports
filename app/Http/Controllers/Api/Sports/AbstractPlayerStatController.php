@@ -87,12 +87,108 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
         return 'season';
     }
 
+    protected function getGameSeasonTypeColumn(): string
+    {
+        return 'season_type';
+    }
+
     protected function hasGameSeasonColumn(): bool
     {
         $gameModel = $this->getGameModel();
         $instance = new $gameModel();
 
         return Schema::hasColumn($instance->getTable(), $this->getGameSeasonColumn());
+    }
+
+    protected function hasGameSeasonTypeColumn(): bool
+    {
+        $gameModel = $this->getGameModel();
+        $instance = new $gameModel();
+
+        return Schema::hasColumn($instance->getTable(), $this->getGameSeasonTypeColumn());
+    }
+
+    protected function gamesTable(): string
+    {
+        $gameModel = $this->getGameModel();
+
+        return (new $gameModel())->getTable();
+    }
+
+    protected function sportSlug(): ?string
+    {
+        $gamesTable = $this->gamesTable();
+        if (! str_ends_with($gamesTable, '_games')) {
+            return null;
+        }
+
+        return (string) substr($gamesTable, 0, -strlen('_games'));
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    protected function resolveSeasonTypeCandidates(?string $requested): array
+    {
+        $requested = trim((string) $requested);
+        if ($requested === '') {
+            return [];
+        }
+
+        $sportSlug = $this->sportSlug();
+        if (! $sportSlug) {
+            return [$requested];
+        }
+
+        $typeNames = config("{$sportSlug}.season.type_names", []);
+        $typesByKey = config("{$sportSlug}.season.types", []);
+        $candidates = [$requested];
+
+        if (is_numeric($requested)) {
+            $code = (int) $requested;
+            $candidates[] = $code;
+            $matchedKey = array_search($code, $typesByKey, true);
+
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = (string) $typeNames[$matchedKey];
+                }
+            }
+        } else {
+            if (isset($typesByKey[$requested])) {
+                $resolvedCode = $typesByKey[$requested];
+                $candidates[] = $resolvedCode;
+                $candidates[] = (string) $resolvedCode;
+            }
+
+            $matchedKey = array_search($requested, $typeNames, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typesByKey[$matchedKey])) {
+                    $resolvedCode = $typesByKey[$matchedKey];
+                    $candidates[] = $resolvedCode;
+                    $candidates[] = (string) $resolvedCode;
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(
+            $candidates,
+            fn ($value) => $value !== null && $value !== ''
+        )));
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    protected function requestedSeasonTypeCandidates(Request $request): array
+    {
+        if (! $request->filled('season_type') || ! $this->hasGameSeasonTypeColumn()) {
+            return [];
+        }
+
+        return $this->resolveSeasonTypeCandidates((string) $request->input('season_type'));
     }
 
     protected function getLeaderboardData(Request $request): Collection
@@ -194,5 +290,4 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
 
         return response()->json(['data' => $seasons]);
     }
-
 }

@@ -54,6 +54,12 @@ export const nbaPlayerStatsPageConfig = {
     breadcrumb: { title: 'NBA Player Stats', href: '/nba-player-stats' },
     bannerStorageKey: 'nba-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/nba/player-stats/leaderboard',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+        { value: '4', label: 'All-Star' },
+    ],
     showEpaColumns: true,
     playerLink: (id: number) => NBAPlayerController(id),
 };
@@ -65,6 +71,11 @@ export const cbbPlayerStatsPageConfig = {
     breadcrumb: { title: 'CBB Player Stats', href: '/cbb-player-stats' },
     bannerStorageKey: 'cbb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/cbb/player-stats/leaderboard',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     showEpaColumns: true,
     playerLink: (id: number) => `/cbb/players/${id}`,
     teamLink: (id: number) => CBBTeamController(id),
@@ -77,6 +88,11 @@ export const nflPlayerStatsPageConfig = {
     breadcrumb: { title: 'NFL Player Stats', href: '/nfl-player-stats' },
     bannerStorageKey: 'nfl-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/nfl/player-stats/leaderboard',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     showEpaColumns: false,
     sortOptions: [
         { key: 'estimated_epa_per_game', label: 'EPA/G' },
@@ -720,11 +736,153 @@ export const mlbPlayerStatsPageConfig = {
     breadcrumb: { title: 'MLB Player Stats', href: '/mlb-player-stats' },
     bannerStorageKey: 'mlb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/mlb/player-stats/leaderboard',
+    minGames: 10,
+    seasonTypeOptions: [
+        { value: '1', label: 'Spring Training' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     showEpaColumns: false,
     sortOptions: [
         { key: 'points_per_game', label: 'H/G' },
         { key: 'rebounds_per_game', label: 'HR/G' },
         { key: 'assists_per_game', label: 'RBI/G' },
+    ],
+    statCategoryOptions: [
+        {
+            key: 'hitting',
+            label: 'Hitting',
+            defaultSortBy: 'points_per_game',
+            sortOptions: [
+                { key: 'points_per_game', label: 'H/G' },
+                { key: 'rebounds_per_game', label: 'HR/G' },
+                { key: 'assists_per_game', label: 'RBI/G' },
+                { key: 'steals_per_game', label: 'SB/G' },
+                { key: 'blocks_per_game', label: 'K/G' },
+                { key: 'field_goal_percentage', label: 'AVG' },
+                { key: 'three_point_percentage', label: 'OBP' },
+                { key: 'free_throw_percentage', label: 'SLG' },
+            ],
+            statColumns: [
+                {
+                    key: 'points_per_game',
+                    label: 'H/G',
+                    cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'rebounds_per_game',
+                    label: 'HR/G',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'assists_per_game',
+                    label: 'RBI/G',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'steals_per_game',
+                    label: 'SB/G',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'blocks_per_game',
+                    label: 'K/G',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'field_goal_percentage',
+                    label: 'AVG',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(3),
+                },
+                {
+                    key: 'three_point_percentage',
+                    label: 'OBP',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(3),
+                },
+                {
+                    key: 'free_throw_percentage',
+                    label: 'SLG',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(3),
+                },
+                {
+                    key: 'minutes_per_game',
+                    label: 'AB/G',
+                    cellClass: 'hidden p-2 text-right text-muted-foreground lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(1),
+                },
+            ],
+            match: () => true,
+        },
+        {
+            key: 'pitching',
+            label: 'Pitching',
+            minGames: 1,
+            defaultSortBy: 'strikeouts_pitched_per_game',
+            sortOptions: [
+                { key: 'strikeouts_pitched_per_game', label: 'K/G' },
+                { key: 'innings_pitched_per_game', label: 'IP/G' },
+                { key: 'era_per_game', label: 'ERA' },
+                { key: 'whip_per_game', label: 'WHIP' },
+                { key: 'walks_allowed_per_game', label: 'BB/G' },
+                { key: 'hits_allowed_per_game', label: 'H/G Allowed' },
+                { key: 'home_runs_allowed_per_game', label: 'HR/G Allowed' },
+            ],
+            statColumns: [
+                {
+                    key: 'strikeouts_pitched_per_game',
+                    label: 'K/G',
+                    cellClass: 'p-2 text-right font-medium',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'innings_pitched_per_game',
+                    label: 'IP/G',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'era_per_game',
+                    label: 'ERA',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'whip_per_game',
+                    label: 'WHIP',
+                    cellClass: 'p-2 text-right',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(3),
+                },
+                {
+                    key: 'walks_allowed_per_game',
+                    label: 'BB/G',
+                    cellClass: 'hidden p-2 text-right md:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'hits_allowed_per_game',
+                    label: 'H/G A',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+                {
+                    key: 'home_runs_allowed_per_game',
+                    label: 'HR/G A',
+                    cellClass: 'hidden p-2 text-right lg:table-cell',
+                    format: (v: number | undefined) => Number(v ?? 0).toFixed(2),
+                },
+            ],
+            match: (entry: Record<string, any>) =>
+                Number(entry.innings_pitched_per_game ?? 0) > 0
+                || Number(entry.strikeouts_pitched_per_game ?? 0) > 0,
+        },
     ],
     statColumns: [
         {
@@ -794,6 +952,11 @@ export const cfbPlayerStatsPageConfig = {
     breadcrumb: { title: 'CFB Player Stats', href: '/cfb-player-stats' },
     bannerStorageKey: 'cfb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/cfb/player-stats/leaderboard',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+    ],
     showEpaColumns: false,
     sortOptions: [
         { key: 'points_per_game', label: 'Yds/G' },

@@ -35,6 +35,7 @@ class PlayerStatController extends AbstractPlayerStatController
     {
         $minGames = (int) ($request->integer('min_games') ?: 10);
         $season = $request->filled('season') ? (int) $request->integer('season') : null;
+        $seasonTypeCandidates = $this->requestedSeasonTypeCandidates($request);
 
         $query = PlayerStat::query()
             ->join('mlb_players', 'mlb_players.id', '=', 'mlb_player_stats.player_id')
@@ -54,6 +55,16 @@ class PlayerStatController extends AbstractPlayerStatController
                 SUM(COALESCE(mlb_player_stats.runs, 0)) as runs,
                 SUM(COALESCE(mlb_player_stats.doubles, 0)) as doubles_total,
                 SUM(COALESCE(mlb_player_stats.triples, 0)) as triples_total,
+                SUM(COALESCE(mlb_player_stats.innings_pitched, 0)) as innings_pitched_total,
+                SUM(COALESCE(mlb_player_stats.earned_runs, 0)) as earned_runs_total,
+                SUM(COALESCE(mlb_player_stats.hits_allowed, 0)) as hits_allowed_total,
+                SUM(COALESCE(mlb_player_stats.walks_allowed, 0)) as walks_allowed_total,
+                SUM(COALESCE(mlb_player_stats.strikeouts_pitched, 0)) as strikeouts_pitched_total,
+                SUM(COALESCE(mlb_player_stats.home_runs_allowed, 0)) as home_runs_allowed_total,
+                AVG(COALESCE(mlb_player_stats.era, 0)) as era_fallback,
+                AVG(COALESCE(mlb_player_stats.batting_average, 0)) as batting_average_fallback,
+                AVG(COALESCE(mlb_player_stats.on_base_percentage, 0)) as on_base_percentage_fallback,
+                AVG(COALESCE(mlb_player_stats.slugging_percentage, 0)) as slugging_percentage_fallback,
                 mlb_players.id as player_ref_id,
                 mlb_players.full_name,
                 mlb_players.headshot_url,
@@ -82,9 +93,13 @@ class PlayerStatController extends AbstractPlayerStatController
             $query->where('mlb_games.season', $season);
         }
 
+        if ($seasonTypeCandidates !== []) {
+            $query->whereIn('mlb_games.season_type', $seasonTypeCandidates);
+        }
+
         return $query
             ->orderByDesc(DB::raw('SUM(COALESCE(mlb_player_stats.hits, 0)) / NULLIF(COUNT(DISTINCT mlb_player_stats.game_id), 0)'))
-            ->limit(200)
+            ->limit(1000)
             ->get()
             ->map(function ($row): array {
                 $games = max(1, (int) $row->games_played);
@@ -99,10 +114,37 @@ class PlayerStatController extends AbstractPlayerStatController
                 $doubles = (float) $row->doubles_total;
                 $triples = (float) $row->triples_total;
                 $singles = max(0.0, $hits - $doubles - $triples - $homeRuns);
+                $inningsPitched = (float) $row->innings_pitched_total;
+                $earnedRuns = (float) $row->earned_runs_total;
+                $hitsAllowed = (float) $row->hits_allowed_total;
+                $walksAllowed = (float) $row->walks_allowed_total;
+                $strikeoutsPitched = (float) $row->strikeouts_pitched_total;
+                $homeRunsAllowed = (float) $row->home_runs_allowed_total;
+                $eraFallback = (float) $row->era_fallback;
+                $avgFallback = (float) $row->batting_average_fallback;
+                $obpFallback = (float) $row->on_base_percentage_fallback;
+                $slgFallback = (float) $row->slugging_percentage_fallback;
 
-                $avg = $atBats > 0 ? ($hits / $atBats) : 0.0;
-                $obp = ($atBats + $walks) > 0 ? (($hits + $walks) / ($atBats + $walks)) : 0.0;
-                $slug = $atBats > 0 ? (($singles + (2 * $doubles) + (3 * $triples) + (4 * $homeRuns)) / $atBats) : 0.0;
+                if ($atBats <= 0 && $hits > 0 && $avgFallback > 0) {
+                    $atBats = round($hits / $avgFallback, 1);
+                }
+
+                $avg = $atBats > 0 ? ($hits / $atBats) : max(0.0, $avgFallback);
+                $obp = ($atBats + $walks) > 0
+                    ? (($hits + $walks) / ($atBats + $walks))
+                    : max(0.0, $obpFallback);
+                $slug = $atBats > 0
+                    ? (($singles + (2 * $doubles) + (3 * $triples) + (4 * $homeRuns)) / $atBats)
+                    : max(0.0, $slgFallback);
+                $avg = min(1.0, max(0.0, $avg));
+                $obp = min(1.0, max(0.0, $obp));
+                $slug = max(0.0, $slug);
+                $era = $inningsPitched > 0
+                    ? (($earnedRuns * 9) / $inningsPitched)
+                    : max(0.0, $eraFallback);
+                $whip = $inningsPitched > 0
+                    ? (($walksAllowed + $hitsAllowed) / $inningsPitched)
+                    : 0.0;
 
                 return [
                     'player_id' => (int) $row->player_id,
@@ -129,6 +171,13 @@ class PlayerStatController extends AbstractPlayerStatController
                     'field_goal_percentage' => round($avg, 3),
                     'three_point_percentage' => round($obp, 3),
                     'free_throw_percentage' => round($slug, 3),
+                    'innings_pitched_per_game' => round($inningsPitched / $games, 2),
+                    'era_per_game' => round($era, 2),
+                    'whip_per_game' => round($whip, 3),
+                    'strikeouts_pitched_per_game' => round($strikeoutsPitched / $games, 2),
+                    'walks_allowed_per_game' => round($walksAllowed / $games, 2),
+                    'hits_allowed_per_game' => round($hitsAllowed / $games, 2),
+                    'home_runs_allowed_per_game' => round($homeRunsAllowed / $games, 2),
                 ];
             })
             ->values();

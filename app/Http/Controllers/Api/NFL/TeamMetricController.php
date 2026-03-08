@@ -17,6 +17,8 @@ class TeamMetricController extends AbstractTeamMetricController
 
     protected const TEAM_METRIC_RESOURCE = TeamMetricResource::class;
 
+    protected const GAMES_TABLE = 'nfl_games';
+
     public function __construct(
         protected TeamRecordService $teamRecordService
     ) {}

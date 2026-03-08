@@ -35,6 +35,7 @@ class PlayerStatController extends AbstractPlayerStatController
     {
         $minGames = (int) ($request->integer('min_games') ?: 4);
         $season = $request->filled('season') ? (int) $request->integer('season') : null;
+        $seasonTypeCandidates = $this->requestedSeasonTypeCandidates($request);
 
         $query = PlayerStat::query()
             ->join('cfb_players', 'cfb_players.id', '=', 'cfb_player_stats.player_id')
@@ -91,6 +92,10 @@ class PlayerStatController extends AbstractPlayerStatController
 
         if ($season !== null) {
             $query->where('cfb_games.season', $season);
+        }
+
+        if ($seasonTypeCandidates !== []) {
+            $query->whereIn('cfb_games.season_type', $seasonTypeCandidates);
         }
 
         return $query

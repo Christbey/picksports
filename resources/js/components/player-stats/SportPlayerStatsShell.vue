@@ -81,6 +81,7 @@ interface StatColumn {
 interface StatCategoryOption {
     key: string;
     label: string;
+    minGames?: number;
     defaultSortBy?: string;
     sortOptions?: SortOption[];
     statColumns?: StatColumn[];
@@ -99,6 +100,8 @@ interface SportPlayerStatsShellConfig {
     sortOptions?: SortOption[];
     statColumns?: StatColumn[];
     statCategoryOptions?: StatCategoryOption[];
+    minGames?: number;
+    seasonTypeOptions?: Array<{ value: string; label: string }>;
     playerLink?: (id: number) => HrefLike;
     teamLink?: (id: number) => HrefLike;
 }
@@ -111,6 +114,7 @@ const players = ref<PlayerLeaderboardEntry[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const searchQuery = ref('');
+const selectedSeasonType = ref('');
 const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
 const selectedCategory = ref<string>('all');
@@ -194,9 +198,15 @@ const fetchPlayers = async () => {
         const seasonQuery = selectedSeason.value
             ? `?season=${encodeURIComponent(selectedSeason.value)}`
             : '';
-        const response = await fetch(
-            `${props.config.leaderboardEndpoint}${seasonQuery}`,
-        );
+        const params = new URLSearchParams(seasonQuery.replace(/^\?/, ''));
+        const minGames = activeCategory.value?.minGames ?? props.config.minGames;
+        if (typeof minGames === 'number' && Number.isFinite(minGames)) {
+            params.set('min_games', String(Math.max(0, Math.trunc(minGames))));
+        }
+        if (selectedSeasonType.value) {
+            params.set('season_type', selectedSeasonType.value);
+        }
+        const response = await fetch(`${props.config.leaderboardEndpoint}?${params.toString()}`);
         if (!response.ok) {
             throw new Error('Failed to fetch player stats');
         }
@@ -302,6 +312,15 @@ const activeSortLabel = computed(
         ?? sortBy.value,
 );
 
+const selectedSeasonTypeLabel = computed(() =>
+    props.config.seasonTypeOptions?.find((option) => option.value === selectedSeasonType.value)?.label
+    ?? null,
+);
+
+const showSeasonTypeHeaderBadge = computed(() =>
+    selectedSeasonType.value === '1' && selectedSeasonTypeLabel.value !== null,
+);
+
 const formatColumnValue = (
     entry: PlayerLeaderboardEntry,
     column: StatColumn,
@@ -349,12 +368,18 @@ watch(selectedSeason, () => {
     fetchPlayers();
 });
 
+watch(selectedSeasonType, () => {
+    fetchPlayers();
+});
+
 watch(activeCategory, (category) => {
     const categorySort = category?.defaultSortBy ?? sortOptions.value[0]?.key;
     if (categorySort) {
         sortBy.value = categorySort;
         sortDesc.value = true;
     }
+
+    fetchPlayers();
 });
 </script>
 
@@ -366,7 +391,15 @@ watch(activeCategory, (category) => {
             <div class="flex items-center justify-between">
                 <div>
                     <p class="ui-kicker">Leaderboard</p>
-                    <h1 class="text-3xl font-semibold tracking-tight">{{ config.heading }}</h1>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-3xl font-semibold tracking-tight">{{ config.heading }}</h1>
+                        <span
+                            v-if="showSeasonTypeHeaderBadge"
+                            class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+                        >
+                            {{ selectedSeasonTypeLabel }}
+                        </span>
+                    </div>
                     <p class="text-sm text-muted-foreground">
                         {{ config.description }}
                     </p>
@@ -388,6 +421,23 @@ watch(activeCategory, (category) => {
                                 v-model="selectedSeason"
                                 :options="availableSeasons"
                             />
+                        </div>
+                        <div v-if="config.seasonTypeOptions?.length" class="space-y-2">
+                            <p class="ui-kicker">Season Type</p>
+                            <select
+                                id="player-stats-season-type"
+                                v-model="selectedSeasonType"
+                                class="flex h-10 min-w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+                            >
+                                <option value="">All</option>
+                                <option
+                                    v-for="option in config.seasonTypeOptions"
+                                    :key="option.value"
+                                    :value="option.value"
+                                >
+                                    {{ option.label }}
+                                </option>
+                            </select>
                         </div>
                         <div class="min-w-[200px] flex-1">
                             <Input
@@ -451,6 +501,9 @@ watch(activeCategory, (category) => {
                 </span>
                 <span v-if="selectedSeason" class="ui-chip text-foreground/80">
                     Season: {{ selectedSeason }}
+                </span>
+                <span v-if="selectedSeasonType" class="ui-chip text-foreground/80">
+                    Season Type: {{ config.seasonTypeOptions?.find((option) => option.value === selectedSeasonType)?.label ?? selectedSeasonType }}
                 </span>
                 <span v-if="searchQuery" class="ui-chip text-foreground/80">
                     Search: "{{ searchQuery }}"

@@ -1,9 +1,10 @@
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 import { formatNumber } from '@/composables/useFormatters';
 import { formatVenueLabel, getWinLossRecord } from '@/composables/useGameDataUtils';
 import { useMlbGamePage } from '@/composables/useMlbGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
+import { trackViewItem } from '@/lib/analytics';
 import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
 import type { MlbPageGame } from '@/types';
 
@@ -109,6 +110,27 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
         homeTeamId: game.home_team_id,
         gameHrefPrefix: '/mlb/games',
     }));
+
+    watch(
+        () => [
+            game.id,
+            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
+            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
+        ],
+        () => {
+            const awayLabel = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+
+            trackViewItem({
+                itemId: game.id,
+                itemName: `${awayLabel} @ ${homeLabel}`,
+                sport: 'mlb',
+                homeTeam: homeLabel,
+                awayTeam: awayLabel,
+            });
+        },
+        { immediate: true },
+    );
 
     return { pageProps, recentSectionProps };
 }

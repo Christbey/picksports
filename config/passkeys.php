@@ -11,6 +11,8 @@ return [
 
     'challenge_timeout_seconds' => (int) env('PASSKEYS_CHALLENGE_TIMEOUT', 600),
 
+    'authentication_timeout_ms' => (int) env('PASSKEYS_AUTH_TIMEOUT_MS', 20000),
+
     'user_verification' => env('PASSKEYS_USER_VERIFICATION', 'required'),
 
     'algorithms' => [-7], // ES256

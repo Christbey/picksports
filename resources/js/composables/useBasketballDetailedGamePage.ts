@@ -1,8 +1,9 @@
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useBasketballGamePage } from '@/composables/useBasketballGamePage';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { formatVenueLabel } from '@/composables/useGameDataUtils';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
+import { trackViewItem } from '@/lib/analytics';
 import type {
     ApiEnvelope,
     Game,
@@ -167,6 +168,27 @@ export function useBasketballDetailedGamePage(
         formatNumber,
         getBetterValue,
     }));
+
+    watch(
+        () => [
+            options.game.id,
+            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
+            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
+        ],
+        () => {
+            const awayLabel = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+
+            trackViewItem({
+                itemId: options.game.id,
+                itemName: `${awayLabel} @ ${homeLabel}`,
+                sport: options.sport,
+                homeTeam: homeLabel,
+                awayTeam: awayLabel,
+            });
+        },
+        { immediate: true },
+    );
 
     return {
         config,

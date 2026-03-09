@@ -119,6 +119,9 @@ test('guest user can authenticate with passkey assertion', function () {
     $options->assertOk();
 
     $challenge = $options->json('publicKey.challenge');
+    $challengeId = $options->json('challenge_id');
+
+    expect($challengeId)->not->toBeEmpty();
 
     $clientDataJson = json_encode([
         'type' => 'webauthn.get',
@@ -132,6 +135,7 @@ test('guest user can authenticate with passkey assertion', function () {
     openssl_sign($signaturePayload, $signature, $privatePem, OPENSSL_ALGO_SHA256);
 
     $verify = $this->postJson('/passkeys/authentication/verify', [
+        'challenge_id' => $challengeId,
         'credential_id' => $credentialId,
         'client_data_json' => b64urlEncode($clientDataJson ?: ''),
         'authenticator_data' => b64urlEncode($authenticatorDataRaw),

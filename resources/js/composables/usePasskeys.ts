@@ -28,6 +28,7 @@ type RegistrationOptionsResponse = {
 };
 
 type AuthenticationOptionsResponse = {
+    challenge_id: string;
     publicKey: {
         challenge: string;
         rpId: string;
@@ -105,6 +106,12 @@ async function refreshCsrfState(): Promise<void> {
             'X-Requested-With': 'XMLHttpRequest',
         },
     });
+}
+
+async function ensureCsrfState(): Promise<void> {
+    if (!xsrfCookieToken()) {
+        await refreshCsrfState();
+    }
 }
 
 function requestHeaders(): HeadersInit {
@@ -287,6 +294,7 @@ export async function signInWithPasskey(email?: string): Promise<void> {
 
 async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Promise<void> {
     ensureWebAuthnSupport();
+    await ensureCsrfState();
 
     const optionsResponse = await postJson<AuthenticationOptionsResponse>(
         '/passkeys/authentication/options',
@@ -337,7 +345,12 @@ async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Prom
     let verify: { redirect?: string };
 
     try {
+        if (!optionsResponse.challenge_id) {
+            throw new Error('Passkey challenge is missing. Refresh the page and try again.');
+        }
+
         verify = await postJson<{ redirect?: string }>('/passkeys/authentication/verify', {
+            challenge_id: optionsResponse.challenge_id,
             credential_id: base64UrlEncode(credential.rawId),
             client_data_json: base64UrlEncode(response.clientDataJSON),
             authenticator_data: base64UrlEncode(response.authenticatorData),

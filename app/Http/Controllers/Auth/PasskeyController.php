@@ -216,6 +216,8 @@ class PasskeyController extends Controller
             $this->passkeyAuthenticationService->buildAuthenticationOptions(
                 $request,
                 $validated['email'] ?? null,
+                'passkeys.authenticate',
+                false,
             )
         );
     }
@@ -225,13 +227,19 @@ class PasskeyController extends Controller
         $this->ensurePasskeysEnabled();
 
         $validated = $request->validate([
+            'challenge_id' => ['required', 'string', 'max:255'],
             'credential_id' => ['required', 'string', 'max:512'],
             'client_data_json' => ['required', 'string', 'max:4096'],
             'authenticator_data' => ['required', 'string', 'max:4096'],
             'signature' => ['required', 'string', 'max:4096'],
         ]);
 
-        $user = $this->passkeyAuthenticationService->verifyAuthentication($request, $validated);
+        $user = $this->passkeyAuthenticationService->verifyAuthentication(
+            $request,
+            $validated,
+            'passkeys.authenticate',
+            false,
+        );
 
         Auth::login($user, remember: true);
         $request->session()->regenerate();

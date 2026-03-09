@@ -24,3 +24,9 @@ declare module 'vue' {
         $headManager: ReturnType<typeof createHeadManager>;
     }
 }
+
+declare global {
+    interface Window {
+        dataLayer: Array<Record<string, unknown>>;
+    }
+}

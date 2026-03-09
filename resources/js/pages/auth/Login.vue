@@ -10,6 +10,11 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { signInWithPasskey } from '@/composables/usePasskeys';
 import AuthBase from '@/layouts/AuthLayout.vue';
+import {
+    clearPendingAnalyticsEvent,
+    pushAnalyticsEvent,
+    setPendingAnalyticsEvent,
+} from '@/lib/analytics';
 import { register } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
@@ -24,13 +29,21 @@ const email = ref('');
 const passkeyError = ref<string | null>(null);
 const passkeyProcessing = ref(false);
 
+function trackPasswordLoginStart(): void {
+    pushAnalyticsEvent('login_start', { login_method: 'password' });
+    setPendingAnalyticsEvent('login_complete', { login_method: 'password' });
+}
+
 async function handlePasskeySignIn(): Promise<void> {
     passkeyError.value = null;
     passkeyProcessing.value = true;
+    pushAnalyticsEvent('login_start', { login_method: 'passkey' });
+    setPendingAnalyticsEvent('login_complete', { login_method: 'passkey' });
 
     try {
         await signInWithPasskey(email.value);
     } catch (error) {
+        clearPendingAnalyticsEvent();
         passkeyError.value = error instanceof Error ? error.message : 'Passkey sign-in failed.';
     } finally {
         passkeyProcessing.value = false;
@@ -55,6 +68,8 @@ async function handlePasskeySignIn(): Promise<void> {
         <Form
             v-bind="store.form()"
             :reset-on-success="['password']"
+            @submit="trackPasswordLoginStart"
+            @error="clearPendingAnalyticsEvent"
             v-slot="{ errors, processing }"
             class="flex flex-col gap-6"
         >

@@ -2,6 +2,12 @@
 import { Head, router } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppLayout from '@/layouts/AppLayout.vue';
+import {
+    clearPendingAnalyticsEvent,
+    createAnalyticsEventId,
+    pushAnalyticsEvent,
+    setPendingAnalyticsEvent,
+} from '@/lib/analytics';
 import { type BreadcrumbItem } from '@/types';
 
 interface TierFeatures {
@@ -47,12 +53,41 @@ const breadcrumbs: BreadcrumbItem[] = [
 function subscribe(tierId: string) {
     if (isProcessing.value) return;
 
+    const selectedTier = props.tiers.find((tier) => tier.id === tierId);
+    const rawPrice = selectedTier?.price[selectedBillingPeriod.value];
+    const numericPrice = typeof rawPrice === 'string' ? parseFloat(rawPrice) : rawPrice;
+    const value = typeof numericPrice === 'number' && !Number.isNaN(numericPrice)
+        ? numericPrice
+        : undefined;
+    const planName = selectedTier?.name ?? tierId;
+    const eventId = createAnalyticsEventId();
+
+    pushAnalyticsEvent('begin_checkout', {
+        event_id: eventId,
+        plan_name: planName,
+        plan_id: tierId,
+        billing_cycle: selectedBillingPeriod.value,
+        value,
+        currency: value !== undefined ? 'USD' : undefined,
+    });
+    setPendingAnalyticsEvent('purchase', {
+        event_id: eventId,
+        plan_name: planName,
+        plan_id: tierId,
+        billing_cycle: selectedBillingPeriod.value,
+        value,
+        currency: value !== undefined ? 'USD' : undefined,
+    });
+
     isProcessing.value = true;
 
     router.post('/subscription/checkout', {
         tier: tierId,
         billing_period: selectedBillingPeriod.value,
     }, {
+        onError: () => {
+            clearPendingAnalyticsEvent();
+        },
         onFinish: () => {
             isProcessing.value = false;
         },

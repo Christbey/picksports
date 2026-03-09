@@ -1,8 +1,9 @@
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { useNflGamePage } from '@/composables/useNflGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
+import { trackViewItem } from '@/lib/analytics';
 import type { NflPageGame } from '@/types';
 
 const formatSpread = (spread: number | string): string => {
@@ -138,6 +139,27 @@ export function useNflDetailedGamePage(game: NflPageGame) {
             homeTrends,
         },
     });
+
+    watch(
+        () => [
+            game.id,
+            awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
+            homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
+        ],
+        () => {
+            const awayLabel = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+
+            trackViewItem({
+                itemId: game.id,
+                itemName: `${awayLabel} @ ${homeLabel}`,
+                sport: 'nfl',
+                homeTeam: homeLabel,
+                awayTeam: awayLabel,
+            });
+        },
+        { immediate: true },
+    );
 
     return {
         pageProps,

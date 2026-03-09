@@ -66,7 +66,7 @@ class PasskeyAuthenticationService
             'publicKey' => [
                 'challenge' => $challenge,
                 'rpId' => $rpId,
-                'timeout' => 60000,
+                'timeout' => max(5000, (int) config('passkeys.authentication_timeout_ms', 20000)),
                 'userVerification' => (string) config('passkeys.user_verification', 'required'),
                 'allowCredentials' => $allowCredentials,
             ],

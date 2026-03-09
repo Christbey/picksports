@@ -7,8 +7,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import AuthBase from '@/layouts/AuthLayout.vue';
+import {
+    clearPendingAnalyticsEvent,
+    pushAnalyticsEvent,
+    setPendingAnalyticsEvent,
+} from '@/lib/analytics';
 import { login, terms } from '@/routes';
 import { store } from '@/routes/register';
+
+function trackSignupStart(): void {
+    pushAnalyticsEvent('sign_up_start', { sign_up_method: 'email' });
+    setPendingAnalyticsEvent('sign_up_complete', { sign_up_method: 'email' });
+}
 </script>
 
 <template>
@@ -21,6 +31,8 @@ import { store } from '@/routes/register';
         <Form
             v-bind="store.form()"
             :reset-on-success="['password', 'password_confirmation']"
+            @submit="trackSignupStart"
+            @error="clearPendingAnalyticsEvent"
             v-slot="{ errors, processing }"
             class="flex flex-col gap-6"
         >

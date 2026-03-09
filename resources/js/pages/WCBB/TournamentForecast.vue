@@ -360,7 +360,7 @@ onMounted(async () => {
                                             </div>
                                         </td>
                                         <td class="p-2 text-right text-xs font-semibold" :class="(row.market_edge?.edge_probability ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'">
-                                            <div class="flex items-center justify-end gap-2">
+                                            <div class="flex items-center justify-end">
                                                 <span
                                                     class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
                                                     :class="(row.market_edge?.has_edge ?? false)
@@ -369,9 +369,10 @@ onMounted(async () => {
                                                             : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200')
                                                         : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'"
                                                 >
-                                                    {{ !(row.market_edge?.has_edge ?? false) ? 'No Edge' : ((row.market_edge?.edge_probability ?? 0) > 0 ? '+EV' : '-EV') }}
+                                                    {{ !(row.market_edge?.has_edge ?? false)
+                                                        ? 'No Edge'
+                                                        : `${(row.market_edge?.edge_probability ?? 0) > 0 ? '+EV' : '-EV'} ${formatEdgePoints(row.market_edge?.edge_percent_points)}` }}
                                                 </span>
-                                                <span>{{ formatEdgePoints(row.market_edge?.edge_percent_points) }}</span>
                                             </div>
                                         </td>
                                     </tr>

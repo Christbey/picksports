@@ -3,15 +3,17 @@
 namespace App\Http\Controllers\Subscription;
 
 use App\Http\Controllers\Controller;
-use App\Models\SubscriptionTier;
+use App\Support\SubscriptionTierCache;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class CheckoutController extends Controller
 {
+    public function __construct(private readonly SubscriptionTierCache $subscriptionTierCache) {}
+
     public function __invoke(Request $request)
     {
-        $tierSlugs = SubscriptionTier::active()->pluck('slug')->toArray();
+        $tierSlugs = $this->subscriptionTierCache->activeOrdered()->pluck('slug')->values()->all();
 
         $request->validate([
             'tier' => ['required', Rule::in($tierSlugs)],
@@ -26,7 +28,7 @@ class CheckoutController extends Controller
             return $this->backError('Your account already has founding access and does not require a paid subscription.');
         }
 
-        $tier = SubscriptionTier::where('slug', $tierSlug)->first();
+        $tier = $this->subscriptionTierCache->tierBySlug((string) $tierSlug);
 
         if (! $tier || $tier->is_default) {
             return $this->backError('Cannot subscribe to the free tier.');

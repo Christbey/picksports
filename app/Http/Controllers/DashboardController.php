@@ -22,6 +22,7 @@ use App\Models\WCBB\Game as WCBBGame;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
@@ -33,63 +34,81 @@ class DashboardController extends Controller
 
     private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
 
+    public function __construct(private readonly SportsViewCache $sportsViewCache) {}
+
     public function __invoke(): Response
     {
-        $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
-        $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
-
-        $todayGameScope = fn (Builder $q) => $q->whereRaw(
-            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-            [$todayStartUtc, $todayEndUtc]
-        );
-
-        $sportConfigs = $this->sportConfigs();
-
-        $todaysPredictions = collect($sportConfigs)
-            ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope));
-
         $user = auth()->user();
         $predictionsPerDay = $user->subscriptionTier()?->features['predictions_per_day'] ?? null;
+        $cacheKey = $this->sportsViewCache->contextHash([
+            'date' => now()->toDateString(),
+            'predictions_per_day' => $predictionsPerDay,
+        ]);
 
-        $predictionsBySport = $todaysPredictions
-            ->groupBy('sport')
-            ->map(function (Collection $predictions) use ($predictionsPerDay) {
-                $sorted = $predictions->sortBy('game_time');
+        $payload = $this->sportsViewCache->remember(
+            segment: 'dashboard',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.dashboard_seconds', 20),
+            resolver: function () use ($predictionsPerDay): array {
+                $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
+                $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
 
-                return $predictionsPerDay !== null
-                    ? $sorted->take($predictionsPerDay)->values()
-                    : $sorted->values();
-            });
+                $todayGameScope = fn (Builder $q) => $q->whereRaw(
+                    'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+                    [$todayStartUtc, $todayEndUtc]
+                );
 
-        $sports = collect($sportConfigs)
-            ->map(function (array $config, string $sport) use ($predictionsBySport) {
-                return [
-                    'name' => $sport,
-                    'fullName' => $config['full_name'],
-                    'color' => $config['color'],
-                    'predictions' => $predictionsBySport->get($sport, collect())->values(),
+                $sportConfigs = $this->sportConfigs();
+
+                $todaysPredictions = collect($sportConfigs)
+                    ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope));
+
+                $predictionsBySport = $todaysPredictions
+                    ->groupBy('sport')
+                    ->map(function (Collection $predictions) use ($predictionsPerDay) {
+                        $sorted = $predictions->sortBy('game_time');
+
+                        return $predictionsPerDay !== null
+                            ? $sorted->take($predictionsPerDay)->values()
+                            : $sorted->values();
+                    });
+
+                $sports = collect($sportConfigs)
+                    ->map(function (array $config, string $sport) use ($predictionsBySport) {
+                        return [
+                            'name' => $sport,
+                            'fullName' => $config['full_name'],
+                            'color' => $config['color'],
+                            'predictions' => $predictionsBySport->get($sport, collect())->values(),
+                        ];
+                    })
+                    ->filter(fn (array $sport) => $sport['predictions']->isNotEmpty())
+                    ->values();
+
+                $todayGameCount = fn (string $model) => $model::whereRaw(
+                    'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+                    [$todayStartUtc, $todayEndUtc]
+                )->count();
+
+                $stats = [
+                    'total_predictions_today' => $predictionsBySport->sum(fn (Collection $predictions) => $predictions->count()),
+                    'total_games_today' => collect($sportConfigs)
+                        ->sum(fn (array $config) => $todayGameCount($config['game_model'])),
+                    'healthcheck_status' => Healthcheck::where('checked_at', '>=', now()->subHours(1))
+                        ->where('status', 'failing')
+                        ->exists() ? 'failing' : 'passing',
                 ];
-            })
-            ->filter(fn (array $sport) => $sport['predictions']->isNotEmpty())
-            ->values();
 
-        $todayGameCount = fn (string $model) => $model::whereRaw(
-            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-            [$todayStartUtc, $todayEndUtc]
-        )->count();
-
-        $stats = [
-            'total_predictions_today' => $predictionsBySport->sum(fn (Collection $predictions) => $predictions->count()),
-            'total_games_today' => collect($sportConfigs)
-                ->sum(fn (array $config) => $todayGameCount($config['game_model'])),
-            'healthcheck_status' => Healthcheck::where('checked_at', '>=', now()->subHours(1))
-                ->where('status', 'failing')
-                ->exists() ? 'failing' : 'passing',
-        ];
+                return [
+                    'sports' => $sports->values()->all(),
+                    'stats' => $stats,
+                ];
+            },
+        );
 
         return Inertia::render('Dashboard', [
-            'sports' => $sports,
-            'stats' => $stats,
+            'sports' => $payload['sports'],
+            'stats' => $payload['stats'],
         ]);
     }
 

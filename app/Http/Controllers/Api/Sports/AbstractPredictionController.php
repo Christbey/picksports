@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +13,11 @@ use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractPredictionController extends AbstractSportsApiController
 {
+    /**
+     * @var array<string, bool>
+     */
+    protected static array $gameColumnPresence = [];
+
     protected const PREDICTION_MODEL = '';
 
     protected const GAME_MODEL = '';
@@ -49,19 +56,21 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
      */
     protected function applyIndexFilters($query): void
     {
-        if (request()->filled('season') && $this->hasGameSeasonColumn()) {
+        $request = request();
+
+        if ($request->filled('season') && $this->hasGameSeasonColumn()) {
             $query->whereHas('game', function ($q) {
                 $q->where($this->getGameSeasonColumn(), request('season'));
             });
         }
 
-        if (request()->filled('season_type') && $this->hasGameSeasonTypeColumn()) {
+        if ($request->filled('season_type') && $this->hasGameSeasonTypeColumn()) {
             $query->whereHas('game', function ($q) {
                 $q->where($this->getGameSeasonTypeColumn(), request('season_type'));
             });
         }
 
-        if (request()->filled('week') && $this->hasGameWeekColumn()) {
+        if ($request->filled('week') && $this->hasGameWeekColumn()) {
             $query->whereHas('game', function ($q) {
                 $q->where($this->getGameWeekColumn(), request('week'));
             });
@@ -122,8 +131,13 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     protected function hasGameColumn(string $column): bool
     {
         $gameInstance = new ($this->getGameModel());
+        $cacheKey = $gameInstance->getTable().':'.$column;
 
-        return Schema::hasColumn($gameInstance->getTable(), $column);
+        if (! array_key_exists($cacheKey, self::$gameColumnPresence)) {
+            self::$gameColumnPresence[$cacheKey] = Schema::hasColumn($gameInstance->getTable(), $column);
+        }
+
+        return self::$gameColumnPresence[$cacheKey];
     }
 
     /**
@@ -145,30 +159,51 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     /**
      * Display a listing of predictions
      */
-    public function index(): AnonymousResourceCollection
+    public function index(): AnonymousResourceCollection|JsonResponse
     {
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
         $tierContext = $this->resolveTierContext('getPredictionsLimit');
         $tierMetadata = $tierContext['metadata'];
         $tierLimit = $tierContext['limit'];
+        $request = request();
 
-        $query = $predictionModel::query()
-            ->with(['game.homeTeam', 'game.awayTeam']);
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'query' => $request->query(),
+            'tier_limit' => $tierLimit,
+            'tier_name' => $tierMetadata['tier_name'] ?? null,
+        ]);
 
-        $this->applyIndexFilters($query);
+        $payload = $sportsViewCache->remember(
+            segment: 'predictions_index',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.predictions_index_seconds', 60),
+            resolver: function () use ($predictionModel, $resourceClass, $tierMetadata, $tierLimit): array {
+                $query = $predictionModel::query()
+                    ->with(['game.homeTeam', 'game.awayTeam']);
 
-        $predictions = $query->latest()->get();
+                $this->applyIndexFilters($query);
 
-        // Allow sport-specific processing
-        $predictions = $this->processPredictions($predictions);
+                $predictions = $query->latest()->get();
 
-        // Apply tier limit after processing
-        if ($tierLimit !== null) {
-            $predictions = $predictions->take($tierLimit);
-        }
+                // Allow sport-specific processing
+                $predictions = $this->processPredictions($predictions);
 
-        return $this->withTierMetadata($resourceClass::collection($predictions), $tierMetadata);
+                // Apply tier limit after processing
+                if ($tierLimit !== null) {
+                    $predictions = $predictions->take($tierLimit);
+                }
+
+                return $this->withTierMetadata($resourceClass::collection($predictions), $tierMetadata)
+                    ->response()
+                    ->getData(true);
+            },
+        );
+
+        return response()->json($payload);
     }
 
     /**
@@ -179,50 +214,79 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
         $predictionModel = $this->getPredictionModel();
         $gameInstance = new ($this->getGameModel());
         $predictionInstance = new $predictionModel();
+        $request = request();
 
-        $query = $predictionModel::query()
-            ->join(
-                $gameInstance->getTable(),
-                "{$gameInstance->getTable()}.id",
-                '=',
-                "{$predictionInstance->getTable()}.game_id"
-            )
-            ->select(DB::raw("DISTINCT DATE({$gameInstance->getTable()}.{$this->getGameDateColumn()}) as game_date"));
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'season' => $request->query('season'),
+        ]);
 
-        if (request('season') && $this->hasGameSeasonColumn()) {
-            $query->where("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}", request('season'));
-        }
+        $payload = $sportsViewCache->remember(
+            segment: 'predictions_available_dates',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.predictions_available_dates_seconds', 300),
+            resolver: function () use ($predictionModel, $gameInstance, $predictionInstance, $request): array {
+                $query = $predictionModel::query()
+                    ->join(
+                        $gameInstance->getTable(),
+                        "{$gameInstance->getTable()}.id",
+                        '=',
+                        "{$predictionInstance->getTable()}.game_id"
+                    )
+                    ->select(DB::raw("DISTINCT DATE({$gameInstance->getTable()}.{$this->getGameDateColumn()}) as game_date"));
 
-        $dates = $query
-            ->orderBy('game_date')
-            ->pluck('game_date');
+                if ($request->query('season') && $this->hasGameSeasonColumn()) {
+                    $query->where("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}", $request->query('season'));
+                }
 
-        return response()->json(['data' => $dates]);
+                $dates = $query
+                    ->orderBy('game_date')
+                    ->pluck('game_date');
+
+                return ['data' => $dates];
+            },
+        );
+
+        return response()->json($payload);
     }
 
     public function availableSeasons(): JsonResponse
     {
-        if (! $this->hasGameSeasonColumn()) {
-            return response()->json(['data' => []]);
-        }
-
         $predictionModel = $this->getPredictionModel();
         $gameInstance = new ($this->getGameModel());
         $predictionInstance = new $predictionModel();
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash(['controller' => static::class]);
 
-        $seasons = $predictionModel::query()
-            ->join(
-                $gameInstance->getTable(),
-                "{$gameInstance->getTable()}.id",
-                '=',
-                "{$predictionInstance->getTable()}.game_id"
-            )
-            ->whereNotNull("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}")
-            ->select(DB::raw("DISTINCT {$gameInstance->getTable()}.{$this->getGameSeasonColumn()} as season"))
-            ->orderByDesc('season')
-            ->pluck('season');
+        $payload = $sportsViewCache->remember(
+            segment: 'predictions_available_seasons',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.predictions_available_seasons_seconds', 600),
+            resolver: function () use ($predictionModel, $gameInstance, $predictionInstance): array {
+                if (! $this->hasGameSeasonColumn()) {
+                    return ['data' => []];
+                }
 
-        return response()->json(['data' => $seasons]);
+                $seasons = $predictionModel::query()
+                    ->join(
+                        $gameInstance->getTable(),
+                        "{$gameInstance->getTable()}.id",
+                        '=',
+                        "{$predictionInstance->getTable()}.game_id"
+                    )
+                    ->whereNotNull("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}")
+                    ->select(DB::raw("DISTINCT {$gameInstance->getTable()}.{$this->getGameSeasonColumn()} as season"))
+                    ->orderByDesc('season')
+                    ->pluck('season');
+
+                return ['data' => $seasons];
+            },
+        );
+
+        return response()->json($payload);
     }
 
     /**
@@ -247,23 +311,44 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
         $gameId = $this->requireNumericId($game);
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'game_id' => $gameId,
+            'first_only' => $this->returnFirstPredictionOnly(),
+        ]);
 
-        $query = $predictionModel::query()
-            ->where('game_id', $gameId)
-            ->orderByDesc('created_at');
+        $payload = $sportsViewCache->remember(
+            segment: 'predictions_by_game',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.predictions_by_game_seconds', 30),
+            resolver: function () use ($predictionModel, $resourceClass, $gameId): array {
+                $query = $predictionModel::query()
+                    ->where('game_id', $gameId)
+                    ->orderByDesc('created_at');
 
-        if ($this->returnFirstPredictionOnly()) {
-            $prediction = $query->first();
+                if ($this->returnFirstPredictionOnly()) {
+                    $prediction = $query->first();
 
-            if (! $prediction) {
-                return response()->json(['data' => null], 404);
-            }
+                    if (! $prediction) {
+                        return ['data' => null, '__status' => 404];
+                    }
 
-            return new $resourceClass($prediction);
+                    return (new $resourceClass($prediction))->response()->getData(true);
+                }
+
+                $predictions = $query->paginate(15);
+
+                return $resourceClass::collection($predictions)->response()->getData(true);
+            },
+        );
+
+        $status = (int) ($payload['__status'] ?? 200);
+        if (array_key_exists('__status', $payload)) {
+            unset($payload['__status']);
         }
 
-        $predictions = $query->paginate(15);
-
-        return $resourceClass::collection($predictions);
+        return response()->json($payload, $status);
     }
 }

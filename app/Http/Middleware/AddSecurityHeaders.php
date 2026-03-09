@@ -37,8 +37,8 @@ class AddSecurityHeaders
             "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://*.cloudflareinsights.com https://www.facebook.com https://connect.facebook.net",
             "manifest-src 'self'",
             "worker-src 'self' blob:",
-            // Allow known policy names created by Vue and GTM/gtag to prevent Trusted Types report noise.
-            "trusted-types default vue goog#html",
+            // Allow known policy names created by Vue, GTM/gtag, and Meta Pixel to prevent Trusted Types report noise.
+            "trusted-types default vue goog#html connect.facebook.net/fbevents facebook.com/signals/iwl 'allow-duplicates'",
             'report-to csp',
         ];
 

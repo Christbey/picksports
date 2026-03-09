@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\SubscriptionTierCache;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -41,6 +42,19 @@ class SubscriptionTier extends Model
             'is_active' => 'boolean',
             'sort_order' => 'integer',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        $invalidateCache = static fn (): SubscriptionTierCache => app(SubscriptionTierCache::class);
+
+        static::saved(static function () use ($invalidateCache): void {
+            $invalidateCache()->bust();
+        });
+
+        static::deleted(static function () use ($invalidateCache): void {
+            $invalidateCache()->bust();
+        });
     }
 
     public function scopeActive($query)

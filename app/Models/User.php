@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use App\Services\Admin\TierPermissionSyncService;
+use App\Support\SubscriptionTierCache;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -17,6 +18,12 @@ class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
     use Billable, HasApiTokens, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
+
+    private ?SubscriptionTier $resolvedSubscriptionTier = null;
+
+    private bool $subscriptionTierResolved = false;
+
+    private ?bool $resolvedFoundingAccess = null;
 
     /**
      * The attributes that are mass assignable.
@@ -58,25 +65,28 @@ class User extends Authenticatable
 
     public function subscriptionTier(): ?SubscriptionTier
     {
+        if ($this->subscriptionTierResolved) {
+            return $this->resolvedSubscriptionTier;
+        }
+
+        /** @var SubscriptionTierCache $tierCache */
+        $tierCache = app(SubscriptionTierCache::class);
+
         if ($this->hasFoundingAccess()) {
             $foundingTier = $this->foundingTier();
             if ($foundingTier) {
-                return $foundingTier;
+                return $this->rememberResolvedSubscriptionTier($foundingTier);
             }
         }
 
         if (! $this->subscribed()) {
-            return SubscriptionTier::default()->first();
+            return $this->rememberResolvedSubscriptionTier($tierCache->defaultTier());
         }
 
         $subscription = $this->subscription();
+        $tier = $tierCache->tierByStripePrice($subscription?->stripe_price);
 
-        $tier = SubscriptionTier::where(function ($query) use ($subscription) {
-            $query->where('stripe_price_id_monthly', $subscription->stripe_price)
-                ->orWhere('stripe_price_id_yearly', $subscription->stripe_price);
-        })->first();
-
-        return $tier ?? SubscriptionTier::default()->first();
+        return $this->rememberResolvedSubscriptionTier($tier ?? $tierCache->defaultTier());
     }
 
     public function isAdmin(): bool
@@ -101,21 +111,32 @@ class User extends Authenticatable
                 ->all();
 
             $this->syncRoles(array_values(array_unique([...$nonTierRoles, $role->name])));
+            $this->resetAccessCaches();
         }
     }
 
     public function hasFoundingAccess(): bool
     {
+        if ($this->resolvedFoundingAccess !== null) {
+            return $this->resolvedFoundingAccess;
+        }
+
         if (! config('founding_users.enabled', false)) {
+            $this->resolvedFoundingAccess = false;
+
             return false;
         }
 
         $roleName = (string) config('founding_users.role', 'founding_user');
         if ($roleName === '') {
+            $this->resolvedFoundingAccess = false;
+
             return false;
         }
 
-        return $this->hasRole($roleName);
+        $this->resolvedFoundingAccess = $this->hasRole($roleName);
+
+        return $this->resolvedFoundingAccess;
     }
 
     public function foundingTier(): ?SubscriptionTier
@@ -125,10 +146,15 @@ class User extends Authenticatable
             return null;
         }
 
-        return SubscriptionTier::query()
-            ->where('slug', $foundingTierSlug)
-            ->active()
-            ->first();
+        /** @var SubscriptionTierCache $tierCache */
+        $tierCache = app(SubscriptionTierCache::class);
+        $tier = $tierCache->tierBySlug($foundingTierSlug);
+
+        if (! $tier?->is_active) {
+            return null;
+        }
+
+        return $tier;
     }
 
     public function bets(): HasMany
@@ -203,5 +229,20 @@ class User extends Authenticatable
         $todayCount = UserAlertSent::getTodayCountForUser($this->id);
 
         return $todayCount >= $limit;
+    }
+
+    private function rememberResolvedSubscriptionTier(?SubscriptionTier $tier): ?SubscriptionTier
+    {
+        $this->subscriptionTierResolved = true;
+        $this->resolvedSubscriptionTier = $tier;
+
+        return $tier;
+    }
+
+    private function resetAccessCaches(): void
+    {
+        $this->subscriptionTierResolved = false;
+        $this->resolvedSubscriptionTier = null;
+        $this->resolvedFoundingAccess = null;
     }
 }

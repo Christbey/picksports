@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 
 abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
@@ -41,6 +42,16 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
         $generated = $generatePrediction->executeForAllScheduledGames((int) $season);
 
         $this->info("Predictions generated for {$generated} scheduled games.");
+        if ($generated > 0) {
+            app(SportsViewCache::class)->bustSegments([
+                SportsViewCache::SEGMENT_DASHBOARD,
+                SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
+                SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
+                SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
+            ]);
+        }
 
         return self::SUCCESS;
     }

@@ -4,6 +4,7 @@ namespace App\Actions\OddsApi;
 
 use App\Models\Sports\FuturesOdd;
 use App\Services\OddsApi\OddsApiService;
+use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -43,7 +44,8 @@ class SyncFuturesOdds
     ];
 
     public function __construct(
-        protected OddsApiService $oddsApiService
+        protected OddsApiService $oddsApiService,
+        protected SportsViewCache $sportsViewCache
     ) {}
 
     /**
@@ -76,6 +78,10 @@ class SyncFuturesOdds
             }
 
             $results[$sport] = $this->upsertRows($rows);
+        }
+
+        if (array_sum($results) > 0) {
+            $this->sportsViewCache->bustSegment(SportsViewCache::SEGMENT_FUTURES_FORECASTS);
         }
 
         return $results;

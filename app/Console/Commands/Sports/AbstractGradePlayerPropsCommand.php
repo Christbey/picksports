@@ -4,6 +4,7 @@ namespace App\Console\Commands\Sports;
 
 use App\Actions\GradePlayerProps;
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 
 abstract class AbstractGradePlayerPropsCommand extends Command
@@ -97,6 +98,8 @@ abstract class AbstractGradePlayerPropsCommand extends Command
         } else {
             $this->warn('No probability-tagged graded props available for calibration buckets.');
         }
+
+        app(SportsViewCache::class)->bustSegment(SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE);
 
         return self::SUCCESS;
     }

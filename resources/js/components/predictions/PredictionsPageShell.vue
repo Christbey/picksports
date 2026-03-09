@@ -68,13 +68,13 @@ const breadcrumbs: BreadcrumbItem[] = [
         <div class="flex h-full flex-1 flex-col gap-5 overflow-x-auto rounded-[1.25rem] p-3 md:p-4">
             <SubscriptionBanner variant="subtle" :storage-key="bannerStorageKey" />
 
+            <slot />
+
             <Alert class="ui-surface-subtle">
                 <AlertDescription>
                     <strong>Entertainment Only:</strong> These predictions are for entertainment purposes only. Past performance does not guarantee future results. Please gamble responsibly. If you or someone you know has a gambling problem, call 1-800-522-4700 or visit our <Link :href="responsibleGambling()" class="underline">Responsible Gambling</Link> page.
                 </AlertDescription>
             </Alert>
-
-            <slot />
         </div>
     </AppLayout>
 </template>

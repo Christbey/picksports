@@ -3,19 +3,21 @@
 namespace App\Http\Controllers\Subscription;
 
 use App\Http\Controllers\Controller;
-use App\Models\SubscriptionTier;
+use App\Support\SubscriptionTierCache;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class SubscriptionController extends Controller
 {
+    public function __construct(private readonly SubscriptionTierCache $subscriptionTierCache) {}
+
     public function plans(Request $request): Response
     {
         $user = $request->user();
         $currentTier = $user ? $user->subscriptionTier() : null;
 
-        $tiers = SubscriptionTier::active()->ordered()->get()->map(function ($tier) use ($currentTier) {
+        $tiers = $this->subscriptionTierCache->activeOrdered()->map(function ($tier) use ($currentTier) {
             return [
                 'id' => $tier->slug,
                 'name' => $tier->name,

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\SportsViewCache;
 use App\Support\UserTierResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -97,36 +98,55 @@ abstract class AbstractTeamController extends AbstractSportsApiController
             abort(404, 'Trends not available for this sport');
         }
 
-        $team = $teamModel::findOrFail($teamId);
-        $calculator = app($calculatorClass);
-
         $season = $request->integer('season') ?: null;
         $beforeDate = $request->string('before_date')->toString() ?: null;
         $gamesParam = strtolower(trim((string) $request->query('games', '')));
-
-        $isSeasonSample = in_array($gamesParam, ['season', 'all'], true);
-        if ($isSeasonSample && method_exists($calculator, 'countAvailableGames')) {
-            $gameCount = max(1, (int) $calculator->countAvailableGames($team, $season, $beforeDate));
-        } else {
-            $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));
-            $gameCount = min(
-                max($gameCount, config('trends.defaults.min_sample', 5)),
-                config('trends.defaults.max_sample', 50)
-            );
-        }
-
         $userTier = app(UserTierResolver::class)->resolveTierSlug($request->user());
 
-        $result = $calculator->execute($team, $gameCount, $season, $beforeDate, $userTier);
-
-        return response()->json([
-            'team_id' => $team->id,
-            'team_abbreviation' => $team->abbreviation,
-            'team_name' => $this->getTeamNameForResponse($team),
-            'sample_size' => $gameCount,
-            'user_tier' => $userTier,
-            'trends' => $result['trends'],
-            'locked_trends' => $result['locked'],
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'team_id' => $teamId,
+            'season' => $season,
+            'before_date' => $beforeDate,
+            'games' => $gamesParam !== '' ? $gamesParam : $request->integer('games', config('trends.defaults.sample_size', 20)),
+            'tier' => $userTier,
         ]);
+
+        $payload = $sportsViewCache->remember(
+            segment: 'team_trends',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_trends_seconds', 120),
+            resolver: function () use ($teamModel, $teamId, $calculatorClass, $season, $beforeDate, $gamesParam, $userTier, $request): array {
+                $team = $teamModel::findOrFail($teamId);
+                $calculator = app($calculatorClass);
+
+                $isSeasonSample = in_array($gamesParam, ['season', 'all'], true);
+                if ($isSeasonSample && method_exists($calculator, 'countAvailableGames')) {
+                    $gameCount = max(1, (int) $calculator->countAvailableGames($team, $season, $beforeDate));
+                } else {
+                    $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));
+                    $gameCount = min(
+                        max($gameCount, config('trends.defaults.min_sample', 5)),
+                        config('trends.defaults.max_sample', 50)
+                    );
+                }
+
+                $result = $calculator->execute($team, $gameCount, $season, $beforeDate, $userTier);
+
+                return [
+                    'team_id' => $team->id,
+                    'team_abbreviation' => $team->abbreviation,
+                    'team_name' => $this->getTeamNameForResponse($team),
+                    'sample_size' => $gameCount,
+                    'user_tier' => $userTier,
+                    'trends' => $result['trends'],
+                    'locked_trends' => $result['locked'],
+                ];
+            },
+        );
+
+        return response()->json($payload);
     }
 }

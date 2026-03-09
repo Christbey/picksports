@@ -13,6 +13,8 @@ return [
     */
     'enforce_tiers' => env('ENFORCE_TIERS', false),
 
+    'cache_ttl_seconds' => (int) env('SUBSCRIPTION_CACHE_TTL_SECONDS', 300),
+
     /*
     |--------------------------------------------------------------------------
     | Tier Bypass User IDs

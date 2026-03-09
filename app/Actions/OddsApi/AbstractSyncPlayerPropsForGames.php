@@ -3,6 +3,7 @@
 namespace App\Actions\OddsApi;
 
 use App\Services\OddsApi\OddsApiService;
+use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncPlayerPropsForGames
@@ -24,7 +25,8 @@ abstract class AbstractSyncPlayerPropsForGames
     public const MARKETS_STANDARD = ['player_points', 'player_rebounds', 'player_assists'];
 
     public function __construct(
-        protected OddsApiService $oddsApiService
+        protected OddsApiService $oddsApiService,
+        protected SportsViewCache $sportsViewCache
     ) {}
 
     public function execute(?array $markets = null, ?string $oddsSportKey = null): int
@@ -69,6 +71,10 @@ abstract class AbstractSyncPlayerPropsForGames
                     $stored += $this->storeBookmakerProps($game, $bookmaker, $event['id'], $effectiveSportKey);
                 }
             }
+        }
+
+        if ($stored > 0) {
+            $this->sportsViewCache->bustSegment(SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE);
         }
 
         return $stored;

@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 
 abstract class AbstractGradePredictionsCommand extends Command
@@ -75,6 +76,13 @@ abstract class AbstractGradePredictionsCommand extends Command
         } else {
             $this->warn('No graded predictions available to show confidence breakdown.');
         }
+
+        app(SportsViewCache::class)->bustSegments([
+            SportsViewCache::SEGMENT_DASHBOARD,
+            SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
+            SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
+            SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
+        ]);
 
         return self::SUCCESS;
     }

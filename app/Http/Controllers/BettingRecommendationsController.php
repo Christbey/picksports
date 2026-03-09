@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\BettingRecommendationResource;
+use App\Support\SportsViewCache;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -12,7 +13,8 @@ use Inertia\Response;
 class BettingRecommendationsController extends Controller
 {
     public function __construct(
-        protected PlayerPropAnalyzer $analyzer
+        protected PlayerPropAnalyzer $analyzer,
+        protected SportsViewCache $sportsViewCache,
     ) {}
 
     public function nba(Request $request): Response
@@ -48,48 +50,67 @@ class BettingRecommendationsController extends Controller
         $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
         $marketFilter = $validated['market'] ?? null;
 
-        // NBA page default: load today's board first when no explicit date filter is provided.
-        $dates = $this->analyzer->getAvailableDatesForSport($sport);
-        if ($sport === 'NBA' && $dateFilter === null && $dates->isNotEmpty()) {
-            $today = Carbon::today()->toDateString();
-            $dateValues = $dates->pluck('value');
+        $cacheKey = $this->sportsViewCache->contextHash([
+            'component' => $component,
+            'sport' => $sport,
+            'requested_date' => $requestedDate,
+            'game' => $gameFilter,
+            'market' => $marketFilter,
+            'today' => now()->toDateString(),
+        ]);
 
-            if ($dateValues->contains($today)) {
-                $dateFilter = $today;
-            } else {
-                $futureDates = $dateValues->filter(fn ($d) => is_string($d) && $d > $today)->values();
-                if ($futureDates->isNotEmpty()) {
-                    $dateFilter = (string) $futureDates->first();
-                } else {
-                    $dateFilter = (string) $dateValues->last();
+        $payload = $this->sportsViewCache->remember(
+            segment: 'player_props_page',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.player_props_page_seconds', 60),
+            resolver: function () use ($sport, $dateFilter, $gameFilter, $marketFilter): array {
+                // NBA page default: load today's board first when no explicit date filter is provided.
+                $resolvedDateFilter = $dateFilter;
+                $dates = $this->analyzer->getAvailableDatesForSport($sport);
+                if ($sport === 'NBA' && $resolvedDateFilter === null && $dates->isNotEmpty()) {
+                    $today = Carbon::today()->toDateString();
+                    $dateValues = $dates->pluck('value');
+
+                    if ($dateValues->contains($today)) {
+                        $resolvedDateFilter = $today;
+                    } else {
+                        $futureDates = $dateValues->filter(fn ($d) => is_string($d) && $d > $today)->values();
+                        if ($futureDates->isNotEmpty()) {
+                            $resolvedDateFilter = (string) $futureDates->first();
+                        } else {
+                            $resolvedDateFilter = (string) $dateValues->last();
+                        }
+                    }
                 }
-            }
-        }
 
-        // Use lower minimum games threshold since we have limited historical data
-        $recommendations = $this->analyzer->analyzeProps(
-            sport: $sport,
-            minGames: 3,
-            dateFilter: $dateFilter,
-            gameFilter: $gameFilter,
-            marketFilter: $marketFilter
+                // Use lower minimum games threshold since we have limited historical data
+                $recommendations = $this->analyzer->analyzeProps(
+                    sport: $sport,
+                    minGames: 3,
+                    dateFilter: $resolvedDateFilter,
+                    gameFilter: $gameFilter,
+                    marketFilter: $marketFilter
+                );
+
+                // Get available games for selected date
+                $games = $this->analyzer->getAvailableGamesForSport($sport, $resolvedDateFilter);
+                $markets = $this->analyzer->getAvailableMarketsForSport($sport, $resolvedDateFilter, $gameFilter);
+
+                return [
+                    'sport' => $sport,
+                    'recommendations' => BettingRecommendationResource::collection($recommendations)->resolve(),
+                    'dates' => $dates,
+                    'games' => $games,
+                    'markets' => $markets,
+                    'filters' => [
+                        'date' => $resolvedDateFilter,
+                        'game' => $gameFilter,
+                        'market' => $marketFilter,
+                    ],
+                ];
+            },
         );
 
-        // Get available games for selected date
-        $games = $this->analyzer->getAvailableGamesForSport($sport, $dateFilter);
-        $markets = $this->analyzer->getAvailableMarketsForSport($sport, $dateFilter, $gameFilter);
-
-        return Inertia::render($component, [
-            'sport' => $sport,
-            'recommendations' => BettingRecommendationResource::collection($recommendations)->resolve(),
-            'dates' => $dates,
-            'games' => $games,
-            'markets' => $markets,
-            'filters' => [
-                'date' => $dateFilter,
-                'game' => $gameFilter,
-                'market' => $marketFilter,
-            ],
-        ]);
+        return Inertia::render($component, $payload);
     }
 }

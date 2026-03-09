@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -58,6 +59,14 @@ abstract class AbstractGeneratePredictionsCommand extends Command
             }
 
             $this->displayPrediction($prediction);
+            app(SportsViewCache::class)->bustSegments([
+                SportsViewCache::SEGMENT_DASHBOARD,
+                SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
+                SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
+                SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
+            ]);
 
             return self::SUCCESS;
         }
@@ -113,6 +122,17 @@ abstract class AbstractGeneratePredictionsCommand extends Command
                 ['Game', 'Spread', 'Total', 'Win %', 'Confidence'],
                 $topPredictions->map(fn ($pred) => $this->topPredictionRow($pred))
             );
+        }
+
+        if ($generated > 0) {
+            app(SportsViewCache::class)->bustSegments([
+                SportsViewCache::SEGMENT_DASHBOARD,
+                SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
+                SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
+                SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
+            ]);
         }
 
         return self::SUCCESS;

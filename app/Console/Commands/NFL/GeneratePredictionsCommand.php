@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Models\NFL\Game;
+use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 
 class GeneratePredictionsCommand extends Command
@@ -71,6 +72,16 @@ class GeneratePredictionsCommand extends Command
         $this->newLine(2);
 
         $this->info("Prediction generation complete! {$totalCreated} created, {$totalUpdated} updated.");
+        if (($totalCreated + $totalUpdated) > 0) {
+            app(SportsViewCache::class)->bustSegments([
+                SportsViewCache::SEGMENT_DASHBOARD,
+                SportsViewCache::SEGMENT_LIVE_SCOREBOARD,
+                SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
+                SportsViewCache::SEGMENT_PREDICTIONS_BY_GAME,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_DATES,
+                SportsViewCache::SEGMENT_PREDICTIONS_AVAILABLE_SEASONS,
+            ]);
+        }
 
         return Command::SUCCESS;
     }

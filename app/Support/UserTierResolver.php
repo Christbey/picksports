@@ -7,6 +7,8 @@ use App\Models\User;
 
 class UserTierResolver
 {
+    public function __construct(private readonly SubscriptionTierCache $subscriptionTierCache) {}
+
     public function resolveTierSlug(?User $user): string
     {
         return $this->resolveTier($user)?->slug ?? config('subscriptions.default_tier', 'free');
@@ -15,9 +17,7 @@ class UserTierResolver
     public function resolveTier(?User $user): ?SubscriptionTier
     {
         if (! $user) {
-            return SubscriptionTier::query()
-                ->where('slug', config('subscriptions.default_tier', 'free'))
-                ->first();
+            return $this->subscriptionTierCache->defaultTier();
         }
 
         $roleTier = $this->resolveTierFromRoles($user);
@@ -35,12 +35,9 @@ class UserTierResolver
             return null;
         }
 
-        return SubscriptionTier::query()
+        return $this->subscriptionTierCache
+            ->activeOrdered()
             ->whereIn('slug', $roleNames->all())
-            ->active()
-            ->ordered()
-            ->get()
             ->last();
     }
 }
-

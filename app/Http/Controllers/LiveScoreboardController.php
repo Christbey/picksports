@@ -10,6 +10,7 @@ use App\Models\NBA\Prediction as NBAPrediction;
 use App\Models\NFL\Prediction as NFLPrediction;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -20,29 +21,44 @@ class LiveScoreboardController extends Controller
 
     private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
 
+    public function __construct(private readonly SportsViewCache $sportsViewCache) {}
+
     public function __invoke(): JsonResponse
     {
-        $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
-        $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
+        $cacheKey = $this->sportsViewCache->contextHash([
+            'date' => now()->toDateString(),
+        ]);
 
-        $todayGameScope = fn (Builder $q) => $q->whereRaw(
-            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-            [$todayStartUtc, $todayEndUtc]
+        $payload = $this->sportsViewCache->remember(
+            segment: 'live_scoreboard',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.live_scoreboard_seconds', 10),
+            resolver: function (): array {
+                $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
+                $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
+
+                $todayGameScope = fn (Builder $q) => $q->whereRaw(
+                    'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+                    [$todayStartUtc, $todayEndUtc]
+                );
+
+                $games = collect($this->sportConfigs())
+                    ->flatMap(fn (array $config, string $sport) => $this->getScoreboardGamesForSport($sport, $config, $todayGameScope))
+                    ->sortBy([
+                        fn (array $game) => $game['is_live'] ? 0 : 1,
+                        ['game_time', 'asc'],
+                    ])
+                    ->take(24)
+                    ->values();
+
+                return [
+                    'games' => $games->all(),
+                    'updated_at' => now()->toIso8601String(),
+                ];
+            },
         );
 
-        $games = collect($this->sportConfigs())
-            ->flatMap(fn (array $config, string $sport) => $this->getScoreboardGamesForSport($sport, $config, $todayGameScope))
-            ->sortBy([
-                fn (array $game) => $game['is_live'] ? 0 : 1,
-                ['game_time', 'asc'],
-            ])
-            ->take(24)
-            ->values();
-
-        return response()->json([
-            'games' => $games,
-            'updated_at' => now()->toIso8601String(),
-        ]);
+        return response()->json($payload);
     }
 
     private function sportConfigs(): array

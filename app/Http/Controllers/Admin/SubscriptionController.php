@@ -5,9 +5,9 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\AdminUserSubscriptionResource;
 use App\Http\Resources\Admin\SubscriptionTierOptionResource;
-use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Services\Admin\TierPermissionSyncService;
+use App\Support\SubscriptionTierCache;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -18,7 +18,10 @@ class SubscriptionController extends Controller
 {
     private const USERS_PER_PAGE = 20;
 
-    public function __construct(private readonly TierPermissionSyncService $tierPermissionSyncService) {}
+    public function __construct(
+        private readonly TierPermissionSyncService $tierPermissionSyncService,
+        private readonly SubscriptionTierCache $subscriptionTierCache,
+    ) {}
 
     public function index(Request $request): Response
     {
@@ -87,7 +90,7 @@ class SubscriptionController extends Controller
             'tier_slug' => 'required|exists:subscription_tiers,slug',
         ]);
 
-        $tier = SubscriptionTier::where('slug', $request->tier_slug)->first();
+        $tier = $this->subscriptionTierCache->tierBySlug((string) $request->tier_slug);
 
         if (! $tier) {
             return $this->backError('Tier not found.');
@@ -95,7 +98,7 @@ class SubscriptionController extends Controller
 
         try {
             $role = $this->tierPermissionSyncService->syncTierRolePermissions($tier);
-            $tierSlugs = SubscriptionTier::query()->pluck('slug')->all();
+            $tierSlugs = $this->subscriptionTierCache->allSlugs();
             $nonTierRoles = $user->getRoleNames()
                 ->reject(fn ($name) => in_array($name, $tierSlugs, true))
                 ->values()
@@ -146,9 +149,10 @@ class SubscriptionController extends Controller
     private function tierOptions(): array
     {
         return $this->resourcePayload(SubscriptionTierOptionResource::collection(
-            SubscriptionTier::query()
-                ->orderBy('price_monthly')
-                ->get(['id', 'name', 'slug'])
+            $this->subscriptionTierCache
+                ->activeOrdered()
+                ->sortBy('price_monthly')
+                ->values()
         ));
     }
 }

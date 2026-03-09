@@ -3,10 +3,10 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
-use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Services\Auth\FoundingUserAccessService;
 use App\Services\Settings\FoundingUsersSettingsService;
+use App\Support\SubscriptionTierCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -17,7 +17,10 @@ use Spatie\Permission\Models\Role;
 
 class AdminSettingsController extends Controller
 {
-    public function __construct(private readonly FoundingUsersSettingsService $foundingUsersSettingsService) {}
+    public function __construct(
+        private readonly FoundingUsersSettingsService $foundingUsersSettingsService,
+        private readonly SubscriptionTierCache $subscriptionTierCache,
+    ) {}
 
     public function __invoke(Request $request): Response
     {
@@ -65,7 +68,7 @@ class AdminSettingsController extends Controller
                 'remaining' => max($limit - $used, 0),
                 'role' => $roleName,
                 'tier_slug' => $tierSlug,
-                'tier_name' => SubscriptionTier::query()->where('slug', $tierSlug)->value('name') ?? $tierSlug,
+                'tier_name' => $this->subscriptionTierCache->tierBySlug($tierSlug)?->name ?? $tierSlug,
                 'users' => $foundingUsers,
             ],
         ]);

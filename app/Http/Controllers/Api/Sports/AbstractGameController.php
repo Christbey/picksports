@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\SportsViewCache;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -109,25 +111,46 @@ abstract class AbstractGameController extends AbstractSportsApiController
     /**
      * Display games for a specific team
      */
-    public function byTeam($team, Request $request): AnonymousResourceCollection
+    public function byTeam($team, Request $request): AnonymousResourceCollection|JsonResponse
     {
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
         $teamId = $this->requireNumericId($team);
+        $perPage = $request->integer('per_page') ?: 15;
+        $page = $request->integer('page') ?: 1;
 
-        $games = $gameModel::query()
-            ->with(array_values(array_unique(array_merge(
-                $this->gameRelations(false),
-                ['teamStats']
-            ))))
-            ->where(function ($query) use ($teamId) {
-                $query->where('home_team_id', $teamId)
-                    ->orWhere('away_team_id', $teamId);
-            })
-            ->orderByDesc('game_date')
-            ->paginate($request->per_page ?? 15);
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'team_id' => $teamId,
+            'query' => $request->query(),
+            'per_page' => $perPage,
+            'page' => $page,
+        ]);
 
-        return $resourceClass::collection($games);
+        $payload = $sportsViewCache->remember(
+            segment: 'team_games_by_team',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_games_by_team_seconds', 60),
+            resolver: function () use ($gameModel, $resourceClass, $teamId, $perPage) {
+                $games = $gameModel::query()
+                    ->with(array_values(array_unique(array_merge(
+                        $this->gameRelations(false),
+                        ['teamStats']
+                    ))))
+                    ->where(function ($query) use ($teamId) {
+                        $query->where('home_team_id', $teamId)
+                            ->orWhere('away_team_id', $teamId);
+                    })
+                    ->orderByDesc('game_date')
+                    ->paginate($perPage);
+
+                return $resourceClass::collection($games)->response()->getData(true);
+            },
+        );
+
+        return response()->json($payload);
     }
 
     /**

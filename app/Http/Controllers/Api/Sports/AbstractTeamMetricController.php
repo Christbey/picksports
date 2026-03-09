@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\SportsViewCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -11,6 +12,11 @@ use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractTeamMetricController extends AbstractSportsApiController
 {
+    /**
+     * @var array<string, bool>
+     */
+    protected static array $seasonColumnPresence = [];
+
     protected const TEAM_METRIC_MODEL = '';
 
     protected const TEAM_MODEL = '';
@@ -97,11 +103,16 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
     {
         $model = $this->getTeamMetricModel();
         $instance = new $model();
+        $cacheKey = $instance->getTable().':'.$this->getSeasonColumn();
 
-        return Schema::hasColumn($instance->getTable(), $this->getSeasonColumn());
+        if (! array_key_exists($cacheKey, self::$seasonColumnPresence)) {
+            self::$seasonColumnPresence[$cacheKey] = Schema::hasColumn($instance->getTable(), $this->getSeasonColumn());
+        }
+
+        return self::$seasonColumnPresence[$cacheKey];
     }
 
-    public function index(): AnonymousResourceCollection
+    public function index(): AnonymousResourceCollection|JsonResponse
     {
         $model = $this->getTeamMetricModel();
         $resource = $this->getTeamMetricResource();
@@ -109,55 +120,76 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         $tierMetadata = $tierContext['metadata'];
         $tierLimit = $tierContext['limit'];
         $metricsTable = (new $model())->getTable();
+        $request = request();
 
-        $query = $model::query()
-            ->with(['team'])
-            ->orderByDesc($this->getIndexOrderByColumn());
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'query' => $request->query(),
+            'tier_limit' => $tierLimit,
+            'tier_name' => $tierMetadata['tier_name'] ?? null,
+        ]);
 
-        if (request('season') && $this->hasSeasonColumn()) {
-            $query->where($this->getSeasonColumn(), request('season'));
-        }
+        $payload = $sportsViewCache->remember(
+            segment: 'team_metrics_index',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_metrics_index_seconds', 120),
+            resolver: function () use ($model, $resource, $tierMetadata, $tierLimit, $metricsTable, $request): array {
+                $query = $model::query()
+                    ->with(['team'])
+                    ->orderByDesc($this->getIndexOrderByColumn());
 
-        if ($this->hasSeasonColumn() && request()->filled('season_type')) {
-            $gamesTable = $this->gamesTable();
-            $sportSlug = $this->sportSlugFromGamesTable($gamesTable);
-            $seasonTypeCandidates = $sportSlug
-                ? $this->resolveSeasonTypeCandidates($sportSlug, (string) request('season_type'))
-                : [];
+                if ($request->query('season') && $this->hasSeasonColumn()) {
+                    $query->where($this->getSeasonColumn(), $request->query('season'));
+                }
 
-            if ($gamesTable && $sportSlug && $seasonTypeCandidates !== []) {
-                $seasonColumn = $this->getSeasonColumn();
-                $finalStatus = (string) config("{$sportSlug}.statuses.final", 'STATUS_FINAL');
+                if ($this->hasSeasonColumn() && $request->filled('season_type')) {
+                    $gamesTable = $this->gamesTable();
+                    $sportSlug = $this->sportSlugFromGamesTable($gamesTable);
+                    $seasonTypeCandidates = $sportSlug
+                        ? $this->resolveSeasonTypeCandidates($sportSlug, (string) $request->query('season_type'))
+                        : [];
 
-                $query->whereExists(function ($gameQuery) use (
-                    $gamesTable,
-                    $metricsTable,
-                    $seasonColumn,
-                    $seasonTypeCandidates,
-                    $finalStatus
-                ) {
-                    $gameQuery->selectRaw('1')
-                        ->from($gamesTable)
-                        ->where(function ($teamMatchQuery) use ($gamesTable, $metricsTable) {
-                            $teamMatchQuery
-                                ->whereColumn("{$gamesTable}.home_team_id", "{$metricsTable}.team_id")
-                                ->orWhereColumn("{$gamesTable}.away_team_id", "{$metricsTable}.team_id");
-                        })
-                        ->whereColumn("{$gamesTable}.season", "{$metricsTable}.{$seasonColumn}")
-                        ->where("{$gamesTable}.status", $finalStatus)
-                        ->whereIn("{$gamesTable}.season_type", $seasonTypeCandidates);
-                });
-            }
-        }
+                    if ($gamesTable && $sportSlug && $seasonTypeCandidates !== []) {
+                        $seasonColumn = $this->getSeasonColumn();
+                        $finalStatus = (string) config("{$sportSlug}.statuses.final", 'STATUS_FINAL');
 
-        if ($tierLimit !== null) {
-            $query->limit($tierLimit);
-        }
+                        $query->whereExists(function ($gameQuery) use (
+                            $gamesTable,
+                            $metricsTable,
+                            $seasonColumn,
+                            $seasonTypeCandidates,
+                            $finalStatus
+                        ) {
+                            $gameQuery->selectRaw('1')
+                                ->from($gamesTable)
+                                ->where(function ($teamMatchQuery) use ($gamesTable, $metricsTable) {
+                                    $teamMatchQuery
+                                        ->whereColumn("{$gamesTable}.home_team_id", "{$metricsTable}.team_id")
+                                        ->orWhereColumn("{$gamesTable}.away_team_id", "{$metricsTable}.team_id");
+                                })
+                                ->whereColumn("{$gamesTable}.season", "{$metricsTable}.{$seasonColumn}")
+                                ->where("{$gamesTable}.status", $finalStatus)
+                                ->whereIn("{$gamesTable}.season_type", $seasonTypeCandidates);
+                        });
+                    }
+                }
 
-        $metrics = $query->get();
-        $this->mutateIndexMetrics($metrics);
+                if ($tierLimit !== null) {
+                    $query->limit($tierLimit);
+                }
 
-        return $this->withTierMetadata($resource::collection($metrics), $tierMetadata);
+                $metrics = $query->get();
+                $this->mutateIndexMetrics($metrics);
+
+                return $this->withTierMetadata($resource::collection($metrics), $tierMetadata)
+                    ->response()
+                    ->getData(true);
+            },
+        );
+
+        return response()->json($payload);
     }
 
     private function sportSlugFromGamesTable(?string $gamesTable): ?string
@@ -240,42 +272,83 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
 
         $teamModel::query()->findOrFail($teamId);
 
-        $query = $model::query()
-            ->with(['team'])
-            ->where('team_id', $teamId)
-            ->orderByDesc($this->getByTeamOrderByColumn());
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'team_id' => $teamId,
+            'query' => $request->query(),
+            'latest_only' => $this->byTeamReturnsLatestOnly(),
+        ]);
 
-        if ($request->filled('season') && $this->hasSeasonColumn()) {
-            $query->where($this->getSeasonColumn(), $request->input('season'));
+        $payload = $sportsViewCache->remember(
+            segment: 'team_metrics_by_team',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_metrics_by_team_seconds', 120),
+            resolver: function () use ($model, $resource, $teamId, $request): array {
+                $query = $model::query()
+                    ->with(['team'])
+                    ->where('team_id', $teamId)
+                    ->orderByDesc($this->getByTeamOrderByColumn());
+
+                if ($request->filled('season') && $this->hasSeasonColumn()) {
+                    $query->where($this->getSeasonColumn(), $request->input('season'));
+                }
+
+                if ($this->byTeamReturnsLatestOnly()) {
+                    $metric = $query->first();
+
+                    if (! $metric) {
+                        return ['data' => null, '__status' => 404];
+                    }
+
+                    return (new $resource($metric))->response()->getData(true);
+                }
+
+                return $resource::collection($query->paginate($this->getPerPage($request)))
+                    ->response()
+                    ->getData(true);
+            },
+        );
+
+        $status = (int) ($payload['__status'] ?? 200);
+        if (array_key_exists('__status', $payload)) {
+            unset($payload['__status']);
         }
 
-        if ($this->byTeamReturnsLatestOnly()) {
-            $metric = $query->first();
-
-            if (! $metric) {
-                return response()->json(['data' => null], 404);
-            }
-
-            return new $resource($metric);
-        }
-
-        return $resource::collection($query->paginate($this->getPerPage($request)));
+        return response()->json($payload, $status);
     }
 
     public function availableSeasons(): JsonResponse
     {
-        if (! $this->hasSeasonColumn()) {
-            return response()->json(['data' => []]);
-        }
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'season_column' => $this->getSeasonColumn(),
+        ]);
 
-        $model = $this->getTeamMetricModel();
-        $seasons = $model::query()
-            ->whereNotNull($this->getSeasonColumn())
-            ->select($this->getSeasonColumn())
-            ->distinct()
-            ->orderByDesc($this->getSeasonColumn())
-            ->pluck($this->getSeasonColumn());
+        $payload = $sportsViewCache->remember(
+            segment: 'team_metrics_available_seasons',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_metrics_available_seasons_seconds', 600),
+            resolver: function (): array {
+                if (! $this->hasSeasonColumn()) {
+                    return ['data' => []];
+                }
 
-        return response()->json(['data' => $seasons]);
+                $model = $this->getTeamMetricModel();
+                $seasons = $model::query()
+                    ->whereNotNull($this->getSeasonColumn())
+                    ->select($this->getSeasonColumn())
+                    ->distinct()
+                    ->orderByDesc($this->getSeasonColumn())
+                    ->pluck($this->getSeasonColumn());
+
+                return ['data' => $seasons];
+            },
+        );
+
+        return response()->json($payload);
     }
 }

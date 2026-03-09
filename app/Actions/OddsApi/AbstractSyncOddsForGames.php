@@ -3,6 +3,7 @@
 namespace App\Actions\OddsApi;
 
 use App\Services\OddsApi\OddsApiService;
+use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncOddsForGames
@@ -20,7 +21,8 @@ abstract class AbstractSyncOddsForGames
     protected const INCLUDE_DISPLAY_NAME_IN_TEAM_NAMES = true;
 
     public function __construct(
-        protected OddsApiService $oddsApiService
+        protected OddsApiService $oddsApiService,
+        protected SportsViewCache $sportsViewCache
     ) {}
 
     public function execute(?int $daysAhead = 7, ?string $oddsSportKey = null): int
@@ -52,6 +54,13 @@ abstract class AbstractSyncOddsForGames
             ]);
 
             $updated++;
+        }
+
+        if ($updated > 0) {
+            $this->sportsViewCache->bustSegments([
+                SportsViewCache::SEGMENT_DASHBOARD,
+                SportsViewCache::SEGMENT_TEAM_GAMES_BY_TEAM,
+            ]);
         }
 
         return $updated;

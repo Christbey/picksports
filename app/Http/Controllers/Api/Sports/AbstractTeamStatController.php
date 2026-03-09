@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\SportsViewCache;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -66,17 +68,32 @@ abstract class AbstractTeamStatController extends AbstractSportsApiController
         return static::BY_TEAM_ORDER_BY_COLUMN;
     }
 
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(Request $request): AnonymousResourceCollection|JsonResponse
     {
         $model = $this->getTeamStatModel();
         $resource = $this->getTeamStatResource();
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'query' => $request->query(),
+        ]);
 
-        $stats = $model::query()
-            ->with(['team', 'game'])
-            ->orderByDesc($this->getIndexOrderByColumn())
-            ->paginate($this->getPerPage($request));
+        $payload = $sportsViewCache->remember(
+            segment: 'team_stats_index',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_stats_index_seconds', 120),
+            resolver: function () use ($model, $resource, $request): array {
+                $stats = $model::query()
+                    ->with(['team', 'game'])
+                    ->orderByDesc($this->getIndexOrderByColumn())
+                    ->paginate($this->getPerPage($request));
 
-        return $resource::collection($stats);
+                return $resource::collection($stats)->response()->getData(true);
+            },
+        );
+
+        return response()->json($payload);
     }
 
     public function show($teamStat): JsonResource
@@ -92,7 +109,7 @@ abstract class AbstractTeamStatController extends AbstractSportsApiController
         return new $resource($teamStat);
     }
 
-    public function byGame($game, Request $request): AnonymousResourceCollection
+    public function byGame($game, Request $request): AnonymousResourceCollection|JsonResponse
     {
         $gameModel = $this->getGameModel();
         $model = $this->getTeamStatModel();
@@ -100,16 +117,32 @@ abstract class AbstractTeamStatController extends AbstractSportsApiController
         $gameId = $this->requireNumericId($game);
 
         $gameModel::query()->findOrFail($gameId);
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'game_id' => $gameId,
+            'query' => $request->query(),
+        ]);
 
-        $stats = $model::query()
-            ->with(['team'])
-            ->where('game_id', $gameId)
-            ->paginate($this->getPerPage($request));
+        $payload = $sportsViewCache->remember(
+            segment: 'team_stats_by_game',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_stats_by_game_seconds', 120),
+            resolver: function () use ($model, $resource, $gameId, $request): array {
+                $stats = $model::query()
+                    ->with(['team'])
+                    ->where('game_id', $gameId)
+                    ->paginate($this->getPerPage($request));
 
-        return $resource::collection($stats);
+                return $resource::collection($stats)->response()->getData(true);
+            },
+        );
+
+        return response()->json($payload);
     }
 
-    public function byTeam($team, Request $request): AnonymousResourceCollection
+    public function byTeam($team, Request $request): AnonymousResourceCollection|JsonResponse
     {
         $teamModel = $this->getTeamModel();
         $model = $this->getTeamStatModel();
@@ -117,13 +150,29 @@ abstract class AbstractTeamStatController extends AbstractSportsApiController
         $teamId = $this->requireNumericId($team);
 
         $teamModel::query()->findOrFail($teamId);
+        /** @var SportsViewCache $sportsViewCache */
+        $sportsViewCache = app(SportsViewCache::class);
+        $cacheKey = $sportsViewCache->contextHash([
+            'controller' => static::class,
+            'team_id' => $teamId,
+            'query' => $request->query(),
+        ]);
 
-        $stats = $model::query()
-            ->with(['game'])
-            ->where('team_id', $teamId)
-            ->orderByDesc($this->getByTeamOrderByColumn())
-            ->paginate($this->getPerPage($request));
+        $payload = $sportsViewCache->remember(
+            segment: 'team_stats_by_team',
+            key: $cacheKey,
+            ttlSeconds: (int) config('sports_view_cache.ttl.team_stats_by_team_seconds', 120),
+            resolver: function () use ($model, $resource, $teamId, $request): array {
+                $stats = $model::query()
+                    ->with(['game'])
+                    ->where('team_id', $teamId)
+                    ->orderByDesc($this->getByTeamOrderByColumn())
+                    ->paginate($this->getPerPage($request));
 
-        return $resource::collection($stats);
+                return $resource::collection($stats)->response()->getData(true);
+            },
+        );
+
+        return response()->json($payload);
     }
 }

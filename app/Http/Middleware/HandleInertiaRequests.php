@@ -39,6 +39,8 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user();
         $tier = $user?->subscriptionTier();
+        $isFoundingUser = $user?->hasFoundingAccess() ?? false;
+        $isSubscribed = $user?->subscribed() ?? false;
         $tierAccessBypass = app(TierAccessBypass::class);
         $tiersEnforced = $tierAccessBypass->tiersEnforced();
         $tiersBypassed = $tierAccessBypass->userIsBypassed($user);
@@ -67,8 +69,8 @@ class HandleInertiaRequests extends Middleware
             'subscription' => [
                 'tier' => $tier?->slug ?? 'free',
                 'tier_name' => $tier?->name ?? 'Free',
-                'is_subscribed' => ! $tiersEnforced || $tiersBypassed || ($user?->subscribed() ?? false) || ($user?->hasFoundingAccess() ?? false),
-                'is_founding_user' => $user?->hasFoundingAccess() ?? false,
+                'is_subscribed' => ! $tiersEnforced || $tiersBypassed || $isSubscribed || $isFoundingUser,
+                'is_founding_user' => $isFoundingUser,
                 'features' => $tier?->features ?? [],
                 'tiers_enabled' => $tiersEnforced && ! $tiersBypassed,
                 'tiers_bypassed' => $tiersBypassed,

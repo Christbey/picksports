@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureUserIsSubscribed;
 use App\Http\Middleware\AddSecurityHeaders;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\UpdateUserLastActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -31,6 +32,11 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddSecurityHeaders::class,
             AddLinkHeadersForPreloadedAssets::class,
+            UpdateUserLastActive::class,
+        ]);
+
+        $middleware->api(append: [
+            UpdateUserLastActive::class,
         ]);
 
         // Enable Sanctum stateful SPA authentication for /api routes.

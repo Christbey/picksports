@@ -35,8 +35,9 @@ class UserOverviewController extends Controller
             ->when($sort === 'last_active_asc', fn ($query) => $query->orderByRaw('last_active_at IS NULL, last_active_at ASC'))
             ->when($sort === 'last_active_desc', fn ($query) => $query->orderByRaw('last_active_at IS NULL, last_active_at DESC'))
             ->when(! in_array($sort, ['name_asc', 'name_desc', 'created_asc', 'last_active_asc', 'last_active_desc'], true), fn ($query) => $query->latest())
-            ->withQueryString()
             ->paginate(self::USERS_PER_PAGE, ['*'], 'users_page');
+
+        $users->withQueryString();
 
         $users->through(fn (User $user) => [
             'id' => $user->id,
@@ -49,8 +50,9 @@ class UserOverviewController extends Controller
 
         $submissions = Submission::query()
             ->latest()
-            ->withQueryString()
             ->paginate(self::SUBMISSIONS_PER_PAGE, ['*'], 'submissions_page');
+
+        $submissions->withQueryString();
 
         $submissions->through(fn (Submission $submission) => [
             'id' => $submission->id,

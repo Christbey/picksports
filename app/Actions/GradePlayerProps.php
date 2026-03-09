@@ -57,22 +57,22 @@ class GradePlayerProps
     {
         $props = $this->getUngradedProps($sport, $season);
 
-        return $this->gradePropsCollection($props);
+        return $this->gradePropsCollection($props, $sport, $season);
     }
 
     public function executeForGame(string $sport, int $gameId): array
     {
         $query = $this->getUngradedPropsQuery($sport);
         if ($query === null) {
-            return $this->gradePropsCollection(collect());
+            return $this->gradePropsCollection(collect(), $sport);
         }
 
         $props = $query->where('game_id', $gameId)->get();
 
-        return $this->gradePropsCollection($props);
+        return $this->gradePropsCollection($props, $sport);
     }
 
-    protected function gradePropsCollection(Collection $props): array
+    protected function gradePropsCollection(Collection $props, ?string $sport = null, ?int $season = null): array
     {
         // Find ungraded props for completed games with player stats
 
@@ -117,7 +117,9 @@ class GradePlayerProps
             $graded++;
         }
 
-        $brierStats = $this->calculateBrierScore($sport, $season);
+        $brierStats = $sport !== null
+            ? $this->calculateBrierScore($sport, $season)
+            : ['brier_score' => null, 'sample_size' => 0];
 
         return [
             'graded' => $graded,

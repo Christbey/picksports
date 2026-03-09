@@ -26,6 +26,7 @@ class AddSecurityHeaders
             "form-action 'self'",
             "object-src 'none'",
             "frame-ancestors 'self'",
+            "frame-src 'self' https://www.googletagmanager.com",
             // Inline bootstrap scripts/styles still exist in app.blade.php; keep allowed while in report-only.
             "script-src 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net",
             "script-src-elem 'self' 'unsafe-inline' https://www.googletagmanager.com https://static.cloudflareinsights.com https://connect.facebook.net",
@@ -36,7 +37,7 @@ class AddSecurityHeaders
             "connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com https://*.cloudflareinsights.com https://www.facebook.com https://connect.facebook.net",
             "manifest-src 'self'",
             "worker-src 'self' blob:",
-            // Allow known policy names created by Vue and gtag to prevent Trusted Types report noise.
+            // Allow known policy names created by Vue and GTM/gtag to prevent Trusted Types report noise.
             "trusted-types default vue goog#html",
             'report-to csp',
         ];

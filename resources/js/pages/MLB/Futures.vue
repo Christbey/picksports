@@ -14,6 +14,25 @@ type ForecastTeam = {
     league?: string | null;
 };
 
+type MarketOdds = {
+    bookmaker: string;
+    market_key: string;
+    price: number | null;
+    implied_probability: number | null;
+    fetched_at: string | null;
+    odds_api_sport_key: string;
+};
+
+type MarketEdge = {
+    model_probability: number | null;
+    market_probability: number | null;
+    edge_probability: number | null;
+    edge_percent_points: number | null;
+    fair_price: number | null;
+    market_price: number | null;
+    has_edge: boolean;
+};
+
 type PlayoffForecast = {
     id: number;
     team_id: number;
@@ -27,12 +46,16 @@ type PlayoffForecast = {
     champion_probability: number;
     selection_score: number;
     team: ForecastTeam | null;
+    market_odds?: MarketOdds | null;
+    market_edge?: MarketEdge | null;
 };
 
 const forecasts = ref<PlayoffForecast[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const selectedSeason = ref<number | null>(null);
+const sortMode = ref<'model' | 'edge'>('model');
+const onlyPlusEv = ref(false);
 const availableSeasons = ref<number[]>([]);
 
 const availableSeasonOptions = computed(() =>
@@ -40,6 +63,15 @@ const availableSeasonOptions = computed(() =>
 );
 
 const formatPct = (value: number, digits = 1) => `${(value * 100).toFixed(digits)}%`;
+const formatEdgePoints = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return '-';
+    const rounded = value.toFixed(1);
+    return value >= 0 ? `+${rounded}pp` : `${rounded}pp`;
+};
+const formatAmericanOdds = (value: number | null | undefined) => {
+    if (value === null || value === undefined) return '-';
+    return value > 0 ? `+${value}` : `${value}`;
+};
 const toPct = (value: number) => Math.max(0, Math.min(100, value * 100));
 const formatTeam = (team: ForecastTeam | null, fallback: number) => {
     if (!team) return `Team ${fallback}`;
@@ -47,10 +79,27 @@ const formatTeam = (team: ForecastTeam | null, fallback: number) => {
     return full || team.abbreviation || `Team ${fallback}`;
 };
 
-const topByMake = computed(() => [...forecasts.value].sort((a, b) => b.playoff_make_probability - a.playoff_make_probability).slice(0, 20));
-const topByTitle = computed(() => [...forecasts.value].sort((a, b) => b.champion_probability - a.champion_probability).slice(0, 20));
+const visibleForecasts = computed(() =>
+    onlyPlusEv.value
+        ? forecasts.value.filter((row) => (row.market_edge?.edge_probability ?? 0) > 0)
+        : forecasts.value
+);
+
+const edgeValue = (row: PlayoffForecast) => row.market_edge?.edge_probability ?? Number.NEGATIVE_INFINITY;
+const topByMake = computed(() =>
+    [...visibleForecasts.value]
+        .sort((a, b) => {
+            if (sortMode.value === 'edge') {
+                return edgeValue(b) - edgeValue(a);
+            }
+
+            return b.playoff_make_probability - a.playoff_make_probability;
+        })
+        .slice(0, 20)
+);
+const topByTitle = computed(() => [...visibleForecasts.value].sort((a, b) => b.champion_probability - a.champion_probability).slice(0, 20));
 const bubbleWatch = computed(() =>
-    [...forecasts.value]
+    [...visibleForecasts.value]
         .filter((row) => row.playoff_make_probability >= 0.25 && row.playoff_make_probability < 0.75)
         .sort((a, b) => b.playoff_make_probability - a.playoff_make_probability)
         .slice(0, 12),
@@ -66,7 +115,7 @@ const leagueBreakdown = computed(() => {
         winnerLcsProbability: number;
     }>();
 
-    for (const row of forecasts.value) {
+    for (const row of visibleForecasts.value) {
         const league = (row.league ?? row.team?.league ?? 'Unknown').trim() || 'Unknown';
         const current = byLeague.get(league) ?? {
             league,
@@ -97,10 +146,10 @@ const leagueBreakdown = computed(() => {
         .sort((a, b) => b.projectedIn - a.projectedIn);
 });
 
-const projectedInCount = computed(() => forecasts.value.filter((f) => f.playoff_make_probability >= 0.5).length);
+const projectedInCount = computed(() => visibleForecasts.value.filter((f) => f.playoff_make_probability >= 0.5).length);
 const avgTitleOdds = computed(() => {
-    if (forecasts.value.length === 0) return 0;
-    return forecasts.value.reduce((sum, row) => sum + row.champion_probability, 0) / forecasts.value.length;
+    if (visibleForecasts.value.length === 0) return 0;
+    return visibleForecasts.value.reduce((sum, row) => sum + row.champion_probability, 0) / visibleForecasts.value.length;
 });
 const topChampion = computed(() => topByTitle.value[0] ?? null);
 
@@ -187,6 +236,25 @@ onMounted(async () => {
                                 </option>
                             </select>
                         </div>
+                        <div class="min-w-[220px]">
+                            <p class="ui-kicker">Sort</p>
+                            <select
+                                id="sort-mode"
+                                v-model="sortMode"
+                                class="ui-select mt-1"
+                            >
+                                <option value="model">Model Probability</option>
+                                <option value="edge">Best Edge</option>
+                            </select>
+                        </div>
+                        <label class="mt-5 inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                            <input
+                                v-model="onlyPlusEv"
+                                type="checkbox"
+                                class="h-4 w-4 rounded border-input"
+                            >
+                            Only +EV
+                        </label>
                     </div>
                 </CardContent>
             </Card>
@@ -220,6 +288,7 @@ onMounted(async () => {
                             <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Top Champion</p>
                             <p class="mt-2 text-lg font-bold">{{ topChampion ? formatTeam(topChampion.team, topChampion.team_id) : '-' }}</p>
                             <p class="mt-1 text-sm text-muted-foreground">{{ topChampion ? formatPct(topChampion.champion_probability, 2) : '-' }}</p>
+                            <p class="mt-1 text-xs text-muted-foreground">Market {{ topChampion ? formatAmericanOdds(topChampion.market_odds?.price) : '-' }}</p>
                         </CardContent>
                     </Card>
                     <Card>
@@ -282,6 +351,7 @@ onMounted(async () => {
                                         <th class="p-2 text-right font-medium">League Rank</th>
                                         <th class="p-2 text-right font-medium">Seed</th>
                                         <th class="p-2 font-medium">Playoff Make</th>
+                                        <th class="p-2 text-right font-medium">Edge</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -298,6 +368,21 @@ onMounted(async () => {
                                                     <div class="h-full rounded-full transition-all" :class="meterClass(row.playoff_make_probability)" :style="{ width: `${toPct(row.playoff_make_probability)}%` }" />
                                                 </div>
                                                 <span class="text-xs font-semibold">{{ formatPct(row.playoff_make_probability, 1) }}</span>
+                                            </div>
+                                        </td>
+                                        <td class="p-2 text-right text-xs font-semibold" :class="(row.market_edge?.edge_probability ?? 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'">
+                                            <div class="flex items-center justify-end gap-2">
+                                                <span
+                                                    class="inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-semibold"
+                                                    :class="(row.market_edge?.has_edge ?? false)
+                                                        ? ((row.market_edge?.edge_probability ?? 0) > 0
+                                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                                                            : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200')
+                                                        : 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'"
+                                                >
+                                                    {{ !(row.market_edge?.has_edge ?? false) ? 'No Edge' : ((row.market_edge?.edge_probability ?? 0) > 0 ? '+EV' : '-EV') }}
+                                                </span>
+                                                <span>{{ formatEdgePoints(row.market_edge?.edge_percent_points) }}</span>
                                             </div>
                                         </td>
                                     </tr>
@@ -344,6 +429,7 @@ onMounted(async () => {
                                     <div class="h-2.5 overflow-hidden rounded-full bg-muted">
                                         <div class="h-full rounded-full bg-emerald-500" :style="{ width: `${toPct(row.champion_probability)}%` }" />
                                     </div>
+                                    <p class="mt-1 text-[11px] text-muted-foreground">Market {{ formatAmericanOdds(row.market_odds?.price) }}</p>
                                 </div>
                             </div>
                         </CardContent>

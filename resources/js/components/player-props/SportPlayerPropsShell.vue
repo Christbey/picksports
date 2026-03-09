@@ -52,6 +52,9 @@ type Recommendation = {
         match_quality_score: number;
         context_factor: number;
     } | null;
+    actual_value?: number | null;
+    hit_over?: boolean | null;
+    graded_at?: string | null;
     reasoning: string[];
     game: {
         id: number;
@@ -157,12 +160,6 @@ const getConfidenceColor = (confidence: number) => {
     return 'bg-gray-500';
 };
 
-const getConfidenceBadge = (confidence: number) => {
-    if (confidence >= 80) return 'default';
-    if (confidence >= 70) return 'secondary';
-    return 'outline';
-};
-
 const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : odds.toString());
 
 const getSignalBand = (confidence: number) => {
@@ -186,6 +183,44 @@ const getInitials = (name: string) =>
         .map((part) => part[0])
         .join('')
         .toUpperCase();
+
+const getResultStatus = (rec: Recommendation) => {
+    if (!rec.graded_at || rec.actual_value === null || rec.actual_value === undefined) {
+        return {
+            label: 'Pending',
+            variant: 'outline' as const,
+            className: 'text-muted-foreground border-border',
+        };
+    }
+
+    const actual = Number(rec.actual_value ?? 0);
+    const line = Number(rec.line ?? 0);
+    if (Math.abs(actual - line) < 0.0001) {
+        return {
+            label: 'Push',
+            variant: 'secondary' as const,
+            className: '',
+        };
+    }
+
+    const didGoOver = Boolean(rec.hit_over);
+    const won = (rec.recommendation === 'Over' && didGoOver)
+        || (rec.recommendation === 'Under' && !didGoOver);
+
+    if (won) {
+        return {
+            label: 'Won',
+            variant: 'default' as const,
+            className: 'bg-emerald-600 hover:bg-emerald-600 text-white',
+        };
+    }
+
+    return {
+        label: 'Lost',
+        variant: 'destructive' as const,
+        className: '',
+    };
+};
 
 const expandedModelDetails = ref<number[]>([]);
 
@@ -279,10 +314,10 @@ const toggleModelDetails = (id: number) => {
                 <Card
                     v-for="rec in recommendations"
                     :key="rec.id"
-                    class="mb-5 inline-block w-full break-inside-avoid transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                    class="mb-5 inline-block w-full break-inside-avoid overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
                 >
                     <CardHeader>
-                        <div class="flex items-start justify-between gap-3">
+                        <div class="flex items-start gap-3">
                             <div class="flex min-w-0 flex-1 items-start gap-3">
                                 <template v-if="rec.player?.url">
                                     <Link :href="rec.player.url" class="shrink-0">
@@ -313,6 +348,9 @@ const toggleModelDetails = (id: number) => {
                                         <CardDescription v-if="rec.player.position && rec.player.team" class="shrink-0">
                                             {{ rec.player.position }} • {{ rec.player.team }}
                                         </CardDescription>
+                                        <Badge :variant="getSignalBandVariant(rec.confidence)" class="max-w-full shrink text-[10px]">
+                                            {{ getSignalBand(rec.confidence) }}
+                                        </Badge>
                                         <Badge
                                             v-if="rec.streak && rec.streak.count >= 2"
                                             :variant="rec.streak.status === 'hot' ? 'default' : 'secondary'"
@@ -325,14 +363,6 @@ const toggleModelDetails = (id: number) => {
                                         {{ rec.game?.away_team }} @ {{ rec.game?.home_team }}
                                     </CardDescription>
                                 </div>
-                            </div>
-                            <div class="flex flex-col items-end gap-1">
-                                <Badge :variant="getConfidenceBadge(rec.confidence)" class="h-fit shrink-0">
-                                    {{ rec.confidence }}%
-                                </Badge>
-                                <Badge :variant="getSignalBandVariant(rec.confidence)" class="h-fit shrink-0 text-[10px]">
-                                    {{ getSignalBand(rec.confidence) }}
-                                </Badge>
                             </div>
                         </div>
                     </CardHeader>
@@ -355,6 +385,21 @@ const toggleModelDetails = (id: number) => {
                             <Badge variant="outline" class="font-mono">
                                 {{ formatOdds(rec.odds) }}
                             </Badge>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                            <Badge
+                                :variant="getResultStatus(rec).variant"
+                                :class="getResultStatus(rec).className"
+                            >
+                                {{ getResultStatus(rec).label }}
+                            </Badge>
+                            <span
+                                v-if="rec.actual_value !== null && rec.actual_value !== undefined"
+                                class="text-xs text-muted-foreground"
+                            >
+                                Actual: {{ Number(rec.actual_value).toFixed(1) }}
+                            </span>
                         </div>
 
                         <div class="space-y-1.5">

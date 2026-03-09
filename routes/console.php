@@ -356,6 +356,11 @@ $scheduleDailySeasonJob(
     $nbaInSeason,
     'NBA: Generate Playoff Forecast'
 );
+$scheduleOddsSyncWindow(
+    "sports:sync-futures-odds --sport=nba --season={$fallSeasonYear}",
+    $nbaInSeason,
+    'NBA: Sync Futures Odds'
+);
 $scheduleHalfHourlyWindowJob(
     'espn:sync-nba-injuries',
     '08:00',
@@ -409,6 +414,11 @@ $scheduleDailySeasonJob(
     $cbbInSeason,
     'CBB: Generate Tournament Forecast'
 );
+$scheduleOddsSyncWindow(
+    "sports:sync-futures-odds --sport=cbb --season={$fallSeasonYear}",
+    $cbbInSeason,
+    'CBB: Sync Futures Odds'
+);
 $scheduleHalfHourlyWindowJob(
     'espn:sync-cbb-injuries',
     '08:00',
@@ -452,6 +462,11 @@ $scheduleDailySeasonJob(
     '05:15',
     $wcbbInSeason,
     'WCBB: Generate Tournament Forecast'
+);
+$scheduleOddsSyncWindow(
+    "sports:sync-futures-odds --sport=wcbb --season={$fallSeasonYear}",
+    $wcbbInSeason,
+    'WCBB: Sync Futures Odds'
 );
 $scheduleHalfHourlyWindowJob(
     'espn:sync-wcbb-injuries',
@@ -497,6 +512,11 @@ $scheduleDailySeasonJob(
     '06:15',
     $mlbInSeason,
     'MLB: Generate Playoff Forecast'
+);
+$scheduleOddsSyncWindow(
+    "sports:sync-futures-odds --sport=mlb --season={$currentYear}",
+    $mlbInSeason,
+    'MLB: Sync Futures Odds'
 );
 $scheduleHalfHourlyWindowJob(
     'espn:sync-mlb-injuries',
@@ -576,6 +596,11 @@ $scheduleHalfHourlyWindowJob(
     '23:00',
     $nflInSeason,
     'NFL: Sync Injuries'
+);
+$scheduleOddsSyncWindow(
+    "sports:sync-futures-odds --sport=nfl --season={$fallSeasonYear}",
+    $nflInSeason,
+    'NFL: Sync Futures Odds'
 );
 $scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
 

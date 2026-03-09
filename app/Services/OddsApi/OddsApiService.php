@@ -89,6 +89,28 @@ class OddsApiService
     }
 
     /**
+     * Get futures/outrights odds for a sport key.
+     *
+     * @return array<int, array<string, mixed>>|null
+     */
+    public function getFuturesOdds(
+        string $sport,
+        string $bookmaker = 'draftkings',
+        string $market = 'outrights'
+    ): ?array {
+        $url = $this->baseUrl."/sports/{$sport}/odds/";
+
+        $params = $this->withApiKey([
+            'regions' => 'us',
+            'markets' => $market,
+            'bookmakers' => $bookmaker,
+            'oddsFormat' => 'american',
+        ]);
+
+        return $this->get($url, $params, false);
+    }
+
+    /**
      * Get player props odds for a specific event
      *
      * Available markets:
@@ -398,6 +420,15 @@ class OddsApiService
             ->whereNotNull('espn_team_name')
             ->pluck('espn_team_name')
             ->toArray();
+    }
+
+    public function mappedEspnTeamName(string $sport, string $oddsApiTeamName): ?string
+    {
+        return OddsApiTeamMapping::query()
+            ->where('sport', $sport)
+            ->whereRaw('LOWER(odds_api_team_name) = ?', [mb_strtolower($oddsApiTeamName)])
+            ->whereNotNull('espn_team_name')
+            ->value('espn_team_name');
     }
 
     /**

@@ -27,9 +27,10 @@ abstract class AbstractSyncPlayerPropsForGames
         protected OddsApiService $oddsApiService
     ) {}
 
-    public function execute(?array $markets = null): int
+    public function execute(?array $markets = null, ?string $oddsSportKey = null): int
     {
-        $events = $this->fetchEvents();
+        $effectiveSportKey = $this->effectiveSportKey($oddsSportKey);
+        $events = $this->fetchEvents($effectiveSportKey);
 
         if (! $events) {
             return 0;
@@ -42,7 +43,7 @@ abstract class AbstractSyncPlayerPropsForGames
                 continue;
             }
 
-            $game = $this->matchEvent($event);
+            $game = $this->matchEvent($event, $effectiveSportKey);
 
             if (! $game) {
                 continue;
@@ -50,7 +51,7 @@ abstract class AbstractSyncPlayerPropsForGames
 
             $propsData = $this->oddsApiService->getPlayerProps(
                 eventId: $event['id'],
-                sport: $this->sportKey(),
+                sport: $effectiveSportKey,
                 markets: $markets ?? $this->defaultMarkets()
             );
 
@@ -65,7 +66,7 @@ abstract class AbstractSyncPlayerPropsForGames
 
             if (isset($propsData['bookmakers']) && is_array($propsData['bookmakers'])) {
                 foreach ($propsData['bookmakers'] as $bookmaker) {
-                    $stored += $this->storeBookmakerProps($game, $bookmaker, $event['id']);
+                    $stored += $this->storeBookmakerProps($game, $bookmaker, $event['id'], $effectiveSportKey);
                 }
             }
         }
@@ -73,7 +74,7 @@ abstract class AbstractSyncPlayerPropsForGames
         return $stored;
     }
 
-    protected function storeBookmakerProps(Model $game, array $bookmaker, string $eventId): int
+    protected function storeBookmakerProps(Model $game, array $bookmaker, string $eventId, string $oddsSportKey): int
     {
         $stored = 0;
         $playerPropModel = $this->playerPropModelClass();
@@ -116,7 +117,7 @@ abstract class AbstractSyncPlayerPropsForGames
             foreach ($playerProps as $playerName => $propData) {
                 $playerPropModel::query()->create([
                     'game_id' => $game->id,
-                    'player_id' => $this->resolvePlayerId($playerName, $game),
+                    'player_id' => $this->resolvePlayerId($playerName, $game, $oddsSportKey),
                     'odds_api_event_id' => $eventId,
                     'player_name' => $playerName,
                     'market' => $marketKey,
@@ -135,15 +136,21 @@ abstract class AbstractSyncPlayerPropsForGames
         return $stored;
     }
 
-    protected function matchEvent(array $event): ?Model
+    protected function matchEvent(array $event, string $oddsSportKey): ?Model
     {
         $gameDate = date('Y-m-d', strtotime($event['commence_time']));
         $gameModel = $this->gameModelClass();
 
-        $games = $gameModel::query()
+        $query = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->whereDate('game_date', $gameDate)
-            ->get();
+            ->whereDate('game_date', $gameDate);
+
+        $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
+        if ($seasonType !== null) {
+            $query->where('season_type', $seasonType);
+        }
+
+        $games = $query->get();
 
         foreach ($games as $game) {
             if ($this->oddsApiService->fuzzyMatchTeams(
@@ -152,7 +159,7 @@ abstract class AbstractSyncPlayerPropsForGames
                 $this->homeTeamNames($game),
                 $this->awayTeamNames($game),
                 $this->matchThreshold(),
-                $this->sportKey()
+                $oddsSportKey
             )) {
                 return $game;
             }
@@ -161,7 +168,7 @@ abstract class AbstractSyncPlayerPropsForGames
         return null;
     }
 
-    protected function resolvePlayerId(string $playerName, Model $game): ?int
+    protected function resolvePlayerId(string $playerName, Model $game, string $oddsSportKey): ?int
     {
         $playerModel = $this->playerModelClass();
         $teamIds = array_filter([
@@ -169,7 +176,7 @@ abstract class AbstractSyncPlayerPropsForGames
             $game->away_team_id ?? null,
         ]);
 
-        $mappedEspnName = $this->oddsApiService->mappedEspnPlayerName($this->sportKey(), $playerName);
+        $mappedEspnName = $this->oddsApiService->mappedEspnPlayerName($oddsSportKey, $playerName);
         if ($mappedEspnName) {
             $mappedPlayer = $playerModel::query()
                 ->whereIn('team_id', $teamIds)
@@ -230,7 +237,7 @@ abstract class AbstractSyncPlayerPropsForGames
             return $lastNameMatch->id;
         }
 
-        $this->oddsApiService->rememberUnmappedPlayer($this->sportKey(), $playerName);
+        $this->oddsApiService->rememberUnmappedPlayer($oddsSportKey, $playerName);
 
         return null;
     }
@@ -243,7 +250,19 @@ abstract class AbstractSyncPlayerPropsForGames
     /**
      * @return array<int, array<string, mixed>>|null
      */
-    abstract protected function fetchEvents(): ?array;
+    abstract protected function fetchEvents(?string $oddsSportKey = null): ?array;
+
+    protected function effectiveSportKey(?string $oddsSportKey): string
+    {
+        return ($oddsSportKey !== null && $oddsSportKey !== '')
+            ? $oddsSportKey
+            : $this->sportKey();
+    }
+
+    protected function seasonTypeForOddsSportKey(string $oddsSportKey): ?int
+    {
+        return null;
+    }
 
     /**
      * @return array<int, string>

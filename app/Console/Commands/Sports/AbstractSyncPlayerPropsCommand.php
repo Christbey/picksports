@@ -15,6 +15,8 @@ abstract class AbstractSyncPlayerPropsCommand extends Command
 
     protected const MARKETS_OPTION_DESCRIPTION = 'Specific markets to fetch (defaults to common props)';
 
+    protected const ODDS_SPORT_OPTION_DESCRIPTION = 'Override Odds API sport key (e.g. baseball_mlb_preseason)';
+
     protected const SYNC_ACTION_CLASS = '';
 
     protected const SPORT_LABEL = '';
@@ -29,12 +31,20 @@ abstract class AbstractSyncPlayerPropsCommand extends Command
 
     public function handle(): int
     {
-        $this->info("Syncing {$this->sportLabel()} player props from The Odds API...");
+        $oddsSport = $this->option('odds-sport');
+        $oddsSport = is_string($oddsSport) && $oddsSport !== '' ? $oddsSport : null;
+        $oddsSport ??= $this->defaultOddsSportKey();
+
+        $message = "Syncing {$this->sportLabel()} player props from The Odds API";
+        if ($oddsSport !== null) {
+            $message .= " using sport key [{$oddsSport}]";
+        }
+        $this->info($message.'...');
 
         $markets = $this->option('markets');
         $markets = empty($markets) ? null : $markets;
 
-        $stored = app($this->syncActionClass())->execute($markets);
+        $stored = app($this->syncActionClass())->execute($markets, $oddsSport);
 
         $this->info("Successfully stored {$stored} player props.");
 
@@ -57,9 +67,10 @@ abstract class AbstractSyncPlayerPropsCommand extends Command
     protected function buildSignature(): string
     {
         return sprintf(
-            "%s\n {--markets=* : %s}",
+            "%s\n {--markets=* : %s}\n {--odds-sport= : %s}",
             $this->commandName(),
-            static::MARKETS_OPTION_DESCRIPTION
+            static::MARKETS_OPTION_DESCRIPTION,
+            static::ODDS_SPORT_OPTION_DESCRIPTION
         );
     }
 
@@ -71,5 +82,10 @@ abstract class AbstractSyncPlayerPropsCommand extends Command
     protected function commandDescription(): string
     {
         return $this->requiredString(static::COMMAND_DESCRIPTION, 'COMMAND_DESCRIPTION must be defined.');
+    }
+
+    protected function defaultOddsSportKey(): ?string
+    {
+        return null;
     }
 }

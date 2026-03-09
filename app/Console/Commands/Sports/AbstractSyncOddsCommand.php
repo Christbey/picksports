@@ -15,6 +15,8 @@ abstract class AbstractSyncOddsCommand extends Command
 
     protected const DAYS_OPTION_DESCRIPTION = 'Number of days ahead to sync odds for (default: 7)';
 
+    protected const ODDS_SPORT_OPTION_DESCRIPTION = 'Override Odds API sport key (e.g. baseball_mlb_preseason)';
+
     protected const SYNC_ACTION_CLASS = '';
 
     public function __construct()
@@ -28,10 +30,17 @@ abstract class AbstractSyncOddsCommand extends Command
     public function handle(): int
     {
         $days = $this->option('days') ?? 7;
+        $oddsSport = $this->option('odds-sport');
+        $oddsSport = is_string($oddsSport) && $oddsSport !== '' ? $oddsSport : null;
+        $oddsSport ??= $this->defaultOddsSportKey();
 
-        $this->info("Syncing odds for upcoming games (next {$days} days)...");
+        $message = "Syncing odds for upcoming games (next {$days} days)";
+        if ($oddsSport !== null) {
+            $message .= " using sport key [{$oddsSport}]";
+        }
+        $this->info($message.'...');
 
-        $updated = app($this->syncActionClass())->execute($days);
+        $updated = app($this->syncActionClass())->execute($days, $oddsSport);
 
         if ($updated === 0) {
             $this->warn('No games were updated with odds data.');
@@ -55,9 +64,10 @@ abstract class AbstractSyncOddsCommand extends Command
     protected function buildSignature(): string
     {
         return sprintf(
-            "%s\n {--days= : %s}",
+            "%s\n {--days= : %s}\n {--odds-sport= : %s}",
             $this->commandName(),
-            static::DAYS_OPTION_DESCRIPTION
+            static::DAYS_OPTION_DESCRIPTION,
+            static::ODDS_SPORT_OPTION_DESCRIPTION
         );
     }
 
@@ -69,5 +79,10 @@ abstract class AbstractSyncOddsCommand extends Command
     protected function commandDescription(): string
     {
         return $this->requiredString(static::COMMAND_DESCRIPTION, 'COMMAND_DESCRIPTION must be defined.');
+    }
+
+    protected function defaultOddsSportKey(): ?string
+    {
+        return null;
     }
 }

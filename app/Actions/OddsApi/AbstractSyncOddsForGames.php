@@ -23,9 +23,10 @@ abstract class AbstractSyncOddsForGames
         protected OddsApiService $oddsApiService
     ) {}
 
-    public function execute(?int $daysAhead = 7): int
+    public function execute(?int $daysAhead = 7, ?string $oddsSportKey = null): int
     {
-        $oddsData = $this->fetchOddsData();
+        $effectiveSportKey = $this->effectiveSportKey($oddsSportKey);
+        $oddsData = $this->fetchOddsData($effectiveSportKey);
 
         if (! $oddsData) {
             return 0;
@@ -38,7 +39,7 @@ abstract class AbstractSyncOddsForGames
                 continue;
             }
 
-            $game = $this->matchEvent($event);
+            $game = $this->matchEvent($event, $effectiveSportKey);
 
             if (! $game) {
                 continue;
@@ -56,15 +57,21 @@ abstract class AbstractSyncOddsForGames
         return $updated;
     }
 
-    protected function matchEvent(array $event): ?Model
+    protected function matchEvent(array $event, string $oddsSportKey): ?Model
     {
         $gameDate = date('Y-m-d', strtotime($event['commence_time']));
         $gameModel = $this->gameModelClass();
 
-        $games = $gameModel::query()
+        $query = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->whereDate('game_date', $gameDate)
-            ->get();
+            ->whereDate('game_date', $gameDate);
+
+        $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
+        if ($seasonType !== null) {
+            $query->where('season_type', $seasonType);
+        }
+
+        $games = $query->get();
 
         foreach ($games as $game) {
             if ($this->oddsApiService->fuzzyMatchTeams(
@@ -73,7 +80,7 @@ abstract class AbstractSyncOddsForGames
                 $this->homeTeamNames($game),
                 $this->awayTeamNames($game),
                 $this->matchThreshold(),
-                $this->sportKey()
+                $oddsSportKey
             )) {
                 return $game;
             }
@@ -90,9 +97,21 @@ abstract class AbstractSyncOddsForGames
     /**
      * @return array<string,mixed>|array<int,array<string,mixed>>|null
      */
-    protected function fetchOddsData(): ?array
+    protected function fetchOddsData(?string $oddsSportKey = null): ?array
     {
-        return $this->oddsApiService->getOdds(sport: $this->sportKey());
+        return $this->oddsApiService->getOdds(sport: $this->effectiveSportKey($oddsSportKey));
+    }
+
+    protected function effectiveSportKey(?string $oddsSportKey): string
+    {
+        return ($oddsSportKey !== null && $oddsSportKey !== '')
+            ? $oddsSportKey
+            : $this->sportKey();
+    }
+
+    protected function seasonTypeForOddsSportKey(string $oddsSportKey): ?int
+    {
+        return null;
     }
 
     protected function sportKey(): string

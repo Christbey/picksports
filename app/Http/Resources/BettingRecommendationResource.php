@@ -67,6 +67,9 @@ class BettingRecommendationResource extends JsonResource
             'match_quality_score' => $this->resource['match_quality_score'] ?? null,
             'confidence_decomposition' => $this->resource['confidence_decomposition'] ?? null,
             'reasoning' => $this->resource['reasoning'],
+            'actual_value' => $this->resource['prop']->actual_value !== null ? (float) $this->resource['prop']->actual_value : null,
+            'hit_over' => $this->resource['prop']->hit_over,
+            'graded_at' => $this->resource['prop']->graded_at?->toIso8601String(),
             'game' => [
                 'id' => $this->resource['game']->id,
                 'home_team' => $this->resource['game']->homeTeam?->name,

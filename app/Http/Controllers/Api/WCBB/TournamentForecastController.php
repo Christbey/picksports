@@ -5,11 +5,18 @@ namespace App\Http\Controllers\Api\WCBB;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\WCBB\TournamentForecastResource;
 use App\Models\WCBB\TournamentForecast;
+use App\Services\Sports\FuturesEdgeService;
+use App\Services\Sports\FuturesOddsLookupService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TournamentForecastController extends Controller
 {
+    public function __construct(
+        protected FuturesOddsLookupService $futuresOddsLookup,
+        protected FuturesEdgeService $futuresEdgeService
+    ) {}
+
     public function index(Request $request): JsonResponse
     {
         $season = (int) ($request->integer('season') ?: config('wcbb.season.default'));
@@ -45,8 +52,18 @@ class TournamentForecastController extends Controller
             ->pluck('season')
             ->values();
 
+        $data = TournamentForecastResource::collection($forecasts)->resolve($request);
+        $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason('wcbb', $season);
+        $data = array_map(function (array $row) use ($marketOddsByTeam): array {
+            $teamId = (int) ($row['team_id'] ?? 0);
+            $row['market_odds'] = $marketOddsByTeam[$teamId] ?? null;
+
+            return $row;
+        }, $data);
+        $data = $this->futuresEdgeService->annotate($data, 'champion_probability');
+
         return response()->json([
-            'data' => TournamentForecastResource::collection($forecasts),
+            'data' => $data,
             'meta' => [
                 'season' => $season,
                 'available_seasons' => $seasons,

@@ -138,8 +138,10 @@ class PlayerPropAnalyzer
         $last5Avg = $this->calculateRecentAverage($player->id, $statField, 5, $sportConfig['player_stat_model']);
 
         // Advanced stats
-        $vsOpponentAvg = $this->calculateVsOpponentAverage($player->id, $opponentId, $statField, $sportConfig['player_stat_model']);
-        $homeAwayAvg = $this->calculateHomeAwayAverage($player->id, $isHome, $statField, $sportConfig['player_stat_model']);
+        $vsOpponentProfile = $this->calculateVsOpponentProfile($player->id, $opponentId, $statField, $sportConfig['player_stat_model']);
+        $homeAwayProfile = $this->calculateHomeAwayProfile($player->id, $isHome, $statField, $sportConfig['player_stat_model']);
+        $vsOpponentAvg = $vsOpponentProfile['avg'];
+        $homeAwayAvg = $homeAwayProfile['avg'];
         $hitRate = $this->calculateHitRateVsOpponent($player->id, $opponentId, $statField, $prop->line, $sportConfig['player_stat_model']);
         $timesCoveredLast5 = $this->calculateTimesCovered($player->id, $statField, $prop->line, 5, $sportConfig['player_stat_model']);
         $timesCoveredSeason = $this->calculateTimesCovered($player->id, $statField, $prop->line, 82, $sportConfig['player_stat_model']);
@@ -179,7 +181,10 @@ class PlayerPropAnalyzer
             $consistency,
             $context,
             $dataQualityScore,
-            $matchQualityScore
+            $matchQualityScore,
+            $vsOpponentProfile['games'],
+            $homeAwayProfile['games'],
+            (int) ($timesCoveredSeason['games'] ?? 0)
         );
 
         if (! $analysis['recommendation']) {
@@ -234,7 +239,10 @@ class PlayerPropAnalyzer
         ?array $consistency,
         array $context,
         int $dataQualityScore,
-        int $matchQualityScore
+        int $matchQualityScore,
+        int $vsOpponentSample = 0,
+        int $homeAwaySample = 0,
+        int $seasonSample = 0
     ): array {
         $profile = $this->marketProfiles[$prop->market] ?? [
             'season_weight' => 0.33,
@@ -253,6 +261,8 @@ class PlayerPropAnalyzer
             last5Avg: $last5Avg,
             vsOpponentAvg: $vsOpponentAvg,
             homeAwayAvg: $homeAwayAvg,
+            vsOpponentSample: $vsOpponentSample,
+            homeAwaySample: $homeAwaySample,
             profile: $profile
         ) * ($context['combined_factor'] ?? 1.0);
         $projectionDiff = $projection - $line;
@@ -323,9 +333,11 @@ class PlayerPropAnalyzer
         $edgeConfidenceScore = (int) round(
             pow(max(0, min(1, ($edgeProbability / 0.20))), 1.30) * 100
         );
+        $edgeConfidenceWeight = $this->edgeConfidenceWeight($dataQualityScore);
+        $effectiveEdgeConfidence = (int) round($edgeConfidenceScore * $edgeConfidenceWeight);
         $confidence = (int) round(
             34
-            + ($edgeConfidenceScore * 0.33)
+            + ($effectiveEdgeConfidence * 0.33)
             + ($dataQualityScore * 0.12)
             + ($matchQualityScore * 0.08)
         );
@@ -363,6 +375,18 @@ class PlayerPropAnalyzer
                 $hitRate['games'],
                 $hitRatePercent
             );
+
+            if ($hitRate['games'] >= 5) {
+                if ($recommendation === 'Over' && $hitRatePercent >= 60) {
+                    $confidence += 3;
+                } elseif ($recommendation === 'Under' && $hitRatePercent <= 40) {
+                    $confidence += 3;
+                } elseif ($recommendation === 'Over' && $hitRatePercent <= 40) {
+                    $confidence -= 3;
+                } elseif ($recommendation === 'Under' && $hitRatePercent >= 60) {
+                    $confidence -= 3;
+                }
+            }
         }
 
         if ($consistency && isset($consistency['std_dev'])) {
@@ -376,6 +400,12 @@ class PlayerPropAnalyzer
             } elseif ($stdDev >= 5.5) {
                 $confidence -= 4;
             }
+        }
+
+        $uncertaintyPenalty = $this->uncertaintyPenalty($consistency, $seasonSample);
+        if ($uncertaintyPenalty > 0) {
+            $confidence -= $uncertaintyPenalty;
+            $reasoning[] = sprintf('Uncertainty penalty applied: -%d.', $uncertaintyPenalty);
         }
 
         if ($odds !== null && $odds > 0) {
@@ -410,9 +440,11 @@ class PlayerPropAnalyzer
             'confidence_decomposition' => [
                 'model_edge_score' => $modelEdgeScore,
                 'edge_confidence_score' => $edgeConfidenceScore,
+                'effective_edge_confidence_score' => $effectiveEdgeConfidence,
                 'data_quality_score' => $dataQualityScore,
                 'match_quality_score' => $matchQualityScore,
                 'context_factor' => round((float) ($context['combined_factor'] ?? 1.0), 3),
+                'uncertainty_penalty' => $uncertaintyPenalty,
             ],
         ];
     }
@@ -423,6 +455,8 @@ class PlayerPropAnalyzer
         ?float $last5Avg,
         ?float $vsOpponentAvg,
         ?float $homeAwayAvg,
+        int $vsOpponentSample,
+        int $homeAwaySample,
         array $profile
     ): float {
         $projection = $seasonAvg * $profile['season_weight']
@@ -430,18 +464,56 @@ class PlayerPropAnalyzer
             + ($last5Avg ?? $seasonAvg) * $profile['last5_weight'];
 
         if ($vsOpponentAvg !== null) {
-            $projection += $vsOpponentAvg * $profile['vs_opp_weight'];
+            $vsOpponentShrunk = $this->shrinkToBaseline($vsOpponentAvg, $vsOpponentSample, $seasonAvg, 6.0);
+            $projection += $vsOpponentShrunk * $profile['vs_opp_weight'];
         } else {
             $projection += $seasonAvg * $profile['vs_opp_weight'];
         }
 
         if ($homeAwayAvg !== null) {
-            $projection += $homeAwayAvg * $profile['home_away_weight'];
+            $homeAwayShrunk = $this->shrinkToBaseline($homeAwayAvg, $homeAwaySample, $seasonAvg, 8.0);
+            $projection += $homeAwayShrunk * $profile['home_away_weight'];
         } else {
             $projection += $seasonAvg * $profile['home_away_weight'];
         }
 
         return $projection;
+    }
+
+    protected function shrinkToBaseline(float $value, int $sampleSize, float $baseline, float $priorStrength): float
+    {
+        $sample = max(0, $sampleSize);
+        if ($sample === 0) {
+            return $baseline;
+        }
+
+        $k = max(1.0, $priorStrength);
+
+        return (($value * $sample) + ($baseline * $k)) / ($sample + $k);
+    }
+
+    protected function edgeConfidenceWeight(int $dataQualityScore): float
+    {
+        return match (true) {
+            $dataQualityScore < 55 => 0.45,
+            $dataQualityScore < 65 => 0.60,
+            $dataQualityScore < 75 => 0.78,
+            $dataQualityScore < 85 => 0.90,
+            default => 1.0,
+        };
+    }
+
+    protected function uncertaintyPenalty(?array $consistency, int $seasonSample): int
+    {
+        $stdDev = isset($consistency['std_dev']) ? (float) $consistency['std_dev'] : null;
+        if ($stdDev === null) {
+            return $seasonSample < 6 ? 8 : 4;
+        }
+
+        $volatilityPenalty = (int) round(max(0.0, min(8.0, ($stdDev - 2.5) * 1.2)));
+        $samplePenalty = max(0, 8 - min(8, (int) floor($seasonSample / 2)));
+
+        return max(0, min(14, $volatilityPenalty + $samplePenalty));
     }
 
     protected function estimateVolatility(?array $consistency, float $floor): float
@@ -746,18 +818,18 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        return $stats->avg($statField);
+        return $this->recencyWeightedAverage($stats->pluck($statField)->all(), 0.86);
     }
 
     /**
      * Calculate average vs specific opponent
      */
-    protected function calculateVsOpponentAverage(
+    protected function calculateVsOpponentProfile(
         int $playerId,
         int $opponentId,
         string $statField,
         string $playerStatModel
-    ): ?float {
+    ): array {
         $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)
             ->whereHas('game', function ($q) use ($opponentId) {
                 $q->where(function ($query) use ($opponentId) {
@@ -769,25 +841,28 @@ class PlayerPropAnalyzer
             ->get();
 
         if ($stats->isEmpty()) {
-            return null;
+            return ['avg' => null, 'games' => 0];
         }
 
-        return $stats->avg($statField);
+        return [
+            'avg' => $this->recencyWeightedAverage($stats->pluck($statField)->all(), 0.82),
+            'games' => $stats->count(),
+        ];
     }
 
     /**
      * Calculate home or away average
      */
-    protected function calculateHomeAwayAverage(
+    protected function calculateHomeAwayProfile(
         int $playerId,
         bool $isHome,
         string $statField,
         string $playerStatModel
-    ): ?float {
+    ): array {
         // Get player's team ID first
         $playerStat = $playerStatModel::where('player_id', $playerId)->first();
         if (! $playerStat || ! $playerStat->player || ! $playerStat->player->team_id) {
-            return null;
+            return ['avg' => null, 'games' => 0];
         }
 
         $teamId = $playerStat->player->team_id;
@@ -804,10 +879,40 @@ class PlayerPropAnalyzer
             ->get();
 
         if ($stats->count() < 3) {
+            return ['avg' => null, 'games' => $stats->count()];
+        }
+
+        return [
+            'avg' => $this->recencyWeightedAverage($stats->pluck($statField)->all(), 0.90),
+            'games' => $stats->count(),
+        ];
+    }
+
+    /**
+     * @param  array<int, mixed>  $values
+     */
+    protected function recencyWeightedAverage(array $values, float $decay = 0.88): ?float
+    {
+        if ($values === []) {
             return null;
         }
 
-        return $stats->avg($statField);
+        $decay = max(0.50, min(0.99, $decay));
+        $weightedSum = 0.0;
+        $weightTotal = 0.0;
+
+        foreach ($values as $index => $value) {
+            $numeric = is_numeric($value) ? (float) $value : 0.0;
+            $weight = pow($decay, (float) $index);
+            $weightedSum += ($numeric * $weight);
+            $weightTotal += $weight;
+        }
+
+        if ($weightTotal <= 0.0) {
+            return null;
+        }
+
+        return $weightedSum / $weightTotal;
     }
 
     /**

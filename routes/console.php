@@ -183,6 +183,19 @@ $schedulePlayerPropsWindow = function (
     $attachCommandHeartbeat($event, $command, $name);
 };
 
+$scheduleEveryMinuteJob = function (
+    string $command,
+    string $name
+) use ($attachCommandHeartbeat) {
+    $event = Schedule::command($command)
+        ->everyMinute()
+        ->name($name)
+        ->withoutOverlapping()
+        ->runInBackground();
+
+    $attachCommandHeartbeat($event, $command, $name);
+};
+
 $schedulePredictionPipeline = function (
     string $sportCommandPrefix,
     string $sportLabel,
@@ -650,3 +663,8 @@ $pruneFailedJobsEvent = Schedule::command('queue:prune-failed --hours=168')
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($pruneFailedJobsEvent, 'queue:prune-failed --hours=168', 'Queue: Prune Failed Jobs');
+
+$scheduleEveryMinuteJob(
+    'alerts:send-daily-digests',
+    'Alerts: Send Daily Digests'
+);

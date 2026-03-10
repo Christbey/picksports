@@ -34,8 +34,10 @@ createInertiaApp({
 
 router.on('navigate', (event) => {
     const page = event.detail.page;
-    trackPageView(page);
-    flushPendingAnalyticsEvent(page);
+    window.requestAnimationFrame(() => {
+        trackPageView(page);
+        flushPendingAnalyticsEvent(page);
+    });
 });
 
 // This will set light / dark mode on page load...

@@ -8,9 +8,19 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 abstract class AbstractSportsApiController extends Controller
 {
+    protected const MAX_PER_PAGE = 100;
+
     protected function getPerPage(Request $request, int $default = 15): int
     {
-        return (int) ($request->integer('per_page') ?: $default);
+        $perPage = (int) ($request->integer('per_page') ?: $default);
+        $perPage = max(1, $perPage);
+
+        return min($perPage, $this->getMaxPerPage());
+    }
+
+    protected function getMaxPerPage(): int
+    {
+        return static::MAX_PER_PAGE;
     }
 
     protected function requireNumericId(mixed $value): int

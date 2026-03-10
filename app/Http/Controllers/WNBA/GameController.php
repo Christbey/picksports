@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\WNBA;
 
 use App\Http\Controllers\Controller;
-use App\Http\Resources\WNBA\GameResource;
 use App\Models\WNBA\Game;
 use Inertia\Response;
 
@@ -11,12 +10,11 @@ class GameController extends Controller
 {
     public function __invoke(Game $game): Response
     {
-        return $this->renderResourcePage(
+        return $this->renderFormPage(
             'WNBA/Game',
-            'game',
-            $game,
-            GameResource::class,
-            ['homeTeam.activePlayerInjuries.player', 'awayTeam.activePlayerInjuries.player']
+            'gameId',
+            $game->id,
+            ['game' => $game->toArray()],
         );
     }
 }

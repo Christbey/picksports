@@ -89,7 +89,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
             ->when($request->season, fn ($q, $season) => $q->where('season', $season))
             ->orderByDesc('game_date')
-            ->paginate($request->per_page ?? 15);
+            ->paginate($this->getPerPage($request));
 
         return $resourceClass::collection($games);
     }
@@ -116,7 +116,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $gameModel = $this->getGameModel();
         $resourceClass = $this->getGameResource();
         $teamId = $this->requireNumericId($team);
-        $perPage = $request->integer('per_page') ?: 15;
+        $perPage = $this->getPerPage($request);
         $page = $request->integer('page') ?: 1;
 
         /** @var SportsViewCache $sportsViewCache */
@@ -166,7 +166,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
             ->with($this->gameRelations(false))
             ->where('season', $seasonValue)
             ->orderByDesc('game_date')
-            ->paginate($request->per_page ?? 50);
+            ->paginate($this->getPerPage($request, 50));
 
         return $resourceClass::collection($games);
     }
@@ -180,13 +180,14 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $resourceClass = $this->getGameResource();
         $seasonValue = $this->requireNumericId($season);
         $weekValue = $this->requireNumericId($week);
+        $perPage = $this->getPerPage($request, 50);
 
         $games = $gameModel::query()
             ->with($this->gameRelations(true))
             ->where('season', $seasonValue)
             ->where('week', $weekValue)
             ->oldest('game_date')
-            ->get();
+            ->paginate($perPage);
 
         return $resourceClass::collection($games);
     }

@@ -76,6 +76,7 @@ class DashboardPredictionResource extends JsonResource
         $isFinal = in_array($game->status, $this->finalStatuses, true);
 
         $data = [
+            'id' => $prediction->id,
             'sport' => $this->sport,
             'game_id' => $game->id,
             'season_type' => $game->season_type,

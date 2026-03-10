@@ -40,6 +40,9 @@ test('users can log a new bet via API', function () {
         'bet_amount' => 100.00,
         'odds' => '-110',
         'bet_type' => 'spread',
+        'selection_side' => 'home',
+        'selection_label' => 'Lakers -4.5',
+        'line' => -4.5,
         'notes' => 'Test bet',
     ]);
 
@@ -50,6 +53,9 @@ test('users can log a new bet via API', function () {
             'bet_amount',
             'odds',
             'bet_type',
+            'selection_side',
+            'selection_label',
+            'line',
             'notes',
         ],
     ]);
@@ -59,6 +65,9 @@ test('users can log a new bet via API', function () {
         'bet_amount' => 100.00,
         'odds' => '-110',
         'bet_type' => 'spread',
+        'selection_side' => 'home',
+        'selection_label' => 'Lakers -4.5',
+        'line' => -4.5,
         'notes' => 'Test bet',
     ]);
 });
@@ -192,4 +201,20 @@ test('bet result updates set settled_at timestamp', function () {
 
     expect($bet->settled_at)->not->toBeNull();
     expect($bet->result)->toBe('won');
+});
+
+test('selection side must match bet type', function () {
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->post('/api/v1/user-bets', [
+        'prediction_id' => 1,
+        'prediction_type' => 'App\Models\NBA\Prediction',
+        'bet_amount' => 100.00,
+        'odds' => '-110',
+        'bet_type' => 'moneyline',
+        'selection_side' => 'over',
+        'selection_label' => 'Over ML',
+    ]);
+
+    $response->assertSessionHasErrors('selection_side');
 });

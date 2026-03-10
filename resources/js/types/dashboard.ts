@@ -1,6 +1,7 @@
 import type { BettingRecommendation } from './sports';
 
 export interface DashboardPrediction {
+    id: number;
     sport: string;
     game_id: number;
     season_type?: string | number | null;

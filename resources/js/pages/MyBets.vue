@@ -2,7 +2,7 @@
 import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 import { Download, Plus, Trash2, Check, X } from 'lucide-vue-next';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,11 +12,14 @@ import { type BreadcrumbItem } from '@/types';
 
 interface Bet {
     id: number;
-    prediction_id: number;
-    prediction_type: string;
+    prediction_id: number | null;
+    prediction_type: string | null;
     bet_amount: number;
     odds: string;
     bet_type: string;
+    selection_side: string | null;
+    selection_label: string | null;
+    line: number | null;
     result: 'pending' | 'won' | 'lost' | 'push';
     profit_loss: number | null;
     notes: string | null;
@@ -68,6 +71,9 @@ const form = ref({
     bet_amount: '',
     odds: '',
     bet_type: 'spread',
+    selection_side: 'home',
+    selection_label: '',
+    line: '',
     notes: '',
 });
 
@@ -94,6 +100,9 @@ async function submitBet() {
             bet_amount: '',
             odds: '',
             bet_type: 'spread',
+            selection_side: 'home',
+            selection_label: '',
+            line: '',
             notes: '',
         };
         await fetchBets();
@@ -147,6 +156,25 @@ function getSportName(predictionType: string) {
     return predictionType.split('\\').slice(-2, -1)[0];
 }
 
+function displaySelection(bet: Bet) {
+    if (bet.selection_label) {
+        return bet.selection_label;
+    }
+
+    if (bet.bet_type === 'moneyline') {
+        return `${bet.selection_side?.toUpperCase() ?? 'N/A'} ML`;
+    }
+
+    if (bet.bet_type === 'total_over' || bet.bet_type === 'total_under') {
+        const label = bet.bet_type === 'total_over' ? 'Over' : 'Under';
+        return bet.line !== null ? `${label} ${bet.line}` : label;
+    }
+
+    const side = bet.selection_side?.toUpperCase() ?? 'N/A';
+
+    return bet.line !== null ? `${side} ${bet.line > 0 ? '+' : ''}${bet.line}` : side;
+}
+
 function getResultColor(result: string) {
     const colors = {
         won: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50',
@@ -159,6 +187,22 @@ function getResultColor(result: string) {
 
 onMounted(() => {
     fetchBets();
+});
+
+watch(() => form.value.bet_type, (betType) => {
+    if (betType === 'total_over') {
+        form.value.selection_side = 'over';
+        return;
+    }
+
+    if (betType === 'total_under') {
+        form.value.selection_side = 'under';
+        return;
+    }
+
+    if (! ['home', 'away'].includes(form.value.selection_side)) {
+        form.value.selection_side = 'home';
+    }
 });
 </script>
 
@@ -290,6 +334,29 @@ onMounted(() => {
                         </div>
 
                         <div>
+                            <Label for="selection-side">Side</Label>
+                            <select
+                                id="selection-side"
+                                v-model="form.selection_side"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                            >
+                                <option value="home">Home</option>
+                                <option value="away">Away</option>
+                                <option value="over">Over</option>
+                                <option value="under">Under</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <Label for="selection-label">Selection Label</Label>
+                            <Input
+                                id="selection-label"
+                                v-model="form.selection_label"
+                                placeholder="Lakers +4.5"
+                            />
+                        </div>
+
+                        <div>
                             <Label for="bet-amount">Bet Amount</Label>
                             <Input
                                 id="bet-amount"
@@ -308,6 +375,17 @@ onMounted(() => {
                                 v-model="form.odds"
                                 placeholder="-110"
                                 required
+                            />
+                        </div>
+
+                        <div>
+                            <Label for="line">Line</Label>
+                            <Input
+                                id="line"
+                                v-model="form.line"
+                                type="number"
+                                step="0.5"
+                                placeholder="4.5"
                             />
                         </div>
 
@@ -376,7 +454,11 @@ onMounted(() => {
                                 <div class="flex flex-col gap-1">
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold">
-                                            {{ getSportName(bet.prediction_type) }}
+                                            {{ bet.prediction_type ? getSportName(bet.prediction_type) : 'Manual' }}
+                                        </span>
+                                        <span class="text-sm text-muted-foreground">•</span>
+                                        <span class="text-sm font-medium">
+                                            {{ displaySelection(bet) }}
                                         </span>
                                         <span class="text-sm text-muted-foreground">•</span>
                                         <span class="text-sm text-muted-foreground">

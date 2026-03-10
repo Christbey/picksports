@@ -17,6 +17,9 @@ class UserBet extends Model
         'bet_amount',
         'odds',
         'bet_type',
+        'selection_side',
+        'selection_label',
+        'line',
         'result',
         'profit_loss',
         'notes',
@@ -28,6 +31,7 @@ class UserBet extends Model
     {
         return [
             'bet_amount' => 'decimal:2',
+            'line' => 'decimal:2',
             'profit_loss' => 'decimal:2',
             'placed_at' => 'datetime',
             'settled_at' => 'datetime',

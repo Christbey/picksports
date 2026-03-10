@@ -790,7 +790,7 @@ function saveOptions(): SavePickOption[] {
             </div>
         </Link>
 
-        <div v-if="canSavePick" class="mt-4 border-t border-sidebar-border/70 pt-4">
+        <div v-if="canSavePick && !isFinal()" class="mt-4 border-t border-sidebar-border/70 pt-4">
             <div class="flex items-center justify-between gap-2">
                 <div>
                     <div class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Track This Pick</div>

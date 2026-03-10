@@ -177,6 +177,7 @@
         <link rel="dns-prefetch" href="//laravel.com">
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2394264248851783" crossorigin="anonymous"></script>
 
         <!-- Google Tag Manager -->
         <script>

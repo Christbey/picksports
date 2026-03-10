@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import axios from 'axios';
 import { Link } from '@inertiajs/vue3';
+import axios from 'axios';
 import { ChevronDown, Sparkles, Target } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
@@ -374,6 +374,52 @@ function finalCardClass(): string {
     return '';
 }
 
+function parseTotalPickDirection(recommendation: string): 'over' | 'under' | null {
+    const normalized = recommendation.toLowerCase();
+    if (normalized.includes('over')) return 'over';
+    if (normalized.includes('under')) return 'under';
+
+    return null;
+}
+
+function totalResultLabel(): string | null {
+    if (!isFinal()) return null;
+    if (props.prediction.actual_total === null || props.prediction.actual_total === undefined) return null;
+
+    const totalBet = props.prediction.betting_value?.find((bet) => bet.type === 'total');
+    if (!totalBet) return null;
+    if (totalBet.market_line === null || totalBet.market_line === undefined) return null;
+
+    const direction = parseTotalPickDirection(totalBet.recommendation);
+    if (!direction) return null;
+
+    const actual = Number(props.prediction.actual_total);
+    const line = Number(totalBet.market_line);
+    if (!Number.isFinite(actual) || !Number.isFinite(line)) return null;
+
+    if (actual === line) return 'Push';
+    const correct = direction === 'over' ? actual > line : actual < line;
+
+    return correct ? 'Correct' : 'Incorrect';
+}
+
+function totalResultBadgeClass(): string {
+    const label = totalResultLabel();
+    if (label === 'Correct') {
+        return 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300';
+    }
+
+    if (label === 'Incorrect') {
+        return 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300';
+    }
+
+    if (label === 'Push') {
+        return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300';
+    }
+
+    return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
+}
+
 const canSavePick = computed(() => predictionId() !== null && predictionModelClass() !== null);
 
 watch(
@@ -655,10 +701,27 @@ function saveOptions(): SavePickOption[] {
                         >
                             {{ weekLabel() }}
                         </span>
+                        <span
+                            v-if="isFinal() && winnerCorrect() !== null"
+                            class="rounded px-2 py-0.5 text-xs font-semibold"
+                            :class="finalResultBadgeClass()"
+                        >
+                            Winner Pick: {{ winnerCorrect() ? 'Correct' : 'Incorrect' }}
+                        </span>
+                        <span
+                            v-if="isFinal() && totalResultLabel()"
+                            class="rounded px-2 py-0.5 text-xs font-semibold"
+                            :class="totalResultBadgeClass()"
+                        >
+                            O/U: {{ totalResultLabel() }}
+                        </span>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 gap-2 sm:grid-cols-1 md:min-w-[180px]">
+                <div
+                    v-if="!isFinal()"
+                    class="grid grid-cols-1 gap-2 sm:grid-cols-1 md:min-w-[180px]"
+                >
                     <div class="ui-surface-subtle p-2">
                         <div class="mb-1 flex items-center gap-1.5">
                             <Target class="h-3.5 w-3.5" />
@@ -689,7 +752,7 @@ function saveOptions(): SavePickOption[] {
             </div>
 
             <div
-                v-if="(prediction.betting_value && prediction.betting_value.length > 0) || hasLiveData() || bettingValueDebug()"
+                v-if="!isFinal() && ((prediction.betting_value && prediction.betting_value.length > 0) || hasLiveData() || bettingValueDebug())"
                 class="mt-4 border-t border-sidebar-border/70 pt-4"
             >
                 <div class="mb-2 flex items-center gap-2">

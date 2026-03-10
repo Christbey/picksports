@@ -147,6 +147,7 @@
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
         <meta name="theme-color" content="#0b0f19" media="(prefers-color-scheme: dark)">
         <meta name="description" content="{{ $metaDescription }}">
+        <meta name="google-adsense-account" content="ca-pub-2394264248851783">
         <meta name="robots" content="{{ $isPublicPage ? 'index,follow' : 'noindex,nofollow' }}">
         <link rel="canonical" href="{{ $canonicalUrl }}">
         <link rel="alternate" hreflang="en-US" href="{{ $canonicalUrl }}">

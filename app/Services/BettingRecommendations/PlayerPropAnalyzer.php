@@ -1078,6 +1078,19 @@ class PlayerPropAnalyzer
     protected function findPlayerByName(string $name, string $playerModel, string $oddsSportKey, ?Model $game = null): ?array
     {
         $baseQuery = $this->playerBaseQuery($playerModel, $game);
+        $mappedPlayerId = $this->oddsApiService?->mappedEspnPlayerId($oddsSportKey, $name);
+
+        if ($mappedPlayerId) {
+            $mappedPlayer = (clone $baseQuery)->whereKey($mappedPlayerId)->first();
+
+            if ($mappedPlayer) {
+                return [
+                    'player' => $mappedPlayer,
+                    'match_quality_score' => 99,
+                ];
+            }
+        }
+
         $mappedEspnName = $this->oddsApiService?->mappedEspnPlayerName($oddsSportKey, $name);
 
         if ($mappedEspnName) {
@@ -1132,11 +1145,22 @@ class PlayerPropAnalyzer
         $nameParts = explode(' ', trim($normalizedInput));
         $lastName = end($nameParts);
 
+        if ($candidate) {
+            $this->oddsApiService?->rememberUnmappedPlayer(
+                $oddsSportKey,
+                $name,
+                $candidate['player'],
+                (int) round($candidate['score'])
+            );
+        }
+
         $lastNameMatch = (clone $baseQuery)
             ->whereRaw('LOWER(last_name) = ?', [$lastName])
             ->first();
 
         if ($lastNameMatch) {
+            $this->oddsApiService?->rememberUnmappedPlayer($oddsSportKey, $name, $lastNameMatch, 75);
+
             return [
                 'player' => $lastNameMatch,
                 'match_quality_score' => 75,

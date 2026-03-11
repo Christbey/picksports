@@ -4,7 +4,6 @@ import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { useNflGamePage } from '@/composables/useNflGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
 import { trackViewItem } from '@/lib/analytics';
-import type { NflPageGame } from '@/types';
 
 const formatSpread = (spread: number | string): string => {
     const numSpread = typeof spread === 'string' ? parseFloat(spread) : spread;
@@ -12,8 +11,9 @@ const formatSpread = (spread: number | string): string => {
     return numSpread > 0 ? `+${numSpread.toFixed(1)}` : numSpread.toFixed(1);
 };
 
-export function useNflDetailedGamePage(game: NflPageGame) {
+export function useNflDetailedGamePage(gameId: number) {
     const {
+        game: currentGame,
         homeTeam,
         awayTeam,
         prediction,
@@ -41,15 +41,15 @@ export function useNflDetailedGamePage(game: NflPageGame) {
         formatCategoryName,
         getNumericRecord,
         calculatePercentage,
-    } = useNflGamePage(game);
+    } = useNflGamePage(gameId);
 
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);
     const awayRecord = computed(() =>
-        getNumericRecord(awayRecentGames.value, game.away_team_id),
+        getNumericRecord(awayRecentGames.value, currentGame.value.away_team_id),
     );
     const homeRecord = computed(() =>
-        getNumericRecord(homeRecentGames.value, game.home_team_id),
+        getNumericRecord(homeRecentGames.value, currentGame.value.home_team_id),
     );
     const predictionSectionProps = computed(() => ({
         section: 'prediction' as const,
@@ -84,14 +84,14 @@ export function useNflDetailedGamePage(game: NflPageGame) {
         homeRecord: homeRecord.value,
         awayRecentGames: awayRecentGames.value,
         homeRecentGames: homeRecentGames.value,
-        awayTeamId: game.away_team_id,
-        homeTeamId: game.home_team_id,
+        awayTeamId: currentGame.value.away_team_id,
+        homeTeamId: currentGame.value.home_team_id,
         gameHrefPrefix: '/nfl/games',
     }));
 
     const { pageProps } = useSportGameLayout({
         sport: 'nfl',
-        gameId: game.id,
+        gameId,
         teamLink: (id: number) => NFLTeamController.url(id),
         pageProps: {
             title: computed(
@@ -102,15 +102,15 @@ export function useNflDetailedGamePage(game: NflPageGame) {
             error,
             awayTeam,
             homeTeam,
-            game,
+            game: currentGame,
             gameStatus,
             formatDate: computed(
                 () => (dateString: string | null) => formatDate(dateString || ''),
             ),
-            venueLabel: computed(() => game.venue),
+            venueLabel: computed(() => currentGame.value.venue),
             broadcastNetworks,
             extraInfoItems: computed(() =>
-                weekLabel.value ? [`${game.season_type} - ${weekLabel.value}`] : [],
+                weekLabel.value ? [`${currentGame.value.season_type} - ${weekLabel.value}`] : [],
             ),
             showScoreStatuses: ['STATUS_FINAL', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
             badgePulseStatuses: ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
@@ -119,12 +119,12 @@ export function useNflDetailedGamePage(game: NflPageGame) {
                 () =>
                     homeLinescores.value.length > 0
                     && awayLinescores.value.length > 0
-                    && game.status === 'STATUS_FINAL',
+                    && currentGame.value.status === 'STATUS_FINAL',
             ),
             awayLinescores,
             homeLinescores,
-            awayScore: computed(() => game.away_score),
-            homeScore: computed(() => game.home_score),
+            awayScore: computed(() => currentGame.value.away_score),
+            homeScore: computed(() => currentGame.value.home_score),
             showTrends: computed(() => !!(homeTrends.value || awayTrends.value)),
             trendsSubtitle,
             trendsLoading: false,
@@ -142,7 +142,7 @@ export function useNflDetailedGamePage(game: NflPageGame) {
 
     watch(
         () => [
-            game.id,
+            currentGame.value.id,
             awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
@@ -151,7 +151,7 @@ export function useNflDetailedGamePage(game: NflPageGame) {
             const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
-                itemId: game.id,
+                itemId: currentGame.value.id,
                 itemName: `${awayLabel} @ ${homeLabel}`,
                 sport: 'nfl',
                 homeTeam: homeLabel,

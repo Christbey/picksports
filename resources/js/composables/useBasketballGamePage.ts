@@ -7,7 +7,7 @@ import type { ApiEnvelope, Game, PredictionSummary, TeamMetric, TeamStatsEntry, 
 
 interface UseBasketballGamePageOptions {
     sport: 'nba' | 'cbb' | 'wnba' | 'wcbb';
-    game: Game;
+    gameId: number;
     sortTopPerformers?: (players: TopPerformer[]) => TopPerformer[];
     metricFromResponse?: (payload: ApiEnvelope<TeamMetric | TeamMetric[] | null>) => TeamMetric | null;
     subtitleText?: (sampleSize: number) => string;
@@ -148,6 +148,7 @@ const normalizePrediction = (rawPrediction: unknown): PredictionSummary | null =
 
 export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
     const {
+        game,
         homeTeam,
         awayTeam,
         prediction: rawPrediction,
@@ -165,7 +166,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         error,
     } = useDetailedGameData({
         sport: options.sport,
-        game: options.game,
+        gameId: options.gameId,
         sortTopPerformers: options.sortTopPerformers,
         metricFromResponse: options.metricFromResponse,
     });
@@ -179,14 +180,14 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         formatTrendCategoryName: formatCategoryName,
     } = useTeamTrends(homeTrends, awayTrends);
 
-    const gameStatus = useGameStatus(() => options.game.status);
+    const gameStatus = useGameStatus(() => game.value?.status ?? 'STATUS_SCHEDULED');
     const prediction = computed(() => normalizePrediction(rawPrediction.value));
     const homeTeamStats = computed(() => normalizeBasketballStats(rawHomeTeamStats.value));
     const awayTeamStats = computed(() => normalizeBasketballStats(rawAwayTeamStats.value));
     const formatDate = (dateString: string | null): string => formatDateLong(dateString);
-    const broadcastNetworks = computed(() => parseBroadcastNetworks(options.game.broadcast_networks));
-    const homeLinescores = computed(() => parseLinescores(options.game.home_linescores));
-    const awayLinescores = computed(() => parseLinescores(options.game.away_linescores));
+    const broadcastNetworks = computed(() => parseBroadcastNetworks(game.value?.broadcast_networks ?? null));
+    const homeLinescores = computed(() => parseLinescores(game.value?.home_linescores ?? null));
+    const awayLinescores = computed(() => parseLinescores(game.value?.away_linescores ?? null));
     const homeRecentForm = computed(() => (homeTeam.value ? getRecentForm(homeRecentGames.value, homeTeam.value.id) : ''));
     const awayRecentForm = computed(() => (awayTeam.value ? getRecentForm(awayRecentGames.value, awayTeam.value.id) : ''));
     const trendsSubtitle = computed(() => {
@@ -214,6 +215,7 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         getRequiredTier,
         formatTierName,
         formatCategoryName,
+        game,
         gameStatus,
         formatDate,
         broadcastNetworks,

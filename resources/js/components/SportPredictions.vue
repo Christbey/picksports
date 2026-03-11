@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { fetchJson } from '@/composables/useApiClient';
 import { usePredictionList } from '@/composables/usePredictionList';
 import { useSeasonFilter } from '@/composables/useSeasonFilter';
 import { isMlbRegularSeasonType, isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
@@ -79,11 +80,11 @@ const {
         return { data: [], meta: null };
     }
 
-    const response = await fetch(
+    const payload = await fetchJson<{ data: PredictionListItem[]; meta: any }>(
         `/api/v1/${props.config.sport}/predictions?${buildParams(page)}`,
     );
-    if (!response.ok) throw new Error('Failed to fetch predictions');
-    return response.json();
+    if (!payload) throw new Error('Failed to fetch predictions');
+    return payload;
 });
 
 const formatDateLabel = (dateStr: string) => {
@@ -101,12 +102,11 @@ const fetchAvailableDates = async () => {
     const seasonQuery = selectedSeason.value
         ? `?season=${encodeURIComponent(selectedSeason.value)}`
         : '';
-    const response = await fetch(
+    const data = await fetchJson<{ data?: string[] }>(
         `/api/v1/${props.config.sport}/predictions/available-dates${seasonQuery}`,
     );
-    if (!response.ok) throw new Error('Failed to fetch available dates');
-    const data = await response.json();
-    availableDates.value = data.data;
+    if (!data) throw new Error('Failed to fetch available dates');
+    availableDates.value = Array.isArray(data.data) ? data.data : [];
 
     const now = new Date();
     if (props.config.useEasternTime) {

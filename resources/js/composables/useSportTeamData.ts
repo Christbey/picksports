@@ -1,15 +1,11 @@
 import { computed, onMounted, ref } from 'vue';
+import { fetchJson } from '@/composables/useApiClient';
 import type { BreadcrumbItem, Game } from '@/types';
 import type { TeamPageConfig } from '@/types/sport-team';
 
 export interface UseSportTeamDataProps {
     config: TeamPageConfig;
-    team?: any;
-    teamId?: number;
-    preloadedMetrics?: any;
-    preloadedSeasonStats?: any;
-    preloadedRecentGames?: any[];
-    preloadedUpcomingGames?: any[];
+    teamId: number;
 }
 
 export function useSportTeamData(props: UseSportTeamDataProps) {
@@ -21,11 +17,11 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
         return '#';
     };
 
-    const teamData = ref<any>(props.team || null);
-    const teamMetrics = ref<any>(props.preloadedMetrics || null);
-    const seasonStats = ref<any>(props.preloadedSeasonStats || null);
-    const recentGames = ref<Game[]>((props.preloadedRecentGames as Game[]) || []);
-    const upcomingGames = ref<Game[]>((props.preloadedUpcomingGames as Game[]) || []);
+    const teamData = ref<any>(null);
+    const teamMetrics = ref<any>(null);
+    const seasonStats = ref<any>(null);
+    const recentGames = ref<Game[]>([]);
+    const upcomingGames = ref<Game[]>([]);
     const powerRanking = ref<{ rank: number; total_teams: number } | null>(null);
     const statRankings = ref<Record<string, number>>({});
     const metricRankings = ref<Record<string, number>>({});
@@ -34,12 +30,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     const rosterLoading = ref(false);
     const trendsData = ref<Record<string, string[]> | null>(null);
     const lockedTrends = ref<Record<string, string> | null>(null);
-    const loading = ref(!hasPreloadedData());
+    const loading = ref(true);
     const error = ref<string | null>(null);
-
-    function hasPreloadedData(): boolean {
-        return !!(props.preloadedMetrics !== undefined && props.preloadedRecentGames !== undefined);
-    }
 
     const teamId = computed(() => teamData.value?.id || props.teamId);
 
@@ -151,58 +143,50 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     };
 
     onMounted(async () => {
-        if (hasPreloadedData() && !props.config.showTrends && !props.config.showPowerRanking) return;
-
         try {
-            loading.value = !hasPreloadedData();
+            loading.value = true;
             error.value = null;
 
-            const fetchId = props.teamId || props.team?.id;
+            const fetchId = props.teamId;
             if (!fetchId) return;
 
-            const fetches: Promise<Response>[] = [];
+            const fetches: Promise<unknown>[] = [];
             const fetchKeys: string[] = [];
 
-            if (!props.preloadedMetrics) {
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/metrics`));
-                fetchKeys.push('metrics');
-            }
+            fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}/metrics`));
+            fetchKeys.push('metrics');
 
-            if (props.config.seasonStatTiles && props.preloadedSeasonStats === undefined) {
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/stats/season-averages`));
+            if (props.config.seasonStatTiles) {
+                fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}/stats/season-averages`));
                 fetchKeys.push('seasonStats');
             }
 
-            if (props.preloadedRecentGames === undefined) {
-                // Pull enough rows to cover the full team schedule/game log for the season.
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/games?per_page=500`));
-                fetchKeys.push('games');
-            }
+            // Pull enough rows to cover the full team schedule/game log for the season.
+            fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}/games?per_page=500`));
+            fetchKeys.push('games');
 
-            if (!props.team && props.teamId) {
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}`));
-                fetchKeys.push('team');
-            }
+            fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}`));
+            fetchKeys.push('team');
 
             if (props.config.showPowerRanking || props.config.metricRankingKeys) {
-                fetches.push(fetch(`${props.config.apiBase}/team-metrics`));
+                fetches.push(fetchJson(`${props.config.apiBase}/team-metrics`));
                 fetchKeys.push('allMetrics');
             }
 
             if (props.config.statRankingKeys) {
-                fetches.push(fetch(`${props.config.apiBase}/team-stats/season-averages`));
+                fetches.push(fetchJson(`${props.config.apiBase}/team-stats/season-averages`));
                 fetchKeys.push('allStats');
             }
 
             if (props.config.showTrends) {
                 const games = props.config.trendsGames ?? 20;
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/trends?games=${games}`));
+                fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}/trends?games=${games}`));
                 fetchKeys.push('trends');
             }
 
             if (props.config.showRoster) {
                 rosterLoading.value = true;
-                fetches.push(fetch(`${props.config.apiBase}/teams/${fetchId}/players`));
+                fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}/players`));
                 fetchKeys.push('roster');
             }
 
@@ -210,25 +194,25 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
 
             for (let i = 0; i < fetchKeys.length; i++) {
                 const key = fetchKeys[i];
-                const res = responses[i];
+                const res = responses[i] as any;
 
-                if (key === 'team' && res.ok) {
-                    const data = await res.json();
+                if (key === 'team' && res) {
+                    const data = res;
                     teamData.value = data.data;
                 }
 
-                if (key === 'metrics' && res.ok) {
-                    const data = await res.json();
+                if (key === 'metrics' && res) {
+                    const data = res;
                     teamMetrics.value = data.data?.[0] ?? data.data ?? null;
                 }
 
-                if (key === 'seasonStats' && res.ok) {
-                    const data = await res.json();
+                if (key === 'seasonStats' && res) {
+                    const data = res;
                     seasonStats.value = data.data || null;
                 }
 
-                if (key === 'games' && res.ok) {
-                    const data = await res.json();
+                if (key === 'games' && res) {
+                    const data = res;
                     const games = data.data || [];
                     const metricSeason = toNumber(teamMetrics.value?.season);
                     const seasonScopedGames = metricSeason !== null
@@ -256,8 +240,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                     }
                 }
 
-                if (key === 'allMetrics' && res.ok) {
-                    const data = await res.json();
+                if (key === 'allMetrics' && res) {
+                    const data = res;
                     const allMetricsRaw = data.data || [];
                     const season = toNumber(teamMetrics.value?.season);
                     const seasonMetrics = season !== null
@@ -298,8 +282,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                     }
                 }
 
-                if (key === 'allStats' && res.ok && props.config.statRankingKeys) {
-                    const data = await res.json();
+                if (key === 'allStats' && res && props.config.statRankingKeys) {
+                    const data = res;
                     const allStats = data.data || [];
                     const rankings: Record<string, number> = {};
                     for (const { key: statKey, descending } of props.config.statRankingKeys) {
@@ -313,14 +297,14 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                     statRankings.value = rankings;
                 }
 
-                if (key === 'trends' && res.ok) {
-                    const data = await res.json();
+                if (key === 'trends' && res) {
+                    const data = res;
                     trendsData.value = data.trends || null;
                     lockedTrends.value = data.locked_trends || null;
                 }
 
-                if (key === 'roster' && res.ok) {
-                    const data = await res.json();
+                if (key === 'roster' && res) {
+                    const data = res;
                     rosterPlayers.value = data.data || [];
                     rosterLoading.value = false;
                 }

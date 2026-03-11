@@ -6,10 +6,10 @@ import { useMlbGamePage } from '@/composables/useMlbGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
 import { trackViewItem } from '@/lib/analytics';
 import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
-import type { MlbPageGame } from '@/types';
 
-export function useMlbDetailedGamePage(game: MlbPageGame) {
+export function useMlbDetailedGamePage(gameId: number) {
     const {
+        game: currentGame,
         homeTeam,
         awayTeam,
         prediction,
@@ -35,23 +35,23 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
         getRequiredTier,
         formatTierName,
         formatCategoryName,
-    } = useMlbGamePage(game);
+    } = useMlbGamePage(gameId);
 
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);
     const awayRecord = computed(() =>
-        getWinLossRecord(awayRecentGames.value, game.away_team_id),
+        getWinLossRecord(awayRecentGames.value, currentGame.value.away_team_id),
     );
     const homeRecord = computed(() =>
-        getWinLossRecord(homeRecentGames.value, game.home_team_id),
+        getWinLossRecord(homeRecentGames.value, currentGame.value.home_team_id),
     );
     const contextBadgeLabel = computed(() =>
-        isMlbSpringTrainingType(game.season_type) ? 'Spring Training' : null,
+        isMlbSpringTrainingType(currentGame.value.season_type) ? 'Spring Training' : null,
     );
 
     const { pageProps } = useSportGameLayout({
         sport: 'mlb',
-        gameId: game.id,
+        gameId,
         teamLink: (id: number) => MLBTeamController.url(id),
         pageProps: {
             title: computed(
@@ -61,23 +61,23 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
             error,
             awayTeam: awayMatchupTeam,
             homeTeam: homeMatchupTeam,
-            game,
+            game: currentGame,
             gameStatus,
             formatDate,
             awayRecentForm,
             homeRecentForm,
-            venueLabel: computed(() => formatVenueLabel(game.venue_name, game.venue_city)),
+            venueLabel: computed(() => formatVenueLabel(currentGame.value.venue_name, currentGame.value.venue_city)),
             broadcastNetworks,
             showLinescore: computed(
                 () =>
                     homeLinescores.value.length > 0
                     && awayLinescores.value.length > 0
-                    && game.status === 'STATUS_FINAL',
+                    && currentGame.value.status === 'STATUS_FINAL',
             ),
             awayLinescores,
             homeLinescores,
-            awayScore: computed(() => game.away_score),
-            homeScore: computed(() => game.home_score),
+            awayScore: computed(() => currentGame.value.away_score),
+            homeScore: computed(() => currentGame.value.home_score),
             periodPrefix: '',
             showPredictionSummary: computed(() => !!prediction.value),
             prediction,
@@ -106,14 +106,14 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
         homeRecord: homeRecord.value,
         awayRecentGames: awayRecentGames.value,
         homeRecentGames: homeRecentGames.value,
-        awayTeamId: game.away_team_id,
-        homeTeamId: game.home_team_id,
+        awayTeamId: currentGame.value.away_team_id,
+        homeTeamId: currentGame.value.home_team_id,
         gameHrefPrefix: '/mlb/games',
     }));
 
     watch(
         () => [
-            game.id,
+            currentGame.value.id,
             awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
@@ -122,7 +122,7 @@ export function useMlbDetailedGamePage(game: MlbPageGame) {
             const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
-                itemId: game.id,
+                itemId: currentGame.value.id,
                 itemName: `${awayLabel} @ ${homeLabel}`,
                 sport: 'mlb',
                 homeTeam: homeLabel,

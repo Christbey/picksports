@@ -42,7 +42,7 @@ export interface Game {
     home_team_id: number
     away_team_id: number
     season: number
-    season_type: number
+    season_type: number | string | null
     week: number | null
     game_date: string | null
     game_time: string | null

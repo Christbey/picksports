@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
+import { fetchJson } from '@/composables/useApiClient';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -131,12 +132,10 @@ async function fetchInjuries() {
     error.value = null;
 
     try {
-        const response = await fetch(`/api/v1/${props.config.sport}/injuries?active=1`);
-        if (!response.ok) {
+        const payload = await fetchJson<{ data?: InjuryRow[] }>(`/api/v1/${props.config.sport}/injuries?active=1`);
+        if (!payload) {
             throw new Error('Failed to load injuries');
         }
-
-        const payload = await response.json();
         rows.value = Array.isArray(payload?.data) ? payload.data : [];
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'Failed to load injuries';

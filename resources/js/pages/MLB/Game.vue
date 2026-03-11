@@ -5,13 +5,12 @@ import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue'
 import MlbGameInsights from '@/components/game-page/MlbGameInsights.vue'
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue'
 import { useMlbDetailedGamePage } from '@/composables/useMlbDetailedGamePage'
-import { type MlbPageGame } from '@/types'
 
 const props = defineProps<{
-    game: MlbPageGame
+    gameId: number
 }>()
 
-const { pageProps, recentSectionProps } = useMlbDetailedGamePage(props.game)
+const { pageProps, recentSectionProps } = useMlbDetailedGamePage(props.gameId)
 const awayInjuries = computed(() => pageProps.value.awayTeam?.active_injuries ?? [])
 const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ?? [])
 </script>

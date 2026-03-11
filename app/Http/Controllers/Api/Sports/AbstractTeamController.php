@@ -49,6 +49,14 @@ abstract class AbstractTeamController extends AbstractSportsApiController
     }
 
     /**
+     * @return array<int, string>
+     */
+    protected function additionalTeamRelations(): array
+    {
+        return [];
+    }
+
+    /**
      * Get the team name field(s) for the response
      */
     protected function getTeamNameForResponse(Model $team): string
@@ -65,6 +73,7 @@ abstract class AbstractTeamController extends AbstractSportsApiController
         $resourceClass = $this->getTeamResource();
 
         $teams = $teamModel::query()
+            ->with($this->additionalTeamRelations())
             ->orderBy($this->getOrderByColumn())
             ->paginate(15);
 
@@ -80,7 +89,9 @@ abstract class AbstractTeamController extends AbstractSportsApiController
         $resourceClass = $this->getTeamResource();
         $teamId = $this->requireNumericId($team);
 
-        $team = $teamModel::findOrFail($teamId);
+        $team = $teamModel::query()
+            ->with($this->additionalTeamRelations())
+            ->findOrFail($teamId);
 
         return new $resourceClass($team);
     }

@@ -2,39 +2,12 @@
 import SportPlayerShell from '@/components/player-page/SportPlayerShell.vue';
 import { mlbPlayerPageConfig } from '@/config/player-page-configs';
 
-interface PlayerPagePlayer {
-    id: number;
-    team_id: number;
-    first_name: string;
-    last_name: string;
-    full_name: string;
-    name: string;
-    jersey_number: string | null;
-    position: string | null;
-    height: string | null;
-    weight: string | null;
-    headshot_url: string | null;
-    active_injuries?: Array<{
-        id: number;
-        status: string | null;
-        detail: string | null;
-        type: string | null;
-        return_date: string | null;
-    }>;
-    team: {
-        id: number;
-        name: string;
-        display_name: string;
-        abbreviation: string;
-    } | null;
-}
-
-defineProps<{ player: PlayerPagePlayer }>();
+defineProps<{ playerId: number }>();
 </script>
 
 <template>
-    <SportPlayerShell :config="mlbPlayerPageConfig" :player="player">
-        <template #afterHeader>
+    <SportPlayerShell :config="mlbPlayerPageConfig" :player-id="playerId">
+        <template #afterHeader="{ player }">
             <div
                 class="rounded-2xl border bg-white/95 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90"
             >

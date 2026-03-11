@@ -6,7 +6,23 @@ import { calculatePercentage, parseBroadcastNetworks, parseLinescores } from '@/
 import { useTeamTrends } from '@/composables/useTeamTrends';
 import type { NflPageGame, NflPagePrediction, NflPageTeam, NflTeamStats, RecentGameListItem, TeamTrendData } from '@/types';
 
-export function useNflGamePage(game: NflPageGame) {
+const fallbackGame = (gameId: number): NflPageGame => ({
+    id: gameId,
+    status: 'STATUS_SCHEDULED',
+    game_date: null,
+    away_score: null,
+    home_score: null,
+    home_team_id: 0,
+    away_team_id: 0,
+    season: 0,
+    season_type: '',
+    week: 0,
+    game_time: '',
+    venue: '',
+});
+
+export function useNflGamePage(gameId: number) {
+    const currentGame = ref<NflPageGame>(fallbackGame(gameId));
     const homeTeam = ref<NflPageTeam | null>(null);
     const awayTeam = ref<NflPageTeam | null>(null);
     const prediction = ref<NflPagePrediction | null>(null);
@@ -19,19 +35,19 @@ export function useNflGamePage(game: NflPageGame) {
     const loading = ref(true);
     const error = ref<string | null>(null);
 
-    const gameStatus = useGameStatus(() => game.status);
+    const gameStatus = useGameStatus(() => currentGame.value.status);
     const formatDate = (dateString: string, timeString?: string): string => {
         void timeString;
         return formatDateLong(dateString);
     };
-    const homeLinescores = computed(() => parseLinescores(game.home_linescores));
-    const awayLinescores = computed(() => parseLinescores(game.away_linescores));
-    const broadcastNetworks = computed(() => parseBroadcastNetworks(game.broadcast_networks));
+    const homeLinescores = computed(() => parseLinescores(currentGame.value.home_linescores));
+    const awayLinescores = computed(() => parseLinescores(currentGame.value.away_linescores));
+    const broadcastNetworks = computed(() => parseBroadcastNetworks(currentGame.value.broadcast_networks));
     const weekLabel = computed(() => {
-        if (!game.week || !game.season_type) return '';
+        if (!currentGame.value.week || !currentGame.value.season_type) return '';
 
-        if (game.season_type === 'Regular Season') {
-            return `Week ${game.week}`;
+        if (currentGame.value.season_type === 'Regular Season') {
+            return `Week ${currentGame.value.week}`;
         }
 
         const playoffRounds: Record<number, string> = {
@@ -41,7 +57,7 @@ export function useNflGamePage(game: NflPageGame) {
             5: 'Super Bowl',
         };
 
-        return playoffRounds[game.week] || `Playoff Week ${game.week}`;
+        return playoffRounds[currentGame.value.week] || `Playoff Week ${currentGame.value.week}`;
     });
 
     const hasLivePrediction = computed(() => prediction.value?.live_win_probability !== null && prediction.value?.live_win_probability !== undefined);
@@ -49,9 +65,9 @@ export function useNflGamePage(game: NflPageGame) {
         if (!hasLivePrediction.value || !prediction.value) return undefined;
         return {
             isLive: true,
-            homeScore: game.home_score,
-            awayScore: game.away_score,
-            status: game.status,
+            homeScore: currentGame.value.home_score,
+            awayScore: currentGame.value.away_score,
+            status: currentGame.value.status,
             liveWinProbability: prediction.value.live_win_probability as number | null,
             livePredictedSpread: prediction.value.live_predicted_spread as number | null,
             livePredictedTotal: prediction.value.live_predicted_total as number | null,
@@ -62,7 +78,7 @@ export function useNflGamePage(game: NflPageGame) {
         };
     });
 
-    const trendsSubtitle = computed(() => `${game.season} Season (${homeTrends.value?.sample_size || awayTrends.value?.sample_size || 0} games)`);
+    const trendsSubtitle = computed(() => `${currentGame.value.season} Season (${homeTrends.value?.sample_size || awayTrends.value?.sample_size || 0} games)`);
 
     const {
         allTrendCategories,
@@ -89,13 +105,14 @@ export function useNflGamePage(game: NflPageGame) {
             error.value = null;
 
             const [gameData, predictionData, teamStatsData] = await Promise.all([
-                fetchJson<{ data: NflPageGame }>(`/api/v1/nfl/games/${game.id}`),
-                fetchJson<{ data: NflPagePrediction | NflPagePrediction[] }>(`/api/v1/nfl/games/${game.id}/prediction`),
-                fetchJson<{ data: NflTeamStats[] }>(`/api/v1/nfl/games/${game.id}/team-stats`),
+                fetchJson<{ data: NflPageGame }>(`/api/v1/nfl/games/${gameId}`),
+                fetchJson<{ data: NflPagePrediction | NflPagePrediction[] }>(`/api/v1/nfl/games/${gameId}/prediction`),
+                fetchJson<{ data: NflTeamStats[] }>(`/api/v1/nfl/games/${gameId}/team-stats`),
             ]);
 
             if (gameData?.data) {
                 const fullGame = gameData.data;
+                currentGame.value = fullGame;
                 const fallbackGame = fullGame as NflPageGame & { homeTeam?: NflPageGame['home_team']; awayTeam?: NflPageGame['away_team'] };
                 homeTeam.value = fullGame.home_team || fallbackGame.homeTeam || null;
                 awayTeam.value = fullGame.away_team || fallbackGame.awayTeam || null;
@@ -104,11 +121,11 @@ export function useNflGamePage(game: NflPageGame) {
                     const homeTeamId = fullGame.home_team?.id || fallbackGame.homeTeam?.id;
                     const [homeGamesData, homeTrendsData] = await Promise.all([
                         fetchJson<{ data: RecentGameListItem[] }>(`/api/v1/nfl/teams/${homeTeamId}/games`),
-                        fetchJson<TeamTrendData>(`/api/v1/nfl/teams/${homeTeamId}/trends?games=season&season=${game.season}&before_date=${game.game_date}`),
+                        fetchJson<TeamTrendData>(`/api/v1/nfl/teams/${homeTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`),
                     ]);
                     if (homeGamesData?.data) {
                         homeRecentGames.value = (homeGamesData.data || [])
-                            .filter((g) => g.status === 'STATUS_FINAL' && g.id !== game.id)
+                            .filter((g) => g.status === 'STATUS_FINAL' && g.id !== currentGame.value.id)
                             .slice(0, 5);
                     }
                     if (homeTrendsData) {
@@ -120,11 +137,11 @@ export function useNflGamePage(game: NflPageGame) {
                     const awayTeamId = fullGame.away_team?.id || fallbackGame.awayTeam?.id;
                     const [awayGamesData, awayTrendsData] = await Promise.all([
                         fetchJson<{ data: RecentGameListItem[] }>(`/api/v1/nfl/teams/${awayTeamId}/games`),
-                        fetchJson<TeamTrendData>(`/api/v1/nfl/teams/${awayTeamId}/trends?games=season&season=${game.season}&before_date=${game.game_date}`),
+                        fetchJson<TeamTrendData>(`/api/v1/nfl/teams/${awayTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`),
                     ]);
                     if (awayGamesData?.data) {
                         awayRecentGames.value = (awayGamesData.data || [])
-                            .filter((g) => g.status === 'STATUS_FINAL' && g.id !== game.id)
+                            .filter((g) => g.status === 'STATUS_FINAL' && g.id !== currentGame.value.id)
                             .slice(0, 5);
                     }
                     if (awayTrendsData) {
@@ -152,6 +169,7 @@ export function useNflGamePage(game: NflPageGame) {
     onMounted(load);
 
     return {
+        game: currentGame,
         homeTeam,
         awayTeam,
         prediction,

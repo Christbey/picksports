@@ -21,14 +21,17 @@ class TeamResource extends JsonResource
             'id' => $this->id,
             'espn_id' => $this->espn_id,
             'abbreviation' => $this->abbreviation,
+            'location' => $this->school,
             'school' => $this->school,
             'mascot' => $this->mascot,
             'name' => $this->mascot,
             'display_name' => $this->school,
+            'short_display_name' => $this->abbreviation,
             'conference' => $this->conference,
             'division' => $this->division,
             'color' => $this->color,
             'logo' => $this->logo_url,
+            'logo_url' => $this->logo_url,
             'active_injuries_count' => $this->when(
                 $this->relationLoaded('activePlayerInjuries'),
                 fn () => $this->activePlayerInjuries->count()

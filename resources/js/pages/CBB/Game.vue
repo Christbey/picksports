@@ -7,15 +7,15 @@ import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
-import { type Game, type TopPerformer } from '@/types';
+import { type TopPerformer } from '@/types';
 
 const props = defineProps<{
-    game: Game;
+    gameId: number;
 }>();
 
 const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     sport: 'cbb',
-    game: props.game,
+    gameId: props.gameId,
     sortTopPerformers: (players: TopPerformer[]) =>
         players
             .sort((a, b) => (b.points || 0) - (a.points || 0))

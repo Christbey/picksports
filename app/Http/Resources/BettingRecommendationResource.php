@@ -14,31 +14,23 @@ class BettingRecommendationResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $sport = strtolower($this->resource['prop']->sport);
-        $sportPrefix = match ($sport) {
-            'basketball_nba' => 'nba',
-            'baseball_mlb' => 'mlb',
-            'americanfootball_nfl' => 'nfl',
-            'basketball_ncaab' => 'cbb',
-            default => 'nba',
-        };
-
-        // Build player URL if route exists for that sport
-        $playerUrl = null;
-        if ($sportPrefix === 'nba') {
-            $playerUrl = route('nba.player.show', $this->resource['player']->id);
-        }
-        // Add other sport routes as they become available
-        // elseif ($sportPrefix === 'mlb') { $playerUrl = route('mlb.player.show', ...); }
+        $sportPrefix = $this->resolveSportPrefix();
+        $playerRoute = "{$sportPrefix}.player.show";
+        $playerUrl = app('router')->has($playerRoute)
+            ? route($playerRoute, $this->resource['player']->id)
+            : null;
+        $playerName = $this->resource['player']->full_name
+            ?? $this->resource['player']->display_name
+            ?? $this->resource['player']->name;
 
         return [
             'id' => $this->resource['prop']->id,
             'player' => [
                 'id' => $this->resource['player']->id,
-                'name' => $this->resource['player']->full_name,
+                'name' => $playerName,
                 'position' => $this->resource['player']->position,
                 'team' => $this->resource['player']->team?->abbreviation ?? $this->resource['player']->team?->name,
-                'headshot' => $this->resource['player']->headshot_url ?? null,
+                'headshot' => $this->resource['player']->headshot_url ?? $this->resource['player']->headshot ?? null,
                 'url' => $playerUrl,
             ],
             'market' => $this->resource['market'],
@@ -79,5 +71,18 @@ class BettingRecommendationResource extends JsonResource
             ],
             'bookmaker' => $this->resource['prop']->bookmaker,
         ];
+    }
+
+    protected function resolveSportPrefix(): string
+    {
+        $modelClass = $this->resource['prop']::class;
+
+        return match (true) {
+            str_contains($modelClass, '\\NBA\\') => 'nba',
+            str_contains($modelClass, '\\MLB\\') => 'mlb',
+            str_contains($modelClass, '\\NFL\\') => 'nfl',
+            str_contains($modelClass, '\\CBB\\') => 'cbb',
+            default => 'nba',
+        };
     }
 }

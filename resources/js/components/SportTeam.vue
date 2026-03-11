@@ -19,12 +19,7 @@ import type { TeamPageConfig } from '@/types';
 
 const props = defineProps<{
     config: TeamPageConfig;
-    team?: any;
-    teamId?: number;
-    preloadedMetrics?: any;
-    preloadedSeasonStats?: any;
-    preloadedRecentGames?: any[];
-    preloadedUpcomingGames?: any[];
+    teamId: number;
 }>();
 
 const {

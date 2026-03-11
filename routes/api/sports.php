@@ -127,5 +127,20 @@ return function (string $sport, string $namespace) {
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'MLB') {
             Route::get('playoff-forecasts', [\App\Http\Controllers\Api\MLB\PlayoffForecastController::class, 'index']);
         }
+
+        if ((bool) data_get(config('sports.domains'), "{$sport}.web.player_props", false) === true) {
+            Route::get('player-props', [\App\Http\Controllers\Api\Sports\PlayerPropController::class, 'index'])
+                ->defaults('sport', $sport)
+                ->middleware(["permission:view-{$sport}-predictions"]);
+            Route::get('players/{player}/player-props', [\App\Http\Controllers\Api\Sports\PlayerPropController::class, 'byPlayer'])
+                ->defaults('sport', $sport)
+                ->middleware(["permission:view-{$sport}-predictions"]);
+        }
+
+        if ($namespace === 'CFB') {
+            Route::apiResource('fpi-ratings', \App\Http\Controllers\Api\CFB\FpiRatingController::class)
+                ->only(['index', 'show']);
+            Route::get('teams/{team}/fpi-ratings', [\App\Http\Controllers\Api\CFB\FpiRatingController::class, 'byTeam']);
+        }
     });
 };

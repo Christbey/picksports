@@ -23,10 +23,13 @@ class TeamResource extends JsonResource
             'abbreviation' => $this->abbreviation,
             'location' => $this->location,
             'name' => $this->name,
+            'display_name' => $this->display_name,
+            'short_display_name' => $this->abbreviation,
             'nickname' => $this->nickname,
             'league' => $this->league,
             'division' => $this->division,
             'color' => $this->color,
+            'logo' => $this->logo_url,
             'logo_url' => $this->logo_url,
             'elo_rating' => (float) $this->elo_rating,
             'active_injuries_count' => $this->when(

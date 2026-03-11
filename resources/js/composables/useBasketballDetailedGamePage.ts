@@ -16,7 +16,7 @@ import type {
 
 interface UseBasketballDetailedGamePageOptions {
     sport: 'nba' | 'cbb' | 'wnba' | 'wcbb';
-    game: Game;
+    gameId: number;
     teamLink: (id: number) => GamePageHrefLike;
     sortTopPerformers?: (players: TopPerformer[]) => TopPerformer[];
     subtitleText?: (sampleSize: number) => string;
@@ -55,6 +55,7 @@ export function useBasketballDetailedGamePage(
     options: UseBasketballDetailedGamePageOptions,
 ) {
     const {
+        game,
         homeTeam,
         awayTeam,
         prediction,
@@ -84,18 +85,39 @@ export function useBasketballDetailedGamePage(
         trendsSubtitle,
     } = useBasketballGamePage({
         sport: options.sport,
-        game: options.game,
+        gameId: options.gameId,
         sortTopPerformers: options.sortTopPerformers,
         metricFromResponse: defaultMetricFromResponse,
         subtitleText: options.subtitleText,
     });
 
+    const fallbackGame: Game = {
+        id: options.gameId,
+        espn_id: null,
+        home_team_id: 0,
+        away_team_id: 0,
+        season: 0,
+        season_type: null,
+        week: null,
+        game_date: null,
+        game_time: null,
+        status: 'STATUS_SCHEDULED',
+        period: null,
+        home_score: null,
+        away_score: null,
+        home_linescores: null,
+        away_linescores: null,
+        broadcast_networks: null,
+        created_at: null,
+        updated_at: null,
+    };
+    const currentGame = computed(() => game.value ?? fallbackGame);
     const resolveVenueLabel = options.venueLabel ?? defaultVenueLabel;
     const resolveShowLinescore = options.showLinescore ?? defaultShowLinescore;
 
     const { config, pageProps } = useSportGameLayout({
         sport: options.sport,
-        gameId: options.game.id,
+        gameId: options.gameId,
         teamLink: options.teamLink,
         configOverrides: options.configOverrides,
         pageProps: {
@@ -107,23 +129,23 @@ export function useBasketballDetailedGamePage(
             error,
             awayTeam,
             homeTeam,
-            game: options.game,
+            game: currentGame,
             gameStatus,
             formatDate,
             awayRecentForm,
             homeRecentForm,
-            venueLabel: computed(() => resolveVenueLabel(options.game)),
+            venueLabel: computed(() => resolveVenueLabel(currentGame.value)),
             broadcastNetworks,
             showLinescore: computed(() =>
                 resolveShowLinescore(
-                    options.game,
+                    currentGame.value,
                     homeLinescores.value,
                     awayLinescores.value,
                 )),
             awayLinescores,
             homeLinescores,
-            awayScore: computed(() => options.game.away_score),
-            homeScore: computed(() => options.game.home_score),
+            awayScore: computed(() => currentGame.value.away_score),
+            homeScore: computed(() => currentGame.value.home_score),
             showPredictionSummary: computed(
                 () =>
                     (options.showPredictionSummary ?? true)
@@ -148,10 +170,10 @@ export function useBasketballDetailedGamePage(
     });
 
     const insightsProps = computed(() => ({
-        gameStatus: options.game.status,
+        gameStatus: currentGame.value.status,
         awayLabel: awayTeam.value?.abbreviation || null,
         homeLabel: homeTeam.value?.abbreviation || null,
-        homeTeamId: options.game.home_team_id,
+        homeTeamId: currentGame.value.home_team_id,
         homeTeamStats: homeTeamStats.value,
         awayTeamStats: awayTeamStats.value,
         topPerformers: topPerformers.value,
@@ -171,7 +193,7 @@ export function useBasketballDetailedGamePage(
 
     watch(
         () => [
-            options.game.id,
+            options.gameId,
             awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? null,
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
@@ -180,7 +202,7 @@ export function useBasketballDetailedGamePage(
             const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
-                itemId: options.game.id,
+                itemId: options.gameId,
                 itemName: `${awayLabel} @ ${homeLabel}`,
                 sport: options.sport,
                 homeTeam: homeLabel,

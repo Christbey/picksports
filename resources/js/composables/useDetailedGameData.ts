@@ -4,7 +4,7 @@ import type { ApiEnvelope, Game, Prediction, Team, TeamMetric, TeamStatsEntry, T
 
 interface UseDetailedGameDataOptions {
     sport: string;
-    game: Game;
+    gameId: number;
     sortTopPerformers?: (players: TopPerformer[]) => TopPerformer[];
     metricFromResponse?: (payload: ApiEnvelope<TeamMetric | TeamMetric[] | null>) => TeamMetric | null;
 }
@@ -15,9 +15,10 @@ const defaultMetricFromResponse = (payload: ApiEnvelope<TeamMetric | TeamMetric[
 };
 
 export function useDetailedGameData(options: UseDetailedGameDataOptions) {
-    const homeTeam = ref<Team | null>(options.game.home_team ?? null);
-    const awayTeam = ref<Team | null>(options.game.away_team ?? null);
-    const prediction = ref<Prediction | Record<string, unknown> | null>((options.game.prediction as Prediction | null) ?? null);
+    const game = ref<Game | null>(null);
+    const homeTeam = ref<Team | null>(null);
+    const awayTeam = ref<Team | null>(null);
+    const prediction = ref<Prediction | Record<string, unknown> | null>(null);
     const homeMetrics = ref<TeamMetric | null>(null);
     const awayMetrics = ref<TeamMetric | null>(null);
     const homeTeamStats = ref<TeamStatsEntry | null>(null);
@@ -39,14 +40,15 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             error.value = null;
 
             const [gameData, predictionData, teamStatsData, playerStatsData] = await Promise.all([
-                fetchJson<ApiEnvelope<Game>>(`/api/v1/${options.sport}/games/${options.game.id}`),
-                fetchJson<ApiEnvelope<Prediction | Record<string, unknown> | null>>(`/api/v1/${options.sport}/games/${options.game.id}/prediction`),
-                fetchJson<ApiEnvelope<TeamStatsEntry[]>>(`/api/v1/${options.sport}/games/${options.game.id}/team-stats`),
-                fetchJson<ApiEnvelope<TopPerformer[]>>(`/api/v1/${options.sport}/games/${options.game.id}/player-stats`),
+                fetchJson<ApiEnvelope<Game>>(`/api/v1/${options.sport}/games/${options.gameId}`),
+                fetchJson<ApiEnvelope<Prediction | Record<string, unknown> | null>>(`/api/v1/${options.sport}/games/${options.gameId}/prediction`),
+                fetchJson<ApiEnvelope<TeamStatsEntry[]>>(`/api/v1/${options.sport}/games/${options.gameId}/team-stats`),
+                fetchJson<ApiEnvelope<TopPerformer[]>>(`/api/v1/${options.sport}/games/${options.gameId}/player-stats`),
             ]);
 
             const fullGame = gameData?.data;
             if (fullGame) {
+                game.value = fullGame;
                 homeTeam.value = fullGame.home_team ?? homeTeam.value;
                 awayTeam.value = fullGame.away_team ?? awayTeam.value;
             }
@@ -66,8 +68,8 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 topPerformers.value = options.sortTopPerformers ? options.sortTopPerformers(players) : players.slice(0, 10);
             }
 
-            const homeTeamId = homeTeam.value?.id ?? options.game.home_team_id;
-            const awayTeamId = awayTeam.value?.id ?? options.game.away_team_id;
+            const homeTeamId = homeTeam.value?.id ?? game.value?.home_team_id;
+            const awayTeamId = awayTeam.value?.id ?? game.value?.away_team_id;
 
             const teamFetches: Array<{ key: string; promise: Promise<ApiEnvelope<unknown> | null> }> = [];
 
@@ -115,8 +117,8 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
 
             if (homeTeamId && awayTeamId) {
                 trendsLoading.value = true;
-                const beforeDate = options.game.game_date || '';
-                const seasonParam = options.game.season ? `&season=${options.game.season}` : '';
+                const beforeDate = game.value?.game_date || '';
+                const seasonParam = game.value?.season ? `&season=${game.value.season}` : '';
                 const [homeTrendsData, awayTrendsData] = await Promise.all([
                     fetchJson<TeamTrendData>(`/api/v1/${options.sport}/teams/${homeTeamId}/trends?games=season&before_date=${beforeDate}${seasonParam}`),
                     fetchJson<TeamTrendData>(`/api/v1/${options.sport}/teams/${awayTeamId}/trends?games=season&before_date=${beforeDate}${seasonParam}`),
@@ -143,6 +145,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     onMounted(load);
 
     return {
+        game,
         homeTeam,
         awayTeam,
         prediction,

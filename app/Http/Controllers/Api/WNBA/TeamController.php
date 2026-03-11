@@ -16,4 +16,9 @@ class TeamController extends AbstractTeamController
     protected const TRENDS_CALCULATOR = CalculateTeamTrends::class;
 
     protected const ORDER_BY_COLUMN = 'location';
+
+    protected function additionalTeamRelations(): array
+    {
+        return ['activePlayerInjuries.player'];
+    }
 }

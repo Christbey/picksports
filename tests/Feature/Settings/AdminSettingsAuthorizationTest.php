@@ -222,16 +222,19 @@ it('allows admin users to update player mappings', function () {
         'sport' => 'basketball_nba',
         'odds_api_player_name' => 'S. Gilgeous-Alexander',
         'espn_player_name' => null,
+        'espn_player_id' => null,
     ]);
 
     $this->actingAs($admin)
         ->patch("/settings/player-mappings/{$mapping->id}", [
             'espn_player_name' => 'Shai Gilgeous-Alexander',
+            'espn_player_id' => 42,
         ])
         ->assertRedirect();
 
     $mapping->refresh();
     expect($mapping->espn_player_name)->toBe('Shai Gilgeous-Alexander');
+    expect($mapping->espn_player_id)->toBe(42);
 });
 
 it('allows admin users to clear player mappings', function () {
@@ -240,6 +243,7 @@ it('allows admin users to clear player mappings', function () {
         'sport' => 'basketball_nba',
         'odds_api_player_name' => 'L. Doncic',
         'espn_player_name' => 'Luka Doncic',
+        'espn_player_id' => 77,
     ]);
 
     $this->actingAs($admin)
@@ -248,6 +252,34 @@ it('allows admin users to clear player mappings', function () {
 
     $mapping->refresh();
     expect($mapping->espn_player_name)->toBeNull();
+    expect($mapping->espn_player_id)->toBeNull();
+});
+
+it('clears suggested player mapping fields after admin accepts a suggestion', function () {
+    $admin = User::factory()->admin()->create();
+    $mapping = OddsApiPlayerMapping::query()->create([
+        'sport' => 'basketball_nba',
+        'odds_api_player_name' => 'S. Gilgeous-Alexander',
+        'espn_player_name' => null,
+        'espn_player_id' => null,
+        'suggested_espn_player_name' => 'Shai Gilgeous-Alexander',
+        'suggested_player_id' => 12,
+        'suggested_match_quality_score' => 88,
+    ]);
+
+    $this->actingAs($admin)
+        ->patch("/settings/player-mappings/{$mapping->id}", [
+            'espn_player_name' => 'Shai Gilgeous-Alexander',
+            'espn_player_id' => 12,
+        ])
+        ->assertRedirect();
+
+    $mapping->refresh();
+    expect($mapping->espn_player_name)->toBe('Shai Gilgeous-Alexander');
+    expect($mapping->espn_player_id)->toBe(12);
+    expect($mapping->suggested_espn_player_name)->toBeNull();
+    expect($mapping->suggested_player_id)->toBeNull();
+    expect($mapping->suggested_match_quality_score)->toBeNull();
 });
 
 it('allows admin users to grant and revoke founding access from settings', function () {

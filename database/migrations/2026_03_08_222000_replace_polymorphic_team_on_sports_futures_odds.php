@@ -27,6 +27,12 @@ return new class extends Migration
             ->where('team_type', \App\Models\NFL\Team::class)
             ->update(['nfl_team_id' => DB::raw('team_id')]);
 
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('sports_futures_odds', function (Blueprint $table) {
+                $table->dropIndex('sports_futures_odds_team_type_team_id_index');
+            });
+        }
+
         Schema::table('sports_futures_odds', function (Blueprint $table) {
             $table->dropColumn(['team_type', 'team_id']);
         });
@@ -64,5 +70,11 @@ return new class extends Migration
             $table->dropConstrainedForeignId('mlb_team_id');
             $table->dropConstrainedForeignId('nfl_team_id');
         });
+
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('sports_futures_odds', function (Blueprint $table) {
+                $table->index(['team_type', 'team_id']);
+            });
+        }
     }
 };

@@ -6,15 +6,14 @@ import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
-import { type Game } from '@/types';
 
 const props = defineProps<{
-    game: Game;
+    gameId: number;
 }>();
 
 const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     sport: 'wcbb',
-    game: props.game,
+    gameId: props.gameId,
     teamLink: (id: number) => WCBBTeamController(id),
     showLinescore: () => false,
 });

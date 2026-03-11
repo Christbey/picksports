@@ -2,57 +2,12 @@
 import SportPlayerShell from '@/components/player-page/SportPlayerShell.vue';
 import { nbaPlayerPageConfig } from '@/config/player-page-configs';
 
-interface PlayerPagePlayer {
-    id: number;
-    team_id: number;
-    first_name: string;
-    last_name: string;
-    full_name: string;
-    name: string;
-    jersey_number: string | null;
-    position: string | null;
-    height: string | null;
-    weight: string | null;
-    headshot_url: string | null;
-    active_injuries_count?: number;
-    active_injuries?: Array<{
-        id: number;
-        status: string | null;
-        detail: string | null;
-        type: string | null;
-        return_date: string | null;
-        source_updated_at: string | null;
-    }>;
-    team: {
-        id: number;
-        name: string;
-        display_name: string;
-        abbreviation: string;
-    } | null;
-}
-
-interface PlayerPageProp {
-    id: number;
-    market: string;
-    line: number;
-    over_price: number;
-    under_price: number;
-    game: {
-        id: number;
-        home_team: string;
-        away_team: string;
-    };
-}
-
-defineProps<{
-    player: PlayerPagePlayer;
-    playerProps?: PlayerPageProp[];
-}>();
+defineProps<{ playerId: number }>();
 </script>
 
 <template>
-    <SportPlayerShell :config="nbaPlayerPageConfig" :player="player" :player-props="playerProps">
-        <template #afterHeader>
+    <SportPlayerShell :config="nbaPlayerPageConfig" :player-id="playerId">
+        <template #afterHeader="{ player }">
             <div class="rounded-2xl border bg-white/95 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90">
                 <h3 class="text-sm font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Injury Status</h3>
                 <ul v-if="player.active_injuries && player.active_injuries.length > 0" class="mt-3 space-y-2">

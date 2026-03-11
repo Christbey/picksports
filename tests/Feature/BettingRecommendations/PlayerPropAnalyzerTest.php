@@ -338,6 +338,66 @@ test('uses manual player mappings when fuzzy player name does not match', functi
     expect($recommendations->first()['player']->id)->toBe($player->id);
 });
 
+test('persists suggested player mapping when fuzzy match is below auto-match threshold', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Shai Gilgeous Alexander',
+        'first_name' => 'Shai',
+        'last_name' => 'Gilgeous Alexander',
+    ]);
+
+    for ($i = 0; $i < 6; $i++) {
+        $historicalGame = Game::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 3)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        PlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'points' => 29,
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-02-25',
+        'season' => 2026,
+    ]);
+
+    PlayerProp::create([
+        'game_id' => $game->id,
+        'player_name' => 'S Gilgeous-Alex',
+        'market' => 'player_points',
+        'line' => 24.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $analyzer = new PlayerPropAnalyzer;
+    $analyzer->analyzeProps('NBA', 3, '2026-02-25');
+
+    $mapping = OddsApiPlayerMapping::query()
+        ->where('sport', 'basketball_nba')
+        ->where('odds_api_player_name', 'S Gilgeous-Alex')
+        ->first();
+
+    expect($mapping)->not->toBeNull();
+    expect($mapping->espn_player_name)->toBeNull();
+    expect($mapping->suggested_espn_player_name)->toBe($player->full_name);
+    expect($mapping->suggested_player_id)->toBe($player->id);
+    expect($mapping->suggested_match_quality_score)->not->toBeNull();
+});
+
 test('filters recommendations by prop market', function () {
     $homeTeam = Team::factory()->create();
     $awayTeam = Team::factory()->create();

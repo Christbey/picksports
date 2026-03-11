@@ -14,20 +14,35 @@ class PlayerResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $fullName = $this->full_name
+            ?? $this->display_name
+            ?? $this->name
+            ?? trim(($this->first_name ?? '').' '.($this->last_name ?? ''));
+
+        $headshot = $this->headshot_url ?? $this->headshot;
+        $jerseyNumber = $this->jersey_number ?? $this->jersey;
+
         return [
             'id' => $this->id,
             'team_id' => $this->team_id,
             'espn_id' => $this->espn_id,
-            'name' => $this->name,
-            'display_name' => $this->display_name,
-            'short_name' => $this->short_name,
-            'jersey' => $this->jersey,
+            'first_name' => $this->first_name,
+            'last_name' => $this->last_name,
+            'full_name' => $fullName,
+            'name' => $this->name ?? $fullName,
+            'display_name' => $this->display_name ?? $fullName,
+            'short_name' => $this->short_name ?? $fullName,
+            'jersey' => $this->jersey ?? $jerseyNumber,
+            'jersey_number' => $jerseyNumber,
             'position' => $this->position,
             'height' => $this->height,
             'weight' => $this->weight,
-            'experience' => $this->experience,
+            'experience' => $this->experience ?? $this->year,
+            'year' => $this->year ?? $this->experience,
             'college' => $this->college,
-            'headshot' => $this->headshot,
+            'hometown' => $this->hometown,
+            'headshot' => $headshot,
+            'headshot_url' => $headshot,
             'active_injuries_count' => $this->when(
                 $this->relationLoaded('activeInjuries'),
                 fn () => $this->activeInjuries->count()

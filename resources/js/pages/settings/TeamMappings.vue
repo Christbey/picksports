@@ -20,7 +20,11 @@ type Mapping = {
     espn_team_name?: string | null;
     odds_api_team_name?: string;
     espn_player_name?: string | null;
+    espn_player_id?: number | null;
     odds_api_player_name?: string;
+    suggested_espn_player_name?: string | null;
+    suggested_player_id?: number | null;
+    suggested_match_quality_score?: number | null;
     sport: string;
 };
 
@@ -68,6 +72,8 @@ const selectedEspnName = ref<string>('');
 
 const oddsName = (mapping: Mapping): string => mapping.odds_api_player_name ?? mapping.odds_api_team_name ?? '';
 const espnName = (mapping: Mapping): string | null => mapping.espn_player_name ?? mapping.espn_team_name ?? null;
+const suggestedPlayerName = (mapping: Mapping): string | null => mapping.suggested_espn_player_name ?? null;
+const suggestedScore = (mapping: Mapping): number | null => mapping.suggested_match_quality_score ?? null;
 
 const filteredMappings = computed(() => {
     if (!searchQuery.value) {
@@ -98,12 +104,18 @@ const cancelEdit = () => {
 
 const saveMapping = (mappingId: number) => {
     const payloadKey = isPlayer.value ? 'espn_player_name' : 'espn_team_name';
+    const payload = isPlayer.value
+        ? {
+              espn_player_name: selectedEspnName.value || null,
+              espn_player_id: null,
+          }
+        : {
+              [payloadKey]: selectedEspnName.value || null,
+          };
 
     router.patch(
         `${routeBase.value}/${mappingId}`,
-        {
-            [payloadKey]: selectedEspnName.value || null,
-        },
+        payload,
         {
             preserveScroll: true,
             onSuccess: () => {
@@ -118,6 +130,23 @@ const removeMapping = (mappingId: number) => {
     router.delete(`${routeBase.value}/${mappingId}`, {
         preserveScroll: true,
     });
+};
+
+const acceptSuggestedMapping = (mapping: Mapping) => {
+    if (!isPlayer.value || !mapping.suggested_espn_player_name) {
+        return;
+    }
+
+    router.patch(
+        `${routeBase.value}/${mapping.id}`,
+        {
+            espn_player_name: mapping.suggested_espn_player_name,
+            espn_player_id: mapping.suggested_player_id ?? null,
+        },
+        {
+            preserveScroll: true,
+        }
+    );
 };
 
 const changeSport = (sportKey: string) => {
@@ -263,7 +292,7 @@ const changeFilter = (filter: string) => {
                                 </div>
                                 <div
                                     v-else
-                                    class="text-sm"
+                                    class="space-y-1 text-sm"
                                     :class="{
                                         'text-green-700 dark:text-green-300': espnName(mapping),
                                         'text-muted-foreground': !espnName(mapping),
@@ -271,9 +300,20 @@ const changeFilter = (filter: string) => {
                                 >
                                     <span v-if="espnName(mapping)">→ ESPN: {{ espnName(mapping) }}</span>
                                     <span v-else class="italic">No ESPN {{ entityTitle.toLowerCase() }} mapped</span>
+                                    <div v-if="isPlayer && !espnName(mapping) && suggestedPlayerName(mapping)" class="text-amber-700 dark:text-amber-300">
+                                        Suggested: {{ suggestedPlayerName(mapping) }}
+                                        <span v-if="suggestedScore(mapping) !== null">({{ suggestedScore(mapping) }}%)</span>
+                                    </div>
                                 </div>
                             </div>
                             <div v-if="editingMappingId !== mapping.id" class="flex gap-2">
+                                <Button
+                                    v-if="isPlayer && !espnName(mapping) && suggestedPlayerName(mapping)"
+                                    size="sm"
+                                    @click="acceptSuggestedMapping(mapping)"
+                                >
+                                    Accept Suggestion
+                                </Button>
                                 <Button size="sm" variant="outline" @click="startEdit(mapping)">
                                     {{ espnName(mapping) ? 'Edit' : 'Map' }}
                                 </Button>

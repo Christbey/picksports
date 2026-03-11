@@ -24,6 +24,7 @@ class GameResource extends JsonResource
             'season_type' => $this->season_type,
             'game_date' => $this->game_date?->toDateString(),
             'game_time' => $this->game_time,
+            'venue' => $this->venue_name,
             'name' => $this->name,
             'short_name' => $this->short_name,
             'home_team_id' => $this->home_team_id,

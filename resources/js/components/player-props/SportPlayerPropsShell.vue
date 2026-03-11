@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { Link, router } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3';
 import { BarChart3, TrendingDown, TrendingUp, X } from 'lucide-vue-next';
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
+import { fetchJson } from '@/composables/useApiClient';
 import AppLayout from '@/layouts/AppLayout.vue';
 
 type Recommendation = {
@@ -83,17 +84,25 @@ type MarketOption = {
     label: string;
 };
 
-const props = defineProps<{
+type PlayerPropsFilters = {
+    date: string | null;
+    game: string | number | null;
+    market: string | null;
+};
+
+type PlayerPropsResponse = {
     sport: string;
-    recommendations: Recommendation[];
+    data: Recommendation[];
     dates: DateOption[];
     games: GameOption[];
     markets: MarketOption[];
-    filters: {
-        date: string | null;
-        game: string | number | null;
-        market: string | null;
-    };
+    filters: PlayerPropsFilters;
+};
+
+const props = defineProps<{
+    sport: string;
+    sportSlug: string;
+    filters: PlayerPropsFilters;
     sportLabel: string;
     description: string;
 }>();
@@ -101,13 +110,19 @@ const props = defineProps<{
 const selectedDate = ref(props.filters.date || '');
 const selectedGame = ref(props.filters.game !== null ? String(props.filters.game) : '');
 const selectedMarket = ref(props.filters.market || '');
+const recommendations = ref<Recommendation[]>([]);
+const dates = ref<DateOption[]>([]);
+const games = ref<GameOption[]>([]);
+const markets = ref<MarketOption[]>([]);
+const loading = ref(true);
+const error = ref<string | null>(null);
 
 const filteredGames = computed(() => {
     if (!selectedDate.value) {
-        return props.games;
+        return games.value;
     }
 
-    return props.games.filter((game) => game.date === selectedDate.value);
+    return games.value.filter((game) => game.date === selectedDate.value);
 });
 
 const hasActiveFilters = computed(() =>
@@ -128,29 +143,66 @@ const onMarketChange = () => {
 };
 
 const applyFilters = () => {
+    void loadBoard();
+};
+
+const buildQueryParams = (): Record<string, string> => {
     const params: Record<string, string> = {};
     if (selectedDate.value) params.date = selectedDate.value;
     if (selectedGame.value) params.game = selectedGame.value;
     if (selectedMarket.value) params.market = selectedMarket.value;
 
-    router.get(window.location.pathname, params, {
-        preserveState: true,
-        preserveScroll: true,
-        preserveUrl: true,
-        replace: true,
-    });
+    return params;
 };
 
 const clearFilters = () => {
     selectedDate.value = '';
     selectedGame.value = '';
     selectedMarket.value = '';
-    router.get(window.location.pathname, {}, {
-        preserveState: true,
-        preserveScroll: true,
-        preserveUrl: true,
-        replace: true,
-    });
+    void loadBoard();
+};
+
+const updateBrowserUrl = (filters: PlayerPropsFilters) => {
+    const url = new URL(window.location.href);
+    url.search = '';
+
+    if (filters.date) url.searchParams.set('date', filters.date);
+    if (filters.game !== null && filters.game !== '') url.searchParams.set('game', String(filters.game));
+    if (filters.market) url.searchParams.set('market', filters.market);
+
+    window.history.replaceState({}, '', `${url.pathname}${url.search}`);
+};
+
+const loadBoard = async () => {
+    loading.value = true;
+    error.value = null;
+
+    const query = new URLSearchParams(buildQueryParams()).toString();
+    const endpoint = `/api/v1/${props.sportSlug}/player-props${query ? `?${query}` : ''}`;
+
+    try {
+        const payload = await fetchJson<PlayerPropsResponse>(endpoint);
+        if (!payload) {
+            error.value = 'Unable to load player props.';
+            recommendations.value = [];
+            return;
+        }
+
+        recommendations.value = payload.data || [];
+        dates.value = payload.dates || [];
+        games.value = payload.games || [];
+        markets.value = payload.markets || [];
+
+        selectedDate.value = payload.filters.date || '';
+        selectedGame.value = payload.filters.game !== null ? String(payload.filters.game) : '';
+        selectedMarket.value = payload.filters.market || '';
+        updateBrowserUrl(payload.filters);
+    } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Unable to load player props.';
+        recommendations.value = [];
+    } finally {
+        loading.value = false;
+    }
 };
 
 const getConfidenceColor = (confidence: number) => {
@@ -234,6 +286,10 @@ const toggleModelDetails = (id: number) => {
 
     expandedModelDetails.value = [...expandedModelDetails.value, id];
 };
+
+onMounted(() => {
+    void loadBoard();
+});
 </script>
 
 <template>
@@ -304,7 +360,16 @@ const toggleModelDetails = (id: number) => {
                 </CardContent>
             </Card>
 
-            <div v-if="recommendations.length === 0" class="py-16 text-center">
+            <div v-if="loading" class="py-16 text-center">
+                <p class="text-muted-foreground">Loading player props...</p>
+            </div>
+
+            <div v-else-if="error" class="py-16 text-center">
+                <h3 class="mb-2 text-xl font-semibold tracking-tight">Unable To Load Player Props</h3>
+                <p class="text-muted-foreground">{{ error }}</p>
+            </div>
+
+            <div v-else-if="recommendations.length === 0" class="py-16 text-center">
                 <BarChart3 class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
                 <h3 class="mb-2 text-xl font-semibold tracking-tight">No Recommendations Available</h3>
                 <p class="text-muted-foreground">Check back later or sync player props to see betting recommendations.</p>

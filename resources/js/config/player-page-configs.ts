@@ -10,6 +10,9 @@ export const nbaPlayerPageConfig = {
     predictionsHref: '/nba-predictions',
     teamLink: (id: number) => NBATeamController.url(id),
     gameLink: (id: number) => NBAGameController.url(id),
+    playerEndpoint: (playerId: number) => `/api/v1/nba/players/${playerId}`,
+    playerPropsEndpoint: (playerId: number) =>
+        `/api/v1/nba/players/${playerId}/player-props`,
     statsEndpoint: (playerId: number) =>
         `/api/v1/nba/players/${playerId}/stats`,
     leaderboardEndpoint: '/api/v1/nba/player-stats/leaderboard',
@@ -20,6 +23,9 @@ export const cbbPlayerPageConfig = {
     predictionsHref: '/cbb-predictions',
     teamLink: (id: number) => `/cbb/teams/${id}`,
     gameLink: (id: number) => `/cbb/games/${id}`,
+    playerEndpoint: (playerId: number) => `/api/v1/cbb/players/${playerId}`,
+    playerPropsEndpoint: (playerId: number) =>
+        `/api/v1/cbb/players/${playerId}/player-props`,
     statsEndpoint: (playerId: number) =>
         `/api/v1/cbb/players/${playerId}/stats`,
     leaderboardEndpoint: '/api/v1/cbb/player-stats/leaderboard',
@@ -30,6 +36,7 @@ export const nflPlayerPageConfig = {
     predictionsHref: '/nfl-predictions',
     teamLink: (id: number) => NFLTeamController.url(id),
     gameLink: (id: number) => NFLGameController.url(id),
+    playerEndpoint: (playerId: number) => `/api/v1/nfl/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
         `/api/v1/nfl/players/${playerId}/stats`,
     leaderboardEndpoint: '/api/v1/nfl/player-stats/leaderboard',
@@ -147,6 +154,7 @@ export const mlbPlayerPageConfig = {
     predictionsHref: '/mlb-predictions',
     teamLink: (id: number) => MLBTeamController.url(id),
     gameLink: (id: number) => MLBGameController.url(id),
+    playerEndpoint: (playerId: number) => `/api/v1/mlb/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
         `/api/v1/mlb/players/${playerId}/stats`,
     leaderboardEndpoint: '/api/v1/mlb/player-stats/leaderboard',
@@ -266,6 +274,7 @@ export const mlbPlayerPageConfig = {
 export const cfbPlayerPageConfig = {
     sportLabel: 'CFB',
     predictionsHref: '/cfb-predictions',
+    playerEndpoint: (playerId: number) => `/api/v1/cfb/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
         `/api/v1/cfb/players/${playerId}/stats`,
     leaderboardEndpoint: '/api/v1/cfb/player-stats/leaderboard',

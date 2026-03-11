@@ -10,7 +10,28 @@ interface MlbMatchupTeam extends MlbPageTeam {
     display_name: string;
 }
 
-export function useMlbGamePage(game: MlbPageGame) {
+const fallbackGame = (gameId: number): MlbPageGame => ({
+    id: gameId,
+    status: 'STATUS_SCHEDULED',
+    game_date: null,
+    away_score: null,
+    home_score: null,
+    home_team_id: 0,
+    away_team_id: 0,
+    home_linescores: null,
+    away_linescores: null,
+    inning: null,
+    inning_half: null,
+    venue_name: null,
+    venue_city: null,
+    venue_state: null,
+    broadcast_networks: null,
+    season: 0,
+    season_type: '',
+});
+
+export function useMlbGamePage(gameId: number) {
+    const currentGame = ref<MlbPageGame>(fallbackGame(gameId));
     const homeTeam = ref<MlbPageTeam | null>(null);
     const awayTeam = ref<MlbPageTeam | null>(null);
     const prediction = ref<MlbPagePrediction | null>(null);
@@ -22,11 +43,11 @@ export function useMlbGamePage(game: MlbPageGame) {
     const loading = ref(true);
     const error = ref<string | null>(null);
 
-    const gameStatus = useGameStatus(() => game.status);
+    const gameStatus = useGameStatus(() => currentGame.value.status);
     const formatDate = (dateString: string | null): string => formatDateLong(dateString);
-    const broadcastNetworks = computed(() => parseBroadcastNetworks(game.broadcast_networks));
-    const homeLinescores = computed(() => parseLinescores(game.home_linescores));
-    const awayLinescores = computed(() => parseLinescores(game.away_linescores));
+    const broadcastNetworks = computed(() => parseBroadcastNetworks(currentGame.value.broadcast_networks));
+    const homeLinescores = computed(() => parseLinescores(currentGame.value.home_linescores));
+    const awayLinescores = computed(() => parseLinescores(currentGame.value.away_linescores));
     const homeRecentForm = computed(() => (homeTeam.value ? getRecentForm(homeRecentGames.value, homeTeam.value.id) : ''));
     const awayRecentForm = computed(() => (awayTeam.value ? getRecentForm(awayRecentGames.value, awayTeam.value.id) : ''));
     const trendsSubtitle = computed(() => {
@@ -57,10 +78,18 @@ export function useMlbGamePage(game: MlbPageGame) {
             loading.value = true;
             error.value = null;
 
-            const [homeTeamData, awayTeamData, predictionData] = await Promise.all([
-                fetchJson<{ data: MlbPageTeam }>(`/api/v1/mlb/teams/${game.home_team_id}`),
-                fetchJson<{ data: MlbPageTeam }>(`/api/v1/mlb/teams/${game.away_team_id}`),
-                fetchJson<{ data: MlbPagePrediction }>(`/api/v1/mlb/games/${game.id}/prediction`),
+            const [gameData, predictionData] = await Promise.all([
+                fetchJson<{ data: MlbPageGame }>(`/api/v1/mlb/games/${gameId}`),
+                fetchJson<{ data: MlbPagePrediction }>(`/api/v1/mlb/games/${gameId}/prediction`),
+            ]);
+
+            if (gameData?.data) {
+                currentGame.value = gameData.data;
+            }
+
+            const [homeTeamData, awayTeamData] = await Promise.all([
+                fetchJson<{ data: MlbPageTeam }>(`/api/v1/mlb/teams/${currentGame.value.home_team_id}`),
+                fetchJson<{ data: MlbPageTeam }>(`/api/v1/mlb/teams/${currentGame.value.away_team_id}`),
             ]);
 
             if (homeTeamData?.data) {
@@ -83,7 +112,7 @@ export function useMlbGamePage(game: MlbPageGame) {
                         .then((gamesData) => {
                             if (!gamesData?.data) return;
                             homeRecentGames.value = gamesData.data
-                                .filter((g) => g.status === 'STATUS_FINAL' && g.id !== game.id)
+                                .filter((g) => g.status === 'STATUS_FINAL' && g.id !== currentGame.value.id)
                                 .slice(0, 5);
                         }),
                 );
@@ -95,7 +124,7 @@ export function useMlbGamePage(game: MlbPageGame) {
                         .then((gamesData) => {
                             if (!gamesData?.data) return;
                             awayRecentGames.value = gamesData.data
-                                .filter((g) => g.status === 'STATUS_FINAL' && g.id !== game.id)
+                                .filter((g) => g.status === 'STATUS_FINAL' && g.id !== currentGame.value.id)
                                 .slice(0, 5);
                         }),
                 );
@@ -103,11 +132,11 @@ export function useMlbGamePage(game: MlbPageGame) {
 
             if (homeTeam.value?.id || awayTeam.value?.id) {
                 trendsLoading.value = true;
-                const beforeDate = game.game_date || '';
+                const beforeDate = currentGame.value.game_date || '';
 
                 if (homeTeam.value?.id) {
                     teamRequests.push(
-                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${homeTeam.value.id}/trends?games=season&season=${game.season}&before_date=${beforeDate}`)
+                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${homeTeam.value.id}/trends?games=season&season=${currentGame.value.season}&before_date=${beforeDate}`)
                             .then((data) => { homeTrends.value = data; })
                             .catch(() => { homeTrends.value = null; }),
                     );
@@ -115,7 +144,7 @@ export function useMlbGamePage(game: MlbPageGame) {
 
                 if (awayTeam.value?.id) {
                     teamRequests.push(
-                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${awayTeam.value.id}/trends?games=season&season=${game.season}&before_date=${beforeDate}`)
+                        fetchJson<TeamTrendData>(`/api/v1/mlb/teams/${awayTeam.value.id}/trends?games=season&season=${currentGame.value.season}&before_date=${beforeDate}`)
                             .then((data) => { awayTrends.value = data; })
                             .catch(() => { awayTrends.value = null; }),
                     );
@@ -136,6 +165,7 @@ export function useMlbGamePage(game: MlbPageGame) {
     onMounted(load);
 
     return {
+        game: currentGame,
         homeTeam,
         awayTeam,
         prediction,

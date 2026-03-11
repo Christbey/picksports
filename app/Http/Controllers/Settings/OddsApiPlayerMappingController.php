@@ -52,16 +52,26 @@ class OddsApiPlayerMappingController extends Controller
     {
         $validated = $request->validate([
             'espn_player_name' => 'nullable|string|max:255',
+            'espn_player_id' => 'nullable|integer|min:1',
         ]);
 
-        $mapping->update($validated);
+        $mapping->update([
+            'espn_player_name' => $validated['espn_player_name'] ?? null,
+            'espn_player_id' => $validated['espn_player_id'] ?? null,
+            'suggested_espn_player_name' => null,
+            'suggested_player_id' => null,
+            'suggested_match_quality_score' => null,
+        ]);
 
         return back();
     }
 
     public function destroy(OddsApiPlayerMapping $mapping)
     {
-        $mapping->update(['espn_player_name' => null]);
+        $mapping->update([
+            'espn_player_name' => null,
+            'espn_player_id' => null,
+        ]);
 
         return back();
     }

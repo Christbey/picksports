@@ -1,4 +1,5 @@
 import { ref } from 'vue';
+import { fetchJson } from '@/composables/useApiClient';
 
 interface SeasonPayload {
     data?: Array<number | string>;
@@ -9,12 +10,10 @@ export function useSeasonFilter(getEndpoint: () => string) {
     const selectedSeason = ref('');
 
     const fetchAvailableSeasons = async () => {
-        const response = await fetch(getEndpoint());
-        if (!response.ok) {
+        const payload = await fetchJson<SeasonPayload>(getEndpoint());
+        if (!payload) {
             throw new Error('Failed to fetch available seasons');
         }
-
-        const payload = (await response.json()) as SeasonPayload;
         availableSeasons.value = Array.isArray(payload.data)
             ? payload.data
                 .map((season) => Number(season))

@@ -4,6 +4,7 @@ namespace App\Services\OddsApi;
 
 use App\Models\OddsApiPlayerMapping;
 use App\Models\OddsApiTeamMapping;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -457,16 +458,44 @@ class OddsApiService
             ->value('espn_player_name');
     }
 
-    public function rememberUnmappedPlayer(string $sport, string $oddsApiPlayerName): void
+    public function mappedEspnPlayerId(string $sport, string $oddsApiPlayerName): ?int
     {
-        OddsApiPlayerMapping::query()->firstOrCreate(
+        return OddsApiPlayerMapping::query()
+            ->where('sport', $sport)
+            ->whereRaw('LOWER(odds_api_player_name) = ?', [mb_strtolower($oddsApiPlayerName)])
+            ->whereNotNull('espn_player_name')
+            ->value('espn_player_id');
+    }
+
+    public function rememberUnmappedPlayer(
+        string $sport,
+        string $oddsApiPlayerName,
+        ?Model $suggestedPlayer = null,
+        ?int $suggestedScore = null
+    ): void {
+        $mapping = OddsApiPlayerMapping::query()->firstOrCreate(
             [
                 'sport' => $sport,
                 'odds_api_player_name' => $oddsApiPlayerName,
             ],
             [
                 'espn_player_name' => null,
+                'espn_player_id' => null,
             ]
         );
+
+        if ($suggestedPlayer === null) {
+            return;
+        }
+
+        if ($mapping->espn_player_name !== null && $mapping->espn_player_id !== null) {
+            return;
+        }
+
+        $mapping->forceFill([
+            'suggested_espn_player_name' => $suggestedPlayer->full_name ?? $suggestedPlayer->display_name ?? $suggestedPlayer->name,
+            'suggested_player_id' => $suggestedPlayer->getKey(),
+            'suggested_match_quality_score' => $suggestedScore,
+        ])->save();
     }
 }

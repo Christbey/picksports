@@ -182,6 +182,18 @@ abstract class AbstractSyncPlayerPropsForGames
             $game->away_team_id ?? null,
         ]);
 
+        $mappedPlayerId = $this->oddsApiService->mappedEspnPlayerId($oddsSportKey, $playerName);
+        if ($mappedPlayerId) {
+            $mappedPlayer = $playerModel::query()
+                ->whereIn('team_id', $teamIds)
+                ->whereKey($mappedPlayerId)
+                ->first();
+
+            if ($mappedPlayer) {
+                return $mappedPlayer->id;
+            }
+        }
+
         $mappedEspnName = $this->oddsApiService->mappedEspnPlayerName($oddsSportKey, $playerName);
         if ($mappedEspnName) {
             $mappedPlayer = $playerModel::query()
@@ -234,12 +246,23 @@ abstract class AbstractSyncPlayerPropsForGames
             return $candidate['player']->id;
         }
 
+        if ($candidate) {
+            $this->oddsApiService->rememberUnmappedPlayer(
+                $oddsSportKey,
+                $playerName,
+                $candidate['player'],
+                (int) round($candidate['score'])
+            );
+        }
+
         $lastNameMatch = $playerModel::query()
             ->whereIn('team_id', $teamIds)
             ->whereRaw('LOWER(last_name) = ?', [$lastName])
             ->first();
 
         if ($lastNameMatch) {
+            $this->oddsApiService->rememberUnmappedPlayer($oddsSportKey, $playerName, $lastNameMatch, 75);
+
             return $lastNameMatch->id;
         }
 

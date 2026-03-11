@@ -41,13 +41,21 @@ abstract class AbstractPlayController extends AbstractSportsApiController
         return static::PLAY_RESOURCE;
     }
 
+    /**
+     * @return array<int, string>
+     */
+    protected function playRelations(): array
+    {
+        return ['game', 'possessionTeam'];
+    }
+
     public function index(Request $request): AnonymousResourceCollection
     {
         $model = $this->getPlayModel();
         $resource = $this->getPlayResource();
 
         $plays = $model::query()
-            ->with(['game'])
+            ->with($this->playRelations())
             ->orderByDesc('id')
             ->paginate($this->getPerPage($request));
 
@@ -61,7 +69,7 @@ abstract class AbstractPlayController extends AbstractSportsApiController
         $playId = $this->requireNumericId($play);
 
         $play = $model::query()
-            ->with(['game'])
+            ->with($this->playRelations())
             ->findOrFail($playId);
 
         return new $resource($play);
@@ -77,6 +85,7 @@ abstract class AbstractPlayController extends AbstractSportsApiController
         $gameModel::query()->findOrFail($gameId);
 
         $plays = $model::query()
+            ->with($this->playRelations())
             ->where('game_id', $gameId)
             ->orderBy('id')
             ->paginate($this->getPerPage($request));

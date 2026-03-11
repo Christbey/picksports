@@ -50,6 +50,8 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::loginView(fn (Request $request) => Inertia::render('auth/Login', [
             'canResetPassword' => Features::enabled(Features::resetPasswords()),
             'canRegister' => Features::enabled(Features::registration()),
+            'oauthError' => $request->session()->get('oauth_error'),
+            'oauthProviders' => $this->oauthProviders(),
             'status' => $request->session()->get('status'),
         ]));
 
@@ -66,7 +68,10 @@ class FortifyServiceProvider extends ServiceProvider
             'status' => $request->session()->get('status'),
         ]));
 
-        Fortify::registerView(fn () => Inertia::render('auth/Register'));
+        Fortify::registerView(fn (Request $request) => Inertia::render('auth/Register', [
+            'oauthError' => $request->session()->get('oauth_error'),
+            'oauthProviders' => $this->oauthProviders(),
+        ]));
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/TwoFactorChallenge'));
 
@@ -87,5 +92,23 @@ class FortifyServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by($throttleKey);
         });
+    }
+
+    /**
+     * @return list<array{key: string, label: string, href: string}>
+     */
+    private function oauthProviders(): array
+    {
+        $providers = (array) config('services.oauth.providers', []);
+
+        return collect($providers)
+            ->filter(fn (array $provider) => ($provider['enabled'] ?? false) === true)
+            ->map(fn (array $provider, string $key) => [
+                'key' => $key,
+                'label' => (string) ($provider['label'] ?? Str::headline($key)),
+                'href' => route('oauth.redirect', ['provider' => $key]),
+            ])
+            ->values()
+            ->all();
     }
 }

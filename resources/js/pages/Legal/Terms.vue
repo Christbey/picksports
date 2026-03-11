@@ -28,7 +28,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 
             <h2>3. Age Requirement</h2>
             <p>
-              You must be at least 21 years of age to use this Service. By using the Service, you represent and warrant that you are at least 21 years old. If you are under 21 years of age, you are not permitted to use or register for the Service.
+              You must be at least 18 years of age to use this Service. By using the Service, you represent and warrant that you are at least 18 years old. If you are under 18 years of age, you are not permitted to use or register for the Service.
             </p>
 
             <h2>4. Entertainment Purposes Only</h2>
@@ -130,8 +130,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
               If you have any questions about these Terms, please contact us at:
             </p>
             <p>
-              <strong>Email:</strong> legal@picksports.com<br>
-              <strong>Address:</strong> [Your Business Address]
+              <strong>Email:</strong> legal@picksports.app
             </p>
 
             <div class="mt-8 p-4 bg-orange-50 dark:bg-orange-950 border border-orange-200 dark:border-orange-800 rounded-lg">

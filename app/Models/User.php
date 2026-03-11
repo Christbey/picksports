@@ -33,7 +33,9 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'email_verified_at',
         'password',
+        'age_verified_at',
     ];
 
     /**
@@ -57,6 +59,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'age_verified_at' => 'datetime',
             'last_active_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_confirmed_at' => 'datetime',
@@ -163,6 +166,11 @@ class User extends Authenticatable
         return $this->hasMany(UserBet::class);
     }
 
+    public function oauthAccounts(): HasMany
+    {
+        return $this->hasMany(OauthAccount::class);
+    }
+
     public function passkeys(): HasMany
     {
         return $this->hasMany(Passkey::class);
@@ -216,6 +224,11 @@ class User extends Authenticatable
         }
 
         return $tier->features['predictions_per_day'] ?? null;
+    }
+
+    public function hasCompletedRequiredOnboarding(): bool
+    {
+        return $this->age_verified_at !== null;
     }
 
     public function hasReachedDailyAlertLimit(): bool

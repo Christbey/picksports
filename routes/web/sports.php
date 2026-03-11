@@ -16,23 +16,23 @@ foreach ($sportDomains as $sport => $definition) {
     }
 
     Route::get("/{$sport}/player-props", [BettingRecommendationsController::class, $sport])
-        ->middleware(['auth', 'verified', "permission:view-{$sport}-predictions"])
+        ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
         ->name("{$sport}.player-props");
 }
 
 Route::get('betting-recommendations', fn () => redirect()->route('nba.player-props'));
 
-Route::get('dashboard', DashboardController::class)->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('dashboard', DashboardController::class)->middleware(['auth', 'onboarded', 'verified'])->name('dashboard');
 Route::get('live-scoreboard', LiveScoreboardController::class)
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'onboarded', 'verified'])
     ->name('live-scoreboard');
 
 Route::get('my-bets', function () {
     return Inertia::render('MyBets');
-})->middleware(['auth', 'verified'])->name('my-bets');
+})->middleware(['auth', 'onboarded', 'verified'])->name('my-bets');
 
 Route::get('debug/prediction-access', DebugPredictionAccessController::class)
-    ->middleware(['auth', 'verified'])
+    ->middleware(['auth', 'onboarded', 'verified'])
     ->name('debug.prediction-access');
 
 foreach ($sportDomains as $sport => $definition) {
@@ -42,7 +42,7 @@ foreach ($sportDomains as $sport => $definition) {
     }
 
     Route::get("/{$sport}/predictions", fn () => Inertia::render($page))
-        ->middleware(['auth', 'verified', "permission:view-{$sport}-predictions"])
+        ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
         ->name("{$sport}-predictions");
 }
 
@@ -51,7 +51,7 @@ foreach ($sportDomains as $sport => $definition) {
     foreach ($pages as $suffix => $page) {
         $path = "/{$sport}/{$suffix}";
         Route::get($path, fn () => Inertia::render($page))
-            ->middleware(['auth', 'verified', "permission:view-{$sport}-predictions"])
+            ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
             ->name("{$sport}-{$suffix}");
     }
 }
@@ -63,7 +63,7 @@ foreach ($sportDomains as $sport => $definition) {
     }
 
     $details = (array) ($definition['web']['details'] ?? []);
-    $sportDetailMiddleware = ['auth', 'verified', "permission:view-{$sport}-predictions"];
+    $sportDetailMiddleware = ['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"];
     $teamController = "App\\Http\\Controllers\\{$namespace}\\TeamController";
     $gameController = "App\\Http\\Controllers\\{$namespace}\\GameController";
     $playerController = "App\\Http\\Controllers\\{$namespace}\\PlayerController";

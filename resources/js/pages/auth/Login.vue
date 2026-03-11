@@ -23,6 +23,8 @@ defineProps<{
     status?: string;
     canResetPassword: boolean;
     canRegister: boolean;
+    oauthError?: string;
+    oauthProviders: Array<{ key: string; label: string; href: string }>;
 }>();
 
 const email = ref('');
@@ -63,6 +65,13 @@ async function handlePasskeySignIn(): Promise<void> {
             class="mb-4 text-center text-sm font-medium text-green-600"
         >
             {{ status }}
+        </div>
+
+        <div
+            v-if="oauthError"
+            class="mb-4 text-center text-sm font-medium text-red-600"
+        >
+            {{ oauthError }}
         </div>
 
         <Form
@@ -142,6 +151,15 @@ async function handlePasskeySignIn(): Promise<void> {
                     <Spinner v-if="passkeyProcessing" />
                     Sign in with passkey
                 </Button>
+
+                <a
+                    v-for="provider in oauthProviders"
+                    :key="provider.key"
+                    :href="provider.href"
+                    class="inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                    Continue with {{ provider.label }}
+                </a>
 
                 <p v-if="passkeyError" class="text-sm text-red-600">{{ passkeyError }}</p>
             </div>

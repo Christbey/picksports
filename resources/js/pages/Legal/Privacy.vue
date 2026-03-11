@@ -35,7 +35,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
             <ul>
               <li>Name and email address</li>
               <li>Payment information (processed securely through Stripe)</li>
-              <li>Date of birth (for age verification purposes)</li>
+              <li>Age verification confirmation</li>
               <li>User preferences and settings</li>
             </ul>
 
@@ -140,7 +140,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
 
             <h2>8. Children's Privacy</h2>
             <p>
-              Our Service is not intended for individuals under the age of 21. We do not knowingly collect personal information from anyone under 21 years of age. If you are a parent or guardian and believe your child has provided us with personal information, please contact us immediately.
+              Our Service is not intended for individuals under the age of 18. We do not knowingly collect personal information from anyone under 18 years of age. If you are a parent or guardian and believe your child has provided us with personal information, please contact us immediately.
             </p>
 
             <h2>9. Third-Party Links</h2>
@@ -164,7 +164,7 @@ import AppLayout from '@/layouts/AppLayout.vue'
               <li>Right to non-discrimination for exercising your CCPA rights</li>
             </ul>
             <p>
-              To exercise these rights, please contact us at privacy@picksports.com. We will verify your identity before processing your request.
+              To exercise these rights, please contact us at privacy@picksports.app. We will verify your identity before processing your request.
             </p>
 
             <h2>12. European Privacy Rights (GDPR)</h2>
@@ -182,14 +182,13 @@ import AppLayout from '@/layouts/AppLayout.vue'
               If you have any questions about this Privacy Policy, please contact us:
             </p>
             <p>
-              <strong>Email:</strong> privacy@picksports.com<br>
-              <strong>Address:</strong> [Your Business Address]
+              <strong>Email:</strong> privacy@picksports.app
             </p>
 
             <div class="mt-8 p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg">
               <p class="font-semibold text-blue-900 dark:text-blue-100">Data Protection Officer:</p>
               <p class="mt-2 text-blue-800 dark:text-blue-200">
-                For specific privacy concerns or to exercise your data protection rights, you may contact our Data Protection Officer at dpo@picksports.com.
+                For specific privacy concerns or to exercise your data protection rights, you may contact our privacy team at privacy@picksports.app.
               </p>
             </div>
           </CardContent>

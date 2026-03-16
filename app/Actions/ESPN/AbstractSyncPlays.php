@@ -98,7 +98,15 @@ abstract class AbstractSyncPlays
 
         $gameData = $this->espnService->getGame($eventId);
 
-        return isset($gameData['competitions'][0]['id']) ? (string) $gameData['competitions'][0]['id'] : null;
+        if (isset($gameData['competitions'][0]['id'])) {
+            return (string) $gameData['competitions'][0]['id'];
+        }
+
+        if (isset($gameData['header']['competitions'][0]['id'])) {
+            return (string) $gameData['header']['competitions'][0]['id'];
+        }
+
+        return null;
     }
 
     protected function shouldSkipPlay(array $playData): bool

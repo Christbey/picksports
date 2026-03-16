@@ -1,10 +1,10 @@
 <?php
 
+use App\Services\CommandHeartbeatService;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
-use App\Services\CommandHeartbeatService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -33,6 +33,13 @@ $cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
 // Season year helpers
 $currentYear = (int) now()->year;
 $fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
+$cfbRegularSeasonStart = now()
+    ->setYear($fallSeasonYear)
+    ->setMonth(8)
+    ->setDay(24);
+$cfbCurrentRegularSeasonWeek = now()->lessThan($cfbRegularSeasonStart)
+    ? 1
+    : min(now()->diffInWeeks($cfbRegularSeasonStart) + 1, 15);
 
 /*
 |--------------------------------------------------------------------------
@@ -201,8 +208,18 @@ $schedulePredictionPipeline = function (
     string $sportLabel,
     int $season,
     callable $inSeason,
-    array $times
+    array $times,
+    array $preMetricJobs = []
 ) use ($scheduleDailySeasonJob) {
+    foreach ($preMetricJobs as $job) {
+        $scheduleDailySeasonJob(
+            $job['command'],
+            $job['time'],
+            $inSeason,
+            $job['name']
+        );
+    }
+
     $definitions = [
         'grade-predictions' => 'Grade Predictions',
         'calculate-elo' => 'Calculate Elo Ratings',
@@ -284,7 +301,8 @@ $scheduleSportPipeline = function (
     ?string $playerPropsCommand = null,
     ?int $playerPropsFirstHour = null,
     ?int $playerPropsSecondHour = null,
-    ?string $playerPropsName = null
+    ?string $playerPropsName = null,
+    array $preMetricJobs = []
 ) use (
     $scheduleDailySeasonJob,
     $scheduleLiveScoreboardSync,
@@ -311,7 +329,8 @@ $scheduleSportPipeline = function (
         $sportLabel,
         $season,
         $inSeason,
-        $predictionTimes
+        $predictionTimes,
+        $preMetricJobs
     );
 
     $scheduleOddsSyncWindow($oddsCommand, $inSeason, $oddsName);
@@ -442,6 +461,14 @@ $scheduleHalfHourlyWindowJob(
 $scheduleEpaLifecycle('cbb', 'CBB', fn () => $fallSeasonYear, $cbbInSeason);
 
 // WCBB
+$wcbbTeamSchedulesEvent = Schedule::command("espn:sync-wcbb-schedules --season={$fallSeasonYear}")
+    ->weeklyOn(0, '01:45')
+    ->when($wcbbInSeason)
+    ->name('WCBB: Sync All Team Schedules')
+    ->withoutOverlapping()
+    ->runInBackground();
+$attachCommandHeartbeat($wcbbTeamSchedulesEvent, "espn:sync-wcbb-schedules --season={$fallSeasonYear}", 'WCBB: Sync All Team Schedules');
+
 $scheduleDailySeasonJob('espn:sync-wcbb-teams', '02:45', $wcbbInSeason, 'WCBB: Sync Teams (Daily)');
 $scheduleDailySeasonJob('espn:sync-wcbb-game-details', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');
 
@@ -641,7 +668,18 @@ $scheduleSportPipeline(
         'generate-predictions' => '04:30',
     ],
     'cfb:sync-odds',
-    'CFB: Sync Odds'
+    'CFB: Sync Odds',
+    null,
+    null,
+    null,
+    null,
+    [
+        [
+            'command' => "cfb:import-fpi --season={$fallSeasonYear} --week={$cfbCurrentRegularSeasonWeek}",
+            'time' => '03:45',
+            'name' => 'CFB: Import FPI',
+        ],
+    ]
 );
 $scheduleHalfHourlyWindowJob(
     'espn:sync-cfb-injuries',

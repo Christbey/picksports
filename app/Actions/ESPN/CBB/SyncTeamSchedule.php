@@ -6,11 +6,19 @@ use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Support\CbbNcaaTournamentResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function __construct(
+        \App\Services\ESPN\CBB\EspnService $espnService,
+        protected CbbNcaaTournamentResolver $tournamentResolver,
+    ) {
+        parent::__construct($espnService);
+    }
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
     {
@@ -40,6 +48,7 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
             'away_linescores' => $dto->awayLinescores,
             'period' => $dto->period,
             'game_clock' => $dto->gameClock,
+            ...$this->tournamentResolver->resolveFromEspnEvent($rawGame),
         ];
     }
 
@@ -70,7 +79,13 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
             'venue_city' => $dto->venueCity,
             'venue_state' => $dto->venueState,
             'broadcast_networks' => $dto->broadcastNetworks,
+            ...$this->tournamentResolver->resolveFromEspnEvent($rawGame),
         ];
+    }
+
+    protected function extraPartialGameAttributes(GameData $dto, array $rawGame, ?Model $homeTeam, ?Model $awayTeam): array
+    {
+        return $this->tournamentResolver->resolveFromEspnEvent($rawGame);
     }
 
     protected function effectiveStatus(GameData $dto, array $rawGame): string

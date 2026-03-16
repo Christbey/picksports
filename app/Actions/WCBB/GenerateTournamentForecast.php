@@ -174,24 +174,27 @@ class GenerateTournamentForecast
                 $record = $records->get($metric->team_id);
                 $wins = (int) ($record->wins ?? 0);
                 $losses = (int) ($record->losses ?? 0);
-                $gamesPlayed = $wins + $losses;
+                $gamesPlayed = max($wins + $losses, (int) ($metric->games_played ?? 0));
 
                 $adjNet = (float) ($metric->adj_net_rating ?? $metric->net_rating ?? 0);
                 $rollingNet = (float) ($metric->rolling_net_rating ?? $metric->net_rating ?? 0);
                 $sos = (float) ($metric->strength_of_schedule ?? 1500);
                 $elo = (float) ($metric->team->elo_rating ?? $defaultElo);
                 $winPct = $gamesPlayed > 0 ? $wins / $gamesPlayed : 0.5;
+                $conference = trim((string) ($metric->team->conference ?? '')) ?: 'Independent';
 
                 return [
                     'team_id' => (int) $metric->team_id,
-                    'conference' => trim((string) ($metric->team->conference ?? '')) ?: 'Independent',
+                    'conference' => $conference,
                     'wins' => $wins,
                     'losses' => $losses,
+                    'games_played' => $gamesPlayed,
                     'win_pct' => $winPct,
                     'elo_rating' => $elo,
                     'adj_net_rating' => $adjNet,
                     'rolling_net_rating' => $rollingNet,
                     'strength_of_schedule' => $sos,
+                    'power_conference' => $this->isPowerConference($conference),
                     'power_rating' => 0.0,
                     'selection_score' => 0.0,
                     'tournament_make_probability' => 0.0,
@@ -224,11 +227,62 @@ class GenerateTournamentForecast
             return $team;
         });
 
+        $teams = $this->applySelectionContextAdjustments($teams);
+
         $powerWeights = (array) config('wcbb.tournament_forecast.champion_weights', []);
         $normalizedPowerWeights = $this->normalizeWeights($powerWeights, $keys);
 
         return $teams->map(function (array $team) use ($normalizedPowerWeights) {
             $team['power_rating'] = $this->powerRating($team, $normalizedPowerWeights);
+            $team['power_rating'] += (float) ($team['conference_strength_bonus'] ?? 0.0)
+                * (float) config('wcbb.tournament_forecast.champion_conference_strength_weight', 0.12);
+            $team['power_rating'] += ((bool) ($team['power_conference'] ?? false))
+                ? (float) config('wcbb.tournament_forecast.champion_power_conference_bonus', 0.08)
+                : 0.0;
+
+            return $team;
+        });
+    }
+
+    private function applySelectionContextAdjustments(Collection $teams): Collection
+    {
+        if ($teams->isEmpty()) {
+            return $teams;
+        }
+
+        $conferenceStrengthTopTeams = max(1, (int) config('wcbb.tournament_forecast.conference_strength_top_teams', 3));
+        $fullConfidenceGames = max(1, (int) config('wcbb.tournament_forecast.selection_full_confidence_games', 20));
+        $conferenceStrengthWeight = (float) config('wcbb.tournament_forecast.selection_conference_strength_weight', 0.35);
+        $powerConferenceBonus = (float) config('wcbb.tournament_forecast.selection_power_conference_bonus', 0.45);
+        $resumeConfidencePenalty = max(0.0, (float) config('wcbb.tournament_forecast.selection_resume_confidence_penalty', 0.30));
+
+        $conferenceStrengths = $teams
+            ->groupBy('conference')
+            ->map(function (Collection $conferenceTeams) use ($conferenceStrengthTopTeams): float {
+                return (float) $conferenceTeams
+                    ->sortByDesc('selection_score')
+                    ->take($conferenceStrengthTopTeams)
+                    ->avg('selection_score');
+            });
+
+        $conferenceStrengthZScores = $this->zScores($conferenceStrengths->all());
+
+        return $teams->map(function (array $team) use (
+            $conferenceStrengthZScores,
+            $conferenceStrengthWeight,
+            $powerConferenceBonus,
+            $resumeConfidencePenalty,
+            $fullConfidenceGames
+        ) {
+            $conference = (string) ($team['conference'] ?? 'Independent');
+            $conferenceStrengthBonus = ($conferenceStrengthZScores[$conference] ?? 0.0) * $conferenceStrengthWeight;
+            $confidence = min(1.0, max(0.0, ((int) ($team['games_played'] ?? 0)) / $fullConfidenceGames));
+            $confidencePenalty = (1.0 - $confidence) * $resumeConfidencePenalty;
+            $powerBonus = ((bool) ($team['power_conference'] ?? false)) ? $powerConferenceBonus : 0.0;
+
+            $team['conference_strength_bonus'] = $conferenceStrengthBonus;
+            $team['resume_confidence'] = $confidence;
+            $team['selection_score'] = (float) $team['selection_score'] + $conferenceStrengthBonus + $powerBonus - $confidencePenalty;
 
             return $team;
         });
@@ -618,7 +672,7 @@ class GenerateTournamentForecast
                 return $seedA <=> $seedB;
             }
 
-            return ($b['power_rating'] <=> $a['power_rating']);
+            return $b['power_rating'] <=> $a['power_rating'];
         });
         $winners = [];
         $left = 0;
@@ -817,5 +871,21 @@ class GenerateTournamentForecast
     private function clamp(float $value, float $min, float $max): float
     {
         return max($min, min($max, $value));
+    }
+
+    private function isPowerConference(string $conference): bool
+    {
+        $normalizedConference = $this->normalizeConferenceName($conference);
+        $configured = array_map(
+            fn ($value) => $this->normalizeConferenceName((string) $value),
+            (array) config('wcbb.teams.power_conferences', [])
+        );
+
+        return in_array($normalizedConference, $configured, true);
+    }
+
+    private function normalizeConferenceName(string $conference): string
+    {
+        return strtolower(trim($conference));
     }
 }

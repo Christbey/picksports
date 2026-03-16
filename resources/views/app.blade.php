@@ -26,6 +26,15 @@
                 'wcbb/*',
                 'mlb/*',
             ]);
+            $showAdsense = $isPublicPage || request()->is([
+                'nba/*',
+                'wnba/*',
+                'nfl/*',
+                'cfb/*',
+                'cbb/*',
+                'wcbb/*',
+                'mlb/*',
+            ]);
 
             $defaultDescription = 'Sports predictions, analytics, and live game insights.';
             $descriptionMap = [
@@ -147,7 +156,9 @@
         <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
         <meta name="theme-color" content="#0b0f19" media="(prefers-color-scheme: dark)">
         <meta name="description" content="{{ $metaDescription }}">
-        <meta name="google-adsense-account" content="ca-pub-2394264248851783">
+        @if ($showAdsense)
+            <meta name="google-adsense-account" content="ca-pub-2394264248851783">
+        @endif
         <meta name="robots" content="{{ $isPublicPage ? 'index,follow' : 'noindex,nofollow' }}">
         <link rel="canonical" href="{{ $canonicalUrl }}">
         <link rel="alternate" hreflang="en-US" href="{{ $canonicalUrl }}">
@@ -177,7 +188,9 @@
         <link rel="dns-prefetch" href="//laravel.com">
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
-        <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2394264248851783" crossorigin="anonymous"></script>
+        @if ($showAdsense)
+            <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2394264248851783" crossorigin="anonymous"></script>
+        @endif
 
         <!-- Google Tag Manager -->
         <script>

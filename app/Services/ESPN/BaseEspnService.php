@@ -59,7 +59,12 @@ class BaseEspnService
 
     public function getTeams(): ?array
     {
-        return $this->get($this->buildUrl('site', 'teams').$this->buildQueryString($this->teamsQueryParams()));
+        return $this->getTeamsPage(1);
+    }
+
+    public function getTeamsPage(int $page = 1): ?array
+    {
+        return $this->get($this->buildUrl('site', 'teams').$this->buildQueryString($this->teamsQueryParams($page)));
     }
 
     public function getTeam(string $teamId): ?array
@@ -203,9 +208,12 @@ class BaseEspnService
     /**
      * @return array<string, scalar|null>
      */
-    protected function teamsQueryParams(): array
+    protected function teamsQueryParams(int $page = 1): array
     {
-        return ['limit' => $this->teamsLimit];
+        return [
+            'limit' => $this->teamsLimit,
+            'page' => $page,
+        ];
     }
 
     /**

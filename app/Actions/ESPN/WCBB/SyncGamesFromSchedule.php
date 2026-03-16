@@ -5,11 +5,17 @@ namespace App\Actions\ESPN\WCBB;
 use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\WCBB\Team;
+use App\Services\SportsAssetStorage;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 {
     protected const GAME_MODEL_CLASS = \App\Models\WCBB\Game::class;
+
+    public function __construct(protected ?SportsAssetStorage $sportsAssetStorage = null)
+    {
+        $this->sportsAssetStorage ??= app(SportsAssetStorage::class);
+    }
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
     {
@@ -20,7 +26,11 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
                 'school' => $rawGame['competitions'][0]['competitors'][0]['team']['location'] ?? 'Unknown',
                 'mascot' => $rawGame['competitions'][0]['competitors'][0]['team']['name'] ?? 'Unknown',
                 'abbreviation' => $rawGame['competitions'][0]['competitors'][0]['team']['abbreviation'] ?? 'UNK',
-                'logo_url' => $rawGame['competitions'][0]['competitors'][0]['team']['logo'] ?? null,
+                'logo_url' => $this->sportsAssetStorage->mirrorTeamLogo(
+                    $rawGame['competitions'][0]['competitors'][0]['team']['logo'] ?? null,
+                    'wcbb',
+                    (($rawGame['competitions'][0]['competitors'][0]['team']['location'] ?? 'Unknown').' '.($rawGame['competitions'][0]['competitors'][0]['team']['name'] ?? 'Unknown')).'-'.$dto->homeTeamEspnId
+                ),
             ]);
         }
 
@@ -31,7 +41,11 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
                 'school' => $rawGame['competitions'][0]['competitors'][1]['team']['location'] ?? 'Unknown',
                 'mascot' => $rawGame['competitions'][0]['competitors'][1]['team']['name'] ?? 'Unknown',
                 'abbreviation' => $rawGame['competitions'][0]['competitors'][1]['team']['abbreviation'] ?? 'UNK',
-                'logo_url' => $rawGame['competitions'][0]['competitors'][1]['team']['logo'] ?? null,
+                'logo_url' => $this->sportsAssetStorage->mirrorTeamLogo(
+                    $rawGame['competitions'][0]['competitors'][1]['team']['logo'] ?? null,
+                    'wcbb',
+                    (($rawGame['competitions'][0]['competitors'][1]['team']['location'] ?? 'Unknown').' '.($rawGame['competitions'][0]['competitors'][1]['team']['name'] ?? 'Unknown')).'-'.$dto->awayTeamEspnId
+                ),
             ]);
         }
 

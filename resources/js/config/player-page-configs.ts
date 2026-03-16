@@ -7,7 +7,7 @@ import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController
 
 export const nbaPlayerPageConfig = {
     sportLabel: 'NBA',
-    predictionsHref: '/nba-predictions',
+    predictionsHref: '/nba/predictions',
     teamLink: (id: number) => NBATeamController.url(id),
     gameLink: (id: number) => NBAGameController.url(id),
     playerEndpoint: (playerId: number) => `/api/v1/nba/players/${playerId}`,
@@ -20,7 +20,7 @@ export const nbaPlayerPageConfig = {
 
 export const cbbPlayerPageConfig = {
     sportLabel: 'CBB',
-    predictionsHref: '/cbb-predictions',
+    predictionsHref: '/cbb/predictions',
     teamLink: (id: number) => `/cbb/teams/${id}`,
     gameLink: (id: number) => `/cbb/games/${id}`,
     playerEndpoint: (playerId: number) => `/api/v1/cbb/players/${playerId}`,
@@ -33,7 +33,7 @@ export const cbbPlayerPageConfig = {
 
 export const nflPlayerPageConfig = {
     sportLabel: 'NFL',
-    predictionsHref: '/nfl-predictions',
+    predictionsHref: '/nfl/predictions',
     teamLink: (id: number) => NFLTeamController.url(id),
     gameLink: (id: number) => NFLGameController.url(id),
     playerEndpoint: (playerId: number) => `/api/v1/nfl/players/${playerId}`,
@@ -151,7 +151,7 @@ export const nflPlayerPageConfig = {
 
 export const mlbPlayerPageConfig = {
     sportLabel: 'MLB',
-    predictionsHref: '/mlb-predictions',
+    predictionsHref: '/mlb/predictions',
     teamLink: (id: number) => MLBTeamController.url(id),
     gameLink: (id: number) => MLBGameController.url(id),
     playerEndpoint: (playerId: number) => `/api/v1/mlb/players/${playerId}`,
@@ -273,7 +273,7 @@ export const mlbPlayerPageConfig = {
 
 export const cfbPlayerPageConfig = {
     sportLabel: 'CFB',
-    predictionsHref: '/cfb-predictions',
+    predictionsHref: '/cfb/predictions',
     playerEndpoint: (playerId: number) => `/api/v1/cfb/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
         `/api/v1/cfb/players/${playerId}/stats`,

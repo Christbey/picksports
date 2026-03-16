@@ -6,13 +6,14 @@ use App\Console\Commands\Concerns\DisplaysTeamMetrics;
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
 use App\Console\Commands\Sports\Concerns\HandlesSingleTeamMetricsCalculation;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractCalculateTeamMetricsCommand extends Command
 {
     use DisplaysTeamMetrics;
-    use ResolvesRequiredConfig;
     use HandlesSingleTeamMetricsCalculation;
+    use ResolvesRequiredConfig;
 
     protected const COMMAND_NAME = '';
 
@@ -53,8 +54,10 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
 
         $this->info("Calculating metrics for all teams ({$season})...");
 
+        $this->beforeBulkCalculation($calculateMetrics, $season);
+
         $teamModelClass = $this->teamModelClass();
-        $teams = $teamModelClass::all();
+        $teams = $this->modifyTeamsQuery($teamModelClass::query(), $season)->get();
         $calculated = $this->runWithProgressBar(
             $teams,
             fn ($team) => $calculateMetrics->execute($team, $season)
@@ -172,7 +175,12 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
     /**
      * Hook for sport-specific diagnostics when no teams were recalculated.
      */
-    protected function displayNoRecalculationDiagnostics(int|string $season): void
+    protected function displayNoRecalculationDiagnostics(int|string $season): void {}
+
+    protected function modifyTeamsQuery(Builder $query, int|string $season): Builder
     {
+        return $query;
     }
+
+    protected function beforeBulkCalculation(object $calculateMetrics, int|string $season): void {}
 }

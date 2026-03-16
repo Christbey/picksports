@@ -3,9 +3,9 @@
 namespace App\Http\Controllers\Api\Sports;
 
 use App\Http\Resources\PlayerLeaderboardResource;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Schema;
@@ -77,6 +77,33 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
         return ['game'];
     }
 
+    protected function applySeasonFiltersToStatsQuery($query, Request $request)
+    {
+        if (! $request->filled('season') && ! $request->filled('season_type')) {
+            return $query;
+        }
+
+        $gameModel = $this->getGameModel();
+        $gameInstance = new $gameModel;
+        $gameTable = $gameInstance->getTable();
+        $playerStatModel = $this->getPlayerStatModel();
+        $playerStatInstance = new $playerStatModel;
+        $playerStatTable = $playerStatInstance->getTable();
+
+        $query->join($gameTable, "{$gameTable}.id", '=', "{$playerStatTable}.game_id");
+
+        if ($request->filled('season') && $this->hasGameSeasonColumn()) {
+            $query->where("{$gameTable}.{$this->getGameSeasonColumn()}", (int) $request->integer('season'));
+        }
+
+        $seasonTypeCandidates = $this->requestedSeasonTypeCandidates($request);
+        if ($seasonTypeCandidates !== [] && $this->hasGameSeasonTypeColumn()) {
+            $query->whereIn("{$gameTable}.{$this->getGameSeasonTypeColumn()}", $seasonTypeCandidates);
+        }
+
+        return $query->select("{$playerStatTable}.*");
+    }
+
     protected function supportsLeaderboard(): bool
     {
         return false;
@@ -95,7 +122,7 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
     protected function hasGameSeasonColumn(): bool
     {
         $gameModel = $this->getGameModel();
-        $instance = new $gameModel();
+        $instance = new $gameModel;
 
         return Schema::hasColumn($instance->getTable(), $this->getGameSeasonColumn());
     }
@@ -103,7 +130,7 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
     protected function hasGameSeasonTypeColumn(): bool
     {
         $gameModel = $this->getGameModel();
-        $instance = new $gameModel();
+        $instance = new $gameModel;
 
         return Schema::hasColumn($instance->getTable(), $this->getGameSeasonTypeColumn());
     }
@@ -112,7 +139,7 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
     {
         $gameModel = $this->getGameModel();
 
-        return (new $gameModel())->getTable();
+        return (new $gameModel)->getTable();
     }
 
     protected function sportSlug(): ?string
@@ -203,6 +230,7 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
 
         $stats = $model::query()
             ->with(['player', 'game'])
+            ->tap(fn ($query) => $this->applySeasonFiltersToStatsQuery($query, $request))
             ->orderByDesc('id')
             ->paginate($this->getPerPage($request));
 
@@ -251,6 +279,7 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
         $stats = $model::query()
             ->with($this->getByPlayerRelations())
             ->where('player_id', $playerId)
+            ->tap(fn ($query) => $this->applySeasonFiltersToStatsQuery($query, $request))
             ->orderByDesc('id')
             ->paginate($this->getByPlayerPerPage($request));
 
@@ -274,8 +303,8 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
 
         $playerStatModel = $this->getPlayerStatModel();
         $gameModel = $this->getGameModel();
-        $playerStatInstance = new $playerStatModel();
-        $gameInstance = new $gameModel();
+        $playerStatInstance = new $playerStatModel;
+        $gameInstance = new $gameModel;
         $gameTable = $gameInstance->getTable();
         $playerStatTable = $playerStatInstance->getTable();
         $seasonColumn = $this->getGameSeasonColumn();

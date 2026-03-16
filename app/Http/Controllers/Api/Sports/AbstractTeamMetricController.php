@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Sports;
 
 use App\Support\SportsViewCache;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -86,7 +87,7 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
             return null;
         }
 
-        return (new $gameModelClass())->getTable();
+        return (new $gameModelClass)->getTable();
     }
 
     protected function mutateIndexMetrics(Collection $metrics): void
@@ -99,10 +100,15 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         return 'season';
     }
 
+    protected function modifyIndexQuery(Builder $query): Builder
+    {
+        return $query;
+    }
+
     protected function hasSeasonColumn(): bool
     {
         $model = $this->getTeamMetricModel();
-        $instance = new $model();
+        $instance = new $model;
         $cacheKey = $instance->getTable().':'.$this->getSeasonColumn();
 
         if (! array_key_exists($cacheKey, self::$seasonColumnPresence)) {
@@ -119,7 +125,7 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         $tierContext = $this->resolveTierContext('getTeamMetricsLimit');
         $tierMetadata = $tierContext['metadata'];
         $tierLimit = $tierContext['limit'];
-        $metricsTable = (new $model())->getTable();
+        $metricsTable = (new $model)->getTable();
         $request = request();
 
         /** @var SportsViewCache $sportsViewCache */
@@ -139,6 +145,8 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
                 $query = $model::query()
                     ->with(['team'])
                     ->orderByDesc($this->getIndexOrderByColumn());
+
+                $query = $this->modifyIndexQuery($query);
 
                 if ($request->query('season') && $this->hasSeasonColumn()) {
                     $query->where($this->getSeasonColumn(), $request->query('season'));

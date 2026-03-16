@@ -88,6 +88,10 @@ abstract class AbstractPredictionGenerator
             return null;
         }
 
+        if (! $this->shouldGeneratePredictionForGame($game, $homeTeam, $awayTeam)) {
+            return null;
+        }
+
         // Get current Elo ratings
         $sport = $this->getSport();
         $defaultElo = config("{$sport}.elo.default") ?? config("{$sport}.elo.default_rating");
@@ -219,10 +223,43 @@ abstract class AbstractPredictionGenerator
             ->get()
             ->keyBy('team_id');
 
+        if ($this->shouldUsePriorSeasonMetricFallback()) {
+            foreach ([$homeTeamId, $awayTeamId] as $teamId) {
+                if ($metrics->has($teamId)) {
+                    continue;
+                }
+
+                $fallbackMetric = $this->latestPriorSeasonMetric($teamMetricModel, $teamId, (int) $game->season, $game);
+
+                if ($fallbackMetric) {
+                    $metrics->put($teamId, $fallbackMetric);
+                }
+            }
+        }
+
         return [
             $metrics->get($homeTeamId),
             $metrics->get($awayTeamId),
         ];
+    }
+
+    protected function shouldUsePriorSeasonMetricFallback(): bool
+    {
+        return (bool) config("{$this->getSport()}.predictions.use_previous_season_metrics_fallback", false);
+    }
+
+    protected function shouldGeneratePredictionForGame(Model $game, Model $homeTeam, Model $awayTeam): bool
+    {
+        return true;
+    }
+
+    protected function latestPriorSeasonMetric(string $teamMetricModel, int $teamId, int $season, ?Model $game = null): ?Model
+    {
+        return $teamMetricModel::query()
+            ->where('team_id', $teamId)
+            ->where('season', '<', $season)
+            ->orderByDesc('season')
+            ->first();
     }
 
     /**

@@ -2,15 +2,16 @@
 
 namespace App\Models\CBB;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Concerns\ResolvesTeamLogoUrls;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
     /** @use HasFactory<\Database\Factories\CbbTeamFactory> */
-    use HasFactory;
+    use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'cbb_teams';
 

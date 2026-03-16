@@ -16,6 +16,7 @@ class EspnTeamOptionResource extends JsonResource
             'id' => $this->id,
             'name' => $this->name,
             'abbreviation' => $this->abbreviation,
+            'mascot' => $this->mascot,
         ];
     }
 }

@@ -1,15 +1,16 @@
 <?php
 
-use App\Http\Controllers\Settings\AlertPreferenceController;
+use App\Http\Controllers\Admin\PlayerPropCardExportController;
+use App\Http\Controllers\Auth\UserHeartbeatController;
 use App\Http\Controllers\Settings\AdminSettingsController;
+use App\Http\Controllers\Settings\AlertPreferenceController;
+use App\Http\Controllers\Settings\CfbdTeamMappingController;
 use App\Http\Controllers\Settings\OddsApiPlayerMappingController;
 use App\Http\Controllers\Settings\OddsApiTeamMappingController;
 use App\Http\Controllers\Settings\PasswordController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\TwoFactorAuthenticationController;
 use App\Http\Controllers\Settings\WebPushSubscriptionController;
-use App\Http\Controllers\Auth\UserHeartbeatController;
-use App\Http\Controllers\Admin\PlayerPropCardExportController;
 use App\Support\TierAccessBypass;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -122,9 +123,19 @@ Route::middleware(['auth', 'onboarded', 'verified'])->group(function () {
             ->name('admin.settings.founding-users.grant');
         Route::post('settings/admin/founding-users/revoke', [AdminSettingsController::class, 'revokeFoundingAccess'])
             ->name('admin.settings.founding-users.revoke');
+        Route::post('settings/admin/groups', [AdminSettingsController::class, 'createGroup'])
+            ->name('admin.settings.groups.store');
+        Route::post('settings/admin/groups/join-link', [AdminSettingsController::class, 'rotateJoinLink'])
+            ->name('admin.settings.groups.join-link');
+        Route::post('settings/admin/groups/invite', [AdminSettingsController::class, 'inviteToGroup'])
+            ->name('admin.settings.groups.invite');
         Route::get('settings/team-mappings', [OddsApiTeamMappingController::class, 'index'])->name('team-mappings.index');
+        Route::post('settings/team-mappings/sync', [OddsApiTeamMappingController::class, 'sync'])->name('team-mappings.sync');
         Route::patch('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'update'])->name('team-mappings.update');
         Route::delete('settings/team-mappings/{mapping}', [OddsApiTeamMappingController::class, 'destroy'])->name('team-mappings.destroy');
+        Route::get('settings/cfbd-team-mappings', [CfbdTeamMappingController::class, 'index'])->name('cfbd-team-mappings.index');
+        Route::patch('settings/cfbd-team-mappings/{mapping}', [CfbdTeamMappingController::class, 'update'])->name('cfbd-team-mappings.update');
+        Route::delete('settings/cfbd-team-mappings/{mapping}', [CfbdTeamMappingController::class, 'destroy'])->name('cfbd-team-mappings.destroy');
         Route::get('settings/player-mappings', [OddsApiPlayerMappingController::class, 'index'])->name('player-mappings.index');
         Route::patch('settings/player-mappings/{mapping}', [OddsApiPlayerMappingController::class, 'update'])->name('player-mappings.update');
         Route::delete('settings/player-mappings/{mapping}', [OddsApiPlayerMappingController::class, 'destroy'])->name('player-mappings.destroy');

@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN\CFB;
 
 use App\Actions\ESPN\AbstractSyncPlays;
+use App\Services\ESPN\CFB\EspnService;
 
 class SyncPlays extends AbstractSyncPlays
 {
@@ -13,4 +14,9 @@ class SyncPlays extends AbstractSyncPlays
     protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
 
     protected const PLAY_DTO_CLASS = \App\DataTransferObjects\ESPN\FootballPlayData::class;
+
+    public function __construct(EspnService $espnService)
+    {
+        parent::__construct($espnService);
+    }
 }

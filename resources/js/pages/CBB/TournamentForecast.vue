@@ -234,7 +234,7 @@ onMounted(async () => {
     <PredictionsPageShell
         title="CBB Tournament Forecast"
         breadcrumb-title="CBB Tournament Forecast"
-        breadcrumb-href="/cbb-tournament-forecast"
+        breadcrumb-href="/cbb/tournament-forecast"
         banner-storage-key="cbb-tournament-forecast-banner-dismissed"
         seo-description="March Madness forecast with automatic bid probability, at-large probability, First Four risk, and championship odds."
     >

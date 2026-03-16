@@ -38,7 +38,7 @@ export function createSportTeamMetricsConfig(
         apiEndpoint:
             params.apiEndpoint ?? `/api/v1/${params.sport}/team-metrics`,
         breadcrumbHref:
-            params.breadcrumbHref ?? `/${params.sport}-team-metrics`,
+            params.breadcrumbHref ?? `/${params.sport}/team-metrics`,
         teamLink: params.teamLink,
         sortOptions: params.sortOptions,
         defaultSort: params.defaultSort,

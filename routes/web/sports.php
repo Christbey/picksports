@@ -44,6 +44,11 @@ foreach ($sportDomains as $sport => $definition) {
     Route::get("/{$sport}/predictions", fn () => Inertia::render($page))
         ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
         ->name("{$sport}-predictions");
+
+    // Legacy dashed URL support.
+    Route::get("/{$sport}-predictions", fn () => redirect("/{$sport}/predictions", 301))
+        ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+        ->name("{$sport}.legacy.predictions");
 }
 
 foreach ($sportDomains as $sport => $definition) {
@@ -53,6 +58,11 @@ foreach ($sportDomains as $sport => $definition) {
         Route::get($path, fn () => Inertia::render($page))
             ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
             ->name("{$sport}-{$suffix}");
+
+        // Legacy dashed URL support.
+        Route::get("/{$sport}-{$suffix}", fn () => redirect($path, 301))
+            ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+            ->name("{$sport}.legacy.{$suffix}");
     }
 }
 

@@ -9,6 +9,7 @@ class OddsApiTeamMapping extends Model
     protected $fillable = [
         'espn_team_name',
         'odds_api_team_name',
+        'odds_api_team_id',
         'sport',
     ];
 }

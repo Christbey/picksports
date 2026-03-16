@@ -26,6 +26,7 @@ withDefaults(defineProps<{
     extraInfoItems?: string[];
     showScoreStatuses?: string[];
     badgePulseStatuses?: string[];
+    linkTeams?: boolean;
     useTeamColorGlow?: boolean;
     showLinescore?: boolean;
     linescoreTitle?: string;
@@ -66,6 +67,7 @@ withDefaults(defineProps<{
     extraInfoItems: () => [],
     showScoreStatuses: () => ['STATUS_FINAL'],
     badgePulseStatuses: () => [],
+    linkTeams: true,
     useTeamColorGlow: false,
     showLinescore: false,
     linescoreTitle: 'Linescore',
@@ -135,6 +137,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :extra-info-items="extraInfoItems"
                 :show-score-statuses="showScoreStatuses"
                 :badge-pulse-statuses="badgePulseStatuses"
+                :link-teams="linkTeams"
                 :use-team-color-glow="useTeamColorGlow"
                 :winner-correct="prediction?.winner_correct ?? null"
                 :actual-total="prediction?.actual_total ?? null"

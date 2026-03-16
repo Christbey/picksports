@@ -52,8 +52,8 @@ type GameLink = (id: number) => any
 export const createNbaTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     sport: 'nba',
     sportLabel: 'NBA',
-    predictionsHref: '/nba-predictions',
-    metricsHref: '/nba-team-metrics',
+    predictionsHref: '/nba/predictions',
+    metricsHref: '/nba/team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
     teamLogo: (t) => t.logo,
@@ -81,8 +81,8 @@ export const createNbaTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
 export const createCbbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     sport: 'cbb',
     sportLabel: 'CBB',
-    predictionsHref: '/cbb-predictions',
-    metricsHref: '/cbb-team-metrics',
+    predictionsHref: '/cbb/predictions',
+    metricsHref: '/cbb/team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
     teamLogo: (t) => t.logo,
@@ -134,16 +134,16 @@ const createSimpleBasketballConfig = (
 })
 
 export const createWnbaTeamConfig = (gameLink: GameLink): TeamPageConfig =>
-    createSimpleBasketballConfig('wnba', 'WNBA', '/wnba-predictions', '/wnba-team-metrics', '/wnba/teams', gameLink)
+    createSimpleBasketballConfig('wnba', 'WNBA', '/wnba/predictions', '/wnba/team-metrics', '/wnba/teams', gameLink)
 
 export const createWcbbTeamConfig = (gameLink: GameLink): TeamPageConfig =>
-    createSimpleBasketballConfig('wcbb', 'WCBB', '/wcbb-predictions', '/wcbb-team-metrics', '/wcbb/teams', gameLink)
+    createSimpleBasketballConfig('wcbb', 'WCBB', '/wcbb/predictions', '/wcbb/team-metrics', '/wcbb/teams', gameLink)
 
 export const createNflTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     sport: 'nfl',
     sportLabel: 'NFL',
-    predictionsHref: '/nfl-predictions',
-    metricsHref: '/nfl-team-metrics',
+    predictionsHref: '/nfl/predictions',
+    metricsHref: '/nfl/team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
     teamLogo: (t) => t.logo,
@@ -220,8 +220,8 @@ const rpgClass = (value: number | null): string => {
 export const createMlbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     sport: 'mlb',
     sportLabel: 'MLB',
-    predictionsHref: '/mlb-predictions',
-    metricsHref: '/mlb-team-metrics',
+    predictionsHref: '/mlb/predictions',
+    metricsHref: '/mlb/team-metrics',
     headTitle: (t) => `${t.location} ${t.name}`,
     teamDisplayName: (t) => `${t.location} ${t.name}`,
     teamLogo: (t) => t.logo_url,

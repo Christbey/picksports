@@ -2,6 +2,7 @@
 
 namespace App\Models\CFB;
 
+use App\Models\Concerns\ResolvesPlayerHeadshotUrls;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,24 +11,31 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Player extends Model
 {
     /** @use HasFactory<\Database\Factories\CfbPlayerFactory> */
-    use HasFactory;
+    use HasFactory, ResolvesPlayerHeadshotUrls;
 
     protected $table = 'cfb_players';
 
     protected $fillable = [
         'team_id',
         'espn_id',
-        'name',
-        'display_name',
-        'short_name',
-        'jersey',
+        'first_name',
+        'last_name',
+        'full_name',
+        'jersey_number',
         'position',
         'height',
         'weight',
-        'experience',
-        'college',
-        'headshot',
+        'year',
+        'hometown',
+        'headshot_url',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'weight' => 'integer',
+        ];
+    }
 
     public function team(): BelongsTo
     {

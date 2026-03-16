@@ -44,6 +44,7 @@ export interface Game {
     season: number
     season_type: number | string | null
     week: number | null
+    postseason_round?: number | null
     game_date: string | null
     game_time: string | null
     venue?: string | null

@@ -10,6 +10,7 @@
     "license": "MIT",
     "require": {
         "php": "^8.2",
+        "aws/aws-sdk-php": "^3.373",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/cashier": "^16.2",
         "laravel/fortify": "^1.30",
@@ -18,6 +19,7 @@
         "laravel/socialite": "^5.25",
         "laravel/tinker": "^2.10.1",
         "laravel/wayfinder": "^0.1.9",
+        "league/flysystem-aws-s3-v3": "^3.32",
         "spatie/laravel-permission": "^6.24"
     },
     "require-dev": {

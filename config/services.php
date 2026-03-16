@@ -57,6 +57,11 @@ return [
         'base_url' => 'https://api.the-odds-api.com/v4',
     ],
 
+    'collegefootballdata' => [
+        'api_key' => env('COLLEGEFOOTBALLDATA_API_KEY'),
+        'base_url' => env('COLLEGEFOOTBALLDATA_BASE_URL', 'https://api.collegefootballdata.com'),
+    ],
+
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

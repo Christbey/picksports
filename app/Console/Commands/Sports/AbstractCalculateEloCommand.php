@@ -123,6 +123,7 @@ abstract class AbstractCalculateEloCommand extends Command
     {
         $calculateEloClass = $this->getCalculateEloAction();
         $calculateElo = new $calculateEloClass;
+        $targetSeason = $this->option('season');
 
         // Reset Elo ratings if requested
         if ($this->option('reset')) {
@@ -136,7 +137,17 @@ abstract class AbstractCalculateEloCommand extends Command
         }
 
         if ($this->hasOption('regress') && $this->option('regress') && ! $this->option('reset')) {
-            $this->applyRegressionTowardMean();
+            if ($targetSeason === null || $targetSeason === '') {
+                $this->error('The --regress option requires --season for an idempotent offseason rollover.');
+
+                return Command::FAILURE;
+            }
+
+            if ($this->seasonAlreadyInitialized((int) $targetSeason)) {
+                $this->info("Skipping regression because Elo history already exists for season {$targetSeason}.");
+            } else {
+                $this->applyRegressionTowardMean((int) $targetSeason);
+            }
         }
 
         // Build query for completed games
@@ -207,16 +218,47 @@ abstract class AbstractCalculateEloCommand extends Command
         return Command::SUCCESS;
     }
 
-    protected function applyRegressionTowardMean(): void
+    protected function seasonAlreadyInitialized(int $season): bool
+    {
+        $eloRatingModel = $this->getEloRatingModel();
+
+        return $eloRatingModel::query()
+            ->where('season', $season)
+            ->exists();
+    }
+
+    protected function applyRegressionTowardMean(?int $targetSeason = null): void
     {
         $teamModel = $this->getTeamModel();
+        $eloRatingModel = $this->getEloRatingModel();
         $defaultElo = $this->getDefaultElo();
+        $sportKey = strtolower($this->getSportName());
+        $factor = (float) config("{$sportKey}.elo.offseason_regression_factor", 0.3);
+        $retainFactor = 1 - $factor;
 
-        $this->info('Applying 30% regression toward mean Elo before calculation...');
+        $this->info(sprintf(
+            'Applying %.0f%% regression toward mean Elo before calculation...',
+            $factor * 100
+        ));
 
-        $teamModel::query()->each(function (Model $team) use ($defaultElo) {
-            $current = (int) ($team->elo_rating ?? $defaultElo);
-            $regressed = (int) round(($current * 0.7) + ($defaultElo * 0.3));
+        $teamModel::query()->each(function (Model $team) use ($eloRatingModel, $targetSeason, $defaultElo, $factor, $retainFactor) {
+            $baseline = (int) ($team->elo_rating ?? $defaultElo);
+
+            if ($targetSeason !== null) {
+                $priorRating = $eloRatingModel::query()
+                    ->where('team_id', $team->getKey())
+                    ->where('season', '<', $targetSeason)
+                    ->orderByDesc('season')
+                    ->orderByDesc('date')
+                    ->orderByDesc('id')
+                    ->value('elo_rating');
+
+                if ($priorRating !== null) {
+                    $baseline = (int) round((float) $priorRating);
+                }
+            }
+
+            $regressed = (int) round(($baseline * $retainFactor) + ($defaultElo * $factor));
             $team->update(['elo_rating' => $regressed]);
         });
     }

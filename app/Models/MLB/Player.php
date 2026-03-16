@@ -2,6 +2,7 @@
 
 namespace App\Models\MLB;
 
+use App\Models\Concerns\ResolvesPlayerHeadshotUrls;
 use Database\Factories\MlbPlayerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -11,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Player extends Model
 {
     /** @use HasFactory<MlbPlayerFactory> */
-    use HasFactory;
+    use HasFactory, ResolvesPlayerHeadshotUrls;
 
     protected $table = 'mlb_players';
 

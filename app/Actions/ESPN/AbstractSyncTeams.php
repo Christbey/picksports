@@ -3,6 +3,8 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use App\Services\SportsAssetStorage;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Log;
 
@@ -17,7 +19,12 @@ abstract class AbstractSyncTeams
      */
     protected array $refCache = [];
 
-    public function __construct(protected BaseEspnService $espnService) {}
+    public function __construct(
+        protected BaseEspnService $espnService,
+        protected ?SportsAssetStorage $sportsAssetStorage = null,
+    ) {
+        $this->sportsAssetStorage ??= app(SportsAssetStorage::class);
+    }
 
     /**
      * @param  array<string, mixed>  $team
@@ -66,7 +73,14 @@ abstract class AbstractSyncTeams
      */
     protected function mapTeamAttributes(object $dto, array $resolvedTeam, array $rawTeam): array
     {
-        return $dto->toArray();
+        $attributes = $dto->toArray();
+        $attributes['logo_url'] = $this->mirrorLogo(
+            $attributes['logo_url'] ?? null,
+            $this->sportKey(),
+            $this->teamAssetIdentifier($attributes, $this->getDtoEspnId($dto))
+        );
+
+        return $attributes;
     }
 
     /**
@@ -191,46 +205,77 @@ abstract class AbstractSyncTeams
         return is_array($teams) ? $teams : [];
     }
 
+    protected function extractPageCount(array $response): int
+    {
+        $pageCount = $response['pageCount'] ?? null;
+
+        return is_numeric($pageCount) && (int) $pageCount > 0 ? (int) $pageCount : 1;
+    }
+
     public function execute(): int
     {
-        $response = $this->espnService->getTeams();
-        if (! is_array($response)) {
-            return 0;
-        }
-
-        $teams = $this->extractTeams($response);
-        if ($teams === []) {
-            return 0;
-        }
-
         $teamModel = $this->teamModelClass();
         $uniqueKey = $this->getUniqueKey();
         $synced = 0;
 
-        foreach ($teams as $teamData) {
-            $rawTeam = $teamData['team'] ?? [];
-            if (empty($rawTeam['id'])) {
-                continue;
+        $page = 1;
+        $pageCount = 1;
+
+        do {
+            $response = $this->espnService->getTeamsPage($page);
+            if (! is_array($response)) {
+                break;
             }
 
-            $resolvedTeam = $this->resolveTeam($rawTeam);
-            if (! is_array($resolvedTeam) || $resolvedTeam === []) {
-                continue;
+            $teams = $this->extractTeams($response);
+            if ($teams === []) {
+                break;
             }
 
-            $dto = $this->teamDtoFromApi($resolvedTeam);
-            $espnId = $this->getDtoEspnId($dto);
-            if ($espnId === '') {
-                continue;
+            $pageCount = $this->extractPageCount($response);
+
+            foreach ($teams as $teamData) {
+                $rawTeam = $teamData['team'] ?? [];
+                if (empty($rawTeam['id'])) {
+                    continue;
+                }
+
+                $resolvedTeam = $this->resolveTeam($rawTeam);
+                if (! is_array($resolvedTeam) || $resolvedTeam === []) {
+                    continue;
+                }
+
+                $dto = $this->teamDtoFromApi($resolvedTeam);
+                $espnId = $this->getDtoEspnId($dto);
+                if ($espnId === '') {
+                    continue;
+                }
+
+                $attributes = $this->mapTeamAttributes($dto, $resolvedTeam, $rawTeam);
+
+                try {
+                    $teamModel::updateOrCreate(
+                        [$uniqueKey => $espnId],
+                        $attributes
+                    );
+                } catch (QueryException $e) {
+                    if (! $this->isDuplicateAbbreviationViolation($e, $teamModel::query()->getModel()->getTable())) {
+                        throw $e;
+                    }
+
+                    $attributes['abbreviation'] = $this->resolveUniqueAbbreviation($teamModel, $attributes, $espnId);
+
+                    $teamModel::updateOrCreate(
+                        [$uniqueKey => $espnId],
+                        $attributes
+                    );
+                }
+
+                $synced++;
             }
 
-            $teamModel::updateOrCreate(
-                [$uniqueKey => $espnId],
-                $this->mapTeamAttributes($dto, $resolvedTeam, $rawTeam)
-            );
-
-            $synced++;
-        }
+            $page++;
+        } while ($page <= $pageCount);
 
         return $synced;
     }
@@ -267,5 +312,81 @@ abstract class AbstractSyncTeams
         }
 
         return static::TEAM_DTO_CLASS;
+    }
+
+    protected function isDuplicateAbbreviationViolation(QueryException $e, string $table): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, '1062 Duplicate entry')
+            && str_contains($message, "{$table}.{$table}_abbreviation_unique");
+    }
+
+    /**
+     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $teamModel
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function resolveUniqueAbbreviation(string $teamModel, array $attributes, string $espnId): string
+    {
+        $existing = $teamModel::query()
+            ->where('espn_id', $espnId)
+            ->value('abbreviation');
+
+        if (is_string($existing) && $existing !== '') {
+            return $existing;
+        }
+
+        $base = strtoupper(trim((string) ($attributes['abbreviation'] ?? '')));
+        $base = $base !== '' ? substr($base, 0, 10) : 'TEAM';
+
+        if (! $teamModel::query()->where('abbreviation', $base)->exists()) {
+            return $base;
+        }
+
+        foreach ($this->abbreviationCandidates($base, $espnId) as $candidate) {
+            if (! $teamModel::query()->where('abbreviation', $candidate)->exists()) {
+                return $candidate;
+            }
+        }
+
+        return substr($base, 0, 6).substr($espnId, -4);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function abbreviationCandidates(string $base, string $espnId): array
+    {
+        $suffix = preg_replace('/\D+/', '', $espnId) ?: $espnId;
+        $suffix = substr($suffix, -4);
+
+        return [
+            substr($base, 0, 7).$suffix,
+            substr($base, 0, 6).substr($suffix, -3),
+            substr($base, 0, 5).substr($suffix, -4),
+        ];
+    }
+
+    protected function mirrorLogo(?string $sourceUrl, string $sport, string $teamIdentifier): ?string
+    {
+        return $this->sportsAssetStorage?->mirrorTeamLogo($sourceUrl, $sport, $teamIdentifier) ?? $sourceUrl;
+    }
+
+    protected function teamAssetIdentifier(array $attributes, string $fallbackId): string
+    {
+        $name = trim(implode(' ', array_filter([
+            $attributes['location'] ?? $attributes['school'] ?? null,
+            $attributes['name'] ?? $attributes['mascot'] ?? null,
+        ])));
+
+        return $name !== '' ? "{$name}-{$fallbackId}" : $fallbackId;
+    }
+
+    protected function sportKey(): string
+    {
+        $namespace = static::class;
+        $segments = explode('\\', $namespace);
+
+        return strtolower($segments[3] ?? 'teams');
     }
 }

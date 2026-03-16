@@ -16,6 +16,10 @@ class CalculateEloCommand extends AbstractCalculateEloCommand
 
     protected const SPORT_NAME = 'CFB';
 
+    protected const EXTRA_SIGNATURE_OPTIONS = [
+        '{--regress : Apply offseason regression toward mean before calculating}',
+    ];
+
     protected const GAME_MODEL = Game::class;
 
     protected const TEAM_MODEL = Team::class;

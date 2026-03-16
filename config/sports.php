@@ -45,7 +45,7 @@ return [
                 ],
                 'details' => [
                     'team' => false,
-                    'game' => false,
+                    'game' => true,
                     'player' => true,
                 ],
             ],

@@ -4,6 +4,8 @@ namespace App\Actions\ESPN\CBB;
 
 use App\Actions\CBB\UpdateLivePrediction;
 use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
+use App\Support\CbbNcaaTournamentResolver;
+use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 {
@@ -13,4 +15,26 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 
     protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
+
+    public function __construct(
+        \App\Services\ESPN\CBB\EspnService $espnService,
+        ?object $updateLivePrediction = null,
+        protected ?CbbNcaaTournamentResolver $tournamentResolver = null,
+    ) {
+        $this->tournamentResolver ??= app(CbbNcaaTournamentResolver::class);
+
+        parent::__construct($espnService, $updateLivePrediction);
+    }
+
+    /**
+     * @param  array<string, mixed>  $eventData
+     * @return array<string, mixed>
+     */
+    protected function buildGameAttributes(object $dto, array $eventData, ?Model $homeTeam, ?Model $awayTeam): array
+    {
+        return array_merge(
+            parent::buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam),
+            $this->tournamentResolver?->resolveFromEspnEvent($eventData) ?? [],
+        );
+    }
 }

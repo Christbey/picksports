@@ -96,7 +96,7 @@ export function createSportGamePageConfig(params: CreateSportGamePageConfigParam
     return {
         sport: params.sport,
         sportLabel: params.sportLabel ?? defaultLabels[params.sport],
-        predictionsHref: params.predictionsHref ?? `/${params.sport}-predictions`,
+        predictionsHref: params.predictionsHref ?? `/${params.sport}/predictions`,
         gameHrefPrefix: params.gameHrefPrefix ?? `/${params.sport}/games`,
         teamLink: params.teamLink,
         gradientClass: params.gradientClass ?? defaults.gradientClass,
@@ -115,7 +115,7 @@ export function createSportGamePageConfig(params: CreateSportGamePageConfigParam
 
 export function buildSportGameBreadcrumbs(config: SportGamePageConfig, gameId: number): BreadcrumbItem[] {
     return [
-        { title: config.sportLabel, href: config.predictionsHref },
+        { title: config.sportLabel, href: `/${config.sport}` },
         { title: 'Games', href: config.predictionsHref },
         { title: `Game ${gameId}`, href: `${config.gameHrefPrefix}/${gameId}` },
     ];

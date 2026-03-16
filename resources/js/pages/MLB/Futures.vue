@@ -218,7 +218,7 @@ onMounted(async () => {
     <PredictionsPageShell
         title="MLB Futures"
         breadcrumb-title="MLB Futures"
-        breadcrumb-href="/mlb-futures"
+        breadcrumb-href="/mlb/futures"
         banner-storage-key="mlb-futures-banner-dismissed"
         seo-description="MLB postseason forecast with playoff odds, LCS probability, World Series probability, and championship futures."
     >

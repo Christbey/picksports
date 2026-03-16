@@ -2,15 +2,16 @@
 
 namespace App\Models\CFB;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
+use App\Models\Concerns\ResolvesTeamLogoUrls;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
     /** @use HasFactory<\Database\Factories\CfbTeamFactory> */
-    use HasFactory;
+    use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'cfb_teams';
 
@@ -21,6 +22,7 @@ class Team extends Model
 
     protected $fillable = [
         'espn_id',
+        'cfbd_team_id',
         'name',
         'abbreviation',
         'display_name',
@@ -72,6 +74,11 @@ class Team extends Model
         return $this->hasMany(EloRating::class, 'team_id');
     }
 
+    public function seasonAffiliations(): HasMany
+    {
+        return $this->hasMany(TeamSeasonAffiliation::class, 'team_id');
+    }
+
     public function fpiRatings(): HasMany
     {
         return $this->hasMany(FpiRating::class, 'team_id');
@@ -83,5 +90,35 @@ class Team extends Model
             $query->where('home_team_id', $this->id)
                 ->orWhere('away_team_id', $this->id);
         });
+    }
+
+    public function scopeFbs(Builder $query): Builder
+    {
+        return $query->where('division', config('cfb.teams.divisions.fbs', 'FBS'));
+    }
+
+    public function seasonAffiliation(int $season): ?TeamSeasonAffiliation
+    {
+        if ($this->relationLoaded('seasonAffiliations')) {
+            return $this->seasonAffiliations->firstWhere('season', $season);
+        }
+
+        return $this->seasonAffiliations()->where('season', $season)->first();
+    }
+
+    public function isFbs(): bool
+    {
+        return (string) $this->division === (string) config('cfb.teams.divisions.fbs', 'FBS');
+    }
+
+    public function isFbsForSeason(int $season): bool
+    {
+        $affiliation = $this->seasonAffiliation($season);
+
+        if ($affiliation) {
+            return $affiliation->isFbs();
+        }
+
+        return app(\App\Support\CfbSeasonAffiliationResolver::class)->isFbs($this, $season);
     }
 }

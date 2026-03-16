@@ -17,7 +17,13 @@ class CfbFpiRatingFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'team_id' => null,
+            'season' => $this->faker->numberBetween(2020, 2030),
+            'week' => $this->faker->numberBetween(1, 16),
+            'fpi' => $this->faker->randomFloat(1, -10, 30),
+            'offense' => $this->faker->randomFloat(1, -10, 30),
+            'defense' => $this->faker->randomFloat(1, -10, 30),
+            'special_teams' => $this->faker->randomFloat(1, -5, 10),
         ];
     }
 }

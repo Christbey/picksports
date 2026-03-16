@@ -118,6 +118,7 @@ const selectedSeasonType = ref('');
 const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
 const selectedCategory = ref<string>('all');
+const seasonReady = ref(false);
 const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
     useSeasonFilter(() => {
         return (
@@ -358,17 +359,18 @@ onMounted(() => {
             availableSeasons.value = [];
         })
         .then(() => {
-            if (!selectedSeason.value) {
-                fetchPlayers();
-            }
+            seasonReady.value = true;
+            fetchPlayers();
         });
 });
 
 watch(selectedSeason, () => {
+    if (!seasonReady.value) return;
     fetchPlayers();
 });
 
 watch(selectedSeasonType, () => {
+    if (!seasonReady.value) return;
     fetchPlayers();
 });
 
@@ -379,6 +381,7 @@ watch(activeCategory, (category) => {
         sortDesc.value = true;
     }
 
+    if (!seasonReady.value) return;
     fetchPlayers();
 });
 </script>

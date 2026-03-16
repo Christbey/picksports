@@ -16,31 +16,37 @@ class Play extends Model
     protected $fillable = [
         'game_id',
         'possession_team_id',
-        'espn_id',
+        'espn_play_id',
         'sequence_number',
         'period',
         'clock',
         'down',
         'distance',
-        'yard_line',
+        'yards_to_endzone',
         'play_type',
         'play_text',
         'yards_gained',
-        'scoring_play',
-        'touchdown',
-        'field_goal',
-        'safety',
-        'turnover',
+        'is_scoring_play',
+        'is_turnover',
+        'is_penalty',
+        'is_epa_eligible',
+        'expected_points_before',
+        'expected_points_after',
+        'true_epa',
+        'home_score',
+        'away_score',
     ];
 
     protected function casts(): array
     {
         return [
-            'scoring_play' => 'boolean',
-            'touchdown' => 'boolean',
-            'field_goal' => 'boolean',
-            'safety' => 'boolean',
-            'turnover' => 'boolean',
+            'is_scoring_play' => 'boolean',
+            'is_turnover' => 'boolean',
+            'is_penalty' => 'boolean',
+            'is_epa_eligible' => 'boolean',
+            'expected_points_before' => 'decimal:3',
+            'expected_points_after' => 'decimal:3',
+            'true_epa' => 'decimal:3',
         ];
     }
 

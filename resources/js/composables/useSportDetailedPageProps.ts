@@ -27,6 +27,7 @@ export interface UseSportDetailedPagePropsOptions {
     extraInfoItems?: MaybeRefOrGetter<string[]>;
     showScoreStatuses?: MaybeRefOrGetter<string[]>;
     badgePulseStatuses?: MaybeRefOrGetter<string[]>;
+    linkTeams?: MaybeRefOrGetter<boolean>;
     useTeamColorGlow?: MaybeRefOrGetter<boolean>;
     showLinescore?: MaybeRefOrGetter<boolean>;
     linescoreTitle?: MaybeRefOrGetter<string>;
@@ -92,6 +93,7 @@ export function useSportDetailedPageProps(options: UseSportDetailedPagePropsOpti
             extraInfoItems: options.extraInfoItems ? toValue(options.extraInfoItems) : [],
             showScoreStatuses: options.showScoreStatuses ? toValue(options.showScoreStatuses) : ['STATUS_FINAL'],
             badgePulseStatuses: options.badgePulseStatuses ? toValue(options.badgePulseStatuses) : [],
+            linkTeams: options.linkTeams ? toValue(options.linkTeams) : true,
             useTeamColorGlow: options.useTeamColorGlow ? toValue(options.useTeamColorGlow) : false,
             showLinescore: options.showLinescore ? toValue(options.showLinescore) : false,
             linescoreTitle: options.linescoreTitle ? toValue(options.linescoreTitle) : 'Linescore',

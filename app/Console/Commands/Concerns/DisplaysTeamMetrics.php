@@ -6,6 +6,11 @@ use Illuminate\Support\Collection;
 
 trait DisplaysTeamMetrics
 {
+    protected function modifyTopTeamsQuery(mixed $query, int|string $season): mixed
+    {
+        return $query;
+    }
+
     /**
      * Display top teams table.
      */
@@ -16,10 +21,14 @@ trait DisplaysTeamMetrics
         int $limit = 10,
         array $columns = []
     ): void {
+        $model = new $modelClass;
+        $table = $model->getTable();
+
         $topTeams = $modelClass::query()
-            ->where('season', $season)
+            ->where("{$table}.season", $season)
             ->with('team')
-            ->orderBy($orderByColumn, 'desc')
+            ->tap(fn ($query) => $this->modifyTopTeamsQuery($query, $season))
+            ->orderBy("{$table}.{$orderByColumn}", 'desc')
             ->limit($limit)
             ->get();
 

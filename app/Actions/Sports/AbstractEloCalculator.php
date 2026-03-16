@@ -128,8 +128,10 @@ abstract class AbstractEloCalculator
         // Get current Elo ratings using dynamic config
         $sport = $this->getSport();
         $defaultElo = config("{$sport}.elo.default") ?? config("{$sport}.elo.default_rating");
-        $homeAdvantage = config("{$sport}.elo.home_court_advantage")
-                      ?? config("{$sport}.elo.home_field_advantage");
+        $homeAdvantage = (bool) ($game->neutral_site ?? false)
+            ? 0
+            : (config("{$sport}.elo.home_court_advantage")
+                ?? config("{$sport}.elo.home_field_advantage"));
 
         $homeElo = $homeTeam->elo_rating ?? $defaultElo;
         $awayElo = $awayTeam->elo_rating ?? $defaultElo;

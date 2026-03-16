@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 
 class PopulateOddsApiTeamMappingsCommand extends Command
 {
-    protected $signature = 'odds:populate-team-mappings {sport}';
+    protected $signature = 'odds:populate-team-mappings {sport?} {--all : Populate all supported sports}';
 
     protected $description = 'Fetch all team participants from The Odds API and populate the mappings table for a given sport';
 
@@ -24,58 +24,93 @@ class PopulateOddsApiTeamMappingsCommand extends Command
 
     public function handle(OddsApiService $oddsApiService): int
     {
-        $sport = $this->argument('sport');
+        $sports = $this->resolveSports();
 
-        if (! isset($this->validSports[$sport])) {
-            $this->error('Invalid sport. Valid options: '.implode(', ', array_keys($this->validSports)));
-
-            return Command::FAILURE;
-        }
-
-        $this->info("Fetching {$this->validSports[$sport]} participants from The Odds API...");
-
-        $participants = $oddsApiService->getParticipants($sport);
-
-        if (! $participants) {
-            $this->error('Failed to fetch participants from The Odds API');
+        if ($sports === []) {
+            $this->error('Invalid sport. Valid options: '.implode(', ', array_keys($this->validSports)).' or use --all');
 
             return Command::FAILURE;
         }
-
-        $this->info('Found '.count($participants).' teams');
 
         $added = 0;
+        $updated = 0;
         $skipped = 0;
 
-        foreach ($participants as $participant) {
-            $teamName = $participant['full_name'] ?? null;
+        foreach ($sports as $sport) {
+            $this->info("Fetching {$this->validSports[$sport]} participants from The Odds API...");
 
-            if (! $teamName) {
-                continue;
+            $participants = $oddsApiService->getParticipants($sport);
+
+            if (! $participants) {
+                $this->error("Failed to fetch participants from The Odds API for [{$sport}]");
+
+                return Command::FAILURE;
             }
 
-            $existing = OddsApiTeamMapping::query()
-                ->where('odds_api_team_name', $teamName)
-                ->where('sport', $sport)
-                ->first();
+            $this->info('Found '.count($participants).' teams');
 
-            if ($existing) {
-                $skipped++;
+            foreach ($participants as $participant) {
+                $teamName = $participant['full_name'] ?? null;
+                $teamId = $participant['id'] ?? null;
 
-                continue;
+                if (! $teamName) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $existing = OddsApiTeamMapping::query()
+                    ->where('sport', $sport)
+                    ->where(function ($query) use ($teamId, $teamName): void {
+                        if ($teamId) {
+                            $query->where('odds_api_team_id', $teamId);
+                        }
+
+                        $query->orWhere('odds_api_team_name', $teamName);
+                    })
+                    ->first();
+
+                if ($existing) {
+                    $existing->update([
+                        'odds_api_team_name' => $teamName,
+                        'odds_api_team_id' => $teamId,
+                    ]);
+                    $updated++;
+
+                    continue;
+                }
+
+                OddsApiTeamMapping::create([
+                    'espn_team_name' => null,
+                    'odds_api_team_name' => $teamName,
+                    'odds_api_team_id' => $teamId,
+                    'sport' => $sport,
+                ]);
+
+                $added++;
             }
-
-            OddsApiTeamMapping::create([
-                'espn_team_name' => null,
-                'odds_api_team_name' => $teamName,
-                'sport' => $sport,
-            ]);
-
-            $added++;
         }
 
-        $this->info("Added {$added} new teams, skipped {$skipped} existing teams");
+        $this->info("Added {$added} new teams, updated {$updated} existing teams, skipped {$skipped} invalid rows");
 
         return Command::SUCCESS;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function resolveSports(): array
+    {
+        if ($this->option('all')) {
+            return array_keys($this->validSports);
+        }
+
+        $sport = $this->argument('sport');
+
+        if (! is_string($sport) || ! isset($this->validSports[$sport])) {
+            return [];
+        }
+
+        return [$sport];
     }
 }

@@ -16,7 +16,8 @@ class FpiRatingController extends Controller
     {
         $ratings = FpiRating::query()
             ->with(['team'])
-            ->orderByDesc('year')
+            ->orderByDesc('season')
+            ->orderByDesc('week')
             ->paginate(15);
 
         return FpiRatingResource::collection($ratings);
@@ -39,7 +40,8 @@ class FpiRatingController extends Controller
     {
         $ratings = FpiRating::query()
             ->where('team_id', $team->id)
-            ->orderByDesc('year')
+            ->orderByDesc('season')
+            ->orderByDesc('week')
             ->paginate(15);
 
         return FpiRatingResource::collection($ratings);

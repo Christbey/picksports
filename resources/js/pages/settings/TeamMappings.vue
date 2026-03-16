@@ -13,11 +13,16 @@ type Team = {
     id: number;
     name: string;
     abbreviation: string;
+    mascot?: string | null;
 };
 
 type Mapping = {
     id: number;
+    external_team_name?: string | null;
+    external_team_abbreviation?: string | null;
+    external_team_id?: number | null;
     espn_team_name?: string | null;
+    suggested_espn_team_name?: string | null;
     odds_api_team_name?: string;
     espn_player_name?: string | null;
     espn_player_id?: number | null;
@@ -33,6 +38,11 @@ type Sport = {
     label: string;
 };
 
+type Provider = {
+    key: string;
+    label: string;
+};
+
 type Props = {
     mappings: {
         data: Mapping[];
@@ -44,34 +54,63 @@ type Props = {
     espnTeams: Team[];
     currentSport: string;
     currentFilter: string;
+    currentProvider?: string;
     entityType?: 'team' | 'player';
+    indexBase?: string;
+    mutationBase?: string;
+    queryParams?: Record<string, string>;
+    pageTitle?: string;
+    pageDescription?: string;
+    externalSourceLabel?: string;
+    emptyStateCommand?: string | null;
     stats: {
         total: number;
         mapped: number;
         unmapped: number;
     };
     sports: Sport[];
+    providers?: Provider[];
 };
 
 const props = withDefaults(defineProps<Props>(), {
     entityType: 'team',
+    currentProvider: '',
+    indexBase: '',
+    mutationBase: '',
+    queryParams: () => ({}),
+    pageTitle: '',
+    pageDescription: '',
+    externalSourceLabel: 'Odds API',
+    emptyStateCommand: null,
+    providers: () => [],
 });
 
 const isPlayer = computed(() => props.entityType === 'player');
-const routeBase = computed(() => isPlayer.value ? '/settings/player-mappings' : '/settings/team-mappings');
+const indexBase = computed(() => props.indexBase || (isPlayer.value ? '/settings/player-mappings' : '/settings/team-mappings'));
+const mutationBase = computed(() => props.mutationBase || (isPlayer.value ? '/settings/player-mappings' : '/settings/team-mappings'));
 const entityTitle = computed(() => isPlayer.value ? 'Player' : 'Team');
+const resolvedPageTitle = computed(() => props.pageTitle || `${currentSportLabel.value} ${props.externalSourceLabel} ${entityTitle.value} Mappings`);
+const resolvedPageDescription = computed(() =>
+    props.pageDescription || `Manual matching view for ${entityTitle.value.toLowerCase()} names. ${props.stats.mapped} of ${props.stats.total} mapped (${mappingPercentage.value}%).`
+);
 
 const breadcrumbItems = computed<BreadcrumbItem[]>(() => [{
-    title: `${entityTitle.value} Mappings`,
-    href: routeBase.value,
+    title: resolvedPageTitle.value,
+    href: buildUrl(indexBase.value, {
+        ...props.queryParams,
+        sport: props.currentSport,
+        filter: props.currentFilter,
+    }),
 }]);
 
 const searchQuery = ref('');
 const editingMappingId = ref<number | null>(null);
 const selectedEspnName = ref<string>('');
+const isSyncing = ref(false);
 
-const oddsName = (mapping: Mapping): string => mapping.odds_api_player_name ?? mapping.odds_api_team_name ?? '';
+const oddsName = (mapping: Mapping): string => mapping.odds_api_player_name ?? mapping.external_team_name ?? mapping.odds_api_team_name ?? '';
 const espnName = (mapping: Mapping): string | null => mapping.espn_player_name ?? mapping.espn_team_name ?? null;
+const suggestedTeamName = (mapping: Mapping): string | null => mapping.suggested_espn_team_name ?? null;
 const suggestedPlayerName = (mapping: Mapping): string | null => mapping.suggested_espn_player_name ?? null;
 const suggestedScore = (mapping: Mapping): number | null => mapping.suggested_match_quality_score ?? null;
 
@@ -102,6 +141,22 @@ const cancelEdit = () => {
     selectedEspnName.value = '';
 };
 
+const buildUrl = (base: string, params: Record<string, string | number | null | undefined> = {}) => {
+    const search = new URLSearchParams();
+
+    Object.entries(params).forEach(([key, value]) => {
+        if (value === null || value === undefined || value === '') {
+            return;
+        }
+
+        search.set(key, String(value));
+    });
+
+    const query = search.toString();
+
+    return query ? `${base}?${query}` : base;
+};
+
 const saveMapping = (mappingId: number) => {
     const payloadKey = isPlayer.value ? 'espn_player_name' : 'espn_team_name';
     const payload = isPlayer.value
@@ -114,7 +169,7 @@ const saveMapping = (mappingId: number) => {
           };
 
     router.patch(
-        `${routeBase.value}/${mappingId}`,
+        buildUrl(`${mutationBase.value}/${mappingId}`, props.queryParams),
         payload,
         {
             preserveScroll: true,
@@ -127,18 +182,32 @@ const saveMapping = (mappingId: number) => {
 };
 
 const removeMapping = (mappingId: number) => {
-    router.delete(`${routeBase.value}/${mappingId}`, {
+    router.delete(buildUrl(`${mutationBase.value}/${mappingId}`, props.queryParams), {
         preserveScroll: true,
     });
 };
 
 const acceptSuggestedMapping = (mapping: Mapping) => {
+    if (!isPlayer.value && mapping.suggested_espn_team_name) {
+        router.patch(
+            buildUrl(`${mutationBase.value}/${mapping.id}`, props.queryParams),
+            {
+                espn_team_name: mapping.suggested_espn_team_name,
+            },
+            {
+                preserveScroll: true,
+            }
+        );
+
+        return;
+    }
+
     if (!isPlayer.value || !mapping.suggested_espn_player_name) {
         return;
     }
 
     router.patch(
-        `${routeBase.value}/${mapping.id}`,
+        buildUrl(`${mutationBase.value}/${mapping.id}`, props.queryParams),
         {
             espn_player_name: mapping.suggested_espn_player_name,
             espn_player_id: mapping.suggested_player_id ?? null,
@@ -149,18 +218,51 @@ const acceptSuggestedMapping = (mapping: Mapping) => {
     );
 };
 
+const changeProvider = (providerKey: string) => {
+    const nextSport = providerKey === 'cfbd' ? 'americanfootball_ncaaf' : props.currentSport;
+
+    router.visit(buildUrl(indexBase.value, {
+        provider: providerKey,
+        sport: nextSport,
+        filter: props.currentFilter,
+    }));
+};
+
 const changeSport = (sportKey: string) => {
-    router.visit(`${routeBase.value}?sport=${sportKey}&filter=${props.currentFilter}`);
+    router.visit(buildUrl(indexBase.value, {
+        ...props.queryParams,
+        sport: sportKey,
+        filter: props.currentFilter,
+    }));
 };
 
 const changeFilter = (filter: string) => {
-    router.visit(`${routeBase.value}?sport=${props.currentSport}&filter=${filter}`);
+    router.visit(buildUrl(indexBase.value, {
+        ...props.queryParams,
+        sport: props.currentSport,
+        filter,
+    }));
+};
+
+const syncOddsApiMappings = () => {
+    isSyncing.value = true;
+
+    router.post(
+        buildUrl(`${indexBase.value}/sync`, props.queryParams),
+        {},
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                isSyncing.value = false;
+            },
+        }
+    );
 };
 </script>
 
 <template>
     <AppLayout :breadcrumbs="breadcrumbItems">
-        <Head :title="`${entityTitle} Mappings`" />
+        <Head :title="resolvedPageTitle" />
 
         <h1 class="sr-only">{{ entityTitle }} Mappings</h1>
 
@@ -168,9 +270,30 @@ const changeFilter = (filter: string) => {
             <div class="flex flex-col space-y-6">
                 <Heading
                     variant="small"
-                    :title="`${currentSportLabel} Odds API ${entityTitle} Mappings`"
-                    :description="`Manual matching view for ${entityTitle.toLowerCase()} names. ${stats.mapped} of ${stats.total} mapped (${mappingPercentage}%).`"
+                    :title="resolvedPageTitle"
+                    :description="resolvedPageDescription"
                 />
+
+                <div v-if="!isPlayer && currentProvider === 'odds'" class="flex justify-end">
+                    <Button :disabled="isSyncing" @click="syncOddsApiMappings">
+                        {{ isSyncing ? 'Syncing...' : 'Sync Odds API Teams' }}
+                    </Button>
+                </div>
+
+                <div v-if="!isPlayer && providers.length > 1">
+                    <div class="text-sm font-medium mb-2">Provider</div>
+                    <div class="flex flex-wrap gap-2">
+                        <Button
+                            v-for="provider in providers"
+                            :key="provider.key"
+                            :variant="provider.key === currentProvider ? 'default' : 'outline'"
+                            size="sm"
+                            @click="changeProvider(provider.key)"
+                        >
+                            {{ provider.label }}
+                        </Button>
+                    </div>
+                </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div class="rounded-lg border p-4">
@@ -229,13 +352,13 @@ const changeFilter = (filter: string) => {
                 <div v-if="stats.total === 0" class="rounded-lg border border-dashed p-8 text-center">
                     <div class="text-lg font-medium mb-2">No {{ entityTitle.toLowerCase() }} mappings found</div>
                     <div class="text-sm text-muted-foreground mb-4" v-if="!isPlayer">
-                        Run the populate command to fetch teams from Odds API
+                        Run the populate command to fetch teams from {{ externalSourceLabel }}
                     </div>
                     <div class="text-sm text-muted-foreground mb-4" v-else>
                         Unmatched player names are captured automatically during sync and analysis.
                     </div>
-                    <code v-if="!isPlayer" class="text-sm bg-muted px-3 py-1 rounded">
-                        php artisan odds:populate-team-mappings {{ currentSport }}
+                    <code v-if="!isPlayer && emptyStateCommand" class="text-sm bg-muted px-3 py-1 rounded">
+                        {{ emptyStateCommand }}
                     </code>
                 </div>
 
@@ -300,6 +423,10 @@ const changeFilter = (filter: string) => {
                                 >
                                     <span v-if="espnName(mapping)">→ ESPN: {{ espnName(mapping) }}</span>
                                     <span v-else class="italic">No ESPN {{ entityTitle.toLowerCase() }} mapped</span>
+                                    <div v-if="!isPlayer && !espnName(mapping) && suggestedTeamName(mapping)" class="text-amber-700 dark:text-amber-300">
+                                        Suggested: {{ suggestedTeamName(mapping) }}
+                                        <span v-if="suggestedScore(mapping) !== null">({{ suggestedScore(mapping) }}%)</span>
+                                    </div>
                                     <div v-if="isPlayer && !espnName(mapping) && suggestedPlayerName(mapping)" class="text-amber-700 dark:text-amber-300">
                                         Suggested: {{ suggestedPlayerName(mapping) }}
                                         <span v-if="suggestedScore(mapping) !== null">({{ suggestedScore(mapping) }}%)</span>
@@ -307,6 +434,13 @@ const changeFilter = (filter: string) => {
                                 </div>
                             </div>
                             <div v-if="editingMappingId !== mapping.id" class="flex gap-2">
+                                <Button
+                                    v-if="!isPlayer && !espnName(mapping) && suggestedTeamName(mapping)"
+                                    size="sm"
+                                    @click="acceptSuggestedMapping(mapping)"
+                                >
+                                    Accept Suggestion
+                                </Button>
                                 <Button
                                     v-if="isPlayer && !espnName(mapping) && suggestedPlayerName(mapping)"
                                     size="sm"
@@ -337,7 +471,7 @@ const changeFilter = (filter: string) => {
                             :disabled="mappings.current_page === 1"
                             variant="outline"
                             size="sm"
-                            @click="router.visit(`${routeBase}?sport=${currentSport}&filter=${currentFilter}&page=${mappings.current_page - 1}`)"
+                            @click="router.visit(buildUrl(indexBase, { ...queryParams, sport: currentSport, filter: currentFilter, page: mappings.current_page - 1 }))"
                         >
                             Previous
                         </Button>
@@ -345,7 +479,7 @@ const changeFilter = (filter: string) => {
                             :disabled="mappings.current_page === mappings.last_page"
                             variant="outline"
                             size="sm"
-                            @click="router.visit(`${routeBase}?sport=${currentSport}&filter=${currentFilter}&page=${mappings.current_page + 1}`)"
+                            @click="router.visit(buildUrl(indexBase, { ...queryParams, sport: currentSport, filter: currentFilter, page: mappings.current_page + 1 }))"
                         >
                             Next
                         </Button>

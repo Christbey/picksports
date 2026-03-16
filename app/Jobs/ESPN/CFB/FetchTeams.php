@@ -15,6 +15,8 @@ class FetchTeams implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public $timeout = 1800; // 30 minutes for all CFB teams and conference/division ref hydration
+
     public function handle(): void
     {
         $service = new EspnService;

@@ -18,6 +18,13 @@ import { store } from '@/routes/register';
 defineProps<{
     oauthError?: string;
     oauthProviders: Array<{ key: string; label: string; href: string }>;
+    access?: {
+        token: string;
+        token_field: 'invite_token' | 'join_token';
+        email: string | null;
+        group_name: string | null;
+        mode: 'invite' | 'join_link';
+    } | null;
 }>();
 
 function trackSignupStart(): void {
@@ -48,7 +55,17 @@ function trackSignupStart(): void {
             v-slot="{ errors, processing }"
             class="flex flex-col gap-6"
         >
+            <input v-if="access?.token" type="hidden" :name="access.token_field" :value="access.token">
             <div class="grid gap-6">
+                <div v-if="access" class="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                    <template v-if="access.mode === 'invite'">
+                        You were invited to join <span class="font-medium text-foreground">{{ access.group_name ?? 'a bracket group' }}</span>. Age verification is already handled for this invite.
+                    </template>
+                    <template v-else>
+                        You are joining <span class="font-medium text-foreground">{{ access.group_name ?? 'a bracket group' }}</span> through a shared group link. Age verification is already handled for this link.
+                    </template>
+                </div>
+
                 <div class="grid gap-2">
                     <Label for="name">Name</Label>
                     <Input
@@ -74,6 +91,8 @@ function trackSignupStart(): void {
                         autocomplete="email"
                         name="email"
                         placeholder="email@example.com"
+                        :value="access?.email ?? undefined"
+                        :readonly="Boolean(access?.email)"
                     />
                     <InputError :message="errors.email" />
                 </div>
@@ -106,7 +125,7 @@ function trackSignupStart(): void {
                     <InputError :message="errors.password_confirmation" />
                 </div>
 
-                <div class="grid gap-2">
+                <div v-if="!access" class="grid gap-2">
                     <div class="flex items-start space-x-2">
                         <input
                             id="age_verified"

@@ -21,7 +21,14 @@ class SyncTeams extends AbstractSyncTeams
             'league' => $dto->conference,
             'division' => $dto->division,
             'color' => $dto->color,
-            'logo_url' => $dto->logoUrl,
+            'logo_url' => $this->mirrorLogo(
+                $dto->logoUrl,
+                $this->sportKey(),
+                $this->teamAssetIdentifier([
+                    'location' => $dto->location,
+                    'name' => $dto->name,
+                ], (string) $dto->espnId)
+            ),
         ];
     }
 }

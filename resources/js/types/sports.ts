@@ -35,6 +35,7 @@ export interface PredictionListGame {
     period?: number;
     clock?: string;
     week?: number;
+    postseason_round?: number;
     season_type?: string;
     home_score?: number;
     away_score?: number;
@@ -296,6 +297,7 @@ export interface NflPageGame extends GamePageGame {
     season: number;
     season_type: string;
     week: number;
+    postseason_round?: number | null;
     game_time: string;
     venue: string;
     home_linescores?: Array<{ period?: number; value?: number }> | string;

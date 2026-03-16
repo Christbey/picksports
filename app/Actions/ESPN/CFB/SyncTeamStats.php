@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN\CFB;
 
 use App\Actions\ESPN\AbstractFootballSyncTeamStats;
+use Illuminate\Database\Eloquent\Model;
 
 class SyncTeamStats extends AbstractFootballSyncTeamStats
 {
@@ -22,13 +23,21 @@ class SyncTeamStats extends AbstractFootballSyncTeamStats
                 'firstDowns' => $parsed['firstDowns'] = (int) $value,
                 'totalYards' => $parsed['totalYards'] = (int) $value,
                 'netPassingYards' => $parsed['passingYards'] = (int) $value,
+                'completionAttempts' => $this->parseFraction($value, 'completions', 'passingAttempts', $parsed),
+                'passingTouchdowns' => $parsed['passingTouchdowns'] = (int) $value,
                 'rushingYards' => $parsed['rushingYards'] = (int) $value,
-                'turnovers' => $parsed['turnovers'] = (int) $value,
+                'rushingAttempts' => $parsed['rushingAttempts'] = (int) $value,
+                'rushingTouchdowns' => $parsed['rushingTouchdowns'] = (int) $value,
+                'interceptions' => $parsed['interceptions'] = (int) $value,
+                'fumblesLost' => $parsed['fumblesLost'] = (int) $value,
                 'possessionTime' => $parsed['possessionTime'] = $value,
                 'thirdDownEff' => $this->parseFraction($value, 'thirdDownConversions', 'thirdDownAttempts', $parsed),
                 'fourthDownEff' => $this->parseFraction($value, 'fourthDownConversions', 'fourthDownAttempts', $parsed),
+                'redZoneAttempts' => $parsed['redZoneAttempts'] = (int) $value,
+                'redZoneScores' => $parsed['redZoneScores'] = (int) $value,
+                'redZoneEfficiency' => $this->parseFraction($value, 'redZoneScores', 'redZoneAttempts', $parsed),
                 'totalPenaltiesYards' => $this->parseFraction($value, 'penalties', 'penaltyYards', $parsed),
-                'sacksYardsLost' => $this->parseFraction($value, 'sacks', null, $parsed),
+                'sacksYardsLost' => $this->parseFraction($value, 'sacksAllowed', null, $parsed),
                 default => null,
             };
         }
@@ -39,9 +48,22 @@ class SyncTeamStats extends AbstractFootballSyncTeamStats
     protected function sportSpecificAttributes(array $stats): array
     {
         return [
-            'turnovers' => $stats['turnovers'] ?? null,
-            'possession_time' => $stats['possessionTime'] ?? null,
-            'sacks' => $stats['sacks'] ?? null,
+            'passing_completions' => $stats['completions'] ?? null,
+            'passing_attempts' => $stats['passingAttempts'] ?? null,
+            'passing_touchdowns' => $stats['passingTouchdowns'] ?? null,
+            'interceptions' => $stats['interceptions'] ?? null,
+            'rushing_attempts' => $stats['rushingAttempts'] ?? null,
+            'rushing_touchdowns' => $stats['rushingTouchdowns'] ?? null,
+            'fumbles_lost' => $stats['fumblesLost'] ?? null,
+            'sacks_allowed' => $stats['sacksAllowed'] ?? null,
+            'red_zone_attempts' => $stats['redZoneAttempts'] ?? null,
+            'red_zone_scores' => $stats['redZoneScores'] ?? null,
+            'time_of_possession' => $stats['possessionTime'] ?? null,
         ];
+    }
+
+    protected function resolveTeamType(Model $team, Model $game, array $teamData): ?string
+    {
+        return ($team->id === $game->home_team_id) ? 'home' : 'away';
     }
 }

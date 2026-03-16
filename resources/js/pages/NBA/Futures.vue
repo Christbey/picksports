@@ -309,7 +309,7 @@ watch(selectedSeason, () => {
     <PredictionsPageShell
         title="NBA Futures"
         breadcrumb-title="NBA Futures"
-        breadcrumb-href="/nba-futures"
+        breadcrumb-href="/nba/futures"
         banner-storage-key="nba-futures-banner-dismissed"
         seo-description="NBA postseason forecast with playoff odds, conference finals odds, Finals probability, and championship futures."
     >

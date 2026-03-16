@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Sports;
 
 use App\Http\Controllers\Controller;
+use App\Support\TierAccessBypass;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -38,6 +39,16 @@ abstract class AbstractSportsApiController extends Controller
     protected function resolveTierMetadata(string $limitMethod): array
     {
         $user = auth()->user();
+        $tierAccessBypass = app(TierAccessBypass::class);
+
+        if ($tierAccessBypass->shouldBypassTierChecks($user)) {
+            return [
+                'tier' => null,
+                'tier_limit' => null,
+                'tier_name' => null,
+            ];
+        }
+
         $tier = $user?->subscriptionTier();
         $tierLimit = $tier && method_exists($tier, $limitMethod)
             ? $tier->{$limitMethod}()

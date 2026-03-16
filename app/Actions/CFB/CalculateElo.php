@@ -4,6 +4,7 @@ namespace App\Actions\CFB;
 
 use App\Actions\Sports\AbstractEloCalculator;
 use App\Models\CFB\EloRating;
+use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class CalculateElo extends AbstractEloCalculator
@@ -11,6 +12,10 @@ class CalculateElo extends AbstractEloCalculator
     protected const SPORT_KEY = 'cfb';
 
     protected const ELO_RATING_MODEL = EloRating::class;
+
+    public function __construct(
+        private readonly CfbSeasonAffiliationResolver $seasonAffiliationResolver = new CfbSeasonAffiliationResolver,
+    ) {}
 
     protected function calculateKFactor(Model $game): float
     {
@@ -59,5 +64,22 @@ class CalculateElo extends AbstractEloCalculator
             'elo_rating' => $newElo,
             'elo_change' => $eloChange,
         ]);
+    }
+
+    public function execute(Model $game, bool $skipIfExists = true): array
+    {
+        $homeTeam = $game->homeTeam;
+        $awayTeam = $game->awayTeam;
+
+        if (! $homeTeam || ! $awayTeam) {
+            return ['home_change' => 0, 'away_change' => 0, 'skipped' => false];
+        }
+
+        if (! $this->seasonAffiliationResolver->isFbs($homeTeam, (int) $game->season)
+            || ! $this->seasonAffiliationResolver->isFbs($awayTeam, (int) $game->season)) {
+            return ['home_change' => 0, 'away_change' => 0, 'skipped' => true];
+        }
+
+        return parent::execute($game, $skipIfExists);
     }
 }

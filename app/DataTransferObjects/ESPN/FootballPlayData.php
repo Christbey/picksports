@@ -41,7 +41,7 @@ class FootballPlayData extends AbstractPlayData
             isPenalty: self::playTypeIn($play, ['24']),
             homeScore: $common['homeScore'],
             awayScore: $common['awayScore'],
-            possessionTeamEspnId: self::stringOrNull($play['start']['team']['id'] ?? null),
+            possessionTeamEspnId: self::teamEspnId($play['start']['team'] ?? null),
         );
     }
 
@@ -58,5 +58,29 @@ class FootballPlayData extends AbstractPlayData
             'is_turnover' => $this->isTurnover,
             'is_penalty' => $this->isPenalty,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|string|null  $teamData
+     */
+    protected static function teamEspnId(array|string|null $teamData): ?string
+    {
+        if (is_array($teamData)) {
+            $directId = self::stringOrNull($teamData['id'] ?? null);
+            if ($directId !== null) {
+                return $directId;
+            }
+
+            $ref = self::stringOrNull($teamData['$ref'] ?? null);
+            if ($ref !== null && preg_match('#/teams/(\d+)\b#', $ref, $matches) === 1) {
+                return $matches[1];
+            }
+        }
+
+        if (is_string($teamData) && preg_match('#/teams/(\d+)\b#', $teamData, $matches) === 1) {
+            return $matches[1];
+        }
+
+        return null;
     }
 }

@@ -14,6 +14,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import type { DashboardPrediction, PredictionListItem } from '@/types';
 
 interface SavePickOption {
@@ -189,13 +190,16 @@ function weekLabel(): string | null {
     }
 
     const week = predictionType?.game.week;
+    const postseasonRound = predictionType?.game.postseason_round;
     const seasonType = predictionType?.game.season_type;
 
     if (!week || !seasonType) {
         return null;
     }
 
-    if (seasonType === 'Regular Season') {
+    const normalizedSeasonType = String(seasonType);
+
+    if (normalizedSeasonType === 'Regular Season' || normalizedSeasonType === '2') {
         return `Week ${week}`;
     }
 
@@ -211,13 +215,7 @@ function weekLabel(): string | null {
     }
 
     if (normalizedSport === 'cfb') {
-        const cfbRounds: Record<number, string> = {
-            1: 'Bowl Games',
-            2: 'Playoffs',
-            3: 'Championship',
-        };
-
-        return cfbRounds[week] ?? `Postseason Week ${week}`;
+        return getCfbPostseasonLabel(postseasonRound, week) ?? `Postseason Week ${week}`;
     }
 
     return `Postseason Week ${week}`;

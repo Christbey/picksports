@@ -21,7 +21,12 @@ export function useSeasonFilter(getEndpoint: () => string) {
             : [];
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {
-            selectedSeason.value = String(availableSeasons.value[0]);
+            const currentYear = new Date().getFullYear();
+            const preferredSeason = availableSeasons.value.includes(currentYear)
+                ? currentYear
+                : Math.max(...availableSeasons.value);
+
+            selectedSeason.value = String(preferredSeason);
         }
     };
 

@@ -49,6 +49,15 @@ const weekOptions = computed(() => {
     return props.config.seasonWeekConfig.postseasonOptions;
 });
 
+const setDefaultSeasonWeekFilters = () => {
+    if (filterMode.value !== 'seasonWeek') {
+        return;
+    }
+
+    seasonType.value = 'Regular Season';
+    week.value = '1';
+};
+
 const buildParams = (page: number): URLSearchParams => {
     const params = new URLSearchParams({ page: String(page) });
 
@@ -62,11 +71,28 @@ const buildParams = (page: number): URLSearchParams => {
     }
 
     if (filterMode.value === 'seasonWeek') {
-        if (seasonType.value) params.append('season_type', seasonType.value);
+        if (seasonType.value) {
+            const mappedSeasonType = mapSeasonTypeParam(seasonType.value);
+            if (mappedSeasonType) {
+                params.append('season_type', mappedSeasonType);
+            }
+        }
         if (week.value) params.append('week', week.value);
     }
 
     return params;
+};
+
+const mapSeasonTypeParam = (value: string): string => {
+    if (value === 'Regular Season') {
+        return '2';
+    }
+
+    if (value === 'Postseason') {
+        return '3';
+    }
+
+    return value;
 };
 
 const {
@@ -153,6 +179,12 @@ watch(selectedSeason, async () => {
 
     if (filterMode.value === 'none') {
         fetchPredictions(1);
+        return;
+    }
+
+    if (filterMode.value === 'seasonWeek') {
+        setDefaultSeasonWeekFilters();
+        fetchPredictions(1);
     }
 });
 
@@ -172,8 +204,13 @@ const clearFilters = () => {
         return;
     }
 
-    seasonType.value = '';
-    week.value = '';
+    if (filterMode.value === 'seasonWeek') {
+        setDefaultSeasonWeekFilters();
+    } else {
+        seasonType.value = '';
+        week.value = '';
+    }
+
     fetchPredictions(1);
 };
 
@@ -283,6 +320,10 @@ onMounted(async () => {
                 await fetchPredictions(1);
             }
             return;
+        }
+
+        if (filterMode.value === 'seasonWeek') {
+            setDefaultSeasonWeekFilters();
         }
 
         await fetchPredictions(1);

@@ -43,11 +43,16 @@ abstract class AbstractSyncGames
      * @param  array<string, mixed>  $gameData
      * @return array<string, mixed>
      */
-    protected function buildGameAttributes(GameData $dto, array $gameData, Model $homeTeam, Model $awayTeam): array
+    protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
         $attributes = $dto->toArray();
-        $attributes['home_team_id'] = $homeTeam->getKey();
-        $attributes['away_team_id'] = $awayTeam->getKey();
+        [$homeCompetitor, $awayCompetitor] = $this->resolveCompetitors($gameData);
+        $attributes['home_team_id'] = $homeTeam?->getKey();
+        $attributes['away_team_id'] = $awayTeam?->getKey();
+        $attributes['home_team_display_name'] = $this->competitorDisplayName($homeCompetitor);
+        $attributes['away_team_display_name'] = $this->competitorDisplayName($awayCompetitor);
+        $attributes['home_team_abbreviation'] = $this->competitorAbbreviation($homeCompetitor);
+        $attributes['away_team_abbreviation'] = $this->competitorAbbreviation($awayCompetitor);
 
         return $attributes;
     }
@@ -84,13 +89,38 @@ abstract class AbstractSyncGames
             $homeTeam = $this->findTeamByEspnId($dto->homeTeamEspnId);
             $awayTeam = $this->findTeamByEspnId($dto->awayTeamEspnId);
 
+            $attributes = $this->buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam);
+
             if (! $homeTeam || ! $awayTeam) {
+                if (! $this->shouldStorePartialGame($attributes)) {
+                    continue;
+                }
+            }
+
+            if (($attributes['home_team_display_name'] ?? null) === 'TBD') {
+                $attributes['home_team_display_name'] = null;
+                $attributes['home_team_abbreviation'] = null;
+            }
+
+            if (($attributes['away_team_display_name'] ?? null) === 'TBD') {
+                $attributes['away_team_display_name'] = null;
+                $attributes['away_team_abbreviation'] = null;
+            }
+
+            if (
+                ! $homeTeam
+                && ! $awayTeam
+                && empty($attributes['home_team_display_name'])
+                && empty($attributes['away_team_display_name'])
+            ) {
                 continue;
             }
 
             $uniqueKey = $this->getUniqueGameKey();
-            $attributes = $this->buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam);
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
+            if ($existingGame) {
+                $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
+            }
             $previousStatus = $existingGame ? (string) ($existingGame->status ?? '') : null;
 
             if ($existingGame) {
@@ -130,5 +160,93 @@ abstract class AbstractSyncGames
         }
 
         return static::TEAM_MODEL_CLASS;
+    }
+
+    /**
+     * @param  array<string, mixed>  $gameData
+     * @return array{0: array<string, mixed>, 1: array<string, mixed>}
+     */
+    protected function resolveCompetitors(array $gameData): array
+    {
+        $competition = $gameData['competitions'][0] ?? data_get($gameData, 'header.competitions.0', []);
+        $competitors = $competition['competitors'] ?? [];
+
+        return [
+            collect($competitors)->firstWhere('homeAway', 'home') ?? [],
+            collect($competitors)->firstWhere('homeAway', 'away') ?? [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $competitor
+     */
+    protected function competitorDisplayName(array $competitor): ?string
+    {
+        return $this->firstNonEmptyString([
+            data_get($competitor, 'team.displayName'),
+            data_get($competitor, 'team.location'),
+            data_get($competitor, 'displayName'),
+            data_get($competitor, 'name'),
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $competitor
+     */
+    protected function competitorAbbreviation(array $competitor): ?string
+    {
+        return $this->firstNonEmptyString([
+            data_get($competitor, 'team.abbreviation'),
+            data_get($competitor, 'abbreviation'),
+            data_get($competitor, 'shortDisplayName'),
+        ]);
+    }
+
+    /**
+     * @param  array<int, mixed>  $values
+     */
+    protected function firstNonEmptyString(array $values): ?string
+    {
+        foreach ($values as $value) {
+            if (! is_string($value)) {
+                continue;
+            }
+
+            $trimmed = trim($value);
+            if ($trimmed !== '') {
+                return $trimmed;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function shouldStorePartialGame(array $attributes): bool
+    {
+        return (bool) ($attributes['is_ncaa_tournament'] ?? false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function preserveExistingTeamSlots(array $attributes, Model $existingGame): array
+    {
+        foreach ([
+            'home_team_id',
+            'away_team_id',
+            'home_team_display_name',
+            'away_team_display_name',
+            'home_team_abbreviation',
+            'away_team_abbreviation',
+        ] as $key) {
+            if (($attributes[$key] ?? null) === null && $existingGame->{$key} !== null) {
+                $attributes[$key] = $existingGame->{$key};
+            }
+        }
+
+        return $attributes;
     }
 }

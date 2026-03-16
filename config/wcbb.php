@@ -99,10 +99,17 @@ return [
         ],
         'power_conferences' => [
             'ACC',
+            'Atlantic Coast Conference',
             'Big 12',
+            'Big 12 Conference',
             'Big Ten',
+            'Big Ten Conference',
+            'Big East',
+            'Big East Conference',
             'Pac-12',
+            'Pac-12 Conference',
             'SEC',
+            'Southeastern Conference',
         ],
     ],
 
@@ -322,6 +329,18 @@ return [
         'at_large_noise_stddev' => 0.35,
         'conference_tournament_upset_factor' => 0.45,
         'enable_first_four' => true,
+        'conference_strength_top_teams' => 3,
+        'selection_conference_strength_weight' => 0.35,
+        'selection_power_conference_bonus' => 0.45,
+        'selection_resume_confidence_penalty' => 0.30,
+        'selection_full_confidence_games' => 20,
+        'champion_conference_strength_weight' => 0.12,
+        'champion_power_conference_bonus' => 0.08,
+        'refresh' => [
+            'enabled' => env('WCBB_TOURNAMENT_REFRESH_ENABLED', true),
+            'minimum_coverage_ratio' => env('WCBB_TOURNAMENT_REFRESH_MIN_COVERAGE_RATIO', 0.95),
+            'stale_after_hours' => env('WCBB_TOURNAMENT_REFRESH_STALE_AFTER_HOURS', 6),
+        ],
 
         // Selection score weights
         'selection_weights' => [

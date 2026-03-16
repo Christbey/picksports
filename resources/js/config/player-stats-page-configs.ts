@@ -51,7 +51,7 @@ export const nbaPlayerStatsPageConfig = {
     pageTitle: 'NBA Player Stats',
     heading: 'NBA Player Stats',
     description: 'Season averages leaderboard for NBA players',
-    breadcrumb: { title: 'NBA Player Stats', href: '/nba-player-stats' },
+    breadcrumb: { title: 'NBA Player Stats', href: '/nba/player-stats' },
     bannerStorageKey: 'nba-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/nba/player-stats/leaderboard',
     seasonTypeOptions: [
@@ -68,7 +68,7 @@ export const cbbPlayerStatsPageConfig = {
     pageTitle: 'CBB Player Stats',
     heading: 'CBB Player Stats',
     description: 'Season averages leaderboard for college basketball players',
-    breadcrumb: { title: 'CBB Player Stats', href: '/cbb-player-stats' },
+    breadcrumb: { title: 'CBB Player Stats', href: '/cbb/player-stats' },
     bannerStorageKey: 'cbb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/cbb/player-stats/leaderboard',
     seasonTypeOptions: [
@@ -85,7 +85,7 @@ export const nflPlayerStatsPageConfig = {
     pageTitle: 'NFL Player Stats',
     heading: 'NFL Player Stats',
     description: 'Season leaderboard for NFL player production',
-    breadcrumb: { title: 'NFL Player Stats', href: '/nfl-player-stats' },
+    breadcrumb: { title: 'NFL Player Stats', href: '/nfl/player-stats' },
     bannerStorageKey: 'nfl-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/nfl/player-stats/leaderboard',
     seasonTypeOptions: [
@@ -733,7 +733,7 @@ export const mlbPlayerStatsPageConfig = {
     pageTitle: 'MLB Player Stats',
     heading: 'MLB Player Stats',
     description: 'Season leaderboard for MLB hitters',
-    breadcrumb: { title: 'MLB Player Stats', href: '/mlb-player-stats' },
+    breadcrumb: { title: 'MLB Player Stats', href: '/mlb/player-stats' },
     bannerStorageKey: 'mlb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/mlb/player-stats/leaderboard',
     minGames: 10,
@@ -949,7 +949,7 @@ export const cfbPlayerStatsPageConfig = {
     pageTitle: 'CFB Player Stats',
     heading: 'CFB Player Stats',
     description: 'Season leaderboard for college football player production',
-    breadcrumb: { title: 'CFB Player Stats', href: '/cfb-player-stats' },
+    breadcrumb: { title: 'CFB Player Stats', href: '/cfb/player-stats' },
     bannerStorageKey: 'cfb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/cfb/player-stats/leaderboard',
     seasonTypeOptions: [

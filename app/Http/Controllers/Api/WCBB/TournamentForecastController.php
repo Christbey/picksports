@@ -2,18 +2,22 @@
 
 namespace App\Http\Controllers\Api\WCBB;
 
+use App\Actions\WCBB\GenerateTournamentForecast;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\WCBB\TournamentForecastResource;
+use App\Models\WCBB\TeamMetric;
 use App\Models\WCBB\TournamentForecast;
-use App\Support\SportsViewCache;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Support\SportsViewCache;
+use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TournamentForecastController extends Controller
 {
     public function __construct(
+        protected GenerateTournamentForecast $generateTournamentForecast,
         protected FuturesOddsLookupService $futuresOddsLookup,
         protected FuturesEdgeService $futuresEdgeService,
         protected SportsViewCache $sportsViewCache,
@@ -52,6 +56,8 @@ class TournamentForecastController extends Controller
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.futures_forecasts_seconds', 120),
             resolver: function () use ($season, $sortBy, $direction, $request): array {
+                $this->refreshForecastIfNeeded($season);
+
                 $forecasts = TournamentForecast::query()
                     ->with('team')
                     ->where('season', $season)
@@ -87,5 +93,40 @@ class TournamentForecastController extends Controller
         );
 
         return response()->json($payload);
+    }
+
+    private function refreshForecastIfNeeded(int $season): void
+    {
+        $refreshConfig = (array) config('wcbb.tournament_forecast.refresh', []);
+        if (($refreshConfig['enabled'] ?? true) !== true) {
+            return;
+        }
+
+        $eligibleTeamCount = TeamMetric::query()
+            ->where('season', $season)
+            ->where('meets_minimum', true)
+            ->count();
+
+        if ($eligibleTeamCount === 0) {
+            return;
+        }
+
+        $forecastSummary = TournamentForecast::query()
+            ->where('season', $season)
+            ->selectRaw('COUNT(*) as row_count, MAX(updated_at) as newest_updated_at')
+            ->first();
+
+        $rowCount = (int) ($forecastSummary?->row_count ?? 0);
+        $coverageRatio = $eligibleTeamCount > 0 ? $rowCount / $eligibleTeamCount : 1.0;
+        $minimumCoverageRatio = max(0.0, min(1.0, (float) ($refreshConfig['minimum_coverage_ratio'] ?? 0.95)));
+        $staleAfterHours = max(1, (int) ($refreshConfig['stale_after_hours'] ?? 6));
+        $newestUpdatedAt = $forecastSummary?->newest_updated_at;
+
+        $isStale = ! $newestUpdatedAt instanceof CarbonInterface
+            || $newestUpdatedAt->lt(now()->subHours($staleAfterHours));
+
+        if ($rowCount === 0 || $coverageRatio < $minimumCoverageRatio || $isStale) {
+            $this->generateTournamentForecast->execute($season);
+        }
     }
 }

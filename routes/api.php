@@ -50,6 +50,8 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
     foreach ([
         'user-bets' => 'routes/api/user-bets.php',
         'alert-preferences' => 'routes/api/alert-preferences.php',
+        'cbb-brackets' => 'routes/api/cbb-brackets.php',
+        'groups' => 'routes/api/groups.php',
     ] as $prefix => $file) {
         Route::middleware('auth:sanctum')
             ->prefix($prefix)

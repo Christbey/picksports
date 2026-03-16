@@ -100,6 +100,36 @@ return [
             'fbs_count' => 10,
             'fcs_count' => 13,
         ],
+        'power_conferences' => [
+            'Southeastern Conference',
+            'Big Ten Conference',
+            'Big 12 Conference',
+            'Atlantic Coast Conference',
+        ],
+        'group_of_five_conferences' => [
+            'American Athletic Conference',
+            'Conference USA',
+            'Mid-American Conference',
+            'Mountain West Conference',
+            'Sun Belt Conference',
+        ],
+    ],
+
+    'season_affiliations' => [
+        'overrides' => [
+            'NDSU' => [
+                [
+                    'end_season' => 2025,
+                    'subdivision' => 'FCS',
+                ],
+                [
+                    'start_season' => 2026,
+                    'subdivision' => 'FBS',
+                    'conference' => 'Mountain West Conference',
+                    'division' => 'FBS',
+                ],
+            ],
+        ],
     ],
 
     /*
@@ -117,6 +147,11 @@ return [
          * Default starting ELO rating for all teams
          */
         'default_rating' => 1500,
+
+        /**
+         * Offseason Elo regression toward mean before a new season starts.
+         */
+        'offseason_regression_factor' => 0.30,
 
         /**
          * Base K-factor for regular season games
@@ -194,9 +229,31 @@ return [
         'average_total' => 52,
 
         /**
+         * Bounds for total projections.
+         */
+        'min_total' => 28,
+        'max_total' => 88,
+
+        /**
+         * Advanced metric weights for CFB spread/total shaping.
+         */
+        'fpi_spread_weight' => 0.18,
+        'wepa_spread_weight' => 4.5,
+        'efficiency_spread_weight' => 0.04,
+        'wepa_total_offense_weight' => 2.2,
+        'wepa_total_defense_weight' => 1.4,
+        'fpi_total_weight' => 0.08,
+
+        /**
+         * When current-season team metrics do not exist yet, reuse the latest
+         * prior-season metrics for preseason / early schedule predictions.
+         */
+        'use_previous_season_metrics_fallback' => true,
+
+        /**
          * Model version for tracking prediction algorithm changes
          */
-        'model_version' => '1.0',
+        'model_version' => '1.1',
 
         /**
          * Confidence scoring parameters

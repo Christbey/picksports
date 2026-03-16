@@ -41,8 +41,7 @@ abstract class AbstractSyncSchedulesCommand extends Command
             return $this->syncTeamSchedule((string) $teamEspnId, $season);
         }
 
-        $teamModelClass = $this->teamModelClass();
-        $teams = $teamModelClass::all();
+        $teams = $this->teamsToSync($season);
         $totalTeams = $teams->count();
         $totalGames = 0;
         $sport = $this->sportCode();
@@ -130,5 +129,12 @@ abstract class AbstractSyncSchedulesCommand extends Command
         $action = new $actionClass($service);
 
         return $action->execute($teamEspnId, $season);
+    }
+
+    protected function teamsToSync(int $season): \Illuminate\Database\Eloquent\Collection
+    {
+        $teamModelClass = $this->teamModelClass();
+
+        return $teamModelClass::all();
     }
 }

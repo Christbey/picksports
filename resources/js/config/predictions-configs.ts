@@ -64,8 +64,10 @@ export const cfbPredictionsConfig: SportPredictionsConfig = {
         regularSeasonWeeks: 15,
         postseasonOptions: [
             { value: '1', label: 'Bowl Games' },
-            { value: '2', label: 'Playoffs' },
-            { value: '3', label: 'Championship' },
+            { value: '2', label: 'First Round' },
+            { value: '3', label: 'Quarterfinals' },
+            { value: '4', label: 'Semifinals' },
+            { value: '5', label: 'National Championship' },
         ],
     },
 };

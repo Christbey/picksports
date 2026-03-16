@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Models\GroupInvitation;
+use App\Models\GroupJoinLink;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -11,6 +13,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Laravel\Fortify\Features;
+use Laravel\Fortify\Contracts\RegisterResponse;
 use Laravel\Fortify\Fortify;
 
 class FortifyServiceProvider extends ServiceProvider
@@ -20,7 +23,7 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(RegisterResponse::class, \App\Http\Responses\BracketInviteRegisterResponse::class);
     }
 
     /**
@@ -71,11 +74,55 @@ class FortifyServiceProvider extends ServiceProvider
         Fortify::registerView(fn (Request $request) => Inertia::render('auth/Register', [
             'oauthError' => $request->session()->get('oauth_error'),
             'oauthProviders' => $this->oauthProviders(),
+            'access' => $this->registerAccess($request),
         ]));
 
         Fortify::twoFactorChallengeView(fn () => Inertia::render('auth/TwoFactorChallenge'));
 
         Fortify::confirmPasswordView(fn () => Inertia::render('auth/ConfirmPassword'));
+    }
+
+    private function registerAccess(Request $request): ?array
+    {
+        $inviteToken = (string) $request->query('invite', $request->session()->get('group_invitation.token', ''));
+        if ($inviteToken !== '') {
+            $invitation = GroupInvitation::query()
+                ->with('group')
+                ->where('token', $inviteToken)
+                ->first();
+
+            if ($invitation && $invitation->isPending()) {
+                return [
+                    'token' => $invitation->token,
+                    'token_field' => 'invite_token',
+                    'email' => $invitation->email,
+                    'group_name' => $invitation->group?->name,
+                    'mode' => 'invite',
+                ];
+            }
+        }
+
+        $joinToken = (string) $request->query('join', $request->session()->get('group_join_link.token', ''));
+        if ($joinToken === '') {
+            return null;
+        }
+
+        $joinLink = GroupJoinLink::query()
+            ->with('group')
+            ->where('token', $joinToken)
+            ->first();
+
+        if (! $joinLink || ! $joinLink->isActive()) {
+            return null;
+        }
+
+        return [
+            'token' => $joinLink->token,
+            'token_field' => 'join_token',
+            'email' => null,
+            'group_name' => $joinLink->group?->name,
+            'mode' => 'join_link',
+        ];
     }
 
     /**

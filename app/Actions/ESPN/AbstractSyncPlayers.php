@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use App\Services\SportsAssetStorage;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncPlayers
@@ -15,7 +16,12 @@ abstract class AbstractSyncPlayers
 
     protected const ATHLETES_NESTED_UNDER_GROUP_ITEMS = false;
 
-    public function __construct(protected BaseEspnService $espnService) {}
+    public function __construct(
+        protected BaseEspnService $espnService,
+        protected ?SportsAssetStorage $sportsAssetStorage = null,
+    ) {
+        $this->sportsAssetStorage ??= app(SportsAssetStorage::class);
+    }
 
     protected function getAthletesKey(): string
     {
@@ -81,6 +87,16 @@ abstract class AbstractSyncPlayers
             $dto = $this->playerDtoFromAthlete($athleteData);
             $attributes = $dto->toArray();
             $attributes['team_id'] = $team->getKey();
+            $attributes['headshot_url'] = $this->mirrorHeadshot(
+                $attributes['headshot_url'] ?? null,
+                $this->sportKey(),
+                $this->teamAssetIdentifier($team),
+                $this->playerAssetIdentifier($attributes, (string) $dto->espnId)
+            );
+
+            if ($playerModel::query()->getModel()->isFillable('headshot')) {
+                $attributes['headshot'] = $attributes['headshot_url'];
+            }
 
             $playerModel::updateOrCreate(
                 ['espn_id' => $dto->espnId],
@@ -155,5 +171,44 @@ abstract class AbstractSyncPlayers
     protected function athletesNestedUnderGroupItems(): bool
     {
         return static::ATHLETES_NESTED_UNDER_GROUP_ITEMS;
+    }
+
+    protected function mirrorHeadshot(?string $sourceUrl, string $sport, string $teamIdentifier, string $playerIdentifier): ?string
+    {
+        return $this->sportsAssetStorage?->mirrorPlayerHeadshot($sourceUrl, $sport, $teamIdentifier, $playerIdentifier) ?? $sourceUrl;
+    }
+
+    protected function sportKey(): string
+    {
+        $namespace = static::class;
+        $segments = explode('\\', $namespace);
+
+        return strtolower($segments[3] ?? 'sports');
+    }
+
+    protected function teamAssetIdentifier(Model $team): string
+    {
+        $name = trim(implode(' ', array_filter([
+            $team->getRawOriginal('location') ?? $team->getRawOriginal('school') ?? null,
+            $team->getRawOriginal('name') ?? $team->getRawOriginal('mascot') ?? null,
+        ])));
+        $id = (string) ($team->espn_id ?: $team->getKey());
+
+        return $name !== '' ? "{$name}-{$id}" : $id;
+    }
+
+    protected function playerAssetIdentifier(array $attributes, string $fallbackId): string
+    {
+        $name = trim((string) (
+            $attributes['full_name']
+            ?? $attributes['display_name']
+            ?? $attributes['name']
+            ?? trim(implode(' ', array_filter([
+                $attributes['first_name'] ?? null,
+                $attributes['last_name'] ?? null,
+            ])))
+        ));
+
+        return $name !== '' ? "{$name}-{$fallbackId}" : $fallbackId;
     }
 }

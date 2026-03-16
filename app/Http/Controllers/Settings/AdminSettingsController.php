@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Models\Group;
+use App\Models\GroupInvitation;
+use App\Models\GroupJoinLink;
 use App\Models\User;
 use App\Services\Auth\FoundingUserAccessService;
 use App\Services\Settings\FoundingUsersSettingsService;
@@ -11,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\URL;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -60,6 +64,50 @@ class AdminSettingsController extends Controller
             ->values()
             ->all();
 
+        $groups = Group::query()
+            ->where('owner_id', $request->user()->id)
+            ->where('type', 'bracket_pool')
+            ->where('sport', 'cbb')
+            ->with(['users:id,name,email', 'brackets:id,group_id,name', 'joinLink'])
+            ->latest()
+            ->get()
+            ->map(function (Group $group) {
+                $invitations = GroupInvitation::query()
+                    ->where('group_id', $group->id)
+                    ->latest()
+                    ->limit(20)
+                    ->get()
+                    ->map(fn (GroupInvitation $invitation) => [
+                        'id' => $invitation->id,
+                        'email' => $invitation->email,
+                        'token' => $invitation->token,
+                        'invite_url' => URL::route('group-invitations.show', ['token' => $invitation->token]),
+                        'accepted_at' => $invitation->accepted_at?->toDateTimeString(),
+                        'expires_at' => $invitation->expires_at?->toDateTimeString(),
+                        'created_at' => $invitation->created_at?->toDateTimeString(),
+                    ])
+                    ->values()
+                    ->all();
+
+                return [
+                    'id' => $group->id,
+                    'public_id' => $group->public_id,
+                    'name' => $group->name,
+                    'season' => $group->season,
+                    'members_count' => $group->users->count(),
+                    'brackets_count' => $group->brackets->count(),
+                    'join_link' => $group->joinLink && $group->joinLink->isActive() ? [
+                        'token' => $group->joinLink->token,
+                        'join_url' => URL::route('groups.join.show', ['token' => $group->joinLink->token]),
+                        'expires_at' => $group->joinLink->expires_at?->toDateTimeString(),
+                        'created_at' => $group->joinLink->created_at?->toDateTimeString(),
+                    ] : null,
+                    'invitations' => $invitations,
+                ];
+            })
+            ->values()
+            ->all();
+
         return Inertia::render('settings/Admin', [
             'foundingUsers' => [
                 'enabled' => (bool) config('founding_users.enabled', false),
@@ -71,7 +119,92 @@ class AdminSettingsController extends Controller
                 'tier_name' => $this->subscriptionTierCache->tierBySlug($tierSlug)?->name ?? $tierSlug,
                 'users' => $foundingUsers,
             ],
+            'groups' => $groups,
         ]);
+    }
+
+    public function createGroup(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'season' => ['required', 'integer', 'min:2000', 'max:2100'],
+        ]);
+
+        $group = Group::query()->create([
+            'owner_id' => $request->user()->id,
+            'name' => $validated['name'],
+            'type' => 'bracket_pool',
+            'sport' => 'cbb',
+            'season' => (int) $validated['season'],
+        ]);
+
+        $group->users()->attach($request->user()->id, [
+            'role' => 'owner',
+            'joined_at' => now(),
+        ]);
+
+        GroupJoinLink::query()->create([
+            'group_id' => $group->id,
+            'created_by' => $request->user()->id,
+        ]);
+
+        return $this->backSuccess("Created group {$group->name}.");
+    }
+
+    public function rotateJoinLink(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'group_id' => ['required', 'integer'],
+        ]);
+
+        $group = Group::query()
+            ->where('id', $validated['group_id'])
+            ->where('owner_id', $request->user()->id)
+            ->where('type', 'bracket_pool')
+            ->where('sport', 'cbb')
+            ->firstOrFail();
+
+        $joinLink = GroupJoinLink::query()->firstOrNew([
+            'group_id' => $group->id,
+        ]);
+
+        $joinLink->forceFill([
+            'token' => (string) \Illuminate\Support\Str::uuid(),
+            'created_by' => $request->user()->id,
+            'revoked_at' => null,
+        ])->save();
+
+        return $this->backSuccess("Updated shared join link for {$group->name}.");
+    }
+
+    public function inviteToGroup(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'group_id' => ['required', 'integer'],
+            'email' => ['required', 'email'],
+        ]);
+
+        $group = Group::query()
+            ->where('id', $validated['group_id'])
+            ->where('owner_id', $request->user()->id)
+            ->where('type', 'bracket_pool')
+            ->where('sport', 'cbb')
+            ->firstOrFail();
+
+        GroupInvitation::query()->updateOrCreate(
+            [
+                'group_id' => $group->id,
+                'email' => strtolower($validated['email']),
+            ],
+            [
+                'invited_by' => $request->user()->id,
+                'accepted_by' => null,
+                'accepted_at' => null,
+                'expires_at' => now()->addDays(14),
+            ],
+        );
+
+        return $this->backSuccess("Created invite for {$validated['email']}.");
     }
 
     public function grantFoundingAccess(Request $request, FoundingUserAccessService $foundingUserAccessService): RedirectResponse

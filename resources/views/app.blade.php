@@ -47,7 +47,7 @@
             ];
             $metaTitle = $appName;
             $metaDescription = $descriptionMap[$path] ?? $defaultDescription;
-            $ogImage = $siteAssetStorage->publicUrl('share');
+            $ogImage = $siteAssetStorage->publicUrl('share').'?v=20260316-3';
             $ogImageAlt = 'PickSports PS gradient logo';
             $siteIcon512 = $siteAssetStorage->publicUrl('icon_512');
             $siteIcon192 = $siteAssetStorage->publicUrl('icon_192');

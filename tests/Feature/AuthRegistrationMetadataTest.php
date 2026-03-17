@@ -35,7 +35,7 @@ test('register invite link renders group-specific share metadata', function () {
         ->assertOk()
         ->assertSee('Join Office Pool on PickSports', false)
         ->assertSee('Accept your invitation to join Office Pool, create your account, and complete your March Madness bracket on PickSports.', false)
-        ->assertSee('/storage/site-assets/branding/picksports-share.png', false);
+        ->assertSee('/storage/site-assets/branding/picksports-share.png?v=20260316-3', false);
 });
 
 test('register join link renders group-specific share metadata', function () {
@@ -58,5 +58,5 @@ test('register join link renders group-specific share metadata', function () {
         ->assertOk()
         ->assertSee('Join Friends Bracket on PickSports', false)
         ->assertSee('Use this shared link to join Friends Bracket, create your account, and fill out your March Madness bracket on PickSports.', false)
-        ->assertSee('/storage/site-assets/branding/picksports-share.png', false);
+        ->assertSee('/storage/site-assets/branding/picksports-share.png?v=20260316-3', false);
 });

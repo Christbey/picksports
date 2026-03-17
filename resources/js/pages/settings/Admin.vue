@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
+import { useClipboard } from '@vueuse/core';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
@@ -98,6 +99,8 @@ const assignMemberForm = useForm({
     group_id: null as number | null,
     user_id: null as number | null,
 });
+const copiedLinkKey = ref<string | null>(null);
+const { copy } = useClipboard();
 
 const userSearch = ref('');
 const userSuggestions = ref<UserLookupResult[]>([]);
@@ -359,6 +362,20 @@ function rotateJoinLink(groupId: number): void {
     });
 }
 
+async function copyLink(link: string, key: string): Promise<void> {
+    try {
+        await copy(link);
+        copiedLinkKey.value = key;
+        window.setTimeout(() => {
+            if (copiedLinkKey.value === key) {
+                copiedLinkKey.value = null;
+            }
+        }, 2000);
+    } catch {
+        copiedLinkKey.value = null;
+    }
+}
+
 function formatDate(date: string | null): string {
     if (!date) {
         return 'N/A';
@@ -544,7 +561,17 @@ const adminAreas = [
                                 <div class="mt-3 rounded-lg border border-sidebar-border bg-white p-3 dark:bg-sidebar">
                                     <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Shared Join Link</p>
                                     <div v-if="group.join_link" class="mt-2">
-                                        <a :href="group.join_link.join_url" class="text-sm text-primary hover:underline" target="_blank">{{ group.join_link.join_url }}</a>
+                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                            <p class="break-all text-sm text-primary">{{ group.join_link.join_url }}</p>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                @click="copyLink(group.join_link.join_url, `join-${group.id}`)"
+                                            >
+                                                {{ copiedLinkKey === `join-${group.id}` ? 'Copied' : 'Copy Link' }}
+                                            </Button>
+                                        </div>
                                         <p class="mt-1 text-xs text-muted-foreground">
                                             Anyone with this link can join {{ group.name }} after login or registration.
                                         </p>
@@ -653,7 +680,17 @@ const adminAreas = [
                                             <tr v-for="invite in group.invitations" :key="invite.id" class="border-t border-sidebar-border">
                                                 <td class="px-3 py-2">{{ invite.email }}</td>
                                                 <td class="px-3 py-2">
-                                                    <a :href="invite.invite_url" class="text-primary hover:underline" target="_blank">{{ invite.invite_url }}</a>
+                                                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                                        <p class="break-all text-primary">{{ invite.invite_url }}</p>
+                                                        <Button
+                                                            type="button"
+                                                            variant="outline"
+                                                            size="sm"
+                                                            @click="copyLink(invite.invite_url, `invite-${invite.id}`)"
+                                                        >
+                                                            {{ copiedLinkKey === `invite-${invite.id}` ? 'Copied' : 'Copy Link' }}
+                                                        </Button>
+                                                    </div>
                                                 </td>
                                                 <td class="px-3 py-2">{{ invite.accepted_at ? `Accepted ${formatDate(invite.accepted_at)}` : 'Pending' }}</td>
                                             </tr>

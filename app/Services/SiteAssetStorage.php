@@ -2,21 +2,44 @@
 
 namespace App\Services;
 
+use Throwable;
 use Illuminate\Support\Facades\Storage;
 
 class SiteAssetStorage
 {
+    /**
+     * @return array<string, string>
+     */
+    public function syncAll(): array
+    {
+        $synced = [];
+
+        foreach (array_keys((array) config('site_assets.files', [])) as $key) {
+            $synced[$key] = $this->publicUrl((string) $key);
+        }
+
+        return $synced;
+    }
+
     public function publicUrl(string $key): string
     {
         $asset = $this->assetDefinition($key);
         $path = $this->targetPath($asset['target']);
 
-        if ($this->shouldMirror()) {
+        if ($this->shouldMirror() && $this->storageIsAvailable()) {
             $this->ensureMirrored($asset, $path);
         }
 
-        if ($this->shouldMirror() && Storage::disk($this->disk())->exists($path)) {
-            return Storage::disk($this->disk())->url($path);
+        if ($this->shouldMirror() && $this->storageIsAvailable()) {
+            try {
+                $disk = Storage::disk($this->disk());
+
+                if ($disk->exists($path)) {
+                    return $disk->url($path);
+                }
+            } catch (Throwable) {
+                return '/'.$asset['source'];
+            }
         }
 
         return '/'.$asset['source'];
@@ -42,21 +65,30 @@ class SiteAssetStorage
 
     private function ensureMirrored(array $asset, string $path): void
     {
-        $disk = Storage::disk($this->disk());
+        try {
+            $disk = Storage::disk($this->disk());
 
-        if ($disk->exists($path)) {
+            if ($disk->exists($path)) {
+                return;
+            }
+
+            $sourcePath = public_path($asset['source']);
+            if (! is_file($sourcePath)) {
+                return;
+            }
+
+            $contents = file_get_contents($sourcePath);
+            if ($contents === false) {
+                return;
+            }
+
+            $disk->put($path, $contents, [
+                'visibility' => 'public',
+                'ContentType' => $asset['content_type'],
+            ]);
+        } catch (Throwable) {
             return;
         }
-
-        $sourcePath = public_path($asset['source']);
-        if (! is_file($sourcePath)) {
-            return;
-        }
-
-        $disk->put($path, file_get_contents($sourcePath), [
-            'visibility' => 'public',
-            'ContentType' => $asset['content_type'],
-        ]);
     }
 
     private function disk(): string
@@ -67,6 +99,19 @@ class SiteAssetStorage
     private function shouldMirror(): bool
     {
         return (bool) config('site_assets.mirror', true);
+    }
+
+    private function storageIsAvailable(): bool
+    {
+        $disk = $this->disk();
+
+        if ($disk === 's3') {
+            $bucket = trim((string) config('filesystems.disks.s3.bucket', ''));
+
+            return $bucket !== '';
+        }
+
+        return true;
     }
 
     private function targetPath(string $target): string

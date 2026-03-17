@@ -17,3 +17,13 @@ test('site asset storage mirrors branded assets to configured disk and returns p
     expect($url)->toBe('/storage/site-assets/branding/picksports-share.png');
     Storage::disk('public')->assertExists('site-assets/branding/picksports-share.png');
 });
+
+test('site asset storage falls back to local public asset when s3 bucket is not configured', function () {
+    config()->set('site_assets.disk', 's3');
+    config()->set('site_assets.mirror', true);
+    config()->set('filesystems.disks.s3.bucket', '');
+
+    $service = app(SiteAssetStorage::class);
+
+    expect($service->publicUrl('share'))->toBe('/picksports-share.png');
+});

@@ -169,8 +169,8 @@ abstract class AbstractEloCalculator
         return [
             'home_change' => $homeChange,
             'away_change' => $awayChange,
-            'home_new_elo' => $newHomeElo,
-            'away_new_elo' => $newAwayElo,
+            'home_new_elo' => (int) $newHomeElo,
+            'away_new_elo' => (int) $newAwayElo,
             'skipped' => false,
         ];
     }

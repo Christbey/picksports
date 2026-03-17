@@ -4,6 +4,7 @@ namespace App\Actions\ESPN\WCBB;
 
 use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
 use App\Actions\WCBB\UpdateLivePrediction;
+use App\Services\ESPN\WCBB\EspnService;
 use App\Services\SportsAssetStorage;
 use Illuminate\Database\Eloquent\Model;
 
@@ -17,9 +18,15 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
 
-    public function __construct(protected ?SportsAssetStorage $sportsAssetStorage = null)
+    public function __construct(
+        EspnService $espnService,
+        ?object $updateLivePrediction = null,
+        protected ?SportsAssetStorage $sportsAssetStorage = null,
+    )
     {
         $this->sportsAssetStorage ??= app(SportsAssetStorage::class);
+
+        parent::__construct($espnService, $updateLivePrediction);
     }
 
     protected function shouldAutoCreateMissingTeams(): bool

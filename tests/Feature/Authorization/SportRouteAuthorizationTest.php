@@ -9,6 +9,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
 });
 
 function grantPermission(User $user, string $permission): void
@@ -64,7 +65,7 @@ it('denies team metrics pages without sport permission', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/nfl-team-metrics')
+        ->get('/nfl/team-metrics')
         ->assertRedirect(route('subscription.plans'));
 });
 
@@ -73,12 +74,12 @@ it('allows team metrics pages with sport permission', function () {
     grantPermission($user, 'view-nfl-predictions');
 
     $this->actingAs($user)
-        ->get('/nfl-team-metrics')
+        ->get('/nfl/team-metrics')
         ->assertOk();
 });
 
 it('requires auth for player props routes', function () {
-    $this->get('/nba-player-props')
+    $this->get('/nfl/player-props')
         ->assertRedirect(route('login'));
 });
 
@@ -86,7 +87,7 @@ it('denies player props routes without sport permission', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
-        ->get('/nfl-player-props')
+        ->get('/nfl/player-props')
         ->assertRedirect(route('subscription.plans'));
 });
 
@@ -95,11 +96,11 @@ it('allows player props routes with sport permission', function () {
     grantPermission($user, 'view-nfl-predictions');
 
     $this->actingAs($user)
-        ->get('/nfl-player-props')
+        ->get('/nfl/player-props')
         ->assertOk();
 });
 
-dataset('sport_api_paths', [
+dataset('public_sport_api_paths', [
     ['nba', '/api/v1/nba/teams'],
     ['cbb', '/api/v1/cbb/teams'],
     ['wcbb', '/api/v1/wcbb/teams'],
@@ -109,24 +110,39 @@ dataset('sport_api_paths', [
     ['wnba', '/api/v1/wnba/teams'],
 ]);
 
-it('requires auth on sports api routes', function (string $sport, string $path) {
+dataset('protected_sport_api_paths', [
+    ['nba', '/api/v1/nba/predictions'],
+    ['cbb', '/api/v1/cbb/predictions'],
+    ['wcbb', '/api/v1/wcbb/predictions'],
+    ['nfl', '/api/v1/nfl/predictions'],
+    ['mlb', '/api/v1/mlb/predictions'],
+    ['cfb', '/api/v1/cfb/predictions'],
+    ['wnba', '/api/v1/wnba/predictions'],
+]);
+
+it('allows public access to core sports api routes', function (string $sport, string $path) {
+    $this->getJson($path)
+        ->assertOk();
+})->with('public_sport_api_paths');
+
+it('requires auth on protected sports api routes', function (string $sport, string $path) {
     $this->getJson($path)
         ->assertUnauthorized();
-})->with('sport_api_paths');
+})->with('protected_sport_api_paths');
 
-it('denies authenticated users without sport api permission', function (string $sport, string $path) {
+it('allows authenticated users to access protected sports api routes', function (string $sport, string $path) {
     $user = User::factory()->create();
     Sanctum::actingAs($user);
 
     $this->getJson($path)
-        ->assertForbidden();
-})->with('sport_api_paths');
+        ->assertOk();
+})->with('protected_sport_api_paths');
 
-it('allows authenticated users with sport api permission', function (string $sport, string $path) {
+it('also allows authenticated users with sport api permission', function (string $sport, string $path) {
     $user = User::factory()->create();
     grantPermission($user, "view-{$sport}-predictions");
     Sanctum::actingAs($user);
 
     $this->getJson($path)
         ->assertOk();
-})->with('sport_api_paths');
+})->with('protected_sport_api_paths');

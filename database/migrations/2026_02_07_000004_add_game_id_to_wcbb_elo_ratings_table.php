@@ -12,6 +12,17 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('wcbb_elo_ratings', function (Blueprint $table) {
+                $table->dropUnique('wcbb_elo_ratings_team_id_season_game_date_unique');
+                $table->foreignId('game_id')->nullable()->after('team_id')->constrained('wcbb_games')->onDelete('cascade');
+                $table->decimal('elo_change', 10, 1)->nullable()->after('elo_rating');
+                $table->unique(['team_id', 'game_id']);
+            });
+
+            return;
+        }
+
         if (DB::getDriverName() !== 'mysql') {
             return;
         }
@@ -52,6 +63,17 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (DB::getDriverName() === 'sqlite') {
+            Schema::table('wcbb_elo_ratings', function (Blueprint $table) {
+                $table->dropForeign(['game_id']);
+                $table->dropUnique(['team_id', 'game_id']);
+                $table->dropColumn(['game_id', 'elo_change']);
+                $table->unique(['team_id', 'season', 'game_date']);
+            });
+
+            return;
+        }
+
         if (DB::getDriverName() !== 'mysql') {
             return;
         }

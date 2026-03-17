@@ -13,6 +13,10 @@ use Throwable;
 
 class NotificationTemplatePreviewService
 {
+    public function __construct(
+        private readonly SiteAssetStorage $siteAssetStorage,
+    ) {}
+
     private const SPORT_GAME_MODELS = [
         'nfl' => \App\Models\NFL\Game::class,
         'nba' => \App\Models\NBA\Game::class,
@@ -180,7 +184,7 @@ class NotificationTemplatePreviewService
 
     private function replaceLaravelBranding(string $html): string
     {
-        $logo = rtrim((string) config('app.url'), '/').'/favicon.svg';
+        $logo = $this->siteAssetStorage->publicUrl('favicon_svg');
 
         $replaced = str_replace(
             [

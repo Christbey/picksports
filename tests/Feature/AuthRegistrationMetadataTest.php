@@ -4,6 +4,14 @@ use App\Models\Group;
 use App\Models\GroupInvitation;
 use App\Models\GroupJoinLink;
 use App\Models\User;
+use Illuminate\Support\Facades\Storage;
+
+beforeEach(function () {
+    Storage::fake('public');
+    config()->set('site_assets.disk', 'public');
+    config()->set('site_assets.directory', 'site-assets');
+    config()->set('site_assets.mirror', true);
+});
 
 test('register invite link renders group-specific share metadata', function () {
     $owner = User::factory()->create();
@@ -27,7 +35,7 @@ test('register invite link renders group-specific share metadata', function () {
         ->assertOk()
         ->assertSee('Join Office Pool on PickSports', false)
         ->assertSee('Accept your invitation to join Office Pool, create your account, and complete your March Madness bracket on PickSports.', false)
-        ->assertSee('icon-512.png?v=ps-gradient-2', false);
+        ->assertSee('/storage/site-assets/branding/picksports-share.png', false);
 });
 
 test('register join link renders group-specific share metadata', function () {
@@ -50,5 +58,5 @@ test('register join link renders group-specific share metadata', function () {
         ->assertOk()
         ->assertSee('Join Friends Bracket on PickSports', false)
         ->assertSee('Use this shared link to join Friends Bracket, create your account, and fill out your March Madness bracket on PickSports.', false)
-        ->assertSee('icon-512.png?v=ps-gradient-2', false);
+        ->assertSee('/storage/site-assets/branding/picksports-share.png', false);
 });

@@ -9,6 +9,10 @@ use RuntimeException;
 
 class WebPushService
 {
+    public function __construct(
+        private readonly SiteAssetStorage $siteAssetStorage,
+    ) {}
+
     public function isConfigured(): bool
     {
         return ! empty(config('services.web_push.public_key'))
@@ -214,8 +218,8 @@ class WebPushService
         return [
             'title' => $payload['title'] ?? config('app.name'),
             'body' => $payload['body'] ?? 'New notification',
-            'icon' => $payload['icon'] ?? '/apple-touch-icon.png',
-            'badge' => $payload['badge'] ?? '/icon-192.png',
+            'icon' => $payload['icon'] ?? $this->siteAssetStorage->publicUrl('apple_touch_icon'),
+            'badge' => $payload['badge'] ?? $this->siteAssetStorage->publicUrl('icon_192'),
             'url' => $payload['url'] ?? '/',
             'tag' => $payload['tag'] ?? null,
             'data' => $payload['data'] ?? [],

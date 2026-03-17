@@ -2,6 +2,7 @@
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}"  @class(['dark' => ($appearance ?? 'system') == 'dark'])>
     <head>
         @php
+            $siteAssetStorage = app(\App\Services\SiteAssetStorage::class);
             $appName = config('app.name', 'PickSports');
             $betaEnabled = (bool) config('app.beta_enabled', true);
             $betaLabel = trim((string) config('app.beta_label', 'BETA'));
@@ -46,8 +47,13 @@
             ];
             $metaTitle = $appName;
             $metaDescription = $descriptionMap[$path] ?? $defaultDescription;
-            $ogImage = $baseUrl.'/icon-512.png?v=ps-gradient-2';
+            $ogImage = $siteAssetStorage->publicUrl('share');
             $ogImageAlt = 'PickSports PS gradient logo';
+            $siteIcon512 = $siteAssetStorage->publicUrl('icon_512');
+            $siteIcon192 = $siteAssetStorage->publicUrl('icon_192');
+            $siteIcon512Maskable = $siteAssetStorage->publicUrl('icon_512_maskable');
+            $siteAppleTouchIcon = $siteAssetStorage->publicUrl('apple_touch_icon');
+            $siteFaviconSvg = $siteAssetStorage->publicUrl('favicon_svg');
 
             if ($path === 'login') {
                 $metaTitle = 'Log in to PickSports';
@@ -112,7 +118,7 @@
                     '@type' => 'Organization',
                     'name' => $appName,
                     'url' => $baseUrl,
-                    'logo' => $baseUrl.'/icon-512.png',
+                    'logo' => $siteIcon512,
                 ],
                 [
                     '@context' => 'https://schema.org',
@@ -210,21 +216,21 @@
         <meta property="og:url" content="{{ $canonicalUrl }}">
         <meta property="og:image" content="{{ $ogImage }}">
         <meta property="og:image:alt" content="{{ $ogImageAlt }}">
-        <meta property="og:image:width" content="512">
-        <meta property="og:image:height" content="512">
+        <meta property="og:image:width" content="1200">
+        <meta property="og:image:height" content="1200">
         <meta name="twitter:card" content="summary_large_image">
         <meta name="twitter:title" content="{{ $metaTitle }}">
         <meta name="twitter:description" content="{{ $metaDescription }}">
         <meta name="twitter:image" content="{{ $ogImage }}">
         <meta name="twitter:image:alt" content="{{ $ogImageAlt }}">
 
-        <link rel="icon" href="/favicon.svg?v=ps-gradient-1" type="image/svg+xml">
-        <link rel="shortcut icon" href="/favicon.svg?v=ps-gradient-1" type="image/svg+xml">
+        <link rel="icon" href="{{ $siteFaviconSvg }}" type="image/svg+xml">
+        <link rel="shortcut icon" href="{{ $siteFaviconSvg }}" type="image/svg+xml">
         <link rel="alternate icon" href="/favicon.ico?v=ps-gradient-1" type="image/x-icon" sizes="32x32">
         <link rel="manifest" href="/site.webmanifest">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-        <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
-        <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
+        <link rel="apple-touch-icon" href="{{ $siteAppleTouchIcon }}">
+        <link rel="icon" type="image/png" sizes="192x192" href="{{ $siteIcon192 }}">
+        <link rel="icon" type="image/png" sizes="512x512" href="{{ $siteIcon512 }}">
 
         <link rel="dns-prefetch" href="//fonts.bunny.net">
         <link rel="dns-prefetch" href="//github.com">

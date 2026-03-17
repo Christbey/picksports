@@ -4,6 +4,7 @@ use App\Actions\CBB\GradeBrackets;
 use App\Models\CbbBracket;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Models\Group;
 use App\Models\User;
 
 test('grade brackets stores correct and incorrect results for finalized tournament games', function () {
@@ -77,6 +78,7 @@ test('bracket leaderboard returns ranked bracket rows', function () {
     CbbBracket::query()->create([
         'user_id' => $first->id,
         'season' => 2026,
+        'name' => 'Alpha Entry',
         'picks' => [],
         'points_earned' => 12,
         'correct_picks' => 5,
@@ -85,6 +87,7 @@ test('bracket leaderboard returns ranked bracket rows', function () {
     CbbBracket::query()->create([
         'user_id' => $second->id,
         'season' => 2026,
+        'name' => 'Beta Entry',
         'picks' => [],
         'points_earned' => 8,
         'correct_picks' => 4,
@@ -93,8 +96,62 @@ test('bracket leaderboard returns ranked bracket rows', function () {
     $this->actingAs($first)
         ->getJson('/api/v1/cbb-brackets/leaderboard?season=2026')
         ->assertOk()
-        ->assertJsonPath('data.0.user_name', 'Alpha')
+        ->assertJsonPath('data.0.bracket_name', 'Alpha Entry')
         ->assertJsonPath('data.0.rank', 1)
+        ->assertJsonPath('data.0.user_name', 'Alpha')
+        ->assertJsonPath('data.1.bracket_name', 'Beta Entry')
         ->assertJsonPath('data.1.user_name', 'Beta')
         ->assertJsonPath('data.1.rank', 2);
+});
+
+test('bracket leaderboard can be filtered by group', function () {
+    $owner = User::factory()->create(['name' => 'Owner']);
+    $member = User::factory()->create(['name' => 'Member']);
+    $outside = User::factory()->create(['name' => 'Outside']);
+
+    $group = Group::query()->create([
+        'owner_id' => $owner->id,
+        'name' => 'Office Pool',
+        'type' => 'bracket_pool',
+        'sport' => 'cbb',
+        'season' => 2026,
+    ]);
+
+    $group->users()->attach($owner->id, ['role' => 'owner', 'joined_at' => now()]);
+    $group->users()->attach($member->id, ['role' => 'member', 'joined_at' => now()]);
+
+    CbbBracket::query()->create([
+        'user_id' => $owner->id,
+        'group_id' => $group->id,
+        'season' => 2026,
+        'name' => 'Owner Entry',
+        'picks' => [],
+        'points_earned' => 20,
+        'correct_picks' => 6,
+    ]);
+
+    CbbBracket::query()->create([
+        'user_id' => $member->id,
+        'group_id' => $group->id,
+        'season' => 2026,
+        'name' => 'Member Entry',
+        'picks' => [],
+        'points_earned' => 15,
+        'correct_picks' => 5,
+    ]);
+
+    CbbBracket::query()->create([
+        'user_id' => $outside->id,
+        'season' => 2026,
+        'picks' => [],
+        'points_earned' => 99,
+        'correct_picks' => 10,
+    ]);
+
+    $this->actingAs($owner)
+        ->getJson("/api/v1/cbb-brackets/leaderboard?season=2026&group_id={$group->id}")
+        ->assertOk()
+        ->assertJsonCount(2, 'data')
+        ->assertJsonPath('data.0.bracket_name', 'Owner Entry')
+        ->assertJsonPath('data.1.bracket_name', 'Member Entry');
 });

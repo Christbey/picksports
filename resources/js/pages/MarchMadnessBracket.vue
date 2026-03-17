@@ -2,9 +2,10 @@
 import { Head, Link, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import { computed, onMounted, ref, watch } from 'vue'
-import AppearanceTabs from '@/components/AppearanceTabs.vue'
 import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { useAppearance } from '@/composables/useAppearance'
 
 type Team = {
   id: number | null
@@ -127,6 +128,9 @@ type Group = {
 
 type LeaderboardEntry = {
   rank: number
+  bracket_id: number
+  bracket_public_id: string
+  bracket_name: string
   user_id: number
   user_name: string | null
   points_earned: number
@@ -170,11 +174,11 @@ const roundPoints: Record<string, number> = {
   national_championship: 320,
 }
 const accentByRegion: Record<string, string> = {
-  East: 'from-sky-500/18 via-cyan-500/8 to-transparent',
-  West: 'from-amber-500/18 via-orange-500/8 to-transparent',
-  South: 'from-emerald-500/18 via-teal-500/8 to-transparent',
-  Midwest: 'from-rose-500/18 via-fuchsia-500/8 to-transparent',
-  Unassigned: 'from-white/6 via-white/[0.02] to-transparent',
+  East: 'from-sky-500/8 via-cyan-500/4 to-transparent dark:from-sky-500/18 dark:via-cyan-500/8',
+  West: 'from-amber-500/8 via-orange-500/4 to-transparent dark:from-amber-500/18 dark:via-orange-500/8',
+  South: 'from-emerald-500/8 via-teal-500/4 to-transparent dark:from-emerald-500/18 dark:via-teal-500/8',
+  Midwest: 'from-rose-500/8 via-fuchsia-500/4 to-transparent dark:from-rose-500/18 dark:via-fuchsia-500/8',
+  Unassigned: 'from-foreground/[0.03] via-transparent to-transparent dark:from-foreground/[0.06]',
 }
 const bracketFallbackBySeason: Record<number, Record<string, Record<number, { name: string; abbreviation: string }>>> = {
   2026: {
@@ -235,6 +239,7 @@ const props = defineProps<{
   regions?: TournamentRegion[]
 }>()
 
+const { resolvedAppearance, updateAppearance } = useAppearance()
 const page = usePage()
 const picks = ref<Record<string, string>>({})
 const currentBracket = ref<SavedBracket | null>(null)
@@ -246,6 +251,7 @@ const bracketGroupIdDraft = ref<string>('')
 const leaderboard = ref<LeaderboardEntry[]>([])
 const saveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
 const metaSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>('idle')
+const resetConfirmOpen = ref(false)
 const storageLoaded = ref(false)
 const serverLoaded = ref(false)
 
@@ -767,6 +773,7 @@ const currentSeason = computed(() => {
   return seasons.length ? Math.max(...seasons.map((season) => Number(season))) : new Date().getFullYear()
 })
 const isAuthenticated = computed(() => Boolean(page.props.auth?.user))
+const currentUserId = computed(() => Number(page.props.auth?.user?.id ?? 0))
 const bracketLockDate = computed(() => new Date(bracketLockAtIso))
 const isBracketLocked = computed(() => {
   if (currentBracket.value?.lock_at) {
@@ -787,53 +794,73 @@ const selectedGroupName = computed(() => {
 
   return availableGroups.value.find((group) => group.id === groupId)?.name ?? 'No group'
 })
-const regionCompletion = (region: BracketRegion) => {
-  const matchups = region.rounds.flatMap((round) => round.matchups)
-  const picked = matchups.filter((matchup) => Boolean(selectedParticipant(matchup))).length
+const requiresGroupAssignment = computed(() =>
+  availableGroups.value.some((group) => group.owner_id !== currentUserId.value),
+)
+const maskedLeaderboardUser = (userName: string | null) => {
+  const trimmed = userName?.trim()
 
-  return {
-    picked,
-    total: matchups.length,
-    pct: matchups.length ? Math.round((picked / matchups.length) * 100) : 0,
+  if (!trimmed) {
+    return 'UNK'
   }
-}
 
+  return trimmed.replace(/\s+/g, '').slice(0, 3).toUpperCase()
+}
 const roundPickedCount = (matchups: BracketMatchup[]) => matchups.filter((matchup) => Boolean(selectedParticipant(matchup))).length
 
-const regionNextRound = (region: BracketRegion) =>
-  region.rounds.find((round) => roundPickedCount(round.matchups) < round.matchups.length) ?? null
+const regionMetaById = computed(() => {
+  const meta = new Map<string, {
+    picked: number
+    total: number
+    pct: number
+    nextRoundKey: string | null
+    guidanceLabel: string
+    guidanceDetail: string
+  }>()
 
-const regionGuidanceLabel = (region: BracketRegion) => {
-  const nextRound = regionNextRound(region)
+  bracketRegions.value.forEach((region) => {
+    const roundPicked = new Map(region.rounds.map((round) => [round.key, roundPickedCount(round.matchups)]))
+    const nextRound = region.rounds.find((round) => (roundPicked.get(round.key) ?? 0) < round.matchups.length) ?? null
+    const total = region.rounds.reduce((sum, round) => sum + round.matchups.length, 0)
+    const picked = region.rounds.reduce((sum, round) => sum + (roundPicked.get(round.key) ?? 0), 0)
 
-  if (!nextRound) {
-    return 'Region complete'
-  }
+    let guidanceLabel = 'Region complete'
+    let guidanceDetail = 'Every matchup in this region has a winner selected.'
 
-  const picked = roundPickedCount(nextRound.matchups)
+    if (nextRound) {
+      const pickedInRound = roundPicked.get(nextRound.key) ?? 0
+      const remaining = nextRound.matchups.length - pickedInRound
+      guidanceLabel = pickedInRound === 0 ? `Start with ${nextRound.label}` : `Next up: ${nextRound.label}`
+      guidanceDetail = `${remaining} matchup${remaining === 1 ? '' : 's'} left in ${nextRound.label}.`
+    }
 
-  if (picked === 0) {
-    return `Start with ${nextRound.label}`
-  }
+    meta.set(region.id, {
+      picked,
+      total,
+      pct: total ? Math.round((picked / total) * 100) : 0,
+      nextRoundKey: nextRound?.key ?? null,
+      guidanceLabel,
+      guidanceDetail,
+    })
+  })
 
-  return `Next up: ${nextRound.label}`
+  return meta
+})
+
+const regionCompletion = (region: BracketRegion) => regionMetaById.value.get(region.id) ?? {
+  picked: 0,
+  total: 0,
+  pct: 0,
+  nextRoundKey: null,
+  guidanceLabel: 'Region complete',
+  guidanceDetail: 'Every matchup in this region has a winner selected.',
 }
 
-const regionGuidanceDetail = (region: BracketRegion) => {
-  const nextRound = regionNextRound(region)
-
-  if (!nextRound) {
-    return 'Every matchup in this region has a winner selected.'
-  }
-
-  const picked = roundPickedCount(nextRound.matchups)
-  const remaining = nextRound.matchups.length - picked
-
-  return `${remaining} matchup${remaining === 1 ? '' : 's'} left in ${nextRound.label}.`
-}
+const regionGuidanceLabel = (region: BracketRegion) => regionCompletion(region).guidanceLabel
+const regionGuidanceDetail = (region: BracketRegion) => regionCompletion(region).guidanceDetail
 
 const roundState = (region: BracketRegion, roundKey: string) => {
-  const activeRound = regionNextRound(region)?.key
+  const activeRound = regionCompletion(region).nextRoundKey
 
   if (!activeRound) {
     return 'completed'
@@ -942,6 +969,30 @@ const roundGradeSummaryLabel = (matchups: BracketMatchup[]) => {
 
   return parts.join(' · ')
 }
+const roundMetaById = computed(() => {
+  const meta = new Map<string, { picked: number; summary: ReturnType<typeof roundGradeSummary>; summaryLabel: string }>()
+
+  bracketRegions.value.forEach((region) => {
+    region.rounds.forEach((round) => {
+      const id = `${region.id}:${round.key}`
+      const summary = roundGradeSummary(round.matchups)
+      meta.set(id, {
+        picked: roundPickedCount(round.matchups),
+        summary,
+        summaryLabel: roundGradeSummaryLabel(round.matchups),
+      })
+    })
+  })
+
+  return meta
+})
+
+const roundMeta = (region: BracketRegion, roundKey: string) =>
+  roundMetaById.value.get(`${region.id}:${roundKey}`) ?? {
+    picked: 0,
+    summary: { correct: 0, incorrect: 0, pending: 0, graded: 0, pointsEarned: 0, possiblePoints: 0 },
+    summaryLabel: 'Ungraded',
+  }
 const saveStateLabel = computed(() => {
   if (isBracketLocked.value) return 'Locked Mar 19, 2026 at 11:00 AM CT'
   if (!isAuthenticated.value) return 'Saved on this device'
@@ -977,10 +1028,25 @@ const metaSaveToneClass = computed(() => {
   if (metaSaveState.value === 'error') return 'text-rose-200/80'
   return 'text-muted-foreground'
 })
+const appearanceToggleLabel = computed(() => resolvedAppearance.value === 'dark' ? 'Light mode' : 'Dark mode')
+
+const toggleAppearance = () => {
+  updateAppearance(resolvedAppearance.value === 'dark' ? 'light' : 'dark')
+}
 
 const resetBracket = () => {
   if (isBracketLocked.value) return
   picks.value = {}
+}
+
+const requestResetBracket = () => {
+  if (isBracketLocked.value) return
+  resetConfirmOpen.value = true
+}
+
+const confirmResetBracket = () => {
+  resetBracket()
+  resetConfirmOpen.value = false
 }
 
 const upsertBracketInList = (bracket: SavedBracket) => {
@@ -1000,7 +1066,9 @@ const activateBracket = (bracket: SavedBracket | null, syncPicks = true) => {
   currentBracket.value = bracket
   activeBracketPublicId.value = bracket?.public_id ?? null
   bracketNameDraft.value = bracket?.name ?? ''
-  bracketGroupIdDraft.value = bracket?.group_id ? String(bracket.group_id) : ''
+  bracketGroupIdDraft.value = bracket?.group_id
+    ? String(bracket.group_id)
+    : (requiresGroupAssignment.value && availableGroups.value.length ? String(availableGroups.value[0].id) : '')
 
   if (!syncPicks) {
     return
@@ -1042,10 +1110,14 @@ const createBracket = async (initialPicks: Record<string, string> = {}, syncPick
     return null
   }
 
+  const resolvedGroupId = bracketGroupIdDraft.value
+    ? Number(bracketGroupIdDraft.value)
+    : (requiresGroupAssignment.value && availableGroups.value.length ? availableGroups.value[0].id : null)
+
   const response = await axios.post('/api/v1/cbb-brackets', {
     season: currentSeason.value,
     name: bracketNameDraft.value.trim() || nextBracketName.value,
-    group_id: bracketGroupIdDraft.value ? Number(bracketGroupIdDraft.value) : null,
+    group_id: resolvedGroupId,
     picks: initialPicks,
   })
 
@@ -1069,7 +1141,12 @@ const loadGroups = async () => {
     },
   })
 
-  availableGroups.value = response.data?.data ?? []
+  const groups = response.data?.data ?? []
+  availableGroups.value = groups
+
+  if (!bracketGroupIdDraft.value && groups.length > 0 && groups.some((group: Group) => group.owner_id !== currentUserId.value)) {
+    bracketGroupIdDraft.value = String(groups[0].id)
+  }
 }
 
 const saveBracketMeta = async () => {
@@ -1080,9 +1157,13 @@ const saveBracketMeta = async () => {
   metaSaveState.value = 'saving'
 
   try {
+    const resolvedGroupId = bracketGroupIdDraft.value
+      ? Number(bracketGroupIdDraft.value)
+      : (requiresGroupAssignment.value && availableGroups.value.length ? availableGroups.value[0].id : null)
+
     const response = await axios.patch(`/api/v1/cbb-brackets/${currentBracket.value.public_id}`, {
       name: bracketNameDraft.value.trim() || null,
-      group_id: bracketGroupIdDraft.value ? Number(bracketGroupIdDraft.value) : null,
+      group_id: resolvedGroupId,
     })
 
     const savedBracket = response.data?.data as SavedBracket
@@ -1138,7 +1219,11 @@ const loadLeaderboard = async () => {
   }
 
   const response = await axios.get('/api/v1/cbb-brackets/leaderboard', {
-    params: { season: currentSeason.value, limit: 10 },
+    params: {
+      season: currentSeason.value,
+      limit: 10,
+      group_id: currentBracket.value?.group_id ?? undefined,
+    },
   })
 
   leaderboard.value = response.data?.data ?? []
@@ -1150,6 +1235,13 @@ onMounted(() => {
   void loadServerBrackets()
   void loadLeaderboard()
 })
+
+watch(
+  () => currentBracket.value?.group_id,
+  () => {
+    void loadLeaderboard()
+  },
+)
 
 watch(
   picks,
@@ -1262,7 +1354,14 @@ watch(
           </div>
         </Link>
 
-        <AppearanceTabs />
+        <Button
+          type="button"
+          variant="ghost"
+          class="border border-border/70 bg-card/60 text-foreground hover:bg-accent/70"
+          @click="toggleAppearance"
+        >
+          {{ appearanceToggleLabel }}
+        </Button>
       </div>
     </nav>
 
@@ -1273,31 +1372,57 @@ watch(
       <section class="mx-auto max-w-[1500px] px-4 pb-8 pt-6 sm:px-6 lg:px-8 lg:pt-10">
         <div class="space-y-6">
           <div class="ui-surface rounded-[2rem] p-4 sm:p-5">
-            <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div class="min-w-0">
+            <div class="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] xl:items-start">
+              <div class="min-w-0 space-y-3">
                 <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Active bracket</p>
                 <p class="mt-2 truncate text-xl font-semibold text-foreground sm:text-2xl">{{ isAuthenticated ? activeBracketName : 'Local bracket' }}</p>
-                <p class="mt-1 text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                  {{ isAuthenticated ? `${brackets.length} saved for ${currentSeason}${selectedGroupName !== 'No group' ? ` · ${selectedGroupName}` : ''}` : 'Local device bracket' }}
-                </p>
+                <div class="flex flex-wrap gap-2">
+                  <span class="inline-flex rounded-full border border-border/70 bg-card/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                    Season {{ currentSeason }}
+                  </span>
+                  <span
+                    v-if="isAuthenticated && selectedGroupName !== 'No group'"
+                    class="inline-flex rounded-full border border-border/70 bg-card/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
+                  >
+                    {{ selectedGroupName }}
+                  </span>
+                  <span class="inline-flex rounded-full border border-border/70 bg-card/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em]" :class="isBracketLocked ? 'text-destructive' : 'text-muted-foreground'">
+                    {{ isBracketLocked ? 'Locked' : 'Editable' }}
+                  </span>
+                  <span
+                    v-if="isAuthenticated"
+                    class="inline-flex rounded-full border border-border/70 bg-card/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
+                  >
+                    {{ brackets.length }} saved
+                  </span>
+                  <span
+                    v-else
+                    class="inline-flex rounded-full border border-border/70 bg-card/60 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-muted-foreground"
+                  >
+                    Local only
+                  </span>
+                </div>
               </div>
 
-              <div class="flex flex-col gap-3 lg:min-w-[520px]">
-                <div v-if="isAuthenticated" class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                  <select
-                    :value="activeBracketPublicId ?? ''"
-                    class="ui-select rounded-2xl bg-card/70 text-foreground"
-                    @change="switchBracket(($event.target as HTMLSelectElement).value)"
-                  >
-                    <option v-if="!brackets.length" value="">No saved brackets</option>
-                    <option v-for="bracket in brackets" :key="bracket.public_id" :value="bracket.public_id">
-                      {{ bracket.name || 'Untitled bracket' }}
-                    </option>
-                  </select>
+              <div class="space-y-3 xl:min-w-0">
+                <div v-if="isAuthenticated" class="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                  <div class="space-y-1.5">
+                    <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Switch Bracket</label>
+                    <select
+                      :value="activeBracketPublicId ?? ''"
+                      class="ui-select rounded-2xl bg-card/70 text-foreground"
+                      @change="switchBracket(($event.target as HTMLSelectElement).value)"
+                    >
+                      <option v-if="!brackets.length" value="">No saved brackets</option>
+                      <option v-for="bracket in brackets" :key="bracket.public_id" :value="bracket.public_id">
+                        {{ bracket.name || 'Untitled bracket' }}
+                      </option>
+                    </select>
+                  </div>
                   <Button
                     size="sm"
                     variant="ghost"
-                    class="border border-border/70 bg-card/60 text-foreground hover:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-45"
+                    class="self-end border border-border/70 bg-card/60 text-foreground hover:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-45"
                     :disabled="isBracketLocked"
                     @click="createBracket()"
                   >
@@ -1306,35 +1431,41 @@ watch(
                   <Button
                     size="sm"
                     variant="ghost"
-                    class="border border-border/70 bg-card/60 text-foreground hover:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-45"
+                    class="self-end border border-border/70 bg-card/60 text-foreground hover:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-45"
                     :disabled="isBracketLocked"
-                    @click="resetBracket"
+                    @click="requestResetBracket"
                   >
                     Reset Picks
                   </Button>
                 </div>
 
-                <div v-if="isAuthenticated && currentBracket" class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px_auto]">
-                  <Input
-                    v-model="bracketNameDraft"
-                    placeholder="Bracket name"
-                    class="border-border/70 bg-card/70 text-foreground placeholder:text-muted-foreground"
-                    :disabled="!currentBracket || isBracketLocked"
-                  />
-                  <select
-                    v-model="bracketGroupIdDraft"
-                    class="ui-select rounded-2xl bg-card/70 text-foreground"
-                    :disabled="!currentBracket || isBracketLocked"
-                  >
-                    <option value="">No group</option>
-                    <option v-for="group in availableGroups" :key="group.public_id" :value="String(group.id)">
-                      {{ group.name }}
-                    </option>
-                  </select>
+                <div v-if="isAuthenticated && currentBracket" class="grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto]">
+                  <div class="space-y-1.5">
+                    <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Bracket Name</label>
+                    <Input
+                      v-model="bracketNameDraft"
+                      placeholder="Bracket name"
+                      class="border-border/70 bg-card/70 text-foreground placeholder:text-muted-foreground"
+                      :disabled="!currentBracket || isBracketLocked"
+                    />
+                  </div>
+                  <div class="space-y-1.5">
+                    <label class="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">Group</label>
+                    <select
+                      v-model="bracketGroupIdDraft"
+                      class="ui-select rounded-2xl bg-card/70 text-foreground"
+                      :disabled="!currentBracket || isBracketLocked"
+                    >
+                      <option v-if="!requiresGroupAssignment" value="">No group</option>
+                      <option v-for="group in availableGroups" :key="group.public_id" :value="String(group.id)">
+                        {{ group.name }}
+                      </option>
+                    </select>
+                  </div>
                   <Button
                     size="sm"
                     variant="ghost"
-                    class="border border-border/70 bg-card/60 text-foreground hover:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-45"
+                    class="self-end border border-border/70 bg-card/60 text-foreground hover:bg-accent/70 disabled:cursor-not-allowed disabled:opacity-45"
                     :disabled="!currentBracket || isBracketLocked || metaSaveState === 'saving'"
                     @click="saveBracketMeta"
                   >
@@ -1344,12 +1475,12 @@ watch(
               </div>
             </div>
 
-            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div class="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <div class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
                 <p class="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Progress</p>
                 <div class="mt-2 flex items-center gap-3">
                   <p class="text-xl font-semibold text-foreground">{{ completionPct }}%</p>
-                  <div class="h-2 flex-1 rounded-full bg-white/8">
+                  <div class="h-2 flex-1 rounded-full bg-accent/70">
                     <div class="h-full rounded-full bg-primary/80 transition-[width]" :style="{ width: `${completionPct}%` }" />
                   </div>
                 </div>
@@ -1359,7 +1490,7 @@ watch(
               <div class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
                 <p class="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Champion</p>
                 <p class="mt-2 text-xl font-semibold text-foreground">{{ champion ?? 'TBD' }}</p>
-                <p class="mt-2 text-[11px] uppercase tracking-[0.16em]" :class="picksAutosaveToneClass">{{ picksAutosaveLabel }}</p>
+                <p class="mt-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{{ isBracketLocked ? 'Bracket locked' : 'Still editable' }}</p>
               </div>
 
               <div v-if="isAuthenticated && currentBracket" class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
@@ -1367,26 +1498,45 @@ watch(
                 <p class="mt-2 text-xl font-semibold text-foreground">{{ currentBracket.points_earned }} pts</p>
                 <p class="mt-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{{ currentBracket.correct_picks }} correct · {{ currentBracket.incorrect_picks }} missed</p>
               </div>
+            </div>
 
-              <div class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
-                <p class="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">{{ isAuthenticated && currentBracket ? 'Bracket Details' : 'Bracket Status' }}</p>
-                <p v-if="isAuthenticated && currentBracket" class="mt-2 text-[11px] uppercase tracking-[0.16em]" :class="metaSaveToneClass">
-                  Name and group: {{ metaSaveState === 'idle' ? 'manual save' : metaSaveLabel.toLowerCase() }}
-                </p>
-                <p v-else class="mt-2 text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{{ saveStateLabel }}</p>
-                <a href="#bracket-board" class="mt-3 inline-block">
+            <div class="mt-3 rounded-2xl border border-border/70 bg-card/45 px-4 py-3">
+              <div v-if="isAuthenticated && currentBracket" class="flex flex-col gap-2 text-xs md:flex-row md:items-center md:justify-between">
+                <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+                  <p class="uppercase tracking-[0.18em]" :class="picksAutosaveToneClass">{{ picksAutosaveLabel }}</p>
+                  <p class="uppercase tracking-[0.18em]" :class="metaSaveToneClass">Details: {{ metaSaveState === 'idle' ? 'manual save' : metaSaveLabel.toLowerCase() }}</p>
+                </div>
+                <a href="#bracket-board" class="inline-flex">
                   <Button size="sm" class="bg-primary text-primary-foreground hover:opacity-90">
-                    Open Bracket
+                    Jump to Bracket
                   </Button>
                 </a>
               </div>
+              <p v-else class="text-xs uppercase tracking-[0.18em] text-muted-foreground">{{ saveStateLabel }}</p>
+            </div>
+          </div>
+
+          <div class="ui-surface rounded-[2rem] p-4 sm:p-5">
+            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">How It Works</p>
+                <h2 class="mt-2 text-xl font-semibold text-foreground sm:text-2xl">Make picks round by round</h2>
+              </div>
             </div>
 
-            <div v-if="isAuthenticated && currentBracket" class="mt-3 flex flex-col gap-1 text-xs sm:flex-row sm:items-center sm:justify-between">
-              <p class="uppercase tracking-[0.18em]" :class="picksAutosaveToneClass">{{ picksAutosaveLabel }}</p>
-              <p class="uppercase tracking-[0.18em]" :class="metaSaveToneClass">
-                Bracket name and group: {{ metaSaveState === 'idle' ? 'manual save' : metaSaveLabel.toLowerCase() }}
-              </p>
+            <div class="mt-4 grid gap-3 lg:grid-cols-3">
+              <div class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
+                <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">1. Start Here</p>
+                <p class="mt-2 text-sm leading-6 text-foreground">Pick winners on each region board. First Four winners feed into the main bracket automatically.</p>
+              </div>
+              <div class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
+                <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">2. Saving</p>
+                <p class="mt-2 text-sm leading-6 text-foreground">Picks autosave as you go. Bracket name and group changes use <span class="font-semibold">Save Details</span>.</p>
+              </div>
+              <div class="rounded-2xl border border-border/70 bg-card/55 px-4 py-3">
+                <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">3. Scoring</p>
+                <p class="mt-2 text-sm leading-6 text-foreground">Correct picks earn more points each round. Final scores update your grade and leaderboard rank automatically.</p>
+              </div>
             </div>
           </div>
 
@@ -1399,15 +1549,11 @@ watch(
             <p class="text-sm uppercase tracking-[0.28em] text-muted-foreground">Bracket Board</p>
             <h2 class="mt-2 text-2xl font-semibold tracking-tight text-foreground sm:text-4xl">Complete the full bracket here</h2>
           </div>
-          <div class="max-w-md text-sm leading-6 text-muted-foreground">
-            <p>Later rounds are no longer waiting on synced future games. They populate directly from the winners you choose.</p>
-            <p class="mt-2 text-xs uppercase tracking-[0.22em]" :class="picksAutosaveToneClass">{{ picksAutosaveLabel }}</p>
-          </div>
         </div>
 
         <div v-if="allBracketMatchups.length" class="space-y-8">
-          <article v-if="isAuthenticated && leaderboard.length" class="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/65 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.9)] backdrop-blur sm:p-6">
-            <div class="absolute inset-0 bg-gradient-to-br from-white/8 via-white/[0.03] to-transparent" />
+          <article v-if="isAuthenticated && leaderboard.length" class="relative overflow-hidden rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.18)] backdrop-blur sm:p-6">
+            <div class="absolute inset-0 bg-gradient-to-br from-foreground/[0.04] via-transparent to-transparent dark:from-foreground/[0.06]" />
             <div class="relative">
               <div class="flex items-end justify-between gap-4">
                 <div>
@@ -1417,16 +1563,18 @@ watch(
                 <p class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Season {{ currentSeason }}</p>
               </div>
 
-              <div class="mt-5 overflow-hidden rounded-[1.5rem] border border-white/8 bg-white/5">
+              <div class="mt-5 overflow-hidden rounded-[1.5rem] border border-border/70 bg-background/35">
                 <div
                   v-for="entry in leaderboard"
-                  :key="entry.user_id"
-                  class="grid grid-cols-[56px_minmax(0,1fr)_84px] items-center gap-3 border-b border-white/8 px-4 py-3 last:border-b-0"
+                  :key="entry.bracket_public_id"
+                  class="grid grid-cols-[56px_minmax(0,1fr)_84px] items-center gap-3 border-b border-border/60 px-4 py-3 last:border-b-0"
                 >
                   <div class="text-sm font-semibold text-foreground/80">#{{ entry.rank }}</div>
                   <div class="min-w-0">
-                    <p class="truncate text-sm font-semibold text-foreground">{{ entry.user_name ?? 'Unknown user' }}</p>
-                    <p class="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">{{ entry.correct_picks }} correct · {{ entry.incorrect_picks }} missed</p>
+                    <p class="truncate text-sm font-semibold text-foreground">{{ entry.bracket_name }}</p>
+                    <p class="truncate text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      {{ maskedLeaderboardUser(entry.user_name) }} · {{ entry.correct_picks }} correct · {{ entry.incorrect_picks }} missed
+                    </p>
                   </div>
                   <div class="text-right">
                     <p class="text-lg font-semibold text-foreground">{{ entry.points_earned }}</p>
@@ -1442,7 +1590,7 @@ watch(
               v-for="region in bracketRegions"
               :key="`jump-${region.id}`"
               :href="`#region-${region.id}`"
-              class="rounded-2xl border border-white/10 bg-white/6 px-4 py-3 backdrop-blur transition-colors hover:bg-white/10"
+              class="rounded-2xl border border-border/70 bg-card/65 px-4 py-3 backdrop-blur transition-colors hover:border-border hover:bg-accent/55"
             >
               <div class="flex items-center justify-between gap-3">
                 <div>
@@ -1457,8 +1605,8 @@ watch(
             </a>
           </div>
 
-          <article class="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/65 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.9)] backdrop-blur sm:p-6">
-            <div class="absolute inset-0 bg-gradient-to-br from-white/8 via-white/[0.03] to-transparent" />
+          <article class="relative overflow-hidden rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.18)] backdrop-blur sm:p-6">
+            <div class="absolute inset-0 bg-gradient-to-br from-foreground/[0.04] via-transparent to-transparent dark:from-foreground/[0.06]" />
             <div class="relative">
               <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
@@ -1475,7 +1623,7 @@ watch(
                     <div
                       v-for="matchup in standaloneRounds.finalFour"
                       :key="matchup.id"
-                      class="rounded-2xl border border-white/10 bg-white/7 p-3 backdrop-blur"
+                      class="rounded-2xl border border-border/70 bg-card/70 p-3 backdrop-blur"
                     >
                       <div class="space-y-2">
                         <button
@@ -1486,13 +1634,13 @@ watch(
                           @click="selectWinner(matchup, matchup.participants[0])"
                         >
                           <div class="flex items-center gap-2.5">
-                            <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'Regional winner advances here')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                            <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'Regional winner advances here')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                             <div class="min-w-0">
                               <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[0], 'TBD') }}</p>
                               <div class="mt-0.5 flex items-start gap-2">
                                 <span
                                   v-if="participantSeed(matchup.participants[0])"
-                                  class="inline-flex min-w-7 justify-center rounded-full border border-white/12 bg-white/8 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white/70"
+                                  class="inline-flex min-w-7 justify-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground"
                                 >
                                   {{ participantSeed(matchup.participants[0]) }}
                                 </span>
@@ -1514,13 +1662,13 @@ watch(
                           @click="selectWinner(matchup, matchup.participants[1])"
                         >
                           <div class="flex items-center gap-2.5">
-                            <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'Regional winner advances here')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                            <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'Regional winner advances here')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                             <div class="min-w-0">
                               <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[1], 'TBD') }}</p>
                               <div class="mt-0.5 flex items-start gap-2">
                                 <span
                                   v-if="participantSeed(matchup.participants[1])"
-                                  class="inline-flex min-w-7 justify-center rounded-full border border-white/12 bg-white/8 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white/70"
+                                  class="inline-flex min-w-7 justify-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground"
                                 >
                                   {{ participantSeed(matchup.participants[1]) }}
                                 </span>
@@ -1542,7 +1690,7 @@ watch(
 
                 <section>
                   <p class="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ roundLabels.national_championship }}</p>
-                  <div class="rounded-[1.8rem] border border-white/10 bg-white/8 p-3.5 backdrop-blur sm:p-4">
+                  <div class="rounded-[1.8rem] border border-border/70 bg-card/72 p-3.5 backdrop-blur sm:p-4">
                     <div class="space-y-2">
                       <button
                         type="button"
@@ -1552,13 +1700,13 @@ watch(
                         @click="selectWinner(standaloneRounds.championship, standaloneRounds.championship.participants[0])"
                       >
                         <div class="flex items-center gap-2.5">
-                          <img v-if="participantLogo(standaloneRounds.championship.participants[0])" :src="participantLogo(standaloneRounds.championship.participants[0])!" :alt="participantButtonLabel(standaloneRounds.championship.participants[0], 'Semifinal winner advances here')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                          <img v-if="participantLogo(standaloneRounds.championship.participants[0])" :src="participantLogo(standaloneRounds.championship.participants[0])!" :alt="participantButtonLabel(standaloneRounds.championship.participants[0], 'Semifinal winner advances here')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                           <div class="min-w-0">
                             <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ participantButtonAbbr(standaloneRounds.championship.participants[0], 'TBD') }}</p>
                             <div class="mt-0.5 flex items-start gap-2">
                               <span
                                 v-if="participantSeed(standaloneRounds.championship.participants[0])"
-                                class="inline-flex min-w-7 justify-center rounded-full border border-white/12 bg-white/8 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white/70"
+                                class="inline-flex min-w-7 justify-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground"
                               >
                                 {{ participantSeed(standaloneRounds.championship.participants[0]) }}
                               </span>
@@ -1580,13 +1728,13 @@ watch(
                         @click="selectWinner(standaloneRounds.championship, standaloneRounds.championship.participants[1])"
                       >
                         <div class="flex items-center gap-2.5">
-                          <img v-if="participantLogo(standaloneRounds.championship.participants[1])" :src="participantLogo(standaloneRounds.championship.participants[1])!" :alt="participantButtonLabel(standaloneRounds.championship.participants[1], 'Semifinal winner advances here')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                          <img v-if="participantLogo(standaloneRounds.championship.participants[1])" :src="participantLogo(standaloneRounds.championship.participants[1])!" :alt="participantButtonLabel(standaloneRounds.championship.participants[1], 'Semifinal winner advances here')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                           <div class="min-w-0">
                             <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ participantButtonAbbr(standaloneRounds.championship.participants[1], 'TBD') }}</p>
                             <div class="mt-0.5 flex items-start gap-2">
                               <span
                                 v-if="participantSeed(standaloneRounds.championship.participants[1])"
-                                class="inline-flex min-w-7 justify-center rounded-full border border-white/12 bg-white/8 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white/70"
+                                class="inline-flex min-w-7 justify-center rounded-full border border-border/70 bg-background/70 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-muted-foreground"
                               >
                                 {{ participantSeed(standaloneRounds.championship.participants[1]) }}
                               </span>
@@ -1612,7 +1760,7 @@ watch(
             v-for="region in bracketRegions"
             :id="`region-${region.id}`"
             :key="region.id"
-            class="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/65 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.9)] backdrop-blur sm:p-6"
+            class="relative overflow-hidden rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.18)] backdrop-blur sm:p-6"
           >
             <div class="absolute inset-0 bg-gradient-to-br" :class="accentByRegion[region.name] ?? accentByRegion.Unassigned" />
             <div class="relative space-y-5">
@@ -1623,18 +1771,18 @@ watch(
                       <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Region</p>
                       <h3 class="text-2xl font-semibold text-foreground">{{ region.name }}</h3>
                     </div>
-                    <div class="rounded-full border border-white/12 bg-white/8 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground xl:mt-4 xl:inline-flex">
+                    <div class="rounded-full border border-border/70 bg-background/45 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-muted-foreground xl:mt-4 xl:inline-flex">
                       {{ regionCompletion(region).picked }}/{{ regionCompletion(region).total }} picked
                     </div>
                   </div>
 
                   <div class="hidden space-y-3 xl:block">
-                    <div class="rounded-2xl border border-white/10 bg-white/6 p-3">
+                    <div class="rounded-2xl border border-border/70 bg-background/45 p-3">
                       <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-foreground/80">{{ regionGuidanceLabel(region) }}</p>
                       <p class="mt-2 text-sm leading-6 text-muted-foreground">{{ regionGuidanceDetail(region) }}</p>
                     </div>
-                    <div class="h-2 rounded-full bg-white/8">
-                      <div class="h-full rounded-full bg-white/80 transition-[width]" :style="{ width: `${regionCompletion(region).pct}%` }" />
+                    <div class="h-2 rounded-full bg-accent/70">
+                      <div class="h-full rounded-full bg-primary/80 transition-[width]" :style="{ width: `${regionCompletion(region).pct}%` }" />
                     </div>
                     <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ regionCompletion(region).pct }}% complete</p>
                   </div>
@@ -1648,20 +1796,20 @@ watch(
                       class="rounded-[1.35rem] border p-3 sm:p-3.5"
                       :class="roundSectionClass(region, round.key)"
                     >
-                      <div class="mb-3 flex items-center justify-between gap-3 border-b border-white/8 pb-2">
+                      <div class="mb-3 flex items-center justify-between gap-3 border-b border-border/60 pb-2">
                         <div>
                           <div class="flex items-center gap-2">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">{{ round.label }}</p>
-                            <span class="rounded-full border border-white/10 bg-white/6 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                            <span class="rounded-full border border-border/70 bg-background/45 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
                               {{ roundHeaderBadge(region, round.key) }}
                             </span>
                           </div>
-                          <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{{ roundPickedCount(round.matchups) }}/{{ round.matchups.length }} picked</p>
+                          <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{{ roundMeta(region, round.key).picked }}/{{ round.matchups.length }} picked</p>
                           <p
                             v-if="isAuthenticated && currentBracket"
                             class="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground"
                           >
-                            {{ roundGradeSummaryLabel(round.matchups) }}
+                            {{ roundMeta(region, round.key).summaryLabel }}
                           </p>
                         </div>
                         <div class="text-right">
@@ -1670,7 +1818,7 @@ watch(
                             v-if="isAuthenticated && currentBracket"
                             class="mt-1 text-[10px] font-semibold text-muted-foreground"
                           >
-                            {{ roundGradeSummary(round.matchups).pointsEarned }}/{{ roundGradeSummary(round.matchups).possiblePoints }} pts
+                            {{ roundMeta(region, round.key).summary.pointsEarned }}/{{ roundMeta(region, round.key).summary.possiblePoints }} pts
                           </p>
                         </div>
                       </div>
@@ -1706,7 +1854,7 @@ watch(
                               @click="selectWinner(matchup, matchup.participants[0])"
                             >
                               <div class="flex items-center gap-2.5">
-                                <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'Winner advances here')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                                <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'Winner advances here')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                                 <div class="min-w-0">
                                   <p v-if="!slotIsPlaceholder(matchup.participants[0])" class="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[0], 'TBD') }}</p>
                                   <div class="mt-0.5 flex items-start gap-2">
@@ -1735,7 +1883,7 @@ watch(
                               @click="selectWinner(matchup, matchup.participants[1])"
                             >
                               <div class="flex items-center gap-2.5">
-                                <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'Winner advances here')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                                <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'Winner advances here')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                                 <div class="min-w-0">
                                   <p v-if="!slotIsPlaceholder(matchup.participants[1])" class="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[1], 'TBD') }}</p>
                                   <div class="mt-0.5 flex items-start gap-2">
@@ -1772,23 +1920,23 @@ watch(
                             <div>
                               <div class="flex items-center gap-2">
                                 <p class="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">{{ round.label }}</p>
-                                <span class="rounded-full border border-white/10 bg-white/6 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
+                                <span class="rounded-full border border-border/70 bg-background/45 px-2 py-0.5 text-[9px] uppercase tracking-[0.14em] text-muted-foreground">
                                   {{ roundHeaderBadge(region, round.key) }}
                                 </span>
                               </div>
-                              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{{ roundPickedCount(round.matchups) }}/{{ round.matchups.length }} picked</p>
+                              <p class="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{{ roundMeta(region, round.key).picked }}/{{ round.matchups.length }} picked</p>
                               <p
                                 v-if="isAuthenticated && currentBracket"
                                 class="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground"
                               >
-                                {{ roundGradeSummaryLabel(round.matchups) }}
+                                {{ roundMeta(region, round.key).summaryLabel }}
                               </p>
                             </div>
                             <p
                               v-if="isAuthenticated && currentBracket"
                               class="text-[10px] font-semibold text-muted-foreground"
                             >
-                              {{ roundGradeSummary(round.matchups).pointsEarned }}/{{ roundGradeSummary(round.matchups).possiblePoints }} pts
+                              {{ roundMeta(region, round.key).summary.pointsEarned }}/{{ roundMeta(region, round.key).summary.possiblePoints }} pts
                             </p>
                           </div>
                         </div>
@@ -1827,7 +1975,7 @@ watch(
                                 @click="selectWinner(matchup, matchup.participants[0])"
                               >
                                 <div class="flex items-center gap-2">
-                                  <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'Winner advances here')" class="size-6 rounded-full bg-white/5 object-contain p-1" />
+                                  <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'Winner advances here')" class="size-6 rounded-full bg-background/70 object-contain p-1" />
                                   <div class="min-w-0">
                                     <p v-if="!slotIsPlaceholder(matchup.participants[0])" class="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[0], 'TBD') }}</p>
                                     <div class="mt-0.5 flex items-start gap-1.5">
@@ -1866,7 +2014,7 @@ watch(
                                 @click="selectWinner(matchup, matchup.participants[1])"
                               >
                                 <div class="flex items-center gap-2">
-                                  <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'Winner advances here')" class="size-6 rounded-full bg-white/5 object-contain p-1" />
+                                  <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'Winner advances here')" class="size-6 rounded-full bg-background/70 object-contain p-1" />
                                   <div class="min-w-0">
                                     <p v-if="!slotIsPlaceholder(matchup.participants[1])" class="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[1], 'TBD') }}</p>
                                     <div class="mt-0.5 flex items-start gap-1.5">
@@ -1905,16 +2053,15 @@ watch(
 
           <article
             v-if="standaloneRounds.firstFour.length"
-            class="relative overflow-hidden rounded-[2rem] border border-white/10 bg-slate-950/65 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.9)] backdrop-blur sm:p-6"
+            class="relative overflow-hidden rounded-[2rem] border border-border/70 bg-card/80 p-4 shadow-[0_20px_60px_-32px_rgba(15,23,42,0.18)] backdrop-blur sm:p-6"
           >
-            <div class="absolute inset-0 bg-gradient-to-br from-slate-400/10 via-white/5 to-transparent" />
+            <div class="absolute inset-0 bg-gradient-to-br from-foreground/[0.04] via-transparent to-transparent dark:from-foreground/[0.06]" />
             <div class="relative">
               <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
                 <div>
                   <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Opening Round</p>
                   <h3 class="mt-2 text-xl font-semibold text-foreground sm:text-2xl">{{ roundLabels.first_four }}</h3>
                 </div>
-                <p class="max-w-md text-sm leading-6 text-muted-foreground">Play-in winners feed the main bracket automatically when you pick them here.</p>
               </div>
 
               <div class="mt-5 grid gap-4 lg:grid-cols-2">
@@ -1936,7 +2083,7 @@ watch(
                       @click="selectWinner(matchup, matchup.participants[0])"
                     >
                       <div class="flex items-center gap-2.5">
-                        <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'TBD')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                        <img v-if="participantLogo(matchup.participants[0])" :src="participantLogo(matchup.participants[0])!" :alt="participantButtonLabel(matchup.participants[0], 'TBD')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                         <div class="min-w-0">
                           <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[0], 'TBD') }}</p>
                           <div class="mt-0.5 flex items-start gap-2">
@@ -1963,7 +2110,7 @@ watch(
                       @click="selectWinner(matchup, matchup.participants[1])"
                     >
                       <div class="flex items-center gap-2.5">
-                        <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'TBD')" class="size-8 rounded-full bg-white/5 object-contain p-1" />
+                        <img v-if="participantLogo(matchup.participants[1])" :src="participantLogo(matchup.participants[1])!" :alt="participantButtonLabel(matchup.participants[1], 'TBD')" class="size-8 rounded-full bg-background/70 object-contain p-1" />
                         <div class="min-w-0">
                           <p class="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{{ participantButtonAbbr(matchup.participants[1], 'TBD') }}</p>
                           <div class="mt-0.5 flex items-start gap-2">
@@ -1995,5 +2142,25 @@ watch(
         </div>
       </section>
     </main>
+
+    <Dialog :open="resetConfirmOpen" @update:open="resetConfirmOpen = $event">
+      <DialogContent class="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Reset this bracket?</DialogTitle>
+          <DialogDescription>
+            This clears every winner you have selected in the active bracket. Your bracket name and group will stay the same.
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter class="gap-2 sm:justify-end">
+          <Button variant="ghost" class="border border-border/70 bg-card/60 text-foreground hover:bg-accent/70" @click="resetConfirmOpen = false">
+            Cancel
+          </Button>
+          <Button variant="destructive" @click="confirmResetBracket">
+            Reset Picks
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 </template>

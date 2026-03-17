@@ -37,23 +37,34 @@ class BracketController extends Controller
     {
         $validated = $request->validate([
             'season' => 'required|integer|min:2000|max:2100',
+            'group_id' => 'nullable|integer',
             'limit' => 'nullable|integer|min:1|max:100',
         ]);
 
         $limit = $validated['limit'] ?? 25;
+        $groupId = $this->resolveOwnedGroupId($request, $validated['group_id'] ?? null, (int) $validated['season']);
 
-        $rows = CbbBracket::query()
+        $query = CbbBracket::query()
             ->with('user:id,name')
             ->where('season', $validated['season'])
             ->orderByDesc('points_earned')
             ->orderByDesc('correct_picks')
             ->orderBy('submitted_at')
-            ->orderBy('updated_at')
+            ->orderBy('updated_at');
+
+        if ($groupId !== null) {
+            $query->where('group_id', $groupId);
+        }
+
+        $rows = $query
             ->limit($limit)
             ->get()
             ->values()
             ->map(fn (CbbBracket $bracket, int $index) => [
                 'rank' => $index + 1,
+                'bracket_id' => $bracket->id,
+                'bracket_public_id' => $bracket->public_id,
+                'bracket_name' => $bracket->name ?: 'Untitled bracket',
                 'user_id' => $bracket->user_id,
                 'user_name' => $bracket->user?->name,
                 'points_earned' => (int) ($bracket->points_earned ?? 0),

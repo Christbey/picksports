@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
+use App\Models\CbbBracket;
 use App\Models\Group;
 use App\Models\GroupInvitation;
 use App\Models\GroupJoinLink;
@@ -13,6 +14,7 @@ use App\Support\SubscriptionTierCache;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Inertia\Inertia;
@@ -94,6 +96,22 @@ class AdminSettingsController extends Controller
                     'public_id' => $group->public_id,
                     'name' => $group->name,
                     'season' => $group->season,
+                    'members' => $group->users
+                        ->map(fn (User $user) => [
+                            'id' => $user->id,
+                            'name' => $user->name,
+                            'email' => $user->email,
+                            'role' => (string) ($user->pivot?->role ?? 'member'),
+                            'joined_at' => $user->pivot?->joined_at
+                                ? Carbon::parse($user->pivot->joined_at)->toDateTimeString()
+                                : null,
+                        ])
+                        ->sortBy([
+                            fn (array $member) => $member['role'] === 'owner' ? 0 : 1,
+                            'name',
+                        ])
+                        ->values()
+                        ->all(),
                     'members_count' => $group->users->count(),
                     'brackets_count' => $group->brackets->count(),
                     'join_link' => $group->joinLink && $group->joinLink->isActive() ? [
@@ -205,6 +223,115 @@ class AdminSettingsController extends Controller
         );
 
         return $this->backSuccess("Created invite for {$validated['email']}.");
+    }
+
+    public function searchGroupUsers(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'group_id' => ['required', 'integer'],
+            'query' => ['nullable', 'string'],
+        ]);
+
+        $query = trim((string) ($validated['query'] ?? ''));
+        if ($query === '' || mb_strlen($query) < 2) {
+            return response()->json([
+                'users' => [],
+            ]);
+        }
+
+        $group = Group::query()
+            ->where('id', $validated['group_id'])
+            ->where('owner_id', $request->user()->id)
+            ->where('type', 'bracket_pool')
+            ->where('sport', 'cbb')
+            ->firstOrFail();
+
+        $memberIds = $group->users()->pluck('users.id');
+
+        $users = User::query()
+            ->select(['id', 'name', 'email'])
+            ->where(function ($builder) use ($query) {
+                $builder->where('email', 'like', "%{$query}%")
+                    ->orWhere('name', 'like', "%{$query}%");
+            })
+            ->whereNotIn('id', $memberIds)
+            ->orderBy('name')
+            ->limit(8)
+            ->get()
+            ->map(fn (User $user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+            ])
+            ->values();
+
+        return response()->json([
+            'users' => $users,
+        ]);
+    }
+
+    public function addUserToGroup(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'group_id' => ['required', 'integer'],
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $group = Group::query()
+            ->where('id', $validated['group_id'])
+            ->where('owner_id', $request->user()->id)
+            ->where('type', 'bracket_pool')
+            ->where('sport', 'cbb')
+            ->firstOrFail();
+
+        $user = User::query()->findOrFail($validated['user_id']);
+
+        if ($group->users()->where('users.id', $user->id)->exists()) {
+            return $this->backWarning("{$user->email} is already in {$group->name}.");
+        }
+
+        $group->users()->attach($user->id, [
+            'role' => 'member',
+            'joined_at' => now(),
+        ]);
+
+        return $this->backSuccess("Added {$user->email} to {$group->name}.");
+    }
+
+    public function removeUserFromGroup(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'group_id' => ['required', 'integer'],
+            'user_id' => ['required', 'integer', 'exists:users,id'],
+        ]);
+
+        $group = Group::query()
+            ->where('id', $validated['group_id'])
+            ->where('owner_id', $request->user()->id)
+            ->where('type', 'bracket_pool')
+            ->where('sport', 'cbb')
+            ->firstOrFail();
+
+        $user = User::query()->findOrFail($validated['user_id']);
+
+        if ((int) $group->owner_id === (int) $user->id) {
+            return $this->backError('Group owners cannot be removed from their own group.');
+        }
+
+        if (! $group->users()->where('users.id', $user->id)->exists()) {
+            return $this->backWarning("{$user->email} is not in {$group->name}.");
+        }
+
+        $group->users()->detach($user->id);
+
+        CbbBracket::query()
+            ->where('user_id', $user->id)
+            ->where('group_id', $group->id)
+            ->update([
+                'group_id' => null,
+            ]);
+
+        return $this->backSuccess("Removed {$user->email} from {$group->name}.");
     }
 
     public function grantFoundingAccess(Request $request, FoundingUserAccessService $foundingUserAccessService): RedirectResponse

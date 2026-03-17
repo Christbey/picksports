@@ -117,6 +117,8 @@ Route::middleware(['auth', 'onboarded', 'verified'])->group(function () {
             ->name('settings.prop-exports');
         Route::get('settings/admin/founding-users/search', [AdminSettingsController::class, 'searchUsers'])
             ->name('admin.settings.founding-users.search');
+        Route::get('settings/admin/groups/users/search', [AdminSettingsController::class, 'searchGroupUsers'])
+            ->name('admin.settings.groups.users.search');
         Route::post('settings/admin/founding-users/limit', [AdminSettingsController::class, 'updateFoundingLimit'])
             ->name('admin.settings.founding-users.limit');
         Route::post('settings/admin/founding-users/grant', [AdminSettingsController::class, 'grantFoundingAccess'])
@@ -125,6 +127,10 @@ Route::middleware(['auth', 'onboarded', 'verified'])->group(function () {
             ->name('admin.settings.founding-users.revoke');
         Route::post('settings/admin/groups', [AdminSettingsController::class, 'createGroup'])
             ->name('admin.settings.groups.store');
+        Route::post('settings/admin/groups/users', [AdminSettingsController::class, 'addUserToGroup'])
+            ->name('admin.settings.groups.users.store');
+        Route::delete('settings/admin/groups/users', [AdminSettingsController::class, 'removeUserFromGroup'])
+            ->name('admin.settings.groups.users.destroy');
         Route::post('settings/admin/groups/join-link', [AdminSettingsController::class, 'rotateJoinLink'])
             ->name('admin.settings.groups.join-link');
         Route::post('settings/admin/groups/invite', [AdminSettingsController::class, 'inviteToGroup'])

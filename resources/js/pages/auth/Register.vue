@@ -91,8 +91,8 @@ function trackSignupStart(): void {
                         autocomplete="email"
                         name="email"
                         placeholder="email@example.com"
-                        :value="access?.email ?? undefined"
-                        :readonly="Boolean(access?.email)"
+                        :default-value="access?.mode === 'invite' ? (access.email ?? undefined) : undefined"
+                        :readonly="access?.mode === 'invite' && Boolean(access.email)"
                     />
                     <InputError :message="errors.email" />
                 </div>

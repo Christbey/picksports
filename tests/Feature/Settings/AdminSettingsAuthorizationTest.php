@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\CbbBracket;
+use App\Models\Group;
 use App\Models\OddsApiTeamMapping;
 use App\Models\OddsApiPlayerMapping;
 use App\Models\User;
@@ -72,6 +74,95 @@ it('returns founding users panel data on admin settings page', function () {
             ->where('foundingUsers.role', 'founding_user')
             ->has('foundingUsers.users', 1)
         );
+});
+
+it('allows admin users to search assignable users for their group', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create([
+        'name' => 'Group Target',
+        'email' => 'target@example.com',
+    ]);
+    $existingMember = User::factory()->create();
+
+    $group = Group::query()->create([
+        'owner_id' => $admin->id,
+        'name' => 'Office Pool',
+        'type' => 'bracket_pool',
+        'sport' => 'cbb',
+        'season' => 2026,
+    ]);
+    $group->users()->attach($admin->id, ['role' => 'owner', 'joined_at' => now()]);
+    $group->users()->attach($existingMember->id, ['role' => 'member', 'joined_at' => now()]);
+
+    $this->actingAs($admin)
+        ->getJson("/settings/admin/groups/users/search?group_id={$group->id}&query=target")
+        ->assertOk()
+        ->assertJsonPath('users.0.email', 'target@example.com')
+        ->assertJsonMissing(['email' => $existingMember->email]);
+});
+
+it('allows admin users to add an existing user to a group', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create();
+
+    $group = Group::query()->create([
+        'owner_id' => $admin->id,
+        'name' => 'Office Pool',
+        'type' => 'bracket_pool',
+        'sport' => 'cbb',
+        'season' => 2026,
+    ]);
+    $group->users()->attach($admin->id, ['role' => 'owner', 'joined_at' => now()]);
+
+    $this->actingAs($admin)
+        ->post('/settings/admin/groups/users', [
+            'group_id' => $group->id,
+            'user_id' => $member->id,
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseHas('group_users', [
+        'group_id' => $group->id,
+        'user_id' => $member->id,
+        'role' => 'member',
+    ]);
+});
+
+it('allows admin users to remove a user from a group and clears their bracket group assignment', function () {
+    $admin = User::factory()->admin()->create();
+    $member = User::factory()->create();
+
+    $group = Group::query()->create([
+        'owner_id' => $admin->id,
+        'name' => 'Office Pool',
+        'type' => 'bracket_pool',
+        'sport' => 'cbb',
+        'season' => 2026,
+    ]);
+    $group->users()->attach($admin->id, ['role' => 'owner', 'joined_at' => now()]);
+    $group->users()->attach($member->id, ['role' => 'member', 'joined_at' => now()]);
+
+    $bracket = CbbBracket::query()->create([
+        'user_id' => $member->id,
+        'group_id' => $group->id,
+        'season' => 2026,
+        'name' => 'Member Bracket',
+        'picks' => [],
+    ]);
+
+    $this->actingAs($admin)
+        ->delete('/settings/admin/groups/users', [
+            'group_id' => $group->id,
+            'user_id' => $member->id,
+        ])
+        ->assertRedirect();
+
+    $this->assertDatabaseMissing('group_users', [
+        'group_id' => $group->id,
+        'user_id' => $member->id,
+    ]);
+
+    expect($bracket->fresh()->group_id)->toBeNull();
 });
 
 it('forbids non-admin users from updating team mappings', function () {

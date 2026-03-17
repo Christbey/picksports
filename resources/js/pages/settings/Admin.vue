@@ -49,11 +49,20 @@ interface GroupJoinLink {
     created_at: string | null;
 }
 
+interface GroupMember {
+    id: number;
+    name: string;
+    email: string;
+    role: string;
+    joined_at: string | null;
+}
+
 interface AdminGroup {
     id: number;
     public_id: string;
     name: string;
     season: number | null;
+    members: GroupMember[];
     members_count: number;
     brackets_count: number;
     join_link: GroupJoinLink | null;
@@ -85,12 +94,21 @@ const inviteForm = useForm({
     group_id: (props.groups[0]?.id ?? null) as number | null,
     email: '',
 });
+const assignMemberForm = useForm({
+    group_id: null as number | null,
+    user_id: null as number | null,
+});
 
 const userSearch = ref('');
 const userSuggestions = ref<UserLookupResult[]>([]);
 const isSearchingUsers = ref(false);
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let searchAbortController: AbortController | null = null;
+const groupUserSearch = ref<Record<number, string>>({});
+const groupUserSuggestions = ref<Record<number, UserLookupResult[]>>({});
+const isSearchingGroupUsers = ref<Record<number, boolean>>({});
+let groupUserSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let groupUserSearchAbortController: AbortController | null = null;
 
 watch(userSearch, (value) => {
     const query = value.trim();
@@ -148,6 +166,14 @@ onBeforeUnmount(() => {
     if (searchAbortController) {
         searchAbortController.abort();
     }
+
+    if (groupUserSearchDebounceTimer) {
+        clearTimeout(groupUserSearchDebounceTimer);
+    }
+
+    if (groupUserSearchAbortController) {
+        groupUserSearchAbortController.abort();
+    }
 });
 
 function selectUserSuggestion(user: UserLookupResult): void {
@@ -194,6 +220,136 @@ function inviteToGroup(): void {
     inviteForm.post('/settings/admin/groups/invite', {
         preserveScroll: true,
         onSuccess: () => inviteForm.reset('email'),
+    });
+}
+
+function searchAssignableUsers(groupId: number): void {
+    const query = (groupUserSearch.value[groupId] ?? '').trim();
+
+    if (groupUserSearchDebounceTimer) {
+        clearTimeout(groupUserSearchDebounceTimer);
+    }
+
+    if (query.length < 2) {
+        groupUserSuggestions.value = {
+            ...groupUserSuggestions.value,
+            [groupId]: [],
+        };
+        isSearchingGroupUsers.value = {
+            ...isSearchingGroupUsers.value,
+            [groupId]: false,
+        };
+        return;
+    }
+
+    groupUserSearchDebounceTimer = setTimeout(async () => {
+        if (groupUserSearchAbortController) {
+            groupUserSearchAbortController.abort();
+        }
+
+        groupUserSearchAbortController = new AbortController();
+        isSearchingGroupUsers.value = {
+            ...isSearchingGroupUsers.value,
+            [groupId]: true,
+        };
+
+        try {
+            const response = await fetch(
+                `/settings/admin/groups/users/search?group_id=${groupId}&query=${encodeURIComponent(query)}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                    signal: groupUserSearchAbortController.signal,
+                },
+            );
+
+            if (!response.ok) {
+                throw new Error('Failed group user lookup.');
+            }
+
+            const payload = await response.json() as { users?: UserLookupResult[] };
+            groupUserSuggestions.value = {
+                ...groupUserSuggestions.value,
+                [groupId]: Array.isArray(payload.users) ? payload.users : [],
+            };
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                return;
+            }
+
+            groupUserSuggestions.value = {
+                ...groupUserSuggestions.value,
+                [groupId]: [],
+            };
+        } finally {
+            isSearchingGroupUsers.value = {
+                ...isSearchingGroupUsers.value,
+                [groupId]: false,
+            };
+        }
+    }, 250);
+}
+
+function handleAssignableUserInput(groupId: number, event: Event): void {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) {
+        return;
+    }
+
+    groupUserSearch.value = {
+        ...groupUserSearch.value,
+        [groupId]: target.value,
+    };
+    searchAssignableUsers(groupId);
+}
+
+function selectAssignableUser(groupId: number, user: UserLookupResult): void {
+    assignMemberForm.group_id = groupId;
+    assignMemberForm.user_id = user.id;
+    groupUserSearch.value = {
+        ...groupUserSearch.value,
+        [groupId]: `${user.name} (${user.email})`,
+    };
+    groupUserSuggestions.value = {
+        ...groupUserSuggestions.value,
+        [groupId]: [],
+    };
+}
+
+function addUserToGroup(groupId: number): void {
+    if (!assignMemberForm.user_id || assignMemberForm.group_id !== groupId) {
+        return;
+    }
+
+    assignMemberForm.post('/settings/admin/groups/users', {
+        preserveScroll: true,
+        onSuccess: () => {
+            assignMemberForm.reset();
+            groupUserSearch.value = {
+                ...groupUserSearch.value,
+                [groupId]: '',
+            };
+            groupUserSuggestions.value = {
+                ...groupUserSuggestions.value,
+                [groupId]: [],
+            };
+        },
+    });
+}
+
+function removeUserFromGroup(groupId: number, userId: number, userName: string): void {
+    if (!confirm(`Remove ${userName} from this group?`)) {
+        return;
+    }
+
+    router.delete('/settings/admin/groups/users', {
+        data: {
+            group_id: groupId,
+            user_id: userId,
+        },
+        preserveScroll: true,
     });
 }
 
@@ -394,6 +550,91 @@ const adminAreas = [
                                         </p>
                                     </div>
                                     <p v-else class="mt-2 text-sm text-muted-foreground">No shared join link yet.</p>
+                                </div>
+
+                                <div class="mt-3 rounded-lg border border-sidebar-border bg-white p-3 dark:bg-sidebar">
+                                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Add Existing User</p>
+                                    <div class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start">
+                                        <div class="relative flex-1">
+                                            <input
+                                                :value="groupUserSearch[group.id] ?? ''"
+                                                type="text"
+                                                placeholder="Search existing users by name or email"
+                                                autocomplete="off"
+                                                class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                                @input="handleAssignableUserInput(group.id, $event)"
+                                            >
+                                            <div
+                                                v-if="(isSearchingGroupUsers[group.id] ?? false) || (groupUserSuggestions[group.id]?.length ?? 0) > 0"
+                                                class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-sidebar-border bg-white shadow-lg dark:bg-sidebar"
+                                            >
+                                                <div v-if="isSearchingGroupUsers[group.id] ?? false" class="px-3 py-2 text-xs text-muted-foreground">
+                                                    Searching...
+                                                </div>
+                                                <button
+                                                    v-for="user in (groupUserSuggestions[group.id] ?? [])"
+                                                    :key="user.id"
+                                                    type="button"
+                                                    class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm hover:bg-sidebar-accent first:border-t-0"
+                                                    @click="selectAssignableUser(group.id, user)"
+                                                >
+                                                    <span class="font-medium">{{ user.name }}</span>
+                                                    <span class="ml-1 text-muted-foreground">{{ user.email }}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            :disabled="assignMemberForm.processing || assignMemberForm.group_id !== group.id || !assignMemberForm.user_id"
+                                            @click="addUserToGroup(group.id)"
+                                        >
+                                            {{ assignMemberForm.processing && assignMemberForm.group_id === group.id ? 'Adding...' : 'Add User' }}
+                                        </Button>
+                                    </div>
+                                    <p v-if="assignMemberForm.errors.group_id && assignMemberForm.group_id === group.id" class="mt-1 text-xs text-red-600">
+                                        {{ assignMemberForm.errors.group_id }}
+                                    </p>
+                                    <p v-if="assignMemberForm.errors.user_id && assignMemberForm.group_id === group.id" class="mt-1 text-xs text-red-600">
+                                        {{ assignMemberForm.errors.user_id }}
+                                    </p>
+                                </div>
+
+                                <div class="mt-3 overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar">
+                                    <table class="w-full text-left text-sm">
+                                        <thead class="bg-sidebar-accent">
+                                            <tr>
+                                                <th class="px-3 py-2 font-medium">Member</th>
+                                                <th class="px-3 py-2 font-medium">Role</th>
+                                                <th class="px-3 py-2 font-medium">Joined</th>
+                                                <th class="px-3 py-2 font-medium">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr v-if="group.members.length === 0">
+                                                <td colspan="4" class="px-3 py-3 text-muted-foreground">No members yet.</td>
+                                            </tr>
+                                            <tr v-for="member in group.members" :key="member.id" class="border-t border-sidebar-border">
+                                                <td class="px-3 py-2">
+                                                    <div class="font-medium">{{ member.name }}</div>
+                                                    <div class="text-xs text-muted-foreground">{{ member.email }}</div>
+                                                </td>
+                                                <td class="px-3 py-2 capitalize">{{ member.role }}</td>
+                                                <td class="px-3 py-2">{{ formatDate(member.joined_at) }}</td>
+                                                <td class="px-3 py-2">
+                                                    <Button
+                                                        v-if="member.role !== 'owner'"
+                                                        type="button"
+                                                        variant="outline"
+                                                        size="sm"
+                                                        @click="removeUserFromGroup(group.id, member.id, member.name)"
+                                                    >
+                                                        Remove
+                                                    </Button>
+                                                    <span v-else class="text-xs text-muted-foreground">Owner</span>
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
                                 </div>
 
                                 <div class="mt-3 overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar">

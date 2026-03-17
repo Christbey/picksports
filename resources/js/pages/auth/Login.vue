@@ -8,6 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
+import passkeyMarkGray from '@/assets/auth/passkey-mark-gray.svg';
+import passkeyMarkWhite from '@/assets/auth/passkey-mark-white.svg';
 import { signInWithPasskey } from '@/composables/usePasskeys';
 import AuthBase from '@/layouts/AuthLayout.vue';
 import {
@@ -91,68 +93,64 @@ async function handlePasskeySignIn(): Promise<void> {
                 <div class="grid gap-3 rounded-2xl border border-border/70 bg-card/40 p-4">
                     <p class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Recommended</p>
 
-                    <Button
+                    <button
                         type="button"
-                        class="h-12 w-full justify-between rounded-xl border border-border/70 bg-card/80 px-4 text-foreground shadow-sm transition-colors hover:bg-accent/70"
+                        class="passkey-material-button"
                         :disabled="passkeyProcessing"
                         @click="handlePasskeySignIn"
                     >
-                        <span class="flex items-center gap-3">
-                            <span class="inline-flex size-8 items-center justify-center rounded-lg bg-primary/12 text-primary">
-                                <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M12 11a4 4 0 1 0-4-4" />
-                                    <path d="M8 11v4" />
-                                    <path d="M8 15h3" />
-                                    <path d="M11 15v2a2 2 0 0 0 2 2" />
-                                    <path d="M13 19h1a2 2 0 0 0 2-2v-1" />
-                                    <path d="M16 16h1a2 2 0 0 0 2-2" />
-                                    <path d="M19 14a2 2 0 0 0 2-2v-1" />
-                                </svg>
+                        <span class="passkey-material-button-state"></span>
+                        <span class="passkey-material-button-content-wrapper">
+                            <span class="passkey-material-button-icon" aria-hidden="true">
+                                <img :src="passkeyMarkGray" alt="" class="passkey-mark passkey-mark-light">
+                                <img :src="passkeyMarkWhite" alt="" class="passkey-mark passkey-mark-dark">
                             </span>
-                            <span class="text-sm font-semibold">Sign in with passkey</span>
+                            <span class="passkey-material-button-contents">Sign in with passkey</span>
+                            <span class="passkey-material-button-meta">
+                                <Spinner v-if="passkeyProcessing" class="size-4" />
+                                <span v-else>Fastest</span>
+                            </span>
                         </span>
-                        <Spinner v-if="passkeyProcessing" />
-                        <span v-else class="text-xs uppercase tracking-[0.16em] text-muted-foreground">Fastest</span>
-                    </Button>
+                    </button>
 
                     <a
                         v-for="provider in oauthProviders"
                         :key="provider.key"
                         :href="provider.href"
-                        class="inline-flex h-12 w-full items-center justify-between rounded-xl border px-4 py-2 text-sm font-medium shadow-sm transition-colors"
-                        :class="isGoogleProvider(provider.label)
-                            ? 'border-border/70 bg-background text-foreground hover:bg-accent/70'
-                            : 'border-primary/20 bg-primary text-primary-foreground hover:opacity-90'"
+                        :class="isGoogleProvider(provider.label) ? 'gsi-material-button' : 'provider-material-button'"
                     >
-                        <span class="flex items-center gap-3">
-                            <span
-                                v-if="isGoogleProvider(provider.label)"
-                                class="inline-flex size-8 items-center justify-center rounded-lg bg-white shadow-sm"
-                            >
-                                <svg viewBox="0 0 24 24" class="size-4" aria-hidden="true">
-                                    <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.8-6-6.2s2.7-6.2 6-6.2c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 2.9 14.6 2 12 2 6.9 2 2.8 6.5 2.8 12s4.1 10 9.2 10c5.3 0 8.9-3.8 8.9-9.2 0-.6-.1-1.1-.2-1.6H12Z" />
-                                    <path fill="#34A853" d="M3.8 7.3l3.2 2.4C7.8 7.4 9.7 5.8 12 5.8c1.9 0 3.1.8 3.8 1.5l2.6-2.5C16.7 2.9 14.6 2 12 2 8 2 4.5 4.3 3 7.7Z" />
-                                    <path fill="#FBBC05" d="M12 22c2.5 0 4.6-.8 6.1-2.3l-2.8-2.3c-.8.6-1.8 1-3.3 1-2.8 0-5.1-1.9-5.9-4.4l-3.3 2.5C4.4 19.7 7.9 22 12 22Z" />
-                                    <path fill="#4285F4" d="M3 7.7A10.3 10.3 0 0 0 2 12c0 1.5.3 2.9.9 4.3l3.3-2.5A6.4 6.4 0 0 1 5.9 12c0-.6.1-1.3.3-1.8L3 7.7Z" />
-                                </svg>
+                        <template v-if="isGoogleProvider(provider.label)">
+                            <span class="gsi-material-button-state"></span>
+                            <span class="gsi-material-button-content-wrapper">
+                                <span class="gsi-material-button-icon">
+                                    <svg version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" style="display: block;" aria-hidden="true">
+                                        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                                        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                                        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                                        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                                        <path fill="none" d="M0 0h48v48H0z"></path>
+                                    </svg>
+                                </span>
+                                <span class="gsi-material-button-contents">Sign in with Google</span>
+                                <span class="gsi-material-button-meta">Popular</span>
                             </span>
-                            <span
-                                v-else
-                                class="inline-flex size-8 items-center justify-center rounded-lg bg-primary-foreground/15 text-current"
-                            >
-                                <svg viewBox="0 0 24 24" class="size-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <circle cx="12" cy="12" r="3" />
-                                    <path d="M19 12h2" />
-                                    <path d="M3 12h2" />
-                                    <path d="M12 3v2" />
-                                    <path d="M12 19v2" />
-                                </svg>
+                        </template>
+                        <template v-else>
+                            <span class="provider-material-button-state"></span>
+                            <span class="provider-material-button-content-wrapper">
+                                <span class="provider-material-button-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="3" />
+                                        <path d="M19 12h2" />
+                                        <path d="M3 12h2" />
+                                        <path d="M12 3v2" />
+                                        <path d="M12 19v2" />
+                                    </svg>
+                                </span>
+                                <span class="provider-material-button-contents">Continue with {{ provider.label }}</span>
+                                <span class="provider-material-button-meta">SSO</span>
                             </span>
-                            <span class="text-sm font-semibold">Continue with {{ provider.label }}</span>
-                        </span>
-                        <span class="text-xs uppercase tracking-[0.16em]" :class="isGoogleProvider(provider.label) ? 'text-muted-foreground' : 'text-primary-foreground/80'">
-                            {{ isGoogleProvider(provider.label) ? 'Popular' : 'SSO' }}
-                        </span>
+                        </template>
                     </a>
 
                     <p v-if="passkeyError" class="text-sm text-red-600">{{ passkeyError }}</p>
@@ -246,3 +244,203 @@ async function handlePasskeySignIn(): Promise<void> {
         </Form>
     </AuthBase>
 </template>
+
+<style scoped>
+.gsi-material-button,
+.passkey-material-button,
+.provider-material-button {
+    position: relative;
+    display: inline-flex;
+    min-height: 48px;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 14px;
+    text-decoration: none;
+    transition: box-shadow 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 150ms ease;
+}
+
+.gsi-material-button {
+    border: 1px solid rgb(218 220 224);
+    background: rgb(255 255 255);
+    box-shadow: 0 1px 2px 0 rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
+}
+
+.gsi-material-button:hover {
+    background: rgb(248 249 250);
+    box-shadow: 0 2px 6px 2px rgb(60 64 67 / 0.15), 0 1px 2px 0 rgb(60 64 67 / 0.3);
+}
+
+.dark .gsi-material-button {
+    border-color: rgb(63 63 70);
+    background: rgb(24 24 27);
+}
+
+.dark .gsi-material-button:hover {
+    background: rgb(39 39 42);
+}
+
+.gsi-material-button-state,
+.passkey-material-button-state,
+.provider-material-button-state {
+    position: absolute;
+    inset: 0;
+}
+
+.gsi-material-button-content-wrapper,
+.passkey-material-button-content-wrapper,
+.provider-material-button-content-wrapper {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 12px;
+    padding: 0 16px;
+}
+
+.gsi-material-button-icon,
+.passkey-material-button-icon,
+.provider-material-button-icon {
+    display: inline-flex;
+    height: 20px;
+    width: 20px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+}
+
+.gsi-material-button-contents,
+.passkey-material-button-contents,
+.provider-material-button-contents {
+    flex: 1;
+    text-align: left;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 20px;
+}
+
+.gsi-material-button-contents {
+    color: rgb(60 64 67);
+}
+
+.dark .gsi-material-button-contents {
+    color: rgb(244 244 245);
+}
+
+.gsi-material-button-meta,
+.passkey-material-button-meta,
+.provider-material-button-meta {
+    flex-shrink: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+}
+
+.gsi-material-button-meta {
+    color: rgb(95 99 104);
+}
+
+.dark .gsi-material-button-meta {
+    color: rgb(161 161 170);
+}
+
+.passkey-material-button {
+    border: 1px solid rgb(218 220 224);
+    background: rgb(255 255 255);
+    box-shadow: 0 1px 2px 0 rgb(60 64 67 / 0.3), 0 1px 3px 1px rgb(60 64 67 / 0.15);
+}
+
+.passkey-material-button:hover {
+    background: rgb(248 249 250);
+    box-shadow: 0 2px 6px 2px rgb(60 64 67 / 0.15), 0 1px 2px 0 rgb(60 64 67 / 0.3);
+}
+
+.passkey-material-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.7;
+    transform: none;
+}
+
+.dark .passkey-material-button {
+    border-color: rgb(63 63 70);
+    background: rgb(24 24 27);
+}
+
+.dark .passkey-material-button:hover {
+    background: rgb(39 39 42);
+}
+
+.passkey-material-button-icon {
+    height: 36px;
+    width: 36px;
+    border-radius: 0;
+    background: transparent;
+    overflow: hidden;
+}
+
+.dark .passkey-material-button-icon {
+    background: transparent;
+}
+
+.passkey-material-button-contents {
+    color: rgb(60 64 67);
+}
+
+.passkey-material-button-meta {
+    color: rgb(95 99 104);
+}
+
+.dark .passkey-material-button-contents {
+    color: rgb(244 244 245);
+}
+
+.dark .passkey-material-button-meta {
+    color: rgb(161 161 170);
+}
+
+.passkey-mark {
+    display: block;
+    height: 32px;
+    width: 32px;
+}
+
+.passkey-mark-dark {
+    display: none;
+}
+
+.dark .passkey-mark-light {
+    display: none;
+}
+
+.dark .passkey-mark-dark {
+    display: block;
+}
+
+.provider-material-button {
+    border: 1px solid hsl(var(--border) / 0.8);
+    background: hsl(var(--card));
+}
+
+.provider-material-button:hover {
+    background: hsl(var(--accent));
+}
+
+.provider-material-button-icon {
+    height: 32px;
+    width: 32px;
+    border-radius: 10px;
+    background: hsl(var(--primary) / 0.12);
+    color: hsl(var(--primary));
+}
+
+.provider-material-button-contents {
+    color: hsl(var(--foreground));
+}
+
+.provider-material-button-meta {
+    color: hsl(var(--muted-foreground));
+}
+</style>

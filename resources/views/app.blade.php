@@ -44,8 +44,48 @@
                 'privacy' => 'Review the PickSports privacy policy.',
                 'responsible-gambling' => 'Learn PickSports responsible gambling principles and resources.',
             ];
+            $metaTitle = $appName;
             $metaDescription = $descriptionMap[$path] ?? $defaultDescription;
             $ogImage = $baseUrl.'/icon-512.png?v=ps-gradient-2';
+            $ogImageAlt = 'PickSports PS gradient logo';
+
+            if ($path === 'login') {
+                $metaTitle = 'Log in to PickSports';
+                $metaDescription = 'Sign in to PickSports with passkey, Google, or email to access predictions and your March Madness bracket.';
+            }
+
+            if ($path === 'register') {
+                $metaTitle = 'Create your PickSports account';
+                $metaDescription = 'Create your PickSports account to join bracket groups, save picks, and compete on the leaderboard.';
+
+                $inviteToken = trim((string) request()->query('invite', ''));
+                if ($inviteToken !== '') {
+                    $invitation = \App\Models\GroupInvitation::query()
+                        ->with('group')
+                        ->where('token', $inviteToken)
+                        ->first();
+
+                    if ($invitation && $invitation->isPending()) {
+                        $groupName = $invitation->group?->name ?: 'a PickSports bracket group';
+                        $metaTitle = "Join {$groupName} on {$appName}";
+                        $metaDescription = "Accept your invitation to join {$groupName}, create your account, and complete your March Madness bracket on {$appName}.";
+                    }
+                }
+
+                $joinToken = trim((string) request()->query('join', ''));
+                if ($joinToken !== '') {
+                    $joinLink = \App\Models\GroupJoinLink::query()
+                        ->with('group')
+                        ->where('token', $joinToken)
+                        ->first();
+
+                    if ($joinLink && $joinLink->isActive()) {
+                        $groupName = $joinLink->group?->name ?: 'a PickSports bracket group';
+                        $metaTitle = "Join {$groupName} on {$appName}";
+                        $metaDescription = "Use this shared link to join {$groupName}, create your account, and fill out your March Madness bracket on {$appName}.";
+                    }
+                }
+            }
 
             $segments = array_values(array_filter(explode('/', $path)));
             $breadcrumbItems = [[
@@ -165,15 +205,18 @@
         <link rel="alternate" hreflang="x-default" href="{{ $canonicalUrl }}">
         <meta property="og:type" content="website">
         <meta property="og:site_name" content="{{ $appName }}">
-        <meta property="og:title" content="{{ $appName }}">
+        <meta property="og:title" content="{{ $metaTitle }}">
         <meta property="og:description" content="{{ $metaDescription }}">
         <meta property="og:url" content="{{ $canonicalUrl }}">
         <meta property="og:image" content="{{ $ogImage }}">
-        <meta property="og:image:alt" content="PickSports PS gradient logo">
+        <meta property="og:image:alt" content="{{ $ogImageAlt }}">
+        <meta property="og:image:width" content="512">
+        <meta property="og:image:height" content="512">
         <meta name="twitter:card" content="summary_large_image">
-        <meta name="twitter:title" content="{{ $appName }}">
+        <meta name="twitter:title" content="{{ $metaTitle }}">
         <meta name="twitter:description" content="{{ $metaDescription }}">
         <meta name="twitter:image" content="{{ $ogImage }}">
+        <meta name="twitter:image:alt" content="{{ $ogImageAlt }}">
 
         <link rel="icon" href="/favicon.svg?v=ps-gradient-1" type="image/svg+xml">
         <link rel="shortcut icon" href="/favicon.svg?v=ps-gradient-1" type="image/svg+xml">

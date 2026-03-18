@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN\Concerns;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Support\EspnGameStatusResolver;
 use App\Services\GameFinalizationDispatcher;
 use Illuminate\Database\Eloquent\Model;
 
@@ -26,9 +27,19 @@ trait UpdatesGameFromSummary
         $broadcastNetworks = collect($broadcasts)->pluck('names')->flatten()->toArray();
 
         $normalizedStatus = GameData::normalizeStatus((string) ($status['type']['name'] ?? 'scheduled'));
+        $parts = explode('\\', get_class($game));
+        $sport = strtolower($parts[2] ?? '');
+        /** @var EspnGameStatusResolver $resolver */
+        $resolver = app(EspnGameStatusResolver::class);
+        $resolvedStatus = $resolver->resolveForUpdate(
+            (string) ($game->status ?? ''),
+            $normalizedStatus,
+            'summary',
+            $sport,
+        );
 
         $game->update([
-            'status' => $normalizedStatus,
+            'status' => $resolvedStatus,
             'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : null,
             'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : null,
             'home_linescores' => $homeTeam['linescores'] ?? null,

@@ -77,12 +77,6 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 
     protected function effectiveStatus(GameData $dto, array $rawGame): string
     {
-        $gameDate = GameData::extractDateParts($rawGame['date'] ?? null)['game_date'];
-
-        if ($gameDate && $gameDate < now()->format('Y-m-d') && $dto->status === 'STATUS_SCHEDULED') {
-            return 'STATUS_FINAL';
-        }
-
         return $dto->status;
     }
 }

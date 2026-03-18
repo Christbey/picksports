@@ -19,4 +19,12 @@ class GeneratePrediction extends AbstractCollegeBasketballPredictionGenerator
     protected const GAME_MODEL = Game::class;
 
     protected const TEAM_STAT_MODEL = TeamStat::class;
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function preview(Game $game): ?array
+    {
+        return $this->makePredictionData($game);
+    }
 }

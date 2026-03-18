@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Support\EspnGameStatusResolver;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\ESPN\BaseEspnService;
 use Illuminate\Database\Eloquent\Model;
@@ -15,7 +16,12 @@ abstract class AbstractSyncGames
 
     protected const UNIQUE_GAME_KEY = 'espn_event_id';
 
-    public function __construct(protected BaseEspnService $espnService) {}
+    public function __construct(
+        protected BaseEspnService $espnService,
+        protected ?EspnGameStatusResolver $statusResolver = null,
+    ) {
+        $this->statusResolver ??= app(EspnGameStatusResolver::class);
+    }
 
     protected function getUniqueGameKey(): string
     {
@@ -120,6 +126,18 @@ abstract class AbstractSyncGames
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
             if ($existingGame) {
                 $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
+                $attributes['status'] = $this->statusResolver->resolveForUpdate(
+                    (string) ($existingGame->status ?? ''),
+                    (string) ($attributes['status'] ?? ''),
+                    'games',
+                    $this->sportKey(),
+                );
+            } else {
+                $attributes['status'] = $this->statusResolver->resolveForCreate(
+                    (string) ($attributes['status'] ?? ''),
+                    'games',
+                    $this->sportKey(),
+                );
             }
             $previousStatus = $existingGame ? (string) ($existingGame->status ?? '') : null;
 
@@ -248,5 +266,12 @@ abstract class AbstractSyncGames
         }
 
         return $attributes;
+    }
+
+    protected function sportKey(): string
+    {
+        $parts = explode('\\', $this->gameModelClass());
+
+        return strtolower($parts[2] ?? '');
     }
 }

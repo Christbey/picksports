@@ -7,6 +7,7 @@ use App\Http\Resources\CBB\TournamentForecastResource;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Models\CBB\TournamentForecast;
+use App\Models\CBB\TournamentStateSnapshot;
 use App\Support\SportsViewCache;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
@@ -54,18 +55,35 @@ class TournamentForecastController extends Controller
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.futures_forecasts_seconds', 120),
             resolver: function () use ($season, $sortBy, $direction, $request): array {
-                $actualFieldByTeam = $this->actualFieldByTeam($season);
-                $eliminatedTeamIds = $this->eliminatedTeamIds($season);
-                $forecasts = TournamentForecast::query()
+                $latestSnapshot = TournamentStateSnapshot::query()
+                    ->where('season', $season)
+                    ->where('status', 'completed')
+                    ->latest('as_of')
+                    ->latest('id')
+                    ->first();
+
+                $actualFieldByTeam = $latestSnapshot
+                    ? $this->actualFieldByTeamFromForecasts($latestSnapshot->forecasts()->with('team')->get())
+                    : $this->actualFieldByTeam($season);
+                $eliminatedTeamIds = $latestSnapshot ? [] : $this->eliminatedTeamIds($season);
+                $forecastQuery = TournamentForecast::query()
                     ->with('team')
                     ->where('season', $season)
+                    ->when(
+                        $latestSnapshot,
+                        fn ($query) => $query->where('snapshot_id', $latestSnapshot->id),
+                        fn ($query) => $query->where('mode', 'baseline')
+                    )
                     ->orderBy($sortBy, $direction)
-                    ->orderBy('tournament_make_probability', 'desc')
-                    ->get();
-                $actualTeamIds = array_keys($actualFieldByTeam);
-                $missingActualTeams = Team::query()
-                    ->whereIn('id', array_values(array_diff($actualTeamIds, $forecasts->pluck('team_id')->all())))
-                    ->get();
+                    ->orderBy('tournament_make_probability', 'desc');
+                $forecasts = $forecastQuery->get();
+                $missingActualTeams = collect();
+                if (! $latestSnapshot) {
+                    $actualTeamIds = array_keys($actualFieldByTeam);
+                    $missingActualTeams = Team::query()
+                        ->whereIn('id', array_values(array_diff($actualTeamIds, array_filter($forecasts->pluck('team_id')->all()))))
+                        ->get();
+                }
 
                 $seasons = TournamentForecast::query()
                     ->select('season')
@@ -80,20 +98,32 @@ class TournamentForecastController extends Controller
                 }
                 $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason('cbb', $season);
                 $data = array_map(function (array $row) use ($marketOddsByTeam): array {
-                    $teamId = (int) ($row['team_id'] ?? 0);
-                    $row['market_odds'] = $marketOddsByTeam[$teamId] ?? null;
+                    $teamId = $row['team_id'] !== null ? (int) $row['team_id'] : 0;
+                    $row['market_odds'] = $teamId > 0 ? ($marketOddsByTeam[$teamId] ?? null) : null;
 
                     return $row;
                 }, $data);
-                $data = array_map(function (array $row) use ($actualFieldByTeam, $eliminatedTeamIds): array {
-                    $teamId = (int) ($row['team_id'] ?? 0);
-                    $field = $actualFieldByTeam[$teamId] ?? null;
-                    $row['is_actual_field'] = $field !== null;
-                    $row['is_first_four'] = (bool) ($field['is_first_four'] ?? false);
-                    $row['actual_round'] = $field['round'] ?? null;
-                    $row['actual_region'] = $field['region'] ?? null;
-                    $row['actual_seed'] = $field['seed'] ?? null;
-                    $row['is_eliminated'] = isset($eliminatedTeamIds[$teamId]);
+                $data = array_map(function (array $row) use ($actualFieldByTeam, $eliminatedTeamIds, $latestSnapshot): array {
+                    $teamId = $row['team_id'] !== null ? (int) $row['team_id'] : 0;
+
+                    if ($latestSnapshot) {
+                        $row['is_actual_field'] = true;
+                        $row['actual_round'] = $row['reached_round'];
+                        $row['actual_region'] = $row['region'];
+                        $row['actual_seed'] = $row['seed'];
+                        $row['is_first_four'] = (bool) $row['is_first_four'];
+                    } else {
+                        $field = $actualFieldByTeam[$teamId] ?? null;
+                        $row['is_actual_field'] = $field !== null;
+                        $row['is_first_four'] = (bool) ($field['is_first_four'] ?? false);
+                        $row['actual_round'] = $field['round'] ?? null;
+                        $row['actual_region'] = $field['region'] ?? null;
+                        $row['actual_seed'] = $field['seed'] ?? null;
+                    }
+
+                    if (! $latestSnapshot) {
+                        $row['is_eliminated'] = $teamId > 0 && isset($eliminatedTeamIds[$teamId]);
+                    }
 
                     if ($row['is_eliminated']) {
                         $row['champion_probability'] = 0.0;
@@ -110,7 +140,10 @@ class TournamentForecastController extends Controller
                     'meta' => [
                         'season' => $season,
                         'available_seasons' => $seasons,
-                        'actual_field_size' => count($actualFieldByTeam),
+                        'actual_field_size' => $latestSnapshot?->field_size ?? count($actualFieldByTeam),
+                        'mode' => $latestSnapshot ? 'live_snapshot' : 'baseline',
+                        'snapshot_id' => $latestSnapshot?->id,
+                        'snapshot_as_of' => $latestSnapshot?->as_of?->toIso8601String(),
                     ],
                 ];
             },
@@ -125,6 +158,16 @@ class TournamentForecastController extends Controller
             'id' => null,
             'team_id' => $team->id,
             'season' => $season,
+            'snapshot_id' => null,
+            'as_of' => null,
+            'mode' => 'baseline',
+            'region' => null,
+            'seed' => null,
+            'is_first_four' => false,
+            'is_alive' => true,
+            'is_eliminated' => false,
+            'reached_round' => null,
+            'eliminated_round' => null,
             'selection_score' => 0.0,
             'projected_seed' => null,
             'auto_bid' => false,
@@ -138,6 +181,10 @@ class TournamentForecastController extends Controller
             'champion_probability' => 0.0,
             'final_four_probability' => 0.0,
             'title_game_probability' => 0.0,
+            'games_final_count' => 0,
+            'round_of_32_probability' => 0.0,
+            'sweet_16_probability' => 0.0,
+            'elite_8_probability' => 0.0,
             'simulation_runs' => 0,
             'team' => [
                 'id' => $team->id,
@@ -196,6 +243,24 @@ class TournamentForecastController extends Controller
 
                 return $field;
             }, []);
+    }
+
+    /**
+     * @return array<int, array{seed:int|null,region:?string,round:?string,is_first_four:bool}>
+     */
+    private function actualFieldByTeamFromForecasts($forecasts): array
+    {
+        return collect($forecasts)
+            ->filter(fn (TournamentForecast $forecast) => $forecast->team_id !== null)
+            ->mapWithKeys(fn (TournamentForecast $forecast) => [
+                $forecast->team_id => [
+                    'seed' => $forecast->seed,
+                    'region' => $forecast->region,
+                    'round' => $forecast->reached_round,
+                    'is_first_four' => (bool) $forecast->is_first_four,
+                ],
+            ])
+            ->all();
     }
 
     /**

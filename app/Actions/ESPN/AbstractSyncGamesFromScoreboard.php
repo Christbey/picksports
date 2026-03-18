@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Support\EspnGameStatusResolver;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\ESPN\BaseEspnService;
 use Illuminate\Database\Eloquent\Model;
@@ -21,10 +22,12 @@ abstract class AbstractSyncGamesFromScoreboard
 
     public function __construct(
         protected BaseEspnService $espnService,
-        ?object $updateLivePrediction = null
+        ?object $updateLivePrediction = null,
+        protected ?EspnGameStatusResolver $statusResolver = null,
     ) {
         $this->updateLivePrediction = $updateLivePrediction
             ?? app($this->updateLivePredictionActionClass());
+        $this->statusResolver ??= app(EspnGameStatusResolver::class);
     }
 
     protected function getUniqueGameKey(): string
@@ -181,6 +184,18 @@ abstract class AbstractSyncGamesFromScoreboard
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
             if ($existingGame) {
                 $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
+                $attributes['status'] = $this->statusResolver->resolveForUpdate(
+                    (string) ($existingGame->status ?? ''),
+                    (string) ($attributes['status'] ?? ''),
+                    'scoreboard',
+                    $this->sportKey(),
+                );
+            } else {
+                $attributes['status'] = $this->statusResolver->resolveForCreate(
+                    (string) ($attributes['status'] ?? ''),
+                    'scoreboard',
+                    $this->sportKey(),
+                );
             }
 
             if ($existingGame) {
@@ -254,9 +269,15 @@ abstract class AbstractSyncGamesFromScoreboard
         $homeTeam = collect($competitors)->firstWhere('homeAway', 'home');
         $awayTeam = collect($competitors)->firstWhere('homeAway', 'away');
         $normalizedStatus = GameData::normalizeStatus((string) ($status['type']['name'] ?? 'scheduled'));
+        $resolvedStatus = $this->statusResolver->resolveForUpdate(
+            (string) ($game->status ?? ''),
+            $normalizedStatus,
+            'summary',
+            $this->sportKey(),
+        );
 
         $game->update([
-            'status' => $normalizedStatus,
+            'status' => $resolvedStatus,
             'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : $game->home_score,
             'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : $game->away_score,
             'home_linescores' => $homeTeam['linescores'] ?? $game->home_linescores,
@@ -390,5 +411,12 @@ abstract class AbstractSyncGamesFromScoreboard
         }
 
         return static::UPDATE_LIVE_PREDICTION_ACTION_CLASS;
+    }
+
+    protected function sportKey(): string
+    {
+        $parts = explode('\\', $this->gameModelClass());
+
+        return strtolower($parts[2] ?? '');
     }
 }

@@ -403,6 +403,13 @@ $scheduleHalfHourlyWindowJob(
 $scheduleEpaLifecycle('nba', 'NBA', fn () => $fallSeasonYear, $nbaInSeason);
 
 // CBB
+$scheduleWeeklySeasonJob(
+    'espn:sync-cbb-teams',
+    0,
+    '01:15',
+    $cbbInSeason,
+    'CBB: Sync Teams'
+);
 $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
     ->weeklyOn(0, '01:30')
     ->when($cbbInSeason)
@@ -410,6 +417,26 @@ $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($cbbTeamSchedulesEvent, 'espn:sync-cbb-all-team-schedules', 'CBB: Sync All Team Schedules');
+
+$scheduleDailySeasonJob(
+    "cbb:sync-tournament-structure --season={$fallSeasonYear}",
+    '01:00',
+    $cbbInSeason,
+    'CBB: Sync Tournament Structure'
+);
+$scheduleWeeklySeasonJob(
+    'espn:sync-cbb-players',
+    0,
+    '02:15',
+    $cbbInSeason,
+    'CBB: Sync Players'
+);
+$scheduleDailySeasonJob(
+    'espn:backfill-cbb-stale-games --dispatch=0 --limit=100',
+    '03:00',
+    $cbbInSeason,
+    'CBB: Backfill Stale Games'
+);
 
 $scheduleSportPipeline(
     'espn:sync-cbb-current',
@@ -445,6 +472,12 @@ $scheduleDailySeasonJob(
     '07:00',
     $cbbInSeason,
     'CBB: Generate Tournament Forecast'
+);
+$scheduleDailySeasonJob(
+    "cbb:recalculate-tournament-outlook {$fallSeasonYear} --source=scheduled",
+    '07:15',
+    $cbbInSeason,
+    'CBB: Recalculate Tournament Outlook'
 );
 $scheduleOddsSyncWindow(
     "sports:sync-futures-odds --sport=cbb --season={$fallSeasonYear}",

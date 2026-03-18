@@ -20,7 +20,20 @@ class TournamentForecast extends Model
 
     protected $fillable = [
         'team_id',
+        'snapshot_id',
+        'placeholder_key',
         'season',
+        'as_of',
+        'mode',
+        'region',
+        'seed',
+        'team_display_name',
+        'team_abbreviation',
+        'is_first_four',
+        'is_alive',
+        'is_eliminated',
+        'reached_round',
+        'eliminated_round',
         'selection_score',
         'projected_seed',
         'auto_bid',
@@ -34,6 +47,10 @@ class TournamentForecast extends Model
         'champion_probability',
         'final_four_probability',
         'title_game_probability',
+        'games_final_count',
+        'round_of_32_probability',
+        'sweet_16_probability',
+        'elite_8_probability',
         'simulated_field_appearances',
         'simulated_titles',
         'simulation_runs',
@@ -42,8 +59,15 @@ class TournamentForecast extends Model
     protected function casts(): array
     {
         return [
+            'snapshot_id' => 'integer',
+            'team_id' => 'integer',
             'season' => 'integer',
+            'as_of' => 'datetime',
             'selection_score' => 'decimal:4',
+            'seed' => 'integer',
+            'is_first_four' => 'boolean',
+            'is_alive' => 'boolean',
+            'is_eliminated' => 'boolean',
             'projected_seed' => 'integer',
             'auto_bid' => 'boolean',
             'auto_bid_probability' => 'decimal:5',
@@ -56,6 +80,10 @@ class TournamentForecast extends Model
             'champion_probability' => 'decimal:5',
             'final_four_probability' => 'decimal:5',
             'title_game_probability' => 'decimal:5',
+            'games_final_count' => 'integer',
+            'round_of_32_probability' => 'decimal:5',
+            'sweet_16_probability' => 'decimal:5',
+            'elite_8_probability' => 'decimal:5',
             'simulated_field_appearances' => 'integer',
             'simulated_titles' => 'integer',
             'simulation_runs' => 'integer',
@@ -65,5 +93,10 @@ class TournamentForecast extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'team_id');
+    }
+
+    public function snapshot(): BelongsTo
+    {
+        return $this->belongsTo(TournamentStateSnapshot::class, 'snapshot_id');
     }
 }

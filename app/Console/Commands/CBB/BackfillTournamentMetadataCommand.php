@@ -20,6 +20,7 @@ class BackfillTournamentMetadataCommand extends Command
         $query = Game::query()
             ->where('season_type', (int) config('cbb.season.types.postseason'))
             ->whereNotNull('espn_event_id')
+            ->where('espn_event_id', 'not like', 'placeholder:%')
             ->when($this->option('season'), fn ($q, $season) => $q->where('season', (int) $season))
             ->orderBy('id');
 

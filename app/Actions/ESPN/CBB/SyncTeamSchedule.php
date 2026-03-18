@@ -16,16 +16,28 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
     public function __construct(
         \App\Services\ESPN\CBB\EspnService $espnService,
         protected CbbNcaaTournamentResolver $tournamentResolver,
+        protected ?SyncTeams $syncTeams = null,
     ) {
+        $this->syncTeams ??= app(SyncTeams::class, ['espnService' => $espnService]);
         parent::__construct($espnService);
     }
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
     {
-        return [
-            Team::query()->where('espn_id', $dto->homeTeamEspnId)->first(),
-            Team::query()->where('espn_id', $dto->awayTeamEspnId)->first(),
-        ];
+        $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
+        $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
+
+        if (! $homeTeam && $dto->homeTeamEspnId !== '') {
+            $this->syncTeams?->executeForEspnId($dto->homeTeamEspnId);
+            $homeTeam = Team::query()->where('espn_id', $dto->homeTeamEspnId)->first();
+        }
+
+        if (! $awayTeam && $dto->awayTeamEspnId !== '') {
+            $this->syncTeams?->executeForEspnId($dto->awayTeamEspnId);
+            $awayTeam = Team::query()->where('espn_id', $dto->awayTeamEspnId)->first();
+        }
+
+        return [$homeTeam, $awayTeam];
     }
 
     protected function shouldUpdateExistingGame(Model $existingGame, GameData $dto, array $rawGame): bool
@@ -90,12 +102,6 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
 
     protected function effectiveStatus(GameData $dto, array $rawGame): string
     {
-        $gameDate = GameData::extractDateParts($rawGame['date'] ?? null)['game_date'];
-
-        if ($gameDate && $gameDate < now()->format('Y-m-d') && $dto->status === 'STATUS_SCHEDULED') {
-            return 'STATUS_FINAL';
-        }
-
         return $dto->status;
     }
 }

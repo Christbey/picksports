@@ -60,6 +60,9 @@ type ForecastPayload = {
     meta?: {
         available_seasons?: number[];
         actual_field_size?: number;
+        mode?: string;
+        snapshot_id?: number | null;
+        snapshot_as_of?: string | null;
     };
 };
 
@@ -69,6 +72,8 @@ const error = ref<string | null>(null);
 const selectedSeason = ref<number | null>(null);
 const availableSeasons = ref<number[]>([]);
 const actualFieldSize = ref(0);
+const forecastMode = ref<string>('baseline');
+const snapshotAsOf = ref<string | null>(null);
 
 const regionOrder = ['East', 'West', 'South', 'Midwest'];
 
@@ -152,10 +157,14 @@ const fetchForecasts = async () => {
         forecasts.value = payload.data ?? [];
         availableSeasons.value = payload.meta?.available_seasons ?? [];
         actualFieldSize.value = payload.meta?.actual_field_size ?? 0;
+        forecastMode.value = payload.meta?.mode ?? 'baseline';
+        snapshotAsOf.value = payload.meta?.snapshot_as_of ?? null;
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred while loading forecast data.';
         forecasts.value = [];
         actualFieldSize.value = 0;
+        forecastMode.value = 'baseline';
+        snapshotAsOf.value = null;
     } finally {
         loading.value = false;
     }
@@ -202,8 +211,15 @@ onMounted(async () => {
                         </div>
                         <div class="min-w-[260px] text-sm text-muted-foreground">
                             <p class="font-medium text-foreground">Actual tournament field</p>
-                            <p v-if="actualFieldKnown" class="mt-1">This page now centers on the confirmed field and uses the forecast model for title and deep-run outlook.</p>
+                            <p v-if="actualFieldKnown" class="mt-1">
+                                This page now centers on the confirmed field and uses
+                                {{ forecastMode === 'live_snapshot' ? 'the latest live tournament snapshot' : 'the baseline forecast model' }}
+                                for title and deep-run outlook.
+                            </p>
                             <p v-else class="mt-1">Official field data is not available yet for this season.</p>
+                            <p v-if="snapshotAsOf" class="mt-1 text-xs">
+                                Live snapshot as of {{ new Date(snapshotAsOf).toLocaleString() }}
+                            </p>
                         </div>
                     </div>
                 </CardContent>

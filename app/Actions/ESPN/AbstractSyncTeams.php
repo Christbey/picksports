@@ -280,6 +280,23 @@ abstract class AbstractSyncTeams
         return $synced;
     }
 
+    public function executeForEspnId(string $espnId): bool
+    {
+        $espnId = trim($espnId);
+        if ($espnId === '') {
+            return false;
+        }
+
+        $response = $this->espnService->getTeam($espnId);
+        $team = is_array($response['team'] ?? null) ? $response['team'] : null;
+
+        if (! is_array($team) || empty($team['id'])) {
+            return false;
+        }
+
+        return $this->persistTeamRecord($team) !== null;
+    }
+
     /**
      * @param  array<string, mixed>  $team
      */
@@ -388,5 +405,43 @@ abstract class AbstractSyncTeams
         $segments = explode('\\', $namespace);
 
         return strtolower($segments[3] ?? 'teams');
+    }
+
+    /**
+     * @param  array<string, mixed>  $rawTeam
+     * @return \Illuminate\Database\Eloquent\Model|null
+     */
+    protected function persistTeamRecord(array $rawTeam): ?object
+    {
+        if (empty($rawTeam['id'])) {
+            return null;
+        }
+
+        $teamModel = $this->teamModelClass();
+        $uniqueKey = $this->getUniqueKey();
+        $resolvedTeam = $this->resolveTeam($rawTeam);
+        if (! is_array($resolvedTeam) || $resolvedTeam === []) {
+            return null;
+        }
+
+        $dto = $this->teamDtoFromApi($resolvedTeam);
+        $espnId = $this->getDtoEspnId($dto);
+        if ($espnId === '') {
+            return null;
+        }
+
+        $attributes = $this->mapTeamAttributes($dto, $resolvedTeam, $rawTeam);
+
+        try {
+            return $teamModel::updateOrCreate([$uniqueKey => $espnId], $attributes);
+        } catch (QueryException $e) {
+            if (! $this->isDuplicateAbbreviationViolation($e, $teamModel::query()->getModel()->getTable())) {
+                throw $e;
+            }
+
+            $attributes['abbreviation'] = $this->resolveUniqueAbbreviation($teamModel, $attributes, $espnId);
+
+            return $teamModel::updateOrCreate([$uniqueKey => $espnId], $attributes);
+        }
     }
 }

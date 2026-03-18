@@ -4,6 +4,7 @@ namespace App\Actions\ESPN\CBB;
 
 use App\Actions\CBB\UpdateLivePrediction;
 use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
+use App\Models\CBB\Team;
 use App\Support\CbbNcaaTournamentResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -20,8 +21,10 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
         \App\Services\ESPN\CBB\EspnService $espnService,
         ?object $updateLivePrediction = null,
         protected ?CbbNcaaTournamentResolver $tournamentResolver = null,
+        protected ?SyncTeams $syncTeams = null,
     ) {
         $this->tournamentResolver ??= app(CbbNcaaTournamentResolver::class);
+        $this->syncTeams ??= app(SyncTeams::class, ['espnService' => $espnService]);
 
         parent::__construct($espnService, $updateLivePrediction);
     }
@@ -36,5 +39,17 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
             parent::buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam),
             $this->tournamentResolver?->resolveFromEspnEvent($eventData) ?? [],
         );
+    }
+
+    protected function shouldAutoCreateMissingTeams(): bool
+    {
+        return true;
+    }
+
+    protected function createMissingTeamFromEventData(array $eventData, string $homeAway, string $espnTeamId): ?Model
+    {
+        $created = $this->syncTeams?->executeForEspnId($espnTeamId);
+
+        return $created ? Team::query()->where('espn_id', $espnTeamId)->first() : null;
     }
 }

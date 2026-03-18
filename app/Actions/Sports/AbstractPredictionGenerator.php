@@ -76,6 +76,24 @@ abstract class AbstractPredictionGenerator
      */
     public function execute(Model $game): ?Model
     {
+        $predictionData = $this->makePredictionData($game);
+        if ($predictionData === null) {
+            return null;
+        }
+
+        $predictionModel = $this->getPredictionModel();
+
+        return $predictionModel::updateOrCreate(
+            ['game_id' => $game->id],
+            $predictionData
+        );
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function makePredictionData(Model $game): ?array
+    {
         // Don't predict games that are already completed
         if ($game->status === 'STATUS_FINAL') {
             return null;
@@ -127,7 +145,7 @@ abstract class AbstractPredictionGenerator
         $confidenceScore = $this->calculateConfidence($winProbability);
 
         // Build prediction data
-        $predictionData = $this->buildPredictionData(
+        return $this->buildPredictionData(
             $homeElo,
             $awayElo,
             $homeMetrics,
@@ -136,14 +154,6 @@ abstract class AbstractPredictionGenerator
             $predictedTotal,
             $winProbability,
             $confidenceScore
-        );
-
-        // Create or update prediction
-        $predictionModel = $this->getPredictionModel();
-
-        return $predictionModel::updateOrCreate(
-            ['game_id' => $game->id],
-            $predictionData
         );
     }
 

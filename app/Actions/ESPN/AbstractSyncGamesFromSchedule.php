@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
+use App\Support\EspnGameStatusResolver;
 use App\Services\ESPN\BaseEspnService;
 use Illuminate\Database\Eloquent\Model;
 
@@ -11,8 +12,11 @@ abstract class AbstractSyncGamesFromSchedule
     protected const GAME_MODEL_CLASS = Model::class;
 
     public function __construct(
-        protected BaseEspnService $espnService
-    ) {}
+        protected BaseEspnService $espnService,
+        protected ?EspnGameStatusResolver $statusResolver = null,
+    ) {
+        $this->statusResolver ??= app(EspnGameStatusResolver::class);
+    }
 
     public function execute(string $teamEspnId, ?int $season = null): int
     {
@@ -67,6 +71,18 @@ abstract class AbstractSyncGamesFromSchedule
             $existingGame = $gameModel::query()->where($lookup)->first();
             if ($existingGame) {
                 $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
+                $attributes['status'] = $this->statusResolver->resolveForUpdate(
+                    (string) ($existingGame->status ?? ''),
+                    (string) ($attributes['status'] ?? ''),
+                    'schedule',
+                    $this->sportKey(),
+                );
+            } else {
+                $attributes['status'] = $this->statusResolver->resolveForCreate(
+                    (string) ($attributes['status'] ?? ''),
+                    'schedule',
+                    $this->sportKey(),
+                );
             }
 
             if ($existingGame) {
@@ -268,5 +284,12 @@ abstract class AbstractSyncGamesFromSchedule
         }
 
         return $attributes;
+    }
+
+    protected function sportKey(): string
+    {
+        $parts = explode('\\', $this->gameModelClass());
+
+        return strtolower($parts[2] ?? '');
     }
 }

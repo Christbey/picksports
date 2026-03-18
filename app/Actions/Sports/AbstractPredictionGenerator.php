@@ -123,7 +123,6 @@ abstract class AbstractPredictionGenerator
 
         // Calculate win probability from spread
         $winProbability = $this->calculateWinProbability($predictedSpread);
-
         // Calculate confidence score based on win probability
         $confidenceScore = $this->calculateConfidence($winProbability);
 

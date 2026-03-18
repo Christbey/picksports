@@ -9,40 +9,27 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('cbb_tournament_state_snapshots', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedInteger('season');
-            $table->dateTime('as_of');
-            $table->string('source', 32)->default('manual');
-            $table->string('status', 32)->default('running');
-            $table->foreignId('trigger_game_id')->nullable()->constrained('cbb_games')->nullOnDelete();
-            $table->unsignedInteger('games_final_count')->default(0);
-            $table->unsignedInteger('games_remaining_count')->default(0);
-            $table->unsignedTinyInteger('field_size')->default(0);
-            $table->text('notes')->nullable();
-            $table->json('metadata')->nullable();
-            $table->timestamps();
+        if (! Schema::hasTable('cbb_tournament_state_snapshots')) {
+            Schema::create('cbb_tournament_state_snapshots', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedInteger('season');
+                $table->dateTime('as_of');
+                $table->string('source', 32)->default('manual');
+                $table->string('status', 32)->default('running');
+                $table->foreignId('trigger_game_id')->nullable()->constrained('cbb_games')->nullOnDelete();
+                $table->unsignedInteger('games_final_count')->default(0);
+                $table->unsignedInteger('games_remaining_count')->default(0);
+                $table->unsignedTinyInteger('field_size')->default(0);
+                $table->text('notes')->nullable();
+                $table->json('metadata')->nullable();
+                $table->timestamps();
 
-            $table->index(['season', 'as_of'], 'cbb_tournament_state_snapshots_season_as_of_idx');
-            $table->index(['season', 'status'], 'cbb_tournament_state_snapshots_season_status_idx');
-        });
+                $table->index(['season', 'as_of'], 'cbb_tournament_state_snapshots_season_as_of_idx');
+                $table->index(['season', 'status'], 'cbb_tournament_state_snapshots_season_status_idx');
+            });
+        }
 
-        Schema::table('cbb_tournament_forecasts', function (Blueprint $table) {
-            $table->foreignId('snapshot_id')->nullable()->after('id')->constrained('cbb_tournament_state_snapshots')->nullOnDelete();
-            $table->dateTime('as_of')->nullable()->after('season');
-            $table->string('mode', 32)->default('baseline')->after('as_of');
-            $table->string('region')->nullable()->after('mode');
-            $table->unsignedTinyInteger('seed')->nullable()->after('region');
-            $table->boolean('is_first_four')->default(false)->after('seed');
-            $table->boolean('is_alive')->default(true)->after('is_first_four');
-            $table->boolean('is_eliminated')->default(false)->after('is_alive');
-            $table->string('reached_round')->nullable()->after('is_eliminated');
-            $table->string('eliminated_round')->nullable()->after('reached_round');
-            $table->unsignedInteger('games_final_count')->default(0)->after('simulation_runs');
-            $table->decimal('round_of_32_probability', 6, 5)->default(0)->after('games_final_count');
-            $table->decimal('sweet_16_probability', 6, 5)->default(0)->after('round_of_32_probability');
-            $table->decimal('elite_8_probability', 6, 5)->default(0)->after('sweet_16_probability');
-        });
+        $this->ensureForecastColumns();
 
         $this->backfillBaselineSnapshots();
         $this->replaceForecastIndexes();
@@ -76,12 +63,34 @@ return new class extends Migration
 
     private function backfillBaselineSnapshots(): void
     {
+        if (! Schema::hasTable('cbb_tournament_state_snapshots')) {
+            return;
+        }
+
         $seasons = DB::table('cbb_tournament_forecasts')
             ->select('season')
             ->distinct()
             ->pluck('season');
 
         foreach ($seasons as $season) {
+            $existingSnapshotId = DB::table('cbb_tournament_state_snapshots')
+                ->where('season', $season)
+                ->where('source', 'baseline_backfill')
+                ->value('id');
+
+            if ($existingSnapshotId) {
+                DB::table('cbb_tournament_forecasts')
+                    ->where('season', $season)
+                    ->whereNull('snapshot_id')
+                    ->update([
+                        'snapshot_id' => $existingSnapshotId,
+                        'as_of' => now(),
+                        'mode' => 'baseline',
+                    ]);
+
+                continue;
+            }
+
             $snapshotId = DB::table('cbb_tournament_state_snapshots')->insertGetId([
                 'season' => $season,
                 'as_of' => now(),
@@ -101,6 +110,36 @@ return new class extends Migration
                     'as_of' => now(),
                     'mode' => 'baseline',
                 ]);
+        }
+    }
+
+    private function ensureForecastColumns(): void
+    {
+        $columns = [
+            'snapshot_id' => fn (Blueprint $table) => $table->foreignId('snapshot_id')->nullable()->after('id')->constrained('cbb_tournament_state_snapshots')->nullOnDelete(),
+            'as_of' => fn (Blueprint $table) => $table->dateTime('as_of')->nullable()->after('season'),
+            'mode' => fn (Blueprint $table) => $table->string('mode', 32)->default('baseline')->after('as_of'),
+            'region' => fn (Blueprint $table) => $table->string('region')->nullable()->after('mode'),
+            'seed' => fn (Blueprint $table) => $table->unsignedTinyInteger('seed')->nullable()->after('region'),
+            'is_first_four' => fn (Blueprint $table) => $table->boolean('is_first_four')->default(false)->after('seed'),
+            'is_alive' => fn (Blueprint $table) => $table->boolean('is_alive')->default(true)->after('is_first_four'),
+            'is_eliminated' => fn (Blueprint $table) => $table->boolean('is_eliminated')->default(false)->after('is_alive'),
+            'reached_round' => fn (Blueprint $table) => $table->string('reached_round')->nullable()->after('is_eliminated'),
+            'eliminated_round' => fn (Blueprint $table) => $table->string('eliminated_round')->nullable()->after('reached_round'),
+            'games_final_count' => fn (Blueprint $table) => $table->unsignedInteger('games_final_count')->default(0)->after('simulation_runs'),
+            'round_of_32_probability' => fn (Blueprint $table) => $table->decimal('round_of_32_probability', 6, 5)->default(0)->after('games_final_count'),
+            'sweet_16_probability' => fn (Blueprint $table) => $table->decimal('sweet_16_probability', 6, 5)->default(0)->after('round_of_32_probability'),
+            'elite_8_probability' => fn (Blueprint $table) => $table->decimal('elite_8_probability', 6, 5)->default(0)->after('sweet_16_probability'),
+        ];
+
+        foreach ($columns as $column => $definition) {
+            if (Schema::hasColumn('cbb_tournament_forecasts', $column)) {
+                continue;
+            }
+
+            Schema::table('cbb_tournament_forecasts', function (Blueprint $table) use ($definition) {
+                $definition($table);
+            });
         }
     }
 

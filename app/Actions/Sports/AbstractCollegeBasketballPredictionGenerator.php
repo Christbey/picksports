@@ -17,6 +17,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     private array $metadata = [];
     /** @var array<string, mixed> True EPA rollout metadata */
     private array $trueEpaMetadata = [];
+    /** @var array<string, mixed> Total model metadata */
+    private array $totalMetadata = [];
 
     protected function getGameModel(): string
     {
@@ -45,6 +47,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     ): float {
         $this->metadata = [];
         $this->trueEpaMetadata = [];
+        $this->totalMetadata = [];
 
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
@@ -121,26 +124,66 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
 
-        $homePredictedScore = ($homeOffEff + $awayDefEff) / 2;
-        $awayPredictedScore = ($awayOffEff + $homeDefEff) / 2;
-
-        $seasonPace = (($homeMetrics?->tempo ?? $config['average_pace']) + ($awayMetrics?->tempo ?? $config['average_pace'])) / 2;
-
         $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season);
         $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season);
-        $formPace = ($homeForm['tempo'] + $awayForm['tempo']) / 2;
+        $recentWeight = (float) ($config['total_recent_efficiency_weight'] ?? 0.35);
+        $venueWeight = (float) ($config['total_venue_efficiency_weight'] ?? 0.15);
 
-        $pace = ($seasonPace + $formPace) / 2;
+        $homeSeasonScore = ($homeOffEff + $awayDefEff) / 2;
+        $awaySeasonScore = ($awayOffEff + $homeDefEff) / 2;
+        $homeRecentScore = (
+            (float) ($homeMetrics?->rolling_offensive_efficiency ?? $homeForm['off_eff'])
+            + (float) ($awayMetrics?->rolling_defensive_efficiency ?? $awayForm['def_eff'])
+        ) / 2;
+        $awayRecentScore = (
+            (float) ($awayMetrics?->rolling_offensive_efficiency ?? $awayForm['off_eff'])
+            + (float) ($homeMetrics?->rolling_defensive_efficiency ?? $homeForm['def_eff'])
+        ) / 2;
+        $homeVenueScore = $this->pairedVenueScore(
+            $homeMetrics?->home_offensive_efficiency,
+            $awayMetrics?->away_defensive_efficiency
+        );
+        $awayVenueScore = $this->pairedVenueScore(
+            $awayMetrics?->away_offensive_efficiency,
+            $homeMetrics?->home_defensive_efficiency
+        );
+
+        $homePredictedScore = $this->blendWeightedValues([
+            ['value' => $homeSeasonScore, 'weight' => 1.0],
+            ['value' => $homeRecentScore, 'weight' => $recentWeight],
+            ['value' => $homeVenueScore, 'weight' => $homeVenueScore !== null ? $venueWeight : 0.0],
+        ]);
+        $awayPredictedScore = $this->blendWeightedValues([
+            ['value' => $awaySeasonScore, 'weight' => 1.0],
+            ['value' => $awayRecentScore, 'weight' => $recentWeight],
+            ['value' => $awayVenueScore, 'weight' => $awayVenueScore !== null ? $venueWeight : 0.0],
+        ]);
+
+        $seasonPace = (($homeMetrics?->tempo ?? $config['average_pace']) + ($awayMetrics?->tempo ?? $config['average_pace'])) / 2;
+        $recentPace = (
+            (float) ($homeMetrics?->rolling_tempo ?? $homeForm['tempo'])
+            + (float) ($awayMetrics?->rolling_tempo ?? $awayForm['tempo'])
+        ) / 2;
+        $pace = $this->blendWeightedValues([
+            ['value' => $seasonPace, 'weight' => 1.0],
+            ['value' => $recentPace, 'weight' => $recentWeight],
+        ]);
 
         $restHome = $this->metadata['rest_days_home'] ?? null;
         $restAway = $this->metadata['rest_days_away'] ?? null;
+        $restPaceAdjustment = 0.0;
 
         if ($restHome !== null && $restHome <= 1) {
-            $pace -= 1.0;
+            $restPaceAdjustment -= 1.0;
         }
         if ($restAway !== null && $restAway <= 1) {
-            $pace -= 1.0;
+            $restPaceAdjustment -= 1.0;
         }
+        $pace += $restPaceAdjustment;
+
+        $factorAdjustments = $this->recentPossessionFactorAdjustments($game, (int) $game->season, $config);
+        $homePredictedScore += $factorAdjustments['home_adjustment'];
+        $awayPredictedScore += $factorAdjustments['away_adjustment'];
 
         $legacyTotal = ($homePredictedScore + $awayPredictedScore) * ($pace / 100);
         [$blendedTotal, $trueEpaTotalMeta] = $this->applyTrueEpaTotalBlend(
@@ -149,6 +192,22 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $awayMetrics
         );
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
+        $this->totalMetadata = [
+            'season_home_score_component' => round($homeSeasonScore, 3),
+            'season_away_score_component' => round($awaySeasonScore, 3),
+            'recent_home_score_component' => round($homeRecentScore, 3),
+            'recent_away_score_component' => round($awayRecentScore, 3),
+            'venue_home_score_component' => $homeVenueScore !== null ? round($homeVenueScore, 3) : null,
+            'venue_away_score_component' => $awayVenueScore !== null ? round($awayVenueScore, 3) : null,
+            'home_total_factor_adjustment' => round($factorAdjustments['home_adjustment'], 3),
+            'away_total_factor_adjustment' => round($factorAdjustments['away_adjustment'], 3),
+            'season_pace' => round($seasonPace, 3),
+            'recent_pace' => round($recentPace, 3),
+            'rest_pace_adjustment' => round($restPaceAdjustment, 3),
+            'blended_pace' => round($pace, 3),
+            'legacy_total' => round($legacyTotal, 3),
+            'recent_factor_profile' => $factorAdjustments['metadata'],
+        ];
 
         return round($blendedTotal, 1);
     }
@@ -179,6 +238,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'model_metadata' => [
                 'model' => "{$this->getSport()}_ensemble",
                 'true_epa' => $this->trueEpaMetadata,
+                'total_model' => $this->totalMetadata,
             ],
         ], $this->metadata);
     }
@@ -514,6 +574,252 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         }
 
         return 0.5;
+    }
+
+    private function pairedVenueScore(mixed $offense, mixed $defense): ?float
+    {
+        if (! is_numeric($offense) || ! is_numeric($defense)) {
+            return null;
+        }
+
+        return (((float) $offense) + ((float) $defense)) / 2;
+    }
+
+    /**
+     * @param  array<int, array{value:float|null, weight:float}>  $components
+     */
+    private function blendWeightedValues(array $components): float
+    {
+        $weightedTotal = 0.0;
+        $weightTotal = 0.0;
+
+        foreach ($components as $component) {
+            if ($component['value'] === null || $component['weight'] <= 0) {
+                continue;
+            }
+
+            $weightedTotal += $component['value'] * $component['weight'];
+            $weightTotal += $component['weight'];
+        }
+
+        return $weightTotal > 0 ? ($weightedTotal / $weightTotal) : 0.0;
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array{
+     *   home_adjustment: float,
+     *   away_adjustment: float,
+     *   metadata: array<string, mixed>
+     * }
+     */
+    private function recentPossessionFactorAdjustments(Model $game, int $season, array $config): array
+    {
+        $homeProfile = $this->recentStatProfile($game->homeTeam, $season);
+        $awayProfile = $this->recentStatProfile($game->awayTeam, $season);
+        $weights = (array) ($config['total_factor_weights'] ?? []);
+
+        return [
+            'home_adjustment' => round($this->computeProfileAdjustment($homeProfile, $awayProfile, $weights), 4),
+            'away_adjustment' => round($this->computeProfileAdjustment($awayProfile, $homeProfile, $weights), 4),
+            'metadata' => [
+                'home' => $homeProfile,
+                'away' => $awayProfile,
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, float|null>  $offense
+     * @param  array<string, float|null>  $defense
+     * @param  array<string, mixed>  $weights
+     */
+    private function computeProfileAdjustment(array $offense, array $defense, array $weights): float
+    {
+        $adjustment = 0.0;
+        $adjustment += $this->scaledProfileDifference(
+            $offense['effective_fg_pct'],
+            $defense['effective_fg_pct_allowed'],
+            (float) ($weights['effective_fg_pct'] ?? 40.0)
+        );
+        $adjustment += $this->scaledProfileDifference(
+            $offense['free_throw_rate'],
+            $defense['free_throw_rate_allowed'],
+            (float) ($weights['free_throw_rate'] ?? 18.0)
+        );
+        $adjustment -= $this->scaledProfileDifference(
+            $offense['turnover_rate'],
+            $defense['turnover_force_rate'],
+            (float) ($weights['turnover_rate'] ?? 18.0)
+        );
+        $adjustment += $this->scaledProfileDifference(
+            $offense['offensive_rebound_rate'],
+            $defense['offensive_rebound_rate_allowed'],
+            (float) ($weights['offensive_rebound_rate'] ?? 10.0)
+        );
+
+        return $adjustment;
+    }
+
+    private function scaledProfileDifference(?float $offenseValue, ?float $defenseValue, float $weight): float
+    {
+        if ($offenseValue === null || $defenseValue === null) {
+            return 0.0;
+        }
+
+        return ($offenseValue - $defenseValue) * $weight;
+    }
+
+    /**
+     * @return array<string, float|null>
+     */
+    private function recentStatProfile(Model $team, int $season): array
+    {
+        $sport = $this->getSport();
+        $config = config("{$sport}.prediction");
+        $numGames = (int) ($config['recent_form_games'] ?? 10);
+        $decay = (float) ($config['recency_decay'] ?? 0.9);
+        $defaultPace = (float) ($config['average_pace'] ?? 70.0);
+
+        $gameModel = $this->getGameModel();
+        $teamStatModel = $this->getTeamStatModel();
+        $gameTable = (new $gameModel)->getTable();
+        $teamStatTable = (new $teamStatModel)->getTable();
+
+        $recentGames = $gameModel::query()
+            ->where('status', 'STATUS_FINAL')
+            ->where('season', $season)
+            ->where(function ($q) use ($team) {
+                $q->where('home_team_id', $team->id)
+                    ->orWhere('away_team_id', $team->id);
+            })
+            ->orderByDesc('game_date')
+            ->limit($numGames)
+            ->pluck('id')
+            ->toArray();
+
+        if (empty($recentGames)) {
+            return $this->emptyRecentStatProfile();
+        }
+
+        $stats = $teamStatModel::query()
+            ->where('team_id', $team->id)
+            ->whereIn('game_id', $recentGames)
+            ->join($gameTable, "{$teamStatTable}.game_id", '=', "{$gameTable}.id")
+            ->orderByDesc("{$gameTable}.game_date")
+            ->select("{$teamStatTable}.*")
+            ->get();
+
+        if ($stats->isEmpty()) {
+            return $this->emptyRecentStatProfile();
+        }
+
+        $accumulator = [
+            'effective_fg_pct' => 0.0,
+            'free_throw_rate' => 0.0,
+            'turnover_rate' => 0.0,
+            'offensive_rebound_rate' => 0.0,
+            'effective_fg_pct_allowed' => 0.0,
+            'free_throw_rate_allowed' => 0.0,
+            'turnover_force_rate' => 0.0,
+            'offensive_rebound_rate_allowed' => 0.0,
+        ];
+        $totalWeight = 0.0;
+
+        foreach ($stats as $index => $stat) {
+            $opponentStat = $teamStatModel::query()
+                ->where('game_id', $stat->game_id)
+                ->where('team_id', '!=', $team->id)
+                ->first();
+
+            if (! $opponentStat) {
+                continue;
+            }
+
+            $weight = pow($decay, $index);
+            $possessions = $this->statPossessions($stat, $defaultPace);
+            $opponentPossessions = $this->statPossessions($opponentStat, $defaultPace);
+
+            $accumulator['effective_fg_pct'] += $this->effectiveFieldGoalPct($stat) * $weight;
+            $accumulator['free_throw_rate'] += $this->freeThrowRate($stat) * $weight;
+            $accumulator['turnover_rate'] += $this->turnoverRate($stat, $possessions) * $weight;
+            $accumulator['offensive_rebound_rate'] += $this->offensiveReboundRate($stat, $opponentStat) * $weight;
+            $accumulator['effective_fg_pct_allowed'] += $this->effectiveFieldGoalPct($opponentStat) * $weight;
+            $accumulator['free_throw_rate_allowed'] += $this->freeThrowRate($opponentStat) * $weight;
+            $accumulator['turnover_force_rate'] += $this->turnoverRate($opponentStat, $opponentPossessions) * $weight;
+            $accumulator['offensive_rebound_rate_allowed'] += $this->offensiveReboundRate($opponentStat, $stat) * $weight;
+            $totalWeight += $weight;
+        }
+
+        if ($totalWeight <= 0) {
+            return $this->emptyRecentStatProfile();
+        }
+
+        foreach ($accumulator as $key => $value) {
+            $accumulator[$key] = round($value / $totalWeight, 4);
+        }
+
+        return $accumulator;
+    }
+
+    /**
+     * @return array<string, float|null>
+     */
+    private function emptyRecentStatProfile(): array
+    {
+        return [
+            'effective_fg_pct' => null,
+            'free_throw_rate' => null,
+            'turnover_rate' => null,
+            'offensive_rebound_rate' => null,
+            'effective_fg_pct_allowed' => null,
+            'free_throw_rate_allowed' => null,
+            'turnover_force_rate' => null,
+            'offensive_rebound_rate_allowed' => null,
+        ];
+    }
+
+    private function statPossessions(Model $stat, float $defaultPace): float
+    {
+        if (is_numeric($stat->possessions) && (float) $stat->possessions > 0) {
+            return (float) $stat->possessions;
+        }
+
+        $coefficient = (float) (config("{$this->getSport()}.metrics.possession_coefficient") ?? 0.4);
+        $estimated = (float) ($stat->field_goals_attempted ?? 0)
+            - (float) ($stat->offensive_rebounds ?? 0)
+            + (float) ($stat->turnovers ?? 0)
+            + ($coefficient * (float) ($stat->free_throws_attempted ?? 0));
+
+        return $estimated > 0 ? $estimated : $defaultPace;
+    }
+
+    private function effectiveFieldGoalPct(Model $stat): float
+    {
+        $attempts = max(1.0, (float) ($stat->field_goals_attempted ?? 0));
+
+        return (((float) ($stat->field_goals_made ?? 0)) + (0.5 * (float) ($stat->three_point_made ?? 0))) / $attempts;
+    }
+
+    private function freeThrowRate(Model $stat): float
+    {
+        $attempts = max(1.0, (float) ($stat->field_goals_attempted ?? 0));
+
+        return (float) ($stat->free_throws_made ?? 0) / $attempts;
+    }
+
+    private function turnoverRate(Model $stat, float $possessions): float
+    {
+        return (float) ($stat->turnovers ?? 0) / max(1.0, $possessions);
+    }
+
+    private function offensiveReboundRate(Model $stat, Model $opponentStat): float
+    {
+        $offensiveRebounds = (float) ($stat->offensive_rebounds ?? 0);
+        $opponentDefensiveRebounds = (float) ($opponentStat->defensive_rebounds ?? 0);
+        $opportunities = $offensiveRebounds + $opponentDefensiveRebounds;
+
+        return $opportunities > 0 ? ($offensiveRebounds / $opportunities) : 0.0;
     }
 
     /**

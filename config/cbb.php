@@ -288,6 +288,14 @@ return [
         'home_away_split_weight' => 0.15,
         'turnover_diff_weight' => 0.4,
         'rebound_margin_weight' => 0.25,
+        'total_recent_efficiency_weight' => 0.35,
+        'total_venue_efficiency_weight' => 0.15,
+        'total_factor_weights' => [
+            'effective_fg_pct' => 40.0,
+            'free_throw_rate' => 18.0,
+            'turnover_rate' => 18.0,
+            'offensive_rebound_rate' => 10.0,
+        ],
 
         // Vegas integration
         'vegas_weight' => 0.15,

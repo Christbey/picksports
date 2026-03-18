@@ -134,6 +134,7 @@ class CalculateBettingValue
         $betOver = $prediction->predicted_total > $totalLine;
         $modelTotal = round($prediction->predicted_total, 1);
         $marketTotal = round($totalLine, 1);
+        $totalConfidence = $this->calculateTotalConfidence($edge);
 
         return [
             'type' => 'total',
@@ -142,7 +143,8 @@ class CalculateBettingValue
             'market_line' => $marketTotal,
             'edge' => round($edge, 1),
             'odds' => $betOver ? $overPrice : $underPrice,
-            'confidence' => round($prediction->confidence_score, 2),
+            'confidence' => $totalConfidence,
+            'side_confidence' => round($prediction->confidence_score, 2),
             'reasoning' => $betOver
                 ? "Model projects {$modelTotal} points, {$edge} higher than market {$marketTotal}"
                 : "Model projects {$modelTotal} points, {$edge} lower than market {$marketTotal}",
@@ -261,6 +263,14 @@ class CalculateBettingValue
 
         // Use fractional Kelly (more conservative)
         return $kelly * $fraction;
+    }
+
+    protected function calculateTotalConfidence(float $edge): float
+    {
+        $threshold = max(0.1, (float) config('cbb.betting.edge_thresholds.total'));
+        $confidence = 50 + (($edge / $threshold) * 10);
+
+        return round(max(50, min(95, $confidence)), 2);
     }
 
     protected function getSpreadReasoning(float $modelSpread, float $marketSpread, bool $betHome, string $homeTeam, string $awayTeam): string

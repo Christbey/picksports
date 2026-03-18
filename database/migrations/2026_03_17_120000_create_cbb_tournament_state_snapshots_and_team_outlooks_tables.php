@@ -118,15 +118,38 @@ return new class extends Migration
             ->flip();
 
         Schema::table('cbb_tournament_forecasts', function (Blueprint $table) use ($indexes) {
+            // MySQL may back the team_id foreign key with the existing composite unique.
+            // Ensure a standalone team_id index exists before dropping any legacy unique.
+            if (! $indexes->has('cbb_tournament_forecasts_team_id_index')) {
+                $table->index('team_id', 'cbb_tournament_forecasts_team_id_index');
+            }
+
+            if ($indexes->has('cbb_tournament_forecasts_team_id_season_unique')) {
+                $table->dropUnique('cbb_tournament_forecasts_team_id_season_unique');
+            }
+
             if ($indexes->has('cbb_tf_team_season_uniq')) {
                 $table->dropUnique('cbb_tf_team_season_uniq');
             }
         });
 
-        Schema::table('cbb_tournament_forecasts', function (Blueprint $table) {
-            $table->unique(['snapshot_id', 'team_id'], 'cbb_tf_snapshot_team_uniq');
-            $table->index(['season', 'mode', 'as_of'], 'cbb_tf_season_mode_asof_idx');
-            $table->index(['snapshot_id', 'champion_probability'], 'cbb_tf_snapshot_champ_idx');
+        $indexes = collect(DB::select('SHOW INDEX FROM cbb_tournament_forecasts'))
+            ->pluck('Key_name')
+            ->unique()
+            ->flip();
+
+        Schema::table('cbb_tournament_forecasts', function (Blueprint $table) use ($indexes) {
+            if (! $indexes->has('cbb_tf_snapshot_team_uniq') && ! $indexes->has('cbb_tf_snapshot_team_placeholder_uniq')) {
+                $table->unique(['snapshot_id', 'team_id'], 'cbb_tf_snapshot_team_uniq');
+            }
+
+            if (! $indexes->has('cbb_tf_season_mode_asof_idx')) {
+                $table->index(['season', 'mode', 'as_of'], 'cbb_tf_season_mode_asof_idx');
+            }
+
+            if (! $indexes->has('cbb_tf_snapshot_champ_idx')) {
+                $table->index(['snapshot_id', 'champion_probability'], 'cbb_tf_snapshot_champ_idx');
+            }
         });
     }
 
@@ -153,8 +176,12 @@ return new class extends Migration
             if ($indexes->has('cbb_tf_snapshot_champ_idx')) {
                 $table->dropIndex('cbb_tf_snapshot_champ_idx');
             }
-
-            $table->unique(['team_id', 'season'], 'cbb_tf_team_season_uniq');
+            if ($indexes->has('cbb_tournament_forecasts_team_id_index')) {
+                $table->dropIndex('cbb_tournament_forecasts_team_id_index');
+            }
+            if (! $indexes->has('cbb_tf_team_season_uniq') && ! $indexes->has('cbb_tournament_forecasts_team_id_season_unique')) {
+                $table->unique(['team_id', 'season'], 'cbb_tf_team_season_uniq');
+            }
         });
     }
 };

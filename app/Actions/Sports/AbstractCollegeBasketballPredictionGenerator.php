@@ -168,6 +168,9 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             ['value' => $seasonPace, 'weight' => 1.0],
             ['value' => $recentPace, 'weight' => $recentWeight],
         ]);
+        $calibration = (array) ($config['total_calibration'] ?? []);
+        $paceFloor = (float) ($calibration['pace_floor'] ?? 62.0);
+        $pace = max($pace, $paceFloor);
 
         $restHome = $this->metadata['rest_days_home'] ?? null;
         $restAway = $this->metadata['rest_days_away'] ?? null;
@@ -191,6 +194,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $homeMetrics,
             $awayMetrics
         );
+        $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 4.0);
+        $highTotalThreshold = (float) ($calibration['high_total_threshold'] ?? 135.0);
+        $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 1.2);
+        $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
+        $calibratedTotal = $blendedTotal + $baseAdjustment + $highTotalBoost;
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
             'season_home_score_component' => round($homeSeasonScore, 3),
@@ -204,12 +212,17 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'season_pace' => round($seasonPace, 3),
             'recent_pace' => round($recentPace, 3),
             'rest_pace_adjustment' => round($restPaceAdjustment, 3),
+            'pace_floor' => round($paceFloor, 3),
             'blended_pace' => round($pace, 3),
             'legacy_total' => round($legacyTotal, 3),
+            'post_epa_total' => round($blendedTotal, 3),
+            'total_base_adjustment' => round($baseAdjustment, 3),
+            'high_total_boost' => round($highTotalBoost, 3),
+            'calibrated_total' => round($calibratedTotal, 3),
             'recent_factor_profile' => $factorAdjustments['metadata'],
         ];
 
-        return round($blendedTotal, 1);
+        return round($calibratedTotal, 1);
     }
 
     protected function buildPredictionData(

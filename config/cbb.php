@@ -296,6 +296,12 @@ return [
             'turnover_rate' => 18.0,
             'offensive_rebound_rate' => 10.0,
         ],
+        'total_calibration' => [
+            'pace_floor' => 62.0,
+            'base_adjustment' => 4.0,
+            'high_total_threshold' => 135.0,
+            'high_total_slope' => 1.2,
+        ],
 
         // Vegas integration
         'vegas_weight' => 0.15,

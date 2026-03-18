@@ -108,18 +108,13 @@ abstract class AbstractGeneratePredictionsCommand extends Command
         $this->info("Predictions generated for {$generated} games.");
 
         $this->newLine();
-        $this->info('Top 10 Predictions by Confidence:');
+        $this->info($this->topPredictionsHeading());
 
-        $predictionModel = $this->predictionModelClass();
-        $topPredictions = $predictionModel::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->orderBy('confidence_score', 'desc')
-            ->limit(10)
-            ->get();
+        $topPredictions = $this->topPredictions();
 
         if ($topPredictions->isNotEmpty()) {
             $this->table(
-                ['Game', 'Spread', 'Total', 'Win %', 'Confidence'],
+                $this->topPredictionHeaders(),
                 $topPredictions->map(fn ($pred) => $this->topPredictionRow($pred))
             );
         }
@@ -228,6 +223,27 @@ abstract class AbstractGeneratePredictionsCommand extends Command
             round($prediction->win_probability * 100, 1).'%',
             round($prediction->confidence_score, 1),
         ];
+    }
+
+    protected function topPredictionsHeading(): string
+    {
+        return 'Top 10 Predictions by Confidence:';
+    }
+
+    protected function topPredictionHeaders(): array
+    {
+        return ['Game', 'Spread', 'Total', 'Win %', 'Confidence'];
+    }
+
+    protected function topPredictions(): \Illuminate\Support\Collection
+    {
+        $predictionModel = $this->predictionModelClass();
+
+        return $predictionModel::query()
+            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->orderBy('confidence_score', 'desc')
+            ->limit(10)
+            ->get();
     }
 
     protected function displayPrediction(mixed $prediction): void

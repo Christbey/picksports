@@ -768,3 +768,148 @@ it('uses total-specific confidence for cbb over under recommendations', function
         ->and($totalRec['side_confidence'])->toBe(52.0)
         ->and($totalRec['recommendation'])->toBe('Bet Over');
 });
+
+it('filters out small-edge away spread recommendations for cbb', function () {
+    config()->set('cbb.betting.edge_thresholds.spread', 2.0);
+    config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'home_team' => $this->homeTeam->school,
+            'away_team' => $this->awayTeam->school,
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'spreads',
+                            'outcomes' => [
+                                ['name' => $this->homeTeam->school, 'point' => -8.5, 'price' => -110],
+                                ['name' => $this->awayTeam->school, 'point' => 8.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'home_elo' => 1500,
+        'away_elo' => 1500,
+        'home_off_eff' => 100,
+        'home_def_eff' => 100,
+        'away_off_eff' => 100,
+        'away_def_eff' => 100,
+        'predicted_spread' => 5.9,
+        'predicted_total' => 148.0,
+        'win_probability' => 0.62,
+        'confidence_score' => 62.0,
+    ]);
+
+    $recommendations = app(CalculateBettingValue::class)->execute($game->fresh('prediction'));
+    $spreadRec = collect($recommendations ?? [])->firstWhere('type', 'spread');
+
+    expect($spreadRec)->toBeNull();
+});
+
+it('keeps home spread recommendations at the base cbb threshold', function () {
+    config()->set('cbb.betting.edge_thresholds.spread', 2.0);
+    config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'home_team' => $this->homeTeam->school,
+            'away_team' => $this->awayTeam->school,
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'spreads',
+                            'outcomes' => [
+                                ['name' => $this->homeTeam->school, 'point' => -3.5, 'price' => -110],
+                                ['name' => $this->awayTeam->school, 'point' => 3.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'home_elo' => 1500,
+        'away_elo' => 1500,
+        'home_off_eff' => 100,
+        'home_def_eff' => 100,
+        'away_off_eff' => 100,
+        'away_def_eff' => 100,
+        'predicted_spread' => 5.9,
+        'predicted_total' => 148.0,
+        'win_probability' => 0.62,
+        'confidence_score' => 62.0,
+    ]);
+
+    $recommendations = app(CalculateBettingValue::class)->execute($game->fresh('prediction'));
+    $spreadRec = collect($recommendations ?? [])->firstWhere('type', 'spread');
+
+    expect($spreadRec)->not->toBeNull()
+        ->and($spreadRec['recommendation'])->toContain($this->homeTeam->school);
+});
+
+it('filters out sub-threshold home spread recommendations for cbb', function () {
+    config()->set('cbb.betting.edge_thresholds.spread', 2.0);
+    config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'home_team' => $this->homeTeam->school,
+            'away_team' => $this->awayTeam->school,
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'spreads',
+                            'outcomes' => [
+                                ['name' => $this->homeTeam->school, 'point' => -3.5, 'price' => -110],
+                                ['name' => $this->awayTeam->school, 'point' => 3.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'home_elo' => 1500,
+        'away_elo' => 1500,
+        'home_off_eff' => 100,
+        'home_def_eff' => 100,
+        'away_off_eff' => 100,
+        'away_def_eff' => 100,
+        'predicted_spread' => 5.4,
+        'predicted_total' => 148.0,
+        'win_probability' => 0.60,
+        'confidence_score' => 60.0,
+    ]);
+
+    $recommendations = app(CalculateBettingValue::class)->execute($game->fresh('prediction'));
+    $spreadRec = collect($recommendations ?? [])->firstWhere('type', 'spread');
+
+    expect($spreadRec)->toBeNull();
+});

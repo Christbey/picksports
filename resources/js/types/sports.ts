@@ -8,6 +8,10 @@ export interface BettingRecommendation {
     bet_team?: string;
     model_line?: number;
     market_line?: number;
+    model_home_line?: number;
+    market_home_line?: number;
+    home_team?: string;
+    away_team?: string;
     model_probability?: number;
     implied_probability?: number;
     edge: number;

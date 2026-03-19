@@ -65,13 +65,18 @@ abstract class AbstractGradePredictions
             $isWinnerCorrect = ($actualSpread > 0 && $prediction->predicted_spread > 0)
                 || ($actualSpread < 0 && $prediction->predicted_spread < 0);
 
-            $prediction->update([
+            $updates = [
                 'actual_spread' => round($actualSpread, 1),
                 'actual_total' => round($actualTotal, 1),
                 'spread_error' => round($spreadError, 1),
                 'total_error' => round($totalError, 1),
                 'winner_correct' => $isWinnerCorrect,
                 'graded_at' => now(),
+            ];
+
+            $prediction->update([
+                ...$updates,
+                ...$this->additionalGradingUpdates($prediction, $actualSpread, $actualTotal),
             ]);
 
             if ($isWinnerCorrect) {
@@ -144,6 +149,14 @@ abstract class AbstractGradePredictions
         }
 
         return $predictionModel::query();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function additionalGradingUpdates(Model $prediction, float $actualSpread, float $actualTotal): array
+    {
+        return [];
     }
 
     private function emptyResults(): array

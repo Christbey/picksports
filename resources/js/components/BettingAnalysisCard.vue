@@ -5,6 +5,10 @@ export interface BettingRecommendation {
     bet_team?: string;
     model_line?: number;
     market_line?: number;
+    model_home_line?: number;
+    market_home_line?: number;
+    home_team?: string;
+    away_team?: string;
     model_probability?: number;
     implied_probability?: number;
     edge: number;
@@ -68,6 +72,26 @@ function formatSpread(spread: number | string | null | undefined): string {
     const numSpread = typeof spread === 'string' ? parseFloat(spread) : spread;
     if (isNaN(numSpread)) return '-';
     return numSpread > 0 ? `+${numSpread.toFixed(1)}` : numSpread.toFixed(1);
+}
+
+function formatHomeSideSpreadLine(
+    homeLine: number | string | null | undefined,
+    homeTeam?: string,
+    awayTeam?: string,
+): string {
+    if (homeLine === null || homeLine === undefined) return '-';
+    const numericLine = typeof homeLine === 'string' ? parseFloat(homeLine) : homeLine;
+    if (isNaN(numericLine)) return '-';
+    if (numericLine === 0) return 'PK';
+
+    const homeLabel = homeTeam ?? 'Home';
+    const awayLabel = awayTeam ?? 'Away';
+
+    if (numericLine < 0) {
+        return `${homeLabel} ${numericLine.toFixed(1)}`;
+    }
+
+    return `${awayLabel} -${numericLine.toFixed(1)}`;
 }
 
 function formatNumber(value: number | string | null | undefined, decimals = 1): string {
@@ -187,6 +211,30 @@ function totalResultClass(bet: BettingRecommendation): string {
     }
 
     return '';
+}
+
+function formatBetModelLine(bet: BettingRecommendation): string {
+    if (bet.type !== 'spread') {
+        return formatNumber(bet.model_line);
+    }
+
+    return formatHomeSideSpreadLine(
+        bet.model_home_line ?? bet.model_line,
+        bet.home_team,
+        bet.away_team,
+    );
+}
+
+function formatBetMarketLine(bet: BettingRecommendation): string {
+    if (bet.type !== 'spread') {
+        return formatNumber(bet.market_line);
+    }
+
+    return formatHomeSideSpreadLine(
+        bet.market_home_line ?? bet.market_line,
+        bet.home_team,
+        bet.away_team,
+    );
 }
 </script>
 
@@ -320,13 +368,13 @@ function totalResultClass(bet: BettingRecommendation): string {
                         <div v-if="bet.model_line !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Model:</span>
                             <span class="ml-1 font-medium">
-                                {{ bet.type === 'total' ? formatNumber(bet.model_line) : formatSpread(bet.model_line) }}
+                                {{ formatBetModelLine(bet) }}
                             </span>
                         </div>
                         <div v-if="bet.market_line !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
                             <span class="text-muted-foreground">Market:</span>
                             <span class="ml-1 font-medium">
-                                {{ bet.type === 'total' ? formatNumber(bet.market_line) : formatSpread(bet.market_line) }}
+                                {{ formatBetMarketLine(bet) }}
                             </span>
                         </div>
                         <div v-if="bet.model_probability !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">

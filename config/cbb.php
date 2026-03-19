@@ -392,9 +392,10 @@ return [
     'betting' => [
         // Minimum edge required to generate a recommendation
         'edge_thresholds' => [
-            'spread' => 1.75,     // Points
-            'total' => 2.25,      // Points
-            'moneyline' => 0.035, // Probability (3.5%)
+            'spread' => 2.0,       // Points, default/home-side threshold
+            'spread_away' => 4.0,  // Points, stricter threshold for away ATS recommendations
+            'total' => 2.25,       // Points
+            'moneyline' => 0.035,  // Probability (3.5%)
         ],
 
         // Kelly Criterion bet sizing

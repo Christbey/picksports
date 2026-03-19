@@ -78,15 +78,19 @@ class CalculateBettingValue
         // Convert market spread to model's convention: negate the market spread
         $marketSpreadModelConvention = -$homeSpread;
 
+        $betHome = $prediction->predicted_spread > $marketSpreadModelConvention;
         $edge = abs($prediction->predicted_spread - $marketSpreadModelConvention);
 
+        $minEdge = $betHome
+            ? (float) config('cbb.betting.edge_thresholds.spread')
+            : (float) config('cbb.betting.edge_thresholds.spread_away', config('cbb.betting.edge_thresholds.spread'));
+
         // Edge threshold for recommendation
-        if ($edge < config('cbb.betting.edge_thresholds.spread')) {
+        if ($edge < $minEdge) {
             return null;
         }
 
         // Determine which side to bet
-        $betHome = $prediction->predicted_spread > $marketSpreadModelConvention;
         $selectedOdds = $betHome ? ($homePrice ?? -110) : ($awayPrice ?? -110);
         $betLine = $betHome ? (float) $homeSpread : (float) (-$homeSpread);
 
@@ -97,6 +101,10 @@ class CalculateBettingValue
             'bet_team' => $betHome ? $homeTeam : $awayTeam,
             'model_line' => round($prediction->predicted_spread, 1),
             'market_line' => round($marketSpreadModelConvention, 1),
+            'model_home_line' => round(-$prediction->predicted_spread, 1),
+            'market_home_line' => round((float) $homeSpread, 1),
+            'home_team' => $homeTeam,
+            'away_team' => $awayTeam,
             'edge' => round($edge, 1),
             'odds' => $selectedOdds,
             'confidence' => round($prediction->confidence_score, 2),

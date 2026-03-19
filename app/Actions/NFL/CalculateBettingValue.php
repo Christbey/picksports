@@ -99,6 +99,10 @@ class CalculateBettingValue
             // Display both lines in sportsbook convention (favorite negative, underdog positive)
             'model_line' => round($modelSpreadMarketConvention, 1),
             'market_line' => round((float) $homeSpread, 1),
+            'model_home_line' => round(-(float) $prediction->predicted_spread, 1),
+            'market_home_line' => round((float) $homeSpread, 1),
+            'home_team' => $homeTeam,
+            'away_team' => $awayTeam,
             'edge' => round($edge, 1),
             'odds' => $selectedOdds,
             'confidence' => round($prediction->confidence_score, 2),

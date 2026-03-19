@@ -27,9 +27,16 @@ abstract class AbstractCollegeGeneratePredictionsCommand extends AbstractGenerat
         $etDate = Carbon::parse($date, 'America/New_York');
         $utcStart = $etDate->copy()->setTimezone('UTC');
         $utcEnd = $etDate->copy()->endOfDay()->setTimezone('UTC');
+        $driver = $query->getConnection()->getDriverName();
+
+        $expression = match ($driver) {
+            'mysql', 'mariadb' => "timestamp(game_date, game_time)",
+            'pgsql' => "(game_date + game_time)",
+            default => "datetime(date(game_date) || ' ' || game_time)",
+        };
 
         $query->whereRaw(
-            "datetime(date(game_date) || ' ' || game_time) >= ? AND datetime(date(game_date) || ' ' || game_time) <= ?",
+            "{$expression} >= ? AND {$expression} <= ?",
             [$utcStart->toDateTimeString(), $utcEnd->toDateTimeString()]
         );
     }

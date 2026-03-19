@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\NBA\GeneratePrediction;
+use App\Actions\NBA\CalculateBettingValue;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -546,4 +547,179 @@ it('applies true epa blend metadata when enabled and metrics are available', fun
         ->and(data_get($prediction->model_metadata, 'true_epa.true_epa_applied'))->toBeTrue()
         ->and((float) data_get($prediction->model_metadata, 'true_epa.true_epa_diff'))->toBe(0.1)
         ->and(data_get($prediction->model_metadata, 'true_epa.true_epa_total_reason'))->toBe('applied');
+});
+
+it('uses recent efficiency context in nba total projection and stores total metadata', function () {
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 112.0,
+        'defensive_efficiency' => 110.0,
+        'net_rating' => 2.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 111.0,
+        'defensive_efficiency' => 112.0,
+        'net_rating' => -1.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2027,
+        'offensive_efficiency' => 112.0,
+        'defensive_efficiency' => 110.0,
+        'net_rating' => 2.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2027,
+        'offensive_efficiency' => 111.0,
+        'defensive_efficiency' => 112.0,
+        'net_rating' => -1.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    for ($i = 0; $i < 4; $i++) {
+        $homeOpponent = Team::factory()->create();
+        $homeGame = Game::factory()->create([
+            'home_team_id' => $this->homeTeam->id,
+            'away_team_id' => $homeOpponent->id,
+            'status' => 'STATUS_FINAL',
+            'season' => 2026,
+            'game_date' => now()->subDays(10 - $i),
+            'home_score' => 130,
+            'away_score' => 118,
+        ]);
+
+        TeamStat::factory()->create([
+            'team_id' => $this->homeTeam->id,
+            'game_id' => $homeGame->id,
+            'team_type' => 'home',
+            'points' => 130,
+            'possessions' => 100,
+        ]);
+
+        TeamStat::factory()->create([
+            'team_id' => $homeOpponent->id,
+            'game_id' => $homeGame->id,
+            'team_type' => 'away',
+            'points' => 118,
+            'possessions' => 100,
+        ]);
+
+        $awayOpponent = Team::factory()->create();
+        $awayGame = Game::factory()->create([
+            'home_team_id' => $awayOpponent->id,
+            'away_team_id' => $this->awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'season' => 2026,
+            'game_date' => now()->subDays(10 - $i),
+            'home_score' => 128,
+            'away_score' => 122,
+        ]);
+
+        TeamStat::factory()->create([
+            'team_id' => $awayOpponent->id,
+            'game_id' => $awayGame->id,
+            'team_type' => 'home',
+            'points' => 128,
+            'possessions' => 100,
+        ]);
+
+        TeamStat::factory()->create([
+            'team_id' => $this->awayTeam->id,
+            'game_id' => $awayGame->id,
+            'team_type' => 'away',
+            'points' => 122,
+            'possessions' => 100,
+        ]);
+    }
+
+    $hotGame = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'game_date' => now()->addDay(),
+    ]);
+
+    $controlGame = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2027,
+        'game_date' => now()->addDays(2),
+    ]);
+
+    $action = new GeneratePrediction;
+    $hotPrediction = $action->execute($hotGame);
+    $controlPrediction = $action->execute($controlGame);
+
+    expect($hotPrediction)->not->toBeNull()
+        ->and($controlPrediction)->not->toBeNull()
+        ->and((float) $hotPrediction->predicted_total)->toBeGreaterThan((float) $controlPrediction->predicted_total)
+        ->and(data_get($hotPrediction->model_metadata, 'total_model.recent_home_score_component'))->not->toBeNull()
+        ->and(data_get($hotPrediction->model_metadata, 'total_model.calibrated_total'))->toBeNumeric();
+});
+
+it('uses total-specific confidence for nba total recommendations', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'home_team' => $this->homeTeam->location,
+            'bookmakers' => [
+                [
+                    'key' => 'draftkings',
+                    'markets' => [
+                        [
+                            'key' => 'totals',
+                            'outcomes' => [
+                                ['name' => 'Over', 'point' => 230.0, 'price' => -110],
+                                ['name' => 'Under', 'point' => 230.0, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'home_elo' => 1500,
+        'away_elo' => 1500,
+        'home_off_eff' => 112.0,
+        'home_def_eff' => 110.0,
+        'away_off_eff' => 111.0,
+        'away_def_eff' => 112.0,
+        'predicted_spread' => 1.5,
+        'predicted_total' => 240.0,
+        'win_probability' => 0.60,
+        'confidence_score' => 60.0,
+    ]);
+
+    $recommendations = (new CalculateBettingValue)->execute($game);
+    $totalRec = collect($recommendations)->firstWhere('type', 'total');
+
+    expect($totalRec)->not->toBeNull()
+        ->and($totalRec['confidence'])->toBe(95.0)
+        ->and($totalRec['side_confidence'])->toBe(60.0);
 });

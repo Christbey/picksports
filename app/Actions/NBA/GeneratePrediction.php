@@ -21,6 +21,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
     private array $metadata = [];
     /** @var array<string, mixed> True EPA rollout metadata */
     private array $trueEpaMetadata = [];
+    /** @var array<string, mixed> Total model rollout metadata */
+    private array $totalMetadata = [];
 
     protected const SPORT_KEY = 'nba';
 
@@ -48,6 +50,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
     ): float {
         $this->metadata = [];
         $this->trueEpaMetadata = [];
+        $this->totalMetadata = [];
 
         $config = config('nba.prediction');
         $homeCourtAdvantage = config('nba.elo.home_court_advantage');
@@ -137,22 +140,46 @@ class GeneratePrediction extends AbstractPredictionGenerator
     ): float {
         $config = config('nba.prediction');
         $defaultEfficiency = $config['default_efficiency'];
+        $recentWeight = (float) ($config['total_recent_efficiency_weight'] ?? 0.35);
+        $venueWeight = (float) ($config['total_venue_efficiency_weight'] ?? 0.15);
 
         $homeOffEff = $homeMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $homeDefEff = $homeMetrics?->defensive_efficiency ?? $defaultEfficiency;
         $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
 
-        $homePredictedScore = ($homeOffEff + $awayDefEff) / 2;
-        $awayPredictedScore = ($awayOffEff + $homeDefEff) / 2;
+        $homeForm = $this->getRecentForm($game->homeTeam, $game->season);
+        $awayForm = $this->getRecentForm($game->awayTeam, $game->season);
+
+        $homeSeasonScore = ($homeOffEff + $awayDefEff) / 2;
+        $awaySeasonScore = ($awayOffEff + $homeDefEff) / 2;
+        $homeRecentScore = ($homeForm['off_eff'] + $awayForm['def_eff']) / 2;
+        $awayRecentScore = ($awayForm['off_eff'] + $homeForm['def_eff']) / 2;
+        $homeVenueScore = $this->pairedVenueScore(
+            $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home'),
+            $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away')
+        );
+        $awayVenueScore = $this->pairedVenueScore(
+            $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away'),
+            $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home')
+        );
+
+        $homePredictedScore = $this->blendWeightedValues([
+            ['value' => $homeSeasonScore, 'weight' => 1.0],
+            ['value' => $homeRecentScore, 'weight' => $recentWeight],
+            ['value' => $homeVenueScore, 'weight' => $homeVenueScore !== null ? $venueWeight : 0.0],
+        ]);
+        $awayPredictedScore = $this->blendWeightedValues([
+            ['value' => $awaySeasonScore, 'weight' => 1.0],
+            ['value' => $awayRecentScore, 'weight' => $recentWeight],
+            ['value' => $awayVenueScore, 'weight' => $awayVenueScore !== null ? $venueWeight : 0.0],
+        ]);
 
         // Blend season tempo with recent form tempo
         $seasonPace = ($homeMetrics?->tempo ?? $config['average_pace'])
             + ($awayMetrics?->tempo ?? $config['average_pace']);
         $seasonPace /= 2;
 
-        $homeForm = $this->getRecentForm($game->homeTeam, $game->season);
-        $awayForm = $this->getRecentForm($game->awayTeam, $game->season);
         $formPace = ($homeForm['tempo'] + $awayForm['tempo']) / 2;
 
         $pace = ($seasonPace + $formPace) / 2;
@@ -175,9 +202,34 @@ class GeneratePrediction extends AbstractPredictionGenerator
             $homeMetrics,
             $awayMetrics
         );
-        $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
+        $calibration = (array) ($config['total_calibration'] ?? []);
+        $rangeAnchor = (float) ($calibration['range_anchor'] ?? 228.0);
+        $rangeScale = (float) ($calibration['range_scale'] ?? 1.18);
+        $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 3.0);
+        $calibratedTotal = $rangeAnchor + (($blendedTotal - $rangeAnchor) * $rangeScale) + $baseAdjustment;
 
-        return round($blendedTotal, 1);
+        $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
+        $this->totalMetadata = [
+            'season_home_score_component' => round($homeSeasonScore, 3),
+            'season_away_score_component' => round($awaySeasonScore, 3),
+            'recent_home_score_component' => round($homeRecentScore, 3),
+            'recent_away_score_component' => round($awayRecentScore, 3),
+            'venue_home_score_component' => $homeVenueScore !== null ? round($homeVenueScore, 3) : null,
+            'venue_away_score_component' => $awayVenueScore !== null ? round($awayVenueScore, 3) : null,
+            'season_pace' => round($seasonPace, 3),
+            'recent_pace' => round($formPace, 3),
+            'pace_adjustment' => round($paceAdj, 3),
+            'blended_pace' => round($pace, 3),
+            'injury_total_adjustment' => round($injuryTotalAdj, 3),
+            'legacy_total' => round($legacyTotal, 3),
+            'post_epa_total' => round($blendedTotal, 3),
+            'range_anchor' => round($rangeAnchor, 3),
+            'range_scale' => round($rangeScale, 3),
+            'total_base_adjustment' => round($baseAdjustment, 3),
+            'calibrated_total' => round($calibratedTotal, 3),
+        ];
+
+        return round($calibratedTotal, 1);
     }
 
     protected function buildPredictionData(
@@ -209,9 +261,46 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'model_metadata' => [
                     'model' => 'nba_ensemble',
                     'true_epa' => $this->trueEpaMetadata,
+                    'total_model' => $this->totalMetadata,
                 ],
             ]
         );
+    }
+
+    /**
+     * @param  array{off: float, def: float, net: float}  $offenseVenue
+     * @param  array{off: float, def: float, net: float}  $defenseVenue
+     */
+    private function pairedVenueScore(array $offenseVenue, array $defenseVenue): ?float
+    {
+        return ((float) ($offenseVenue['off'] ?? 0.0) + (float) ($defenseVenue['def'] ?? 0.0)) / 2;
+    }
+
+    /**
+     * @param  array<int, array{value: float|null, weight: float}>  $components
+     */
+    private function blendWeightedValues(array $components): float
+    {
+        $weightedTotal = 0.0;
+        $totalWeight = 0.0;
+
+        foreach ($components as $component) {
+            $value = $component['value'];
+            $weight = (float) ($component['weight'] ?? 0.0);
+
+            if ($value === null || $weight <= 0) {
+                continue;
+            }
+
+            $weightedTotal += (float) $value * $weight;
+            $totalWeight += $weight;
+        }
+
+        if ($totalWeight <= 0) {
+            return 0.0;
+        }
+
+        return $weightedTotal / $totalWeight;
     }
 
     /**

@@ -148,7 +148,8 @@ class CalculateBettingValue
             'market_line' => $marketTotal,
             'edge' => round($edge, 1),
             'odds' => $betOver ? $overPrice : $underPrice,
-            'confidence' => round($prediction->confidence_score, 2),
+            'confidence' => $this->totalConfidenceScore($edge),
+            'side_confidence' => round($prediction->confidence_score, 2),
             'reasoning' => $betOver
                 ? "Model projects {$modelTotal} points, {$edge} higher than market {$marketTotal}"
                 : "Model projects {$modelTotal} points, {$edge} lower than market {$marketTotal}",
@@ -302,5 +303,10 @@ class CalculateBettingValue
     protected function formatLine(float $line): string
     {
         return $line > 0 ? '+'.number_format($line, 1) : number_format($line, 1);
+    }
+
+    protected function totalConfidenceScore(float $edge): float
+    {
+        return round(min(95, 50 + ($edge * 5)), 2);
     }
 }

@@ -170,7 +170,10 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         ]);
         $calibration = (array) ($config['total_calibration'] ?? []);
         $paceFloor = (float) ($calibration['pace_floor'] ?? 62.0);
-        $pace = max($pace, $paceFloor);
+        $paceFloorBlend = (float) ($calibration['pace_floor_blend'] ?? 0.5);
+        if ($pace < $paceFloor) {
+            $pace += ($paceFloor - $pace) * $paceFloorBlend;
+        }
 
         $restHome = $this->metadata['rest_days_home'] ?? null;
         $restAway = $this->metadata['rest_days_away'] ?? null;
@@ -185,8 +188,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $pace += $restPaceAdjustment;
 
         $factorAdjustments = $this->recentPossessionFactorAdjustments($game, (int) $game->season, $config);
-        $homePredictedScore += $factorAdjustments['home_adjustment'];
-        $awayPredictedScore += $factorAdjustments['away_adjustment'];
+        $factorAdjustmentCap = (float) ($calibration['factor_adjustment_cap'] ?? 5.0);
+        $homeFactorAdjustment = $this->clamp($factorAdjustments['home_adjustment'], -$factorAdjustmentCap, $factorAdjustmentCap);
+        $awayFactorAdjustment = $this->clamp($factorAdjustments['away_adjustment'], -$factorAdjustmentCap, $factorAdjustmentCap);
+        $homePredictedScore += $homeFactorAdjustment;
+        $awayPredictedScore += $awayFactorAdjustment;
 
         $legacyTotal = ($homePredictedScore + $awayPredictedScore) * ($pace / 100);
         [$blendedTotal, $trueEpaTotalMeta] = $this->applyTrueEpaTotalBlend(
@@ -207,12 +213,15 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'recent_away_score_component' => round($awayRecentScore, 3),
             'venue_home_score_component' => $homeVenueScore !== null ? round($homeVenueScore, 3) : null,
             'venue_away_score_component' => $awayVenueScore !== null ? round($awayVenueScore, 3) : null,
-            'home_total_factor_adjustment' => round($factorAdjustments['home_adjustment'], 3),
-            'away_total_factor_adjustment' => round($factorAdjustments['away_adjustment'], 3),
+            'home_total_factor_adjustment_raw' => round($factorAdjustments['home_adjustment'], 3),
+            'away_total_factor_adjustment_raw' => round($factorAdjustments['away_adjustment'], 3),
+            'home_total_factor_adjustment' => round($homeFactorAdjustment, 3),
+            'away_total_factor_adjustment' => round($awayFactorAdjustment, 3),
             'season_pace' => round($seasonPace, 3),
             'recent_pace' => round($recentPace, 3),
             'rest_pace_adjustment' => round($restPaceAdjustment, 3),
             'pace_floor' => round($paceFloor, 3),
+            'pace_floor_blend' => round($paceFloorBlend, 3),
             'blended_pace' => round($pace, 3),
             'legacy_total' => round($legacyTotal, 3),
             'post_epa_total' => round($blendedTotal, 3),
@@ -681,6 +690,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         }
 
         return ($offenseValue - $defenseValue) * $weight;
+    }
+
+    private function clamp(float $value, float $min, float $max): float
+    {
+        return max($min, min($max, $value));
     }
 
     /**

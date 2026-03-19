@@ -291,16 +291,18 @@ return [
         'total_recent_efficiency_weight' => 0.35,
         'total_venue_efficiency_weight' => 0.15,
         'total_factor_weights' => [
-            'effective_fg_pct' => 40.0,
-            'free_throw_rate' => 18.0,
-            'turnover_rate' => 18.0,
-            'offensive_rebound_rate' => 10.0,
+            'effective_fg_pct' => 34.0,
+            'free_throw_rate' => 15.0,
+            'turnover_rate' => 15.0,
+            'offensive_rebound_rate' => 8.0,
         ],
         'total_calibration' => [
             'pace_floor' => 62.0,
+            'pace_floor_blend' => 0.5,
+            'factor_adjustment_cap' => 6.0,
             'base_adjustment' => 4.0,
-            'high_total_threshold' => 135.0,
-            'high_total_slope' => 1.2,
+            'high_total_threshold' => 140.0,
+            'high_total_slope' => 1.0,
         ],
 
         // Vegas integration

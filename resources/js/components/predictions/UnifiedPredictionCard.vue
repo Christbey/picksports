@@ -227,7 +227,19 @@ function preGameWinProbability(): number {
 
 function liveWinProbability(): number | null {
     if (dashboardType) return dashboardType.live_win_probability ?? null;
-    return predictionType?.game.live_win_probability?.away_win_probability ?? null;
+
+    const gameLiveProbability = predictionType?.game.live_win_probability;
+    if (!gameLiveProbability) return null;
+
+    if (typeof gameLiveProbability.home_win_probability === 'number') {
+        return gameLiveProbability.home_win_probability;
+    }
+
+    if (typeof gameLiveProbability.away_win_probability === 'number') {
+        return 1 - gameLiveProbability.away_win_probability;
+    }
+
+    return null;
 }
 
 function hasLiveData(): boolean {

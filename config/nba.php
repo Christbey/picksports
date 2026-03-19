@@ -182,6 +182,8 @@ return [
         // Recent form
         'recent_form_games' => 10,
         'recency_decay' => 0.9,
+        'total_recent_efficiency_weight' => 0.35,
+        'total_venue_efficiency_weight' => 0.15,
 
         // Rest days
         'rest_day_adjustment' => 1.5,
@@ -224,6 +226,12 @@ return [
             'total_points_per_epa_component' => env('NBA_TRUE_EPA_TOTAL_POINTS_PER_COMP', 35.0),
             'min_predicted_total' => env('NBA_TRUE_EPA_MIN_TOTAL', 180.0),
             'max_predicted_total' => env('NBA_TRUE_EPA_MAX_TOTAL', 270.0),
+        ],
+
+        'total_calibration' => [
+            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 228.0),
+            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.18),
+            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 3.0),
         ],
 
         // Narrative generation settings for prediction summaries.

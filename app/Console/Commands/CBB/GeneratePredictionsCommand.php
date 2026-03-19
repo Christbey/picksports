@@ -38,6 +38,10 @@ class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsComma
 
         return $predictionModel::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
+            ->when(
+                $this->generatedGameIds() !== [],
+                fn ($query) => $query->whereIn('game_id', $this->generatedGameIds())
+            )
             ->latest()
             ->get()
             ->map(function ($prediction) use ($calculator) {

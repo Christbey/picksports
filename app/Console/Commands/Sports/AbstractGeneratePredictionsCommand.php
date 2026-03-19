@@ -11,6 +11,8 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 {
     use ResolvesRequiredConfig;
 
+    protected ?\Illuminate\Support\Collection $generatedGames = null;
+
     protected const COMMAND_NAME = '';
 
     protected const COMMAND_DESCRIPTION = '';
@@ -80,6 +82,7 @@ abstract class AbstractGeneratePredictionsCommand extends Command
         $this->applyFilters($query);
 
         $games = $query->get();
+        $this->generatedGames = $games;
 
         if ($games->isEmpty()) {
             $this->warn('No upcoming games found matching the criteria.');
@@ -241,9 +244,30 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
         return $predictionModel::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
+            ->when(
+                $this->generatedGameIds() !== [],
+                fn ($query) => $query->whereIn('game_id', $this->generatedGameIds())
+            )
             ->orderBy('confidence_score', 'desc')
             ->limit(10)
             ->get();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    protected function generatedGameIds(): array
+    {
+        if ($this->generatedGames === null) {
+            return [];
+        }
+
+        return $this->generatedGames
+            ->pluck('id')
+            ->filter(fn ($id) => is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
     }
 
     protected function displayPrediction(mixed $prediction): void

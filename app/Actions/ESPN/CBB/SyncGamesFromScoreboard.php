@@ -35,10 +35,20 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
      */
     protected function buildGameAttributes(object $dto, array $eventData, ?Model $homeTeam, ?Model $awayTeam): array
     {
-        return array_merge(
+        $attributes = array_merge(
             parent::buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam),
             $this->tournamentResolver?->resolveFromEspnEvent($eventData) ?? [],
         );
+
+        $existingGame = \App\Models\CBB\Game::query()
+            ->where('espn_event_id', $dto->espnEventId)
+            ->first();
+
+        if ($existingGame && $this->tournamentResolver) {
+            return $this->tournamentResolver->mergeOntoExistingGame($existingGame, $attributes);
+        }
+
+        return $attributes;
     }
 
     protected function shouldAutoCreateMissingTeams(): bool

@@ -15,9 +15,10 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
 
     public function __construct(
         \App\Services\ESPN\CBB\EspnService $espnService,
-        protected CbbNcaaTournamentResolver $tournamentResolver,
+        protected ?CbbNcaaTournamentResolver $tournamentResolver = null,
         protected ?SyncTeams $syncTeams = null,
     ) {
+        $this->tournamentResolver ??= app(CbbNcaaTournamentResolver::class);
         $this->syncTeams ??= app(SyncTeams::class, ['espnService' => $espnService]);
         parent::__construct($espnService);
     }
@@ -52,7 +53,7 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
         Model $awayTeam,
         Model $existingGame
     ): array {
-        return [
+        return $this->tournamentResolver->mergeOntoExistingGame($existingGame, [
             'status' => $this->effectiveStatus($dto, $rawGame),
             'home_score' => $dto->homeScore,
             'away_score' => $dto->awayScore,
@@ -61,14 +62,14 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
             'period' => $dto->period,
             'game_clock' => $dto->gameClock,
             ...$this->tournamentResolver->resolveFromEspnEvent($rawGame),
-        ];
+        ]);
     }
 
     protected function gameAttributes(GameData $dto, array $rawGame, Model $homeTeam, Model $awayTeam): array
     {
         $dateParts = GameData::extractDateParts($rawGame['date'] ?? null);
 
-        return [
+        $attributes = [
             'espn_event_id' => $dto->espnEventId,
             'espn_uid' => $rawGame['uid'] ?? null,
             'season' => $dto->season,
@@ -93,11 +94,26 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
             'broadcast_networks' => $dto->broadcastNetworks,
             ...$this->tournamentResolver->resolveFromEspnEvent($rawGame),
         ];
+
+        $existingGame = Game::query()->where('espn_event_id', $dto->espnEventId)->first();
+
+        if ($existingGame) {
+            return $this->tournamentResolver->mergeOntoExistingGame($existingGame, $attributes);
+        }
+
+        return $attributes;
     }
 
     protected function extraPartialGameAttributes(GameData $dto, array $rawGame, ?Model $homeTeam, ?Model $awayTeam): array
     {
-        return $this->tournamentResolver->resolveFromEspnEvent($rawGame);
+        $resolved = $this->tournamentResolver->resolveFromEspnEvent($rawGame);
+        $existingGame = Game::query()->where('espn_event_id', $dto->espnEventId)->first();
+
+        if ($existingGame) {
+            return $this->tournamentResolver->mergeOntoExistingGame($existingGame, $resolved);
+        }
+
+        return $resolved;
     }
 
     protected function effectiveStatus(GameData $dto, array $rawGame): string

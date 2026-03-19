@@ -92,3 +92,37 @@ it('captures first four seed routing metadata', function () {
         ->and($resolved['away_seed'])->toBe(16)
         ->and($resolved['play_in_target_seed'])->toBe(16);
 });
+
+it('preserves existing tournament metadata when a later payload is incomplete', function () {
+    $resolver = new CbbNcaaTournamentResolver;
+
+    $game = new Game([
+        'is_ncaa_tournament' => true,
+        'tournament_id' => 22,
+        'tournament_note' => "NCAA Men's Basketball Championship - East Region - 1st Round",
+        'tournament_round' => 'round_of_64',
+        'tournament_region' => 'East',
+        'home_seed' => 6,
+        'away_seed' => 11,
+        'play_in_target_seed' => null,
+    ]);
+
+    $resolved = $resolver->mergeOntoExistingGame($game, [
+        'is_ncaa_tournament' => false,
+        'tournament_id' => null,
+        'tournament_note' => null,
+        'tournament_round' => null,
+        'tournament_region' => null,
+        'home_seed' => null,
+        'away_seed' => null,
+        'play_in_target_seed' => null,
+    ]);
+
+    expect($resolved['is_ncaa_tournament'])->toBeTrue()
+        ->and($resolved['tournament_id'])->toBe(22)
+        ->and($resolved['tournament_note'])->toBe("NCAA Men's Basketball Championship - East Region - 1st Round")
+        ->and($resolved['tournament_round'])->toBe('round_of_64')
+        ->and($resolved['tournament_region'])->toBe('East')
+        ->and($resolved['home_seed'])->toBe(6)
+        ->and($resolved['away_seed'])->toBe(11);
+});

@@ -116,6 +116,52 @@ class CbbNcaaTournamentResolver
     }
 
     /**
+     * Preserve existing NCAA tournament metadata when a newer ESPN payload is incomplete.
+     *
+     * @param  array<string, mixed>  $resolved
+     * @return array<string, mixed>
+     */
+    public function mergeOntoExistingGame(Game $game, array $resolved): array
+    {
+        $existingTournament = (bool) ($game->is_ncaa_tournament ?? false);
+        $resolvedTournament = (bool) ($resolved['is_ncaa_tournament'] ?? false);
+
+        if ($existingTournament && ! $resolvedTournament) {
+            return [
+                ...$resolved,
+                'is_ncaa_tournament' => true,
+                'tournament_id' => $resolved['tournament_id'] ?? $game->tournament_id,
+                'tournament_note' => $resolved['tournament_note'] ?? $game->tournament_note,
+                'tournament_round' => $resolved['tournament_round'] ?? $game->tournament_round,
+                'tournament_region' => $resolved['tournament_region'] ?? $game->tournament_region,
+                'home_seed' => $resolved['home_seed'] ?? $game->home_seed,
+                'away_seed' => $resolved['away_seed'] ?? $game->away_seed,
+                'play_in_target_seed' => $resolved['play_in_target_seed'] ?? $game->play_in_target_seed,
+            ];
+        }
+
+        foreach ([
+            'tournament_id',
+            'tournament_note',
+            'tournament_round',
+            'tournament_region',
+            'home_seed',
+            'away_seed',
+            'play_in_target_seed',
+        ] as $key) {
+            if (($resolved[$key] ?? null) === null && $game->{$key} !== null) {
+                $resolved[$key] = $game->{$key};
+            }
+        }
+
+        if (($resolved['is_ncaa_tournament'] ?? null) === false && $existingTournament) {
+            $resolved['is_ncaa_tournament'] = true;
+        }
+
+        return $resolved;
+    }
+
+    /**
      * @param  array<string, mixed>  $competitor
      */
     protected function resolveCompetitorSeed(array $competitor): ?int

@@ -22,9 +22,19 @@ class SyncGames extends AbstractSyncGames
 
     protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
-        return array_merge(
+        $attributes = array_merge(
             parent::buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam),
             $this->tournamentResolver->resolveFromEspnEvent($gameData),
         );
+
+        $existingGame = \App\Models\CBB\Game::query()
+            ->where('espn_event_id', $dto->espnEventId)
+            ->first();
+
+        if ($existingGame) {
+            return $this->tournamentResolver->mergeOntoExistingGame($existingGame, $attributes);
+        }
+
+        return $attributes;
     }
 }

@@ -24,6 +24,7 @@ use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -213,6 +214,14 @@ class DashboardController extends Controller
             ->whereHas('game', $todayGameScope)
             ->get();
 
+        if (strtolower($sport) === 'cbb') {
+            $predictions = $predictions->filter(function ($prediction) {
+                $game = $prediction->game;
+
+                return $game && ! $this->isPlaceholderCbbGame($game);
+            })->values();
+        }
+
         return $predictions->map(function ($prediction) use ($sport, $config) {
             $resource = DashboardPredictionResource::make($prediction)
                 ->sport($sport)
@@ -274,5 +283,27 @@ class DashboardController extends Controller
             'recommendations' => null,
             'debug' => 'Below threshold',
         ];
+    }
+
+    private function isPlaceholderCbbGame(object $game): bool
+    {
+        return $this->isPlaceholderCbbTeam($game->homeTeam ?? null)
+            || $this->isPlaceholderCbbTeam($game->awayTeam ?? null)
+            || str_starts_with((string) ($game->espn_event_id ?? ''), 'placeholder:');
+    }
+
+    private function isPlaceholderCbbTeam(?Model $team): bool
+    {
+        if (! $team) {
+            return true;
+        }
+
+        $school = strtoupper(trim((string) ($team->school ?? '')));
+        $abbreviation = strtoupper(trim((string) ($team->abbreviation ?? '')));
+        $espnId = (int) ($team->espn_id ?? 0);
+
+        return in_array($school, ['TBD', 'TBD2'], true)
+            || in_array($abbreviation, ['TBD', 'TBD2', 'WFF', 'FF'], true)
+            || $espnId < 0;
     }
 }

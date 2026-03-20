@@ -338,6 +338,15 @@ return [
             'min_predicted_total' => env('CBB_TRUE_EPA_MIN_TOTAL', 110.0),
             'max_predicted_total' => env('CBB_TRUE_EPA_MAX_TOTAL', 190.0),
         ],
+        'live_possession' => [
+            'enabled' => env('CBB_LIVE_POSSESSION_ENABLED', true),
+            'tempo_blend_weight' => env('CBB_LIVE_POSSESSION_TEMPO_BLEND', 0.55),
+            'pregame_margin_weight' => env('CBB_LIVE_POSSESSION_PREGAME_MARGIN', 0.40),
+            'efficiency_margin_weight' => env('CBB_LIVE_POSSESSION_EFF_MARGIN', 0.90),
+            'late_game_ppp_weight' => env('CBB_LIVE_POSSESSION_LATE_GAME_PPP', 0.60),
+            'live_total_metrics_weight' => env('CBB_LIVE_POSSESSION_TOTAL_WEIGHT', 0.65),
+            'minimum_sample_possessions' => env('CBB_LIVE_POSSESSION_MIN_SAMPLE', 40),
+        ],
     ],
 
     /*

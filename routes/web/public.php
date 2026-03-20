@@ -119,7 +119,7 @@ Route::get('/', function () {
 Route::get('performance', PerformanceController::class)->name('performance');
 
 Route::get('march-madness-bracket', function () {
-    $scheduledStatus = config('cbb.statuses.scheduled');
+    $season = (int) config('cbb.season.default');
     $roundLabels = [
         'first_four' => 'First Four',
         'round_of_64' => 'Round of 64',
@@ -138,8 +138,7 @@ Route::get('march-madness-bracket', function () {
             'awayTeam:id,school,mascot,abbreviation,logo_url',
             'prediction:id,game_id,win_probability',
         ])
-        ->where('game_date', '>=', now()->toDateString())
-        ->where('status', $scheduledStatus)
+        ->where('season', $season)
         ->where('season_type', (int) config('cbb.season.types.postseason'))
         ->where(function ($query) {
             $query->where('is_ncaa_tournament', true)
@@ -187,7 +186,15 @@ Route::get('march-madness-bracket', function () {
                     ]
                     : null,
             ];
-        });
+        })
+        ->sortBy([
+            fn (array $game) => $regionOrder[$game['region']] ?? 999,
+            fn (array $game) => $roundOrder[$game['roundKey']] ?? 999,
+            'gameDate',
+            'gameTime',
+            'id',
+        ])
+        ->values();
 
     $regions = $tournamentGames
         ->groupBy('region')

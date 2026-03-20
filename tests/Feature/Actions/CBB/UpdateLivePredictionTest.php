@@ -4,6 +4,7 @@ use App\Actions\CBB\UpdateLivePrediction;
 use App\Models\CBB\Game;
 use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
+use App\Models\CBB\TeamPossessionMetric;
 
 uses()->group('cbb', 'live-predictions');
 
@@ -453,4 +454,106 @@ test('clears live prediction', function () {
         ->and($prediction->live_predicted_total)->toBeNull()
         ->and($prediction->live_seconds_remaining)->toBeNull()
         ->and($prediction->live_updated_at)->toBeNull();
+});
+
+test('uses possession metrics to lift live total and home edge when home team quality is stronger', function () {
+    $baselineGame = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'status' => 'STATUS_IN_PROGRESS',
+        'period' => 2,
+        'game_clock' => '8:00',
+        'home_score' => 58,
+        'away_score' => 55,
+    ]);
+
+    $baselinePrediction = Prediction::factory()->create([
+        'game_id' => $baselineGame->id,
+        'predicted_spread' => 1.0,
+        'predicted_total' => 140.0,
+        'win_probability' => 0.52,
+    ]);
+
+    $baselineResult = $this->action->execute($baselineGame->fresh());
+
+    TeamPossessionMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'as_of_date' => now()->toDateString(),
+        'games_sampled' => 10,
+        'offensive_possessions' => 700,
+        'defensive_possessions' => 700,
+        'rolling_games_sampled' => 10,
+        'rolling_offensive_possessions' => 120,
+        'rolling_defensive_possessions' => 120,
+        'late_game_offensive_possessions' => 40,
+        'late_game_defensive_possessions' => 40,
+        'offensive_points_per_possession' => 1.18,
+        'defensive_points_per_possession_allowed' => 0.94,
+        'net_points_per_possession' => 0.24,
+        'rolling_offensive_points_per_possession' => 1.22,
+        'rolling_defensive_points_per_possession_allowed' => 0.92,
+        'rolling_net_points_per_possession' => 0.30,
+        'late_game_offensive_points_per_possession' => 1.28,
+        'late_game_defensive_points_per_possession_allowed' => 0.88,
+        'turnover_rate' => 0.12,
+        'forced_turnover_rate' => 0.17,
+        'free_throw_trip_rate' => 0.18,
+        'free_throw_rate_allowed' => 0.13,
+        'possessions_per_game' => 69.0,
+    ]);
+
+    TeamPossessionMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'as_of_date' => now()->toDateString(),
+        'games_sampled' => 10,
+        'offensive_possessions' => 700,
+        'defensive_possessions' => 700,
+        'rolling_games_sampled' => 10,
+        'rolling_offensive_possessions' => 120,
+        'rolling_defensive_possessions' => 120,
+        'late_game_offensive_possessions' => 40,
+        'late_game_defensive_possessions' => 40,
+        'offensive_points_per_possession' => 0.98,
+        'defensive_points_per_possession_allowed' => 1.10,
+        'net_points_per_possession' => -0.12,
+        'rolling_offensive_points_per_possession' => 0.94,
+        'rolling_defensive_points_per_possession_allowed' => 1.14,
+        'rolling_net_points_per_possession' => -0.20,
+        'late_game_offensive_points_per_possession' => 0.90,
+        'late_game_defensive_points_per_possession_allowed' => 1.18,
+        'turnover_rate' => 0.18,
+        'forced_turnover_rate' => 0.11,
+        'free_throw_trip_rate' => 0.12,
+        'free_throw_rate_allowed' => 0.19,
+        'possessions_per_game' => 68.0,
+    ]);
+
+    $metricsGame = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'status' => 'STATUS_IN_PROGRESS',
+        'period' => 2,
+        'game_clock' => '8:00',
+        'home_score' => 58,
+        'away_score' => 55,
+    ]);
+
+    Prediction::factory()->create([
+        'game_id' => $metricsGame->id,
+        'predicted_spread' => 1.0,
+        'predicted_total' => 140.0,
+        'win_probability' => 0.52,
+    ]);
+
+    $metricsResult = $this->action->execute($metricsGame->fresh());
+
+    expect($baselineResult)->not->toBeNull()
+        ->and($metricsResult)->not->toBeNull()
+        ->and($metricsResult['live_predicted_total'])->toBeGreaterThan($baselineResult['live_predicted_total'])
+        ->and($metricsResult['live_predicted_spread'])->toBeGreaterThan($baselineResult['live_predicted_spread'])
+        ->and($metricsResult['live_win_probability'])->toBeGreaterThan($baselineResult['live_win_probability']);
 });

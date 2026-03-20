@@ -3,6 +3,7 @@
 namespace App\Actions\CBB;
 
 use App\Actions\Sports\AbstractAdvancedBasketballUpdateLivePrediction;
+use App\Models\CBB\TeamPossessionMetric;
 use Carbon\Carbon;
 
 class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePrediction
@@ -16,6 +17,8 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
     protected const DEFAULT_PRE_GAME_TOTAL = 140;
 
     protected const UPPER_BOUND_BASE = 220;
+
+    private ?array $liveContext = null;
 
     /**
      * @return array{live_predicted_spread: float, live_win_probability: float, live_predicted_total: float, live_seconds_remaining: int}|null
@@ -37,12 +40,47 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             return null;
         }
 
-        $secondsRemaining = $this->calculateSecondsRemaining($game->period, $game->game_clock);
-        $actualSecondsElapsed = $this->calculateActualSecondsElapsed($game->period, $game->game_clock);
-        $effectiveGameLength = $this->calculateEffectiveGameLength($game->period);
+        $state = $this->previewState(
+            $game,
+            $prediction,
+            (int) $game->period,
+            $game->game_clock,
+            (int) ($game->home_score ?? 0),
+            (int) ($game->away_score ?? 0)
+        );
+
+        if ($state === null) {
+            return null;
+        }
+
+        $prediction->update([
+            'live_predicted_spread' => $state['live_predicted_spread'],
+            'live_win_probability' => $state['live_win_probability'],
+            'live_predicted_total' => $state['live_predicted_total'],
+            'live_seconds_remaining' => $state['live_seconds_remaining'],
+            'live_updated_at' => Carbon::now(),
+        ]);
+
+        return $state;
+    }
+
+    /**
+     * @return array{live_predicted_spread: float, live_win_probability: float, live_predicted_total: float, live_seconds_remaining: int}|null
+     */
+    public function previewState(object $game, object $prediction, int $period, ?string $gameClock, int $homeScore, int $awayScore): ?array
+    {
+        $secondsRemaining = $this->calculateSecondsRemaining($period, $gameClock);
+        $actualSecondsElapsed = $this->calculateActualSecondsElapsed($period, $gameClock);
+        $effectiveGameLength = $this->calculateEffectiveGameLength($period);
         $timeElapsedFraction = min(1.0, $actualSecondsElapsed / $effectiveGameLength);
-        $margin = ($game->home_score ?? 0) - ($game->away_score ?? 0);
-        $totalPoints = ($game->home_score ?? 0) + ($game->away_score ?? 0);
+        $margin = $homeScore - $awayScore;
+        $totalPoints = $homeScore + $awayScore;
+        $this->liveContext = $this->buildLiveContext(
+            $game,
+            $secondsRemaining,
+            $effectiveGameLength,
+            (float) ($prediction->predicted_total ?? static::DEFAULT_PRE_GAME_TOTAL)
+        );
 
         $liveWinProbability = $this->calculateLiveWinProbability(
             $margin,
@@ -67,14 +105,6 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             $margin,
             $prediction->predicted_total ?? static::DEFAULT_PRE_GAME_TOTAL
         );
-
-        $prediction->update([
-            'live_predicted_spread' => round($livePredictedSpread, 1),
-            'live_win_probability' => round($liveWinProbability, 3),
-            'live_predicted_total' => round($livePredictedTotal, 1),
-            'live_seconds_remaining' => $secondsRemaining,
-            'live_updated_at' => Carbon::now(),
-        ]);
 
         return [
             'live_predicted_spread' => round($livePredictedSpread, 1),
@@ -103,7 +133,8 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         $preGameWeight = pow($remainingTimeRatio, 0.65);
         $marginScale = 2.8 + (9.0 * $remainingTimeRatio);
         $marginAdjustment = $margin / $marginScale;
-        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment;
+        $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0);
+        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment + ($efficiencyMargin / 5.5);
 
         $probability = 1 / (1 + exp(-$combinedLogOdds));
 
@@ -127,8 +158,9 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         $scoreStateDampener = max(0.2, 1 - (abs($currentMargin) / 18));
         $pregameCarryWeight = (0.65 + (0.25 * $remainingFraction)) * $scoreStateDampener;
         $remainingPreGameContribution = $preGameSpread * $remainingFraction * $pregameCarryWeight;
+        $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0);
 
-        return $currentMargin + $remainingPreGameContribution;
+        return $currentMargin + $remainingPreGameContribution + $efficiencyMargin;
     }
 
     private function calculateCbbLiveTotal(
@@ -168,7 +200,10 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             $scoreStateMultiplier += 0.05;
         }
 
-        $projectedRemaining = max(0.0, $remainingRate * $secondsRemaining * $scoreStateMultiplier);
+        $metricsRemainingPoints = (float) ($this->liveContext['expected_remaining_total_points'] ?? 0.0);
+        $metricsWeight = (float) config('cbb.prediction.live_possession.live_total_metrics_weight', 0.65);
+        $paceProjectedRemaining = max(0.0, $remainingRate * $secondsRemaining * $scoreStateMultiplier);
+        $projectedRemaining = ($paceProjectedRemaining * (1 - $metricsWeight)) + ($metricsRemainingPoints * $metricsWeight * $scoreStateMultiplier);
         $liveTotal = $currentTotal + $projectedRemaining;
 
         $upperBound = static::UPPER_BOUND_BASE;
@@ -178,5 +213,90 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         }
 
         return max($currentTotal, min($upperBound, $liveTotal));
+    }
+
+    private function buildLiveContext(object $game, int $secondsRemaining, int $effectiveGameLength, float $preGameTotal): array
+    {
+        $config = (array) config('cbb.prediction.live_possession', []);
+        if (! ($config['enabled'] ?? true)) {
+            return [];
+        }
+
+        $homeMetric = $this->latestPossessionMetric((int) $game->home_team_id, (int) $game->season);
+        $awayMetric = $this->latestPossessionMetric((int) $game->away_team_id, (int) $game->season);
+
+        if (! $homeMetric || ! $awayMetric) {
+            return [];
+        }
+
+        $minimumSample = (int) ($config['minimum_sample_possessions'] ?? 40);
+        if (($homeMetric->rolling_offensive_possessions ?? 0) < $minimumSample || ($awayMetric->rolling_offensive_possessions ?? 0) < $minimumSample) {
+            return [];
+        }
+
+        $baseTempo = (
+            (float) ($homeMetric->possessions_per_game ?? 0)
+            + (float) ($awayMetric->possessions_per_game ?? 0)
+        ) / 2;
+        $tempoBlendWeight = (float) ($config['tempo_blend_weight'] ?? 0.55);
+        $pregameTempo = max(55.0, $preGameTotal / 2.1);
+        $blendedTempo = ($baseTempo * $tempoBlendWeight) + ($pregameTempo * (1 - $tempoBlendWeight));
+        $remainingPossessions = max(0.0, $blendedTempo * ($secondsRemaining / max(1, $effectiveGameLength)));
+
+        $lateGameWeight = $secondsRemaining <= 300 ? (float) ($config['late_game_ppp_weight'] ?? 0.60) : 0.0;
+        $homeOffPpp = $this->blendPpp(
+            (float) ($homeMetric->rolling_offensive_points_per_possession ?? $homeMetric->offensive_points_per_possession),
+            (float) ($homeMetric->late_game_offensive_points_per_possession ?? 0),
+            $lateGameWeight
+        );
+        $awayOffPpp = $this->blendPpp(
+            (float) ($awayMetric->rolling_offensive_points_per_possession ?? $awayMetric->offensive_points_per_possession),
+            (float) ($awayMetric->late_game_offensive_points_per_possession ?? 0),
+            $lateGameWeight
+        );
+        $homeDefPppAllowed = $this->blendPpp(
+            (float) ($homeMetric->rolling_defensive_points_per_possession_allowed ?? $homeMetric->defensive_points_per_possession_allowed),
+            (float) ($homeMetric->late_game_defensive_points_per_possession_allowed ?? 0),
+            $lateGameWeight
+        );
+        $awayDefPppAllowed = $this->blendPpp(
+            (float) ($awayMetric->rolling_defensive_points_per_possession_allowed ?? $awayMetric->defensive_points_per_possession_allowed),
+            (float) ($awayMetric->late_game_defensive_points_per_possession_allowed ?? 0),
+            $lateGameWeight
+        );
+
+        $expectedHomePpp = ($homeOffPpp + $awayDefPppAllowed) / 2;
+        $expectedAwayPpp = ($awayOffPpp + $homeDefPppAllowed) / 2;
+
+        $efficiencyWeight = (float) ($config['efficiency_margin_weight'] ?? 0.90);
+        $pregameMarginWeight = (float) ($config['pregame_margin_weight'] ?? 0.40);
+        $expectedRemainingMargin = (($expectedHomePpp - $expectedAwayPpp) * $remainingPossessions * $efficiencyWeight)
+            + (((float) ($game->prediction->predicted_spread ?? 0)) * ($secondsRemaining / max(1, static::TOTAL_GAME_SECONDS)) * $pregameMarginWeight);
+
+        return [
+            'remaining_possessions' => round($remainingPossessions, 3),
+            'expected_home_ppp' => round($expectedHomePpp, 3),
+            'expected_away_ppp' => round($expectedAwayPpp, 3),
+            'expected_remaining_margin' => round($expectedRemainingMargin, 3),
+            'expected_remaining_total_points' => round(($expectedHomePpp + $expectedAwayPpp) * $remainingPossessions, 3),
+        ];
+    }
+
+    private function latestPossessionMetric(int $teamId, int $season): ?TeamPossessionMetric
+    {
+        return TeamPossessionMetric::query()
+            ->where('team_id', $teamId)
+            ->where('season', $season)
+            ->orderByDesc('as_of_date')
+            ->first();
+    }
+
+    private function blendPpp(float $base, float $late, float $lateWeight): float
+    {
+        if ($late <= 0 || $lateWeight <= 0) {
+            return $base;
+        }
+
+        return ($base * (1 - $lateWeight)) + ($late * $lateWeight);
     }
 }

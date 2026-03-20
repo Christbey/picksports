@@ -10,7 +10,9 @@ class CalculatePossessionMetricsCommand extends Command
     protected $signature = 'cbb:calculate-possession-metrics
         {--season= : Limit to season (defaults to configured season)}
         {--game_id= : Rebuild metrics using only a single game}
-        {--rebuild : Delete existing season metrics before recalculating}';
+        {--rebuild : Delete existing season metrics before recalculating}
+        {--chunk=200 : Number of final games to process per batch}
+        {--limit-games=0 : Limit the number of final games processed (0 = all)}';
 
     protected $description = 'Calculate team-level possession value metrics for CBB from play-by-play data';
 
@@ -19,10 +21,18 @@ class CalculatePossessionMetricsCommand extends Command
         $season = (int) ($this->option('season') ?: config('cbb.season.default'));
         $gameId = $this->option('game_id') ? (int) $this->option('game_id') : null;
         $rebuild = (bool) $this->option('rebuild');
+        $chunkSize = max(25, (int) $this->option('chunk'));
+        $limitGames = max(0, (int) $this->option('limit-games'));
 
         $this->info("Calculating CBB possession metrics for season {$season}".($gameId ? " using game {$gameId}" : '').'...');
 
-        $rows = $action->execute($season, $gameId, $rebuild);
+        $rows = $action->execute(
+            $season,
+            $gameId,
+            $rebuild,
+            $chunkSize,
+            $limitGames > 0 ? $limitGames : null
+        );
 
         $this->info('Calculated '.count($rows).' team possession metric rows.');
 

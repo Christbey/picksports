@@ -17,59 +17,79 @@ class CalculatePossessionMetrics
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function execute(int $season, ?int $gameId = null, bool $rebuild = false): array
+    public function execute(int $season, ?int $gameId = null, bool $rebuild = false, int $chunkSize = 200, ?int $limitGames = null): array
     {
-        $games = Game::query()
-            ->with(['homeTeam:id', 'awayTeam:id'])
+        $gameQuery = Game::query()
             ->where('season', $season)
             ->where('status', 'STATUS_FINAL')
             ->when($gameId !== null, fn ($query) => $query->where('id', $gameId))
             ->orderBy('game_date')
-            ->orderBy('id')
-            ->get();
+            ->orderBy('id');
+
+        if ($limitGames !== null && $limitGames > 0) {
+            $gameQuery->limit($limitGames);
+        }
 
         $seasonStats = [];
         $rollingWindows = [];
         $gameCountByTeam = [];
         $lastGameDateByTeam = [];
 
-        foreach ($games as $game) {
-            if (! $game->home_team_id || ! $game->away_team_id) {
-                continue;
-            }
+        $processedGames = 0;
+        $gameQuery->chunkById($chunkSize, function ($games) use (&$seasonStats, &$rollingWindows, &$gameCountByTeam, &$lastGameDateByTeam, &$processedGames) {
+            $gameIds = $games->pluck('id')->all();
+            $playsByGame = Play::query()
+                ->whereIn('game_id', $gameIds)
+                ->whereNotNull('possession_team_id')
+                ->orderBy('game_id')
+                ->orderBy('sequence_number')
+                ->get()
+                ->groupBy('game_id');
 
-            $possessions = $this->gamePossessions($game->id, $game->home_team_id, $game->away_team_id);
-            if ($possessions->isEmpty()) {
-                continue;
-            }
-
-            $byTeam = $possessions->groupBy('team_id');
-
-            foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
-                $teamPossessions = collect($byTeam->get($teamId, []));
-                $opponentTeamId = $teamId === $game->home_team_id ? $game->away_team_id : $game->home_team_id;
-                $opponentPossessions = collect($byTeam->get($opponentTeamId, []));
-
-                if ($teamPossessions->isEmpty() || $opponentPossessions->isEmpty()) {
+            foreach ($games as $game) {
+                if (! $game->home_team_id || ! $game->away_team_id) {
                     continue;
                 }
 
-                $gameAggregate = $this->aggregateTeamGame($teamPossessions, $opponentPossessions);
-
-                $seasonStats[$teamId] = $this->mergeAggregate($seasonStats[$teamId] ?? $this->emptyAggregate(), $gameAggregate);
-
-                $rollingWindows[$teamId] ??= [];
-                $rollingWindows[$teamId][] = $gameAggregate;
-                if (count($rollingWindows[$teamId]) > self::ROLLING_GAME_LIMIT) {
-                    array_shift($rollingWindows[$teamId]);
+                $possessions = $this->gamePossessions(
+                    $playsByGame->get($game->id, collect()),
+                    $game->home_team_id,
+                    $game->away_team_id
+                );
+                if ($possessions->isEmpty()) {
+                    continue;
                 }
 
-                $gameCountByTeam[$teamId] = ($gameCountByTeam[$teamId] ?? 0) + 1;
-                $lastGameDateByTeam[$teamId] = $game->game_date instanceof Carbon
-                    ? $game->game_date->copy()
-                    : Carbon::parse((string) $game->game_date);
+                $byTeam = $possessions->groupBy('team_id');
+
+                foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+                    $teamPossessions = collect($byTeam->get($teamId, []));
+                    $opponentTeamId = $teamId === $game->home_team_id ? $game->away_team_id : $game->home_team_id;
+                    $opponentPossessions = collect($byTeam->get($opponentTeamId, []));
+
+                    if ($teamPossessions->isEmpty() || $opponentPossessions->isEmpty()) {
+                        continue;
+                    }
+
+                    $gameAggregate = $this->aggregateTeamGame($teamPossessions, $opponentPossessions);
+
+                    $seasonStats[$teamId] = $this->mergeAggregate($seasonStats[$teamId] ?? $this->emptyAggregate(), $gameAggregate);
+
+                    $rollingWindows[$teamId] ??= [];
+                    $rollingWindows[$teamId][] = $gameAggregate;
+                    if (count($rollingWindows[$teamId]) > self::ROLLING_GAME_LIMIT) {
+                        array_shift($rollingWindows[$teamId]);
+                    }
+
+                    $gameCountByTeam[$teamId] = ($gameCountByTeam[$teamId] ?? 0) + 1;
+                    $lastGameDateByTeam[$teamId] = $game->game_date instanceof Carbon
+                        ? $game->game_date->copy()
+                        : Carbon::parse((string) $game->game_date);
+                }
+
+                $processedGames++;
             }
-        }
+        }, 'id');
 
         if ($rebuild) {
             TeamPossessionMetric::query()->where('season', $season)->delete();
@@ -106,22 +126,48 @@ class CalculatePossessionMetrics
                 'free_throw_trip_rate' => $this->rate($aggregate['offensive_foul_trips'], $aggregate['offensive_possessions']),
                 'free_throw_rate_allowed' => $this->rate($aggregate['defensive_foul_trips_allowed'], $aggregate['defensive_possessions']),
                 'possessions_per_game' => $gamesSampled > 0 ? round($aggregate['offensive_possessions'] / $gamesSampled, 3) : 0,
-                'metadata' => [
+                'metadata' => json_encode([
                     'rolling_window_games' => min(self::ROLLING_GAME_LIMIT, $gamesSampled),
                     'late_game_seconds' => self::LATE_GAME_SECONDS,
-                ],
+                    'processed_games' => $processedGames,
+                ], JSON_THROW_ON_ERROR),
+                'created_at' => now(),
+                'updated_at' => now(),
             ];
 
-            TeamPossessionMetric::query()->updateOrCreate(
-                [
-                    'team_id' => $teamId,
-                    'season' => $season,
-                    'as_of_date' => $asOfDate,
-                ],
-                $payload
-            );
-
             $rows[] = $payload;
+        }
+
+        if ($rows !== []) {
+            TeamPossessionMetric::query()->upsert(
+                $rows,
+                ['team_id', 'season', 'as_of_date'],
+                [
+                    'games_sampled',
+                    'offensive_possessions',
+                    'defensive_possessions',
+                    'rolling_games_sampled',
+                    'rolling_offensive_possessions',
+                    'rolling_defensive_possessions',
+                    'late_game_offensive_possessions',
+                    'late_game_defensive_possessions',
+                    'offensive_points_per_possession',
+                    'defensive_points_per_possession_allowed',
+                    'net_points_per_possession',
+                    'rolling_offensive_points_per_possession',
+                    'rolling_defensive_points_per_possession_allowed',
+                    'rolling_net_points_per_possession',
+                    'late_game_offensive_points_per_possession',
+                    'late_game_defensive_points_per_possession_allowed',
+                    'turnover_rate',
+                    'forced_turnover_rate',
+                    'free_throw_trip_rate',
+                    'free_throw_rate_allowed',
+                    'possessions_per_game',
+                    'metadata',
+                    'updated_at',
+                ]
+            );
         }
 
         return $rows;
@@ -130,14 +176,8 @@ class CalculatePossessionMetrics
     /**
      * @return Collection<int, array{team_id:int, points:int, seconds_remaining:int, is_turnover:bool, is_foul_trip:bool}>
      */
-    private function gamePossessions(int $gameId, int $homeTeamId, int $awayTeamId): Collection
+    private function gamePossessions(Collection $plays, int $homeTeamId, int $awayTeamId): Collection
     {
-        $plays = Play::query()
-            ->where('game_id', $gameId)
-            ->whereIn('possession_team_id', [$homeTeamId, $awayTeamId])
-            ->orderBy('sequence_number')
-            ->get();
-
         if ($plays->isEmpty()) {
             return collect();
         }

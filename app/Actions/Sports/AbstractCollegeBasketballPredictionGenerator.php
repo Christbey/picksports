@@ -164,11 +164,14 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             (float) ($homeMetrics?->rolling_tempo ?? $homeForm['tempo'])
             + (float) ($awayMetrics?->rolling_tempo ?? $awayForm['tempo'])
         ) / 2;
+        $calibration = (array) ($config['total_calibration'] ?? []);
+        $maxRecentPaceDrop = (float) ($calibration['max_recent_pace_drop'] ?? 8.0);
+        $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
+        $recentPace = max($recentPace, $recentPaceFloor);
         $pace = $this->blendWeightedValues([
             ['value' => $seasonPace, 'weight' => 1.0],
             ['value' => $recentPace, 'weight' => $recentWeight],
         ]);
-        $calibration = (array) ($config['total_calibration'] ?? []);
         $paceFloor = (float) ($calibration['pace_floor'] ?? 62.0);
         $paceFloorBlend = (float) ($calibration['pace_floor_blend'] ?? 0.5);
         if ($pace < $paceFloor) {
@@ -201,10 +204,11 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $awayMetrics
         );
         $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 4.0);
+        $tournamentAdjustment = $this->roundOf64TotalAdjustment($game, $calibration);
         $highTotalThreshold = (float) ($calibration['high_total_threshold'] ?? 135.0);
         $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 1.2);
         $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
-        $calibratedTotal = $blendedTotal + $baseAdjustment + $highTotalBoost;
+        $calibratedTotal = $blendedTotal + $baseAdjustment + $tournamentAdjustment + $highTotalBoost;
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
             'season_home_score_component' => round($homeSeasonScore, 3),
@@ -219,6 +223,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'away_total_factor_adjustment' => round($awayFactorAdjustment, 3),
             'season_pace' => round($seasonPace, 3),
             'recent_pace' => round($recentPace, 3),
+            'recent_pace_floor' => round($recentPaceFloor, 3),
+            'max_recent_pace_drop' => round($maxRecentPaceDrop, 3),
             'rest_pace_adjustment' => round($restPaceAdjustment, 3),
             'pace_floor' => round($paceFloor, 3),
             'pace_floor_blend' => round($paceFloorBlend, 3),
@@ -226,6 +232,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'legacy_total' => round($legacyTotal, 3),
             'post_epa_total' => round($blendedTotal, 3),
             'total_base_adjustment' => round($baseAdjustment, 3),
+            'tournament_adjustment' => round($tournamentAdjustment, 3),
             'high_total_boost' => round($highTotalBoost, 3),
             'calibrated_total' => round($calibratedTotal, 3),
             'recent_factor_profile' => $factorAdjustments['metadata'],
@@ -695,6 +702,36 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     private function clamp(float $value, float $min, float $max): float
     {
         return max($min, min($max, $value));
+    }
+
+    /**
+     * Adds a modest round-of-64 lift for real seed-gap games, which tend to run
+     * faster and score later than the raw regular-season inputs imply.
+     *
+     * @param  array<string, mixed>  $calibration
+     */
+    private function roundOf64TotalAdjustment(Model $game, array $calibration): float
+    {
+        if (($game->tournament_round ?? null) !== 'round_of_64') {
+            return 0.0;
+        }
+
+        $homeSeed = (int) ($game->home_seed ?? 0);
+        $awaySeed = (int) ($game->away_seed ?? 0);
+        if ($homeSeed <= 0 || $awaySeed <= 0) {
+            return 0.0;
+        }
+
+        $seedGap = abs($homeSeed - $awaySeed);
+        $threshold = (int) ($calibration['round_of_64_seed_gap_threshold'] ?? 6);
+        if ($seedGap < $threshold) {
+            return 0.0;
+        }
+
+        $base = (float) ($calibration['round_of_64_base_adjustment'] ?? 3.5);
+        $perSeed = (float) ($calibration['round_of_64_seed_gap_points'] ?? 0.8);
+
+        return $base + (($seedGap - $threshold) * $perSeed);
     }
 
     /**

@@ -299,10 +299,14 @@ return [
         'total_calibration' => [
             'pace_floor' => 62.0,
             'pace_floor_blend' => 0.5,
+            'max_recent_pace_drop' => 8.0,
             'factor_adjustment_cap' => 6.0,
             'base_adjustment' => 4.0,
             'high_total_threshold' => 140.0,
             'high_total_slope' => 1.0,
+            'round_of_64_base_adjustment' => 3.5,
+            'round_of_64_seed_gap_threshold' => 6,
+            'round_of_64_seed_gap_points' => 0.8,
         ],
 
         // Vegas integration

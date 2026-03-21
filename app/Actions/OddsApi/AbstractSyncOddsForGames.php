@@ -5,6 +5,7 @@ namespace App\Actions\OddsApi;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 
 abstract class AbstractSyncOddsForGames
 {
@@ -29,6 +30,7 @@ abstract class AbstractSyncOddsForGames
     {
         $effectiveSportKey = $this->effectiveSportKey($oddsSportKey);
         $oddsData = $this->fetchOddsData($effectiveSportKey);
+        $daysAhead = $daysAhead !== null ? max(1, $daysAhead) : null;
 
         if (! $oddsData) {
             return 0;
@@ -41,7 +43,11 @@ abstract class AbstractSyncOddsForGames
                 continue;
             }
 
-            $game = $this->matchEvent($event, $effectiveSportKey);
+            if (! $this->eventFallsWithinWindow($event, $daysAhead)) {
+                continue;
+            }
+
+            $game = $this->matchEvent($event, $effectiveSportKey, $daysAhead);
 
             if (! $game) {
                 continue;
@@ -66,19 +72,71 @@ abstract class AbstractSyncOddsForGames
         return $updated;
     }
 
-    protected function matchEvent(array $event, string $oddsSportKey): ?Model
+    /**
+     * @return array{
+     *   sport_key:string,
+     *   days_ahead:?int,
+     *   local_games:int,
+     *   local_games_with_odds:int,
+     *   api_events:int,
+     *   in_window_events:int,
+     *   matched_events:int,
+     *   unmatched_events:list<array{event_id:string,commence_date:string,home_team:string,away_team:string}>
+     * }
+     */
+    public function diagnostics(?int $daysAhead = 7, ?string $oddsSportKey = null): array
+    {
+        $effectiveSportKey = $this->effectiveSportKey($oddsSportKey);
+        $daysAhead = $daysAhead !== null ? max(1, $daysAhead) : null;
+        $oddsData = $this->fetchOddsData($effectiveSportKey) ?? [];
+        $events = collect(is_array($oddsData) ? $oddsData : []);
+
+        $inWindowEvents = $events
+            ->filter(fn ($event) => is_array($event))
+            ->filter(fn (array $event) => isset($event['id'], $event['home_team'], $event['away_team'], $event['commence_time']))
+            ->filter(fn (array $event) => $this->eventFallsWithinWindow($event, $daysAhead))
+            ->values();
+
+        $matchedEvents = 0;
+        $unmatchedEvents = [];
+
+        foreach ($inWindowEvents as $event) {
+            $game = $this->matchEvent($event, $effectiveSportKey, $daysAhead);
+
+            if ($game) {
+                $matchedEvents++;
+
+                continue;
+            }
+
+            $unmatchedEvents[] = [
+                'event_id' => (string) $event['id'],
+                'commence_date' => date('Y-m-d H:i', strtotime((string) $event['commence_time'])),
+                'home_team' => (string) $event['home_team'],
+                'away_team' => (string) $event['away_team'],
+            ];
+        }
+
+        $localGamesQuery = $this->localGamesQuery($effectiveSportKey, $daysAhead);
+
+        return [
+            'sport_key' => $effectiveSportKey,
+            'days_ahead' => $daysAhead,
+            'local_games' => (clone $localGamesQuery)->count(),
+            'local_games_with_odds' => (clone $localGamesQuery)->whereNotNull('odds_updated_at')->count(),
+            'api_events' => $events->count(),
+            'in_window_events' => $inWindowEvents->count(),
+            'matched_events' => $matchedEvents,
+            'unmatched_events' => array_slice($unmatchedEvents, 0, 10),
+        ];
+    }
+
+    protected function matchEvent(array $event, string $oddsSportKey, ?int $daysAhead = null): ?Model
     {
         $gameDate = date('Y-m-d', strtotime($event['commence_time']));
-        $gameModel = $this->gameModelClass();
-
-        $query = $gameModel::query()
+        $query = $this->localGamesQuery($oddsSportKey, $daysAhead)
             ->with(['homeTeam', 'awayTeam'])
             ->whereDate('game_date', $gameDate);
-
-        $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
-        if ($seasonType !== null) {
-            $query->where('season_type', $seasonType);
-        }
 
         $games = $query->get();
 
@@ -96,6 +154,44 @@ abstract class AbstractSyncOddsForGames
         }
 
         return null;
+    }
+
+    protected function eventFallsWithinWindow(array $event, ?int $daysAhead): bool
+    {
+        if ($daysAhead === null) {
+            return true;
+        }
+
+        $commenceTime = strtotime((string) ($event['commence_time'] ?? ''));
+        if ($commenceTime === false) {
+            return false;
+        }
+
+        $windowStart = now()->startOfDay();
+        $windowEnd = now()->copy()->startOfDay()->addDays($daysAhead)->endOfDay();
+        $eventTime = now()->setTimestamp($commenceTime);
+
+        return $eventTime->betweenIncluded($windowStart, $windowEnd);
+    }
+
+    protected function localGamesQuery(string $oddsSportKey, ?int $daysAhead = null)
+    {
+        $gameModel = $this->gameModelClass();
+
+        $query = $gameModel::query();
+
+        if ($daysAhead !== null) {
+            $query->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
+                ->whereDate('game_date', '<=', now()->startOfDay()->addDays($daysAhead)->toDateString())
+                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME']);
+        }
+
+        $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
+        if ($seasonType !== null) {
+            $query->where('season_type', $seasonType);
+        }
+
+        return $query;
     }
 
     protected function matchThreshold(): float

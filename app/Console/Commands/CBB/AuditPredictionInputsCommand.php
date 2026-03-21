@@ -16,9 +16,11 @@ class AuditPredictionInputsCommand extends Command
         {--season= : Limit to a season}
         {--date= : Limit to a game date (YYYY-MM-DD)}
         {--game= : Audit a single game ID}
+        {--days=7 : Number of upcoming days to audit when no specific game/date is provided}
         {--stale-odds-hours=8 : Mark odds as stale when older than this many hours}
         {--recent-finals=25 : Number of recent final games to sample for play completeness}
         {--include-placeholders : Include placeholder tournament slots in the game audit table}
+        {--include-historical : Include canceled, postponed, and older historical scheduled games}
         {--show-ok : Include clean rows in the game audit table}';
 
     protected $description = 'Audit CBB prediction inputs for placeholders, odds, metrics, injuries, and play completeness';
@@ -97,14 +99,23 @@ class AuditPredictionInputsCommand extends Command
         if ($gameId = $this->option('game')) {
             $query->whereKey($gameId);
         } else {
-            $query->where('status', '!=', 'STATUS_FINAL');
-
             if ($season = $this->option('season')) {
                 $query->where('season', $season);
             }
 
             if ($date = $this->option('date')) {
                 $query->whereDate('game_date', $date);
+            } elseif (! $this->option('include-historical')) {
+                $days = max(1, (int) $this->option('days'));
+                $today = now()->startOfDay();
+                $through = now()->copy()->startOfDay()->addDays($days);
+
+                $query
+                    ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME'])
+                    ->whereDate('game_date', '>=', $today->toDateString())
+                    ->whereDate('game_date', '<=', $through->toDateString());
+            } else {
+                $query->where('status', '!=', 'STATUS_FINAL');
             }
         }
 

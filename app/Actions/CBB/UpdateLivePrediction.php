@@ -101,7 +101,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             $actualSecondsElapsed,
             $secondsRemaining,
             $effectiveGameLength,
-            $game->period,
+            $period,
             $margin,
             $prediction->predicted_total ?? static::DEFAULT_PRE_GAME_TOTAL
         );

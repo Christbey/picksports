@@ -165,7 +165,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             + (float) ($awayMetrics?->rolling_tempo ?? $awayForm['tempo'])
         ) / 2;
         $calibration = (array) ($config['total_calibration'] ?? []);
-        $maxRecentPaceDrop = (float) ($calibration['max_recent_pace_drop'] ?? 8.0);
+        $maxRecentPaceDrop = $this->maxRecentPaceDropForGame($game, $calibration);
         $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
         $recentPace = max($recentPace, $recentPaceFloor);
         $pace = $this->blendWeightedValues([
@@ -204,7 +204,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $awayMetrics
         );
         $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 4.0);
-        $tournamentAdjustment = $this->roundOf64TotalAdjustment($game, $calibration);
+        $tournamentAdjustment = $this->tournamentTotalAdjustment($game, $calibration);
         $highTotalThreshold = (float) ($calibration['high_total_threshold'] ?? 135.0);
         $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 1.2);
         $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
@@ -705,14 +705,15 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     }
 
     /**
-     * Adds a modest round-of-64 lift for real seed-gap games, which tend to run
+     * Adds a modest tournament lift for real seed-gap games, which tend to run
      * faster and score later than the raw regular-season inputs imply.
      *
      * @param  array<string, mixed>  $calibration
      */
-    private function roundOf64TotalAdjustment(Model $game, array $calibration): float
+    private function tournamentTotalAdjustment(Model $game, array $calibration): float
     {
-        if (($game->tournament_round ?? null) !== 'round_of_64') {
+        $round = (string) ($game->tournament_round ?? '');
+        if (! in_array($round, ['round_of_64', 'round_of_32'], true)) {
             return 0.0;
         }
 
@@ -728,10 +729,30 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             return 0.0;
         }
 
-        $base = (float) ($calibration['round_of_64_base_adjustment'] ?? 3.5);
-        $perSeed = (float) ($calibration['round_of_64_seed_gap_points'] ?? 0.8);
+        if ($round === 'round_of_32') {
+            $base = (float) ($calibration['round_of_32_base_adjustment'] ?? 2.0);
+            $perSeed = (float) ($calibration['round_of_32_seed_gap_points'] ?? 0.55);
+        } else {
+            $base = (float) ($calibration['round_of_64_base_adjustment'] ?? 3.5);
+            $perSeed = (float) ($calibration['round_of_64_seed_gap_points'] ?? 0.8);
+        }
 
         return $base + (($seedGap - $threshold) * $perSeed);
+    }
+
+    /**
+     * @param  array<string, mixed>  $calibration
+     */
+    private function maxRecentPaceDropForGame(Model $game, array $calibration): float
+    {
+        $default = (float) ($calibration['max_recent_pace_drop'] ?? 8.0);
+        $round = (string) ($game->tournament_round ?? '');
+
+        if (! in_array($round, ['round_of_64', 'round_of_32'], true)) {
+            return $default;
+        }
+
+        return (float) ($calibration['tournament_max_recent_pace_drop'] ?? ($default / 2));
     }
 
     /**

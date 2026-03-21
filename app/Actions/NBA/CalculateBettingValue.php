@@ -105,7 +105,8 @@ class CalculateBettingValue
             'away_team' => $awayTeam,
             'edge' => round($edge, 1),
             'odds' => $selectedOdds,
-            'confidence' => round($prediction->confidence_score, 2),
+            'confidence' => $this->spreadConfidenceScore($edge),
+            'side_confidence' => round((float) $prediction->confidence_score, 2),
             'reasoning' => $this->getSpreadReasoning($prediction->predicted_spread, $marketSpreadModelConvention, $betHome, $homeTeam, $awayTeam),
         ];
     }
@@ -212,7 +213,8 @@ class CalculateBettingValue
             'edge' => round($edge * 100, 1),
             'odds' => $price,
             'kelly_bet_size_percent' => max(0, min($maxKelly, round($kellySizePercent, 1))),
-            'confidence' => round($prediction->confidence_score, 2),
+            'confidence' => $this->moneylineConfidenceScore($edge),
+            'side_confidence' => round((float) $prediction->confidence_score, 2),
             'reasoning' => sprintf(
                 'Safe side: model gives %d%% chance vs market implied %d%% (%+d%% edge)',
                 round($modelProb * 100),
@@ -308,5 +310,17 @@ class CalculateBettingValue
     protected function totalConfidenceScore(float $edge): float
     {
         return round(min(95, 50 + ($edge * 5)), 2);
+    }
+
+    protected function spreadConfidenceScore(float $edge): float
+    {
+        return round(min(95, 50 + ($edge * 4)), 2);
+    }
+
+    protected function moneylineConfidenceScore(float $edge): float
+    {
+        $threshold = max(0.005, (float) config('nba.betting.edge_thresholds.moneyline'));
+
+        return round(min(95, 50 + (($edge / $threshold) * 7)), 2);
     }
 }

@@ -32,7 +32,7 @@ class CalculateBettingValue
 
         // 2. TOTAL VALUE ANALYSIS
         if ($totalsMarket && $prediction->predicted_total !== null) {
-            $totalRec = $this->analyzeTotal($prediction, $totalsMarket);
+            $totalRec = $this->analyzeTotal($game, $prediction, $totalsMarket);
             if ($totalRec) {
                 $recommendations[] = $totalRec;
             }
@@ -85,6 +85,11 @@ class CalculateBettingValue
             ? (float) config('cbb.betting.edge_thresholds.spread')
             : (float) config('cbb.betting.edge_thresholds.spread_away', config('cbb.betting.edge_thresholds.spread'));
 
+        $marketLineAbs = abs((float) $homeSpread);
+        if ($this->isTournamentRound($game) && ! $betHome && $marketLineAbs >= (float) config('cbb.betting.filters.big_dog_line_threshold', 15.0)) {
+            $minEdge = max($minEdge, (float) config('cbb.betting.filters.big_dog_min_edge', 6.0));
+        }
+
         // Edge threshold for recommendation
         if ($edge < $minEdge) {
             return null;
@@ -107,12 +112,13 @@ class CalculateBettingValue
             'away_team' => $awayTeam,
             'edge' => round($edge, 1),
             'odds' => $selectedOdds,
-            'confidence' => round($prediction->confidence_score, 2),
+            'confidence' => $this->calculateSpreadConfidence($edge, $minEdge, $game, $betHome, $marketLineAbs),
+            'side_confidence' => round((float) $prediction->confidence_score, 2),
             'reasoning' => $this->getSpreadReasoning($prediction->predicted_spread, $marketSpreadModelConvention, $betHome, $homeTeam, $awayTeam),
         ];
     }
 
-    protected function analyzeTotal(object $prediction, array $market): ?array
+    protected function analyzeTotal(Game $game, object $prediction, array $market): ?array
     {
         // Find the total line
         $totalLine = null;
@@ -133,16 +139,27 @@ class CalculateBettingValue
         }
 
         $edge = abs($prediction->predicted_total - $totalLine);
+        $betOver = $prediction->predicted_total > $totalLine;
+        $minEdge = (float) config('cbb.betting.edge_thresholds.total');
+
+        if ($this->isTournamentRound($game) && ! $betOver) {
+            $minEdge = max($minEdge, (float) config('cbb.betting.filters.tournament_under_min_edge', 4.5));
+
+            $marketTotalFloor = (float) config('cbb.betting.filters.tournament_under_market_total_floor', 145.0);
+            $skipEdge = (float) config('cbb.betting.filters.tournament_under_skip_edge', 18.0);
+            if ((float) $totalLine >= $marketTotalFloor && $edge >= $skipEdge) {
+                return null;
+            }
+        }
 
         // Edge threshold for totals
-        if ($edge < config('cbb.betting.edge_thresholds.total')) {
+        if ($edge < $minEdge) {
             return null;
         }
 
-        $betOver = $prediction->predicted_total > $totalLine;
         $modelTotal = round($prediction->predicted_total, 1);
         $marketTotal = round($totalLine, 1);
-        $totalConfidence = $this->calculateTotalConfidence($edge);
+        $totalConfidence = $this->calculateTotalConfidence($edge, $minEdge, $game, $betOver, (float) $totalLine);
 
         return [
             'type' => 'total',
@@ -227,7 +244,8 @@ class CalculateBettingValue
             'edge' => round($edge * 100, 1),
             'odds' => $price,
             'kelly_bet_size_percent' => max(0, min($maxKelly, round($kellySizePercent, 1))),
-            'confidence' => round($prediction->confidence_score, 2),
+            'confidence' => $this->calculateMoneylineConfidence($edge, $modelProb),
+            'side_confidence' => round((float) $prediction->confidence_score, 2),
             'reasoning' => sprintf(
                 'Safe side: model gives %d%% chance vs market implied %d%% (%+d%% edge)',
                 round($modelProb * 100),
@@ -273,12 +291,44 @@ class CalculateBettingValue
         return $kelly * $fraction;
     }
 
-    protected function calculateTotalConfidence(float $edge): float
+    protected function calculateTotalConfidence(float $edge, float $threshold, ?Game $game = null, bool $betOver = false, float $marketTotal = 0.0): float
     {
-        $threshold = max(0.1, (float) config('cbb.betting.edge_thresholds.total'));
         $confidence = 50 + (($edge / $threshold) * 10);
 
+        if ($game && $this->isTournamentRound($game) && ! $betOver) {
+            if ($marketTotal >= 145.0) {
+                $confidence -= 8;
+            }
+            if ($edge >= 12.0) {
+                $confidence -= 7;
+            }
+        }
+
         return round(max(50, min(95, $confidence)), 2);
+    }
+
+    protected function calculateSpreadConfidence(float $edge, float $threshold, Game $game, bool $betHome, float $marketLineAbs): float
+    {
+        $confidence = 50 + (($edge / max(0.1, $threshold)) * 9);
+
+        if ($this->isTournamentRound($game) && ! $betHome && $marketLineAbs >= 15.0) {
+            $confidence -= 8;
+        }
+
+        return round(max(50, min(95, $confidence)), 2);
+    }
+
+    protected function calculateMoneylineConfidence(float $edge, float $modelProbability): float
+    {
+        $threshold = max(0.005, (float) config('cbb.betting.edge_thresholds.moneyline'));
+        $confidence = 50 + (($edge / $threshold) * 7) + max(0, ($modelProbability - 0.5) * 20);
+
+        return round(max(50, min(95, $confidence)), 2);
+    }
+
+    protected function isTournamentRound(Game $game): bool
+    {
+        return in_array((string) ($game->tournament_round ?? ''), ['round_of_64', 'round_of_32'], true);
     }
 
     protected function getSpreadReasoning(float $modelSpread, float $marketSpread, bool $betHome, string $homeTeam, string $awayTeam): string

@@ -416,6 +416,14 @@ return [
             'moneyline' => 0.035,  // Probability (3.5%)
         ],
 
+        'filters' => [
+            'big_dog_line_threshold' => 15.0,
+            'big_dog_min_edge' => 6.0,
+            'tournament_under_min_edge' => 4.5,
+            'tournament_under_market_total_floor' => 145.0,
+            'tournament_under_skip_edge' => 18.0,
+        ],
+
         // Kelly Criterion bet sizing
         'kelly' => [
             'fraction' => 0.25,   // Quarter Kelly (conservative)

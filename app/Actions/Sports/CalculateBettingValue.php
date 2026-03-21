@@ -94,7 +94,8 @@ class CalculateBettingValue
             'away_team' => $awayTeam,
             'edge' => round($edge, 1),
             'odds' => (float) $selectedOdds,
-            'confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
+            'confidence' => $this->calculateSpreadConfidence($edge, $sportKey),
+            'side_confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
             'reasoning' => 'Model spread diverges from market spread.',
         ];
     }
@@ -136,7 +137,8 @@ class CalculateBettingValue
             'market_line' => round((float) $totalLine, 1),
             'edge' => round($edge, 1),
             'odds' => (float) ($betOver ? $overPrice : $underPrice),
-            'confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
+            'confidence' => $this->calculateTotalConfidence($edge, $sportKey),
+            'side_confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
             'reasoning' => 'Model total diverges from market total.',
         ];
     }
@@ -188,7 +190,8 @@ class CalculateBettingValue
             'implied_probability' => round($impliedProb * 100, 1),
             'edge' => round($edge * 100, 1),
             'odds' => $selectedPrice,
-            'confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
+            'confidence' => $this->calculateMoneylineConfidence($edge, $sportKey),
+            'side_confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
             'reasoning' => 'Model win probability exceeds market implied probability.',
         ];
     }
@@ -219,6 +222,30 @@ class CalculateBettingValue
     protected function moneylineThreshold(string $sportKey): float
     {
         return (float) config("{$sportKey}.betting.edge_thresholds.moneyline", 0.05);
+    }
+
+    protected function calculateSpreadConfidence(float $edge, string $sportKey): float
+    {
+        $threshold = max(0.1, $this->spreadThreshold($sportKey));
+        $confidence = 50 + (($edge / $threshold) * 8);
+
+        return round(max(50, min(95, $confidence)), 2);
+    }
+
+    protected function calculateTotalConfidence(float $edge, string $sportKey): float
+    {
+        $threshold = max(0.1, $this->totalThreshold($sportKey));
+        $confidence = 50 + (($edge / $threshold) * 10);
+
+        return round(max(50, min(95, $confidence)), 2);
+    }
+
+    protected function calculateMoneylineConfidence(float $edge, string $sportKey): float
+    {
+        $threshold = max(0.005, $this->moneylineThreshold($sportKey));
+        $confidence = 50 + (($edge / $threshold) * 7);
+
+        return round(max(50, min(95, $confidence)), 2);
     }
 
     protected function getTeamDisplayName(object $team): string

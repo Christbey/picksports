@@ -131,10 +131,11 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         $preGameLogOdds = log($preGameProbability / (1 - $preGameProbability));
         $remainingTimeRatio = max(0.02, min(1.0, $secondsRemaining / static::TOTAL_GAME_SECONDS));
         $preGameWeight = pow($remainingTimeRatio, 0.65);
+        $stateWeight = 0.20 + (0.80 * $timeElapsedFraction);
         $marginScale = 2.8 + (9.0 * $remainingTimeRatio);
-        $marginAdjustment = $margin / $marginScale;
+        $marginAdjustment = ($margin / $marginScale) * $stateWeight;
         $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0);
-        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment + ($efficiencyMargin / 5.5);
+        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment + (($efficiencyMargin / 7.5) * $stateWeight);
 
         $probability = 1 / (1 + exp(-$combinedLogOdds));
 
@@ -155,10 +156,11 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         }
 
         $remainingFraction = max(0.0, min(1.0, $secondsRemaining / static::TOTAL_GAME_SECONDS));
+        $stateWeight = 0.25 + (0.75 * $timeElapsedFraction);
         $scoreStateDampener = max(0.2, 1 - (abs($currentMargin) / 18));
         $pregameCarryWeight = (0.65 + (0.25 * $remainingFraction)) * $scoreStateDampener;
         $remainingPreGameContribution = $preGameSpread * $remainingFraction * $pregameCarryWeight;
-        $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0);
+        $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0) * $stateWeight;
 
         return $currentMargin + $remainingPreGameContribution + $efficiencyMargin;
     }
@@ -182,9 +184,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
 
         $timeElapsedFraction = $actualSecondsElapsed / $effectiveGameLength;
         $actualRate = $currentTotal / max(1, $actualSecondsElapsed);
-        $preGameRate = $preGameTotal / max(1, $effectiveGameLength);
-        $actualWeight = pow($timeElapsedFraction, 0.8);
-        $remainingRate = ($actualRate * $actualWeight) + ($preGameRate * (1 - $actualWeight));
+        $paceProjectedFullGame = $actualRate * $effectiveGameLength;
 
         $scoreStateMultiplier = 1.0;
         $absMargin = abs($margin);
@@ -201,10 +201,18 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         }
 
         $metricsRemainingPoints = (float) ($this->liveContext['expected_remaining_total_points'] ?? 0.0);
-        $metricsWeight = (float) config('cbb.prediction.live_possession.live_total_metrics_weight', 0.65);
-        $paceProjectedRemaining = max(0.0, $remainingRate * $secondsRemaining * $scoreStateMultiplier);
-        $projectedRemaining = ($paceProjectedRemaining * (1 - $metricsWeight)) + ($metricsRemainingPoints * $metricsWeight * $scoreStateMultiplier);
-        $liveTotal = $currentTotal + $projectedRemaining;
+        $metricsProjectedFullGame = $currentTotal + ($metricsRemainingPoints * $scoreStateMultiplier);
+        $metricsWeight = (float) config('cbb.prediction.live_possession.live_total_metrics_weight', 0.65) * min(0.60, $timeElapsedFraction);
+        $paceWeight = min(0.55, pow($timeElapsedFraction, 1.35));
+        $pregameWeight = max(0.15, 1 - $paceWeight - $metricsWeight);
+        $weightTotal = $pregameWeight + $paceWeight + $metricsWeight;
+        $pregameWeight /= $weightTotal;
+        $paceWeight /= $weightTotal;
+        $metricsWeight /= $weightTotal;
+
+        $liveTotal = ($preGameTotal * $pregameWeight)
+            + ($paceProjectedFullGame * $paceWeight)
+            + ($metricsProjectedFullGame * $metricsWeight);
 
         $upperBound = static::UPPER_BOUND_BASE;
         if ($period > static::REGULATION_PERIODS) {
@@ -212,7 +220,9 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             $upperBound += $otPeriods * 25;
         }
 
-        return max($currentTotal, min($upperBound, $liveTotal));
+        $lowerBound = max((float) $currentTotal, $preGameTotal - 18);
+
+        return max($lowerBound, min($upperBound, $liveTotal));
     }
 
     private function buildLiveContext(object $game, int $secondsRemaining, int $effectiveGameLength, float $preGameTotal): array

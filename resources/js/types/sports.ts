@@ -60,6 +60,11 @@ export interface PredictionListItem {
     predicted_spread?: number;
     predicted_total?: number;
     win_probability?: number;
+    live_predicted_spread?: number | null;
+    live_predicted_total?: number | null;
+    live_win_probability?: number | null;
+    live_seconds_remaining?: number | null;
+    live_updated_at?: string | null;
     confidence_score?: number;
     actual_spread?: number;
     actual_total?: number;

@@ -228,6 +228,10 @@ function preGameWinProbability(): number {
 function liveWinProbability(): number | null {
     if (dashboardType) return dashboardType.live_win_probability ?? null;
 
+    if (typeof predictionType?.live_win_probability === 'number') {
+        return predictionType.live_win_probability;
+    }
+
     const gameLiveProbability = predictionType?.game.live_win_probability;
     if (!gameLiveProbability) return null;
 
@@ -301,13 +305,13 @@ function livePredictionData() {
 
     const livePredictedSpread = dashboardType
         ? dashboardType.live_predicted_spread ?? null
-        : null;
+        : predictionType?.live_predicted_spread ?? null;
     const livePredictedTotal = dashboardType
         ? dashboardType.live_predicted_total ?? null
-        : null;
+        : predictionType?.live_predicted_total ?? null;
     const liveSecondsRemaining = dashboardType
         ? dashboardType.live_seconds_remaining ?? null
-        : null;
+        : predictionType?.live_seconds_remaining ?? null;
     const liveOutsRemaining = dashboardType
         ? dashboardType.live_outs_remaining ?? null
         : null;

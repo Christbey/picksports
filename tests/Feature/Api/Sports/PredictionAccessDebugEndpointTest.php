@@ -8,6 +8,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
 });
 
 it('requires sanctum auth for prediction access debug endpoint', function () {

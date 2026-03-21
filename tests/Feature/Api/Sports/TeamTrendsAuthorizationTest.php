@@ -8,6 +8,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
 });
 
 it('requires sanctum auth for team trends endpoint', function () {
@@ -37,4 +38,3 @@ it('allows authenticated users with sport permission on team trends endpoint', f
     $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
         ->assertOk();
 });
-

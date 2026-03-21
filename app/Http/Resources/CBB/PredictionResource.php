@@ -16,11 +16,16 @@ class PredictionResource extends AbstractPredictionResource
     public function toArray(Request $request): array
     {
         $data = $this->basePredictionData(GameResource::class);
+        $liveStatuses = ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+        $isLive = ! $this->relationLoaded('game')
+            || in_array($this->game?->status, $liveStatuses, true);
 
         // Spread (includes predicted_spread and predicted_total)
         if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = (float) $this->predicted_spread;
             $data['predicted_total'] = (float) $this->predicted_total;
+            $data['live_predicted_spread'] = $isLive && $this->live_predicted_spread !== null ? (float) $this->live_predicted_spread : null;
+            $data['live_predicted_total'] = $isLive && $this->live_predicted_total !== null ? (float) $this->live_predicted_total : null;
         }
 
         // Win Probability
@@ -29,6 +34,9 @@ class PredictionResource extends AbstractPredictionResource
             $data['win_probability'] = $winProbability;
             $data['home_win_probability'] = $winProbability;
             $data['away_win_probability'] = 1 - $winProbability;
+            $data['live_win_probability'] = $isLive && $this->live_win_probability !== null ? (float) $this->live_win_probability : null;
+            $data['live_seconds_remaining'] = $isLive ? $this->live_seconds_remaining : null;
+            $data['live_updated_at'] = $isLive ? $this->live_updated_at?->toIso8601String() : null;
         }
 
         // Confidence Score

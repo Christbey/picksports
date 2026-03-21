@@ -15,7 +15,8 @@ it('exposes leaderboard only for configured sports', function () {
         ->assertJsonStructure(['data']);
 
     $this->getJson('/api/v1/nfl/player-stats/leaderboard')
-        ->assertNotFound();
+        ->assertOk()
+        ->assertJsonStructure(['data']);
 });
 
 it('exposes team season averages only for configured sports', function () {

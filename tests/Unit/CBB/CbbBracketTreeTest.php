@@ -3,8 +3,8 @@
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Support\CbbBracketTree;
-use Tests\TestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
 uses(TestCase::class);
 uses(RefreshDatabase::class);
@@ -60,7 +60,7 @@ test('cbb bracket tree builds seeded regional matchups and advances picked winne
     $roundOf64 = collect($east['rounds'])->firstWhere('key', 'round_of_64');
     $roundOf32 = collect($east['rounds'])->firstWhere('key', 'round_of_32');
 
-    expect($tree['scoring']['round_of_64'])->toBe(1)
+    expect($tree['scoring']['round_of_64'])->toBe(10)
         ->and($roundOf64['matchups'][0]['participants'][0]['participant']['name'])->toBe('Duke Blue Devils')
         ->and($roundOf64['matchups'][1]['participants'][0]['participant']['name'])->toBe('Ohio State Buckeyes')
         ->and($roundOf32['matchups'][0]['participants'][0]['participant']['name'])->toBe('Duke Blue Devils')

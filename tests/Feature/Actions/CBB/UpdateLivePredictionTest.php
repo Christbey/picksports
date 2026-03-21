@@ -9,7 +9,6 @@ use App\Models\CBB\TeamPossessionMetric;
 uses()->group('cbb', 'live-predictions');
 
 beforeEach(function () {
-    $this->refreshDatabase();
     $this->action = new UpdateLivePrediction;
     $this->homeTeam = Team::factory()->create();
     $this->awayTeam = Team::factory()->create();

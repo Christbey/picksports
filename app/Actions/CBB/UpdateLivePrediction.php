@@ -131,11 +131,13 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         $preGameLogOdds = log($preGameProbability / (1 - $preGameProbability));
         $remainingTimeRatio = max(0.02, min(1.0, $secondsRemaining / static::TOTAL_GAME_SECONDS));
         $preGameWeight = pow($remainingTimeRatio, 0.65);
-        $stateWeight = 0.20 + (0.80 * $timeElapsedFraction);
-        $marginScale = 2.8 + (9.0 * $remainingTimeRatio);
-        $marginAdjustment = ($margin / $marginScale) * $stateWeight;
+        $stateWeight = 0.15 + (0.75 * $timeElapsedFraction);
+        $projectedFinalMargin = $this->projectedFinalMargin($margin, $secondsRemaining, $timeElapsedFraction, 0.0);
+        $marginScale = 4.2 + (10.5 * $remainingTimeRatio);
+        $marginAdjustment = ($projectedFinalMargin / $marginScale) * $stateWeight;
         $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0);
-        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment + (($efficiencyMargin / 7.5) * $stateWeight);
+        $efficiencyAdjustment = ($efficiencyMargin / 10.0) * min(0.50, $timeElapsedFraction);
+        $combinedLogOdds = ($preGameLogOdds * $preGameWeight) + $marginAdjustment + $efficiencyAdjustment;
 
         $probability = 1 / (1 + exp(-$combinedLogOdds));
 
@@ -155,14 +157,7 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             return (float) $currentMargin;
         }
 
-        $remainingFraction = max(0.0, min(1.0, $secondsRemaining / static::TOTAL_GAME_SECONDS));
-        $stateWeight = 0.25 + (0.75 * $timeElapsedFraction);
-        $scoreStateDampener = max(0.2, 1 - (abs($currentMargin) / 18));
-        $pregameCarryWeight = (0.65 + (0.25 * $remainingFraction)) * $scoreStateDampener;
-        $remainingPreGameContribution = $preGameSpread * $remainingFraction * $pregameCarryWeight;
-        $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0) * $stateWeight;
-
-        return $currentMargin + $remainingPreGameContribution + $efficiencyMargin;
+        return $this->projectedFinalMargin($currentMargin, $secondsRemaining, $timeElapsedFraction, $preGameSpread);
     }
 
     private function calculateCbbLiveTotal(
@@ -308,5 +303,23 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
         }
 
         return ($base * (1 - $lateWeight)) + ($late * $lateWeight);
+    }
+
+    private function projectedFinalMargin(int $currentMargin, int $secondsRemaining, float $timeElapsedFraction, float $preGameSpread): float
+    {
+        $remainingFraction = max(0.0, min(1.0, $secondsRemaining / static::TOTAL_GAME_SECONDS));
+        $expectedRemainingMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0);
+        $stateProjection = $currentMargin + $expectedRemainingMargin;
+        $stateWeight = 0.18 + (0.82 * pow($timeElapsedFraction, 1.1));
+        $earlyMarginCompression = 1.0;
+
+        if ($secondsRemaining > 180) {
+            $earlyMarginCompression -= min(0.30, (abs($currentMargin) / 30) * (1 - $timeElapsedFraction));
+        }
+
+        $stateProjection *= $earlyMarginCompression;
+        $pregameAnchor = $preGameSpread * (0.55 + (0.25 * $remainingFraction));
+
+        return ($pregameAnchor * (1 - $stateWeight)) + ($stateProjection * $stateWeight);
     }
 }

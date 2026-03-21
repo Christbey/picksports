@@ -8,7 +8,6 @@ use App\Models\NBA\Team;
 uses()->group('nba', 'live-predictions');
 
 beforeEach(function () {
-    $this->refreshDatabase();
     $this->action = new UpdateLivePrediction;
     $this->homeTeam = Team::factory()->create();
     $this->awayTeam = Team::factory()->create();

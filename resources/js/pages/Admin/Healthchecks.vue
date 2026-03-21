@@ -53,27 +53,35 @@ const isRunning = ref(false);
 const syncingCheck = ref<string | null>(null);
 
 function filterBySport() {
-    router.get('/admin/healthchecks', {
-        sport: selectedSport.value === 'all' ? null : selectedSport.value,
-        view: selectedView.value,
-    }, {
-        preserveState: true,
-        replace: true,
-    });
+    router.get(
+        '/admin/healthchecks',
+        {
+            sport: selectedSport.value === 'all' ? null : selectedSport.value,
+            view: selectedView.value,
+        },
+        {
+            preserveState: true,
+            replace: true,
+        },
+    );
 }
 
 function runHealthChecks() {
     if (isRunning.value) return;
 
     isRunning.value = true;
-    router.post('/admin/healthchecks/run', {
-        sport: selectedSport.value === 'all' ? null : selectedSport.value,
-        mode: selectedView.value,
-    }, {
-        onFinish: () => {
-            isRunning.value = false;
+    router.post(
+        '/admin/healthchecks/run',
+        {
+            sport: selectedSport.value === 'all' ? null : selectedSport.value,
+            mode: selectedView.value,
         },
-    });
+        {
+            onFinish: () => {
+                isRunning.value = false;
+            },
+        },
+    );
 }
 
 function syncData(sport: string, checkType: string) {
@@ -81,15 +89,19 @@ function syncData(sport: string, checkType: string) {
     if (syncingCheck.value === syncKey) return;
 
     syncingCheck.value = syncKey;
-    router.post('/admin/healthchecks/sync', {
-        sport,
-        check_type: checkType,
-    }, {
-        onFinish: () => {
-            syncingCheck.value = null;
+    router.post(
+        '/admin/healthchecks/sync',
+        {
+            sport,
+            check_type: checkType,
         },
-        preserveScroll: true,
-    });
+        {
+            onFinish: () => {
+                syncingCheck.value = null;
+            },
+            preserveScroll: true,
+        },
+    );
 }
 
 function canSync(sport: string, checkType: string): boolean {
@@ -174,7 +186,7 @@ function formatCheckType(type: string): string {
 
     return displayType
         .split('_')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
 }
 
@@ -221,19 +233,29 @@ const overallStatus = computed(() => {
     return 'passing';
 });
 
-function getTeamScheduleOutliers(metadata: Record<string, any> | null): TeamScheduleOutlier[] {
+function getTeamScheduleOutliers(
+    metadata: Record<string, any> | null,
+): TeamScheduleOutlier[] {
     if (!metadata || !Array.isArray(metadata.outliers)) {
         return [];
     }
     return metadata.outliers as TeamScheduleOutlier[];
 }
 
-function getNoGameOutliers(metadata: Record<string, any> | null): TeamScheduleOutlier[] {
-    return getTeamScheduleOutliers(metadata).filter((outlier) => outlier.type === 'no_games');
+function getNoGameOutliers(
+    metadata: Record<string, any> | null,
+): TeamScheduleOutlier[] {
+    return getTeamScheduleOutliers(metadata).filter(
+        (outlier) => outlier.type === 'no_games',
+    );
 }
 
-function getScheduleOutliers(metadata: Record<string, any> | null): TeamScheduleOutlier[] {
-    return getTeamScheduleOutliers(metadata).filter((outlier) => outlier.type !== 'no_games');
+function getScheduleOutliers(
+    metadata: Record<string, any> | null,
+): TeamScheduleOutlier[] {
+    return getTeamScheduleOutliers(metadata).filter(
+        (outlier) => outlier.type !== 'no_games',
+    );
 }
 
 function formatMetadataLabel(key: string): string {
@@ -257,7 +279,10 @@ function formatMetadataLabel(key: string): string {
         expected_upcoming_games: 'Expected Upcoming Games',
     };
 
-    return labels[key] ?? key.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase());
+    return (
+        labels[key] ??
+        key.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase())
+    );
 }
 
 function formatMetadataValue(key: string, value: unknown): string {
@@ -282,7 +307,9 @@ function formatMetadataValue(key: string, value: unknown): string {
     }
 
     if (key === 'command_patterns' && Array.isArray(value)) {
-        return value.map((pattern) => String(pattern).replace(/%+$/g, '')).join(', ');
+        return value
+            .map((pattern) => String(pattern).replace(/%+$/g, ''))
+            .join(', ');
     }
 
     if (
@@ -314,7 +341,9 @@ function displayMessage(message: string): string {
     return message.split('\n')[0]?.trim() ?? message;
 }
 
-function metadataEntries(check: Healthcheck): Array<{ key: string; label: string; value: string; raw: unknown }> {
+function metadataEntries(
+    check: Healthcheck,
+): Array<{ key: string; label: string; value: string; raw: unknown }> {
     if (!check.metadata) return [];
 
     const keys = [
@@ -355,264 +384,564 @@ function metadataEntries(check: Healthcheck): Array<{ key: string; label: string
     <AppLayout :breadcrumbs="breadcrumbs">
         <SettingsLayout :full-width="true">
             <RenderErrorBoundary title="Health Checks Render Error">
-                <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-2xl font-bold">Health Checks</h1>
-                    <p class="mt-1 text-muted-foreground">
-                        Monitor command heartbeat and pipeline freshness
-                    </p>
-                </div>
-                <button
-                    @click="runHealthChecks"
-                    :disabled="isRunning"
-                    class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                <div
+                    class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
                 >
-                    {{ isRunning ? 'Running Checks...' : `Run ${selectedView === 'validation' ? 'Validation' : 'Heartbeat'} Checks` }}
-                </button>
-            </div>
-
-            <div class="flex gap-2">
-                <button
-                    type="button"
-                    class="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-                    :class="selectedView === 'heartbeat' ? 'bg-primary text-primary-foreground' : 'bg-sidebar-accent hover:bg-sidebar-accent/80'"
-                    @click="selectedView = 'heartbeat'; filterBySport()"
-                >
-                    Heartbeat
-                </button>
-                <button
-                    type="button"
-                    class="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-                    :class="selectedView === 'validation' ? 'bg-primary text-primary-foreground' : 'bg-sidebar-accent hover:bg-sidebar-accent/80'"
-                    @click="selectedView = 'validation'; filterBySport()"
-                >
-                    Data Validation
-                </button>
-            </div>
-
-            <!-- Status Summary -->
-            <div class="grid gap-4 md:grid-cols-4">
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6">
                     <div class="flex items-center justify-between">
                         <div>
-                            <p class="text-sm font-medium text-muted-foreground">Overall Status</p>
-                            <p :class="['mt-2 text-2xl font-bold capitalize', getStatusColor(overallStatus)]">
-                                {{ overallStatus }}
+                            <h1 class="text-2xl font-bold">Health Checks</h1>
+                            <p class="mt-1 text-muted-foreground">
+                                Monitor command heartbeat and pipeline freshness
                             </p>
                         </div>
-                        <div
-                            :class="['flex h-12 w-12 items-center justify-center rounded-full text-2xl', getStatusColor(overallStatus)]"
+                        <button
+                            @click="runHealthChecks"
+                            :disabled="isRunning"
+                            class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                            {{ getStatusIcon(overallStatus) }}
-                        </div>
+                            {{
+                                isRunning
+                                    ? 'Running Checks...'
+                                    : `Run ${selectedView === 'validation' ? 'Validation' : 'Heartbeat'} Checks`
+                            }}
+                        </button>
                     </div>
-                </div>
 
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6">
-                    <p class="text-sm font-medium text-muted-foreground">Passing</p>
-                    <p class="mt-2 text-2xl font-bold text-green-600 dark:text-green-400">
-                        {{ status_counts.passing || 0 }}
-                    </p>
-                </div>
-
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6">
-                    <p class="text-sm font-medium text-muted-foreground">Warning</p>
-                    <p class="mt-2 text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                        {{ status_counts.warning || 0 }}
-                    </p>
-                </div>
-
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6">
-                    <p class="text-sm font-medium text-muted-foreground">Failing</p>
-                    <p class="mt-2 text-2xl font-bold text-red-600 dark:text-red-400">
-                        {{ status_counts.failing || 0 }}
-                    </p>
-                </div>
-            </div>
-
-            <!-- Filter -->
-            <div class="flex gap-4">
-                <select
-                    v-model="selectedSport"
-                    @change="filterBySport"
-                    class="rounded-lg border border-sidebar-border bg-white px-4 py-2 dark:bg-sidebar focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                    <option value="all">All Sports</option>
-                    <option v-for="sport in sports" :key="sport" :value="sport">
-                        {{ formatSportName(sport) }}
-                    </option>
-                </select>
-            </div>
-
-            <!-- Health Checks by Sport -->
-            <div v-if="Object.keys(checks_by_sport).length === 0" class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-8 text-center">
-                <p class="text-muted-foreground">No health checks found. Run <code class="rounded bg-sidebar-accent px-2 py-1">php artisan healthcheck:run</code> to generate checks.</p>
-            </div>
-
-            <div v-else class="space-y-6">
-                <div
-                    v-for="(checks, sport) in checks_by_sport"
-                    :key="sport"
-                    class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6"
-                >
-                    <h2 class="mb-4 text-lg font-semibold">{{ formatSportName(sport) }}</h2>
-
-                    <div class="space-y-3">
-                        <div
-                            v-for="check in checks"
-                            :key="check.id"
-                            class="flex items-start justify-between rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
+                    <div class="flex gap-2">
+                        <button
+                            type="button"
+                            class="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+                            :class="
+                                selectedView === 'heartbeat'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-sidebar-accent hover:bg-sidebar-accent/80'
+                            "
+                            @click="
+                                selectedView = 'heartbeat';
+                                filterBySport();
+                            "
                         >
-                            <div class="flex-1">
-                                <div class="flex items-center gap-3">
-                                    <span
-                                        :class="['inline-flex items-center justify-center rounded-full px-3 py-1 text-sm font-medium', getStatusColor(check.status)]"
+                            Heartbeat
+                        </button>
+                        <button
+                            type="button"
+                            class="rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+                            :class="
+                                selectedView === 'validation'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-sidebar-accent hover:bg-sidebar-accent/80'
+                            "
+                            @click="
+                                selectedView = 'validation';
+                                filterBySport();
+                            "
+                        >
+                            Data Validation
+                        </button>
+                    </div>
+
+                    <!-- Status Summary -->
+                    <div class="grid gap-4 md:grid-cols-4">
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <p
+                                        class="text-sm font-medium text-muted-foreground"
                                     >
-                                        <span class="mr-1">{{ getStatusIcon(check.status) }}</span>
-                                        {{ formatStatus(check.status) }}
-                                    </span>
-                                    <h3 class="font-semibold">{{ formatCheckType(check.check_type) }}</h3>
+                                        Overall Status
+                                    </p>
+                                    <p
+                                        :class="[
+                                            'mt-2 text-2xl font-bold capitalize',
+                                            getStatusColor(overallStatus),
+                                        ]"
+                                    >
+                                        {{ overallStatus }}
+                                    </p>
                                 </div>
-                                <p class="mt-2 text-sm text-muted-foreground">{{ displayMessage(check.message) }}</p>
-
-                                <!-- Team Schedules Metadata -->
-                                <div v-if="check.check_type === 'team_schedules' && check.metadata" class="mt-3 space-y-2">
-                                    <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                                        <span v-if="check.metadata.total_teams" class="rounded bg-white dark:bg-sidebar px-2 py-1">
-                                            Total Teams: {{ check.metadata.total_teams }}
-                                        </span>
-                                        <span v-if="check.metadata.teams_with_games" class="rounded bg-white dark:bg-sidebar px-2 py-1">
-                                            Teams with Games: {{ check.metadata.teams_with_games }}
-                                        </span>
-                                        <span v-if="check.metadata.average_games" class="rounded bg-white dark:bg-sidebar px-2 py-1">
-                                            Avg Games: {{ Math.round(check.metadata.average_games * 10) / 10 }}
-                                        </span>
-                                        <span v-if="check.metadata.std_dev" class="rounded bg-white dark:bg-sidebar px-2 py-1">
-                                            Std Dev: {{ Math.round(check.metadata.std_dev * 10) / 10 }}
-                                        </span>
-                                    </div>
-
-                                    <!-- Teams with no games and outliers -->
-                                    <div v-if="getTeamScheduleOutliers(check.metadata).length > 0" class="mt-2 space-y-2">
-                                        <!-- Teams with no games -->
-                                        <div v-if="getNoGameOutliers(check.metadata).length > 0">
-                                            <p class="text-xs font-medium text-red-600 dark:text-red-400">
-                                                Teams with no games ({{ getNoGameOutliers(check.metadata).length }}):
-                                            </p>
-                                            <div class="mt-1 flex flex-wrap gap-1">
-                                                <span
-                                                    v-for="team in getNoGameOutliers(check.metadata)"
-                                                    :key="team.espn_id"
-                                                    class="rounded bg-red-100 dark:bg-red-900/30 px-2 py-1 text-xs text-red-800 dark:text-red-300"
-                                                >
-                                                    {{ team.team }} (#{{ team.espn_id }})
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <!-- Schedule outliers (too many/too few games) -->
-                                        <div v-if="getScheduleOutliers(check.metadata).length > 0">
-                                            <p class="text-xs font-medium text-yellow-600 dark:text-yellow-400">
-                                                Schedule outliers ({{ getScheduleOutliers(check.metadata).length }}):
-                                            </p>
-                                            <div class="mt-1 flex flex-wrap gap-1">
-                                                <span
-                                                    v-for="outlier in getScheduleOutliers(check.metadata)"
-                                                    :key="outlier.espn_id"
-                                                    class="rounded bg-yellow-100 dark:bg-yellow-900/30 px-2 py-1 text-xs text-yellow-800 dark:text-yellow-300"
-                                                    :title="`${outlier.type}: ${Math.round((outlier.deviation_from_avg ?? 0) * 10) / 10} deviation from avg`"
-                                                >
-                                                    {{ outlier.team }} ({{ outlier.games }} games)
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Standard Metadata -->
-                                <div v-else-if="check.metadata" class="mt-3 space-y-2">
-                                    <div class="flex flex-wrap gap-2 text-xs">
-                                        <template v-for="entry in metadataEntries(check)" :key="entry.key">
-                                            <span
-                                                v-if="entry.key !== 'command_patterns' && entry.key !== 'last_failure_error'"
-                                                class="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-foreground dark:bg-sidebar"
-                                            >
-                                                <span class="font-medium text-muted-foreground">{{ entry.label }}</span>
-                                                <span>{{ entry.value }}</span>
-                                            </span>
-                                        </template>
-                                    </div>
-
-                                    <template v-for="entry in metadataEntries(check)" :key="`${entry.key}-patterns-wrap`">
-                                        <div
-                                            v-if="entry.key === 'command_patterns'"
-                                            :key="`${entry.key}-patterns`"
-                                            class="space-y-1"
-                                        >
-                                            <p class="text-xs font-medium text-muted-foreground">{{ entry.label }}</p>
-                                            <div class="flex flex-wrap gap-1">
-                                                <span
-                                                    v-for="pattern in Array.isArray(entry.raw) ? entry.raw : [entry.value]"
-                                                    :key="String(pattern)"
-                                                    class="rounded border border-sidebar-border bg-white px-2 py-1 font-mono text-[11px] text-foreground dark:bg-sidebar"
-                                                >
-                                                    {{ String(pattern).replace(/%+$/g, '') }}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </template>
-
-                                    <template v-for="entry in metadataEntries(check)" :key="`${entry.key}-error-wrap`">
-                                        <div
-                                            v-if="entry.key === 'last_failure_error'"
-                                            :key="`${entry.key}-error`"
-                                            class="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
-                                        >
-                                            <p class="mb-1 font-medium">{{ entry.label }}</p>
-                                            <p class="font-mono leading-relaxed">{{ entry.value }}</p>
-                                        </div>
-                                    </template>
+                                <div
+                                    :class="[
+                                        'flex h-12 w-12 items-center justify-center rounded-full text-2xl',
+                                        getStatusColor(overallStatus),
+                                    ]"
+                                >
+                                    {{ getStatusIcon(overallStatus) }}
                                 </div>
                             </div>
-                            <div class="ml-4 flex flex-col items-end gap-2">
+                        </div>
+
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Passing
+                            </p>
+                            <p
+                                class="mt-2 text-2xl font-bold text-green-600 dark:text-green-400"
+                            >
+                                {{ status_counts.passing || 0 }}
+                            </p>
+                        </div>
+
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Warning
+                            </p>
+                            <p
+                                class="mt-2 text-2xl font-bold text-yellow-600 dark:text-yellow-400"
+                            >
+                                {{ status_counts.warning || 0 }}
+                            </p>
+                        </div>
+
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Failing
+                            </p>
+                            <p
+                                class="mt-2 text-2xl font-bold text-red-600 dark:text-red-400"
+                            >
+                                {{ status_counts.failing || 0 }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Filter -->
+                    <div class="flex gap-4">
+                        <select
+                            v-model="selectedSport"
+                            @change="filterBySport"
+                            class="rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                        >
+                            <option value="all">All Sports</option>
+                            <option
+                                v-for="sport in sports"
+                                :key="sport"
+                                :value="sport"
+                            >
+                                {{ formatSportName(sport) }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <!-- Health Checks by Sport -->
+                    <div
+                        v-if="Object.keys(checks_by_sport).length === 0"
+                        class="rounded-xl border border-sidebar-border bg-white p-8 text-center dark:bg-sidebar"
+                    >
+                        <p class="text-muted-foreground">
+                            No health checks found. Run
+                            <code class="rounded bg-sidebar-accent px-2 py-1"
+                                >php artisan healthcheck:run</code
+                            >
+                            to generate checks.
+                        </p>
+                    </div>
+
+                    <div v-else class="space-y-6">
+                        <div
+                            v-for="(checks, sport) in checks_by_sport"
+                            :key="sport"
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <h2 class="mb-4 text-lg font-semibold">
+                                {{ formatSportName(sport) }}
+                            </h2>
+
+                            <div class="space-y-3">
                                 <div
-                                    class="text-sm text-muted-foreground cursor-help"
-                                    :title="formatAbsoluteDate(check.checked_at)"
+                                    v-for="check in checks"
+                                    :key="check.id"
+                                    class="flex items-start justify-between rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
                                 >
-                                    {{ formatDate(check.checked_at) }}
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-3">
+                                            <span
+                                                :class="[
+                                                    'inline-flex items-center justify-center rounded-full px-3 py-1 text-sm font-medium',
+                                                    getStatusColor(
+                                                        check.status,
+                                                    ),
+                                                ]"
+                                            >
+                                                <span class="mr-1">{{
+                                                    getStatusIcon(check.status)
+                                                }}</span>
+                                                {{ formatStatus(check.status) }}
+                                            </span>
+                                            <h3 class="font-semibold">
+                                                {{
+                                                    formatCheckType(
+                                                        check.check_type,
+                                                    )
+                                                }}
+                                            </h3>
+                                        </div>
+                                        <p
+                                            class="mt-2 text-sm text-muted-foreground"
+                                        >
+                                            {{ displayMessage(check.message) }}
+                                        </p>
+
+                                        <!-- Team Schedules Metadata -->
+                                        <div
+                                            v-if="
+                                                check.check_type ===
+                                                    'team_schedules' &&
+                                                check.metadata
+                                            "
+                                            class="mt-3 space-y-2"
+                                        >
+                                            <div
+                                                class="flex flex-wrap gap-2 text-xs text-muted-foreground"
+                                            >
+                                                <span
+                                                    v-if="
+                                                        check.metadata
+                                                            .total_teams
+                                                    "
+                                                    class="rounded bg-white px-2 py-1 dark:bg-sidebar"
+                                                >
+                                                    Total Teams:
+                                                    {{
+                                                        check.metadata
+                                                            .total_teams
+                                                    }}
+                                                </span>
+                                                <span
+                                                    v-if="
+                                                        check.metadata
+                                                            .teams_with_games
+                                                    "
+                                                    class="rounded bg-white px-2 py-1 dark:bg-sidebar"
+                                                >
+                                                    Teams with Games:
+                                                    {{
+                                                        check.metadata
+                                                            .teams_with_games
+                                                    }}
+                                                </span>
+                                                <span
+                                                    v-if="
+                                                        check.metadata
+                                                            .average_games
+                                                    "
+                                                    class="rounded bg-white px-2 py-1 dark:bg-sidebar"
+                                                >
+                                                    Avg Games:
+                                                    {{
+                                                        Math.round(
+                                                            check.metadata
+                                                                .average_games *
+                                                                10,
+                                                        ) / 10
+                                                    }}
+                                                </span>
+                                                <span
+                                                    v-if="
+                                                        check.metadata.std_dev
+                                                    "
+                                                    class="rounded bg-white px-2 py-1 dark:bg-sidebar"
+                                                >
+                                                    Std Dev:
+                                                    {{
+                                                        Math.round(
+                                                            check.metadata
+                                                                .std_dev * 10,
+                                                        ) / 10
+                                                    }}
+                                                </span>
+                                            </div>
+
+                                            <!-- Teams with no games and outliers -->
+                                            <div
+                                                v-if="
+                                                    getTeamScheduleOutliers(
+                                                        check.metadata,
+                                                    ).length > 0
+                                                "
+                                                class="mt-2 space-y-2"
+                                            >
+                                                <!-- Teams with no games -->
+                                                <div
+                                                    v-if="
+                                                        getNoGameOutliers(
+                                                            check.metadata,
+                                                        ).length > 0
+                                                    "
+                                                >
+                                                    <p
+                                                        class="text-xs font-medium text-red-600 dark:text-red-400"
+                                                    >
+                                                        Teams with no games ({{
+                                                            getNoGameOutliers(
+                                                                check.metadata,
+                                                            ).length
+                                                        }}):
+                                                    </p>
+                                                    <div
+                                                        class="mt-1 flex flex-wrap gap-1"
+                                                    >
+                                                        <span
+                                                            v-for="team in getNoGameOutliers(
+                                                                check.metadata,
+                                                            )"
+                                                            :key="team.espn_id"
+                                                            class="rounded bg-red-100 px-2 py-1 text-xs text-red-800 dark:bg-red-900/30 dark:text-red-300"
+                                                        >
+                                                            {{ team.team }} (#{{
+                                                                team.espn_id
+                                                            }})
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <!-- Schedule outliers (too many/too few games) -->
+                                                <div
+                                                    v-if="
+                                                        getScheduleOutliers(
+                                                            check.metadata,
+                                                        ).length > 0
+                                                    "
+                                                >
+                                                    <p
+                                                        class="text-xs font-medium text-yellow-600 dark:text-yellow-400"
+                                                    >
+                                                        Schedule outliers ({{
+                                                            getScheduleOutliers(
+                                                                check.metadata,
+                                                            ).length
+                                                        }}):
+                                                    </p>
+                                                    <div
+                                                        class="mt-1 flex flex-wrap gap-1"
+                                                    >
+                                                        <span
+                                                            v-for="outlier in getScheduleOutliers(
+                                                                check.metadata,
+                                                            )"
+                                                            :key="
+                                                                outlier.espn_id
+                                                            "
+                                                            class="rounded bg-yellow-100 px-2 py-1 text-xs text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300"
+                                                            :title="`${outlier.type}: ${Math.round((outlier.deviation_from_avg ?? 0) * 10) / 10} deviation from avg`"
+                                                        >
+                                                            {{ outlier.team }}
+                                                            ({{ outlier.games }}
+                                                            games)
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Standard Metadata -->
+                                        <div
+                                            v-else-if="check.metadata"
+                                            class="mt-3 space-y-2"
+                                        >
+                                            <div
+                                                class="flex flex-wrap gap-2 text-xs"
+                                            >
+                                                <template
+                                                    v-for="entry in metadataEntries(
+                                                        check,
+                                                    )"
+                                                    :key="entry.key"
+                                                >
+                                                    <span
+                                                        v-if="
+                                                            entry.key !==
+                                                                'command_patterns' &&
+                                                            entry.key !==
+                                                                'last_failure_error'
+                                                        "
+                                                        class="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-foreground dark:bg-sidebar"
+                                                    >
+                                                        <span
+                                                            class="font-medium text-muted-foreground"
+                                                            >{{
+                                                                entry.label
+                                                            }}</span
+                                                        >
+                                                        <span>{{
+                                                            entry.value
+                                                        }}</span>
+                                                    </span>
+                                                </template>
+                                            </div>
+
+                                            <template
+                                                v-for="entry in metadataEntries(
+                                                    check,
+                                                )"
+                                                :key="`${entry.key}-patterns-wrap`"
+                                            >
+                                                <div
+                                                    v-if="
+                                                        entry.key ===
+                                                        'command_patterns'
+                                                    "
+                                                    :key="`${entry.key}-patterns`"
+                                                    class="space-y-1"
+                                                >
+                                                    <p
+                                                        class="text-xs font-medium text-muted-foreground"
+                                                    >
+                                                        {{ entry.label }}
+                                                    </p>
+                                                    <div
+                                                        class="flex flex-wrap gap-1"
+                                                    >
+                                                        <span
+                                                            v-for="pattern in Array.isArray(
+                                                                entry.raw,
+                                                            )
+                                                                ? entry.raw
+                                                                : [entry.value]"
+                                                            :key="
+                                                                String(pattern)
+                                                            "
+                                                            class="rounded border border-sidebar-border bg-white px-2 py-1 font-mono text-[11px] text-foreground dark:bg-sidebar"
+                                                        >
+                                                            {{
+                                                                String(
+                                                                    pattern,
+                                                                ).replace(
+                                                                    /%+$/g,
+                                                                    '',
+                                                                )
+                                                            }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </template>
+
+                                            <template
+                                                v-for="entry in metadataEntries(
+                                                    check,
+                                                )"
+                                                :key="`${entry.key}-error-wrap`"
+                                            >
+                                                <div
+                                                    v-if="
+                                                        entry.key ===
+                                                        'last_failure_error'
+                                                    "
+                                                    :key="`${entry.key}-error`"
+                                                    class="rounded border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300"
+                                                >
+                                                    <p class="mb-1 font-medium">
+                                                        {{ entry.label }}
+                                                    </p>
+                                                    <p
+                                                        class="font-mono leading-relaxed"
+                                                    >
+                                                        {{ entry.value }}
+                                                    </p>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="ml-4 flex flex-col items-end gap-2"
+                                    >
+                                        <div
+                                            class="cursor-help text-sm text-muted-foreground"
+                                            :title="
+                                                formatAbsoluteDate(
+                                                    check.checked_at,
+                                                )
+                                            "
+                                        >
+                                            {{ formatDate(check.checked_at) }}
+                                        </div>
+                                        <button
+                                            v-if="
+                                                canSync(
+                                                    check.sport,
+                                                    check.check_type,
+                                                )
+                                            "
+                                            @click="
+                                                syncData(
+                                                    check.sport,
+                                                    check.check_type,
+                                                )
+                                            "
+                                            :disabled="
+                                                syncingCheck ===
+                                                `${check.sport}-${check.check_type}`
+                                            "
+                                            class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {{
+                                                syncingCheck ===
+                                                `${check.sport}-${check.check_type}`
+                                                    ? 'Syncing...'
+                                                    : getSyncLabel(
+                                                          check.check_type,
+                                                      )
+                                            }}
+                                        </button>
+                                    </div>
                                 </div>
-                                <button
-                                    v-if="canSync(check.sport, check.check_type)"
-                                    @click="syncData(check.sport, check.check_type)"
-                                    :disabled="syncingCheck === `${check.sport}-${check.check_type}`"
-                                    class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {{ syncingCheck === `${check.sport}-${check.check_type}` ? 'Syncing...' : getSyncLabel(check.check_type) }}
-                                </button>
                             </div>
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <!-- Info Box -->
-            <div class="rounded-xl border border-blue-200 bg-blue-50 dark:border-blue-900 dark:bg-blue-950 p-4">
-                <div class="flex gap-3">
-                    <svg class="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <div class="text-sm text-blue-900 dark:text-blue-100">
-                        <p class="font-medium">How Health Checks Work</p>
-                        <p v-if="selectedView === 'heartbeat'" class="mt-1">
-                            Heartbeat checks verify sync, live scoreboard, prediction, model, and odds commands are executing on time.
-                        </p>
-                        <p v-else class="mt-1">
-                            Data validation checks audit freshness, schedule coverage, predictions, Elo, team metrics, and live-update integrity.
-                        </p>
+                    <!-- Info Box -->
+                    <div
+                        class="rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900 dark:bg-blue-950"
+                    >
+                        <div class="flex gap-3">
+                            <svg
+                                class="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    stroke-width="2"
+                                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                            </svg>
+                            <div
+                                class="text-sm text-blue-900 dark:text-blue-100"
+                            >
+                                <p class="font-medium">
+                                    How Health Checks Work
+                                </p>
+                                <p
+                                    v-if="selectedView === 'heartbeat'"
+                                    class="mt-1"
+                                >
+                                    Heartbeat checks verify sync, live
+                                    scoreboard, prediction, model, and odds
+                                    commands are executing on time.
+                                </p>
+                                <p v-else class="mt-1">
+                                    Data validation checks audit freshness,
+                                    schedule coverage, predictions, Elo, team
+                                    metrics, and live-update integrity.
+                                </p>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
                 </div>
             </RenderErrorBoundary>
         </SettingsLayout>

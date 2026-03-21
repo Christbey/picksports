@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\ResourcePayload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
-use App\Support\ResourcePayload;
 use Inertia\Inertia;
 use Inertia\Response;
 

@@ -79,18 +79,24 @@ onMounted(() => {
             gradientClasses,
         ]"
     >
-        <div class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
+        <div
+            class="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center"
+        >
             <div class="flex items-center gap-3">
                 <div
                     :class="[
                         'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
-                        variant === 'gradient' ? 'bg-white/20' : 'bg-indigo-500/20',
+                        variant === 'gradient'
+                            ? 'bg-white/20'
+                            : 'bg-indigo-500/20',
                     ]"
                 >
                     <Sparkles
                         :class="[
                             'h-5 w-5',
-                            variant === 'gradient' ? 'text-white' : 'text-indigo-500',
+                            variant === 'gradient'
+                                ? 'text-white'
+                                : 'text-indigo-500',
                         ]"
                     />
                 </div>
@@ -101,7 +107,9 @@ onMounted(() => {
                     <p
                         :class="[
                             'text-sm',
-                            variant === 'gradient' ? 'text-white/80' : 'text-muted-foreground',
+                            variant === 'gradient'
+                                ? 'text-white/80'
+                                : 'text-muted-foreground',
                         ]"
                     >
                         {{ message.description }}
@@ -111,9 +119,7 @@ onMounted(() => {
 
             <div class="flex items-center gap-3">
                 <Button :variant="buttonVariant" size="sm" as-child>
-                    <Link :href="subscriptionPlans()">
-                        View Plans
-                    </Link>
+                    <Link :href="subscriptionPlans()"> View Plans </Link>
                 </Button>
 
                 <button

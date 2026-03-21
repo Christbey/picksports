@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\BettingRecommendationResource;
-use App\Models\CBB\TournamentForecast as CbbTournamentForecast;
 use App\Models\CBB\Prediction as CbbPrediction;
+use App\Models\CBB\TournamentForecast as CbbTournamentForecast;
 use App\Models\MLB\PlayoffForecast as MlbPlayoffForecast;
 use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
@@ -102,7 +102,7 @@ class PlayerPropCardExportController extends Controller
     protected function getPredictionDateOptions(string $sport): array
     {
         $modelClass = $this->getPredictionModel($sport);
-        $prediction = new $modelClass();
+        $prediction = new $modelClass;
         $table = $prediction->getTable();
         $gameTable = str_replace('_predictions', '_games', $table);
 

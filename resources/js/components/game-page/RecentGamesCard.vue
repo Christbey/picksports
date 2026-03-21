@@ -13,15 +13,20 @@ defineProps<{
 
 const didTeamWin = (game: RecentGameListItem, teamId: number): boolean => {
     const isHome = game.home_team_id === teamId;
-    const teamScore = isHome ? (game.home_score || 0) : (game.away_score || 0);
-    const oppScore = isHome ? (game.away_score || 0) : (game.home_score || 0);
+    const teamScore = isHome ? game.home_score || 0 : game.away_score || 0;
+    const oppScore = isHome ? game.away_score || 0 : game.home_score || 0;
     return teamScore > oppScore;
 };
 
-const opponentAbbreviation = (game: RecentGameListItem, teamId: number): string => {
-    return (game.home_team_id === teamId
-        ? game.away_team?.abbreviation
-        : game.home_team?.abbreviation) || '-';
+const opponentAbbreviation = (
+    game: RecentGameListItem,
+    teamId: number,
+): string => {
+    return (
+        (game.home_team_id === teamId
+            ? game.away_team?.abbreviation
+            : game.home_team?.abbreviation) || '-'
+    );
 };
 
 const formattedScore = (game: RecentGameListItem, teamId: number): string => {
@@ -49,12 +54,20 @@ const formattedScore = (game: RecentGameListItem, teamId: number): string => {
                 >
                     <div class="flex items-center justify-between">
                         <div class="text-sm font-medium">
-                            <span v-if="recentGame.home_team_id === teamId">vs</span>
+                            <span v-if="recentGame.home_team_id === teamId"
+                                >vs</span
+                            >
                             <span v-else>@</span>
                             {{ opponentAbbreviation(recentGame, teamId) }}
                         </div>
                         <div class="text-sm font-semibold">
-                            <span :class="didTeamWin(recentGame, teamId) ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'">
+                            <span
+                                :class="
+                                    didTeamWin(recentGame, teamId)
+                                        ? 'text-green-600 dark:text-green-400'
+                                        : 'text-red-600 dark:text-red-400'
+                                "
+                            >
                                 {{ didTeamWin(recentGame, teamId) ? 'W' : 'L' }}
                                 {{ formattedScore(recentGame, teamId) }}
                             </span>

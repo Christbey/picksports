@@ -5,7 +5,13 @@ import { computed, onMounted, ref } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { fetchJson } from '@/composables/useApiClient';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -32,7 +38,12 @@ type Recommendation = {
         times_covered_last5: { hits: number; games: number } | null;
         times_covered_season: { hits: number; games: number } | null;
         vs_opponent_avg: number | null;
-        consistency: { std_dev: number; level: string; min: number; max: number } | null;
+        consistency: {
+            std_dev: number;
+            level: string;
+            min: number;
+            max: number;
+        } | null;
     };
     streak: { count: number; type: string; status: string } | null;
     edge: number;
@@ -108,7 +119,9 @@ const props = defineProps<{
 }>();
 
 const selectedDate = ref(props.filters.date || '');
-const selectedGame = ref(props.filters.game !== null ? String(props.filters.game) : '');
+const selectedGame = ref(
+    props.filters.game !== null ? String(props.filters.game) : '',
+);
 const selectedMarket = ref(props.filters.market || '');
 const recommendations = ref<Recommendation[]>([]);
 const dates = ref<DateOption[]>([]);
@@ -125,8 +138,11 @@ const filteredGames = computed(() => {
     return games.value.filter((game) => game.date === selectedDate.value);
 });
 
-const hasActiveFilters = computed(() =>
-    selectedDate.value !== '' || selectedGame.value !== '' || selectedMarket.value !== ''
+const hasActiveFilters = computed(
+    () =>
+        selectedDate.value !== '' ||
+        selectedGame.value !== '' ||
+        selectedMarket.value !== '',
 );
 
 const onDateChange = () => {
@@ -167,7 +183,8 @@ const updateBrowserUrl = (filters: PlayerPropsFilters) => {
     url.search = '';
 
     if (filters.date) url.searchParams.set('date', filters.date);
-    if (filters.game !== null && filters.game !== '') url.searchParams.set('game', String(filters.game));
+    if (filters.game !== null && filters.game !== '')
+        url.searchParams.set('game', String(filters.game));
     if (filters.market) url.searchParams.set('market', filters.market);
 
     window.history.replaceState({}, '', `${url.pathname}${url.search}`);
@@ -194,11 +211,13 @@ const loadBoard = async () => {
         markets.value = payload.markets || [];
 
         selectedDate.value = payload.filters.date || '';
-        selectedGame.value = payload.filters.game !== null ? String(payload.filters.game) : '';
+        selectedGame.value =
+            payload.filters.game !== null ? String(payload.filters.game) : '';
         selectedMarket.value = payload.filters.market || '';
         updateBrowserUrl(payload.filters);
     } catch (err) {
-        error.value = err instanceof Error ? err.message : 'Unable to load player props.';
+        error.value =
+            err instanceof Error ? err.message : 'Unable to load player props.';
         recommendations.value = [];
     } finally {
         loading.value = false;
@@ -237,7 +256,11 @@ const getInitials = (name: string) =>
         .toUpperCase();
 
 const getResultStatus = (rec: Recommendation) => {
-    if (!rec.graded_at || rec.actual_value === null || rec.actual_value === undefined) {
+    if (
+        !rec.graded_at ||
+        rec.actual_value === null ||
+        rec.actual_value === undefined
+    ) {
         return {
             label: 'Pending',
             variant: 'outline' as const,
@@ -256,8 +279,9 @@ const getResultStatus = (rec: Recommendation) => {
     }
 
     const didGoOver = Boolean(rec.hit_over);
-    const won = (rec.recommendation === 'Over' && didGoOver)
-        || (rec.recommendation === 'Under' && !didGoOver);
+    const won =
+        (rec.recommendation === 'Over' && didGoOver) ||
+        (rec.recommendation === 'Under' && !didGoOver);
 
     if (won) {
         return {
@@ -276,11 +300,14 @@ const getResultStatus = (rec: Recommendation) => {
 
 const expandedModelDetails = ref<number[]>([]);
 
-const isModelDetailsOpen = (id: number) => expandedModelDetails.value.includes(id);
+const isModelDetailsOpen = (id: number) =>
+    expandedModelDetails.value.includes(id);
 
 const toggleModelDetails = (id: number) => {
     if (isModelDetailsOpen(id)) {
-        expandedModelDetails.value = expandedModelDetails.value.filter((item) => item !== id);
+        expandedModelDetails.value = expandedModelDetails.value.filter(
+            (item) => item !== id,
+        );
         return;
     }
 
@@ -297,7 +324,9 @@ onMounted(() => {
         <div class="mx-auto w-full max-w-7xl space-y-6 p-3 md:p-4">
             <div class="space-y-2">
                 <p class="ui-kicker">Player Markets</p>
-                <h1 class="text-3xl font-semibold tracking-tight">{{ sportLabel }} Player Props</h1>
+                <h1 class="text-3xl font-semibold tracking-tight">
+                    {{ sportLabel }} Player Props
+                </h1>
                 <p class="text-muted-foreground">{{ description }}</p>
             </div>
 
@@ -313,7 +342,11 @@ onMounted(() => {
                                 class="ui-select"
                             >
                                 <option value="">All dates</option>
-                                <option v-for="date in dates" :key="date.value" :value="date.value">
+                                <option
+                                    v-for="date in dates"
+                                    :key="date.value"
+                                    :value="date.value"
+                                >
                                     {{ date.label }}
                                 </option>
                             </select>
@@ -329,7 +362,11 @@ onMounted(() => {
                                 :disabled="filteredGames.length === 0"
                             >
                                 <option value="">All games</option>
-                                <option v-for="game in filteredGames" :key="game.id" :value="game.id.toString()">
+                                <option
+                                    v-for="game in filteredGames"
+                                    :key="game.id"
+                                    :value="game.id.toString()"
+                                >
                                     {{ game.label }}
                                 </option>
                             </select>
@@ -344,14 +381,22 @@ onMounted(() => {
                                 class="ui-select"
                             >
                                 <option value="">All props</option>
-                                <option v-for="market in markets" :key="market.value" :value="market.value">
+                                <option
+                                    v-for="market in markets"
+                                    :key="market.value"
+                                    :value="market.value"
+                                >
                                     {{ market.label }}
                                 </option>
                             </select>
                         </div>
 
                         <div class="flex gap-2">
-                            <Button v-if="hasActiveFilters" variant="outline" @click="clearFilters">
+                            <Button
+                                v-if="hasActiveFilters"
+                                variant="outline"
+                                @click="clearFilters"
+                            >
                                 <X class="mr-2 h-4 w-4" />
                                 Clear
                             </Button>
@@ -365,14 +410,26 @@ onMounted(() => {
             </div>
 
             <div v-else-if="error" class="py-16 text-center">
-                <h3 class="mb-2 text-xl font-semibold tracking-tight">Unable To Load Player Props</h3>
+                <h3 class="mb-2 text-xl font-semibold tracking-tight">
+                    Unable To Load Player Props
+                </h3>
                 <p class="text-muted-foreground">{{ error }}</p>
             </div>
 
-            <div v-else-if="recommendations.length === 0" class="py-16 text-center">
-                <BarChart3 class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-                <h3 class="mb-2 text-xl font-semibold tracking-tight">No Recommendations Available</h3>
-                <p class="text-muted-foreground">Check back later or sync player props to see betting recommendations.</p>
+            <div
+                v-else-if="recommendations.length === 0"
+                class="py-16 text-center"
+            >
+                <BarChart3
+                    class="mx-auto mb-4 h-16 w-16 text-muted-foreground"
+                />
+                <h3 class="mb-2 text-xl font-semibold tracking-tight">
+                    No Recommendations Available
+                </h3>
+                <p class="text-muted-foreground">
+                    Check back later or sync player props to see betting
+                    recommendations.
+                </p>
             </div>
 
             <div v-else class="columns-1 gap-5 md:columns-2 lg:columns-3">
@@ -385,47 +442,111 @@ onMounted(() => {
                         <div class="flex items-start gap-3">
                             <div class="flex min-w-0 flex-1 items-start gap-3">
                                 <template v-if="rec.player?.url">
-                                    <Link :href="rec.player.url" class="shrink-0">
-                                        <Avatar class="h-12 w-12 border-2 border-border transition-colors hover:border-primary">
-                                            <AvatarImage :src="rec.player.headshot" :alt="rec.player.name" class="object-cover" />
-                                            <AvatarFallback>{{ getInitials(rec.player.name || 'Unknown') }}</AvatarFallback>
+                                    <Link
+                                        :href="rec.player.url"
+                                        class="shrink-0"
+                                    >
+                                        <Avatar
+                                            class="h-12 w-12 border-2 border-border transition-colors hover:border-primary"
+                                        >
+                                            <AvatarImage
+                                                :src="rec.player.headshot"
+                                                :alt="rec.player.name"
+                                                class="object-cover"
+                                            />
+                                            <AvatarFallback>{{
+                                                getInitials(
+                                                    rec.player.name ||
+                                                        'Unknown',
+                                                )
+                                            }}</AvatarFallback>
                                         </Avatar>
                                     </Link>
                                 </template>
                                 <template v-else>
-                                    <Avatar class="h-12 w-12 border-2 border-border">
-                                        <AvatarImage :src="rec.player.headshot" :alt="rec.player.name" class="object-cover" />
-                                        <AvatarFallback>{{ getInitials(rec.player.name || 'Unknown') }}</AvatarFallback>
+                                    <Avatar
+                                        class="h-12 w-12 border-2 border-border"
+                                    >
+                                        <AvatarImage
+                                            :src="rec.player.headshot"
+                                            :alt="rec.player.name"
+                                            class="object-cover"
+                                        />
+                                        <AvatarFallback>{{
+                                            getInitials(
+                                                rec.player.name || 'Unknown',
+                                            )
+                                        }}</AvatarFallback>
                                     </Avatar>
                                 </template>
 
                                 <div class="min-w-0 flex-1 space-y-1">
                                     <template v-if="rec.player?.url">
-                                        <Link :href="rec.player.url" class="hover:underline">
-                                            <CardTitle class="truncate text-lg tracking-tight">{{ rec.player.name }}</CardTitle>
+                                        <Link
+                                            :href="rec.player.url"
+                                            class="hover:underline"
+                                        >
+                                            <CardTitle
+                                                class="truncate text-lg tracking-tight"
+                                                >{{
+                                                    rec.player.name
+                                                }}</CardTitle
+                                            >
                                         </Link>
                                     </template>
                                     <template v-else>
-                                        <CardTitle class="truncate text-lg tracking-tight">{{ rec.player.name }}</CardTitle>
+                                        <CardTitle
+                                            class="truncate text-lg tracking-tight"
+                                            >{{ rec.player.name }}</CardTitle
+                                        >
                                     </template>
 
-                                    <div class="flex flex-wrap items-center gap-2">
-                                        <CardDescription v-if="rec.player.position && rec.player.team" class="shrink-0">
-                                            {{ rec.player.position }} • {{ rec.player.team }}
+                                    <div
+                                        class="flex flex-wrap items-center gap-2"
+                                    >
+                                        <CardDescription
+                                            v-if="
+                                                rec.player.position &&
+                                                rec.player.team
+                                            "
+                                            class="shrink-0"
+                                        >
+                                            {{ rec.player.position }} •
+                                            {{ rec.player.team }}
                                         </CardDescription>
-                                        <Badge :variant="getSignalBandVariant(rec.confidence)" class="max-w-full shrink text-[10px]">
+                                        <Badge
+                                            :variant="
+                                                getSignalBandVariant(
+                                                    rec.confidence,
+                                                )
+                                            "
+                                            class="max-w-full shrink text-[10px]"
+                                        >
                                             {{ getSignalBand(rec.confidence) }}
                                         </Badge>
                                         <Badge
-                                            v-if="rec.streak && rec.streak.count >= 2"
-                                            :variant="rec.streak.status === 'hot' ? 'default' : 'secondary'"
+                                            v-if="
+                                                rec.streak &&
+                                                rec.streak.count >= 2
+                                            "
+                                            :variant="
+                                                rec.streak.status === 'hot'
+                                                    ? 'default'
+                                                    : 'secondary'
+                                            "
                                             class="shrink-0 text-xs"
                                         >
-                                            {{ rec.streak.status === 'hot' ? '🔥' : '❄️' }} {{ rec.streak.count }}
+                                            {{
+                                                rec.streak.status === 'hot'
+                                                    ? '🔥'
+                                                    : '❄️'
+                                            }}
+                                            {{ rec.streak.count }}
                                         </Badge>
                                     </div>
                                     <CardDescription class="truncate text-xs">
-                                        {{ rec.game?.away_team }} @ {{ rec.game?.home_team }}
+                                        {{ rec.game?.away_team }} @
+                                        {{ rec.game?.home_team }}
                                     </CardDescription>
                                 </div>
                             </div>
@@ -433,18 +554,30 @@ onMounted(() => {
                     </CardHeader>
 
                     <CardContent class="space-y-4">
-                        <div class="ui-surface-subtle flex items-center justify-between p-3">
+                        <div
+                            class="ui-surface-subtle flex items-center justify-between p-3"
+                        >
                             <div class="flex items-center gap-2">
                                 <component
-                                    :is="rec.recommendation === 'Over' ? TrendingUp : TrendingDown"
+                                    :is="
+                                        rec.recommendation === 'Over'
+                                            ? TrendingUp
+                                            : TrendingDown
+                                    "
                                     :class="[
                                         'h-5 w-5',
-                                        rec.recommendation === 'Over' ? 'text-green-500' : 'text-red-500',
+                                        rec.recommendation === 'Over'
+                                            ? 'text-green-500'
+                                            : 'text-red-500',
                                     ]"
                                 />
                                 <div>
-                                    <p class="font-semibold">{{ rec.recommendation }} {{ rec.line }}</p>
-                                    <p class="text-xs text-muted-foreground">{{ rec.market }}</p>
+                                    <p class="font-semibold">
+                                        {{ rec.recommendation }} {{ rec.line }}
+                                    </p>
+                                    <p class="text-xs text-muted-foreground">
+                                        {{ rec.market }}
+                                    </p>
                                 </div>
                             </div>
                             <Badge variant="outline" class="font-mono">
@@ -460,19 +593,27 @@ onMounted(() => {
                                 {{ getResultStatus(rec).label }}
                             </Badge>
                             <span
-                                v-if="rec.actual_value !== null && rec.actual_value !== undefined"
+                                v-if="
+                                    rec.actual_value !== null &&
+                                    rec.actual_value !== undefined
+                                "
                                 class="text-xs text-muted-foreground"
                             >
-                                Actual: {{ Number(rec.actual_value).toFixed(1) }}
+                                Actual:
+                                {{ Number(rec.actual_value).toFixed(1) }}
                             </span>
                         </div>
 
                         <div class="space-y-1.5">
-                            <div class="flex justify-between text-xs text-muted-foreground">
+                            <div
+                                class="flex justify-between text-xs text-muted-foreground"
+                            >
                                 <span>Signal Strength</span>
                                 <span>{{ rec.confidence }}%</span>
                             </div>
-                            <div class="h-2 overflow-hidden rounded-full bg-muted">
+                            <div
+                                class="h-2 overflow-hidden rounded-full bg-muted"
+                            >
                                 <div
                                     class="h-full transition-all"
                                     :class="getConfidenceColor(rec.confidence)"
@@ -488,7 +629,11 @@ onMounted(() => {
                                 class="h-7 px-2 text-xs text-muted-foreground"
                                 @click="toggleModelDetails(rec.id)"
                             >
-                                {{ isModelDetailsOpen(rec.id) ? 'Hide Stats' : 'Show Stats' }}
+                                {{
+                                    isModelDetailsOpen(rec.id)
+                                        ? 'Hide Stats'
+                                        : 'Show Stats'
+                                }}
                             </Button>
 
                             <div
@@ -497,15 +642,22 @@ onMounted(() => {
                             >
                                 <div class="space-y-2">
                                     <div class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">Season Avg</span>
-                                        <span class="font-medium">{{ rec.stats?.season_avg ?? 0 }}</span>
+                                        <span class="text-muted-foreground"
+                                            >Season Avg</span
+                                        >
+                                        <span class="font-medium">{{
+                                            rec.stats?.season_avg ?? 0
+                                        }}</span>
                                     </div>
                                     <div class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">Last 10 Games</span>
+                                        <span class="text-muted-foreground"
+                                            >Last 10 Games</span
+                                        >
                                         <span
                                             :class="[
                                                 'font-medium',
-                                                (rec.stats?.recent_avg ?? 0) > (rec.stats?.season_avg ?? 0)
+                                                (rec.stats?.recent_avg ?? 0) >
+                                                (rec.stats?.season_avg ?? 0)
                                                     ? 'text-green-600 dark:text-green-400'
                                                     : 'text-red-600 dark:text-red-400',
                                             ]"
@@ -514,11 +666,14 @@ onMounted(() => {
                                         </span>
                                     </div>
                                     <div class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">Last 5 Games</span>
+                                        <span class="text-muted-foreground"
+                                            >Last 5 Games</span
+                                        >
                                         <span
                                             :class="[
                                                 'font-medium',
-                                                (rec.stats?.last5_avg ?? 0) > (rec.stats?.recent_avg ?? 0)
+                                                (rec.stats?.last5_avg ?? 0) >
+                                                (rec.stats?.recent_avg ?? 0)
                                                     ? 'text-green-600 dark:text-green-400'
                                                     : 'text-red-600 dark:text-red-400',
                                             ]"
@@ -526,12 +681,20 @@ onMounted(() => {
                                             {{ rec.stats?.last5_avg ?? 0 }}
                                         </span>
                                     </div>
-                                    <div v-if="rec.stats?.vs_opponent_avg !== null" class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">vs Opponent</span>
+                                    <div
+                                        v-if="
+                                            rec.stats?.vs_opponent_avg !== null
+                                        "
+                                        class="flex justify-between text-sm"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >vs Opponent</span
+                                        >
                                         <span
                                             :class="[
                                                 'font-medium',
-                                                rec.stats.vs_opponent_avg > (rec.stats?.season_avg ?? 0)
+                                                rec.stats.vs_opponent_avg >
+                                                (rec.stats?.season_avg ?? 0)
                                                     ? 'text-green-600 dark:text-green-400'
                                                     : 'text-red-600 dark:text-red-400',
                                             ]"
@@ -539,34 +702,79 @@ onMounted(() => {
                                             {{ rec.stats.vs_opponent_avg }}
                                         </span>
                                     </div>
-                                    <div v-if="rec.stats?.times_covered_last5" class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">Hit {{ rec.recommendation }} (L5)</span>
+                                    <div
+                                        v-if="rec.stats?.times_covered_last5"
+                                        class="flex justify-between text-sm"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >Hit
+                                            {{ rec.recommendation }} (L5)</span
+                                        >
                                         <span class="font-medium">
                                             {{
                                                 rec.recommendation === 'Under'
-                                                    ? (rec.stats.times_covered_last5.games - rec.stats.times_covered_last5.hits)
-                                                    : rec.stats.times_covered_last5.hits
-                                            }}/{{ rec.stats.times_covered_last5.games }}
+                                                    ? rec.stats
+                                                          .times_covered_last5
+                                                          .games -
+                                                      rec.stats
+                                                          .times_covered_last5
+                                                          .hits
+                                                    : rec.stats
+                                                          .times_covered_last5
+                                                          .hits
+                                            }}/{{
+                                                rec.stats.times_covered_last5
+                                                    .games
+                                            }}
                                         </span>
                                     </div>
-                                    <div v-if="rec.stats?.times_covered_season" class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">Hit {{ rec.recommendation }} (Season)</span>
+                                    <div
+                                        v-if="rec.stats?.times_covered_season"
+                                        class="flex justify-between text-sm"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >Hit
+                                            {{ rec.recommendation }}
+                                            (Season)</span
+                                        >
                                         <span class="font-medium">
                                             {{
                                                 rec.recommendation === 'Under'
-                                                    ? (rec.stats.times_covered_season.games - rec.stats.times_covered_season.hits)
-                                                    : rec.stats.times_covered_season.hits
-                                            }}/{{ rec.stats.times_covered_season.games }}
+                                                    ? rec.stats
+                                                          .times_covered_season
+                                                          .games -
+                                                      rec.stats
+                                                          .times_covered_season
+                                                          .hits
+                                                    : rec.stats
+                                                          .times_covered_season
+                                                          .hits
+                                            }}/{{
+                                                rec.stats.times_covered_season
+                                                    .games
+                                            }}
                                         </span>
                                     </div>
-                                    <div v-if="rec.stats?.consistency" class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground">Consistency</span>
+                                    <div
+                                        v-if="rec.stats?.consistency"
+                                        class="flex justify-between text-sm"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >Consistency</span
+                                        >
                                         <span class="text-xs font-medium">
-                                            {{ rec.stats.consistency.level }} (±{{ rec.stats.consistency.std_dev }})
+                                            {{ rec.stats.consistency.level }}
+                                            (±{{
+                                                rec.stats.consistency.std_dev
+                                            }})
                                         </span>
                                     </div>
-                                    <div class="flex justify-between border-t pt-2 text-sm">
-                                        <span class="text-muted-foreground">Edge vs Line</span>
+                                    <div
+                                        class="flex justify-between border-t pt-2 text-sm"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >Edge vs Line</span
+                                        >
                                         <span
                                             :class="[
                                                 'font-bold',
@@ -575,16 +783,32 @@ onMounted(() => {
                                                     : 'text-red-600 dark:text-red-400',
                                             ]"
                                         >
-                                            {{ (rec.edge ?? 0) > 0 ? '+' : '' }}{{ rec.edge ?? 0 }}
+                                            {{ (rec.edge ?? 0) > 0 ? '+' : ''
+                                            }}{{ rec.edge ?? 0 }}
                                         </span>
                                     </div>
                                     <div
-                                        v-if="rec.model_over_probability !== null && rec.market_over_probability !== null"
+                                        v-if="
+                                            rec.model_over_probability !==
+                                                null &&
+                                            rec.market_over_probability !== null
+                                        "
                                         class="flex justify-between text-sm"
                                     >
-                                        <span class="text-muted-foreground">Model vs Market</span>
+                                        <span class="text-muted-foreground"
+                                            >Model vs Market</span
+                                        >
                                         <span class="font-medium">
-                                            {{ rec.model_over_probability?.toFixed(1) }}% vs {{ rec.market_over_probability?.toFixed(1) }}%
+                                            {{
+                                                rec.model_over_probability?.toFixed(
+                                                    1,
+                                                )
+                                            }}% vs
+                                            {{
+                                                rec.market_over_probability?.toFixed(
+                                                    1,
+                                                )
+                                            }}%
                                         </span>
                                     </div>
                                 </div>

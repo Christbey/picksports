@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { faBaseball, faBasketball, faFootball } from '@fortawesome/free-solid-svg-icons';
+import {
+    faBaseball,
+    faBasketball,
+    faFootball,
+} from '@fortawesome/free-solid-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome';
 import { Link } from '@inertiajs/vue3';
 import { LayoutGrid, MessageSquare } from 'lucide-vue-next';
@@ -53,7 +57,8 @@ import AppLogo from './AppLogo.vue';
 const footballIconProps = { icon: faFootball };
 const basketballIconProps = { icon: faBasketball };
 const baseballIconProps = { icon: faBaseball };
-const playerPropsHref = (sport: 'nfl' | 'nba' | 'mlb') => `/${sport}/player-props`;
+const playerPropsHref = (sport: 'nfl' | 'nba' | 'mlb') =>
+    `/${sport}/player-props`;
 
 const openFeedbackModal = () => {
     if (typeof window === 'undefined') {

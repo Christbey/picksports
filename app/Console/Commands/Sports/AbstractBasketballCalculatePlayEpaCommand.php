@@ -88,6 +88,7 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
 
             if ($plays->isEmpty()) {
                 $bar->advance();
+
                 continue;
             }
 

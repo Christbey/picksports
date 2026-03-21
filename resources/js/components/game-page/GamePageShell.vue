@@ -20,7 +20,8 @@ const props = defineProps<{
 
 const page = usePage();
 const pageDescription = computed(
-    () => `${props.title} game analysis, trends, and prediction insights from PickSports.`,
+    () =>
+        `${props.title} game analysis, trends, and prediction insights from PickSports.`,
 );
 const canonicalUrl = computed(() => {
     const path = (page.url ?? '/').split('?')[0] || '/';
@@ -76,15 +77,25 @@ const sportsEventSchema = computed(() =>
             : {}),
         ...(props.homeTeamName || props.awayTeamName
             ? {
-                competitor: [
-                    ...(props.homeTeamName
-                        ? [{ '@type': 'SportsTeam', name: props.homeTeamName }]
-                        : []),
-                    ...(props.awayTeamName
-                        ? [{ '@type': 'SportsTeam', name: props.awayTeamName }]
-                        : []),
-                ],
-            }
+                  competitor: [
+                      ...(props.homeTeamName
+                          ? [
+                                {
+                                    '@type': 'SportsTeam',
+                                    name: props.homeTeamName,
+                                },
+                            ]
+                          : []),
+                      ...(props.awayTeamName
+                          ? [
+                                {
+                                    '@type': 'SportsTeam',
+                                    name: props.awayTeamName,
+                                },
+                            ]
+                          : []),
+                  ],
+              }
             : {}),
         ...(props.venueName
             ? { location: { '@type': 'Place', name: props.venueName } }
@@ -95,17 +106,41 @@ const sportsEventSchema = computed(() =>
 
 <template>
     <Head :title="title">
-        <meta head-key="description" name="description" :content="pageDescription" />
+        <meta
+            head-key="description"
+            name="description"
+            :content="pageDescription"
+        />
         <link head-key="canonical" rel="canonical" :href="canonicalUrl" />
         <meta head-key="og:title" property="og:title" :content="title" />
-        <meta head-key="og:description" property="og:description" :content="pageDescription" />
+        <meta
+            head-key="og:description"
+            property="og:description"
+            :content="pageDescription"
+        />
         <meta head-key="og:url" property="og:url" :content="canonicalUrl" />
         <meta head-key="og:image" property="og:image" :content="imageUrl" />
         <meta head-key="twitter:title" name="twitter:title" :content="title" />
-        <meta head-key="twitter:description" name="twitter:description" :content="pageDescription" />
-        <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
-        <component :is="'script'" head-key="schema-webpage-game" type="application/ld+json" v-html="webPageSchema" />
-        <component :is="'script'" head-key="schema-sportsevent-game" type="application/ld+json" v-html="sportsEventSchema" />
+        <meta
+            head-key="twitter:description"
+            name="twitter:description"
+            :content="pageDescription"
+        />
+        <meta
+            head-key="twitter:image"
+            name="twitter:image"
+            :content="imageUrl"
+        />
+        <script
+            head-key="schema-webpage-game"
+            type="application/ld+json"
+            v-text="webPageSchema"
+        />
+        <script
+            head-key="schema-sportsevent-game"
+            type="application/ld+json"
+            v-text="sportsEventSchema"
+        />
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">

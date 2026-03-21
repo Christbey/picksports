@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\GroupResource;
 use App\Models\Group;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class GroupController extends Controller
 {

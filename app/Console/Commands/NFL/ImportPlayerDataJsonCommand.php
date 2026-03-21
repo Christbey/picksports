@@ -3,13 +3,12 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
-use App\Models\NFL\Player;
 use App\Models\NFL\Play;
+use App\Models\NFL\Player;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamStat;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
@@ -177,6 +176,7 @@ class ImportPlayerDataJsonCommand extends Command
             $espnId = isset($row['playerID']) ? trim((string) $row['playerID']) : '';
             if ($espnId === '') {
                 $skipped++;
+
                 continue;
             }
 
@@ -271,6 +271,7 @@ class ImportPlayerDataJsonCommand extends Command
             $gameId = $gameLookup[$gameKey] ?? null;
             if (! $gameId) {
                 $skipped++;
+
                 continue;
             }
 
@@ -346,18 +347,21 @@ class ImportPlayerDataJsonCommand extends Command
 
             if (! $gameId || $teamId === null || ! isset($teamIdLookup[$teamId])) {
                 $skipped++;
+
                 continue;
             }
 
             $homeAway = $gameHomeAwayLookup[$gameId] ?? null;
             if (! $homeAway) {
                 $skipped++;
+
                 continue;
             }
 
             $teamType = $teamId === $homeAway['home'] ? 'home' : ($teamId === $homeAway['away'] ? 'away' : null);
             if (! $teamType) {
                 $skipped++;
+
                 continue;
             }
 
@@ -491,6 +495,7 @@ class ImportPlayerDataJsonCommand extends Command
 
             if (! $gameId || $teamId === null || ! isset($teamIdLookup[$teamId]) || $playerEspnId === '') {
                 $skipped++;
+
                 continue;
             }
 

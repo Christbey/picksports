@@ -20,8 +20,12 @@ const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     teamLink: (id: number) => NBATeamController(id),
 });
 
-const awayInjuries = computed(() => pageProps.value.awayTeam?.active_injuries ?? []);
-const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ?? []);
+const awayInjuries = computed(
+    () => pageProps.value.awayTeam?.active_injuries ?? [],
+);
+const homeInjuries = computed(
+    () => pageProps.value.homeTeam?.active_injuries ?? [],
+);
 </script>
 
 <template>

@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 class UserBet extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'user_id',
         'prediction_id',

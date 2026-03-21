@@ -2,10 +2,10 @@
 import { router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted } from 'vue';
 import AppContent from '@/components/AppContent.vue';
-import FeedbackSubmissionModal from '@/components/FeedbackSubmissionModal.vue';
 import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
+import FeedbackSubmissionModal from '@/components/FeedbackSubmissionModal.vue';
 import type { AppPageProps, BreadcrumbItem } from '@/types';
 
 type Props = {
@@ -21,7 +21,10 @@ const impersonation = computed(() => page.props.impersonation);
 const currentUser = computed(() => page.props.auth?.user ?? null);
 let heartbeatTimer: number | null = null;
 
-const csrfToken = () => document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ?? '';
+const csrfToken = () =>
+    document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute('content') ?? '';
 
 const sendHeartbeat = async () => {
     if (!currentUser.value || document.visibilityState !== 'visible') {
@@ -109,7 +112,11 @@ onBeforeUnmount(() => {
                 class="flex flex-wrap items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
             >
                 <p>
-                    You are impersonating <span class="font-semibold">{{ page.props.auth.user.name }}</span>.
+                    You are impersonating
+                    <span class="font-semibold">{{
+                        page.props.auth.user.name
+                    }}</span
+                    >.
                 </p>
                 <button
                     type="button"

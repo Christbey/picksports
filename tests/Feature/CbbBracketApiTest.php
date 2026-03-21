@@ -1,9 +1,9 @@
 <?php
 
-use Carbon\Carbon;
 use App\Models\CbbBracket;
 use App\Models\Group;
 use App\Models\User;
+use Carbon\Carbon;
 
 beforeEach(function () {
     Carbon::setTestNow(Carbon::parse('2026-03-18 12:00:00', 'America/Chicago'));

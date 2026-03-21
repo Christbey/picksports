@@ -6,8 +6,8 @@ use App\Http\Resources\UserAlertPreferenceResource;
 use App\Models\UserAlertPreference;
 use App\Support\SportCatalog;
 use App\Support\Validation\AlertPreferenceRules;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class AlertPreferenceController extends Controller
 {

@@ -264,7 +264,7 @@ class HealthcheckRun extends Command
             'passing' => ucfirst($label)." heartbeat is healthy. Last success {$ageMinutes} min ago.",
             'warning' => ucfirst($label)." heartbeat is stale. Last success {$ageMinutes} min ago.",
             'failing' => ucfirst($label)." heartbeat is overdue. Last success {$ageMinutes} min ago.",
-            default => ucfirst($label)." heartbeat status unknown.",
+            default => ucfirst($label).' heartbeat status unknown.',
         };
 
         $this->recordCheck(

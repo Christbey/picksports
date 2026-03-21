@@ -214,4 +214,3 @@ class ReportPlayerPropsCalibrationCommand extends Command
         return number_format($value, 4);
     }
 }
-

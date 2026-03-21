@@ -53,8 +53,12 @@ const {
 } = useSportTeamData(props);
 
 const page = usePage();
-const pageTitle = computed(() => (teamData.value ? props.config.headTitle(teamData.value) : 'Team'));
-const teamName = computed(() => (teamData.value ? props.config.teamDisplayName(teamData.value) : 'Team'));
+const pageTitle = computed(() =>
+    teamData.value ? props.config.headTitle(teamData.value) : 'Team',
+);
+const teamName = computed(() =>
+    teamData.value ? props.config.teamDisplayName(teamData.value) : 'Team',
+);
 const pageDescription = computed(() =>
     teamData.value
         ? `${teamName.value} ${props.config.sportLabel} team profile, recent form, schedule, and analytics from PickSports.`
@@ -67,8 +71,10 @@ const canonicalUrl = computed(() => {
     }
     return `https://picksports.app${path}`;
 });
-const imageUrl = computed(() =>
-    (teamData.value ? props.config.teamLogo(teamData.value) : null) || 'https://picksports.app/icon-512.png?v=ps-gradient-2',
+const imageUrl = computed(
+    () =>
+        (teamData.value ? props.config.teamLogo(teamData.value) : null) ||
+        'https://picksports.app/icon-512.png?v=ps-gradient-2',
 );
 const webPageSchema = computed(() =>
     JSON.stringify(
@@ -86,49 +92,84 @@ const webPageSchema = computed(() =>
 const sportsTeamSchema = computed(() =>
     teamData.value
         ? JSON.stringify(
-            {
-                '@context': 'https://schema.org',
-                '@type': 'SportsTeam',
-                name: teamName.value,
-                sport: props.config.sportLabel,
-                url: canonicalUrl.value,
-                logo: imageUrl.value,
-            },
-            null,
-            0,
-        )
+              {
+                  '@context': 'https://schema.org',
+                  '@type': 'SportsTeam',
+                  name: teamName.value,
+                  sport: props.config.sportLabel,
+                  url: canonicalUrl.value,
+                  logo: imageUrl.value,
+              },
+              null,
+              0,
+          )
         : '',
 );
 </script>
 
 <template>
     <Head :title="pageTitle">
-        <meta head-key="description" name="description" :content="pageDescription" />
+        <meta
+            head-key="description"
+            name="description"
+            :content="pageDescription"
+        />
         <link head-key="canonical" rel="canonical" :href="canonicalUrl" />
         <meta head-key="og:title" property="og:title" :content="pageTitle" />
-        <meta head-key="og:description" property="og:description" :content="pageDescription" />
+        <meta
+            head-key="og:description"
+            property="og:description"
+            :content="pageDescription"
+        />
         <meta head-key="og:url" property="og:url" :content="canonicalUrl" />
         <meta head-key="og:image" property="og:image" :content="imageUrl" />
-        <meta head-key="twitter:title" name="twitter:title" :content="pageTitle" />
-        <meta head-key="twitter:description" name="twitter:description" :content="pageDescription" />
-        <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
-        <component :is="'script'" head-key="schema-webpage-team" type="application/ld+json" v-html="webPageSchema" />
-        <component :is="'script'" v-if="sportsTeamSchema" head-key="schema-sportsteam" type="application/ld+json" v-html="sportsTeamSchema" />
+        <meta
+            head-key="twitter:title"
+            name="twitter:title"
+            :content="pageTitle"
+        />
+        <meta
+            head-key="twitter:description"
+            name="twitter:description"
+            :content="pageDescription"
+        />
+        <meta
+            head-key="twitter:image"
+            name="twitter:image"
+            :content="imageUrl"
+        />
+        <script
+            head-key="schema-webpage-team"
+            type="application/ld+json"
+            v-text="webPageSchema"
+        />
+        <script
+            v-if="sportsTeamSchema"
+            head-key="schema-sportsteam"
+            type="application/ld+json"
+            v-text="sportsTeamSchema"
+        />
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div v-if="!teamData && loading" class="flex h-full flex-1 flex-col gap-4 p-4">
+        <div
+            v-if="!teamData && loading"
+            class="flex h-full flex-1 flex-col gap-4 p-4"
+        >
             <div class="flex items-start gap-4">
-                <div class="w-20 h-20 bg-muted animate-pulse rounded" />
+                <div class="h-20 w-20 animate-pulse rounded bg-muted" />
                 <div class="flex-1 space-y-2">
-                    <div class="h-8 w-64 bg-muted animate-pulse rounded" />
-                    <div class="h-4 w-48 bg-muted animate-pulse rounded" />
+                    <div class="h-8 w-64 animate-pulse rounded bg-muted" />
+                    <div class="h-4 w-48 animate-pulse rounded bg-muted" />
                 </div>
             </div>
-            <div class="h-48 bg-muted animate-pulse rounded" />
+            <div class="h-48 animate-pulse rounded bg-muted" />
         </div>
 
-        <div v-else-if="!teamData && error" class="flex h-full flex-1 flex-col gap-4 p-4">
+        <div
+            v-else-if="!teamData && error"
+            class="flex h-full flex-1 flex-col gap-4 p-4"
+        >
             <Card>
                 <CardContent class="p-6">
                     <p class="text-destructive">{{ error }}</p>
@@ -137,7 +178,11 @@ const sportsTeamSchema = computed(() =>
         </div>
 
         <div v-else-if="teamData" class="flex h-full flex-1 flex-col gap-4 p-4">
-            <TeamHeader :config="config" :team-data="teamData" :header-info-items="headerInfoItems" />
+            <TeamHeader
+                :config="config"
+                :team-data="teamData"
+                :header-info-items="headerInfoItems"
+            />
 
             <Alert v-if="error" variant="destructive">
                 <AlertDescription>{{ error }}</AlertDescription>
@@ -163,9 +208,17 @@ const sportsTeamSchema = computed(() =>
                     <Tabs default-value="overview" class="w-full">
                         <TabsList class="w-full">
                             <TabsTrigger value="overview">Overview</TabsTrigger>
-                            <TabsTrigger v-if="config.seasonStatTiles" value="stats">Advanced Stats</TabsTrigger>
-                            <TabsTrigger v-if="config.showTrends" value="trends">Trends & Insights</TabsTrigger>
-                            <TabsTrigger v-if="config.showRoster" value="roster">Roster</TabsTrigger>
+                            <TabsTrigger
+                                v-if="config.seasonStatTiles"
+                                value="stats"
+                                >Advanced Stats</TabsTrigger
+                            >
+                            <TabsTrigger v-if="config.showTrends" value="trends"
+                                >Trends & Insights</TabsTrigger
+                            >
+                            <TabsTrigger v-if="config.showRoster" value="roster"
+                                >Roster</TabsTrigger
+                            >
                             <TabsTrigger value="schedule">Schedule</TabsTrigger>
                         </TabsList>
 
@@ -175,8 +228,13 @@ const sportsTeamSchema = computed(() =>
                                     :tiles="config.metricTiles"
                                     :metrics="teamMetrics"
                                     :metric-rankings="metricRankings"
-                                    :ranking-total-teams="metricRankingTotalTeams"
-                                    :grid-class="config.metricsGridCols || 'md:grid-cols-5'"
+                                    :ranking-total-teams="
+                                        metricRankingTotalTeams
+                                    "
+                                    :grid-class="
+                                        config.metricsGridCols ||
+                                        'md:grid-cols-5'
+                                    "
                                 />
 
                                 <TeamSeasonStatsCard
@@ -184,7 +242,10 @@ const sportsTeamSchema = computed(() =>
                                     :season-stats="seasonStats"
                                     :tiles="overviewSeasonStatTiles"
                                     :stat-rankings="statRankings"
-                                    :grid-class="config.seasonStatsGridCols || 'md:grid-cols-4 lg:grid-cols-6'"
+                                    :grid-class="
+                                        config.seasonStatsGridCols ||
+                                        'md:grid-cols-4 lg:grid-cols-6'
+                                    "
                                 />
 
                                 <TeamGamesCard
@@ -198,19 +259,35 @@ const sportsTeamSchema = computed(() =>
                                     :show-score="true"
                                 />
 
-                                <div v-if="!teamMetrics && !seasonStats && recentGames.length === 0" class="text-center py-8 text-muted-foreground">
-                                    <p>No overview data available for this team yet.</p>
+                                <div
+                                    v-if="
+                                        !teamMetrics &&
+                                        !seasonStats &&
+                                        recentGames.length === 0
+                                    "
+                                    class="py-8 text-center text-muted-foreground"
+                                >
+                                    <p>
+                                        No overview data available for this team
+                                        yet.
+                                    </p>
                                 </div>
                             </div>
                         </TabsContent>
 
-                        <TabsContent v-if="config.seasonStatTiles" value="stats">
+                        <TabsContent
+                            v-if="config.seasonStatTiles"
+                            value="stats"
+                        >
                             <TeamSeasonStatsCard
                                 v-if="seasonStats"
                                 :season-stats="seasonStats"
                                 :tiles="config.seasonStatTiles"
                                 :stat-rankings="statRankings"
-                                :grid-class="config.seasonStatsGridCols || 'md:grid-cols-4 lg:grid-cols-6'"
+                                :grid-class="
+                                    config.seasonStatsGridCols ||
+                                    'md:grid-cols-4 lg:grid-cols-6'
+                                "
                             />
                         </TabsContent>
 
@@ -223,7 +300,10 @@ const sportsTeamSchema = computed(() =>
                         </TabsContent>
 
                         <TabsContent v-if="config.showRoster" value="roster">
-                            <TeamRosterCard :roster-players="rosterPlayers" :player-link="config.playerLink" />
+                            <TeamRosterCard
+                                :roster-players="rosterPlayers"
+                                :player-link="config.playerLink"
+                            />
                         </TabsContent>
 
                         <TabsContent value="schedule">
@@ -267,10 +347,19 @@ const sportsTeamSchema = computed(() =>
                         :season-stats="seasonStats"
                         :tiles="config.seasonStatTiles"
                         :stat-rankings="statRankings"
-                        :grid-class="config.seasonStatsGridCols || 'md:grid-cols-4 lg:grid-cols-6'"
+                        :grid-class="
+                            config.seasonStatsGridCols ||
+                            'md:grid-cols-4 lg:grid-cols-6'
+                        "
                     />
 
-                    <div :class="config.gamesLayout === 'side-by-side' ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'space-y-4'">
+                    <div
+                        :class="
+                            config.gamesLayout === 'side-by-side'
+                                ? 'grid grid-cols-1 gap-4 lg:grid-cols-2'
+                                : 'space-y-4'
+                        "
+                    >
                         <TeamGamesCard
                             title="Recent Games"
                             :games="displayRecentGames"

@@ -6,16 +6,22 @@ export function useSubscription() {
     const page = usePage<AppPageProps>();
 
     const subscription = computed(() => page.props.subscription);
-    const tiersEnabled = computed(() => subscription.value?.tiers_enabled ?? true);
+    const tiersEnabled = computed(
+        () => subscription.value?.tiers_enabled ?? true,
+    );
     const tier = computed(() => subscription.value?.tier ?? 'free');
     const tierName = computed(() => subscription.value?.tier_name ?? 'Free');
-    const isSubscribed = computed(() => subscription.value?.is_subscribed ?? false);
+    const isSubscribed = computed(
+        () => subscription.value?.is_subscribed ?? false,
+    );
     const features = computed(() => subscription.value?.features ?? {});
 
     const isFree = computed(() => tier.value === 'free');
     const isBasic = computed(() => tier.value === 'basic');
     const isPro = computed(() => tier.value === 'pro');
-    const isPremium = computed(() => !tiersEnabled.value || tier.value === 'premium');
+    const isPremium = computed(
+        () => !tiersEnabled.value || tier.value === 'premium',
+    );
 
     const hasFeature = (feature: string): boolean => {
         const featureValue = features.value?.[feature];
@@ -26,7 +32,12 @@ export function useSubscription() {
     };
 
     const canAccessTier = (requiredTier: SubscriptionTier): boolean => {
-        const tierOrder: SubscriptionTier[] = ['free', 'basic', 'pro', 'premium'];
+        const tierOrder: SubscriptionTier[] = [
+            'free',
+            'basic',
+            'pro',
+            'premium',
+        ];
         return tierOrder.indexOf(tier.value) >= tierOrder.indexOf(requiredTier);
     };
 
@@ -35,17 +46,20 @@ export function useSubscription() {
             case 'free':
                 return {
                     title: 'Unlock Unlimited Predictions',
-                    description: 'Upgrade to get more predictions, advanced analytics, and access to all sports.',
+                    description:
+                        'Upgrade to get more predictions, advanced analytics, and access to all sports.',
                 };
             case 'basic':
                 return {
                     title: 'Go Pro for More Power',
-                    description: 'Upgrade to Pro for unlimited predictions, API access, and advanced analytics.',
+                    description:
+                        'Upgrade to Pro for unlimited predictions, API access, and advanced analytics.',
                 };
             case 'pro':
                 return {
                     title: 'Experience Premium',
-                    description: 'Upgrade to Premium for priority support and exclusive features.',
+                    description:
+                        'Upgrade to Premium for priority support and exclusive features.',
                 };
             default:
                 return {

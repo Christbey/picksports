@@ -14,8 +14,8 @@ class DailyPredictionsDigestMail extends Mailable
     use Queueable, SerializesModels;
 
     /**
-     * @param array<int, array<string, mixed>> $predictions
-     * @param array<int, array<string, mixed>> $playerProps
+     * @param  array<int, array<string, mixed>>  $predictions
+     * @param  array<int, array<string, mixed>>  $playerProps
      */
     public function __construct(
         public User $user,

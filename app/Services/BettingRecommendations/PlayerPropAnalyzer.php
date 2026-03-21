@@ -3,8 +3,8 @@
 namespace App\Services\BettingRecommendations;
 
 use App\Services\OddsApi\OddsApiService;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class PlayerPropAnalyzer
@@ -58,6 +58,7 @@ class PlayerPropAnalyzer
             'volatility_floor' => 1.2,
         ],
     ];
+
     /**
      * Analyze player props for any sport and generate betting recommendations
      */
@@ -67,8 +68,7 @@ class PlayerPropAnalyzer
         ?string $dateFilter = null,
         ?int $gameFilter = null,
         ?string $marketFilter = null
-    ): Collection
-    {
+    ): Collection {
         $sportConfig = $this->getSportConfig($sport);
 
         $playerPropModel = $sportConfig['player_prop_model'];

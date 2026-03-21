@@ -2,14 +2,14 @@
 
 namespace App\Console\Commands\ESPN;
 
-use App\Console\Commands\ESPN\Concerns\ResolvesSportCode;
 use App\Console\Commands\ESPN\Concerns\ResolvesJobClass;
+use App\Console\Commands\ESPN\Concerns\ResolvesSportCode;
 use Illuminate\Console\Command;
 
 abstract class AbstractSyncGamesCommand extends Command
 {
-    use ResolvesSportCode;
     use ResolvesJobClass;
+    use ResolvesSportCode;
 
     protected const COMMAND_NAME = '';
 

@@ -20,11 +20,13 @@ class PredictionResource extends AbstractPredictionResource
         if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = (float) $this->predicted_spread;
             $data['predicted_total'] = (float) $this->predicted_total;
+            $data = $this->appendLiveSpreadFields($data);
         }
 
         // Win Probability
         if ($this->hasTierPermission($request, 'win_probability')) {
-            $data['win_probability'] = (float) $this->win_probability;
+            $data = $this->appendWinProbabilityFields($data, (float) $this->win_probability);
+            $data = $this->appendLiveWinProbabilityFields($data, 'live_outs_remaining');
         }
 
         // Confidence Score

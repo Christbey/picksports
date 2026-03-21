@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { formatNumber, ratingClass } from '@/components/sport-team-metrics-helpers';
+import {
+    formatNumber,
+    ratingClass,
+} from '@/components/sport-team-metrics-helpers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 defineProps<{
@@ -13,7 +16,10 @@ defineProps<{
 </script>
 
 <template>
-    <div v-if="showPowerRanking || showRecentForm" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div
+        v-if="showPowerRanking || showRecentForm"
+        class="grid grid-cols-1 gap-4 md:grid-cols-2"
+    >
         <Card v-if="showPowerRanking && powerRanking">
             <CardHeader>
                 <CardTitle>Power Ranking</CardTitle>
@@ -21,14 +27,24 @@ defineProps<{
             <CardContent>
                 <div class="flex items-center justify-between">
                     <div>
-                        <div class="text-4xl font-bold">#{{ powerRanking.rank }}</div>
-                        <div class="text-sm text-muted-foreground mt-1">of {{ powerRanking.total_teams }} teams</div>
+                        <div class="text-4xl font-bold">
+                            #{{ powerRanking.rank }}
+                        </div>
+                        <div class="mt-1 text-sm text-muted-foreground">
+                            of {{ powerRanking.total_teams }} teams
+                        </div>
                     </div>
                     <div v-if="teamMetrics" class="text-right">
-                        <div class="text-2xl font-semibold" :class="ratingClass(teamMetrics.net_rating)">
-                            {{ teamMetrics.net_rating > 0 ? '+' : '' }}{{ formatNumber(teamMetrics.net_rating) }}
+                        <div
+                            class="text-2xl font-semibold"
+                            :class="ratingClass(teamMetrics.net_rating)"
+                        >
+                            {{ teamMetrics.net_rating > 0 ? '+' : ''
+                            }}{{ formatNumber(teamMetrics.net_rating) }}
                         </div>
-                        <div class="text-xs text-muted-foreground mt-1">Net Rating</div>
+                        <div class="mt-1 text-xs text-muted-foreground">
+                            Net Rating
+                        </div>
                     </div>
                 </div>
             </CardContent>
@@ -44,22 +60,28 @@ defineProps<{
                         <div class="text-4xl font-bold">
                             {{ recentRecord.wins }}-{{ recentRecord.losses }}
                         </div>
-                        <div class="text-sm text-muted-foreground mt-1">Last {{ recentRecord.games }} Games</div>
+                        <div class="mt-1 text-sm text-muted-foreground">
+                            Last {{ recentRecord.games }} Games
+                        </div>
                     </div>
                     <div class="text-right">
-                        <div class="flex gap-1 justify-end">
+                        <div class="flex justify-end gap-1">
                             <span
                                 v-for="(result, idx) in recentForm"
                                 :key="idx"
                                 :class="[
-                                    'inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold',
-                                    result === 'W' ? 'bg-green-600 text-white' : 'bg-red-600 text-white',
+                                    'inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold',
+                                    result === 'W'
+                                        ? 'bg-green-600 text-white'
+                                        : 'bg-red-600 text-white',
                                 ]"
                             >
                                 {{ result }}
                             </span>
                         </div>
-                        <div class="text-xs text-muted-foreground mt-1">Recent Results</div>
+                        <div class="mt-1 text-xs text-muted-foreground">
+                            Recent Results
+                        </div>
                     </div>
                 </div>
             </CardContent>

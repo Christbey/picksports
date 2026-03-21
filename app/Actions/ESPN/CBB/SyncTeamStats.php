@@ -21,5 +21,4 @@ class SyncTeamStats extends AbstractBasketballSyncTeamStats
 
         return $fga - $oreb + $turnovers + (0.4 * $fta);
     }
-
 }

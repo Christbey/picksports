@@ -14,9 +14,9 @@ use Illuminate\Support\Facades\Log;
 
 class CalculateTeamMetrics
 {
-    use FiltersTeamGames;
     use CalculatesGridironTeamMetrics;
     use CalculatesTeamTrueEpaFromPlays;
+    use FiltersTeamGames;
 
     /**
      * Fallback NFL division map for cases where synced conference/division fields are missing.

@@ -1,5 +1,9 @@
 import { router } from '@inertiajs/vue3';
 import { computed, onMounted, onUnmounted, type ComputedRef } from 'vue';
+import {
+    buildPredictionLiveData,
+    hasPredictionLiveData,
+} from '@/composables/usePredictionLiveData';
 import type { DashboardPrediction, DashboardSport } from '@/types';
 
 interface DashboardPollingOptions {
@@ -81,7 +85,10 @@ export function useDashboardPolling(options: DashboardPollingOptions) {
     onUnmounted(() => {
         isMounted = false;
         stopPolling();
-        document.removeEventListener('visibilitychange', handleVisibilityChange);
+        document.removeEventListener(
+            'visibilitychange',
+            handleVisibilityChange,
+        );
     });
 
     return {
@@ -116,30 +123,11 @@ export function useDashboardPresentation() {
     }
 
     function hasLiveData(prediction: DashboardPrediction): boolean {
-        return !!prediction.is_live && prediction.live_win_probability != null;
+        return hasPredictionLiveData(prediction);
     }
 
     function buildLivePredictionData(prediction: DashboardPrediction) {
-        if (!prediction.is_live) return undefined;
-
-        return {
-            isLive: true,
-            homeScore: prediction.home_score,
-            awayScore: prediction.away_score,
-            period: prediction.period,
-            inning: prediction.inning,
-            gameClock: prediction.game_clock,
-            inningState: prediction.inning_state,
-            status: prediction.status,
-            liveWinProbability: prediction.live_win_probability,
-            livePredictedSpread: prediction.live_predicted_spread,
-            livePredictedTotal: prediction.live_predicted_total,
-            liveSecondsRemaining: prediction.live_seconds_remaining,
-            liveOutsRemaining: prediction.live_outs_remaining,
-            preGameWinProbability: prediction.win_probability,
-            preGamePredictedSpread: prediction.predicted_spread,
-            preGamePredictedTotal: prediction.predicted_total,
-        };
+        return buildPredictionLiveData(prediction);
     }
 
     return {

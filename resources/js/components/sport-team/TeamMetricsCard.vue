@@ -18,17 +18,35 @@ defineProps<{
             <CardTitle>{{ title || 'Current Season Metrics' }}</CardTitle>
         </CardHeader>
         <CardContent>
-            <div class="grid grid-cols-2 gap-4" :class="gridClass || 'md:grid-cols-5'">
-                <div v-for="tile in tiles" :key="tile.label" class="text-center p-4 bg-muted/50 rounded-lg">
-                    <div class="text-sm text-muted-foreground">{{ tile.label }}</div>
-                    <div class="text-2xl font-bold" :class="tile.class?.(metrics)">
+            <div
+                class="grid grid-cols-2 gap-4"
+                :class="gridClass || 'md:grid-cols-5'"
+            >
+                <div
+                    v-for="tile in tiles"
+                    :key="tile.label"
+                    class="rounded-lg bg-muted/50 p-4 text-center"
+                >
+                    <div class="text-sm text-muted-foreground">
+                        {{ tile.label }}
+                    </div>
+                    <div
+                        class="text-2xl font-bold"
+                        :class="tile.class?.(metrics)"
+                    >
                         {{ tile.value(metrics) }}
                     </div>
                     <div
-                        v-if="tile.rankingKey && metricRankings && metricRankings[tile.rankingKey] && rankingTotalTeams"
-                        class="text-xs text-muted-foreground mt-1"
+                        v-if="
+                            tile.rankingKey &&
+                            metricRankings &&
+                            metricRankings[tile.rankingKey] &&
+                            rankingTotalTeams
+                        "
+                        class="mt-1 text-xs text-muted-foreground"
                     >
-                        Rank {{ metricRankings[tile.rankingKey] }} / {{ rankingTotalTeams }}
+                        Rank {{ metricRankings[tile.rankingKey] }} /
+                        {{ rankingTotalTeams }}
                     </div>
                 </div>
             </div>

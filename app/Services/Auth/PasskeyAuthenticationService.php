@@ -4,8 +4,8 @@ namespace App\Services\Auth;
 
 use App\Models\Passkey;
 use App\Models\User;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class PasskeyAuthenticationService
@@ -22,8 +22,7 @@ class PasskeyAuthenticationService
         ?string $email = null,
         string $stateKey = 'passkeys.authenticate',
         bool $useSession = true,
-    ): array
-    {
+    ): array {
         $user = null;
 
         if ($email !== null && trim($email) !== '') {
@@ -87,8 +86,7 @@ class PasskeyAuthenticationService
         array $validated,
         string $stateKey = 'passkeys.authenticate',
         bool $useSession = true,
-    ): User
-    {
+    ): User {
         $sessionPayload = $this->pullStatePayload($request, $validated, $stateKey, $useSession);
 
         if (! is_array($sessionPayload) || ($sessionPayload['expires_at'] ?? 0) < now()->timestamp) {

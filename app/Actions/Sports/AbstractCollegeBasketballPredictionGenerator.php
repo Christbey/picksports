@@ -15,8 +15,10 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
     /** @var array<string, mixed> Cached metadata for the current prediction */
     private array $metadata = [];
+
     /** @var array<string, mixed> True EPA rollout metadata */
     private array $trueEpaMetadata = [];
+
     /** @var array<string, mixed> Total model metadata */
     private array $totalMetadata = [];
 
@@ -118,127 +120,74 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
         $defaultEfficiency = $config['default_efficiency'];
-
-        $homeOffEff = $homeMetrics?->offensive_efficiency ?? $defaultEfficiency;
-        $homeDefEff = $homeMetrics?->defensive_efficiency ?? $defaultEfficiency;
-        $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
-        $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
-
         $homeForm = $this->getRecentForm($game->homeTeam, (int) $game->season);
         $awayForm = $this->getRecentForm($game->awayTeam, (int) $game->season);
         $recentWeight = (float) ($config['total_recent_efficiency_weight'] ?? 0.35);
         $venueWeight = (float) ($config['total_venue_efficiency_weight'] ?? 0.15);
-
-        $homeSeasonScore = ($homeOffEff + $awayDefEff) / 2;
-        $awaySeasonScore = ($awayOffEff + $homeDefEff) / 2;
-        $homeRecentScore = (
-            (float) ($homeMetrics?->rolling_offensive_efficiency ?? $homeForm['off_eff'])
-            + (float) ($awayMetrics?->rolling_defensive_efficiency ?? $awayForm['def_eff'])
-        ) / 2;
-        $awayRecentScore = (
-            (float) ($awayMetrics?->rolling_offensive_efficiency ?? $awayForm['off_eff'])
-            + (float) ($homeMetrics?->rolling_defensive_efficiency ?? $homeForm['def_eff'])
-        ) / 2;
-        $homeVenueScore = $this->pairedVenueScore(
-            $homeMetrics?->home_offensive_efficiency,
-            $awayMetrics?->away_defensive_efficiency
-        );
-        $awayVenueScore = $this->pairedVenueScore(
-            $awayMetrics?->away_offensive_efficiency,
-            $homeMetrics?->home_defensive_efficiency
-        );
-
-        $homePredictedScore = $this->blendWeightedValues([
-            ['value' => $homeSeasonScore, 'weight' => 1.0],
-            ['value' => $homeRecentScore, 'weight' => $recentWeight],
-            ['value' => $homeVenueScore, 'weight' => $homeVenueScore !== null ? $venueWeight : 0.0],
-        ]);
-        $awayPredictedScore = $this->blendWeightedValues([
-            ['value' => $awaySeasonScore, 'weight' => 1.0],
-            ['value' => $awayRecentScore, 'weight' => $recentWeight],
-            ['value' => $awayVenueScore, 'weight' => $awayVenueScore !== null ? $venueWeight : 0.0],
-        ]);
-
-        $seasonPace = (($homeMetrics?->tempo ?? $config['average_pace']) + ($awayMetrics?->tempo ?? $config['average_pace'])) / 2;
-        $recentPace = (
-            (float) ($homeMetrics?->rolling_tempo ?? $homeForm['tempo'])
-            + (float) ($awayMetrics?->rolling_tempo ?? $awayForm['tempo'])
-        ) / 2;
         $calibration = (array) ($config['total_calibration'] ?? []);
-        $maxRecentPaceDrop = $this->maxRecentPaceDropForGame($game, $calibration);
-        $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
-        $recentPace = max($recentPace, $recentPaceFloor);
-        $pace = $this->blendWeightedValues([
-            ['value' => $seasonPace, 'weight' => 1.0],
-            ['value' => $recentPace, 'weight' => $recentWeight],
-        ]);
-        $paceFloor = (float) ($calibration['pace_floor'] ?? 62.0);
-        $paceFloorBlend = (float) ($calibration['pace_floor_blend'] ?? 0.5);
-        if ($pace < $paceFloor) {
-            $pace += ($paceFloor - $pace) * $paceFloorBlend;
-        }
 
-        $restHome = $this->metadata['rest_days_home'] ?? null;
-        $restAway = $this->metadata['rest_days_away'] ?? null;
-        $restPaceAdjustment = 0.0;
-
-        if ($restHome !== null && $restHome <= 1) {
-            $restPaceAdjustment -= 1.0;
-        }
-        if ($restAway !== null && $restAway <= 1) {
-            $restPaceAdjustment -= 1.0;
-        }
-        $pace += $restPaceAdjustment;
-
+        $scoreComponents = $this->buildTotalScoreComponents(
+            $homeMetrics,
+            $awayMetrics,
+            $homeForm,
+            $awayForm,
+            $defaultEfficiency,
+            $recentWeight,
+            $venueWeight
+        );
+        $paceContext = $this->buildTotalPaceContext(
+            $game,
+            $homeMetrics,
+            $awayMetrics,
+            $homeForm,
+            $awayForm,
+            $config,
+            $calibration,
+            $recentWeight
+        );
         $factorAdjustments = $this->recentPossessionFactorAdjustments($game, (int) $game->season, $config);
         $factorAdjustmentCap = (float) ($calibration['factor_adjustment_cap'] ?? 5.0);
         $homeFactorAdjustment = $this->clamp($factorAdjustments['home_adjustment'], -$factorAdjustmentCap, $factorAdjustmentCap);
         $awayFactorAdjustment = $this->clamp($factorAdjustments['away_adjustment'], -$factorAdjustmentCap, $factorAdjustmentCap);
-        $homePredictedScore += $homeFactorAdjustment;
-        $awayPredictedScore += $awayFactorAdjustment;
-
-        $legacyTotal = ($homePredictedScore + $awayPredictedScore) * ($pace / 100);
+        $homePredictedScore = $scoreComponents['home_predicted_score'] + $homeFactorAdjustment;
+        $awayPredictedScore = $scoreComponents['away_predicted_score'] + $awayFactorAdjustment;
+        $legacyTotal = ($homePredictedScore + $awayPredictedScore) * ($paceContext['pace'] / 100);
         [$blendedTotal, $trueEpaTotalMeta] = $this->applyTrueEpaTotalBlend(
             (float) $legacyTotal,
             $homeMetrics,
             $awayMetrics
         );
-        $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 4.0);
-        $tournamentAdjustment = $this->tournamentTotalAdjustment($game, $calibration);
-        $highTotalThreshold = (float) ($calibration['high_total_threshold'] ?? 135.0);
-        $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 1.2);
-        $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
-        $calibratedTotal = $blendedTotal + $baseAdjustment + $tournamentAdjustment + $highTotalBoost;
+        $calibrationResult = $this->calibrateTotalForGame($game, $blendedTotal, $calibration);
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
-            'season_home_score_component' => round($homeSeasonScore, 3),
-            'season_away_score_component' => round($awaySeasonScore, 3),
-            'recent_home_score_component' => round($homeRecentScore, 3),
-            'recent_away_score_component' => round($awayRecentScore, 3),
-            'venue_home_score_component' => $homeVenueScore !== null ? round($homeVenueScore, 3) : null,
-            'venue_away_score_component' => $awayVenueScore !== null ? round($awayVenueScore, 3) : null,
+            'season_home_score_component' => round($scoreComponents['home_season_score'], 3),
+            'season_away_score_component' => round($scoreComponents['away_season_score'], 3),
+            'recent_home_score_component' => round($scoreComponents['home_recent_score'], 3),
+            'recent_away_score_component' => round($scoreComponents['away_recent_score'], 3),
+            'venue_home_score_component' => $scoreComponents['home_venue_score'] !== null ? round($scoreComponents['home_venue_score'], 3) : null,
+            'venue_away_score_component' => $scoreComponents['away_venue_score'] !== null ? round($scoreComponents['away_venue_score'], 3) : null,
             'home_total_factor_adjustment_raw' => round($factorAdjustments['home_adjustment'], 3),
             'away_total_factor_adjustment_raw' => round($factorAdjustments['away_adjustment'], 3),
             'home_total_factor_adjustment' => round($homeFactorAdjustment, 3),
             'away_total_factor_adjustment' => round($awayFactorAdjustment, 3),
-            'season_pace' => round($seasonPace, 3),
-            'recent_pace' => round($recentPace, 3),
-            'recent_pace_floor' => round($recentPaceFloor, 3),
-            'max_recent_pace_drop' => round($maxRecentPaceDrop, 3),
-            'rest_pace_adjustment' => round($restPaceAdjustment, 3),
-            'pace_floor' => round($paceFloor, 3),
-            'pace_floor_blend' => round($paceFloorBlend, 3),
-            'blended_pace' => round($pace, 3),
+            'season_pace' => round($paceContext['season_pace'], 3),
+            'recent_pace' => round($paceContext['recent_pace'], 3),
+            'recent_pace_floor' => round($paceContext['recent_pace_floor'], 3),
+            'max_recent_pace_drop' => round($paceContext['max_recent_pace_drop'], 3),
+            'rest_pace_adjustment' => round($paceContext['rest_pace_adjustment'], 3),
+            'pace_floor' => round($paceContext['pace_floor'], 3),
+            'pace_floor_blend' => round($paceContext['pace_floor_blend'], 3),
+            'blended_pace' => round($paceContext['pace'], 3),
             'legacy_total' => round($legacyTotal, 3),
             'post_epa_total' => round($blendedTotal, 3),
-            'total_base_adjustment' => round($baseAdjustment, 3),
-            'tournament_adjustment' => round($tournamentAdjustment, 3),
-            'high_total_boost' => round($highTotalBoost, 3),
-            'calibrated_total' => round($calibratedTotal, 3),
+            'total_base_adjustment' => round($calibrationResult['base_adjustment'], 3),
+            'tournament_adjustment' => round($calibrationResult['tournament_adjustment'], 3),
+            'high_total_boost' => round($calibrationResult['high_total_boost'], 3),
+            'calibrated_total' => round($calibrationResult['calibrated_total'], 3),
             'recent_factor_profile' => $factorAdjustments['metadata'],
         ];
 
-        return round($calibratedTotal, 1);
+        return round($calibrationResult['calibrated_total'], 1);
     }
 
     protected function buildPredictionData(
@@ -615,6 +564,165 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
     }
 
     /**
+     * @param  array{off_eff: float, def_eff: float, net_rating: float, tempo: float}  $homeForm
+     * @param  array{off_eff: float, def_eff: float, net_rating: float, tempo: float}  $awayForm
+     * @return array{
+     *   home_season_score: float,
+     *   away_season_score: float,
+     *   home_recent_score: float,
+     *   away_recent_score: float,
+     *   home_venue_score: float|null,
+     *   away_venue_score: float|null,
+     *   home_predicted_score: float,
+     *   away_predicted_score: float
+     * }
+     */
+    private function buildTotalScoreComponents(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        array $homeForm,
+        array $awayForm,
+        float $defaultEfficiency,
+        float $recentWeight,
+        float $venueWeight
+    ): array {
+        $homeOffEff = $homeMetrics?->offensive_efficiency ?? $defaultEfficiency;
+        $homeDefEff = $homeMetrics?->defensive_efficiency ?? $defaultEfficiency;
+        $awayOffEff = $awayMetrics?->offensive_efficiency ?? $defaultEfficiency;
+        $awayDefEff = $awayMetrics?->defensive_efficiency ?? $defaultEfficiency;
+
+        $homeSeasonScore = ($homeOffEff + $awayDefEff) / 2;
+        $awaySeasonScore = ($awayOffEff + $homeDefEff) / 2;
+        $homeRecentScore = (
+            (float) ($homeMetrics?->rolling_offensive_efficiency ?? $homeForm['off_eff'])
+            + (float) ($awayMetrics?->rolling_defensive_efficiency ?? $awayForm['def_eff'])
+        ) / 2;
+        $awayRecentScore = (
+            (float) ($awayMetrics?->rolling_offensive_efficiency ?? $awayForm['off_eff'])
+            + (float) ($homeMetrics?->rolling_defensive_efficiency ?? $homeForm['def_eff'])
+        ) / 2;
+        $homeVenueScore = $this->pairedVenueScore(
+            $homeMetrics?->home_offensive_efficiency,
+            $awayMetrics?->away_defensive_efficiency
+        );
+        $awayVenueScore = $this->pairedVenueScore(
+            $awayMetrics?->away_offensive_efficiency,
+            $homeMetrics?->home_defensive_efficiency
+        );
+
+        return [
+            'home_season_score' => $homeSeasonScore,
+            'away_season_score' => $awaySeasonScore,
+            'home_recent_score' => $homeRecentScore,
+            'away_recent_score' => $awayRecentScore,
+            'home_venue_score' => $homeVenueScore,
+            'away_venue_score' => $awayVenueScore,
+            'home_predicted_score' => $this->blendWeightedValues([
+                ['value' => $homeSeasonScore, 'weight' => 1.0],
+                ['value' => $homeRecentScore, 'weight' => $recentWeight],
+                ['value' => $homeVenueScore, 'weight' => $homeVenueScore !== null ? $venueWeight : 0.0],
+            ]),
+            'away_predicted_score' => $this->blendWeightedValues([
+                ['value' => $awaySeasonScore, 'weight' => 1.0],
+                ['value' => $awayRecentScore, 'weight' => $recentWeight],
+                ['value' => $awayVenueScore, 'weight' => $awayVenueScore !== null ? $venueWeight : 0.0],
+            ]),
+        ];
+    }
+
+    /**
+     * @param  array{off_eff: float, def_eff: float, net_rating: float, tempo: float}  $homeForm
+     * @param  array{off_eff: float, def_eff: float, net_rating: float, tempo: float}  $awayForm
+     * @param  array<string, mixed>  $config
+     * @param  array<string, mixed>  $calibration
+     * @return array{
+     *   season_pace: float,
+     *   recent_pace: float,
+     *   recent_pace_floor: float,
+     *   max_recent_pace_drop: float,
+     *   rest_pace_adjustment: float,
+     *   pace_floor: float,
+     *   pace_floor_blend: float,
+     *   pace: float
+     * }
+     */
+    private function buildTotalPaceContext(
+        Model $game,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        array $homeForm,
+        array $awayForm,
+        array $config,
+        array $calibration,
+        float $recentWeight
+    ): array {
+        $seasonPace = (($homeMetrics?->tempo ?? $config['average_pace']) + ($awayMetrics?->tempo ?? $config['average_pace'])) / 2;
+        $recentPaceRaw = (
+            (float) ($homeMetrics?->rolling_tempo ?? $homeForm['tempo'])
+            + (float) ($awayMetrics?->rolling_tempo ?? $awayForm['tempo'])
+        ) / 2;
+        $maxRecentPaceDrop = $this->maxRecentPaceDropForGame($game, $calibration);
+        $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
+        $recentPace = max($recentPaceRaw, $recentPaceFloor);
+        $pace = $this->blendWeightedValues([
+            ['value' => $seasonPace, 'weight' => 1.0],
+            ['value' => $recentPace, 'weight' => $recentWeight],
+        ]);
+        $paceFloor = (float) ($calibration['pace_floor'] ?? 62.0);
+        $paceFloorBlend = (float) ($calibration['pace_floor_blend'] ?? 0.5);
+        if ($pace < $paceFloor) {
+            $pace += ($paceFloor - $pace) * $paceFloorBlend;
+        }
+
+        $restHome = $this->metadata['rest_days_home'] ?? null;
+        $restAway = $this->metadata['rest_days_away'] ?? null;
+        $restPaceAdjustment = 0.0;
+        if ($restHome !== null && $restHome <= 1) {
+            $restPaceAdjustment -= 1.0;
+        }
+        if ($restAway !== null && $restAway <= 1) {
+            $restPaceAdjustment -= 1.0;
+        }
+        $pace += $restPaceAdjustment;
+
+        return [
+            'season_pace' => $seasonPace,
+            'recent_pace' => $recentPace,
+            'recent_pace_floor' => $recentPaceFloor,
+            'max_recent_pace_drop' => $maxRecentPaceDrop,
+            'rest_pace_adjustment' => $restPaceAdjustment,
+            'pace_floor' => $paceFloor,
+            'pace_floor_blend' => $paceFloorBlend,
+            'pace' => $pace,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $calibration
+     * @return array{
+     *   base_adjustment: float,
+     *   tournament_adjustment: float,
+     *   high_total_boost: float,
+     *   calibrated_total: float
+     * }
+     */
+    private function calibrateTotalForGame(Model $game, float $blendedTotal, array $calibration): array
+    {
+        $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 4.0);
+        $tournamentAdjustment = $this->tournamentTotalAdjustment($game, $calibration);
+        $highTotalThreshold = (float) ($calibration['high_total_threshold'] ?? 135.0);
+        $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 1.2);
+        $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
+
+        return [
+            'base_adjustment' => $baseAdjustment,
+            'tournament_adjustment' => $tournamentAdjustment,
+            'high_total_boost' => $highTotalBoost,
+            'calibrated_total' => $blendedTotal + $baseAdjustment + $tournamentAdjustment + $highTotalBoost,
+        ];
+    }
+
+    /**
      * @param  array<int, array{value:float|null, weight:float}>  $components
      */
     private function blendWeightedValues(array $components): float
@@ -973,5 +1081,4 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             190.0
         );
     }
-
 }

@@ -5,11 +5,18 @@ import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileCo
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
-import { signalCurrentUserDetails } from '@/composables/useWebAuthnSignal';
-import { deletePasskey, listPasskeys, passkeyNameOrFallback, registerPasskey, toPasskeyLabelInput, type PasskeySummary } from '@/composables/usePasskeys';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+    deletePasskey,
+    listPasskeys,
+    passkeyNameOrFallback,
+    registerPasskey,
+    toPasskeyLabelInput,
+    type PasskeySummary,
+} from '@/composables/usePasskeys';
+import { signalCurrentUserDetails } from '@/composables/useWebAuthnSignal';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { edit } from '@/routes/profile';
@@ -52,7 +59,8 @@ async function loadPasskeys() {
     try {
         passkeys.value = await listPasskeys();
     } catch (error) {
-        passkeyError.value = error instanceof Error ? error.message : 'Failed to load passkeys.';
+        passkeyError.value =
+            error instanceof Error ? error.message : 'Failed to load passkeys.';
     } finally {
         loadingPasskeys.value = false;
     }
@@ -64,13 +72,17 @@ async function handleAddPasskey(): Promise<void> {
     passkeyProcessing.value = true;
 
     try {
-        const labelInput = window.prompt('Passkey label (optional)', 'My device');
+        const labelInput = window.prompt(
+            'Passkey label (optional)',
+            'My device',
+        );
         const name = labelInput ? toPasskeyLabelInput(labelInput) : null;
         await registerPasskey(name);
         await loadPasskeys();
         passkeyMessage.value = 'Passkey added successfully.';
     } catch (error) {
-        passkeyError.value = error instanceof Error ? error.message : 'Failed to add passkey.';
+        passkeyError.value =
+            error instanceof Error ? error.message : 'Failed to add passkey.';
     } finally {
         passkeyProcessing.value = false;
     }
@@ -86,7 +98,10 @@ async function handleDeletePasskey(id: number): Promise<void> {
         await loadPasskeys();
         passkeyMessage.value = 'Passkey removed.';
     } catch (error) {
-        passkeyError.value = error instanceof Error ? error.message : 'Failed to remove passkey.';
+        passkeyError.value =
+            error instanceof Error
+                ? error.message
+                : 'Failed to remove passkey.';
     } finally {
         passkeyProcessing.value = false;
     }
@@ -208,10 +223,19 @@ onMounted(async () => {
                         Add passkey
                     </Button>
 
-                    <p v-if="passkeyMessage" class="text-sm text-green-600">{{ passkeyMessage }}</p>
-                    <p v-if="passkeyError" class="text-sm text-red-600">{{ passkeyError }}</p>
+                    <p v-if="passkeyMessage" class="text-sm text-green-600">
+                        {{ passkeyMessage }}
+                    </p>
+                    <p v-if="passkeyError" class="text-sm text-red-600">
+                        {{ passkeyError }}
+                    </p>
 
-                    <p v-if="loadingPasskeys" class="text-sm text-muted-foreground">Loading passkeys...</p>
+                    <p
+                        v-if="loadingPasskeys"
+                        class="text-sm text-muted-foreground"
+                    >
+                        Loading passkeys...
+                    </p>
 
                     <ul v-else class="space-y-2">
                         <li
@@ -221,11 +245,22 @@ onMounted(async () => {
                         >
                             <div class="min-w-0">
                                 <p class="truncate text-sm font-medium">
-                                    {{ passkeyNameOrFallback(passkey.name, passkey.created_at) }}
+                                    {{
+                                        passkeyNameOrFallback(
+                                            passkey.name,
+                                            passkey.created_at,
+                                        )
+                                    }}
                                 </p>
                                 <p class="text-xs text-muted-foreground">
                                     Last used:
-                                    {{ passkey.last_used_at ? new Date(passkey.last_used_at).toLocaleString() : 'Never' }}
+                                    {{
+                                        passkey.last_used_at
+                                            ? new Date(
+                                                  passkey.last_used_at,
+                                              ).toLocaleString()
+                                            : 'Never'
+                                    }}
                                 </p>
                             </div>
 
@@ -239,7 +274,10 @@ onMounted(async () => {
                                 Remove
                             </Button>
                         </li>
-                        <li v-if="passkeys.length === 0" class="text-sm text-muted-foreground">
+                        <li
+                            v-if="passkeys.length === 0"
+                            class="text-sm text-muted-foreground"
+                        >
                             No passkeys added yet.
                         </li>
                     </ul>

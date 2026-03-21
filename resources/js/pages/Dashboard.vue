@@ -7,9 +7,7 @@ import DashboardSportSections from '@/components/dashboard/DashboardSportSection
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import {
-    useDashboardPolling,
-} from '@/composables/useDashboardView';
+import { useDashboardPolling } from '@/composables/useDashboardView';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { dashboard } from '@/routes';
 import {
@@ -48,15 +46,30 @@ const breadcrumbs: BreadcrumbItem[] = [
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <RenderErrorBoundary title="Dashboard Render Error">
-            <div class="flex h-full flex-1 flex-col gap-5 rounded-[1.25rem] p-3 md:p-4">
+            <div
+                class="flex h-full flex-1 flex-col gap-5 rounded-[1.25rem] p-3 md:p-4"
+            >
                 <!-- Subscription Banner -->
                 <SubscriptionBanner variant="gradient" />
 
-                <Alert class="overflow-hidden border-primary/30 bg-gradient-to-r from-primary/16 via-primary/8 to-transparent shadow-[0_20px_45px_-30px_hsl(var(--primary)/0.45)]">
-                    <AlertDescription class="flex flex-col gap-4 p-1 sm:flex-row sm:items-center sm:justify-between">
+                <Alert
+                    class="overflow-hidden border-primary/30 bg-gradient-to-r from-primary/16 via-primary/8 to-transparent shadow-[0_20px_45px_-30px_hsl(var(--primary)/0.45)]"
+                >
+                    <AlertDescription
+                        class="flex flex-col gap-4 p-1 sm:flex-row sm:items-center sm:justify-between"
+                    >
                         <div>
-                            <p class="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">March Madness</p>
-                            <p class="mt-2 text-lg font-semibold leading-tight text-foreground sm:text-xl">Click here to complete your 2026 March Madness Bracket.</p>
+                            <p
+                                class="text-xs font-semibold tracking-[0.24em] text-primary/80 uppercase"
+                            >
+                                March Madness
+                            </p>
+                            <p
+                                class="mt-2 text-lg leading-tight font-semibold text-foreground sm:text-xl"
+                            >
+                                Click here to complete your 2026 March Madness
+                                Bracket.
+                            </p>
                         </div>
                         <Link
                             href="/march-madness-bracket"
@@ -71,16 +84,35 @@ const breadcrumbs: BreadcrumbItem[] = [
 
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div class="ui-surface p-4">
-                        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Predictions Today</p>
-                        <p class="mt-1 text-3xl font-semibold tracking-tight">{{ stats.total_predictions_today }}</p>
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Predictions Today
+                        </p>
+                        <p class="mt-1 text-3xl font-semibold tracking-tight">
+                            {{ stats.total_predictions_today }}
+                        </p>
                     </div>
                     <div class="ui-surface p-4">
-                        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Games Today</p>
-                        <p class="mt-1 text-3xl font-semibold tracking-tight">{{ stats.total_games_today }}</p>
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Games Today
+                        </p>
+                        <p class="mt-1 text-3xl font-semibold tracking-tight">
+                            {{ stats.total_games_today }}
+                        </p>
                     </div>
                     <div class="ui-surface p-4">
-                        <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Healthchecks</p>
-                        <p class="mt-2 inline-flex rounded-full px-2.5 py-1 text-sm font-semibold capitalize" :class="healthStatusClass">
+                        <p
+                            class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                        >
+                            Healthchecks
+                        </p>
+                        <p
+                            class="mt-2 inline-flex rounded-full px-2.5 py-1 text-sm font-semibold capitalize"
+                            :class="healthStatusClass"
+                        >
                             {{ stats.healthcheck_status }}
                         </p>
                     </div>

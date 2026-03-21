@@ -1,11 +1,11 @@
 <?php
 
 use App\Models\NBA\Game;
-use App\Models\OddsApiPlayerMapping;
 use App\Models\NBA\Player;
 use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
 use App\Models\NBA\Team;
+use App\Models\OddsApiPlayerMapping;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 
 test('analyzes props for completed games', function () {

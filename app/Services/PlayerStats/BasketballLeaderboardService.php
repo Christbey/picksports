@@ -18,8 +18,7 @@ class BasketballLeaderboardService
         ?string $gameModel = null,
         ?int $season = null,
         ?array $seasonTypeCandidates = null
-    ): Collection
-    {
+    ): Collection {
         $query = $playerStatModel::query()
             ->selectRaw('
                 player_id,
@@ -43,8 +42,8 @@ class BasketballLeaderboardService
             ');
 
         if ($gameModel !== null) {
-            $gameInstance = new $gameModel();
-            $playerStatInstance = new $playerStatModel();
+            $gameInstance = new $gameModel;
+            $playerStatInstance = new $playerStatModel;
             $query->join(
                 $gameInstance->getTable(),
                 "{$gameInstance->getTable()}.id",
@@ -139,8 +138,8 @@ class BasketballLeaderboardService
             ->whereIn('player_id', $playerIds);
 
         if ($gameModel !== null) {
-            $gameInstance = new $gameModel();
-            $playerStatInstance = new $playerStatModel();
+            $gameInstance = new $gameModel;
+            $playerStatInstance = new $playerStatModel;
             $query->join(
                 $gameInstance->getTable(),
                 "{$gameInstance->getTable()}.id",

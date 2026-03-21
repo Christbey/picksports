@@ -54,6 +54,7 @@ class ImportFpiRatingsCommand extends Command
 
             if (! $team) {
                 $skipped++;
+
                 continue;
             }
 

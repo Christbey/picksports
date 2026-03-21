@@ -16,4 +16,3 @@ return [
     'role' => env('FOUNDING_USERS_ROLE', 'founding_user'),
     'tier_slug' => env('FOUNDING_USERS_TIER_SLUG', 'premium'),
 ];
-

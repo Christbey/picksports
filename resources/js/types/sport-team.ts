@@ -47,7 +47,10 @@ export interface TeamPageConfig {
     gamesLayout?: 'stacked' | 'side-by-side';
     sortRecentByDate?: boolean;
 
-    headerInfo?: (team: any, computed: { record: { wins: number; losses: number } }) => { label: string; value: string }[];
+    headerInfo?: (
+        team: any,
+        computed: { record: { wins: number; losses: number } },
+    ) => { label: string; value: string }[];
 
     statRankingKeys?: { key: string; descending?: boolean }[];
     metricRankingKeys?: { key: string; descending?: boolean }[];

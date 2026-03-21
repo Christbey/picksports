@@ -31,11 +31,13 @@ return new class extends Migration
 
             if ($driver === 'mysql') {
                 DB::statement("ALTER TABLE `{$table}` MODIFY `strength_of_schedule` DECIMAL(7,3) NULL");
+
                 continue;
             }
 
             if ($driver === 'pgsql') {
                 DB::statement("ALTER TABLE \"{$table}\" ALTER COLUMN \"strength_of_schedule\" TYPE DECIMAL(7,3)");
+
                 continue;
             }
 
@@ -69,11 +71,13 @@ return new class extends Migration
 
             if ($driver === 'mysql') {
                 DB::statement("ALTER TABLE `{$table}` MODIFY `strength_of_schedule` DECIMAL({$precision},{$scale}) NULL");
+
                 continue;
             }
 
             if ($driver === 'pgsql') {
                 DB::statement("ALTER TABLE \"{$table}\" ALTER COLUMN \"strength_of_schedule\" TYPE DECIMAL({$precision},{$scale})");
+
                 continue;
             }
 

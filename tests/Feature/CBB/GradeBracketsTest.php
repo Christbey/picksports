@@ -1,9 +1,9 @@
 <?php
 
 use App\Actions\CBB\GradeBrackets;
-use App\Models\CbbBracket;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Models\CbbBracket;
 use App\Models\Group;
 use App\Models\User;
 

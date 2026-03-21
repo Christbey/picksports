@@ -28,7 +28,9 @@ const fallbackBreadcrumbs = computed<BreadcrumbItem[]>(() => {
     segments.forEach((segment, index) => {
         runningPath += `/${segment}`;
         items.push({
-            title: segment.replace(/-/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()),
+            title: segment
+                .replace(/-/g, ' ')
+                .replace(/\b\w/g, (m) => m.toUpperCase()),
             href: index === segments.length - 1 ? undefined : runningPath,
         });
     });
@@ -37,7 +39,9 @@ const fallbackBreadcrumbs = computed<BreadcrumbItem[]>(() => {
 });
 
 const resolvedBreadcrumbs = computed(() =>
-    props.breadcrumbs.length > 0 ? props.breadcrumbs : fallbackBreadcrumbs.value,
+    props.breadcrumbs.length > 0
+        ? props.breadcrumbs
+        : fallbackBreadcrumbs.value,
 );
 </script>
 

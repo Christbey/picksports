@@ -61,14 +61,13 @@ const sortBy = ref(props.config.defaultSort);
 const sortDesc = ref(true);
 const tierLimit = ref<number | null>(null);
 const tierName = ref<string | null>(null);
-const {
-    availableSeasons,
-    selectedSeason,
-    fetchAvailableSeasons,
-} = useSeasonFilter(() => {
-    return props.config.availableSeasonsEndpoint
-        ?? `${props.config.apiEndpoint}/available-seasons`;
-});
+const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
+    useSeasonFilter(() => {
+        return (
+            props.config.availableSeasonsEndpoint ??
+            `${props.config.apiEndpoint}/available-seasons`
+        );
+    });
 
 const currentSortOption = computed(() => {
     return props.config.sortOptions.find((o) => o.key === sortBy.value);
@@ -124,7 +123,9 @@ const fetchMetrics = async () => {
         if (selectedSeasonType.value) {
             params.set('season_type', selectedSeasonType.value);
         }
-        const response = await fetch(`${props.config.apiEndpoint}?${params.toString()}`);
+        const response = await fetch(
+            `${props.config.apiEndpoint}?${params.toString()}`,
+        );
         if (!response.ok) throw new Error('Failed to fetch team metrics');
 
         const data = await response.json();
@@ -196,14 +197,19 @@ onMounted(async () => {
                 <div class="flex items-center justify-between">
                     <div>
                         <p class="ui-kicker">Rankings</p>
-                        <h1 class="text-3xl font-semibold tracking-tight">{{ config.title }}</h1>
+                        <h1 class="text-3xl font-semibold tracking-tight">
+                            {{ config.title }}
+                        </h1>
                         <p class="text-sm text-muted-foreground">
                             {{ config.subtitle }}
                         </p>
                     </div>
                 </div>
 
-                <SubscriptionBanner variant="subtle" :storage-key="`${config.sport}-metrics-banner-dismissed`" />
+                <SubscriptionBanner
+                    variant="subtle"
+                    :storage-key="`${config.sport}-metrics-banner-dismissed`"
+                />
 
                 <Card>
                     <CardContent class="pt-6">
@@ -216,7 +222,10 @@ onMounted(async () => {
                                     :options="availableSeasons"
                                 />
                             </div>
-                            <div v-if="config.seasonTypeOptions?.length" class="space-y-2">
+                            <div
+                                v-if="config.seasonTypeOptions?.length"
+                                class="space-y-2"
+                            >
                                 <p class="ui-kicker">Season Type</p>
                                 <select
                                     id="metrics-season-type"
@@ -234,37 +243,64 @@ onMounted(async () => {
                                 </select>
                             </div>
                             <div class="min-w-[200px] flex-1">
-                                <Input v-model="searchQuery" placeholder="Search by team name..." class="w-full" />
+                                <Input
+                                    v-model="searchQuery"
+                                    placeholder="Search by team name..."
+                                    class="w-full"
+                                />
                             </div>
                             <div class="flex gap-2">
                                 <Button
                                     v-for="option in config.sortOptions"
                                     :key="option.key"
-                                    :variant="sortBy === option.key ? 'default' : 'outline'"
+                                    :variant="
+                                        sortBy === option.key
+                                            ? 'default'
+                                            : 'outline'
+                                    "
                                     size="sm"
                                     class="h-9"
                                     @click="toggleSort(option.key)"
                                 >
                                     {{ option.label }}
-                                    {{ sortBy === option.key ? (sortDesc ? '↓' : '↑') : '' }}
+                                    {{
+                                        sortBy === option.key
+                                            ? sortDesc
+                                                ? '↓'
+                                                : '↑'
+                                            : ''
+                                    }}
                                 </Button>
                             </div>
                         </div>
                     </CardContent>
                 </Card>
 
-                <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div
+                    class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                >
                     <span class="ui-chip text-foreground/80">
                         {{ sortedMetrics.length }} teams
                     </span>
                     <span class="ui-chip text-foreground/80">
                         Sort: {{ activeSortLabel }} {{ sortDesc ? '↓' : '↑' }}
                     </span>
-                    <span v-if="selectedSeason" class="ui-chip text-foreground/80">
+                    <span
+                        v-if="selectedSeason"
+                        class="ui-chip text-foreground/80"
+                    >
                         Season: {{ selectedSeason }}
                     </span>
-                    <span v-if="selectedSeasonType" class="ui-chip text-foreground/80">
-                        Season Type: {{ config.seasonTypeOptions?.find((option) => option.value === selectedSeasonType)?.label ?? selectedSeasonType }}
+                    <span
+                        v-if="selectedSeasonType"
+                        class="ui-chip text-foreground/80"
+                    >
+                        Season Type:
+                        {{
+                            config.seasonTypeOptions?.find(
+                                (option) => option.value === selectedSeasonType,
+                            )?.label ?? selectedSeasonType
+                        }}
                     </span>
                     <span v-if="searchQuery" class="ui-chip text-foreground/80">
                         Search: "{{ searchQuery }}"
@@ -282,7 +318,9 @@ onMounted(async () => {
                 <Card v-else>
                     <CardHeader>
                         <div class="ui-kicker">Standings</div>
-                        <CardTitle class="tracking-tight">Team Rankings</CardTitle>
+                        <CardTitle class="tracking-tight"
+                            >Team Rankings</CardTitle
+                        >
                     </CardHeader>
                     <CardContent>
                         <div class="ui-table-wrap">
@@ -291,7 +329,11 @@ onMounted(async () => {
                                     <tr class="border-b bg-muted/35 text-left">
                                         <th class="p-2 font-medium">#</th>
                                         <th class="p-2 font-medium">Team</th>
-                                        <th v-for="col in config.columns" :key="col.label" class="p-2 text-right font-medium">
+                                        <th
+                                            v-for="col in config.columns"
+                                            :key="col.label"
+                                            class="p-2 text-right font-medium"
+                                        >
                                             {{ col.label }}
                                         </th>
                                     </tr>
@@ -301,21 +343,55 @@ onMounted(async () => {
                                         v-for="(metric, index) in sortedMetrics"
                                         :key="metric.id"
                                         class="border-b transition-colors odd:bg-muted/15 hover:bg-muted/40"
-                                        :class="{ 'opacity-60': config.hasMeetsMinimum && !metric.meets_minimum }"
+                                        :class="{
+                                            'opacity-60':
+                                                config.hasMeetsMinimum &&
+                                                !metric.meets_minimum,
+                                        }"
                                     >
                                         <td class="p-2 text-muted-foreground">
-                                            <span class="font-medium" :class="rankColorClass(index, sortedMetrics.length)">
+                                            <span
+                                                class="font-medium"
+                                                :class="
+                                                    rankColorClass(
+                                                        index,
+                                                        sortedMetrics.length,
+                                                    )
+                                                "
+                                            >
                                                 {{ index + 1 }}
                                             </span>
                                         </td>
-                                        <td class="p-2 font-medium" :class="rankColorClass(index, sortedMetrics.length)">
+                                        <td
+                                            class="p-2 font-medium"
+                                            :class="
+                                                rankColorClass(
+                                                    index,
+                                                    sortedMetrics.length,
+                                                )
+                                            "
+                                        >
                                             <Link
                                                 v-if="metric.team?.id != null"
-                                                :href="config.teamLink(metric.team.id)"
+                                                :href="
+                                                    config.teamLink(
+                                                        metric.team.id,
+                                                    )
+                                                "
                                                 class="flex items-center gap-2 transition-colors hover:text-primary"
                                             >
-                                                <span>{{ metric.team.display_name ?? metric.team.name }}</span>
-                                                <span class="text-xs text-muted-foreground">({{ metric.team.abbreviation ?? '-' }})</span>
+                                                <span>{{
+                                                    metric.team.display_name ??
+                                                    metric.team.name
+                                                }}</span>
+                                                <span
+                                                    class="text-xs text-muted-foreground"
+                                                    >({{
+                                                        metric.team
+                                                            .abbreviation ??
+                                                        '-'
+                                                    }})</span
+                                                >
                                             </Link>
                                             <span v-else>-</span>
                                         </td>
@@ -323,7 +399,11 @@ onMounted(async () => {
                                             v-for="col in config.columns"
                                             :key="col.label"
                                             class="p-2 text-right"
-                                            :class="col.class ? col.class(metric) : ''"
+                                            :class="
+                                                col.class
+                                                    ? col.class(metric)
+                                                    : ''
+                                            "
                                         >
                                             {{ col.value(metric) }}
                                         </td>
@@ -332,10 +412,19 @@ onMounted(async () => {
                             </table>
                         </div>
 
-                        <Alert v-if="tierLimit && metrics.length >= tierLimit" class="mt-4">
+                        <Alert
+                            v-if="tierLimit && metrics.length >= tierLimit"
+                            class="mt-4"
+                        >
                             <AlertDescription>
-                                You're viewing the top {{ tierLimit }} teams with your {{ tierName }} plan.
-                                <a href="/settings/subscription" class="font-medium underline">Upgrade your plan</a> to see more rankings.
+                                You're viewing the top {{ tierLimit }} teams
+                                with your {{ tierName }} plan.
+                                <a
+                                    href="/settings/subscription"
+                                    class="font-medium underline"
+                                    >Upgrade your plan</a
+                                >
+                                to see more rankings.
                             </AlertDescription>
                         </Alert>
                     </CardContent>

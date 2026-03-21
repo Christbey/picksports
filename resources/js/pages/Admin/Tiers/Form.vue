@@ -51,7 +51,9 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
     {
         title: isEditing.value ? 'Edit Tier' : 'Create Tier',
-        href: isEditing.value ? `/admin/tiers/${props.tier?.id}/edit` : '/admin/tiers/create',
+        href: isEditing.value
+            ? `/admin/tiers/${props.tier?.id}/edit`
+            : '/admin/tiers/create',
     },
 ];
 
@@ -65,7 +67,8 @@ const form = useForm({
     stripe_price_id_yearly: props.tier?.stripe_price_id_yearly || '',
     features: {
         predictions_per_day: props.tier?.features?.predictions_per_day ?? null,
-        historical_data_days: props.tier?.features?.historical_data_days ?? null,
+        historical_data_days:
+            props.tier?.features?.historical_data_days ?? null,
         sports_access: props.tier?.features?.sports_access || [],
         export_predictions: props.tier?.features?.export_predictions ?? false,
         api_access: props.tier?.features?.api_access ?? false,
@@ -131,281 +134,418 @@ function submit() {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <SettingsLayout :full-width="true">
-            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
-            <div>
-                <h1 class="text-2xl font-bold">{{ isEditing ? 'Edit' : 'Create' }} Subscription Tier</h1>
-                <p class="mt-1 text-muted-foreground">
-                    {{ isEditing ? 'Update tier information and pricing' : 'Create a new subscription tier' }}
-                </p>
-            </div>
-
-            <form @submit.prevent="submit" class="space-y-6">
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar p-6 space-y-6">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label for="name" class="block text-sm font-medium mb-2">
-                                Tier Name <span class="text-red-600">*</span>
-                            </label>
-                            <input
-                                id="name"
-                                v-model="form.name"
-                                type="text"
-                                required
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.name }"
-                            />
-                            <p v-if="form.errors.name" class="mt-1 text-sm text-red-600">{{ form.errors.name }}</p>
-                        </div>
-
-                        <div>
-                            <label for="slug" class="block text-sm font-medium mb-2">
-                                Slug <span class="text-red-600">*</span>
-                            </label>
-                            <input
-                                id="slug"
-                                v-model="form.slug"
-                                type="text"
-                                required
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.slug }"
-                            />
-                            <p v-if="form.errors.slug" class="mt-1 text-sm text-red-600">{{ form.errors.slug }}</p>
-                        </div>
-                    </div>
-
-                    <div>
-                        <label for="description" class="block text-sm font-medium mb-2">
-                            Description
-                        </label>
-                        <textarea
-                            id="description"
-                            v-model="form.description"
-                            rows="3"
-                            class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                            :class="{ 'border-red-500': form.errors.description }"
-                        ></textarea>
-                        <p v-if="form.errors.description" class="mt-1 text-sm text-red-600">{{ form.errors.description }}</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label for="price_monthly" class="block text-sm font-medium mb-2">
-                                Monthly Price ($)
-                            </label>
-                            <input
-                                id="price_monthly"
-                                v-model="form.price_monthly"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.price_monthly }"
-                            />
-                            <p v-if="form.errors.price_monthly" class="mt-1 text-sm text-red-600">{{ form.errors.price_monthly }}</p>
-                        </div>
-
-                        <div>
-                            <label for="price_yearly" class="block text-sm font-medium mb-2">
-                                Yearly Price ($)
-                            </label>
-                            <input
-                                id="price_yearly"
-                                v-model="form.price_yearly"
-                                type="number"
-                                step="0.01"
-                                min="0"
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.price_yearly }"
-                            />
-                            <p v-if="form.errors.price_yearly" class="mt-1 text-sm text-red-600">{{ form.errors.price_yearly }}</p>
-                        </div>
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <label for="stripe_price_id_monthly" class="block text-sm font-medium mb-2">
-                                Stripe Price ID (Monthly)
-                            </label>
-                            <input
-                                id="stripe_price_id_monthly"
-                                v-model="form.stripe_price_id_monthly"
-                                type="text"
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.stripe_price_id_monthly }"
-                            />
-                            <p v-if="form.errors.stripe_price_id_monthly" class="mt-1 text-sm text-red-600">{{ form.errors.stripe_price_id_monthly }}</p>
-                        </div>
-
-                        <div>
-                            <label for="stripe_price_id_yearly" class="block text-sm font-medium mb-2">
-                                Stripe Price ID (Yearly)
-                            </label>
-                            <input
-                                id="stripe_price_id_yearly"
-                                v-model="form.stripe_price_id_yearly"
-                                type="text"
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.stripe_price_id_yearly }"
-                            />
-                            <p v-if="form.errors.stripe_price_id_yearly" class="mt-1 text-sm text-red-600">{{ form.errors.stripe_price_id_yearly }}</p>
-                        </div>
-                    </div>
-
-                    <div class="space-y-6">
-                        <h3 class="text-lg font-semibold">Features</h3>
-
-                        <!-- Predictions Per Day -->
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Predictions Per Day</label>
-                            <div class="flex gap-4 items-center">
-                                <input
-                                    v-model.number="form.features.predictions_per_day"
-                                    type="number"
-                                    min="0"
-                                    :disabled="unlimitedPredictions"
-                                    class="w-32 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                                />
-                                <label class="flex items-center cursor-pointer">
-                                    <input
-                                        v-model="unlimitedPredictions"
-                                        type="checkbox"
-                                        @change="toggleUnlimitedPredictions"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm">Unlimited</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Historical Data Days -->
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Historical Data Days</label>
-                            <div class="flex gap-4 items-center">
-                                <input
-                                    v-model.number="form.features.historical_data_days"
-                                    type="number"
-                                    min="0"
-                                    :disabled="unlimitedHistory"
-                                    class="w-32 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                                />
-                                <label class="flex items-center cursor-pointer">
-                                    <input
-                                        v-model="unlimitedHistory"
-                                        type="checkbox"
-                                        @change="toggleUnlimitedHistory"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm">Unlimited</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Team Metrics Limit -->
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Team Metrics Limit</label>
-                            <div class="flex gap-4 items-center">
-                                <input
-                                    v-model.number="form.team_metrics_limit"
-                                    type="number"
-                                    min="1"
-                                    :disabled="unlimitedTeamMetrics"
-                                    class="w-32 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                                />
-                                <label class="flex items-center cursor-pointer">
-                                    <input
-                                        v-model="unlimitedTeamMetrics"
-                                        type="checkbox"
-                                        @change="toggleUnlimitedTeamMetrics"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm">Unlimited</span>
-                                </label>
-                            </div>
-                        </div>
-
-                        <!-- Predictions Limit -->
-                        <div>
-                            <label class="block text-sm font-medium mb-2">Predictions Limit (API)</label>
-                            <div class="flex gap-4 items-center">
-                                <input
-                                    v-model.number="form.predictions_limit"
-                                    type="number"
-                                    min="1"
-                                    :disabled="unlimitedPredictionsLimit"
-                                    class="w-32 rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-50"
-                                />
-                                <label class="flex items-center cursor-pointer">
-                                    <input
-                                        v-model="unlimitedPredictionsLimit"
-                                        type="checkbox"
-                                        @change="toggleUnlimitedPredictionsLimit"
-                                        class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                    />
-                                    <span class="ml-2 text-sm">Unlimited</span>
-                                </label>
-                            </div>
-                            <p class="mt-1 text-xs text-muted-foreground">Max predictions returned per API request</p>
-                        </div>
-
-                    </div>
-
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                            <label for="sort_order" class="block text-sm font-medium mb-2">
-                                Sort Order
-                            </label>
-                            <input
-                                id="sort_order"
-                                v-model.number="form.sort_order"
-                                type="number"
-                                min="0"
-                                class="w-full rounded-lg border border-sidebar-border bg-white dark:bg-sidebar px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                                :class="{ 'border-red-500': form.errors.sort_order }"
-                            />
-                            <p v-if="form.errors.sort_order" class="mt-1 text-sm text-red-600">{{ form.errors.sort_order }}</p>
-                        </div>
-
-                        <div class="flex items-center">
-                            <label class="flex items-center cursor-pointer">
-                                <input
-                                    v-model="form.is_active"
-                                    type="checkbox"
-                                    class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                />
-                                <span class="ml-2 text-sm font-medium">Active</span>
-                            </label>
-                        </div>
-
-                        <div class="flex items-center">
-                            <label class="flex items-center cursor-pointer">
-                                <input
-                                    v-model="form.is_default"
-                                    type="checkbox"
-                                    class="w-4 h-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                />
-                                <span class="ml-2 text-sm font-medium">Default Tier</span>
-                            </label>
-                        </div>
-                    </div>
+            <div
+                class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
+            >
+                <div>
+                    <h1 class="text-2xl font-bold">
+                        {{ isEditing ? 'Edit' : 'Create' }} Subscription Tier
+                    </h1>
+                    <p class="mt-1 text-muted-foreground">
+                        {{
+                            isEditing
+                                ? 'Update tier information and pricing'
+                                : 'Create a new subscription tier'
+                        }}
+                    </p>
                 </div>
 
-                <div class="flex gap-4">
-                    <button
-                        type="submit"
-                        :disabled="form.processing"
-                        class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                <form @submit.prevent="submit" class="space-y-6">
+                    <div
+                        class="space-y-6 rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
                     >
-                        {{ form.processing ? 'Saving...' : (isEditing ? 'Update Tier' : 'Create Tier') }}
-                    </button>
-                    <button
-                        type="button"
-                        @click="router.get('/admin/tiers')"
-                        class="rounded-lg bg-sidebar-accent px-4 py-2 font-medium hover:bg-sidebar-accent/80 transition-colors"
-                    >
-                        Cancel
-                    </button>
-                </div>
-            </form>
+                        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                                <label
+                                    for="name"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Tier Name
+                                    <span class="text-red-600">*</span>
+                                </label>
+                                <input
+                                    id="name"
+                                    v-model="form.name"
+                                    type="text"
+                                    required
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500': form.errors.name,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.name"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.name }}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label
+                                    for="slug"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Slug <span class="text-red-600">*</span>
+                                </label>
+                                <input
+                                    id="slug"
+                                    v-model="form.slug"
+                                    type="text"
+                                    required
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500': form.errors.slug,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.slug"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.slug }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label
+                                for="description"
+                                class="mb-2 block text-sm font-medium"
+                            >
+                                Description
+                            </label>
+                            <textarea
+                                id="description"
+                                v-model="form.description"
+                                rows="3"
+                                class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                :class="{
+                                    'border-red-500': form.errors.description,
+                                }"
+                            ></textarea>
+                            <p
+                                v-if="form.errors.description"
+                                class="mt-1 text-sm text-red-600"
+                            >
+                                {{ form.errors.description }}
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                                <label
+                                    for="price_monthly"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Monthly Price ($)
+                                </label>
+                                <input
+                                    id="price_monthly"
+                                    v-model="form.price_monthly"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500':
+                                            form.errors.price_monthly,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.price_monthly"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.price_monthly }}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label
+                                    for="price_yearly"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Yearly Price ($)
+                                </label>
+                                <input
+                                    id="price_yearly"
+                                    v-model="form.price_yearly"
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500':
+                                            form.errors.price_yearly,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.price_yearly"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.price_yearly }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                            <div>
+                                <label
+                                    for="stripe_price_id_monthly"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Stripe Price ID (Monthly)
+                                </label>
+                                <input
+                                    id="stripe_price_id_monthly"
+                                    v-model="form.stripe_price_id_monthly"
+                                    type="text"
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500':
+                                            form.errors.stripe_price_id_monthly,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.stripe_price_id_monthly"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.stripe_price_id_monthly }}
+                                </p>
+                            </div>
+
+                            <div>
+                                <label
+                                    for="stripe_price_id_yearly"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Stripe Price ID (Yearly)
+                                </label>
+                                <input
+                                    id="stripe_price_id_yearly"
+                                    v-model="form.stripe_price_id_yearly"
+                                    type="text"
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500':
+                                            form.errors.stripe_price_id_yearly,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.stripe_price_id_yearly"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.stripe_price_id_yearly }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="space-y-6">
+                            <h3 class="text-lg font-semibold">Features</h3>
+
+                            <!-- Predictions Per Day -->
+                            <div>
+                                <label class="mb-2 block text-sm font-medium"
+                                    >Predictions Per Day</label
+                                >
+                                <div class="flex items-center gap-4">
+                                    <input
+                                        v-model.number="
+                                            form.features.predictions_per_day
+                                        "
+                                        type="number"
+                                        min="0"
+                                        :disabled="unlimitedPredictions"
+                                        class="w-32 rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 dark:bg-sidebar"
+                                    />
+                                    <label
+                                        class="flex cursor-pointer items-center"
+                                    >
+                                        <input
+                                            v-model="unlimitedPredictions"
+                                            type="checkbox"
+                                            @change="toggleUnlimitedPredictions"
+                                            class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                        />
+                                        <span class="ml-2 text-sm"
+                                            >Unlimited</span
+                                        >
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Historical Data Days -->
+                            <div>
+                                <label class="mb-2 block text-sm font-medium"
+                                    >Historical Data Days</label
+                                >
+                                <div class="flex items-center gap-4">
+                                    <input
+                                        v-model.number="
+                                            form.features.historical_data_days
+                                        "
+                                        type="number"
+                                        min="0"
+                                        :disabled="unlimitedHistory"
+                                        class="w-32 rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 dark:bg-sidebar"
+                                    />
+                                    <label
+                                        class="flex cursor-pointer items-center"
+                                    >
+                                        <input
+                                            v-model="unlimitedHistory"
+                                            type="checkbox"
+                                            @change="toggleUnlimitedHistory"
+                                            class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                        />
+                                        <span class="ml-2 text-sm"
+                                            >Unlimited</span
+                                        >
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Team Metrics Limit -->
+                            <div>
+                                <label class="mb-2 block text-sm font-medium"
+                                    >Team Metrics Limit</label
+                                >
+                                <div class="flex items-center gap-4">
+                                    <input
+                                        v-model.number="form.team_metrics_limit"
+                                        type="number"
+                                        min="1"
+                                        :disabled="unlimitedTeamMetrics"
+                                        class="w-32 rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 dark:bg-sidebar"
+                                    />
+                                    <label
+                                        class="flex cursor-pointer items-center"
+                                    >
+                                        <input
+                                            v-model="unlimitedTeamMetrics"
+                                            type="checkbox"
+                                            @change="toggleUnlimitedTeamMetrics"
+                                            class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                        />
+                                        <span class="ml-2 text-sm"
+                                            >Unlimited</span
+                                        >
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Predictions Limit -->
+                            <div>
+                                <label class="mb-2 block text-sm font-medium"
+                                    >Predictions Limit (API)</label
+                                >
+                                <div class="flex items-center gap-4">
+                                    <input
+                                        v-model.number="form.predictions_limit"
+                                        type="number"
+                                        min="1"
+                                        :disabled="unlimitedPredictionsLimit"
+                                        class="w-32 rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 dark:bg-sidebar"
+                                    />
+                                    <label
+                                        class="flex cursor-pointer items-center"
+                                    >
+                                        <input
+                                            v-model="unlimitedPredictionsLimit"
+                                            type="checkbox"
+                                            @change="
+                                                toggleUnlimitedPredictionsLimit
+                                            "
+                                            class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                        />
+                                        <span class="ml-2 text-sm"
+                                            >Unlimited</span
+                                        >
+                                    </label>
+                                </div>
+                                <p class="mt-1 text-xs text-muted-foreground">
+                                    Max predictions returned per API request
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="grid grid-cols-1 gap-6 md:grid-cols-3">
+                            <div>
+                                <label
+                                    for="sort_order"
+                                    class="mb-2 block text-sm font-medium"
+                                >
+                                    Sort Order
+                                </label>
+                                <input
+                                    id="sort_order"
+                                    v-model.number="form.sort_order"
+                                    type="number"
+                                    min="0"
+                                    class="w-full rounded-lg border border-sidebar-border bg-white px-4 py-2 focus:ring-2 focus:ring-primary focus:outline-none dark:bg-sidebar"
+                                    :class="{
+                                        'border-red-500':
+                                            form.errors.sort_order,
+                                    }"
+                                />
+                                <p
+                                    v-if="form.errors.sort_order"
+                                    class="mt-1 text-sm text-red-600"
+                                >
+                                    {{ form.errors.sort_order }}
+                                </p>
+                            </div>
+
+                            <div class="flex items-center">
+                                <label class="flex cursor-pointer items-center">
+                                    <input
+                                        v-model="form.is_active"
+                                        type="checkbox"
+                                        class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                    />
+                                    <span class="ml-2 text-sm font-medium"
+                                        >Active</span
+                                    >
+                                </label>
+                            </div>
+
+                            <div class="flex items-center">
+                                <label class="flex cursor-pointer items-center">
+                                    <input
+                                        v-model="form.is_default"
+                                        type="checkbox"
+                                        class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                    />
+                                    <span class="ml-2 text-sm font-medium"
+                                        >Default Tier</span
+                                    >
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <button
+                            type="submit"
+                            :disabled="form.processing"
+                            class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                            {{
+                                form.processing
+                                    ? 'Saving...'
+                                    : isEditing
+                                      ? 'Update Tier'
+                                      : 'Create Tier'
+                            }}
+                        </button>
+                        <button
+                            type="button"
+                            @click="router.get('/admin/tiers')"
+                            class="rounded-lg bg-sidebar-accent px-4 py-2 font-medium transition-colors hover:bg-sidebar-accent/80"
+                        >
+                            Cancel
+                        </button>
+                    </div>
+                </form>
             </div>
         </SettingsLayout>
     </AppLayout>

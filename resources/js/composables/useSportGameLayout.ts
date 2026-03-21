@@ -1,6 +1,13 @@
 import { computed, toValue, type MaybeRefOrGetter } from 'vue';
-import { useSportDetailedPageProps, type UseSportDetailedPagePropsOptions } from '@/composables/useSportDetailedPageProps';
-import { buildSportGameBreadcrumbs, createSportGamePageConfig, type SupportedGameSport } from '@/config/sport-game-page-configs';
+import {
+    useSportDetailedPageProps,
+    type UseSportDetailedPagePropsOptions,
+} from '@/composables/useSportDetailedPageProps';
+import {
+    buildSportGameBreadcrumbs,
+    createSportGamePageConfig,
+    type SupportedGameSport,
+} from '@/config/sport-game-page-configs';
 import type { SportGamePageConfig } from '@/types';
 
 interface UseSportGameLayoutOptions {
@@ -33,7 +40,9 @@ export function useSportGameLayout(options: UseSportGameLayoutOptions) {
         trendsTitle: options.configOverrides?.trendsTitle,
     });
 
-    const breadcrumbs = computed(() => buildSportGameBreadcrumbs(config, Number(toValue(options.gameId))));
+    const breadcrumbs = computed(() =>
+        buildSportGameBreadcrumbs(config, Number(toValue(options.gameId))),
+    );
     const pageProps = useSportDetailedPageProps({
         ...options.pageProps,
         breadcrumbs,
@@ -47,8 +56,15 @@ export function useSportGameLayout(options: UseSportGameLayoutOptions) {
     };
 }
 
-export function useSportGameLayoutFromConfig(options: UseSportGameLayoutFromConfigOptions) {
-    const breadcrumbs = computed(() => buildSportGameBreadcrumbs(options.config, Number(toValue(options.gameId))));
+export function useSportGameLayoutFromConfig(
+    options: UseSportGameLayoutFromConfigOptions,
+) {
+    const breadcrumbs = computed(() =>
+        buildSportGameBreadcrumbs(
+            options.config,
+            Number(toValue(options.gameId)),
+        ),
+    );
     const pageProps = useSportDetailedPageProps({
         ...options.pageProps,
         breadcrumbs,

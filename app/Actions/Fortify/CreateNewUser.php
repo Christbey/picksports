@@ -4,8 +4,8 @@ namespace App\Actions\Fortify;
 
 use App\Concerns\PasswordValidationRules;
 use App\Concerns\ProfileValidationRules;
-use App\Http\Controllers\Auth\GroupJoinLinkController;
 use App\Http\Controllers\Auth\GroupInvitationController;
+use App\Http\Controllers\Auth\GroupJoinLinkController;
 use App\Models\GroupInvitation;
 use App\Models\GroupJoinLink;
 use App\Models\User;

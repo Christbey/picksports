@@ -21,6 +21,25 @@ export interface BettingRecommendation {
     reasoning: string;
 }
 
+export interface LivePredictionData {
+    isLive: boolean;
+    homeScore?: number | null;
+    awayScore?: number | null;
+    period?: number | null;
+    inning?: number | null;
+    gameClock?: string | null;
+    inningState?: string | null;
+    status?: string | null;
+    liveWinProbability?: number | null;
+    livePredictedSpread?: number | null;
+    livePredictedTotal?: number | null;
+    liveSecondsRemaining?: number | null;
+    liveOutsRemaining?: number | null;
+    preGameWinProbability: number;
+    preGamePredictedSpread: number;
+    preGamePredictedTotal: number;
+}
+
 export interface PredictionListGameTeam {
     abbreviation: string;
     school?: string;
@@ -60,10 +79,13 @@ export interface PredictionListItem {
     predicted_spread?: number;
     predicted_total?: number;
     win_probability?: number;
+    home_win_probability?: number;
+    away_win_probability?: number;
     live_predicted_spread?: number | null;
     live_predicted_total?: number | null;
     live_win_probability?: number | null;
     live_seconds_remaining?: number | null;
+    live_outs_remaining?: number | null;
     live_updated_at?: string | null;
     confidence_score?: number;
     actual_spread?: number;

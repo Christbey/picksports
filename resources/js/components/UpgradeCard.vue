@@ -28,17 +28,15 @@ const { isPremium, getUpgradeMessage, tierName } = useSubscription();
 const message = computed(() => getUpgradeMessage());
 
 const displayTitle = computed(() => props.title || message.value.title);
-const displayDescription = computed(() => props.description || message.value.description);
+const displayDescription = computed(
+    () => props.description || message.value.description,
+);
 
 const defaultFeatures = computed(() => {
     if (props.features.length > 0) {
         return props.features;
     }
-    return [
-        'Unlimited predictions',
-        'Advanced analytics',
-        'All sports access',
-    ];
+    return ['Unlimited predictions', 'Advanced analytics', 'All sports access'];
 });
 
 const shouldShow = computed(() => {
@@ -47,10 +45,15 @@ const shouldShow = computed(() => {
 </script>
 
 <template>
-    <Card v-if="shouldShow" class="border-dashed border-indigo-500/30 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/20 dark:to-purple-950/20">
+    <Card
+        v-if="shouldShow"
+        class="border-dashed border-indigo-500/30 bg-gradient-to-br from-indigo-50/50 to-purple-50/50 dark:from-indigo-950/20 dark:to-purple-950/20"
+    >
         <CardHeader :class="variant === 'compact' ? 'pb-2' : ''">
             <div class="flex items-center gap-2">
-                <div class="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/10">
+                <div
+                    class="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/10"
+                >
                     <Zap class="h-4 w-4 text-indigo-500" />
                 </div>
                 <div>
@@ -63,7 +66,10 @@ const shouldShow = computed(() => {
         </CardHeader>
 
         <CardContent :class="variant === 'compact' ? 'pt-0' : ''">
-            <p v-if="variant !== 'compact'" class="mb-4 text-sm text-muted-foreground">
+            <p
+                v-if="variant !== 'compact'"
+                class="mb-4 text-sm text-muted-foreground"
+            >
                 {{ displayDescription }}
             </p>
 

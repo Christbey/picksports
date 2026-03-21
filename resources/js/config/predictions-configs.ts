@@ -34,7 +34,7 @@ export const wcbbPredictionsConfig: SportPredictionsConfig = {
     sport: 'wcbb',
     title: 'WCBB Predictions',
     subtitle: 'Predictions based on Elo ratings and advanced metrics',
-    useEasternTime: false,
+    useEasternTime: true,
     showGameTime: true,
     confidenceIsDecimal: false,
     confidenceDecimals: 0,

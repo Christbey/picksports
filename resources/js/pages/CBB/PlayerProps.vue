@@ -5,7 +5,11 @@ import { getPlayerPropsPageConfig } from '@/config/player-props-page-configs';
 
 const props = defineProps<{
     sport: string;
-    filters: { date: string | null; game: string | number | null; market: string | null };
+    filters: {
+        date: string | null;
+        game: string | number | null;
+        market: string | null;
+    };
 }>();
 
 const config = getPlayerPropsPageConfig(props.sport);

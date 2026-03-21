@@ -22,8 +22,7 @@ class GenerateTournamentForecast
         ?int $simulationRuns = null,
         array $configOverrides = [],
         bool $persist = true
-    ): Collection
-    {
+    ): Collection {
         $run = $this->runForecast($season, $simulationRuns, $configOverrides);
         if ($run['team_pool']->isEmpty()) {
             return collect();
@@ -328,8 +327,7 @@ class GenerateTournamentForecast
         Collection $teams,
         array $weights,
         array $championWeights = []
-    ): Collection
-    {
+    ): Collection {
         $keys = ['adj_net_rating', 'rolling_net_rating', 'strength_of_schedule', 'elo_rating', 'win_pct'];
         $normalizedWeights = $this->normalizeWeights($weights, $keys);
 
@@ -747,7 +745,7 @@ class GenerateTournamentForecast
                 return $seedA <=> $seedB;
             }
 
-            return ($b['power_rating'] <=> $a['power_rating']);
+            return $b['power_rating'] <=> $a['power_rating'];
         });
         $winners = [];
         $left = 0;

@@ -15,11 +15,14 @@ import { type NavItem } from '@/types';
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
-const props = withDefaults(defineProps<{
-    fullWidth?: boolean;
-}>(), {
-    fullWidth: false,
-});
+const props = withDefaults(
+    defineProps<{
+        fullWidth?: boolean;
+    }>(),
+    {
+        fullWidth: false,
+    },
+);
 
 const userNavItems = computed(() => {
     const items: NavItem[] = [
@@ -100,7 +103,11 @@ function isSettingsItemActive(href: NavItem['href']): boolean {
             <aside class="w-full max-w-xl lg:w-56">
                 <div class="space-y-4">
                     <div class="rounded-lg border border-sidebar-border p-2">
-                        <p class="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Account</p>
+                        <p
+                            class="px-2 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            Account
+                        </p>
                         <nav
                             class="flex flex-col space-y-1 space-x-0"
                             aria-label="Account settings"
@@ -111,20 +118,34 @@ function isSettingsItemActive(href: NavItem['href']): boolean {
                                 variant="ghost"
                                 :class="[
                                     'w-full justify-start',
-                                    { 'bg-muted': isSettingsItemActive(item.href) },
+                                    {
+                                        'bg-muted': isSettingsItemActive(
+                                            item.href,
+                                        ),
+                                    },
                                 ]"
                                 as-child
                             >
                                 <Link :href="item.href">
-                                    <component :is="item.icon" class="h-4 w-4" />
+                                    <component
+                                        :is="item.icon"
+                                        class="h-4 w-4"
+                                    />
                                     {{ item.title }}
                                 </Link>
                             </Button>
                         </nav>
                     </div>
 
-                    <div v-if="adminNavItems.length > 0" class="rounded-lg border border-sidebar-border p-2">
-                        <p class="px-2 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Admin</p>
+                    <div
+                        v-if="adminNavItems.length > 0"
+                        class="rounded-lg border border-sidebar-border p-2"
+                    >
+                        <p
+                            class="px-2 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            Admin
+                        </p>
                         <nav
                             class="flex flex-col space-y-1 space-x-0"
                             aria-label="Admin settings"
@@ -135,12 +156,19 @@ function isSettingsItemActive(href: NavItem['href']): boolean {
                                 variant="ghost"
                                 :class="[
                                     'w-full justify-start',
-                                    { 'bg-muted': isSettingsItemActive(item.href) },
+                                    {
+                                        'bg-muted': isSettingsItemActive(
+                                            item.href,
+                                        ),
+                                    },
                                 ]"
                                 as-child
                             >
                                 <Link :href="item.href">
-                                    <component :is="item.icon" class="h-4 w-4" />
+                                    <component
+                                        :is="item.icon"
+                                        class="h-4 w-4"
+                                    />
                                     {{ item.title }}
                                 </Link>
                             </Button>
@@ -151,8 +179,18 @@ function isSettingsItemActive(href: NavItem['href']): boolean {
 
             <Separator class="my-6 lg:hidden" />
 
-            <div :class="props.fullWidth ? 'min-w-0 flex-1' : 'min-w-0 flex-1 md:max-w-2xl'">
-                <section :class="props.fullWidth ? 'space-y-12' : 'max-w-xl space-y-12'">
+            <div
+                :class="
+                    props.fullWidth
+                        ? 'min-w-0 flex-1'
+                        : 'min-w-0 flex-1 md:max-w-2xl'
+                "
+            >
+                <section
+                    :class="
+                        props.fullWidth ? 'space-y-12' : 'max-w-xl space-y-12'
+                    "
+                >
                     <slot />
                 </section>
             </div>

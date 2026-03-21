@@ -53,26 +53,59 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 <template>
     <Head :title="title">
-        <meta head-key="description" name="description" :content="description" />
+        <meta
+            head-key="description"
+            name="description"
+            :content="description"
+        />
         <meta head-key="og:title" property="og:title" :content="title" />
-        <meta head-key="og:description" property="og:description" :content="description" />
+        <meta
+            head-key="og:description"
+            property="og:description"
+            :content="description"
+        />
         <meta head-key="og:url" property="og:url" :content="canonicalUrl" />
         <meta head-key="og:image" property="og:image" :content="imageUrl" />
         <meta head-key="twitter:title" name="twitter:title" :content="title" />
-        <meta head-key="twitter:description" name="twitter:description" :content="description" />
-        <meta head-key="twitter:image" name="twitter:image" :content="imageUrl" />
-        <component :is="'script'" head-key="schema-webpage" type="application/ld+json" v-html="webPageSchema" />
+        <meta
+            head-key="twitter:description"
+            name="twitter:description"
+            :content="description"
+        />
+        <meta
+            head-key="twitter:image"
+            name="twitter:image"
+            :content="imageUrl"
+        />
+        <script
+            head-key="schema-webpage"
+            type="application/ld+json"
+            v-text="webPageSchema"
+        />
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-5 overflow-x-auto rounded-[1.25rem] p-3 md:p-4">
-            <SubscriptionBanner variant="subtle" :storage-key="bannerStorageKey" />
+        <div
+            class="flex h-full flex-1 flex-col gap-5 overflow-x-auto rounded-[1.25rem] p-3 md:p-4"
+        >
+            <SubscriptionBanner
+                variant="subtle"
+                :storage-key="bannerStorageKey"
+            />
 
             <slot />
 
             <Alert class="ui-surface-subtle">
                 <AlertDescription>
-                    <strong>Entertainment Only:</strong> These predictions are for entertainment purposes only. Past performance does not guarantee future results. Please gamble responsibly. If you or someone you know has a gambling problem, call 1-800-522-4700 or visit our <Link :href="responsibleGambling()" class="underline">Responsible Gambling</Link> page.
+                    <strong>Entertainment Only:</strong> These predictions are
+                    for entertainment purposes only. Past performance does not
+                    guarantee future results. Please gamble responsibly. If you
+                    or someone you know has a gambling problem, call
+                    1-800-522-4700 or visit our
+                    <Link :href="responsibleGambling()" class="underline"
+                        >Responsible Gambling</Link
+                    >
+                    page.
                 </AlertDescription>
             </Alert>
         </div>

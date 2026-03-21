@@ -20,8 +20,7 @@ trait CalculatesTeamTrueEpaFromPlays
         int $teamId,
         Collection $games,
         bool $eligibleOnly = false
-    ): array
-    {
+    ): array {
         if ($games->isEmpty()) {
             return $this->emptyTrueEpaMetrics();
         }

@@ -106,8 +106,8 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array<int, array{seed:int|null,region:?string,round:?string,is_first_four:bool}> $actualFieldByTeam
-     * @param array<int, array{placeholder_key:string,team_display_name:string,team_abbreviation:string,seed:int|null,region:?string,round:?string,is_first_four:bool}> $placeholderFieldRows
+     * @param  array<int, array{seed:int|null,region:?string,round:?string,is_first_four:bool}>  $actualFieldByTeam
+     * @param  array<int, array{placeholder_key:string,team_display_name:string,team_abbreviation:string,seed:int|null,region:?string,round:?string,is_first_four:bool}>  $placeholderFieldRows
      * @return array<int, array<string, mixed>>
      */
     private function buildOutlookRows(
@@ -116,8 +116,7 @@ class RecalculateTournamentOutlook
         array $actualFieldByTeam,
         array $placeholderFieldRows,
         TournamentStateSnapshot $snapshot,
-    ): array
-    {
+    ): array {
         $aliveTeamIds = array_diff(array_keys($actualFieldByTeam), array_keys($this->eliminatedByTeam($games)));
         $eliminatedByTeam = $this->eliminatedByTeam($games);
         $reachedRoundByTeam = $this->reachedRoundByTeam($games, $actualFieldByTeam);
@@ -326,7 +325,7 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array<int, array<int, float>> $previousRound
+     * @param  array<int, array<int, float>>  $previousRound
      * @return array<int, array<int, float>>
      */
     private function advanceRound(array $previousRound, Collection $candidateGames, int $season): array
@@ -369,8 +368,8 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array<int, float> $left
-     * @param array<int, float> $right
+     * @param  array<int, float>  $left
+     * @param  array<int, float>  $right
      * @return array<int, float>
      */
     private function playMatchup(?Game $game, array $left, array $right, int $season): array
@@ -579,7 +578,7 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array<int, array{seed:int|null,region:?string,round:?string,is_first_four:bool}> $actualFieldByTeam
+     * @param  array<int, array{seed:int|null,region:?string,round:?string,is_first_four:bool}>  $actualFieldByTeam
      * @return array<int, string>
      */
     private function reachedRoundByTeam(Collection $games, array $actualFieldByTeam): array
@@ -664,9 +663,9 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array<int, float> $left
-     * @param array<int, float> $right
-     * @param array<int, int> $usedGameIds
+     * @param  array<int, float>  $left
+     * @param  array<int, float>  $right
+     * @param  array<int, int>  $usedGameIds
      */
     private function matchActualGame(Collection $candidateGames, array $left, array $right, array $usedGameIds): ?Game
     {
@@ -723,8 +722,8 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array{side:string,team_id:mixed,seed:mixed,display_name:mixed,abbreviation:mixed} $participant
-     * @param array{seed:int|null,region:?string,round:?string,is_first_four:bool} $replacement
+     * @param  array{side:string,team_id:mixed,seed:mixed,display_name:mixed,abbreviation:mixed}  $participant
+     * @param  array{seed:int|null,region:?string,round:?string,is_first_four:bool}  $replacement
      * @return array{placeholder_key:string,team_display_name:string,team_abbreviation:string,seed:int|null,region:?string,round:?string,is_first_four:bool}|null
      */
     private function placeholderFromParticipant(int $season, Game $game, array $participant, array $replacement): ?array
@@ -752,7 +751,7 @@ class RecalculateTournamentOutlook
     }
 
     /**
-     * @param array{name?:mixed,abbreviation?:mixed} $fallback
+     * @param  array{name?:mixed,abbreviation?:mixed}  $fallback
      */
     private function resolveFallbackTeamId(array $fallback): ?int
     {

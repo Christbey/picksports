@@ -19,21 +19,29 @@ const PENDING_EVENT_TTL_MS = 1000 * 60 * 30;
 let lastTrackedUrl: string | null = null;
 const trackedViewItemKeys = new Set<string>();
 
-function normalizeParams(params?: AnalyticsParams): Record<string, AnalyticsValue> {
+function normalizeParams(
+    params?: AnalyticsParams,
+): Record<string, AnalyticsValue> {
     if (!params) {
         return {};
     }
 
-    return Object.entries(params).reduce<Record<string, AnalyticsValue>>((acc, [key, value]) => {
-        if (value !== undefined) {
-            acc[key] = value;
-        }
+    return Object.entries(params).reduce<Record<string, AnalyticsValue>>(
+        (acc, [key, value]) => {
+            if (value !== undefined) {
+                acc[key] = value;
+            }
 
-        return acc;
-    }, {});
+            return acc;
+        },
+        {},
+    );
 }
 
-export function pushAnalyticsEvent(event: string, params?: AnalyticsParams): void {
+export function pushAnalyticsEvent(
+    event: string,
+    params?: AnalyticsParams,
+): void {
     if (typeof window === 'undefined') {
         return;
     }
@@ -46,7 +54,10 @@ export function pushAnalyticsEvent(event: string, params?: AnalyticsParams): voi
 }
 
 export function createAnalyticsEventId(): string {
-    if (typeof window !== 'undefined' && typeof window.crypto?.randomUUID === 'function') {
+    if (
+        typeof window !== 'undefined' &&
+        typeof window.crypto?.randomUUID === 'function'
+    ) {
         return window.crypto.randomUUID();
     }
 
@@ -93,10 +104,10 @@ function readPendingAnalyticsEvent(): PendingEvent | null {
         const parsed = JSON.parse(raw) as PendingEvent;
 
         if (
-            !parsed
-            || typeof parsed !== 'object'
-            || typeof parsed.event !== 'string'
-            || typeof parsed.createdAt !== 'number'
+            !parsed ||
+            typeof parsed !== 'object' ||
+            typeof parsed.event !== 'string' ||
+            typeof parsed.createdAt !== 'number'
         ) {
             clearPendingAnalyticsEvent();
 
@@ -112,18 +123,22 @@ function readPendingAnalyticsEvent(): PendingEvent | null {
 }
 
 function isAuthenticated(page: InertiaPageLike): boolean {
-    const auth = page.props?.auth as { user?: { id?: number | string } } | undefined;
+    const auth = page.props?.auth as
+        | { user?: { id?: number | string } }
+        | undefined;
 
     return Boolean(auth?.user?.id);
 }
 
 function isAuthRoute(path: string): boolean {
-    return path.startsWith('/login')
-        || path.startsWith('/register')
-        || path.startsWith('/forgot-password')
-        || path.startsWith('/reset-password')
-        || path.startsWith('/two-factor-challenge')
-        || path.startsWith('/verify-email');
+    return (
+        path.startsWith('/login') ||
+        path.startsWith('/register') ||
+        path.startsWith('/forgot-password') ||
+        path.startsWith('/reset-password') ||
+        path.startsWith('/two-factor-challenge') ||
+        path.startsWith('/verify-email')
+    );
 }
 
 function getPathname(page: InertiaPageLike): string {
@@ -140,10 +155,16 @@ function getPageType(page: InertiaPageLike): string {
 
     if (component === 'Welcome' || path === '/') return 'landing';
     if (component.startsWith('auth/')) return 'auth';
-    if (component.startsWith('Subscription/') || path.startsWith('/subscription')) return 'subscription';
+    if (
+        component.startsWith('Subscription/') ||
+        path.startsWith('/subscription')
+    )
+        return 'subscription';
     if (component.endsWith('/Game')) return 'game';
-    if (component.includes('/Predictions') || path.includes('/predictions')) return 'predictions';
-    if (component.includes('/Player') || path.includes('/players')) return 'player';
+    if (component.includes('/Predictions') || path.includes('/predictions'))
+        return 'predictions';
+    if (component.includes('/Player') || path.includes('/players'))
+        return 'player';
     if (component.includes('/Team') || path.includes('/teams')) return 'team';
     if (component.startsWith('settings/')) return 'settings';
 
@@ -151,7 +172,9 @@ function getPageType(page: InertiaPageLike): string {
 }
 
 function getUserTier(page: InertiaPageLike): string {
-    const subscription = page.props?.subscription as { tier?: string } | undefined;
+    const subscription = page.props?.subscription as
+        | { tier?: string }
+        | undefined;
 
     return subscription?.tier ?? 'free';
 }
@@ -205,7 +228,11 @@ export function flushPendingAnalyticsEvent(page: InertiaPageLike): void {
         }
 
         if (pending.event === 'purchase') {
-            return authenticated && (path.startsWith('/dashboard') || path.startsWith('/subscription'));
+            return (
+                authenticated &&
+                (path.startsWith('/dashboard') ||
+                    path.startsWith('/subscription'))
+            );
         }
 
         return false;

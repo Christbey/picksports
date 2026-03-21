@@ -9,7 +9,10 @@ use App\Jobs\ESPN\WCBB\FetchTeams;
 class SyncCurrentWeekCommand extends AbstractSyncCurrentRangeCommand
 {
     protected const COMMAND_NAME = 'espn:sync-wcbb-current';
+
     protected const SPORT_CODE = 'WCBB';
+
     protected const TEAM_SYNC_JOB_CLASS = FetchTeams::class;
+
     protected const CURRENT_DATE_SYNC_JOB_CLASS = FetchGamesFromScoreboard::class;
 }

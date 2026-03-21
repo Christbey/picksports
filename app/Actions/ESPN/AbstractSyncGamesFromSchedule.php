@@ -3,8 +3,8 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
-use App\Support\EspnGameStatusResolver;
 use App\Services\ESPN\BaseEspnService;
+use App\Support\EspnGameStatusResolver;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGamesFromSchedule

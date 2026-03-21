@@ -55,4 +55,3 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
         ClutchPerformanceTrendCollector::class,
     ];
 }
-

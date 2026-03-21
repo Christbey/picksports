@@ -19,8 +19,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     /** @var array<string, mixed> Cached metadata for the current prediction */
     private array $metadata = [];
+
     /** @var array<string, mixed> True EPA rollout metadata */
     private array $trueEpaMetadata = [];
+
     /** @var array<string, mixed> Total model rollout metadata */
     private array $totalMetadata = [];
 
@@ -605,7 +607,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
     {
         $homeTeam = $game->homeTeam;
         $name = strtolower($outcomeName);
-        $teamName = strtolower(trim($homeTeam->location . ' ' . $homeTeam->name));
+        $teamName = strtolower(trim($homeTeam->location.' '.$homeTeam->name));
         $mascot = strtolower($homeTeam->name ?? '');
 
         return str_contains($name, strtolower($homeTeam->location ?? ''))

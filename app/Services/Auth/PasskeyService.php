@@ -266,7 +266,7 @@ class PasskeyService
         $offset++;
 
         $majorType = $initial >> 5;
-        $additionalInfo = $initial & 0x1f;
+        $additionalInfo = $initial & 0x1F;
         $length = $this->decodeCborLength($data, $offset, $additionalInfo);
 
         return match ($majorType) {

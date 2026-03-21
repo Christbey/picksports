@@ -35,5 +35,4 @@ class SyncPlays extends AbstractSyncPlays
             }
         }
     }
-
 }

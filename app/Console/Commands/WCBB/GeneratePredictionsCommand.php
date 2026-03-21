@@ -15,4 +15,6 @@ class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsComma
     protected const GAME_MODEL_CLASS = \App\Models\WCBB\Game::class;
 
     protected const PREDICTION_MODEL_CLASS = \App\Models\WCBB\Prediction::class;
+
+    protected const USES_EASTERN_DATE_WINDOW = true;
 }

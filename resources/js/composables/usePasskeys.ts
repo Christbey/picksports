@@ -59,7 +59,10 @@ function base64UrlEncode(buffer: ArrayBuffer): string {
         binary += String.fromCharCode(byte);
     }
 
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    return btoa(binary)
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=+$/g, '');
 }
 
 function base64UrlDecode(value: string): Uint8Array {
@@ -76,7 +79,9 @@ function base64UrlDecode(value: string): Uint8Array {
 }
 
 function csrfToken(): string {
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    const token = document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute('content');
 
     if (!token) {
         throw new Error('Missing CSRF token.');
@@ -131,12 +136,18 @@ function requestHeaders(): HeadersInit {
 }
 
 function ensureWebAuthnSupport(): void {
-    if (!window.isSecureContext || typeof window.PublicKeyCredential === 'undefined') {
+    if (
+        !window.isSecureContext ||
+        typeof window.PublicKeyCredential === 'undefined'
+    ) {
         throw new Error('Passkeys are not available in this browser/context.');
     }
 }
 
-async function postJson<T>(url: string, payload: Record<string, unknown> = {}): Promise<T> {
+async function postJson<T>(
+    url: string,
+    payload: Record<string, unknown> = {},
+): Promise<T> {
     let retriedAfterCsrfRefresh = false;
 
     while (true) {
@@ -147,7 +158,10 @@ async function postJson<T>(url: string, payload: Record<string, unknown> = {}): 
             body: JSON.stringify(payload),
         });
 
-        const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        const json = (await response.json().catch(() => ({}))) as Record<
+            string,
+            unknown
+        >;
 
         if (response.ok) {
             return json as T;
@@ -160,13 +174,16 @@ async function postJson<T>(url: string, payload: Record<string, unknown> = {}): 
         }
 
         if (response.status === 419) {
-            throw new Error('Your session expired. Refresh the page and try again.');
+            throw new Error(
+                'Your session expired. Refresh the page and try again.',
+            );
         }
 
         const message =
-            (json.message as string | undefined)
-            ?? (json.errors as Record<string, string[]> | undefined)?.credential?.[0]
-            ?? 'Passkey request failed.';
+            (json.message as string | undefined) ??
+            (json.errors as Record<string, string[]> | undefined)
+                ?.credential?.[0] ??
+            'Passkey request failed.';
 
         throw new Error(message);
     }
@@ -182,7 +199,10 @@ async function deleteJson(url: string): Promise<void> {
             headers: requestHeaders(),
         });
 
-        const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        const json = (await response.json().catch(() => ({}))) as Record<
+            string,
+            unknown
+        >;
 
         if (response.ok) {
             return;
@@ -195,18 +215,25 @@ async function deleteJson(url: string): Promise<void> {
         }
 
         if (response.status === 419) {
-            throw new Error('Your session expired. Refresh the page and try deleting the passkey again.');
+            throw new Error(
+                'Your session expired. Refresh the page and try deleting the passkey again.',
+            );
         }
 
         if (response.status === 401) {
-            throw new Error('You are no longer signed in. Refresh and sign in again.');
+            throw new Error(
+                'You are no longer signed in. Refresh and sign in again.',
+            );
         }
 
         if (response.status === 404) {
-            throw new Error('Passkey not found. Refresh the page and try again.');
+            throw new Error(
+                'Passkey not found. Refresh the page and try again.',
+            );
         }
 
-        const message = (json.message as string | undefined) ?? 'Failed to delete passkey.';
+        const message =
+            (json.message as string | undefined) ?? 'Failed to delete passkey.';
 
         throw new Error(message);
     }
@@ -235,10 +262,14 @@ export async function deletePasskey(id: number): Promise<void> {
     await deleteJson(`/passkeys/${id}`);
 }
 
-export async function registerPasskey(name: string | null = null): Promise<void> {
+export async function registerPasskey(
+    name: string | null = null,
+): Promise<void> {
     ensureWebAuthnSupport();
 
-    const optionsResponse = await postJson<RegistrationOptionsResponse>('/passkeys/registration/options');
+    const optionsResponse = await postJson<RegistrationOptionsResponse>(
+        '/passkeys/registration/options',
+    );
 
     const publicKey: PublicKeyCredentialCreationOptions = {
         challenge: base64UrlDecode(optionsResponse.publicKey.challenge),
@@ -251,11 +282,14 @@ export async function registerPasskey(name: string | null = null): Promise<void>
         pubKeyCredParams: optionsResponse.publicKey.pubKeyCredParams,
         timeout: optionsResponse.publicKey.timeout,
         attestation: optionsResponse.publicKey.attestation,
-        authenticatorSelection: optionsResponse.publicKey.authenticatorSelection,
-        excludeCredentials: optionsResponse.publicKey.excludeCredentials.map((credential) => ({
-            ...credential,
-            id: base64UrlDecode(credential.id),
-        })),
+        authenticatorSelection:
+            optionsResponse.publicKey.authenticatorSelection,
+        excludeCredentials: optionsResponse.publicKey.excludeCredentials.map(
+            (credential) => ({
+                ...credential,
+                id: base64UrlDecode(credential.id),
+            }),
+        ),
     };
 
     const credential = await navigator.credentials.create({ publicKey });
@@ -277,11 +311,17 @@ export async function registerPasskey(name: string | null = null): Promise<void>
     const payload = {
         name,
         credential_id: base64UrlEncode(credential.rawId),
-        public_key: publicKeyBuffer ? base64UrlEncode(publicKeyBuffer) : undefined,
+        public_key: publicKeyBuffer
+            ? base64UrlEncode(publicKeyBuffer)
+            : undefined,
         attestation_object: base64UrlEncode(response.attestationObject),
-        algorithm: publicKeyBuffer ? (response.getPublicKeyAlgorithm?.() ?? -7) : undefined,
+        algorithm: publicKeyBuffer
+            ? (response.getPublicKeyAlgorithm?.() ?? -7)
+            : undefined,
         client_data_json: base64UrlEncode(response.clientDataJSON),
-        authenticator_data: authenticatorData ? base64UrlEncode(authenticatorData) : undefined,
+        authenticator_data: authenticatorData
+            ? base64UrlEncode(authenticatorData)
+            : undefined,
         transports: response.getTransports?.() ?? [],
     };
 
@@ -292,7 +332,10 @@ export async function signInWithPasskey(email?: string): Promise<void> {
     await signInWithPasskeyAttempt(email, true);
 }
 
-async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Promise<void> {
+async function signInWithPasskeyAttempt(
+    email?: string,
+    allowRetry = true,
+): Promise<void> {
     ensureWebAuthnSupport();
     await ensureCsrfState();
 
@@ -308,10 +351,12 @@ async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Prom
         rpId: optionsResponse.publicKey.rpId,
         timeout: optionsResponse.publicKey.timeout,
         userVerification: optionsResponse.publicKey.userVerification,
-        allowCredentials: optionsResponse.publicKey.allowCredentials.map((credential) => ({
-            ...credential,
-            id: base64UrlDecode(credential.id),
-        })),
+        allowCredentials: optionsResponse.publicKey.allowCredentials.map(
+            (credential) => ({
+                ...credential,
+                id: base64UrlDecode(credential.id),
+            }),
+        ),
     };
 
     let credential: Credential | null;
@@ -321,15 +366,21 @@ async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Prom
     } catch (error) {
         if (error instanceof DOMException) {
             if (error.name === 'NotAllowedError') {
-                throw new Error('Passkey sign-in was canceled or no matching passkey is available.');
+                throw new Error(
+                    'Passkey sign-in was canceled or no matching passkey is available.',
+                );
             }
 
             if (error.name === 'InvalidStateError') {
-                throw new Error('This device is not ready for passkey sign-in right now. Try again.');
+                throw new Error(
+                    'This device is not ready for passkey sign-in right now. Try again.',
+                );
             }
 
             if (error.name === 'SecurityError') {
-                throw new Error('Passkey sign-in requires a secure domain (HTTPS) and matching app domain settings.');
+                throw new Error(
+                    'Passkey sign-in requires a secure domain (HTTPS) and matching app domain settings.',
+                );
             }
         }
 
@@ -346,19 +397,26 @@ async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Prom
 
     try {
         if (!optionsResponse.challenge_id) {
-            throw new Error('Passkey challenge is missing. Refresh the page and try again.');
+            throw new Error(
+                'Passkey challenge is missing. Refresh the page and try again.',
+            );
         }
 
-        verify = await postJson<{ redirect?: string }>('/passkeys/authentication/verify', {
-            challenge_id: optionsResponse.challenge_id,
-            credential_id: base64UrlEncode(credential.rawId),
-            client_data_json: base64UrlEncode(response.clientDataJSON),
-            authenticator_data: base64UrlEncode(response.authenticatorData),
-            signature: base64UrlEncode(response.signature),
-        });
+        verify = await postJson<{ redirect?: string }>(
+            '/passkeys/authentication/verify',
+            {
+                challenge_id: optionsResponse.challenge_id,
+                credential_id: base64UrlEncode(credential.rawId),
+                client_data_json: base64UrlEncode(response.clientDataJSON),
+                authenticator_data: base64UrlEncode(response.authenticatorData),
+                signature: base64UrlEncode(response.signature),
+            },
+        );
     } catch (error) {
         const message = error instanceof Error ? error.message : '';
-        const challengeExpired = message.toLowerCase().includes('challenge expired');
+        const challengeExpired = message
+            .toLowerCase()
+            .includes('challenge expired');
 
         if (allowRetry && challengeExpired) {
             await signInWithPasskeyAttempt(email, false);
@@ -372,7 +430,10 @@ async function signInWithPasskeyAttempt(email?: string, allowRetry = true): Prom
     window.location.assign(verify.redirect ?? '/dashboard');
 }
 
-export function passkeyNameOrFallback(name: string | null, createdAt: string): string {
+export function passkeyNameOrFallback(
+    name: string | null,
+    createdAt: string,
+): string {
     if (name && name.trim().length > 0) {
         return name;
     }
@@ -381,5 +442,7 @@ export function passkeyNameOrFallback(name: string | null, createdAt: string): s
 }
 
 export function toPasskeyLabelInput(value: string): string {
-    return textEncoder.encode(value.trim()).length > 255 ? value.slice(0, 255) : value.trim();
+    return textEncoder.encode(value.trim()).length > 255
+        ? value.slice(0, 255)
+        : value.trim();
 }

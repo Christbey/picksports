@@ -1,15 +1,27 @@
 import { computed } from 'vue';
 import { useDetailedGameData } from '@/composables/useDetailedGameData';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
-import { getRecentForm, parseBroadcastNetworks, parseLinescores } from '@/composables/useGameDataUtils';
+import {
+    getRecentForm,
+    parseBroadcastNetworks,
+    parseLinescores,
+} from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
-import type { ApiEnvelope, Game, PredictionSummary, TeamMetric, TeamStatsEntry, TopPerformer } from '@/types';
+import type {
+    ApiEnvelope,
+    PredictionSummary,
+    TeamMetric,
+    TeamStatsEntry,
+    TopPerformer,
+} from '@/types';
 
 interface UseBasketballGamePageOptions {
     sport: 'nba' | 'cbb' | 'wnba' | 'wcbb';
     gameId: number;
     sortTopPerformers?: (players: TopPerformer[]) => TopPerformer[];
-    metricFromResponse?: (payload: ApiEnvelope<TeamMetric | TeamMetric[] | null>) => TeamMetric | null;
+    metricFromResponse?: (
+        payload: ApiEnvelope<TeamMetric | TeamMetric[] | null>,
+    ) => TeamMetric | null;
     subtitleText?: (sampleSize: number) => string;
 }
 
@@ -41,11 +53,14 @@ const toOptionalNumber = (value: unknown): number | null => {
     return Number.isFinite(parsed) ? parsed : null;
 };
 
-const normalizeBasketballStats = (stats: TeamStatsEntry | null): BasketballTeamStats | null => {
+const normalizeBasketballStats = (
+    stats: TeamStatsEntry | null,
+): BasketballTeamStats | null => {
     if (!stats) return null;
     const source = stats as Record<string, unknown>;
     return {
-        team_type: typeof source.team_type === 'string' ? source.team_type : undefined,
+        team_type:
+            typeof source.team_type === 'string' ? source.team_type : undefined,
         field_goals_made: toNumber(source.field_goals_made),
         field_goals_attempted: toNumber(source.field_goals_attempted),
         three_point_made: toNumber(source.three_point_made),
@@ -62,78 +77,119 @@ const normalizeBasketballStats = (stats: TeamStatsEntry | null): BasketballTeamS
     };
 };
 
-const normalizePrediction = (rawPrediction: unknown): PredictionSummary | null => {
+const normalizePrediction = (
+    rawPrediction: unknown,
+): PredictionSummary | null => {
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
     const source = rawPrediction as Record<string, unknown>;
-    if (source.home_win_probability === undefined || source.away_win_probability === undefined) return null;
+    if (
+        source.home_win_probability === undefined ||
+        source.away_win_probability === undefined
+    )
+        return null;
 
     const confidenceScore = toOptionalNumber(source.confidence_score);
-    const confidenceLevel = typeof source.confidence_level === 'string'
-        ? source.confidence_level
-        : confidenceScore === null
-            ? 'unavailable'
-            : confidenceScore >= 75
+    const confidenceLevel =
+        typeof source.confidence_level === 'string'
+            ? source.confidence_level
+            : confidenceScore === null
+              ? 'unavailable'
+              : confidenceScore >= 75
                 ? 'high'
                 : confidenceScore >= 60
-                    ? 'medium'
-                    : 'low';
+                  ? 'medium'
+                  : 'low';
 
     const rawNarrative = source.narrative;
-    const narrative = rawNarrative && typeof rawNarrative === 'object'
-        ? {
-            summary: typeof (rawNarrative as Record<string, unknown>).summary === 'string'
-                ? (rawNarrative as Record<string, unknown>).summary as string
-                : '',
-            key_points: Array.isArray((rawNarrative as Record<string, unknown>).key_points)
-                ? ((rawNarrative as Record<string, unknown>).key_points as unknown[])
-                    .map((point) => String(point))
-                    .filter((point) => point.length > 0)
-                : [],
-            risk_note: typeof (rawNarrative as Record<string, unknown>).risk_note === 'string'
-                ? (rawNarrative as Record<string, unknown>).risk_note as string
-                : '',
-            generated_by: typeof (rawNarrative as Record<string, unknown>).generated_by === 'string'
-                ? (rawNarrative as Record<string, unknown>).generated_by as string
-                : '',
-            social_caption: typeof (rawNarrative as Record<string, unknown>).social_caption === 'string'
-                ? (rawNarrative as Record<string, unknown>).social_caption as string
-                : null,
-            betting_plan: (() => {
-                const plan = (rawNarrative as Record<string, unknown>).betting_plan;
-                if (!plan || typeof plan !== 'object') return null;
+    const narrative =
+        rawNarrative && typeof rawNarrative === 'object'
+            ? {
+                  summary:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .summary === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .summary as string)
+                          : '',
+                  key_points: Array.isArray(
+                      (rawNarrative as Record<string, unknown>).key_points,
+                  )
+                      ? (
+                            (rawNarrative as Record<string, unknown>)
+                                .key_points as unknown[]
+                        )
+                            .map((point) => String(point))
+                            .filter((point) => point.length > 0)
+                      : [],
+                  risk_note:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .risk_note === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .risk_note as string)
+                          : '',
+                  generated_by:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .generated_by === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .generated_by as string)
+                          : '',
+                  social_caption:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .social_caption === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .social_caption as string)
+                          : null,
+                  betting_plan: (() => {
+                      const plan = (rawNarrative as Record<string, unknown>)
+                          .betting_plan;
+                      if (!plan || typeof plan !== 'object') return null;
 
-                const betPick = typeof (plan as Record<string, unknown>).bet_pick === 'string'
-                    ? (plan as Record<string, unknown>).bet_pick as string
-                    : '';
-                const reasoning = typeof (plan as Record<string, unknown>).reasoning === 'string'
-                    ? (plan as Record<string, unknown>).reasoning as string
-                    : '';
+                      const betPick =
+                          typeof (plan as Record<string, unknown>).bet_pick ===
+                          'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .bet_pick as string)
+                              : '';
+                      const reasoning =
+                          typeof (plan as Record<string, unknown>).reasoning ===
+                          'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .reasoning as string)
+                              : '';
 
-                if (betPick !== '' && reasoning !== '') {
-                    return {
-                        bet_pick: betPick,
-                        reasoning,
-                    };
-                }
+                      if (betPick !== '' && reasoning !== '') {
+                          return {
+                              bet_pick: betPick,
+                              reasoning,
+                          };
+                      }
 
-                const legacySpreadLean = typeof (plan as Record<string, unknown>).spread_lean === 'string'
-                    ? (plan as Record<string, unknown>).spread_lean as string
-                    : '';
-                const legacyMoneylineHedge = typeof (plan as Record<string, unknown>).moneyline_hedge === 'string'
-                    ? (plan as Record<string, unknown>).moneyline_hedge as string
-                    : '';
+                      const legacySpreadLean =
+                          typeof (plan as Record<string, unknown>)
+                              .spread_lean === 'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .spread_lean as string)
+                              : '';
+                      const legacyMoneylineHedge =
+                          typeof (plan as Record<string, unknown>)
+                              .moneyline_hedge === 'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .moneyline_hedge as string)
+                              : '';
 
-                if (legacySpreadLean === '' || legacyMoneylineHedge === '') {
-                    return null;
-                }
+                      if (
+                          legacySpreadLean === '' ||
+                          legacyMoneylineHedge === ''
+                      ) {
+                          return null;
+                      }
 
-                return {
-                    bet_pick: legacySpreadLean,
-                    reasoning: legacyMoneylineHedge,
-                };
-            })(),
-        }
-        : null;
+                      return {
+                          bet_pick: legacySpreadLean,
+                          reasoning: legacyMoneylineHedge,
+                      };
+                  })(),
+              }
+            : null;
 
     return {
         home_win_probability: toNumber(source.home_win_probability),
@@ -180,19 +236,45 @@ export function useBasketballGamePage(options: UseBasketballGamePageOptions) {
         formatTrendCategoryName: formatCategoryName,
     } = useTeamTrends(homeTrends, awayTrends);
 
-    const gameStatus = useGameStatus(() => game.value?.status ?? 'STATUS_SCHEDULED');
+    const gameStatus = useGameStatus(
+        () => game.value?.status ?? 'STATUS_SCHEDULED',
+    );
     const prediction = computed(() => normalizePrediction(rawPrediction.value));
-    const homeTeamStats = computed(() => normalizeBasketballStats(rawHomeTeamStats.value));
-    const awayTeamStats = computed(() => normalizeBasketballStats(rawAwayTeamStats.value));
-    const formatDate = (dateString: string | null): string => formatDateLong(dateString);
-    const broadcastNetworks = computed(() => parseBroadcastNetworks(game.value?.broadcast_networks ?? null));
-    const homeLinescores = computed(() => parseLinescores(game.value?.home_linescores ?? null));
-    const awayLinescores = computed(() => parseLinescores(game.value?.away_linescores ?? null));
-    const homeRecentForm = computed(() => (homeTeam.value ? getRecentForm(homeRecentGames.value, homeTeam.value.id) : ''));
-    const awayRecentForm = computed(() => (awayTeam.value ? getRecentForm(awayRecentGames.value, awayTeam.value.id) : ''));
+    const homeTeamStats = computed(() =>
+        normalizeBasketballStats(rawHomeTeamStats.value),
+    );
+    const awayTeamStats = computed(() =>
+        normalizeBasketballStats(rawAwayTeamStats.value),
+    );
+    const formatDate = (dateString: string | null): string =>
+        formatDateLong(dateString);
+    const broadcastNetworks = computed(() =>
+        parseBroadcastNetworks(game.value?.broadcast_networks ?? null),
+    );
+    const homeLinescores = computed(() =>
+        parseLinescores(game.value?.home_linescores ?? null),
+    );
+    const awayLinescores = computed(() =>
+        parseLinescores(game.value?.away_linescores ?? null),
+    );
+    const homeRecentForm = computed(() =>
+        homeTeam.value
+            ? getRecentForm(homeRecentGames.value, homeTeam.value.id)
+            : '',
+    );
+    const awayRecentForm = computed(() =>
+        awayTeam.value
+            ? getRecentForm(awayRecentGames.value, awayTeam.value.id)
+            : '',
+    );
     const trendsSubtitle = computed(() => {
-        const sampleSize = homeTrends.value?.sample_size || awayTrends.value?.sample_size || 20;
-        return options.subtitleText ? options.subtitleText(sampleSize) : `Based on current season form (${sampleSize} games before this matchup)`;
+        const sampleSize =
+            homeTrends.value?.sample_size ||
+            awayTrends.value?.sample_size ||
+            20;
+        return options.subtitleText
+            ? options.subtitleText(sampleSize)
+            : `Based on current season form (${sampleSize} games before this matchup)`;
     });
 
     return {

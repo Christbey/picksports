@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { fetchJson } from '@/composables/useApiClient';
+import type { SportInjuriesConfig } from '@/config/sport-injuries-configs';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
-import type { SportInjuriesConfig } from '@/config/sport-injuries-configs';
 
 interface InjuryRow {
     id: number;
@@ -49,7 +49,10 @@ const filtered = computed(() => {
     const query = search.value.trim().toLowerCase();
     return rows.value.filter((row) => {
         const severity = severityBucket(row.status);
-        if (severityFilter.value !== 'all' && severity !== severityFilter.value) {
+        if (
+            severityFilter.value !== 'all' &&
+            severity !== severityFilter.value
+        ) {
             return false;
         }
 
@@ -89,24 +92,42 @@ const grouped = computed(() => {
 
 function statusClass(status: string | null): string {
     const normalized = (status ?? '').toLowerCase();
-    if (normalized.includes('out') || normalized.includes('doubtful') || normalized.includes('inactive')) {
+    if (
+        normalized.includes('out') ||
+        normalized.includes('doubtful') ||
+        normalized.includes('inactive')
+    ) {
         return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
     }
 
-    if (normalized.includes('questionable') || normalized.includes('day-to-day') || normalized.includes('probable')) {
+    if (
+        normalized.includes('questionable') ||
+        normalized.includes('day-to-day') ||
+        normalized.includes('probable')
+    ) {
         return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
     }
 
     return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
 }
 
-function severityBucket(status: string | null): 'out' | 'questionable' | 'other' {
+function severityBucket(
+    status: string | null,
+): 'out' | 'questionable' | 'other' {
     const normalized = (status ?? '').toLowerCase();
-    if (normalized.includes('out') || normalized.includes('doubtful') || normalized.includes('inactive')) {
+    if (
+        normalized.includes('out') ||
+        normalized.includes('doubtful') ||
+        normalized.includes('inactive')
+    ) {
         return 'out';
     }
 
-    if (normalized.includes('questionable') || normalized.includes('day-to-day') || normalized.includes('probable')) {
+    if (
+        normalized.includes('questionable') ||
+        normalized.includes('day-to-day') ||
+        normalized.includes('probable')
+    ) {
         return 'questionable';
     }
 
@@ -114,13 +135,20 @@ function severityBucket(status: string | null): 'out' | 'questionable' | 'other'
 }
 
 const summary = computed(() => {
-    const outCount = rows.value.filter((row) => severityBucket(row.status) === 'out').length;
-    const questionableCount = rows.value.filter((row) => severityBucket(row.status) === 'questionable').length;
-    const otherCount = rows.value.filter((row) => severityBucket(row.status) === 'other').length;
+    const outCount = rows.value.filter(
+        (row) => severityBucket(row.status) === 'out',
+    ).length;
+    const questionableCount = rows.value.filter(
+        (row) => severityBucket(row.status) === 'questionable',
+    ).length;
+    const otherCount = rows.value.filter(
+        (row) => severityBucket(row.status) === 'other',
+    ).length;
 
     return {
         total: rows.value.length,
-        teams: new Set(rows.value.map((row) => row.team_abbreviation ?? 'UNK')).size,
+        teams: new Set(rows.value.map((row) => row.team_abbreviation ?? 'UNK'))
+            .size,
         out: outCount,
         questionable: questionableCount,
         other: otherCount,
@@ -132,13 +160,16 @@ async function fetchInjuries() {
     error.value = null;
 
     try {
-        const payload = await fetchJson<{ data?: InjuryRow[] }>(`/api/v1/${props.config.sport}/injuries?active=1`);
+        const payload = await fetchJson<{ data?: InjuryRow[] }>(
+            `/api/v1/${props.config.sport}/injuries?active=1`,
+        );
         if (!payload) {
             throw new Error('Failed to load injuries');
         }
         rows.value = Array.isArray(payload?.data) ? payload.data : [];
     } catch (e) {
-        error.value = e instanceof Error ? e.message : 'Failed to load injuries';
+        error.value =
+            e instanceof Error ? e.message : 'Failed to load injuries';
     } finally {
         loading.value = false;
     }
@@ -155,8 +186,12 @@ onMounted(fetchInjuries);
             <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
                 <div>
                     <p class="ui-kicker">Availability</p>
-                    <h1 class="text-3xl font-semibold tracking-tight">{{ config.title }}</h1>
-                    <p class="text-sm text-muted-foreground">{{ config.subtitle }}</p>
+                    <h1 class="text-3xl font-semibold tracking-tight">
+                        {{ config.title }}
+                    </h1>
+                    <p class="text-sm text-muted-foreground">
+                        {{ config.subtitle }}
+                    </p>
                 </div>
 
                 <Card>
@@ -171,7 +206,11 @@ onMounted(fetchInjuries);
                             </div>
                             <div class="flex flex-wrap gap-2">
                                 <Button
-                                    :variant="severityFilter === 'all' ? 'default' : 'outline'"
+                                    :variant="
+                                        severityFilter === 'all'
+                                            ? 'default'
+                                            : 'outline'
+                                    "
                                     size="sm"
                                     class="h-9"
                                     @click="severityFilter = 'all'"
@@ -179,7 +218,11 @@ onMounted(fetchInjuries);
                                     All
                                 </Button>
                                 <Button
-                                    :variant="severityFilter === 'out' ? 'default' : 'outline'"
+                                    :variant="
+                                        severityFilter === 'out'
+                                            ? 'default'
+                                            : 'outline'
+                                    "
                                     size="sm"
                                     class="h-9"
                                     @click="severityFilter = 'out'"
@@ -187,7 +230,11 @@ onMounted(fetchInjuries);
                                     Out
                                 </Button>
                                 <Button
-                                    :variant="severityFilter === 'questionable' ? 'default' : 'outline'"
+                                    :variant="
+                                        severityFilter === 'questionable'
+                                            ? 'default'
+                                            : 'outline'
+                                    "
                                     size="sm"
                                     class="h-9"
                                     @click="severityFilter = 'questionable'"
@@ -195,7 +242,11 @@ onMounted(fetchInjuries);
                                     Q / D2D
                                 </Button>
                                 <Button
-                                    :variant="severityFilter === 'other' ? 'default' : 'outline'"
+                                    :variant="
+                                        severityFilter === 'other'
+                                            ? 'default'
+                                            : 'outline'
+                                    "
                                     size="sm"
                                     class="h-9"
                                     @click="severityFilter = 'other'"
@@ -207,13 +258,27 @@ onMounted(fetchInjuries);
                     </CardContent>
                 </Card>
 
-                <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span class="ui-chip text-foreground/80">{{ summary.total }} injuries</span>
-                    <span class="ui-chip text-foreground/80">{{ summary.teams }} teams</span>
-                    <span class="ui-chip text-red-700 dark:text-red-300">Out: {{ summary.out }}</span>
-                    <span class="ui-chip text-amber-700 dark:text-amber-300">Q/D2D: {{ summary.questionable }}</span>
-                    <span class="ui-chip text-foreground/80">Other: {{ summary.other }}</span>
-                    <span v-if="search" class="ui-chip text-foreground/80">Search: "{{ search }}"</span>
+                <div
+                    class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                >
+                    <span class="ui-chip text-foreground/80"
+                        >{{ summary.total }} injuries</span
+                    >
+                    <span class="ui-chip text-foreground/80"
+                        >{{ summary.teams }} teams</span
+                    >
+                    <span class="ui-chip text-red-700 dark:text-red-300"
+                        >Out: {{ summary.out }}</span
+                    >
+                    <span class="ui-chip text-amber-700 dark:text-amber-300"
+                        >Q/D2D: {{ summary.questionable }}</span
+                    >
+                    <span class="ui-chip text-foreground/80"
+                        >Other: {{ summary.other }}</span
+                    >
+                    <span v-if="search" class="ui-chip text-foreground/80"
+                        >Search: "{{ search }}"</span
+                    >
                 </div>
 
                 <Alert v-if="error" variant="destructive">
@@ -236,7 +301,9 @@ onMounted(fetchInjuries);
                     <Card v-for="group in grouped" :key="group.team">
                         <CardHeader>
                             <div class="ui-kicker">Team</div>
-                            <CardTitle class="tracking-tight">{{ group.team }}</CardTitle>
+                            <CardTitle class="tracking-tight">{{
+                                group.team
+                            }}</CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div class="grid gap-2">
@@ -245,9 +312,14 @@ onMounted(fetchInjuries);
                                     :key="injury.id"
                                     class="ui-surface-subtle p-3"
                                 >
-                                    <div class="flex flex-wrap items-center gap-2">
+                                    <div
+                                        class="flex flex-wrap items-center gap-2"
+                                    >
                                         <p class="font-semibold">
-                                            {{ injury.player_name || 'Unknown Player' }}
+                                            {{
+                                                injury.player_name ||
+                                                'Unknown Player'
+                                            }}
                                         </p>
                                         <Badge
                                             :class="statusClass(injury.status)"
@@ -256,12 +328,30 @@ onMounted(fetchInjuries);
                                             {{ injury.status || 'Unknown' }}
                                         </Badge>
                                     </div>
-                                    <p class="mt-1 text-sm text-muted-foreground">
-                                        {{ injury.detail || injury.type || 'No details available' }}
+                                    <p
+                                        class="mt-1 text-sm text-muted-foreground"
+                                    >
+                                        {{
+                                            injury.detail ||
+                                            injury.type ||
+                                            'No details available'
+                                        }}
                                     </p>
-                                    <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                                        <span class="ui-chip text-foreground/75">Injury: {{ injury.injury_date || 'N/A' }}</span>
-                                        <span class="ui-chip text-foreground/75">Return: {{ injury.return_date || 'N/A' }}</span>
+                                    <div
+                                        class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                                    >
+                                        <span class="ui-chip text-foreground/75"
+                                            >Injury:
+                                            {{
+                                                injury.injury_date || 'N/A'
+                                            }}</span
+                                        >
+                                        <span class="ui-chip text-foreground/75"
+                                            >Return:
+                                            {{
+                                                injury.return_date || 'N/A'
+                                            }}</span
+                                        >
                                     </div>
                                 </div>
                             </div>

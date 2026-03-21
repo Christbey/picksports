@@ -82,6 +82,7 @@ class PlayEpaDataService
             $teamId = (int) $player->team_id;
             if (! isset($map[$lastName])) {
                 $map[$lastName] = $teamId;
+
                 continue;
             }
 

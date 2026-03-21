@@ -4,7 +4,14 @@ export const STANDARD_SHEET_CELL_HEIGHT = 330;
 export const STANDARD_SHEET_GAP = 24;
 export const STANDARD_SHEET_PAD = 36;
 
-export function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+export function drawRoundRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number,
+): void {
     ctx.beginPath();
     ctx.moveTo(x + r, y);
     ctx.arcTo(x + w, y, x + w, y + h, r);
@@ -31,7 +38,11 @@ export function drawCenteredText(
     ctx.restore();
 }
 
-export function fitTextToWidth(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
+export function fitTextToWidth(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    maxWidth: number,
+): string {
     if (ctx.measureText(text).width <= maxWidth) {
         return text;
     }
@@ -80,7 +91,8 @@ export function drawStatRow(
     ctx.fillStyle = '#0f172a';
     ctx.font = `600 ${fontSize}px "Instrument Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
     const maxRight = 34;
-    const truncatedRight = right.length > maxRight ? `${right.slice(0, maxRight)}...` : right;
+    const truncatedRight =
+        right.length > maxRight ? `${right.slice(0, maxRight)}...` : right;
     const rightWidth = ctx.measureText(truncatedRight).width;
     ctx.fillText(truncatedRight, x + width - rightWidth, y);
 }
@@ -88,8 +100,14 @@ export function drawStatRow(
 export function createStandardSheetCanvas(total: number) {
     const columns = STANDARD_SHEET_COLUMNS;
     const rows = Math.ceil(total / columns);
-    const width = (STANDARD_SHEET_PAD * 2) + (columns * STANDARD_SHEET_CELL_WIDTH) + ((columns - 1) * STANDARD_SHEET_GAP);
-    const height = (STANDARD_SHEET_PAD * 2) + (rows * STANDARD_SHEET_CELL_HEIGHT) + ((rows - 1) * STANDARD_SHEET_GAP);
+    const width =
+        STANDARD_SHEET_PAD * 2 +
+        columns * STANDARD_SHEET_CELL_WIDTH +
+        (columns - 1) * STANDARD_SHEET_GAP;
+    const height =
+        STANDARD_SHEET_PAD * 2 +
+        rows * STANDARD_SHEET_CELL_HEIGHT +
+        (rows - 1) * STANDARD_SHEET_GAP;
 
     const canvas = document.createElement('canvas');
     canvas.width = width;
@@ -108,8 +126,13 @@ export function createStandardSheetCanvas(total: number) {
     return { canvas, ctx };
 }
 
-export async function downloadCanvasPng(canvas: HTMLCanvasElement, filename: string): Promise<void> {
-    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((data) => resolve(data), 'image/png'));
+export async function downloadCanvasPng(
+    canvas: HTMLCanvasElement,
+    filename: string,
+): Promise<void> {
+    const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((data) => resolve(data), 'image/png'),
+    );
     if (!blob) {
         return;
     }

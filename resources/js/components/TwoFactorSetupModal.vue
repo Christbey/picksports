@@ -96,9 +96,11 @@ const resetModalState = () => {
 function getCodeError(
     formErrors: Record<string, string | undefined>,
 ): string | undefined {
-    return formErrors.confirmTwoFactorAuthentication
-        ?? formErrors['confirmTwoFactorAuthentication.code']
-        ?? formErrors.code;
+    return (
+        formErrors.confirmTwoFactorAuthentication ??
+        formErrors['confirmTwoFactorAuthentication.code'] ??
+        formErrors.code
+    );
 }
 
 watch(
@@ -273,9 +275,7 @@ watch(
                                         />
                                     </InputOTPGroup>
                                 </InputOTP>
-                                <InputError
-                                    :message="getCodeError(errors)"
-                                />
+                                <InputError :message="getCodeError(errors)" />
                             </div>
 
                             <div class="flex w-full items-center space-x-5">

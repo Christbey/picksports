@@ -43,6 +43,7 @@ class BackfillTournamentMetadataCommand extends Command
 
             if (! is_array($eventData)) {
                 $this->warn("Skipping game {$game->id}: ESPN event fetch failed.");
+
                 continue;
             }
 

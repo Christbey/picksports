@@ -8,6 +8,8 @@ use App\Jobs\ESPN\WCBB\FetchGames;
 class SyncGamesCommand extends AbstractSyncGamesCommand
 {
     protected const COMMAND_NAME = 'espn:sync-wcbb-games';
+
     protected const SPORT_CODE = 'WCBB';
+
     protected const GAMES_SYNC_JOB_CLASS = FetchGames::class;
 }

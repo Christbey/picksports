@@ -14,7 +14,7 @@ interface Subscription {
     cancel_at_period_end: boolean;
 }
 
-const props = defineProps<{
+defineProps<{
     subscription: Subscription;
 }>();
 
@@ -30,7 +30,11 @@ const resumeForm = useForm({});
 const isProcessingPortal = ref(false);
 
 function cancelSubscription() {
-    if (confirm('Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.')) {
+    if (
+        confirm(
+            'Are you sure you want to cancel your subscription? You will retain access until the end of your billing period.',
+        )
+    ) {
         cancelForm.post('/subscription/cancel', {
             onSuccess: () => {
                 router.reload();
@@ -52,11 +56,15 @@ function openBillingPortal() {
 
     isProcessingPortal.value = true;
 
-    router.post('/subscription/billing-portal', {}, {
-        onFinish: () => {
-            isProcessingPortal.value = false;
+    router.post(
+        '/subscription/billing-portal',
+        {},
+        {
+            onFinish: () => {
+                isProcessingPortal.value = false;
+            },
         },
-    });
+    );
 }
 
 function formatDate(dateString: string | null): string {
@@ -102,21 +110,30 @@ function getStatusLabel(status: string): string {
 
                 <div class="space-y-6">
                     <!-- Subscription Details Card -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                    >
                         <h3 class="mb-4 text-sm font-semibold">Current Plan</h3>
 
                         <div class="space-y-4">
                             <div>
-                                <div class="text-sm text-muted-foreground">Plan</div>
+                                <div class="text-sm text-muted-foreground">
+                                    Plan
+                                </div>
                                 <div class="mt-1 text-xl font-bold capitalize">
                                     {{ subscription.tier }}
                                 </div>
                             </div>
 
                             <div>
-                                <div class="text-sm text-muted-foreground">Status</div>
+                                <div class="text-sm text-muted-foreground">
+                                    Status
+                                </div>
                                 <div
-                                    :class="['mt-1 text-lg font-semibold capitalize', getStatusColor(subscription.status)]"
+                                    :class="[
+                                        'mt-1 text-lg font-semibold capitalize',
+                                        getStatusColor(subscription.status),
+                                    ]"
                                 >
                                     {{ getStatusLabel(subscription.status) }}
                                 </div>
@@ -124,10 +141,18 @@ function getStatusLabel(status: string): string {
 
                             <div v-if="subscription.current_period_end">
                                 <div class="text-sm text-muted-foreground">
-                                    {{ subscription.cancel_at_period_end ? 'Access Until' : 'Next Billing Date' }}
+                                    {{
+                                        subscription.cancel_at_period_end
+                                            ? 'Access Until'
+                                            : 'Next Billing Date'
+                                    }}
                                 </div>
                                 <div class="mt-1 font-medium">
-                                    {{ formatDate(subscription.current_period_end) }}
+                                    {{
+                                        formatDate(
+                                            subscription.current_period_end,
+                                        )
+                                    }}
                                 </div>
                             </div>
 
@@ -135,18 +160,29 @@ function getStatusLabel(status: string): string {
                                 v-if="subscription.cancel_at_period_end"
                                 class="rounded-lg bg-yellow-50 p-4 dark:bg-yellow-900/20"
                             >
-                                <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                                    Your subscription has been cancelled and will end on
-                                    {{ formatDate(subscription.current_period_end) }}.
-                                    You can resume your subscription anytime before this date.
+                                <p
+                                    class="text-sm text-yellow-800 dark:text-yellow-200"
+                                >
+                                    Your subscription has been cancelled and
+                                    will end on
+                                    {{
+                                        formatDate(
+                                            subscription.current_period_end,
+                                        )
+                                    }}. You can resume your subscription anytime
+                                    before this date.
                                 </p>
                             </div>
                         </div>
                     </div>
 
                     <!-- Actions Card -->
-                    <div class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar">
-                        <h3 class="mb-4 text-sm font-semibold">Manage Subscription</h3>
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                    >
+                        <h3 class="mb-4 text-sm font-semibold">
+                            Manage Subscription
+                        </h3>
 
                         <div class="space-y-3">
                             <Button
@@ -155,17 +191,15 @@ function getStatusLabel(status: string): string {
                                 class="w-full"
                                 variant="default"
                             >
-                                {{ isProcessingPortal ? 'Opening Portal...' : 'Update Payment Method' }}
+                                {{
+                                    isProcessingPortal
+                                        ? 'Opening Portal...'
+                                        : 'Update Payment Method'
+                                }}
                             </Button>
 
-                            <Button
-                                as-child
-                                class="w-full"
-                                variant="outline"
-                            >
-                                <a href="/subscription/plans">
-                                    Change Plan
-                                </a>
+                            <Button as-child class="w-full" variant="outline">
+                                <a href="/subscription/plans"> Change Plan </a>
                             </Button>
 
                             <Button

@@ -58,6 +58,7 @@ class BackfillPlayPossessionCommand extends Command
         foreach ($games as $game) {
             if (! $game->homeTeam || ! $game->awayTeam) {
                 $bar->advance();
+
                 continue;
             }
 
@@ -82,6 +83,7 @@ class BackfillPlayPossessionCommand extends Command
             foreach ($plays as $play) {
                 if ($play->possession_team_id !== null) {
                     $lastKnownPossession = (int) $play->possession_team_id;
+
                     continue;
                 }
 

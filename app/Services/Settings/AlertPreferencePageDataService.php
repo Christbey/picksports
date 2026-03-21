@@ -5,8 +5,8 @@ namespace App\Services\Settings;
 use App\Models\NotificationTemplate;
 use App\Models\User;
 use App\Models\UserAlertPreference;
-use App\Support\SportCatalog;
 use App\Services\WebPushService;
+use App\Support\SportCatalog;
 
 class AlertPreferencePageDataService
 {

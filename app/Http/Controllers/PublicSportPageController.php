@@ -3,13 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\BettingRecommendationResource;
-use App\Support\InjuryImpactScorer;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Support\InjuryImpactScorer;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
@@ -222,7 +222,7 @@ class PublicSportPageController extends Controller
         return $rows
             ->sortByDesc(fn (array $row) => (float) (data_get($row, 'points_per_game') ?? 0))
             ->values()
-            ->reduce(function (\Illuminate\Support\Collection $carry, array $row) use ($sport) {
+            ->reduce(function (\Illuminate\Support\Collection $carry, array $row) {
                 if ($carry->count() >= 10) {
                     return $carry;
                 }

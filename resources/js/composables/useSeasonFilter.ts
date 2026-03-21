@@ -16,8 +16,8 @@ export function useSeasonFilter(getEndpoint: () => string) {
         }
         availableSeasons.value = Array.isArray(payload.data)
             ? payload.data
-                .map((season) => Number(season))
-                .filter((season) => Number.isFinite(season))
+                  .map((season) => Number(season))
+                  .filter((season) => Number.isFinite(season))
             : [];
 
         if (!selectedSeason.value && availableSeasons.value.length > 0) {

@@ -50,8 +50,7 @@ export function createSportTeamMetricsConfig(
 
 const eraClass = (value: number | null): string => {
     if (value === null) return '';
-    if (value < 3.5)
-        return 'text-green-600 dark:text-green-400 font-semibold';
+    if (value < 3.5) return 'text-green-600 dark:text-green-400 font-semibold';
     if (value < 4.0) return 'text-green-600 dark:text-green-400';
     if (value > 5.0) return 'text-red-600 dark:text-red-400 font-semibold';
     if (value > 4.5) return 'text-red-600 dark:text-red-400';
@@ -96,15 +95,33 @@ export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
     teamLink: (id: number) => NBATeamController.url(id),
     defaultSort: 'net_rating',
     sortOptions: [
-        { key: 'net_rating', label: 'Net Rating', getValue: (m: any) => m.net_rating },
-        { key: 'offensive_efficiency', label: 'Offense', getValue: (m: any) => m.offensive_efficiency },
-        { key: 'defensive_efficiency', label: 'Defense', getValue: (m: any) => m.defensive_efficiency, lowerIsBetter: true },
-        { key: 'net_true_epa_per_play', label: 'Net EPA', getValue: (m: any) => m.net_true_epa_per_play },
+        {
+            key: 'net_rating',
+            label: 'Net Rating',
+            getValue: (m: any) => m.net_rating,
+        },
+        {
+            key: 'offensive_efficiency',
+            label: 'Offense',
+            getValue: (m: any) => m.offensive_efficiency,
+        },
+        {
+            key: 'defensive_efficiency',
+            label: 'Defense',
+            getValue: (m: any) => m.defensive_efficiency,
+            lowerIsBetter: true,
+        },
+        {
+            key: 'net_true_epa_per_play',
+            label: 'Net EPA',
+            getValue: (m: any) => m.net_true_epa_per_play,
+        },
     ],
     columns: [
         {
             label: 'Record',
-            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            value: (m: any) =>
+                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
             class: () => 'text-muted-foreground',
         },
         {
@@ -166,15 +183,33 @@ export const wnbaTeamMetricsConfig = createSportTeamMetricsConfig({
     teamLink: (id: number) => WNBATeamController.url(id),
     defaultSort: 'net_rating',
     sortOptions: [
-        { key: 'net_rating', label: 'Net Rating', getValue: (m: any) => m.net_rating },
-        { key: 'offensive_rating', label: 'Offense', getValue: (m: any) => m.offensive_rating },
-        { key: 'defensive_rating', label: 'Defense', getValue: (m: any) => m.defensive_rating, lowerIsBetter: true },
-        { key: 'true_shooting_percentage', label: 'TS%', getValue: (m: any) => m.true_shooting_percentage },
+        {
+            key: 'net_rating',
+            label: 'Net Rating',
+            getValue: (m: any) => m.net_rating,
+        },
+        {
+            key: 'offensive_rating',
+            label: 'Offense',
+            getValue: (m: any) => m.offensive_rating,
+        },
+        {
+            key: 'defensive_rating',
+            label: 'Defense',
+            getValue: (m: any) => m.defensive_rating,
+            lowerIsBetter: true,
+        },
+        {
+            key: 'true_shooting_percentage',
+            label: 'TS%',
+            getValue: (m: any) => m.true_shooting_percentage,
+        },
     ],
     columns: [
         {
             label: 'Record',
-            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            value: (m: any) =>
+                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
             class: () => 'text-muted-foreground',
         },
         {
@@ -247,29 +282,56 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
     defaultSort: 'adj_net_rating',
     hasMeetsMinimum: true,
     sortOptions: [
-        { key: 'adj_net_rating', label: 'Net Rating', getValue: (m: any) => m.adj_net_rating ?? m.net_rating },
-        { key: 'offensive_efficiency', label: 'Offense', getValue: (m: any) => m.adj_offensive_efficiency ?? m.offensive_efficiency },
-        { key: 'defensive_efficiency', label: 'Defense', getValue: (m: any) => m.adj_defensive_efficiency ?? m.defensive_efficiency, lowerIsBetter: true },
-        { key: 'net_true_epa_per_play', label: 'Net EPA', getValue: (m: any) => m.net_true_epa_per_play },
+        {
+            key: 'adj_net_rating',
+            label: 'Net Rating',
+            getValue: (m: any) => m.adj_net_rating ?? m.net_rating,
+        },
+        {
+            key: 'offensive_efficiency',
+            label: 'Offense',
+            getValue: (m: any) =>
+                m.adj_offensive_efficiency ?? m.offensive_efficiency,
+        },
+        {
+            key: 'defensive_efficiency',
+            label: 'Defense',
+            getValue: (m: any) =>
+                m.adj_defensive_efficiency ?? m.defensive_efficiency,
+            lowerIsBetter: true,
+        },
+        {
+            key: 'net_true_epa_per_play',
+            label: 'Net EPA',
+            getValue: (m: any) => m.net_true_epa_per_play,
+        },
     ],
     columns: [
         {
             label: 'Record',
-            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`),
+            value: (m: any) =>
+                m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`,
             class: () => 'text-muted-foreground',
         },
         {
             label: 'AdjO',
-            value: (m: any) => formatNumber(m.adj_offensive_efficiency ?? m.offensive_efficiency),
+            value: (m: any) =>
+                formatNumber(
+                    m.adj_offensive_efficiency ?? m.offensive_efficiency,
+                ),
         },
         {
             label: 'AdjD',
-            value: (m: any) => formatNumber(m.adj_defensive_efficiency ?? m.defensive_efficiency),
+            value: (m: any) =>
+                formatNumber(
+                    m.adj_defensive_efficiency ?? m.defensive_efficiency,
+                ),
         },
         {
             label: 'AdjNet',
             value: (m: any) => formatNumber(m.adj_net_rating ?? m.net_rating),
-            class: (m: any) => ratingClass(m.adj_net_rating ?? m.net_rating, 10),
+            class: (m: any) =>
+                ratingClass(m.adj_net_rating ?? m.net_rating, 10),
         },
         {
             label: 'Tempo',
@@ -285,7 +347,9 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
             label: 'L10 Net',
             value: (m: any) => {
                 const val = formatNumber(m.rolling_net_rating);
-                const count = m.rolling_games_count ? ` (${m.rolling_games_count})` : '';
+                const count = m.rolling_games_count
+                    ? ` (${m.rolling_games_count})`
+                    : '';
                 return `${val}${count}`;
             },
             class: (m: any) => ratingClass(m.rolling_net_rating, 10),
@@ -295,7 +359,10 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => {
                 const net =
                     m.home_offensive_efficiency && m.home_defensive_efficiency
-                        ? formatNumber(m.home_offensive_efficiency - m.home_defensive_efficiency)
+                        ? formatNumber(
+                              m.home_offensive_efficiency -
+                                  m.home_defensive_efficiency,
+                          )
                         : '-';
                 const count = m.home_games ? ` (${m.home_games})` : '';
                 return `${net}${count}`;
@@ -306,7 +373,10 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => {
                 const net =
                     m.away_offensive_efficiency && m.away_defensive_efficiency
-                        ? formatNumber(m.away_offensive_efficiency - m.away_defensive_efficiency)
+                        ? formatNumber(
+                              m.away_offensive_efficiency -
+                                  m.away_defensive_efficiency,
+                          )
                         : '-';
                 const count = m.away_games ? ` (${m.away_games})` : '';
                 return `${net}${count}`;
@@ -338,7 +408,8 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
 export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'wcbb',
     title: 'WCBB Team Metrics',
-    subtitle: "Advanced efficiency metrics for women's college basketball teams",
+    subtitle:
+        "Advanced efficiency metrics for women's college basketball teams",
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
         { value: '2', label: 'Regular Season' },
@@ -348,29 +419,56 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
     defaultSort: 'adj_net_rating',
     hasMeetsMinimum: true,
     sortOptions: [
-        { key: 'adj_net_rating', label: 'Net Rating', getValue: (m: any) => m.adj_net_rating ?? m.net_rating },
-        { key: 'offensive_efficiency', label: 'Offense', getValue: (m: any) => m.adj_offensive_efficiency ?? m.offensive_efficiency },
-        { key: 'defensive_efficiency', label: 'Defense', getValue: (m: any) => m.adj_defensive_efficiency ?? m.defensive_efficiency, lowerIsBetter: true },
-        { key: 'net_true_epa_per_play', label: 'Net EPA', getValue: (m: any) => m.net_true_epa_per_play },
+        {
+            key: 'adj_net_rating',
+            label: 'Net Rating',
+            getValue: (m: any) => m.adj_net_rating ?? m.net_rating,
+        },
+        {
+            key: 'offensive_efficiency',
+            label: 'Offense',
+            getValue: (m: any) =>
+                m.adj_offensive_efficiency ?? m.offensive_efficiency,
+        },
+        {
+            key: 'defensive_efficiency',
+            label: 'Defense',
+            getValue: (m: any) =>
+                m.adj_defensive_efficiency ?? m.defensive_efficiency,
+            lowerIsBetter: true,
+        },
+        {
+            key: 'net_true_epa_per_play',
+            label: 'Net EPA',
+            getValue: (m: any) => m.net_true_epa_per_play,
+        },
     ],
     columns: [
         {
             label: 'Record',
-            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`),
+            value: (m: any) =>
+                m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`,
             class: () => 'text-muted-foreground',
         },
         {
             label: 'AdjO',
-            value: (m: any) => formatNumber(m.adj_offensive_efficiency ?? m.offensive_efficiency),
+            value: (m: any) =>
+                formatNumber(
+                    m.adj_offensive_efficiency ?? m.offensive_efficiency,
+                ),
         },
         {
             label: 'AdjD',
-            value: (m: any) => formatNumber(m.adj_defensive_efficiency ?? m.defensive_efficiency),
+            value: (m: any) =>
+                formatNumber(
+                    m.adj_defensive_efficiency ?? m.defensive_efficiency,
+                ),
         },
         {
             label: 'AdjNet',
             value: (m: any) => formatNumber(m.adj_net_rating ?? m.net_rating),
-            class: (m: any) => ratingClass(m.adj_net_rating ?? m.net_rating, 10),
+            class: (m: any) =>
+                ratingClass(m.adj_net_rating ?? m.net_rating, 10),
         },
         {
             label: 'Tempo',
@@ -386,7 +484,9 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
             label: 'L10 Net',
             value: (m: any) => {
                 const val = formatNumber(m.rolling_net_rating);
-                const count = m.rolling_games_count ? ` (${m.rolling_games_count})` : '';
+                const count = m.rolling_games_count
+                    ? ` (${m.rolling_games_count})`
+                    : '';
                 return `${val}${count}`;
             },
             class: (m: any) => ratingClass(m.rolling_net_rating, 10),
@@ -396,7 +496,10 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => {
                 const net =
                     m.home_offensive_efficiency && m.home_defensive_efficiency
-                        ? formatNumber(m.home_offensive_efficiency - m.home_defensive_efficiency)
+                        ? formatNumber(
+                              m.home_offensive_efficiency -
+                                  m.home_defensive_efficiency,
+                          )
                         : '-';
                 const count = m.home_games ? ` (${m.home_games})` : '';
                 return `${net}${count}`;
@@ -407,7 +510,10 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => {
                 const net =
                     m.away_offensive_efficiency && m.away_defensive_efficiency
-                        ? formatNumber(m.away_offensive_efficiency - m.away_defensive_efficiency)
+                        ? formatNumber(
+                              m.away_offensive_efficiency -
+                                  m.away_defensive_efficiency,
+                          )
                         : '-';
                 const count = m.away_games ? ` (${m.away_games})` : '';
                 return `${net}${count}`;
@@ -448,29 +554,100 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
     teamLink: (id: number) => NFLTeamController.url(id),
     defaultSort: 'net_true_epa_per_play',
     sortOptions: [
-        { key: 'net_true_epa_per_play', label: 'Net EPA/Play', getValue: (m: any) => m.net_true_epa_per_play },
-        { key: 'offensive_true_epa_per_play', label: 'Off EPA/Play', getValue: (m: any) => m.offensive_true_epa_per_play },
-        { key: 'defensive_true_epa_per_play', label: 'Def EPA/Play', getValue: (m: any) => m.defensive_true_epa_per_play, lowerIsBetter: true },
-        { key: 'predictive_rating', label: 'Predictive', getValue: (m: any) => m.predictive_rating },
+        {
+            key: 'net_true_epa_per_play',
+            label: 'Net EPA/Play',
+            getValue: (m: any) => m.net_true_epa_per_play,
+        },
+        {
+            key: 'offensive_true_epa_per_play',
+            label: 'Off EPA/Play',
+            getValue: (m: any) => m.offensive_true_epa_per_play,
+        },
+        {
+            key: 'defensive_true_epa_per_play',
+            label: 'Def EPA/Play',
+            getValue: (m: any) => m.defensive_true_epa_per_play,
+            lowerIsBetter: true,
+        },
+        {
+            key: 'predictive_rating',
+            label: 'Predictive',
+            getValue: (m: any) => m.predictive_rating,
+        },
         { key: 'net_rating', label: 'Net', getValue: (m: any) => m.net_rating },
-        { key: 'home_rating', label: 'Home', getValue: (m: any) => m.home_rating },
-        { key: 'away_rating', label: 'Away', getValue: (m: any) => m.away_rating },
-        { key: 'home_advantage_rating', label: 'HFA', getValue: (m: any) => m.home_advantage_rating },
-        { key: 'season_strength_of_schedule', label: 'Season SOS', getValue: (m: any) => m.season_strength_of_schedule },
-        { key: 'future_strength_of_schedule', label: 'Future SOS', getValue: (m: any) => m.future_strength_of_schedule },
-        { key: 'last_5_rating', label: 'Last 5', getValue: (m: any) => m.last_5_rating },
-        { key: 'last_10_rating', label: 'Last 10', getValue: (m: any) => m.last_10_rating },
-        { key: 'in_division_rating', label: 'In-Div', getValue: (m: any) => m.in_division_rating },
-        { key: 'non_division_rating', label: 'Non-Div', getValue: (m: any) => m.non_division_rating },
-        { key: 'luck_rating', label: 'Luck', getValue: (m: any) => m.luck_rating },
-        { key: 'consistency_rating', label: 'Consistency', getValue: (m: any) => m.consistency_rating },
-        { key: 'offensive_rating', label: 'Offense', getValue: (m: any) => m.offensive_rating },
-        { key: 'defensive_rating', label: 'Defense', getValue: (m: any) => m.defensive_rating, lowerIsBetter: true },
+        {
+            key: 'home_rating',
+            label: 'Home',
+            getValue: (m: any) => m.home_rating,
+        },
+        {
+            key: 'away_rating',
+            label: 'Away',
+            getValue: (m: any) => m.away_rating,
+        },
+        {
+            key: 'home_advantage_rating',
+            label: 'HFA',
+            getValue: (m: any) => m.home_advantage_rating,
+        },
+        {
+            key: 'season_strength_of_schedule',
+            label: 'Season SOS',
+            getValue: (m: any) => m.season_strength_of_schedule,
+        },
+        {
+            key: 'future_strength_of_schedule',
+            label: 'Future SOS',
+            getValue: (m: any) => m.future_strength_of_schedule,
+        },
+        {
+            key: 'last_5_rating',
+            label: 'Last 5',
+            getValue: (m: any) => m.last_5_rating,
+        },
+        {
+            key: 'last_10_rating',
+            label: 'Last 10',
+            getValue: (m: any) => m.last_10_rating,
+        },
+        {
+            key: 'in_division_rating',
+            label: 'In-Div',
+            getValue: (m: any) => m.in_division_rating,
+        },
+        {
+            key: 'non_division_rating',
+            label: 'Non-Div',
+            getValue: (m: any) => m.non_division_rating,
+        },
+        {
+            key: 'luck_rating',
+            label: 'Luck',
+            getValue: (m: any) => m.luck_rating,
+        },
+        {
+            key: 'consistency_rating',
+            label: 'Consistency',
+            getValue: (m: any) => m.consistency_rating,
+        },
+        {
+            key: 'offensive_rating',
+            label: 'Offense',
+            getValue: (m: any) => m.offensive_rating,
+        },
+        {
+            key: 'defensive_rating',
+            label: 'Defense',
+            getValue: (m: any) => m.defensive_rating,
+            lowerIsBetter: true,
+        },
     ],
     columns: [
         {
             label: 'Record',
-            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            value: (m: any) =>
+                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
             class: () => 'text-muted-foreground',
         },
         {
@@ -540,7 +717,11 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
         },
         {
             label: 'Season SOS',
-            value: (m: any) => formatNumber(m.season_strength_of_schedule ?? m.strength_of_schedule, 3),
+            value: (m: any) =>
+                formatNumber(
+                    m.season_strength_of_schedule ?? m.strength_of_schedule,
+                    3,
+                ),
             class: () => 'text-muted-foreground',
         },
         {
@@ -643,17 +824,39 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
     teamLink: (id: number) => MLBTeamController.url(id),
     defaultSort: 'offensive_rating',
     sortOptions: [
-        { key: 'offensive_rating', label: 'Offense', getValue: (m: any) => m.offensive_rating },
-        { key: 'pitching_rating', label: 'Pitching', getValue: (m: any) => m.pitching_rating },
-        { key: 'runs_per_game', label: 'R/G', getValue: (m: any) => m.runs_per_game },
+        {
+            key: 'offensive_rating',
+            label: 'Offense',
+            getValue: (m: any) => m.offensive_rating,
+        },
+        {
+            key: 'pitching_rating',
+            label: 'Pitching',
+            getValue: (m: any) => m.pitching_rating,
+        },
+        {
+            key: 'runs_per_game',
+            label: 'R/G',
+            getValue: (m: any) => m.runs_per_game,
+        },
         { key: 'ops', label: 'OPS', getValue: (m: any) => m.ops },
-        { key: 'whip', label: 'WHIP', getValue: (m: any) => m.whip, lowerIsBetter: true },
-        { key: 'run_differential_per_game', label: 'Run Diff', getValue: (m: any) => m.run_differential_per_game },
+        {
+            key: 'whip',
+            label: 'WHIP',
+            getValue: (m: any) => m.whip,
+            lowerIsBetter: true,
+        },
+        {
+            key: 'run_differential_per_game',
+            label: 'Run Diff',
+            getValue: (m: any) => m.run_differential_per_game,
+        },
     ],
     columns: [
         {
             label: 'Record',
-            value: (m: any) => (m.wins !== null ? `${m.wins}-${m.losses}` : '-'),
+            value: (m: any) =>
+                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
             class: () => 'text-muted-foreground',
         },
         {

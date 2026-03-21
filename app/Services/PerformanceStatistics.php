@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class PerformanceStatistics
 {
@@ -40,9 +40,9 @@ class PerformanceStatistics
         return [
             'total_predictions' => $totalGraded,
             'winner_accuracy' => $totalGraded > 0 ? round(($totalWinnerCorrect / $totalGraded) * 100, 1) : 0,
-            'avg_spread_error' => !empty($spreadErrors) ? round(array_sum($spreadErrors) / count($spreadErrors), 2) : 0,
-            'avg_total_error' => !empty($totalErrors) ? round(array_sum($totalErrors) / count($totalErrors), 2) : 0,
-            'win_record' => "{$totalWinnerCorrect}-" . ($totalGraded - $totalWinnerCorrect),
+            'avg_spread_error' => ! empty($spreadErrors) ? round(array_sum($spreadErrors) / count($spreadErrors), 2) : 0,
+            'avg_total_error' => ! empty($totalErrors) ? round(array_sum($totalErrors) / count($totalErrors), 2) : 0,
+            'win_record' => "{$totalWinnerCorrect}-".($totalGraded - $totalWinnerCorrect),
         ];
     }
 

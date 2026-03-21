@@ -1,8 +1,8 @@
 <?php
 
-use Illuminate\Support\Carbon;
 use App\Models\Submission;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 
 test('admin can view users overview with user and submission metrics', function () {
     $this->withoutVite();

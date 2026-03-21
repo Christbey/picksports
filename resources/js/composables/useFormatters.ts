@@ -1,6 +1,9 @@
 import { computed } from 'vue';
 
-export const formatNumber = (value: number | string | null | undefined, decimals = 1): string => {
+export const formatNumber = (
+    value: number | string | null | undefined,
+    decimals = 1,
+): string => {
     if (value === null || value === undefined) return '-';
     const num = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(num)) return '-';
@@ -22,9 +25,15 @@ export const formatDateLong = (dateString: string | null): string => {
     });
 };
 
-export const formatDateShort = (dateString: string, timeString?: string, includeTime = true): string => {
+export const formatDateShort = (
+    dateString: string,
+    timeString?: string,
+    includeTime = true,
+): string => {
     const [year, month, day] = dateString.split('-').map(Number);
-    const date = timeString ? new Date(`${dateString}T${timeString}`) : new Date(year, month - 1, day);
+    const date = timeString
+        ? new Date(`${dateString}T${timeString}`)
+        : new Date(year, month - 1, day);
 
     if (includeTime) {
         return new Intl.DateTimeFormat('en-US', {

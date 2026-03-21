@@ -6,7 +6,9 @@ const capturedError = ref<string | null>(null);
 
 onErrorCaptured((error) => {
     capturedError.value =
-        error instanceof Error ? error.message : 'An unexpected rendering error occurred.';
+        error instanceof Error
+            ? error.message
+            : 'An unexpected rendering error occurred.';
     return false;
 });
 </script>

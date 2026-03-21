@@ -19,7 +19,12 @@ interface Tier {
 }
 
 const props = defineProps<{
-    roles: Array<{ id: number; name: string; users_count: number; permissions: string[] }>;
+    roles: Array<{
+        id: number;
+        name: string;
+        users_count: number;
+        permissions: string[];
+    }>;
     tiers: Tier[];
     permissions: Permission[];
 }>();
@@ -62,7 +67,7 @@ function getRoleBadgeColor(roleName: string): string {
 function formatPermissionName(permission: string): string {
     return permission
         .split('-')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
         .join(' ');
 }
 
@@ -78,7 +83,7 @@ function getPermissionCategory(permission: string): string {
 const groupedPermissions = computed<Record<string, Permission[]>>(() => {
     const grouped: Record<string, Permission[]> = {};
 
-    props.permissions.forEach(permission => {
+    props.permissions.forEach((permission) => {
         const category = getPermissionCategory(permission.name);
         if (!grouped[category]) {
             grouped[category] = [];
@@ -90,31 +95,42 @@ const groupedPermissions = computed<Record<string, Permission[]>>(() => {
 });
 
 function hasPermission(tierId: number, permissionName: string): boolean {
-    return (selectedPermissionsByTier.value[tierId] ?? []).includes(permissionName);
+    return (selectedPermissionsByTier.value[tierId] ?? []).includes(
+        permissionName,
+    );
 }
 
 function togglePermission(tierId: number, permissionName: string): void {
     const currentPermissions = selectedPermissionsByTier.value[tierId] ?? [];
 
     if (currentPermissions.includes(permissionName)) {
-        selectedPermissionsByTier.value[tierId] = currentPermissions.filter(permission => permission !== permissionName);
+        selectedPermissionsByTier.value[tierId] = currentPermissions.filter(
+            (permission) => permission !== permissionName,
+        );
         return;
     }
 
-    selectedPermissionsByTier.value[tierId] = [...currentPermissions, permissionName].sort();
+    selectedPermissionsByTier.value[tierId] = [
+        ...currentPermissions,
+        permissionName,
+    ].sort();
 }
 
 function saveTierPermissions(tier: Tier): void {
     savingTierId.value = tier.id;
 
-    router.patch(`/admin/permissions/tiers/${tier.id}`, {
-        permissions: selectedPermissionsByTier.value[tier.id] ?? [],
-    }, {
-        preserveScroll: true,
-        onFinish: () => {
-            savingTierId.value = null;
+    router.patch(
+        `/admin/permissions/tiers/${tier.id}`,
+        {
+            permissions: selectedPermissionsByTier.value[tier.id] ?? [],
         },
-    });
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                savingTierId.value = null;
+            },
+        },
+    );
 }
 </script>
 
@@ -123,67 +139,104 @@ function saveTierPermissions(tier: Tier): void {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <SettingsLayout :full-width="true">
-            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
-            <div>
-                <h1 class="text-2xl font-bold">Manage Tier Permissions</h1>
-                <p class="mt-1 text-muted-foreground">
-                    Edit tier permissions directly. Saving a tier updates and syncs its matching role automatically.
-                </p>
-            </div>
+            <div
+                class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
+            >
+                <div>
+                    <h1 class="text-2xl font-bold">Manage Tier Permissions</h1>
+                    <p class="mt-1 text-muted-foreground">
+                        Edit tier permissions directly. Saving a tier updates
+                        and syncs its matching role automatically.
+                    </p>
+                </div>
 
-            <div class="space-y-4">
-                <div
-                    v-for="tier in tiers"
-                    :key="tier.id"
-                    class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
-                >
-                    <div class="mb-4 flex items-center justify-between gap-4">
-                        <div class="flex items-center gap-3">
-                            <span
-                                :class="['inline-block rounded-full px-3 py-1 text-sm font-medium capitalize', getRoleBadgeColor(tier.slug)]"
-                            >
-                                {{ tier.name }}
-                            </span>
-                            <span class="text-sm text-muted-foreground">
-                                {{ tier.users_count }} {{ tier.users_count === 1 ? 'user' : 'users' }}
-                            </span>
-                        </div>
-                        <button
-                            type="button"
-                            :disabled="savingTierId === tier.id"
-                            class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                            @click="saveTierPermissions(tier)"
-                        >
-                            {{ savingTierId === tier.id ? 'Saving...' : 'Save Tier Permissions' }}
-                        </button>
-                    </div>
-
-                    <div class="space-y-4">
+                <div class="space-y-4">
+                    <div
+                        v-for="tier in tiers"
+                        :key="tier.id"
+                        class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                    >
                         <div
-                            v-for="(categoryPermissions, category) in groupedPermissions"
-                            :key="`${tier.id}-${category}`"
-                            class="rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
+                            class="mb-4 flex items-center justify-between gap-4"
                         >
-                            <h3 class="mb-3 text-sm font-semibold">{{ category }}</h3>
-                            <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                                <label
-                                    v-for="permission in categoryPermissions"
-                                    :key="permission.id"
-                                    class="flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                            <div class="flex items-center gap-3">
+                                <span
+                                    :class="[
+                                        'inline-block rounded-full px-3 py-1 text-sm font-medium capitalize',
+                                        getRoleBadgeColor(tier.slug),
+                                    ]"
                                 >
-                                    <input
-                                        type="checkbox"
-                                        :checked="hasPermission(tier.id, permission.name)"
-                                        class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
-                                        @change="togglePermission(tier.id, permission.name)"
+                                    {{ tier.name }}
+                                </span>
+                                <span class="text-sm text-muted-foreground">
+                                    {{ tier.users_count }}
+                                    {{
+                                        tier.users_count === 1
+                                            ? 'user'
+                                            : 'users'
+                                    }}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                :disabled="savingTierId === tier.id"
+                                class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                @click="saveTierPermissions(tier)"
+                            >
+                                {{
+                                    savingTierId === tier.id
+                                        ? 'Saving...'
+                                        : 'Save Tier Permissions'
+                                }}
+                            </button>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div
+                                v-for="(
+                                    categoryPermissions, category
+                                ) in groupedPermissions"
+                                :key="`${tier.id}-${category}`"
+                                class="rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
+                            >
+                                <h3 class="mb-3 text-sm font-semibold">
+                                    {{ category }}
+                                </h3>
+                                <div
+                                    class="grid gap-2 md:grid-cols-2 xl:grid-cols-3"
+                                >
+                                    <label
+                                        v-for="permission in categoryPermissions"
+                                        :key="permission.id"
+                                        class="flex cursor-pointer items-center gap-2 rounded-md bg-white px-3 py-2 text-sm dark:bg-sidebar"
                                     >
-                                    <span>{{ formatPermissionName(permission.name) }}</span>
-                                </label>
+                                        <input
+                                            type="checkbox"
+                                            :checked="
+                                                hasPermission(
+                                                    tier.id,
+                                                    permission.name,
+                                                )
+                                            "
+                                            class="h-4 w-4 rounded border-sidebar-border text-primary focus:ring-2 focus:ring-primary"
+                                            @change="
+                                                togglePermission(
+                                                    tier.id,
+                                                    permission.name,
+                                                )
+                                            "
+                                        />
+                                        <span>{{
+                                            formatPermissionName(
+                                                permission.name,
+                                            )
+                                        }}</span>
+                                    </label>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
             </div>
         </SettingsLayout>
     </AppLayout>

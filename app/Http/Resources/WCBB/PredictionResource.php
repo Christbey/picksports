@@ -18,32 +18,41 @@ class PredictionResource extends AbstractPredictionResource
 
         // Spread (includes predicted_spread and predicted_total)
         if ($this->hasTierPermission($request, 'spread')) {
-            $data['predicted_spread'] = $this->predicted_spread;
-            $data['predicted_total'] = $this->predicted_total;
+            $data['predicted_spread'] = (float) $this->predicted_spread;
+            $data['predicted_total'] = (float) $this->predicted_total;
+            $data = $this->appendLiveSpreadFields($data);
         }
 
         // Win Probability
         if ($this->hasTierPermission($request, 'win_probability')) {
-            $data['win_probability'] = $this->win_probability;
+            $winProbability = (float) $this->win_probability;
+            $data = $this->appendWinProbabilityFields($data, $winProbability);
+            $data = $this->appendLiveWinProbabilityFields($data);
         }
 
         // Confidence Score
         if ($this->hasTierPermission($request, 'confidence_score')) {
-            $data['confidence_score'] = $this->confidence_score;
+            $confidenceScore = (float) $this->confidence_score;
+            $data['confidence_score'] = $confidenceScore;
+            $data['confidence_level'] = match (true) {
+                $confidenceScore >= 75 => 'high',
+                $confidenceScore >= 60 => 'medium',
+                default => 'low',
+            };
         }
 
         // Away Elo
         if ($this->hasTierPermission($request, 'away_elo')) {
-            $data['away_elo'] = $this->away_elo;
-            $data['away_off_eff'] = $this->away_off_eff;
-            $data['away_def_eff'] = $this->away_def_eff;
+            $data['away_elo'] = (float) $this->away_elo;
+            $data['away_off_eff'] = (float) $this->away_off_eff;
+            $data['away_def_eff'] = (float) $this->away_def_eff;
         }
 
         // Home Elo
         if ($this->hasTierPermission($request, 'home_elo')) {
-            $data['home_elo'] = $this->home_elo;
-            $data['home_off_eff'] = $this->home_off_eff;
-            $data['home_def_eff'] = $this->home_def_eff;
+            $data['home_elo'] = (float) $this->home_elo;
+            $data['home_off_eff'] = (float) $this->home_off_eff;
+            $data['home_def_eff'] = (float) $this->home_def_eff;
         }
 
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));

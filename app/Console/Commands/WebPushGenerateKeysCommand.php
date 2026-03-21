@@ -117,7 +117,7 @@ class WebPushGenerateKeysCommand extends Command
     }
 
     /**
-     * @param array<string, string> $pairs
+     * @param  array<string, string>  $pairs
      */
     private function writeToEnv(array $pairs): void
     {
@@ -126,7 +126,7 @@ class WebPushGenerateKeysCommand extends Command
 
         foreach ($pairs as $key => $value) {
             $line = "{$key}={$value}";
-            $pattern = "/^".preg_quote($key, '/')."=.*/m";
+            $pattern = '/^'.preg_quote($key, '/').'=.*/m';
 
             if (preg_match($pattern, $contents) === 1) {
                 $contents = (string) preg_replace($pattern, $line, $contents);

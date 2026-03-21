@@ -47,9 +47,9 @@ const defaultShowLinescore = (
     homeLinescores: LineScoreEntry[],
     awayLinescores: LineScoreEntry[],
 ): boolean =>
-    game.status === 'STATUS_FINAL'
-    && homeLinescores.length > 0
-    && awayLinescores.length > 0;
+    game.status === 'STATUS_FINAL' &&
+    homeLinescores.length > 0 &&
+    awayLinescores.length > 0;
 
 export function useBasketballDetailedGamePage(
     options: UseBasketballDetailedGamePageOptions,
@@ -141,15 +141,16 @@ export function useBasketballDetailedGamePage(
                     currentGame.value,
                     homeLinescores.value,
                     awayLinescores.value,
-                )),
+                ),
+            ),
             awayLinescores,
             homeLinescores,
             awayScore: computed(() => currentGame.value.away_score),
             homeScore: computed(() => currentGame.value.home_score),
             showPredictionSummary: computed(
                 () =>
-                    (options.showPredictionSummary ?? true)
-                    && !!prediction.value,
+                    (options.showPredictionSummary ?? true) &&
+                    !!prediction.value,
             ),
             prediction,
             awayLabel: computed(() => awayTeam.value?.abbreviation || null),
@@ -178,13 +179,13 @@ export function useBasketballDetailedGamePage(
         awayTeamStats: awayTeamStats.value,
         topPerformers: topPerformers.value,
         performersMode:
-            config.topPerformersMode
-            || (options.sport === 'cbb' ? 'table' : 'list'),
+            config.topPerformersMode ||
+            (options.sport === 'cbb' ? 'table' : 'list'),
         homeMetrics: homeMetrics.value,
         awayMetrics: awayMetrics.value,
         metricsTitle:
-            config.metricsTitle
-            || (options.sport === 'cbb'
+            config.metricsTitle ||
+            (options.sport === 'cbb'
                 ? 'Team Metrics Comparison'
                 : 'Team Stats Comparison'),
         formatNumber,
@@ -198,8 +199,10 @@ export function useBasketballDetailedGamePage(
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
         () => {
-            const awayLabel = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+            const awayLabel =
+                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const homeLabel =
+                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
                 itemId: options.gameId,

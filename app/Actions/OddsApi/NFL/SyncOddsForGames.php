@@ -7,7 +7,9 @@ use App\Actions\OddsApi\AbstractSyncOddsForGames;
 class SyncOddsForGames extends AbstractSyncOddsForGames
 {
     protected const SPORT_KEY = 'americanfootball_nfl';
+
     protected const PRESEASON_SPORT_KEY = 'americanfootball_nfl_preseason';
+
     protected const GAME_MODEL_CLASS = \App\Models\NFL\Game::class;
 
     protected function seasonTypeForOddsSportKey(string $oddsSportKey): ?int

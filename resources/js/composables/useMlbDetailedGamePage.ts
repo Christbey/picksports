@@ -1,7 +1,10 @@
 import { computed, watch } from 'vue';
 import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 import { formatNumber } from '@/composables/useFormatters';
-import { formatVenueLabel, getWinLossRecord } from '@/composables/useGameDataUtils';
+import {
+    formatVenueLabel,
+    getWinLossRecord,
+} from '@/composables/useGameDataUtils';
 import { useMlbGamePage } from '@/composables/useMlbGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
 import { trackViewItem } from '@/lib/analytics';
@@ -46,7 +49,9 @@ export function useMlbDetailedGamePage(gameId: number) {
         getWinLossRecord(homeRecentGames.value, currentGame.value.home_team_id),
     );
     const contextBadgeLabel = computed(() =>
-        isMlbSpringTrainingType(currentGame.value.season_type) ? 'Spring Training' : null,
+        isMlbSpringTrainingType(currentGame.value.season_type)
+            ? 'Spring Training'
+            : null,
     );
 
     const { pageProps } = useSportGameLayout({
@@ -55,7 +60,8 @@ export function useMlbDetailedGamePage(gameId: number) {
         teamLink: (id: number) => MLBTeamController.url(id),
         pageProps: {
             title: computed(
-                () => `${awayTeam.value?.name || 'Away'} @ ${homeTeam.value?.name || 'Home'}`,
+                () =>
+                    `${awayTeam.value?.name || 'Away'} @ ${homeTeam.value?.name || 'Home'}`,
             ),
             loading,
             error,
@@ -66,13 +72,18 @@ export function useMlbDetailedGamePage(gameId: number) {
             formatDate,
             awayRecentForm,
             homeRecentForm,
-            venueLabel: computed(() => formatVenueLabel(currentGame.value.venue_name, currentGame.value.venue_city)),
+            venueLabel: computed(() =>
+                formatVenueLabel(
+                    currentGame.value.venue_name,
+                    currentGame.value.venue_city,
+                ),
+            ),
             broadcastNetworks,
             showLinescore: computed(
                 () =>
-                    homeLinescores.value.length > 0
-                    && awayLinescores.value.length > 0
-                    && currentGame.value.status === 'STATUS_FINAL',
+                    homeLinescores.value.length > 0 &&
+                    awayLinescores.value.length > 0 &&
+                    currentGame.value.status === 'STATUS_FINAL',
             ),
             awayLinescores,
             homeLinescores,
@@ -118,8 +129,10 @@ export function useMlbDetailedGamePage(gameId: number) {
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
         () => {
-            const awayLabel = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+            const awayLabel =
+                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const homeLabel =
+                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
                 itemId: currentGame.value.id,

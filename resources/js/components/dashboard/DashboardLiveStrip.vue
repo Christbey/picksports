@@ -23,7 +23,9 @@ const liveGames = computed<LiveTile[]>(() =>
     ),
 );
 
-const hasLiveGames = computed(() => liveGames.value.some((game) => game.is_live));
+const hasLiveGames = computed(() =>
+    liveGames.value.some((game) => game.is_live),
+);
 
 function statusLabel(game: LiveTile): string {
     if (game.is_live) {
@@ -49,12 +51,14 @@ function statusLabel(game: LiveTile): string {
         <div class="mb-3 flex items-center justify-between">
             <div class="flex items-center gap-2">
                 <span
-                    class="inline-flex items-center gap-1.5 rounded-full border border-red-300/60 bg-red-500/12 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-red-700 dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300"
+                    class="inline-flex items-center gap-1.5 rounded-full border border-red-300/60 bg-red-500/12 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-red-700 uppercase dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300"
                 >
                     <Radio class="size-3.5" />
                     Live
                 </span>
-                <p class="text-sm font-semibold tracking-tight text-foreground/90">
+                <p
+                    class="text-sm font-semibold tracking-tight text-foreground/90"
+                >
                     Game Center
                 </p>
             </div>
@@ -71,10 +75,16 @@ function statusLabel(game: LiveTile): string {
                 class="ui-surface-subtle min-w-[250px] snap-start p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm"
             >
                 <div class="mb-2 flex items-center justify-between">
-                    <span class="ui-chip text-foreground/80">{{ game.sportName }}</span>
+                    <span class="ui-chip text-foreground/80">{{
+                        game.sportName
+                    }}</span>
                     <span
                         class="text-xs font-semibold"
-                        :class="game.is_live ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'"
+                        :class="
+                            game.is_live
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-muted-foreground'
+                        "
                     >
                         {{ statusLabel(game) }}
                     </span>
@@ -82,12 +92,20 @@ function statusLabel(game: LiveTile): string {
 
                 <div class="space-y-1.5">
                     <div class="flex items-center justify-between text-sm">
-                        <p class="font-medium text-foreground/85">{{ game.away_team }}</p>
-                        <p class="text-base font-semibold">{{ game.away_score ?? '-' }}</p>
+                        <p class="font-medium text-foreground/85">
+                            {{ game.away_team }}
+                        </p>
+                        <p class="text-base font-semibold">
+                            {{ game.away_score ?? '-' }}
+                        </p>
                     </div>
                     <div class="flex items-center justify-between text-sm">
-                        <p class="font-medium text-foreground/85">{{ game.home_team }}</p>
-                        <p class="text-base font-semibold">{{ game.home_score ?? '-' }}</p>
+                        <p class="font-medium text-foreground/85">
+                            {{ game.home_team }}
+                        </p>
+                        <p class="text-base font-semibold">
+                            {{ game.home_score ?? '-' }}
+                        </p>
                     </div>
                 </div>
             </Link>

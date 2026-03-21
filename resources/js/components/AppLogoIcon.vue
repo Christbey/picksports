@@ -20,12 +20,26 @@ defineProps<Props>();
         v-bind="$attrs"
     >
         <defs>
-            <linearGradient id="ps-gradient" x1="4" y1="4" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+            <linearGradient
+                id="ps-gradient"
+                x1="4"
+                y1="4"
+                x2="28"
+                y2="28"
+                gradientUnits="userSpaceOnUse"
+            >
                 <stop offset="0" stop-color="#f97316" />
                 <stop offset="1" stop-color="#db2777" />
             </linearGradient>
         </defs>
-        <rect x="2" y="2" width="28" height="28" rx="7" fill="url(#ps-gradient)" />
+        <rect
+            x="2"
+            y="2"
+            width="28"
+            height="28"
+            rx="7"
+            fill="url(#ps-gradient)"
+        />
         <text
             x="16"
             y="20"

@@ -7,8 +7,8 @@ use App\Http\Resources\CBB\TeamStatResource;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamStat;
-use App\Support\SportsViewCache;
 use App\Services\TeamStats\BasketballTeamSeasonAveragesService;
+use App\Support\SportsViewCache;
 
 class TeamStatController extends AbstractTeamStatController
 {

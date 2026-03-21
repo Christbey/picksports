@@ -17,13 +17,22 @@ const playerName = (player: TopPerformer): string => {
     return 'Unknown';
 };
 
-const teamLabel = (player: TopPerformer, homeTeamId: number, homeLabel?: string | null, awayLabel?: string | null): string => {
+const teamLabel = (
+    player: TopPerformer,
+    homeTeamId: number,
+    homeLabel?: string | null,
+    awayLabel?: string | null,
+): string => {
     if (player?.team?.abbreviation) return player.team.abbreviation;
-    if (player?.team_id) return player.team_id === homeTeamId ? (homeLabel || '-') : (awayLabel || '-');
+    if (player?.team_id)
+        return player.team_id === homeTeamId
+            ? homeLabel || '-'
+            : awayLabel || '-';
     return '-';
 };
 
-const rebounds = (player: TopPerformer): number => Number(player?.rebounds_total ?? player?.rebounds ?? 0);
+const rebounds = (player: TopPerformer): number =>
+    Number(player?.rebounds_total ?? player?.rebounds ?? 0);
 const assists = (player: TopPerformer): number => Number(player?.assists ?? 0);
 const points = (player: TopPerformer): number => Number(player?.points ?? 0);
 </script>
@@ -32,7 +41,9 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
     <Card>
         <CardHeader>
             <div class="ui-kicker">Impact Players</div>
-            <CardTitle class="tracking-tight">{{ title || 'Top Performers' }}</CardTitle>
+            <CardTitle class="tracking-tight">{{
+                title || 'Top Performers'
+            }}</CardTitle>
         </CardHeader>
         <CardContent>
             <div v-if="mode === 'table'" class="ui-table-wrap">
@@ -48,23 +59,61 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
                         </tr>
                     </thead>
                     <tbody class="text-sm">
-                        <tr v-for="player in performers" :key="player.id" class="border-b">
-                            <td class="p-2 font-medium">{{ playerName(player) }}</td>
-                            <td class="p-2 text-center">{{ teamLabel(player, homeTeamId, homeLabel, awayLabel) }}</td>
-                            <td class="p-2 text-center font-bold">{{ points(player) }}</td>
-                            <td class="p-2 text-center">{{ rebounds(player) }}</td>
-                            <td class="p-2 text-center">{{ assists(player) }}</td>
-                            <td class="p-2 text-center">{{ player.field_goals_made || 0 }}-{{ player.field_goals_attempted || 0 }}</td>
+                        <tr
+                            v-for="player in performers"
+                            :key="player.id"
+                            class="border-b"
+                        >
+                            <td class="p-2 font-medium">
+                                {{ playerName(player) }}
+                            </td>
+                            <td class="p-2 text-center">
+                                {{
+                                    teamLabel(
+                                        player,
+                                        homeTeamId,
+                                        homeLabel,
+                                        awayLabel,
+                                    )
+                                }}
+                            </td>
+                            <td class="p-2 text-center font-bold">
+                                {{ points(player) }}
+                            </td>
+                            <td class="p-2 text-center">
+                                {{ rebounds(player) }}
+                            </td>
+                            <td class="p-2 text-center">
+                                {{ assists(player) }}
+                            </td>
+                            <td class="p-2 text-center">
+                                {{ player.field_goals_made || 0 }}-{{
+                                    player.field_goals_attempted || 0
+                                }}
+                            </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
             <div v-else class="space-y-3">
-                <div v-for="player in performers" :key="player.id" class="ui-surface-subtle flex items-center justify-between p-3">
+                <div
+                    v-for="player in performers"
+                    :key="player.id"
+                    class="ui-surface-subtle flex items-center justify-between p-3"
+                >
                     <div class="flex-1">
                         <div class="font-medium">{{ playerName(player) }}</div>
-                        <div class="text-sm text-muted-foreground">{{ teamLabel(player, homeTeamId, homeLabel, awayLabel) }}</div>
+                        <div class="text-sm text-muted-foreground">
+                            {{
+                                teamLabel(
+                                    player,
+                                    homeTeamId,
+                                    homeLabel,
+                                    awayLabel,
+                                )
+                            }}
+                        </div>
                     </div>
                     <div class="flex gap-4 text-sm">
                         <div class="text-center">
@@ -80,7 +129,11 @@ const points = (player: TopPerformer): number => Number(player?.points ?? 0);
                             <div class="text-xs text-muted-foreground">AST</div>
                         </div>
                         <div class="text-center">
-                            <div class="font-bold">{{ player.field_goals_made || 0 }}-{{ player.field_goals_attempted || 0 }}</div>
+                            <div class="font-bold">
+                                {{ player.field_goals_made || 0 }}-{{
+                                    player.field_goals_attempted || 0
+                                }}
+                            </div>
                             <div class="text-xs text-muted-foreground">FG</div>
                         </div>
                     </div>

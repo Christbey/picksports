@@ -22,8 +22,7 @@ class TrueEpaCalculator
         int $awayTeamId,
         ?int $season = null,
         string $sport = 'nba'
-    ): array
-    {
+    ): array {
         if ($plays->isEmpty()) {
             return [];
         }
@@ -126,8 +125,7 @@ class TrueEpaCalculator
         array $realizedFuturePoints,
         bool $halfMode,
         int $periodDurationSeconds
-    ): array
-    {
+    ): array {
         $stateBuckets = [];
 
         foreach ($rows as $play) {

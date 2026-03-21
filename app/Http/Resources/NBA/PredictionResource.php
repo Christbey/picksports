@@ -23,6 +23,7 @@ class PredictionResource extends AbstractPredictionResource
         if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = (float) $this->predicted_spread;
             $data['predicted_total'] = (float) $this->predicted_total;
+            $data = $this->appendLiveSpreadFields($data);
             $data['injury_spread_adj'] = (float) ($this->injury_spread_adj ?? 0);
             $data['injury_total_adj'] = (float) ($this->injury_total_adj ?? 0);
             $data['home_injuries_out'] = (int) ($this->home_injuries_out ?? 0);
@@ -34,9 +35,8 @@ class PredictionResource extends AbstractPredictionResource
         // Win Probability
         if ($this->hasTierPermission($request, 'win_probability')) {
             $winProbability = (float) $this->win_probability;
-            $data['win_probability'] = $winProbability;
-            $data['home_win_probability'] = $winProbability;
-            $data['away_win_probability'] = 1 - $winProbability;
+            $data = $this->appendWinProbabilityFields($data, $winProbability);
+            $data = $this->appendLiveWinProbabilityFields($data);
         }
 
         // Confidence Score

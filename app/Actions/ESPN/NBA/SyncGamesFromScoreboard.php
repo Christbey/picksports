@@ -12,5 +12,6 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
     protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
 
     protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
+
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
 }

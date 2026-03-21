@@ -38,7 +38,9 @@ const requiredTierName = computed(() => tierNames[props.requiredTier]);
         <div
             :class="[
                 'transition-all duration-200',
-                !hasAccess && blur ? 'pointer-events-none select-none blur-sm' : '',
+                !hasAccess && blur
+                    ? 'pointer-events-none blur-sm select-none'
+                    : '',
             ]"
         >
             <slot />
@@ -50,8 +52,12 @@ const requiredTierName = computed(() => tierNames[props.requiredTier]);
             class="absolute inset-0 flex items-center justify-center bg-background/60 backdrop-blur-[2px]"
         >
             <slot name="locked">
-                <div class="flex flex-col items-center gap-3 rounded-lg bg-card p-6 text-center shadow-lg">
-                    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+                <div
+                    class="flex flex-col items-center gap-3 rounded-lg bg-card p-6 text-center shadow-lg"
+                >
+                    <div
+                        class="flex h-12 w-12 items-center justify-center rounded-full bg-muted"
+                    >
                         <Lock class="h-6 w-6 text-muted-foreground" />
                     </div>
                     <div>
@@ -59,13 +65,12 @@ const requiredTierName = computed(() => tierNames[props.requiredTier]);
                             {{ requiredTierName }} Required
                         </p>
                         <p class="mt-1 text-sm text-muted-foreground">
-                            Upgrade from {{ tierName }} to access {{ featureName }}.
+                            Upgrade from {{ tierName }} to access
+                            {{ featureName }}.
                         </p>
                     </div>
                     <Button size="sm" as-child>
-                        <Link :href="subscriptionPlans()">
-                            Upgrade Now
-                        </Link>
+                        <Link :href="subscriptionPlans()"> Upgrade Now </Link>
                     </Button>
                 </div>
             </slot>

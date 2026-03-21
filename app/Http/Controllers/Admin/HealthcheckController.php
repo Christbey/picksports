@@ -4,8 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\HealthcheckSummaryResource;
-use App\Services\CommandHeartbeatService;
 use App\Models\Healthcheck;
+use App\Services\CommandHeartbeatService;
 use App\Support\SportCatalog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;

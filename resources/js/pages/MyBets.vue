@@ -4,7 +4,13 @@ import axios from 'axios';
 import { Download, Plus, Trash2, Check, X } from 'lucide-vue-next';
 import { ref, onMounted, watch } from 'vue';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -52,7 +58,12 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const bets = ref<BetsData>({ data: [], links: [], current_page: 1, last_page: 1 });
+const bets = ref<BetsData>({
+    data: [],
+    links: [],
+    current_page: 1,
+    last_page: 1,
+});
 const statistics = ref<Statistics>({
     total_bets: 0,
     total_wagered: 0,
@@ -172,7 +183,9 @@ function displaySelection(bet: Bet) {
 
     const side = bet.selection_side?.toUpperCase() ?? 'N/A';
 
-    return bet.line !== null ? `${side} ${bet.line > 0 ? '+' : ''}${bet.line}` : side;
+    return bet.line !== null
+        ? `${side} ${bet.line > 0 ? '+' : ''}${bet.line}`
+        : side;
 }
 
 function getResultColor(result: string) {
@@ -180,7 +193,8 @@ function getResultColor(result: string) {
         won: 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/50',
         lost: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50',
         push: 'text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-900/50',
-        pending: 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/50',
+        pending:
+            'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/50',
     };
     return colors[result as keyof typeof colors] || colors.pending;
 }
@@ -189,28 +203,33 @@ onMounted(() => {
     fetchBets();
 });
 
-watch(() => form.value.bet_type, (betType) => {
-    if (betType === 'total_over') {
-        form.value.selection_side = 'over';
-        return;
-    }
+watch(
+    () => form.value.bet_type,
+    (betType) => {
+        if (betType === 'total_over') {
+            form.value.selection_side = 'over';
+            return;
+        }
 
-    if (betType === 'total_under') {
-        form.value.selection_side = 'under';
-        return;
-    }
+        if (betType === 'total_under') {
+            form.value.selection_side = 'under';
+            return;
+        }
 
-    if (! ['home', 'away'].includes(form.value.selection_side)) {
-        form.value.selection_side = 'home';
-    }
-});
+        if (!['home', 'away'].includes(form.value.selection_side)) {
+            form.value.selection_side = 'home';
+        }
+    },
+);
 </script>
 
 <template>
     <Head title="My Bets" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
+        <div
+            class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4"
+        >
             <!-- Statistics Cards -->
             <div class="grid auto-rows-min gap-4 md:grid-cols-4">
                 <!-- Total Bets -->
@@ -218,7 +237,9 @@ watch(() => form.value.bet_type, (betType) => {
                     class="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 bg-gradient-to-br from-blue-500 to-blue-700 p-6 dark:border-sidebar-border"
                 >
                     <div class="flex h-full flex-col justify-between">
-                        <div class="text-sm font-medium text-white/80">Total Bets</div>
+                        <div class="text-sm font-medium text-white/80">
+                            Total Bets
+                        </div>
                         <div class="text-5xl font-bold text-white">
                             {{ statistics.total_bets }}
                         </div>
@@ -231,7 +252,9 @@ watch(() => form.value.bet_type, (betType) => {
                     class="relative aspect-video overflow-hidden rounded-xl border border-sidebar-border/70 bg-gradient-to-br from-green-500 to-green-700 p-6 dark:border-sidebar-border"
                 >
                     <div class="flex h-full flex-col justify-between">
-                        <div class="text-sm font-medium text-white/80">Win Rate</div>
+                        <div class="text-sm font-medium text-white/80">
+                            Win Rate
+                        </div>
                         <div class="text-5xl font-bold text-white">
                             {{ statistics.win_rate }}%
                         </div>
@@ -251,7 +274,9 @@ watch(() => form.value.bet_type, (betType) => {
                     ]"
                 >
                     <div class="flex h-full flex-col justify-between">
-                        <div class="text-sm font-medium text-white/80">Total Profit</div>
+                        <div class="text-sm font-medium text-white/80">
+                            Total Profit
+                        </div>
                         <div class="text-4xl font-bold text-white">
                             {{ formatCurrency(statistics.total_profit) }}
                         </div>
@@ -274,7 +299,8 @@ watch(() => form.value.bet_type, (betType) => {
                             {{ statistics.roi }}%
                         </div>
                         <div class="text-xs text-white/60">
-                            {{ formatCurrency(statistics.total_wagered) }} wagered
+                            {{ formatCurrency(statistics.total_wagered) }}
+                            wagered
                         </div>
                     </div>
                 </div>
@@ -301,21 +327,38 @@ watch(() => form.value.bet_type, (betType) => {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    <form @submit.prevent="submitBet" class="grid gap-4 md:grid-cols-2">
+                    <form
+                        @submit.prevent="submitBet"
+                        class="grid gap-4 md:grid-cols-2"
+                    >
                         <div>
                             <Label for="prediction-type">Sport</Label>
                             <select
                                 id="prediction-type"
                                 v-model="form.prediction_type"
-                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                             >
-                                <option value="App\Models\NBA\Prediction">NBA</option>
-                                <option value="App\Models\NFL\Prediction">NFL</option>
-                                <option value="App\Models\CBB\Prediction">CBB</option>
-                                <option value="App\Models\WCBB\Prediction">WCBB</option>
-                                <option value="App\Models\MLB\Prediction">MLB</option>
-                                <option value="App\Models\CFB\Prediction">CFB</option>
-                                <option value="App\Models\WNBA\Prediction">WNBA</option>
+                                <option value="App\Models\NBA\Prediction">
+                                    NBA
+                                </option>
+                                <option value="App\Models\NFL\Prediction">
+                                    NFL
+                                </option>
+                                <option value="App\Models\CBB\Prediction">
+                                    CBB
+                                </option>
+                                <option value="App\Models\WCBB\Prediction">
+                                    WCBB
+                                </option>
+                                <option value="App\Models\MLB\Prediction">
+                                    MLB
+                                </option>
+                                <option value="App\Models\CFB\Prediction">
+                                    CFB
+                                </option>
+                                <option value="App\Models\WNBA\Prediction">
+                                    WNBA
+                                </option>
                             </select>
                         </div>
 
@@ -324,7 +367,7 @@ watch(() => form.value.bet_type, (betType) => {
                             <select
                                 id="bet-type"
                                 v-model="form.bet_type"
-                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                             >
                                 <option value="spread">Spread</option>
                                 <option value="moneyline">Moneyline</option>
@@ -338,7 +381,7 @@ watch(() => form.value.bet_type, (betType) => {
                             <select
                                 id="selection-side"
                                 v-model="form.selection_side"
-                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                             >
                                 <option value="home">Home</option>
                                 <option value="away">Away</option>
@@ -396,7 +439,7 @@ watch(() => form.value.bet_type, (betType) => {
                                 v-model="form.notes"
                                 placeholder="Add any notes about this bet..."
                                 rows="3"
-                                class="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                                class="flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-base shadow-sm placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                             />
                         </div>
 
@@ -427,9 +470,13 @@ watch(() => form.value.bet_type, (betType) => {
                         <p class="text-muted-foreground">Loading...</p>
                     </div>
 
-                    <div v-else-if="bets.data.length === 0" class="py-12 text-center">
+                    <div
+                        v-else-if="bets.data.length === 0"
+                        class="py-12 text-center"
+                    >
                         <p class="text-muted-foreground">
-                            No bets tracked yet. Click "Log New Bet" to get started.
+                            No bets tracked yet. Click "Log New Bet" to get
+                            started.
                         </p>
                     </div>
 
@@ -454,24 +501,48 @@ watch(() => form.value.bet_type, (betType) => {
                                 <div class="flex flex-col gap-1">
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold">
-                                            {{ bet.prediction_type ? getSportName(bet.prediction_type) : 'Manual' }}
+                                            {{
+                                                bet.prediction_type
+                                                    ? getSportName(
+                                                          bet.prediction_type,
+                                                      )
+                                                    : 'Manual'
+                                            }}
                                         </span>
-                                        <span class="text-sm text-muted-foreground">•</span>
+                                        <span
+                                            class="text-sm text-muted-foreground"
+                                            >•</span
+                                        >
                                         <span class="text-sm font-medium">
                                             {{ displaySelection(bet) }}
                                         </span>
-                                        <span class="text-sm text-muted-foreground">•</span>
-                                        <span class="text-sm text-muted-foreground">
-                                            {{ bet.bet_type.replace('_', ' ').toUpperCase() }}
+                                        <span
+                                            class="text-sm text-muted-foreground"
+                                            >•</span
+                                        >
+                                        <span
+                                            class="text-sm text-muted-foreground"
+                                        >
+                                            {{
+                                                bet.bet_type
+                                                    .replace('_', ' ')
+                                                    .toUpperCase()
+                                            }}
                                         </span>
-                                        <span class="text-sm text-muted-foreground">•</span>
+                                        <span
+                                            class="text-sm text-muted-foreground"
+                                            >•</span
+                                        >
                                         <span class="text-sm font-medium">
-                                            {{ formatCurrency(bet.bet_amount) }} @ {{ bet.odds }}
+                                            {{ formatCurrency(bet.bet_amount) }}
+                                            @ {{ bet.odds }}
                                         </span>
                                     </div>
                                     <div class="text-xs text-muted-foreground">
                                         {{ formatDate(bet.placed_at) }}
-                                        <span v-if="bet.notes"> • {{ bet.notes }}</span>
+                                        <span v-if="bet.notes">
+                                            • {{ bet.notes }}</span
+                                        >
                                     </div>
                                 </div>
                             </div>
@@ -486,10 +557,14 @@ watch(() => form.value.bet_type, (betType) => {
                                             : 'text-red-600 dark:text-red-400',
                                     ]"
                                 >
-                                    {{ bet.profit_loss >= 0 ? '+' : '' }}{{ formatCurrency(bet.profit_loss) }}
+                                    {{ bet.profit_loss >= 0 ? '+' : ''
+                                    }}{{ formatCurrency(bet.profit_loss) }}
                                 </div>
 
-                                <div v-if="bet.result === 'pending'" class="flex gap-2">
+                                <div
+                                    v-if="bet.result === 'pending'"
+                                    class="flex gap-2"
+                                >
                                     <Button
                                         size="sm"
                                         variant="outline"

@@ -66,7 +66,9 @@ withDefaults(
 <template>
     <template v-if="showRecap">
         <BasketballBoxScoreCard
-            v-if="gameStatus === 'STATUS_FINAL' && homeTeamStats && awayTeamStats"
+            v-if="
+                gameStatus === 'STATUS_FINAL' && homeTeamStats && awayTeamStats
+            "
             :away-label="awayLabel"
             :home-label="homeLabel"
             :away-team-stats="awayTeamStats"

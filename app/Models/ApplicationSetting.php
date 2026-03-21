@@ -29,4 +29,3 @@ class ApplicationSetting extends Model
         );
     }
 }
-

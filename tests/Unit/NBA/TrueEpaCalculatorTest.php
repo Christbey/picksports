@@ -1,8 +1,8 @@
 <?php
 
+use App\Services\Epa\StateBaselineService;
 use App\Services\NBA\PlayEpaDataService;
 use App\Services\NBA\TrueEpaCalculator;
-use App\Services\Epa\StateBaselineService;
 use Illuminate\Support\Collection;
 
 it('derives distinct expected points states for college-style 20-minute clocks', function () {

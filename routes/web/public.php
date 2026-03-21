@@ -1,12 +1,12 @@
 <?php
 
-use App\Http\Controllers\PublicSportPageController;
 use App\Http\Controllers\PerformanceController;
+use App\Http\Controllers\PublicSportPageController;
 use App\Models\CBB\Game as CbbGame;
-use Inertia\Inertia;
-use Laravel\Fortify\Features;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
+use Inertia\Inertia;
+use Laravel\Fortify\Features;
 
 Route::get('/sitemap.xml', function () {
     $now = now()->toAtomString();

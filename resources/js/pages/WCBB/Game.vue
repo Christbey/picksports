@@ -18,15 +18,24 @@ const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     showLinescore: () => false,
 });
 
-const awayInjuries = computed(() => pageProps.value.awayTeam?.active_injuries ?? []);
-const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ?? []);
+const awayInjuries = computed(
+    () => pageProps.value.awayTeam?.active_injuries ?? [],
+);
+const homeInjuries = computed(
+    () => pageProps.value.homeTeam?.active_injuries ?? [],
+);
 </script>
 
 <template>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
-            <BettingPlanCard :betting-plan="pageProps.prediction?.narrative?.betting_plan" />
-            <BasketballGameInsights v-bind="insightsProps" :show-recap="false" />
+            <BettingPlanCard
+                :betting-plan="pageProps.prediction?.narrative?.betting_plan"
+            />
+            <BasketballGameInsights
+                v-bind="insightsProps"
+                :show-recap="false"
+            />
             <InjuryReportCard
                 :away-team-abbr="pageProps.awayTeam?.abbreviation"
                 :home-team-abbr="pageProps.homeTeam?.abbreviation"

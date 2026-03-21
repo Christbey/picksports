@@ -5,15 +5,15 @@ import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.
 import { useCfbDetailedGamePage } from '@/composables/useCfbDetailedGamePage';
 
 const props = defineProps<{
-    gameId: number
-}>()
+    gameId: number;
+}>();
 
 const {
     pageProps,
     predictionSectionProps,
     analysisSectionProps,
     recentSectionProps,
-} = useCfbDetailedGamePage(props.gameId)
+} = useCfbDetailedGamePage(props.gameId);
 </script>
 
 <template>
@@ -23,7 +23,9 @@ const {
         </template>
 
         <template #afterLinescore>
-            <BettingPlanCard :betting-plan="pageProps.prediction?.narrative?.betting_plan" />
+            <BettingPlanCard
+                :betting-plan="pageProps.prediction?.narrative?.betting_plan"
+            />
             <NflGameEnhancements v-bind="analysisSectionProps" />
         </template>
 

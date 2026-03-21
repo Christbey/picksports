@@ -11,8 +11,8 @@ use Illuminate\Database\Eloquent\Model;
 abstract class AbstractAdjustedBasketballTeamMetricsCommand extends Command
 {
     use DisplaysTeamMetrics;
-    use ResolvesRequiredConfig;
     use HandlesSingleTeamMetricsCalculation;
+    use ResolvesRequiredConfig;
 
     protected const COMMAND_NAME = '';
 

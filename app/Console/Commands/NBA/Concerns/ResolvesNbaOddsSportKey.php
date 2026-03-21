@@ -9,7 +9,9 @@ trait ResolvesNbaOddsSportKey
     use ResolvesSeasonalOddsSportKey;
 
     protected const NBA_REGULAR_ODDS_SPORT_KEY = 'basketball_nba';
+
     protected const NBA_PRESEASON_ODDS_SPORT_KEY = 'basketball_nba_preseason';
+
     protected const NBA_ODDS_DETECTION_WINDOW_DAYS = 14;
 
     protected function resolveAutomaticNbaOddsSportKey(): string

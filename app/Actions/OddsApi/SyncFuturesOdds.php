@@ -62,18 +62,21 @@ class SyncFuturesOdds
             $sportKey = $oddsSportOverrides[$sport] ?? (self::DEFAULT_FUTURES_SPORT_KEYS[$sport] ?? null);
             if (! $sportKey) {
                 $results[$sport] = 0;
+
                 continue;
             }
 
             $payload = $this->oddsApiService->getFuturesOdds($sportKey);
             if (! is_array($payload) || $payload === []) {
                 $results[$sport] = 0;
+
                 continue;
             }
 
             $rows = $this->buildRows($sport, $season, $sportKey, $payload, $fetchedAt);
             if ($rows === []) {
                 $results[$sport] = 0;
+
                 continue;
             }
 
@@ -232,8 +235,6 @@ class SyncFuturesOdds
         return count($rows);
     }
 
-    /**
-     */
     protected function resolveTeamId(string $sport, string $oddsSportKey, string $outcomeName): ?int
     {
         $teamModelClass = self::TEAM_MODEL_BY_SPORT[$sport] ?? null;

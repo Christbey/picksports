@@ -8,7 +8,10 @@ use App\Jobs\ESPN\CBB\FetchTeams;
 class SyncTeamsCommand extends AbstractSyncTeamsCommand
 {
     protected const COMMAND_NAME = 'espn:sync-cbb-teams';
+
     protected const SPORT_CODE = 'CBB';
+
     protected const TEAMS_SYNC_JOB_CLASS = FetchTeams::class;
+
     protected const TEAMS_SYNC_ACTION_CLASS = \App\Actions\ESPN\CBB\SyncTeams::class;
 }

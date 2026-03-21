@@ -3,8 +3,8 @@
 namespace App\Actions\ESPN\Concerns;
 
 use App\DataTransferObjects\ESPN\GameData;
-use App\Support\EspnGameStatusResolver;
 use App\Services\GameFinalizationDispatcher;
+use App\Support\EspnGameStatusResolver;
 use Illuminate\Database\Eloquent\Model;
 
 trait UpdatesGameFromSummary

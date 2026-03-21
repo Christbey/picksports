@@ -9,6 +9,20 @@ use Illuminate\Http\Resources\Json\JsonResource;
 abstract class AbstractPredictionResource extends JsonResource
 {
     /**
+     * @return array<int, string>
+     */
+    protected function liveStatuses(): array
+    {
+        return ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+    }
+
+    protected function isLivePrediction(): bool
+    {
+        return ! $this->relationLoaded('game')
+            || in_array($this->game?->status, $this->liveStatuses(), true);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     protected function basePredictionData(string $gameResourceClass): array
@@ -54,6 +68,56 @@ abstract class AbstractPredictionResource extends JsonResource
         $data['total_error'] = $this->total_error;
         $data['winner_correct'] = $this->winner_correct;
         $data['graded_at'] = $this->graded_at?->toIso8601String();
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function appendWinProbabilityFields(array $data, float $winProbability): array
+    {
+        $normalizedWinProbability = round($winProbability, 3);
+
+        $data['win_probability'] = $normalizedWinProbability;
+        $data['home_win_probability'] = $normalizedWinProbability;
+        $data['away_win_probability'] = round(1 - $normalizedWinProbability, 3);
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function appendLiveSpreadFields(array $data): array
+    {
+        $isLive = $this->isLivePrediction();
+
+        $data['live_predicted_spread'] = $isLive && $this->live_predicted_spread !== null
+            ? (float) $this->live_predicted_spread
+            : null;
+        $data['live_predicted_total'] = $isLive && $this->live_predicted_total !== null
+            ? (float) $this->live_predicted_total
+            : null;
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function appendLiveWinProbabilityFields(array $data, string $remainingField = 'live_seconds_remaining'): array
+    {
+        $isLive = $this->isLivePrediction();
+
+        $data['live_win_probability'] = $isLive && $this->live_win_probability !== null
+            ? (float) $this->live_win_probability
+            : null;
+        $data[$remainingField] = $isLive ? $this->{$remainingField} : null;
+        $data['live_updated_at'] = $isLive ? $this->live_updated_at?->toIso8601String() : null;
 
         return $data;
     }

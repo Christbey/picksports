@@ -2,5 +2,4 @@
 
 namespace App\Actions\ESPN;
 
-abstract class AbstractStandardSyncGameDetails extends AbstractSyncGameDetails
-{}
+abstract class AbstractStandardSyncGameDetails extends AbstractSyncGameDetails {}

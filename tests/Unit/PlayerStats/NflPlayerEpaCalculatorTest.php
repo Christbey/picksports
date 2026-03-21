@@ -26,4 +26,3 @@ test('it normalizes nfl estimated epa by opportunity', function () {
 
     expect($epaPerOpp)->toBe(0.619);
 });
-

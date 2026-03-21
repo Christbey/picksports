@@ -42,7 +42,7 @@ function authorizedPredictionRequest(): Request
 }
 
 test('nba prediction resource exposes shared summary fields for ios clients', function () {
-    $prediction = (new NbaPrediction())->forceFill([
+    $prediction = (new NbaPrediction)->forceFill([
         'id' => 1,
         'game_id' => 12,
         'predicted_spread' => 4.5,
@@ -73,7 +73,7 @@ test('nba prediction resource exposes shared summary fields for ios clients', fu
 });
 
 test('cbb prediction resource exposes shared home away probability aliases', function () {
-    $prediction = (new CbbPrediction())->forceFill([
+    $prediction = (new CbbPrediction)->forceFill([
         'id' => 2,
         'game_id' => 22,
         'predicted_spread' => 2.5,
@@ -102,7 +102,7 @@ test('cbb prediction resource exposes shared home away probability aliases', fun
 });
 
 test('mlb prediction resource preserves canonical prediction fields and elo splits', function () {
-    $prediction = (new MlbPrediction())->forceFill([
+    $prediction = (new MlbPrediction)->forceFill([
         'id' => 3,
         'game_id' => 33,
         'predicted_spread' => 1.5,

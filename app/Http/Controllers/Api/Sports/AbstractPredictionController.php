@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\Sports;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\DB;
@@ -213,7 +212,7 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     {
         $predictionModel = $this->getPredictionModel();
         $gameInstance = new ($this->getGameModel());
-        $predictionInstance = new $predictionModel();
+        $predictionInstance = new $predictionModel;
         $request = request();
 
         /** @var SportsViewCache $sportsViewCache */
@@ -256,7 +255,7 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     {
         $predictionModel = $this->getPredictionModel();
         $gameInstance = new ($this->getGameModel());
-        $predictionInstance = new $predictionModel();
+        $predictionInstance = new $predictionModel;
         /** @var SportsViewCache $sportsViewCache */
         $sportsViewCache = app(SportsViewCache::class);
         $cacheKey = $sportsViewCache->contextHash(['controller' => static::class]);

@@ -21,7 +21,7 @@ function gameResourceRequest(): Request
 }
 
 test('nfl game resource exposes stable venue and clock aliases with nested teams', function () {
-    $game = (new NflGame())->forceFill([
+    $game = (new NflGame)->forceFill([
         'id' => 10,
         'home_team_id' => 1,
         'away_team_id' => 2,
@@ -53,7 +53,7 @@ test('nfl game resource exposes stable venue and clock aliases with nested teams
 });
 
 test('nba game resource includes legacy and canonical aliases together', function () {
-    $game = (new NbaGame())->forceFill([
+    $game = (new NbaGame)->forceFill([
         'id' => 21,
         'home_team_id' => 3,
         'away_team_id' => 4,
@@ -83,7 +83,7 @@ test('nba game resource includes legacy and canonical aliases together', functio
 });
 
 test('wnba game resource exposes game time plus venue and clock aliases', function () {
-    $game = (new WnbaGame())->forceFill([
+    $game = (new WnbaGame)->forceFill([
         'id' => 9,
         'home_team_id' => 8,
         'away_team_id' => 7,
@@ -111,7 +111,7 @@ test('wnba game resource exposes game time plus venue and clock aliases', functi
 });
 
 test('mlb game resource includes shared venue alias', function () {
-    $game = (new MlbGame())->forceFill([
+    $game = (new MlbGame)->forceFill([
         'id' => 30,
         'home_team_id' => 1,
         'away_team_id' => 2,

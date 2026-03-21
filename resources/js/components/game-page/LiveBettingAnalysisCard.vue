@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import BettingAnalysisCard, {
-    type BettingRecommendation,
-    type LivePredictionData,
-} from '@/components/BettingAnalysisCard.vue';
+import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import type { BettingRecommendation, LivePredictionData } from '@/types';
 
 defineProps<{
     hasLivePrediction: boolean;
@@ -18,7 +16,9 @@ defineProps<{
 <template>
     <Card v-if="hasLivePrediction || (bettingValue && bettingValue.length > 0)">
         <CardHeader>
-            <div class="ui-kicker">{{ hasLivePrediction ? 'Live Trading' : 'Market Edge' }}</div>
+            <div class="ui-kicker">
+                {{ hasLivePrediction ? 'Live Trading' : 'Market Edge' }}
+            </div>
             <CardTitle class="flex items-center gap-2">
                 <span v-if="hasLivePrediction" class="relative flex h-3 w-3">
                     <span
@@ -29,9 +29,7 @@ defineProps<{
                     ></span>
                 </span>
                 <span>{{
-                    hasLivePrediction
-                        ? 'Live Analysis'
-                        : 'Betting Signals'
+                    hasLivePrediction ? 'Live Analysis' : 'Betting Signals'
                 }}</span>
                 <span
                     v-if="!hasLivePrediction && bettingValue?.length"

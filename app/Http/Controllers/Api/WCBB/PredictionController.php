@@ -14,4 +14,9 @@ class PredictionController extends AbstractPredictionController
     protected const GAME_MODEL = Game::class;
 
     protected const PREDICTION_RESOURCE = PredictionResource::class;
+
+    protected function returnFirstPredictionOnly(): bool
+    {
+        return true;
+    }
 }

@@ -1,16 +1,19 @@
 <script setup lang="ts">
-withDefaults(defineProps<{
-    id: string;
-    label?: string;
-    modelValue: string;
-    options: number[];
-    emptyLabel?: string;
-    disabled?: boolean;
-}>(), {
-    label: 'Season',
-    emptyLabel: 'No seasons',
-    disabled: false,
-});
+withDefaults(
+    defineProps<{
+        id: string;
+        label?: string;
+        modelValue: string;
+        options: number[];
+        emptyLabel?: string;
+        disabled?: boolean;
+    }>(),
+    {
+        label: 'Season',
+        emptyLabel: 'No seasons',
+        disabled: false,
+    },
+);
 
 const emit = defineEmits<{
     (e: 'update:modelValue', value: string): void;
@@ -24,7 +27,10 @@ const onChange = (event: Event) => {
 
 <template>
     <div class="min-w-[160px]">
-        <label class="mb-1 block text-xs font-medium text-muted-foreground" :for="id">
+        <label
+            class="mb-1 block text-xs font-medium text-muted-foreground"
+            :for="id"
+        >
             {{ label }}
         </label>
         <select
@@ -47,4 +53,3 @@ const onChange = (event: Event) => {
         </select>
     </div>
 </template>
-

@@ -7,6 +7,7 @@ use App\Actions\OddsApi\AbstractSyncOddsForGames;
 class SyncOddsForGames extends AbstractSyncOddsForGames
 {
     protected const SPORT_KEY = 'americanfootball_ncaaf';
+
     protected const GAME_MODEL_CLASS = \App\Models\CFB\Game::class;
 
     protected const MATCH_THRESHOLD = 85.0;

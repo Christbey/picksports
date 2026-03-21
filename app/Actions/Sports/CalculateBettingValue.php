@@ -2,8 +2,12 @@
 
 namespace App\Actions\Sports;
 
+use App\Actions\Sports\Concerns\InteractsWithBettingMarkets;
+
 class CalculateBettingValue
 {
+    use InteractsWithBettingMarkets;
+
     public function execute(object $game, string $sportKey = 'nba'): ?array
     {
         $prediction = $game->prediction ?? null;
@@ -196,19 +200,6 @@ class CalculateBettingValue
         ];
     }
 
-    protected function extractMarket(array $oddsData, string $marketKey): ?array
-    {
-        foreach (($oddsData['bookmakers'] ?? []) as $bookmaker) {
-            foreach (($bookmaker['markets'] ?? []) as $market) {
-                if (($market['key'] ?? null) === $marketKey) {
-                    return $market;
-                }
-            }
-        }
-
-        return null;
-    }
-
     protected function spreadThreshold(string $sportKey): float
     {
         return (float) config("{$sportKey}.betting.edge_thresholds.spread", 2.5);
@@ -278,17 +269,4 @@ class CalculateBettingValue
         return $outcome === $oddsApi;
     }
 
-    protected function americanToImplied(float $odds): float
-    {
-        if ($odds > 0) {
-            return 100 / ($odds + 100);
-        }
-
-        return abs($odds) / (abs($odds) + 100);
-    }
-
-    protected function formatLine(float $line): string
-    {
-        return $line > 0 ? '+'.number_format($line, 1) : number_format($line, 1);
-    }
 }

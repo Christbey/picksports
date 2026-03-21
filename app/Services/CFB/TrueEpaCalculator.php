@@ -45,6 +45,7 @@ class TrueEpaCalculator
                     'ep_after' => null,
                     'epa' => null,
                 ];
+
                 continue;
             }
 
@@ -91,6 +92,7 @@ class TrueEpaCalculator
 
             if (! is_numeric($play->possession_team_id ?? null)) {
                 $results[$playId] = 0.0;
+
                 continue;
             }
 

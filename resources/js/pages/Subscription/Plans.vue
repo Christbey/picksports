@@ -55,10 +55,12 @@ function subscribe(tierId: string) {
 
     const selectedTier = props.tiers.find((tier) => tier.id === tierId);
     const rawPrice = selectedTier?.price[selectedBillingPeriod.value];
-    const numericPrice = typeof rawPrice === 'string' ? parseFloat(rawPrice) : rawPrice;
-    const value = typeof numericPrice === 'number' && !Number.isNaN(numericPrice)
-        ? numericPrice
-        : undefined;
+    const numericPrice =
+        typeof rawPrice === 'string' ? parseFloat(rawPrice) : rawPrice;
+    const value =
+        typeof numericPrice === 'number' && !Number.isNaN(numericPrice)
+            ? numericPrice
+            : undefined;
     const planName = selectedTier?.name ?? tierId;
     const eventId = createAnalyticsEventId();
 
@@ -81,17 +83,21 @@ function subscribe(tierId: string) {
 
     isProcessing.value = true;
 
-    router.post('/subscription/checkout', {
-        tier: tierId,
-        billing_period: selectedBillingPeriod.value,
-    }, {
-        onError: () => {
-            clearPendingAnalyticsEvent();
+    router.post(
+        '/subscription/checkout',
+        {
+            tier: tierId,
+            billing_period: selectedBillingPeriod.value,
         },
-        onFinish: () => {
-            isProcessing.value = false;
+        {
+            onError: () => {
+                clearPendingAnalyticsEvent();
+            },
+            onFinish: () => {
+                isProcessing.value = false;
+            },
         },
-    });
+    );
 }
 
 function formatPrice(price: number | string | null): string {
@@ -113,7 +119,9 @@ function formatFeatureValue(value: any): string {
     <Head title="Subscription Plans" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+        <div
+            class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
+        >
             <div class="text-center">
                 <h1 class="text-3xl font-bold">Choose Your Plan</h1>
                 <p class="mt-2 text-muted-foreground">
@@ -176,7 +184,11 @@ function formatFeatureValue(value: any): string {
                             {{ formatPrice(tier.price[selectedBillingPeriod]) }}
                         </div>
                         <div class="text-sm text-muted-foreground">
-                            {{ tier.price[selectedBillingPeriod] !== null ? `per ${selectedBillingPeriod === 'monthly' ? 'month' : 'year'}` : '' }}
+                            {{
+                                tier.price[selectedBillingPeriod] !== null
+                                    ? `per ${selectedBillingPeriod === 'monthly' ? 'month' : 'year'}`
+                                    : ''
+                            }}
                         </div>
                     </div>
 
@@ -184,20 +196,41 @@ function formatFeatureValue(value: any): string {
                         <li class="flex items-start gap-2">
                             <span class="text-primary">✓</span>
                             <span>
-                                {{ formatFeatureValue(tier.features.predictions_per_day) }}
-                                {{ tier.features.predictions_per_day === null ? 'predictions' : 'predictions/day' }}
+                                {{
+                                    formatFeatureValue(
+                                        tier.features.predictions_per_day,
+                                    )
+                                }}
+                                {{
+                                    tier.features.predictions_per_day === null
+                                        ? 'predictions'
+                                        : 'predictions/day'
+                                }}
                             </span>
                         </li>
                         <li class="flex items-start gap-2">
                             <span class="text-primary">✓</span>
                             <span>
-                                {{ formatFeatureValue(tier.features.historical_data_days) }}
-                                {{ tier.features.historical_data_days === null ? 'historical data' : 'days of data' }}
+                                {{
+                                    formatFeatureValue(
+                                        tier.features.historical_data_days,
+                                    )
+                                }}
+                                {{
+                                    tier.features.historical_data_days === null
+                                        ? 'historical data'
+                                        : 'days of data'
+                                }}
                             </span>
                         </li>
                         <li class="flex items-start gap-2">
                             <span class="text-primary">✓</span>
-                            <span>{{ tier.features.sports_access.join(', ') }} access</span>
+                            <span
+                                >{{
+                                    tier.features.sports_access.join(', ')
+                                }}
+                                access</span
+                            >
                         </li>
                         <li
                             v-if="tier.features.export_predictions"
@@ -240,14 +273,14 @@ function formatFeatureValue(value: any): string {
                         v-if="tier.id !== 'free' && !tier.is_current"
                         @click="subscribe(tier.id)"
                         :disabled="isProcessing"
-                        class="w-full rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        class="w-full rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                         {{ isProcessing ? 'Processing...' : 'Subscribe' }}
                     </button>
                     <button
                         v-else-if="tier.is_current"
                         disabled
-                        class="w-full rounded-lg bg-sidebar-accent px-4 py-2 font-medium text-muted-foreground cursor-not-allowed"
+                        class="w-full cursor-not-allowed rounded-lg bg-sidebar-accent px-4 py-2 font-medium text-muted-foreground"
                     >
                         Current Plan
                     </button>

@@ -135,20 +135,27 @@ watch(userSearch, (value) => {
         isSearchingUsers.value = true;
 
         try {
-            const response = await fetch(`/settings/admin/founding-users/search?query=${encodeURIComponent(query)}`, {
-                method: 'GET',
-                headers: {
-                    Accept: 'application/json',
+            const response = await fetch(
+                `/settings/admin/founding-users/search?query=${encodeURIComponent(query)}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json',
+                    },
+                    signal: searchAbortController.signal,
                 },
-                signal: searchAbortController.signal,
-            });
+            );
 
             if (!response.ok) {
                 throw new Error('Failed user lookup.');
             }
 
-            const payload = await response.json() as { users?: UserLookupResult[] };
-            userSuggestions.value = Array.isArray(payload.users) ? payload.users : [];
+            const payload = (await response.json()) as {
+                users?: UserLookupResult[];
+            };
+            userSuggestions.value = Array.isArray(payload.users)
+                ? payload.users
+                : [];
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
                 return;
@@ -207,9 +214,13 @@ function revokeFoundingAccess(userId: number): void {
         return;
     }
 
-    router.post('/settings/admin/founding-users/revoke', { user_id: userId }, {
-        preserveScroll: true,
-    });
+    router.post(
+        '/settings/admin/founding-users/revoke',
+        { user_id: userId },
+        {
+            preserveScroll: true,
+        },
+    );
 }
 
 function createGroup(): void {
@@ -272,7 +283,9 @@ function searchAssignableUsers(groupId: number): void {
                 throw new Error('Failed group user lookup.');
             }
 
-            const payload = await response.json() as { users?: UserLookupResult[] };
+            const payload = (await response.json()) as {
+                users?: UserLookupResult[];
+            };
             groupUserSuggestions.value = {
                 ...groupUserSuggestions.value,
                 [groupId]: Array.isArray(payload.users) ? payload.users : [],
@@ -342,7 +355,11 @@ function addUserToGroup(groupId: number): void {
     });
 }
 
-function removeUserFromGroup(groupId: number, userId: number, userName: string): void {
+function removeUserFromGroup(
+    groupId: number,
+    userId: number,
+    userName: string,
+): void {
     if (!confirm(`Remove ${userName} from this group?`)) {
         return;
     }
@@ -357,9 +374,13 @@ function removeUserFromGroup(groupId: number, userId: number, userName: string):
 }
 
 function rotateJoinLink(groupId: number): void {
-    router.post('/settings/admin/groups/join-link', { group_id: groupId }, {
-        preserveScroll: true,
-    });
+    router.post(
+        '/settings/admin/groups/join-link',
+        { group_id: groupId },
+        {
+            preserveScroll: true,
+        },
+    );
 }
 
 async function copyLink(link: string, key: string): Promise<void> {
@@ -392,12 +413,14 @@ const adminAreas = [
     },
     {
         title: 'Submissions',
-        description: 'Jump directly to form submissions in the admin users view.',
+        description:
+            'Jump directly to form submissions in the admin users view.',
         href: '/admin/users#submissions',
     },
     {
         title: 'Prop Exports',
-        description: 'Export player prop cards optimized for Instagram and Facebook.',
+        description:
+            'Export player prop cards optimized for Instagram and Facebook.',
         href: '/settings/prop-exports',
     },
     {
@@ -422,7 +445,8 @@ const adminAreas = [
     },
     {
         title: 'Prediction Access Debug',
-        description: 'Inspect tier and permission-based prediction field access.',
+        description:
+            'Inspect tier and permission-based prediction field access.',
         href: '/debug/prediction-access',
     },
     {
@@ -432,12 +456,14 @@ const adminAreas = [
     },
     {
         title: 'CFBD Team Mappings',
-        description: 'Resolve CollegeFootballData team names to internal CFB teams.',
+        description:
+            'Resolve CollegeFootballData team names to internal CFB teams.',
         href: '/settings/team-mappings?provider=cfbd&sport=americanfootball_ncaaf',
     },
     {
         title: 'Player Mappings',
-        description: 'Resolve odds provider player names when fuzzy matching fails.',
+        description:
+            'Resolve odds provider player names when fuzzy matching fails.',
         href: '/settings/player-mappings',
     },
 ];
@@ -457,18 +483,30 @@ const adminAreas = [
                     description="Use this panel to access all admin configuration areas"
                 />
 
-                <div class="rounded-xl border border-sidebar-border bg-white p-5 dark:bg-sidebar">
+                <div
+                    class="rounded-xl border border-sidebar-border bg-white p-5 dark:bg-sidebar"
+                >
                     <div class="flex flex-col gap-4">
                         <div>
-                            <h3 class="text-sm font-semibold">Bracket Groups</h3>
+                            <h3 class="text-sm font-semibold">
+                                Bracket Groups
+                            </h3>
                             <p class="mt-1 text-sm text-muted-foreground">
-                                Create March Madness groups, generate invite links, and onboard users directly into bracket pools.
+                                Create March Madness groups, generate invite
+                                links, and onboard users directly into bracket
+                                pools.
                             </p>
                         </div>
 
-                        <form class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px_auto]" @submit.prevent="createGroup">
+                        <form
+                            class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px_auto]"
+                            @submit.prevent="createGroup"
+                        >
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="group-name">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="group-name"
+                                >
                                     Group Name
                                 </label>
                                 <input
@@ -477,11 +515,19 @@ const adminAreas = [
                                     type="text"
                                     required
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                />
+                                <p
+                                    v-if="groupForm.errors.name"
+                                    class="mt-1 text-xs text-red-600"
                                 >
-                                <p v-if="groupForm.errors.name" class="mt-1 text-xs text-red-600">{{ groupForm.errors.name }}</p>
+                                    {{ groupForm.errors.name }}
+                                </p>
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="group-season">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="group-season"
+                                >
                                     Season
                                 </label>
                                 <input
@@ -490,19 +536,37 @@ const adminAreas = [
                                     type="number"
                                     required
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                />
+                                <p
+                                    v-if="groupForm.errors.season"
+                                    class="mt-1 text-xs text-red-600"
                                 >
-                                <p v-if="groupForm.errors.season" class="mt-1 text-xs text-red-600">{{ groupForm.errors.season }}</p>
+                                    {{ groupForm.errors.season }}
+                                </p>
                             </div>
                             <div class="flex items-end">
-                                <Button type="submit" :disabled="groupForm.processing">
-                                    {{ groupForm.processing ? 'Creating...' : 'Create Group' }}
+                                <Button
+                                    type="submit"
+                                    :disabled="groupForm.processing"
+                                >
+                                    {{
+                                        groupForm.processing
+                                            ? 'Creating...'
+                                            : 'Create Group'
+                                    }}
                                 </Button>
                             </div>
                         </form>
 
-                        <form class="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)_auto]" @submit.prevent="inviteToGroup">
+                        <form
+                            class="grid gap-3 sm:grid-cols-[220px_minmax(0,1fr)_auto]"
+                            @submit.prevent="inviteToGroup"
+                        >
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="invite-group">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="invite-group"
+                                >
                                     Group
                                 </label>
                                 <select
@@ -511,14 +575,26 @@ const adminAreas = [
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
                                 >
                                     <option :value="null">Select group</option>
-                                    <option v-for="group in groups" :key="group.id" :value="group.id">
+                                    <option
+                                        v-for="group in groups"
+                                        :key="group.id"
+                                        :value="group.id"
+                                    >
                                         {{ group.name }}
                                     </option>
                                 </select>
-                                <p v-if="inviteForm.errors.group_id" class="mt-1 text-xs text-red-600">{{ inviteForm.errors.group_id }}</p>
+                                <p
+                                    v-if="inviteForm.errors.group_id"
+                                    class="mt-1 text-xs text-red-600"
+                                >
+                                    {{ inviteForm.errors.group_id }}
+                                </p>
                             </div>
                             <div>
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="invite-email">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="invite-email"
+                                >
                                     Invite Email
                                 </label>
                                 <input
@@ -528,12 +604,27 @@ const adminAreas = [
                                     required
                                     placeholder="user@example.com"
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                />
+                                <p
+                                    v-if="inviteForm.errors.email"
+                                    class="mt-1 text-xs text-red-600"
                                 >
-                                <p v-if="inviteForm.errors.email" class="mt-1 text-xs text-red-600">{{ inviteForm.errors.email }}</p>
+                                    {{ inviteForm.errors.email }}
+                                </p>
                             </div>
                             <div class="flex items-end">
-                                <Button type="submit" :disabled="inviteForm.processing || !inviteForm.group_id">
-                                    {{ inviteForm.processing ? 'Inviting...' : 'Create Invite' }}
+                                <Button
+                                    type="submit"
+                                    :disabled="
+                                        inviteForm.processing ||
+                                        !inviteForm.group_id
+                                    "
+                                >
+                                    {{
+                                        inviteForm.processing
+                                            ? 'Inviting...'
+                                            : 'Create Invite'
+                                    }}
                                 </Button>
                             </div>
                         </form>
@@ -544,155 +635,385 @@ const adminAreas = [
                                 :key="group.id"
                                 class="rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
                             >
-                                <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div
+                                    class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                                >
                                     <div>
-                                        <h4 class="text-sm font-semibold">{{ group.name }}</h4>
-                                        <p class="text-xs text-muted-foreground">
-                                            Season {{ group.season ?? 'N/A' }} · {{ group.members_count }} members · {{ group.brackets_count }} brackets
+                                        <h4 class="text-sm font-semibold">
+                                            {{ group.name }}
+                                        </h4>
+                                        <p
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            Season {{ group.season ?? 'N/A' }} ·
+                                            {{ group.members_count }} members ·
+                                            {{ group.brackets_count }} brackets
                                         </p>
                                     </div>
                                     <div class="flex gap-2">
-                                        <Button type="button" variant="outline" @click="rotateJoinLink(group.id)">
-                                            {{ group.join_link ? 'Rotate Join Link' : 'Create Join Link' }}
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            @click="rotateJoinLink(group.id)"
+                                        >
+                                            {{
+                                                group.join_link
+                                                    ? 'Rotate Join Link'
+                                                    : 'Create Join Link'
+                                            }}
                                         </Button>
                                     </div>
                                 </div>
 
-                                <div class="mt-3 rounded-lg border border-sidebar-border bg-white p-3 dark:bg-sidebar">
-                                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Shared Join Link</p>
+                                <div
+                                    class="mt-3 rounded-lg border border-sidebar-border bg-white p-3 dark:bg-sidebar"
+                                >
+                                    <p
+                                        class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                                    >
+                                        Shared Join Link
+                                    </p>
                                     <div v-if="group.join_link" class="mt-2">
-                                        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                            <p class="break-all text-sm text-primary">{{ group.join_link.join_url }}</p>
+                                        <div
+                                            class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                                        >
+                                            <p
+                                                class="text-sm break-all text-primary"
+                                            >
+                                                {{ group.join_link.join_url }}
+                                            </p>
                                             <Button
                                                 type="button"
                                                 variant="outline"
                                                 size="sm"
-                                                @click="copyLink(group.join_link.join_url, `join-${group.id}`)"
+                                                @click="
+                                                    copyLink(
+                                                        group.join_link
+                                                            .join_url,
+                                                        `join-${group.id}`,
+                                                    )
+                                                "
                                             >
-                                                {{ copiedLinkKey === `join-${group.id}` ? 'Copied' : 'Copy Link' }}
+                                                {{
+                                                    copiedLinkKey ===
+                                                    `join-${group.id}`
+                                                        ? 'Copied'
+                                                        : 'Copy Link'
+                                                }}
                                             </Button>
                                         </div>
-                                        <p class="mt-1 text-xs text-muted-foreground">
-                                            Anyone with this link can join {{ group.name }} after login or registration.
+                                        <p
+                                            class="mt-1 text-xs text-muted-foreground"
+                                        >
+                                            Anyone with this link can join
+                                            {{ group.name }} after login or
+                                            registration.
                                         </p>
                                     </div>
-                                    <p v-else class="mt-2 text-sm text-muted-foreground">No shared join link yet.</p>
+                                    <p
+                                        v-else
+                                        class="mt-2 text-sm text-muted-foreground"
+                                    >
+                                        No shared join link yet.
+                                    </p>
                                 </div>
 
-                                <div class="mt-3 rounded-lg border border-sidebar-border bg-white p-3 dark:bg-sidebar">
-                                    <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Add Existing User</p>
-                                    <div class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start">
+                                <div
+                                    class="mt-3 rounded-lg border border-sidebar-border bg-white p-3 dark:bg-sidebar"
+                                >
+                                    <p
+                                        class="text-xs font-medium tracking-wide text-muted-foreground uppercase"
+                                    >
+                                        Add Existing User
+                                    </p>
+                                    <div
+                                        class="mt-2 flex flex-col gap-3 sm:flex-row sm:items-start"
+                                    >
                                         <div class="relative flex-1">
                                             <input
-                                                :value="groupUserSearch[group.id] ?? ''"
+                                                :value="
+                                                    groupUserSearch[group.id] ??
+                                                    ''
+                                                "
                                                 type="text"
                                                 placeholder="Search existing users by name or email"
                                                 autocomplete="off"
                                                 class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
-                                                @input="handleAssignableUserInput(group.id, $event)"
-                                            >
+                                                @input="
+                                                    handleAssignableUserInput(
+                                                        group.id,
+                                                        $event,
+                                                    )
+                                                "
+                                            />
                                             <div
-                                                v-if="(isSearchingGroupUsers[group.id] ?? false) || (groupUserSuggestions[group.id]?.length ?? 0) > 0"
+                                                v-if="
+                                                    (isSearchingGroupUsers[
+                                                        group.id
+                                                    ] ??
+                                                        false) ||
+                                                    (groupUserSuggestions[
+                                                        group.id
+                                                    ]?.length ?? 0) > 0
+                                                "
                                                 class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-sidebar-border bg-white shadow-lg dark:bg-sidebar"
                                             >
-                                                <div v-if="isSearchingGroupUsers[group.id] ?? false" class="px-3 py-2 text-xs text-muted-foreground">
+                                                <div
+                                                    v-if="
+                                                        isSearchingGroupUsers[
+                                                            group.id
+                                                        ] ?? false
+                                                    "
+                                                    class="px-3 py-2 text-xs text-muted-foreground"
+                                                >
                                                     Searching...
                                                 </div>
                                                 <button
-                                                    v-for="user in (groupUserSuggestions[group.id] ?? [])"
+                                                    v-for="user in groupUserSuggestions[
+                                                        group.id
+                                                    ] ?? []"
                                                     :key="user.id"
                                                     type="button"
-                                                    class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm hover:bg-sidebar-accent first:border-t-0"
-                                                    @click="selectAssignableUser(group.id, user)"
+                                                    class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm first:border-t-0 hover:bg-sidebar-accent"
+                                                    @click="
+                                                        selectAssignableUser(
+                                                            group.id,
+                                                            user,
+                                                        )
+                                                    "
                                                 >
-                                                    <span class="font-medium">{{ user.name }}</span>
-                                                    <span class="ml-1 text-muted-foreground">{{ user.email }}</span>
+                                                    <span class="font-medium">{{
+                                                        user.name
+                                                    }}</span>
+                                                    <span
+                                                        class="ml-1 text-muted-foreground"
+                                                        >{{ user.email }}</span
+                                                    >
                                                 </button>
                                             </div>
                                         </div>
                                         <Button
                                             type="button"
-                                            :disabled="assignMemberForm.processing || assignMemberForm.group_id !== group.id || !assignMemberForm.user_id"
+                                            :disabled="
+                                                assignMemberForm.processing ||
+                                                assignMemberForm.group_id !==
+                                                    group.id ||
+                                                !assignMemberForm.user_id
+                                            "
                                             @click="addUserToGroup(group.id)"
                                         >
-                                            {{ assignMemberForm.processing && assignMemberForm.group_id === group.id ? 'Adding...' : 'Add User' }}
+                                            {{
+                                                assignMemberForm.processing &&
+                                                assignMemberForm.group_id ===
+                                                    group.id
+                                                    ? 'Adding...'
+                                                    : 'Add User'
+                                            }}
                                         </Button>
                                     </div>
-                                    <p v-if="assignMemberForm.errors.group_id && assignMemberForm.group_id === group.id" class="mt-1 text-xs text-red-600">
+                                    <p
+                                        v-if="
+                                            assignMemberForm.errors.group_id &&
+                                            assignMemberForm.group_id ===
+                                                group.id
+                                        "
+                                        class="mt-1 text-xs text-red-600"
+                                    >
                                         {{ assignMemberForm.errors.group_id }}
                                     </p>
-                                    <p v-if="assignMemberForm.errors.user_id && assignMemberForm.group_id === group.id" class="mt-1 text-xs text-red-600">
+                                    <p
+                                        v-if="
+                                            assignMemberForm.errors.user_id &&
+                                            assignMemberForm.group_id ===
+                                                group.id
+                                        "
+                                        class="mt-1 text-xs text-red-600"
+                                    >
                                         {{ assignMemberForm.errors.user_id }}
                                     </p>
                                 </div>
 
-                                <div class="mt-3 overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar">
+                                <div
+                                    class="mt-3 overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar"
+                                >
                                     <table class="w-full text-left text-sm">
                                         <thead class="bg-sidebar-accent">
                                             <tr>
-                                                <th class="px-3 py-2 font-medium">Member</th>
-                                                <th class="px-3 py-2 font-medium">Role</th>
-                                                <th class="px-3 py-2 font-medium">Joined</th>
-                                                <th class="px-3 py-2 font-medium">Action</th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Member
+                                                </th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Role
+                                                </th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Joined
+                                                </th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Action
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-if="group.members.length === 0">
-                                                <td colspan="4" class="px-3 py-3 text-muted-foreground">No members yet.</td>
-                                            </tr>
-                                            <tr v-for="member in group.members" :key="member.id" class="border-t border-sidebar-border">
-                                                <td class="px-3 py-2">
-                                                    <div class="font-medium">{{ member.name }}</div>
-                                                    <div class="text-xs text-muted-foreground">{{ member.email }}</div>
+                                            <tr
+                                                v-if="
+                                                    group.members.length === 0
+                                                "
+                                            >
+                                                <td
+                                                    colspan="4"
+                                                    class="px-3 py-3 text-muted-foreground"
+                                                >
+                                                    No members yet.
                                                 </td>
-                                                <td class="px-3 py-2 capitalize">{{ member.role }}</td>
-                                                <td class="px-3 py-2">{{ formatDate(member.joined_at) }}</td>
+                                            </tr>
+                                            <tr
+                                                v-for="member in group.members"
+                                                :key="member.id"
+                                                class="border-t border-sidebar-border"
+                                            >
+                                                <td class="px-3 py-2">
+                                                    <div class="font-medium">
+                                                        {{ member.name }}
+                                                    </div>
+                                                    <div
+                                                        class="text-xs text-muted-foreground"
+                                                    >
+                                                        {{ member.email }}
+                                                    </div>
+                                                </td>
+                                                <td
+                                                    class="px-3 py-2 capitalize"
+                                                >
+                                                    {{ member.role }}
+                                                </td>
+                                                <td class="px-3 py-2">
+                                                    {{
+                                                        formatDate(
+                                                            member.joined_at,
+                                                        )
+                                                    }}
+                                                </td>
                                                 <td class="px-3 py-2">
                                                     <Button
-                                                        v-if="member.role !== 'owner'"
+                                                        v-if="
+                                                            member.role !==
+                                                            'owner'
+                                                        "
                                                         type="button"
                                                         variant="outline"
                                                         size="sm"
-                                                        @click="removeUserFromGroup(group.id, member.id, member.name)"
+                                                        @click="
+                                                            removeUserFromGroup(
+                                                                group.id,
+                                                                member.id,
+                                                                member.name,
+                                                            )
+                                                        "
                                                     >
                                                         Remove
                                                     </Button>
-                                                    <span v-else class="text-xs text-muted-foreground">Owner</span>
+                                                    <span
+                                                        v-else
+                                                        class="text-xs text-muted-foreground"
+                                                        >Owner</span
+                                                    >
                                                 </td>
                                             </tr>
                                         </tbody>
                                     </table>
                                 </div>
 
-                                <div class="mt-3 overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar">
+                                <div
+                                    class="mt-3 overflow-x-auto rounded-lg border border-sidebar-border bg-white dark:bg-sidebar"
+                                >
                                     <table class="w-full text-left text-sm">
                                         <thead class="bg-sidebar-accent">
                                             <tr>
-                                                <th class="px-3 py-2 font-medium">Invite Email</th>
-                                                <th class="px-3 py-2 font-medium">Link</th>
-                                                <th class="px-3 py-2 font-medium">Status</th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Invite Email
+                                                </th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Link
+                                                </th>
+                                                <th
+                                                    class="px-3 py-2 font-medium"
+                                                >
+                                                    Status
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            <tr v-if="group.invitations.length === 0">
-                                                <td colspan="3" class="px-3 py-3 text-muted-foreground">No invites yet.</td>
+                                            <tr
+                                                v-if="
+                                                    group.invitations.length ===
+                                                    0
+                                                "
+                                            >
+                                                <td
+                                                    colspan="3"
+                                                    class="px-3 py-3 text-muted-foreground"
+                                                >
+                                                    No invites yet.
+                                                </td>
                                             </tr>
-                                            <tr v-for="invite in group.invitations" :key="invite.id" class="border-t border-sidebar-border">
-                                                <td class="px-3 py-2">{{ invite.email }}</td>
+                                            <tr
+                                                v-for="invite in group.invitations"
+                                                :key="invite.id"
+                                                class="border-t border-sidebar-border"
+                                            >
                                                 <td class="px-3 py-2">
-                                                    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                                        <p class="break-all text-primary">{{ invite.invite_url }}</p>
+                                                    {{ invite.email }}
+                                                </td>
+                                                <td class="px-3 py-2">
+                                                    <div
+                                                        class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+                                                    >
+                                                        <p
+                                                            class="break-all text-primary"
+                                                        >
+                                                            {{
+                                                                invite.invite_url
+                                                            }}
+                                                        </p>
                                                         <Button
                                                             type="button"
                                                             variant="outline"
                                                             size="sm"
-                                                            @click="copyLink(invite.invite_url, `invite-${invite.id}`)"
+                                                            @click="
+                                                                copyLink(
+                                                                    invite.invite_url,
+                                                                    `invite-${invite.id}`,
+                                                                )
+                                                            "
                                                         >
-                                                            {{ copiedLinkKey === `invite-${invite.id}` ? 'Copied' : 'Copy Link' }}
+                                                            {{
+                                                                copiedLinkKey ===
+                                                                `invite-${invite.id}`
+                                                                    ? 'Copied'
+                                                                    : 'Copy Link'
+                                                            }}
                                                         </Button>
                                                     </div>
                                                 </td>
-                                                <td class="px-3 py-2">{{ invite.accepted_at ? `Accepted ${formatDate(invite.accepted_at)}` : 'Pending' }}</td>
+                                                <td class="px-3 py-2">
+                                                    {{
+                                                        invite.accepted_at
+                                                            ? `Accepted ${formatDate(invite.accepted_at)}`
+                                                            : 'Pending'
+                                                    }}
+                                                </td>
                                             </tr>
                                         </tbody>
                                     </table>
@@ -702,37 +1023,79 @@ const adminAreas = [
                     </div>
                 </div>
 
-                <div class="rounded-xl border border-sidebar-border bg-white p-5 dark:bg-sidebar">
+                <div
+                    class="rounded-xl border border-sidebar-border bg-white p-5 dark:bg-sidebar"
+                >
                     <div class="flex flex-col gap-4">
                         <div>
-                            <h3 class="text-sm font-semibold">Founding Users</h3>
+                            <h3 class="text-sm font-semibold">
+                                Founding Users
+                            </h3>
                             <p class="mt-1 text-sm text-muted-foreground">
-                                Grant or revoke the <code>{{ foundingUsers.role }}</code> role with access level <code>{{ foundingUsers.tier_name }}</code>.
+                                Grant or revoke the
+                                <code>{{ foundingUsers.role }}</code> role with
+                                access level
+                                <code>{{ foundingUsers.tier_name }}</code
+                                >.
                             </p>
                         </div>
 
                         <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
-                            <div class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3">
-                                <p class="text-xs text-muted-foreground">Program</p>
-                                <p class="text-sm font-semibold">{{ foundingUsers.enabled ? 'Enabled' : 'Disabled' }}</p>
+                            <div
+                                class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3"
+                            >
+                                <p class="text-xs text-muted-foreground">
+                                    Program
+                                </p>
+                                <p class="text-sm font-semibold">
+                                    {{
+                                        foundingUsers.enabled
+                                            ? 'Enabled'
+                                            : 'Disabled'
+                                    }}
+                                </p>
                             </div>
-                            <div class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3">
-                                <p class="text-xs text-muted-foreground">Limit</p>
-                                <p class="text-sm font-semibold">{{ foundingUsers.limit }}</p>
+                            <div
+                                class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3"
+                            >
+                                <p class="text-xs text-muted-foreground">
+                                    Limit
+                                </p>
+                                <p class="text-sm font-semibold">
+                                    {{ foundingUsers.limit }}
+                                </p>
                             </div>
-                            <div class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3">
-                                <p class="text-xs text-muted-foreground">Used</p>
-                                <p class="text-sm font-semibold">{{ foundingUsers.used }}</p>
+                            <div
+                                class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3"
+                            >
+                                <p class="text-xs text-muted-foreground">
+                                    Used
+                                </p>
+                                <p class="text-sm font-semibold">
+                                    {{ foundingUsers.used }}
+                                </p>
                             </div>
-                            <div class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3">
-                                <p class="text-xs text-muted-foreground">Remaining</p>
-                                <p class="text-sm font-semibold">{{ foundingUsers.remaining }}</p>
+                            <div
+                                class="rounded-lg border border-sidebar-border bg-sidebar-accent p-3"
+                            >
+                                <p class="text-xs text-muted-foreground">
+                                    Remaining
+                                </p>
+                                <p class="text-sm font-semibold">
+                                    {{ foundingUsers.remaining }}
+                                </p>
                             </div>
                         </div>
 
-                        <form class="flex flex-col gap-3 sm:flex-row sm:items-end" @submit.prevent="updateFoundingLimit">
+                        <form
+                            class="flex flex-col gap-3 sm:flex-row sm:items-end"
+                            @submit.prevent="updateFoundingLimit"
+                        >
                             <div class="w-full sm:max-w-xs">
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="founding-user-limit">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="founding-user-limit"
+                                >
                                     Founding User Limit (X)
                                 </label>
                                 <input
@@ -743,17 +1106,35 @@ const adminAreas = [
                                     step="1"
                                     required
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                />
+                                <p
+                                    v-if="limitForm.errors.limit"
+                                    class="mt-1 text-xs text-red-600"
                                 >
-                                <p v-if="limitForm.errors.limit" class="mt-1 text-xs text-red-600">{{ limitForm.errors.limit }}</p>
+                                    {{ limitForm.errors.limit }}
+                                </p>
                             </div>
-                            <Button type="submit" :disabled="limitForm.processing">
-                                {{ limitForm.processing ? 'Saving...' : 'Save Limit' }}
+                            <Button
+                                type="submit"
+                                :disabled="limitForm.processing"
+                            >
+                                {{
+                                    limitForm.processing
+                                        ? 'Saving...'
+                                        : 'Save Limit'
+                                }}
                             </Button>
                         </form>
 
-                        <form class="flex flex-col gap-3 sm:flex-row sm:items-start" @submit.prevent="grantFoundingAccess">
+                        <form
+                            class="flex flex-col gap-3 sm:flex-row sm:items-start"
+                            @submit.prevent="grantFoundingAccess"
+                        >
                             <div class="relative flex-1">
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="founding-user-search">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="founding-user-search"
+                                >
                                     User Search
                                 </label>
                                 <input
@@ -764,28 +1145,42 @@ const adminAreas = [
                                     placeholder="Search by name or email (min 2 chars)"
                                     autocomplete="off"
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
-                                >
+                                />
                                 <div
-                                    v-if="isSearchingUsers || userSuggestions.length > 0"
+                                    v-if="
+                                        isSearchingUsers ||
+                                        userSuggestions.length > 0
+                                    "
                                     class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-sidebar-border bg-white shadow-lg dark:bg-sidebar"
                                 >
-                                    <div v-if="isSearchingUsers" class="px-3 py-2 text-xs text-muted-foreground">
+                                    <div
+                                        v-if="isSearchingUsers"
+                                        class="px-3 py-2 text-xs text-muted-foreground"
+                                    >
                                         Searching...
                                     </div>
                                     <button
                                         v-for="user in userSuggestions"
                                         :key="user.id"
                                         type="button"
-                                        class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm hover:bg-sidebar-accent first:border-t-0"
+                                        class="block w-full border-t border-sidebar-border px-3 py-2 text-left text-sm first:border-t-0 hover:bg-sidebar-accent"
                                         @click="selectUserSuggestion(user)"
                                     >
-                                        <span class="font-medium">{{ user.name }}</span>
-                                        <span class="ml-1 text-muted-foreground">{{ user.email }}</span>
+                                        <span class="font-medium">{{
+                                            user.name
+                                        }}</span>
+                                        <span
+                                            class="ml-1 text-muted-foreground"
+                                            >{{ user.email }}</span
+                                        >
                                     </button>
                                 </div>
                             </div>
                             <div class="flex-1">
-                                <label class="mb-1 block text-xs font-medium text-muted-foreground" for="founding-user-email">
+                                <label
+                                    class="mb-1 block text-xs font-medium text-muted-foreground"
+                                    for="founding-user-email"
+                                >
                                     Selected Email
                                 </label>
                                 <input
@@ -795,40 +1190,95 @@ const adminAreas = [
                                     required
                                     placeholder="user@example.com"
                                     class="w-full rounded-lg border border-sidebar-border bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                />
+                                <p
+                                    v-if="grantForm.errors.email"
+                                    class="mt-1 text-xs text-red-600"
                                 >
-                                <p v-if="grantForm.errors.email" class="mt-1 text-xs text-red-600">{{ grantForm.errors.email }}</p>
+                                    {{ grantForm.errors.email }}
+                                </p>
                             </div>
-                            <Button type="submit" :disabled="grantForm.processing || !foundingUsers.enabled || foundingUsers.remaining < 1">
-                                {{ grantForm.processing ? 'Granting...' : 'Grant Founding Access' }}
+                            <Button
+                                type="submit"
+                                :disabled="
+                                    grantForm.processing ||
+                                    !foundingUsers.enabled ||
+                                    foundingUsers.remaining < 1
+                                "
+                            >
+                                {{
+                                    grantForm.processing
+                                        ? 'Granting...'
+                                        : 'Grant Founding Access'
+                                }}
                             </Button>
                         </form>
 
                         <div>
-                            <h4 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Founding Users</h4>
-                            <div class="mt-2 overflow-x-auto rounded-lg border border-sidebar-border">
+                            <h4
+                                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                            >
+                                Current Founding Users
+                            </h4>
+                            <div
+                                class="mt-2 overflow-x-auto rounded-lg border border-sidebar-border"
+                            >
                                 <table class="w-full text-left text-sm">
                                     <thead class="bg-sidebar-accent">
                                         <tr>
-                                            <th class="px-3 py-2 font-medium">Name</th>
-                                            <th class="px-3 py-2 font-medium">Email</th>
-                                            <th class="px-3 py-2 font-medium">Created</th>
-                                            <th class="px-3 py-2 font-medium">Action</th>
+                                            <th class="px-3 py-2 font-medium">
+                                                Name
+                                            </th>
+                                            <th class="px-3 py-2 font-medium">
+                                                Email
+                                            </th>
+                                            <th class="px-3 py-2 font-medium">
+                                                Created
+                                            </th>
+                                            <th class="px-3 py-2 font-medium">
+                                                Action
+                                            </th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        <tr v-if="foundingUsers.users.length === 0">
-                                            <td colspan="4" class="px-3 py-3 text-muted-foreground">No founding users assigned yet.</td>
+                                        <tr
+                                            v-if="
+                                                foundingUsers.users.length === 0
+                                            "
+                                        >
+                                            <td
+                                                colspan="4"
+                                                class="px-3 py-3 text-muted-foreground"
+                                            >
+                                                No founding users assigned yet.
+                                            </td>
                                         </tr>
-                                        <tr v-for="user in foundingUsers.users" :key="user.id" class="border-t border-sidebar-border">
-                                            <td class="px-3 py-2">{{ user.name }}</td>
-                                            <td class="px-3 py-2">{{ user.email }}</td>
-                                            <td class="px-3 py-2">{{ formatDate(user.created_at) }}</td>
+                                        <tr
+                                            v-for="user in foundingUsers.users"
+                                            :key="user.id"
+                                            class="border-t border-sidebar-border"
+                                        >
+                                            <td class="px-3 py-2">
+                                                {{ user.name }}
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                {{ user.email }}
+                                            </td>
+                                            <td class="px-3 py-2">
+                                                {{
+                                                    formatDate(user.created_at)
+                                                }}
+                                            </td>
                                             <td class="px-3 py-2">
                                                 <Button
                                                     type="button"
                                                     variant="outline"
                                                     class="h-8"
-                                                    @click="revokeFoundingAccess(user.id)"
+                                                    @click="
+                                                        revokeFoundingAccess(
+                                                            user.id,
+                                                        )
+                                                    "
                                                 >
                                                     Revoke
                                                 </Button>
@@ -848,7 +1298,9 @@ const adminAreas = [
                         class="rounded-xl border border-sidebar-border bg-white p-5 dark:bg-sidebar"
                     >
                         <h3 class="text-sm font-semibold">{{ area.title }}</h3>
-                        <p class="mt-2 text-sm text-muted-foreground">{{ area.description }}</p>
+                        <p class="mt-2 text-sm text-muted-foreground">
+                            {{ area.description }}
+                        </p>
                         <Button as-child variant="outline" class="mt-4">
                             <Link :href="area.href">Open</Link>
                         </Button>

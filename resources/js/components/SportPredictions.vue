@@ -12,7 +12,10 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { fetchJson } from '@/composables/useApiClient';
 import { usePredictionList } from '@/composables/usePredictionList';
 import { useSeasonFilter } from '@/composables/useSeasonFilter';
-import { isMlbRegularSeasonType, isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
+import {
+    isMlbRegularSeasonType,
+    isMlbSpringTrainingType,
+} from '@/lib/mlbSeasonType';
 import type { PredictionListItem, SportPredictionsConfig } from '@/types';
 
 const props = defineProps<{
@@ -27,11 +30,10 @@ const seasonType = ref('');
 const week = ref('');
 const searchQuery = ref('');
 const isBootstrapping = ref(true);
-const {
-    availableSeasons,
-    selectedSeason,
-    fetchAvailableSeasons,
-} = useSeasonFilter(() => `/api/v1/${props.config.sport}/predictions/available-seasons`);
+const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
+    useSeasonFilter(
+        () => `/api/v1/${props.config.sport}/predictions/available-seasons`,
+    );
 
 const weekOptions = computed(() => {
     if (!props.config.seasonWeekConfig || !seasonType.value) return [];
@@ -219,7 +221,9 @@ const hasAppliedSeasonWeekFilters = computed(() => {
     return seasonType.value !== '' || week.value !== '';
 });
 
-const normalizedSearchQuery = computed(() => searchQuery.value.trim().toLowerCase());
+const normalizedSearchQuery = computed(() =>
+    searchQuery.value.trim().toLowerCase(),
+);
 
 const filteredPredictions = computed(() => {
     if (!normalizedSearchQuery.value) {
@@ -254,12 +258,16 @@ const showSpringTrainingBadge = computed(() => {
     }
 
     // Keep the badge visible until this MLB slate is regular season.
-    const hasSpringTraining = predictions.value.some((prediction) => isMlbSpringTrainingType(prediction.game?.season_type));
+    const hasSpringTraining = predictions.value.some((prediction) =>
+        isMlbSpringTrainingType(prediction.game?.season_type),
+    );
     if (hasSpringTraining) {
         return true;
     }
 
-    return predictions.value.some((prediction) => !isMlbRegularSeasonType(prediction.game?.season_type));
+    return predictions.value.some(
+        (prediction) => !isMlbRegularSeasonType(prediction.game?.season_type),
+    );
 });
 
 const emptyStateTitle = computed(() => {
@@ -271,7 +279,10 @@ const emptyStateTitle = computed(() => {
         return 'No prediction dates available yet';
     }
 
-    if (filterMode.value === 'seasonWeek' && hasAppliedSeasonWeekFilters.value) {
+    if (
+        filterMode.value === 'seasonWeek' &&
+        hasAppliedSeasonWeekFilters.value
+    ) {
         return 'No predictions match these filters';
     }
 
@@ -291,7 +302,10 @@ const emptyStateDescription = computed(() => {
         return `No games are available for ${formatDateLabel(selectedDate.value)}. Try another date.`;
     }
 
-    if (filterMode.value === 'seasonWeek' && hasAppliedSeasonWeekFilters.value) {
+    if (
+        filterMode.value === 'seasonWeek' &&
+        hasAppliedSeasonWeekFilters.value
+    ) {
         return 'Try clearing season/week filters to view the full board.';
     }
 
@@ -300,7 +314,8 @@ const emptyStateDescription = computed(() => {
 
 const showEmptyClearAction = computed(() => {
     if (normalizedSearchQuery.value) return true;
-    if (filterMode.value === 'seasonWeek') return hasAppliedSeasonWeekFilters.value;
+    if (filterMode.value === 'seasonWeek')
+        return hasAppliedSeasonWeekFilters.value;
     if (filterMode.value === 'date') return availableDates.value.length > 0;
     return false;
 });
@@ -343,7 +358,7 @@ onMounted(async () => {
                     <h2 class="text-2xl font-bold">{{ config.title }}</h2>
                     <span
                         v-if="showSpringTrainingBadge"
-                        class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+                        class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-amber-800 uppercase dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
                     >
                         Spring Training
                     </span>
@@ -462,7 +477,10 @@ onMounted(async () => {
         </div>
 
         <div v-else-if="filteredPredictions.length > 0" class="grid gap-4">
-            <template v-for="prediction in filteredPredictions" :key="prediction.id">
+            <template
+                v-for="prediction in filteredPredictions"
+                :key="prediction.id"
+            >
                 <UnifiedPredictionCard
                     :prediction="prediction"
                     :href="gameHref(prediction)"
@@ -472,10 +490,14 @@ onMounted(async () => {
         </div>
 
         <Card v-else class="border-dashed">
-            <CardContent class="flex flex-col items-center gap-3 py-12 text-center">
+            <CardContent
+                class="flex flex-col items-center gap-3 py-12 text-center"
+            >
                 <div class="rounded-full bg-muted p-3 text-muted-foreground">
                     <CalendarX2
-                        v-if="filterMode === 'date' && availableDates.length === 0"
+                        v-if="
+                            filterMode === 'date' && availableDates.length === 0
+                        "
                         class="h-5 w-5"
                     />
                     <FilterX v-else class="h-5 w-5" />

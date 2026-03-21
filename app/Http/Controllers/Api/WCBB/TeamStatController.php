@@ -7,8 +7,8 @@ use App\Http\Resources\WCBB\TeamStatResource;
 use App\Models\WCBB\Game;
 use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamStat;
-use App\Support\SportsViewCache;
 use App\Services\TeamStats\BasketballTeamSeasonAveragesService;
+use App\Support\SportsViewCache;
 
 class TeamStatController extends AbstractTeamStatController
 {

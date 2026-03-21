@@ -1,8 +1,8 @@
 <?php
 
-use App\Http\Controllers\Api\SecurityReportController;
 use App\Http\Controllers\Api\Auth\PasskeyTokenAuthController;
 use App\Http\Controllers\Api\Auth\TokenAuthController;
+use App\Http\Controllers\Api\SecurityReportController;
 use Illuminate\Support\Facades\Route;
 
 // Load generic sport route definer

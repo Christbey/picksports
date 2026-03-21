@@ -40,7 +40,9 @@ class TierPermissionSyncService
 
         $sourcePermissions = $storedPermissions->intersect($availablePermissions)->values();
 
-        $mappedDataPermissions = collect(PredictionDataPermissions::permissionsForFields($tier->data_permissions ?? []));
+        $mappedDataPermissions = collect(PredictionDataPermissions::permissionsForFields($tier->data_permissions ?? []))
+            ->intersect($availablePermissions)
+            ->values();
 
         return $sourcePermissions
             ->concat($mappedDataPermissions)

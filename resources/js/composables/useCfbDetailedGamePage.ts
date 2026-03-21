@@ -1,13 +1,27 @@
 import { computed, onMounted, ref, watch } from 'vue';
-import { formatNumber, getBetterValue, useGameStatus } from '@/composables/useFormatters';
 import { fetchJson } from '@/composables/useApiClient';
+import {
+    formatNumber,
+    getBetterValue,
+    useGameStatus,
+} from '@/composables/useFormatters';
 import { formatDateLong } from '@/composables/useFormatters';
-import { calculatePercentage, parseBroadcastNetworks, parseLinescores } from '@/composables/useGameDataUtils';
+import {
+    calculatePercentage,
+    parseBroadcastNetworks,
+    parseLinescores,
+} from '@/composables/useGameDataUtils';
 import { useSportGameLayoutFromConfig } from '@/composables/useSportGameLayout';
 import { useTeamTrends } from '@/composables/useTeamTrends';
-import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import { trackViewItem } from '@/lib/analytics';
-import type { NflPageGame, NflPagePrediction, NflTeamStats, RecentGameListItem, TeamTrendData } from '@/types';
+import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
+import type {
+    NflPageGame,
+    NflPagePrediction,
+    NflTeamStats,
+    RecentGameListItem,
+    TeamTrendData,
+} from '@/types';
 
 const fallbackGame = (gameId: number): NflPageGame => ({
     id: gameId,
@@ -38,11 +52,15 @@ const weekLabelForGame = (game: NflPageGame): string => {
         return `Week ${game.week}`;
     }
 
-    return getCfbPostseasonLabel(game.postseason_round, game.week) || `Postseason Week ${game.week}`;
+    return (
+        getCfbPostseasonLabel(game.postseason_round, game.week) ||
+        `Postseason Week ${game.week}`
+    );
 };
 
 const seasonTypeLabel = (seasonType: string): string => {
-    if (seasonType === '2' || seasonType === 'Regular Season') return 'Regular Season';
+    if (seasonType === '2' || seasonType === 'Regular Season')
+        return 'Regular Season';
     if (seasonType === '3' || seasonType === 'Postseason') return 'Postseason';
 
     return seasonType;
@@ -63,15 +81,25 @@ export function useCfbDetailedGamePage(gameId: number) {
     const error = ref<string | null>(null);
 
     const gameStatus = useGameStatus(() => currentGame.value.status);
-    const formatDate = (dateString: string | null): string => formatDateLong(dateString || '');
-    const homeLinescores = computed(() => parseLinescores(currentGame.value.home_linescores));
-    const awayLinescores = computed(() => parseLinescores(currentGame.value.away_linescores));
-    const broadcastNetworks = computed(() => parseBroadcastNetworks(currentGame.value.broadcast_networks));
+    const formatDate = (dateString: string | null): string =>
+        formatDateLong(dateString || '');
+    const homeLinescores = computed(() =>
+        parseLinescores(currentGame.value.home_linescores),
+    );
+    const awayLinescores = computed(() =>
+        parseLinescores(currentGame.value.away_linescores),
+    );
+    const broadcastNetworks = computed(() =>
+        parseBroadcastNetworks(currentGame.value.broadcast_networks),
+    );
     const weekLabel = computed(() => weekLabelForGame(currentGame.value));
 
     const hasLivePrediction = computed(() => false);
     const livePredictionData = computed(() => undefined);
-    const trendsSubtitle = computed(() => `${currentGame.value.season} Season (${homeTrends.value?.sample_size || awayTrends.value?.sample_size || 0} games)`);
+    const trendsSubtitle = computed(
+        () =>
+            `${currentGame.value.season} Season (${homeTrends.value?.sample_size || awayTrends.value?.sample_size || 0} games)`,
+    );
 
     const {
         allTrendCategories,
@@ -81,7 +109,10 @@ export function useCfbDetailedGamePage(gameId: number) {
         formatTrendCategoryName: formatCategoryName,
     } = useTeamTrends(homeTrends, awayTrends);
 
-    const getNumericRecord = (games: RecentGameListItem[], teamId: number): string => {
+    const getNumericRecord = (
+        games: RecentGameListItem[],
+        teamId: number,
+    ): string => {
         const wins = games.filter((g) => {
             const isHome = g.home_team_id === teamId;
             const teamScore = isHome ? g.home_score : g.away_score;
@@ -97,29 +128,51 @@ export function useCfbDetailedGamePage(gameId: number) {
             loading.value = true;
             error.value = null;
 
-            const [gameData, predictionData, teamStatsData] = await Promise.all([
-                fetchJson<{ data: NflPageGame }>(`/api/v1/cfb/games/${gameId}`),
-                fetchJson<{ data: NflPagePrediction | NflPagePrediction[] }>(`/api/v1/cfb/games/${gameId}/prediction`),
-                fetchJson<{ data: NflTeamStats[] }>(`/api/v1/cfb/games/${gameId}/team-stats`),
-            ]);
+            const [gameData, predictionData, teamStatsData] = await Promise.all(
+                [
+                    fetchJson<{ data: NflPageGame }>(
+                        `/api/v1/cfb/games/${gameId}`,
+                    ),
+                    fetchJson<{
+                        data: NflPagePrediction | NflPagePrediction[];
+                    }>(`/api/v1/cfb/games/${gameId}/prediction`),
+                    fetchJson<{ data: NflTeamStats[] }>(
+                        `/api/v1/cfb/games/${gameId}/team-stats`,
+                    ),
+                ],
+            );
 
             if (gameData?.data) {
                 const fullGame = gameData.data;
                 currentGame.value = fullGame;
-                const fallback = fullGame as NflPageGame & { homeTeam?: NflPageGame['home_team']; awayTeam?: NflPageGame['away_team'] };
-                homeTeam.value = fullGame.home_team || fallback.homeTeam || null;
-                awayTeam.value = fullGame.away_team || fallback.awayTeam || null;
+                const fallback = fullGame as NflPageGame & {
+                    homeTeam?: NflPageGame['home_team'];
+                    awayTeam?: NflPageGame['away_team'];
+                };
+                homeTeam.value =
+                    fullGame.home_team || fallback.homeTeam || null;
+                awayTeam.value =
+                    fullGame.away_team || fallback.awayTeam || null;
 
                 if (fullGame.home_team?.id || fallback.homeTeam?.id) {
-                    const homeTeamId = fullGame.home_team?.id || fallback.homeTeam?.id;
+                    const homeTeamId =
+                        fullGame.home_team?.id || fallback.homeTeam?.id;
                     const [homeGamesData, homeTrendsData] = await Promise.all([
-                        fetchJson<{ data: RecentGameListItem[] }>(`/api/v1/cfb/teams/${homeTeamId}/games`),
-                        fetchJson<TeamTrendData>(`/api/v1/cfb/teams/${homeTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`),
+                        fetchJson<{ data: RecentGameListItem[] }>(
+                            `/api/v1/cfb/teams/${homeTeamId}/games`,
+                        ),
+                        fetchJson<TeamTrendData>(
+                            `/api/v1/cfb/teams/${homeTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`,
+                        ),
                     ]);
 
                     if (homeGamesData?.data) {
                         homeRecentGames.value = (homeGamesData.data || [])
-                            .filter((g) => g.status === 'STATUS_FINAL' && g.id !== currentGame.value.id)
+                            .filter(
+                                (g) =>
+                                    g.status === 'STATUS_FINAL' &&
+                                    g.id !== currentGame.value.id,
+                            )
                             .slice(0, 5);
                     }
 
@@ -129,15 +182,24 @@ export function useCfbDetailedGamePage(gameId: number) {
                 }
 
                 if (fullGame.away_team?.id || fallback.awayTeam?.id) {
-                    const awayTeamId = fullGame.away_team?.id || fallback.awayTeam?.id;
+                    const awayTeamId =
+                        fullGame.away_team?.id || fallback.awayTeam?.id;
                     const [awayGamesData, awayTrendsData] = await Promise.all([
-                        fetchJson<{ data: RecentGameListItem[] }>(`/api/v1/cfb/teams/${awayTeamId}/games`),
-                        fetchJson<TeamTrendData>(`/api/v1/cfb/teams/${awayTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`),
+                        fetchJson<{ data: RecentGameListItem[] }>(
+                            `/api/v1/cfb/teams/${awayTeamId}/games`,
+                        ),
+                        fetchJson<TeamTrendData>(
+                            `/api/v1/cfb/teams/${awayTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`,
+                        ),
                     ]);
 
                     if (awayGamesData?.data) {
                         awayRecentGames.value = (awayGamesData.data || [])
-                            .filter((g) => g.status === 'STATUS_FINAL' && g.id !== currentGame.value.id)
+                            .filter(
+                                (g) =>
+                                    g.status === 'STATUS_FINAL' &&
+                                    g.id !== currentGame.value.id,
+                            )
                             .slice(0, 5);
                     }
 
@@ -148,13 +210,17 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
-                prediction.value = Array.isArray(predictionData.data) ? (predictionData.data[0] ?? null) : predictionData.data;
+                prediction.value = Array.isArray(predictionData.data)
+                    ? (predictionData.data[0] ?? null)
+                    : predictionData.data;
             }
 
             if (teamStatsData?.data) {
                 const stats = teamStatsData.data || [];
-                homeTeamStats.value = stats.find((s) => s.team_type === 'home') || null;
-                awayTeamStats.value = stats.find((s) => s.team_type === 'away') || null;
+                homeTeamStats.value =
+                    stats.find((s) => s.team_type === 'home') || null;
+                awayTeamStats.value =
+                    stats.find((s) => s.team_type === 'away') || null;
             }
         } catch (e) {
             error.value = e instanceof Error ? e.message : 'An error occurred';
@@ -167,8 +233,12 @@ export function useCfbDetailedGamePage(gameId: number) {
 
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);
-    const awayRecord = computed(() => getNumericRecord(awayRecentGames.value, currentGame.value.away_team_id));
-    const homeRecord = computed(() => getNumericRecord(homeRecentGames.value, currentGame.value.home_team_id));
+    const awayRecord = computed(() =>
+        getNumericRecord(awayRecentGames.value, currentGame.value.away_team_id),
+    );
+    const homeRecord = computed(() =>
+        getNumericRecord(homeRecentGames.value, currentGame.value.home_team_id),
+    );
 
     const predictionSectionProps = computed(() => ({
         section: 'prediction' as const,
@@ -218,7 +288,8 @@ export function useCfbDetailedGamePage(gameId: number) {
             predictionsHref: '/cfb/predictions',
             gameHrefPrefix: '/cfb/games',
             teamLink: () => '/cfb/predictions',
-            gradientClass: 'bg-gradient-to-r from-green-600 to-green-800 dark:from-green-800 dark:to-green-950',
+            gradientClass:
+                'bg-gradient-to-r from-green-600 to-green-800 dark:from-green-800 dark:to-green-950',
             projectedLabel: 'Projected points',
             linescoreTitle: 'Quarter by Quarter',
             linescoreUsePeriodNumbers: true,
@@ -239,23 +310,33 @@ export function useCfbDetailedGamePage(gameId: number) {
             venueLabel: computed(() => currentGame.value.venue),
             broadcastNetworks,
             extraInfoItems: computed(() =>
-                weekLabel.value ? [`${seasonTypeLabel(currentGame.value.season_type)} - ${weekLabel.value}`] : [],
+                weekLabel.value
+                    ? [
+                          `${seasonTypeLabel(currentGame.value.season_type)} - ${weekLabel.value}`,
+                      ]
+                    : [],
             ),
-            showScoreStatuses: ['STATUS_FINAL', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
+            showScoreStatuses: [
+                'STATUS_FINAL',
+                'STATUS_IN_PROGRESS',
+                'STATUS_HALFTIME',
+            ],
             badgePulseStatuses: ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
             linkTeams: false,
             useTeamColorGlow: true,
             showLinescore: computed(
                 () =>
-                    homeLinescores.value.length > 0
-                    && awayLinescores.value.length > 0
-                    && currentGame.value.status === 'STATUS_FINAL',
+                    homeLinescores.value.length > 0 &&
+                    awayLinescores.value.length > 0 &&
+                    currentGame.value.status === 'STATUS_FINAL',
             ),
             awayLinescores,
             homeLinescores,
             awayScore: computed(() => currentGame.value.away_score),
             homeScore: computed(() => currentGame.value.home_score),
-            showTrends: computed(() => !!(homeTrends.value || awayTrends.value)),
+            showTrends: computed(
+                () => !!(homeTrends.value || awayTrends.value),
+            ),
             trendsSubtitle,
             trendsLoading: false,
             allTrendCategories,
@@ -277,8 +358,10 @@ export function useCfbDetailedGamePage(gameId: number) {
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
         () => {
-            const away = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const home = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+            const away =
+                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const home =
+                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
                 itemId: currentGame.value.id,

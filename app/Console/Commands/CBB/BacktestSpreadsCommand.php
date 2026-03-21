@@ -46,8 +46,8 @@ class BacktestSpreadsCommand extends Command
                 ['Model MAE', number_format($summary['model_mae'], 2)],
                 ['ATS record', "{$summary['wins']}-{$summary['losses']}-{$summary['pushes']}"],
                 ['ATS win rate', number_format($summary['win_rate'], 1).'%'],
-                ['Home-side bets', "{$summary['home_side_bets']} (".number_format($summary['home_side_rate'], 1)."%)"],
-                ['Away-side bets', "{$summary['away_side_bets']} (".number_format($summary['away_side_rate'], 1)."%)"],
+                ['Home-side bets', "{$summary['home_side_bets']} (".number_format($summary['home_side_rate'], 1).'%)'],
+                ['Away-side bets', "{$summary['away_side_bets']} (".number_format($summary['away_side_rate'], 1).'%)'],
             ]
         );
 

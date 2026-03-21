@@ -5,108 +5,121 @@ import LinescoreCard from '@/components/game-page/LinescoreCard.vue';
 import MatchupHero from '@/components/game-page/MatchupHero.vue';
 import PredictionSummaryCard from '@/components/game-page/PredictionSummaryCard.vue';
 import TrendsComparisonCard from '@/components/game-page/TrendsComparisonCard.vue';
-import type { BreadcrumbItem, GamePageGame, GamePageHrefLike, GamePageTeam, PredictionSummary, TeamTrendData } from '@/types';
+import type {
+    BreadcrumbItem,
+    GamePageGame,
+    GamePageHrefLike,
+    GamePageTeam,
+    PredictionSummary,
+    TeamTrendData,
+} from '@/types';
 
-withDefaults(defineProps<{
-    title: string;
-    breadcrumbs: BreadcrumbItem[];
-    loading: boolean;
-    error?: string | null;
-    awayTeam: GamePageTeam | null;
-    homeTeam: GamePageTeam | null;
-    game: GamePageGame;
-    gameStatus: string;
-    formatDate: (dateString: string | null) => string;
-    teamLink: (id: number) => GamePageHrefLike;
-    gradientClass: string;
-    awayRecentForm?: string;
-    homeRecentForm?: string;
-    venueLabel?: string | null;
-    broadcastNetworks?: string[];
-    extraInfoItems?: string[];
-    showScoreStatuses?: string[];
-    badgePulseStatuses?: string[];
-    linkTeams?: boolean;
-    useTeamColorGlow?: boolean;
-    showLinescore?: boolean;
-    linescoreTitle?: string;
-    awayLinescores?: Array<{ period?: number; value: number | string }>;
-    homeLinescores?: Array<{ period?: number; value: number | string }>;
-    awayScore?: number | null;
-    homeScore?: number | null;
-    usePeriodNumbers?: boolean;
-    periodPrefix?: string;
-    showPredictionSummary?: boolean;
-    prediction?: PredictionSummary | null;
-    awayLabel?: string | null;
-    homeLabel?: string | null;
-    formatNumber?: (value: number | string | null | undefined, decimals?: number) => string;
-    projectedLabel?: string;
-    awayBarClass?: string;
-    homeBarClass?: string;
-    showTrends?: boolean;
-    trendsTitle?: string;
-    trendsSubtitle?: string;
-    trendsLoading?: boolean;
-    topMatchupEdges?: string[];
-    allTrendCategories?: string[];
-    formatCategoryName?: (value: string) => string;
-    isLockedCategory?: (category: string) => boolean;
-    formatTierName?: (tier: string) => string;
-    getRequiredTier?: (category: string) => string;
-    awayTrends?: TeamTrendData | null;
-    homeTrends?: TeamTrendData | null;
-    trendsEmptyText?: string;
-    contextBadgeLabel?: string | null;
-}>(), {
-    error: null,
-    awayRecentForm: undefined,
-    homeRecentForm: undefined,
-    venueLabel: undefined,
-    broadcastNetworks: () => [],
-    extraInfoItems: () => [],
-    showScoreStatuses: () => ['STATUS_FINAL'],
-    badgePulseStatuses: () => [],
-    linkTeams: true,
-    useTeamColorGlow: false,
-    showLinescore: false,
-    linescoreTitle: 'Linescore',
-    awayLinescores: () => [],
-    homeLinescores: () => [],
-    awayScore: null,
-    homeScore: null,
-    usePeriodNumbers: true,
-    periodPrefix: undefined,
-    showPredictionSummary: false,
-    prediction: null,
-    awayLabel: null,
-    homeLabel: null,
-    formatNumber: undefined,
-    projectedLabel: 'Projected points',
-    awayBarClass: 'bg-blue-500 dark:bg-blue-600',
-    homeBarClass: 'bg-blue-800 dark:bg-blue-400',
-    showTrends: false,
-    trendsTitle: 'Team Trends',
-    trendsSubtitle: undefined,
-    trendsLoading: false,
-    topMatchupEdges: () => [],
-    allTrendCategories: () => [],
-    formatCategoryName: undefined,
-    isLockedCategory: undefined,
-    formatTierName: undefined,
-    getRequiredTier: undefined,
-    awayTrends: null,
-    homeTrends: null,
-    trendsEmptyText: 'No trends available for this matchup',
-    contextBadgeLabel: null,
-});
+withDefaults(
+    defineProps<{
+        title: string;
+        breadcrumbs: BreadcrumbItem[];
+        loading: boolean;
+        error?: string | null;
+        awayTeam: GamePageTeam | null;
+        homeTeam: GamePageTeam | null;
+        game: GamePageGame;
+        gameStatus: string;
+        formatDate: (dateString: string | null) => string;
+        teamLink: (id: number) => GamePageHrefLike;
+        gradientClass: string;
+        awayRecentForm?: string;
+        homeRecentForm?: string;
+        venueLabel?: string | null;
+        broadcastNetworks?: string[];
+        extraInfoItems?: string[];
+        showScoreStatuses?: string[];
+        badgePulseStatuses?: string[];
+        linkTeams?: boolean;
+        useTeamColorGlow?: boolean;
+        showLinescore?: boolean;
+        linescoreTitle?: string;
+        awayLinescores?: Array<{ period?: number; value: number | string }>;
+        homeLinescores?: Array<{ period?: number; value: number | string }>;
+        awayScore?: number | null;
+        homeScore?: number | null;
+        usePeriodNumbers?: boolean;
+        periodPrefix?: string;
+        showPredictionSummary?: boolean;
+        prediction?: PredictionSummary | null;
+        awayLabel?: string | null;
+        homeLabel?: string | null;
+        formatNumber?: (
+            value: number | string | null | undefined,
+            decimals?: number,
+        ) => string;
+        projectedLabel?: string;
+        awayBarClass?: string;
+        homeBarClass?: string;
+        showTrends?: boolean;
+        trendsTitle?: string;
+        trendsSubtitle?: string;
+        trendsLoading?: boolean;
+        topMatchupEdges?: string[];
+        allTrendCategories?: string[];
+        formatCategoryName?: (value: string) => string;
+        isLockedCategory?: (category: string) => boolean;
+        formatTierName?: (tier: string) => string;
+        getRequiredTier?: (category: string) => string;
+        awayTrends?: TeamTrendData | null;
+        homeTrends?: TeamTrendData | null;
+        trendsEmptyText?: string;
+        contextBadgeLabel?: string | null;
+    }>(),
+    {
+        error: null,
+        awayRecentForm: undefined,
+        homeRecentForm: undefined,
+        venueLabel: undefined,
+        broadcastNetworks: () => [],
+        extraInfoItems: () => [],
+        showScoreStatuses: () => ['STATUS_FINAL'],
+        badgePulseStatuses: () => [],
+        linkTeams: true,
+        useTeamColorGlow: false,
+        showLinescore: false,
+        linescoreTitle: 'Linescore',
+        awayLinescores: () => [],
+        homeLinescores: () => [],
+        awayScore: null,
+        homeScore: null,
+        usePeriodNumbers: true,
+        periodPrefix: undefined,
+        showPredictionSummary: false,
+        prediction: null,
+        awayLabel: null,
+        homeLabel: null,
+        formatNumber: undefined,
+        projectedLabel: 'Projected points',
+        awayBarClass: 'bg-blue-500 dark:bg-blue-600',
+        homeBarClass: 'bg-blue-800 dark:bg-blue-400',
+        showTrends: false,
+        trendsTitle: 'Team Trends',
+        trendsSubtitle: undefined,
+        trendsLoading: false,
+        topMatchupEdges: () => [],
+        allTrendCategories: () => [],
+        formatCategoryName: undefined,
+        isLockedCategory: undefined,
+        formatTierName: undefined,
+        getRequiredTier: undefined,
+        awayTrends: null,
+        homeTrends: null,
+        trendsEmptyText: 'No trends available for this matchup',
+        contextBadgeLabel: null,
+    },
+);
 
 const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
-    team?.display_name
-    || `${team?.location || ''} ${team?.name || ''}`.trim()
-    || team?.name
-    || team?.abbreviation
-    || fallback;
+    team?.display_name ||
+    `${team?.location || ''} ${team?.name || ''}`.trim() ||
+    team?.name ||
+    team?.abbreviation ||
+    fallback;
 </script>
 
 <template>
@@ -178,7 +191,13 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
             <slot name="beforeTrends" />
 
             <TrendsComparisonCard
-                v-if="showTrends && formatCategoryName && isLockedCategory && formatTierName && getRequiredTier"
+                v-if="
+                    showTrends &&
+                    formatCategoryName &&
+                    isLockedCategory &&
+                    formatTierName &&
+                    getRequiredTier
+                "
                 :title="trendsTitle"
                 :subtitle="trendsSubtitle"
                 :trends-loading="trendsLoading"

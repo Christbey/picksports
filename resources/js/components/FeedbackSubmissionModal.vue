@@ -42,11 +42,17 @@ const submit = () => {
 };
 
 onMounted(() => {
-    window.addEventListener('open-feedback-submission-modal', handleOpenRequest);
+    window.addEventListener(
+        'open-feedback-submission-modal',
+        handleOpenRequest,
+    );
 });
 
 onUnmounted(() => {
-    window.removeEventListener('open-feedback-submission-modal', handleOpenRequest);
+    window.removeEventListener(
+        'open-feedback-submission-modal',
+        handleOpenRequest,
+    );
 });
 </script>
 
@@ -56,7 +62,8 @@ onUnmounted(() => {
             <DialogHeader>
                 <DialogTitle>Send feedback</DialogTitle>
                 <DialogDescription>
-                    Share bugs, ideas, or confusing flows. We store this as a submission.
+                    Share bugs, ideas, or confusing flows. We store this as a
+                    submission.
                 </DialogDescription>
             </DialogHeader>
 
@@ -87,14 +94,18 @@ onUnmounted(() => {
                         v-model="form.message"
                         rows="7"
                         maxlength="5000"
-                        class="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+                        class="flex min-h-[140px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         placeholder="Tell us what happened and what you expected."
                     />
                     <InputError :message="form.errors.message" />
                 </div>
 
                 <DialogFooter class="gap-2 sm:justify-end">
-                    <Button type="button" variant="outline" @click="isOpen = false">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        @click="isOpen = false"
+                    >
                         Close
                     </Button>
                     <Button type="submit" :disabled="form.processing">

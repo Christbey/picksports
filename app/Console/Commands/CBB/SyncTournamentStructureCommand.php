@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands\CBB;
 
-use App\Actions\ESPN\CBB\SyncTeamSchedule;
 use App\Actions\CBB\RepairTournamentStructure;
+use App\Actions\ESPN\CBB\SyncTeamSchedule;
 use App\Models\CBB\Team;
 use Illuminate\Console\Command;
 

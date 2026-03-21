@@ -10,8 +10,11 @@ use Illuminate\Database\Eloquent\Collection;
 class SyncGameDetailsCommand extends AbstractSyncGameDetailsCommand
 {
     protected const COMMAND_NAME = 'espn:sync-mlb-game-details';
+
     protected const SPORT_CODE = 'MLB';
+
     protected const PENDING_GAMES_DESCRIPTOR = 'past games without linescores';
+
     protected const GAME_DETAILS_JOB_CLASS = FetchGameDetails::class;
 
     protected function pendingGames(): Collection

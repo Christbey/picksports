@@ -13,7 +13,8 @@ const emit = defineEmits<{
         <h2 class="mb-4 text-xl font-semibold">Today's Predictions</h2>
         <div class="py-12 text-center">
             <p class="text-muted-foreground">
-                No predictions are available yet. Check back as game slates and model runs update.
+                No predictions are available yet. Check back as game slates and
+                model runs update.
             </p>
             <div class="mt-4 flex flex-wrap justify-center gap-2">
                 <Link

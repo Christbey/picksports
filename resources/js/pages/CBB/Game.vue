@@ -17,19 +17,22 @@ const { pageProps, insightsProps } = useBasketballDetailedGamePage({
     sport: 'cbb',
     gameId: props.gameId,
     sortTopPerformers: (players: TopPerformer[]) =>
-        players
-            .sort((a, b) => (b.points || 0) - (a.points || 0))
-            .slice(0, 10),
+        players.sort((a, b) => (b.points || 0) - (a.points || 0)).slice(0, 10),
     teamLink: (id: number) => CBBTeamController(id),
-    subtitleText: (sampleSize) => `Based on last ${sampleSize} games before this matchup`,
+    subtitleText: (sampleSize) =>
+        `Based on last ${sampleSize} games before this matchup`,
     venueLabel: (game) => game.venue || null,
     showLinescore: (game, homeLinescores, awayLinescores) =>
-        game.status === 'STATUS_FINAL'
-        && (homeLinescores.length > 0 || awayLinescores.length > 0),
+        game.status === 'STATUS_FINAL' &&
+        (homeLinescores.length > 0 || awayLinescores.length > 0),
 });
 
-const awayInjuries = computed(() => pageProps.value.awayTeam?.active_injuries ?? []);
-const homeInjuries = computed(() => pageProps.value.homeTeam?.active_injuries ?? []);
+const awayInjuries = computed(
+    () => pageProps.value.awayTeam?.active_injuries ?? [],
+);
+const homeInjuries = computed(
+    () => pageProps.value.homeTeam?.active_injuries ?? [],
+);
 </script>
 
 <template>

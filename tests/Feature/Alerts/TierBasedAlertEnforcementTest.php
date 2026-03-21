@@ -36,8 +36,8 @@ test('free tier users do not receive email alerts', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $homeTeam = Team::factory()->create(['school' => 'Lakers']);
-    $awayTeam = Team::factory()->create(['school' => 'Celtics']);
+    $homeTeam = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
@@ -102,8 +102,8 @@ test('basic tier users receive email alerts for allowed sports', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $homeTeam = Team::factory()->create(['school' => 'Lakers']);
-    $awayTeam = Team::factory()->create(['school' => 'Celtics']);
+    $homeTeam = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),
@@ -295,8 +295,8 @@ test('alert sent records include all required data', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $homeTeam = Team::factory()->create(['school' => 'Lakers']);
-    $awayTeam = Team::factory()->create(['school' => 'Celtics']);
+    $homeTeam = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
 
     $game = Game::factory()->create([
         'game_date' => now()->addDay(),

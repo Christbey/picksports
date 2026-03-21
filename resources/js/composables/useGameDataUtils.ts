@@ -7,7 +7,10 @@ type GameRecord = {
     away_score: number | null;
 };
 
-const normalizeLineScoreEntry = (entry: unknown, index: number): LineScoreEntry | null => {
+const normalizeLineScoreEntry = (
+    entry: unknown,
+    index: number,
+): LineScoreEntry | null => {
     if (typeof entry === 'number' || typeof entry === 'string') {
         return { period: index + 1, value: entry };
     }
@@ -25,19 +28,18 @@ const normalizeLineScoreEntry = (entry: unknown, index: number): LineScoreEntry 
 export const parseLinescores = (linescores: unknown): LineScoreEntry[] => {
     if (!linescores) return [];
 
-    const raw: unknown[] =
-        Array.isArray(linescores)
-            ? linescores
-            : typeof linescores === 'string'
-              ? (() => {
-                    try {
-                        const parsed = JSON.parse(linescores);
-                        return Array.isArray(parsed) ? parsed : [];
-                    } catch {
-                        return [];
-                    }
-                })()
-              : [];
+    const raw: unknown[] = Array.isArray(linescores)
+        ? linescores
+        : typeof linescores === 'string'
+          ? (() => {
+                try {
+                    const parsed = JSON.parse(linescores);
+                    return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                    return [];
+                }
+            })()
+          : [];
 
     return raw
         .map((entry, index) => normalizeLineScoreEntry(entry, index))
@@ -66,7 +68,10 @@ export const getRecentForm = (games: GameRecord[], teamId: number): string => {
         .join('-');
 };
 
-export const calculatePercentage = (made: number, attempted: number): string => {
+export const calculatePercentage = (
+    made: number,
+    attempted: number,
+): string => {
     if (!attempted || attempted === 0) return '0.0';
     return ((made / attempted) * 100).toFixed(1);
 };
@@ -79,7 +84,10 @@ export const formatVenueLabel = (
     return `${venueName}${venueCity ? `, ${venueCity}` : ''}`;
 };
 
-export const getWinLossRecord = (games: GameRecord[], teamId: number): string => {
+export const getWinLossRecord = (
+    games: GameRecord[],
+    teamId: number,
+): string => {
     const wins = games.filter((g) => {
         const isHome = g.home_team_id === teamId;
         const teamScore = isHome ? g.home_score : g.away_score;

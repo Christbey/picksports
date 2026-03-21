@@ -3,9 +3,9 @@
 namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
-use App\Support\EspnGameStatusResolver;
-use App\Services\GameFinalizationDispatcher;
 use App\Services\ESPN\BaseEspnService;
+use App\Services\GameFinalizationDispatcher;
+use App\Support\EspnGameStatusResolver;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGamesFromScoreboard
@@ -242,6 +242,7 @@ abstract class AbstractSyncGamesFromScoreboard
             $gameData = $this->espnService->getGame((string) $game->{$uniqueKey});
             if (! is_array($gameData)) {
                 usleep(300_000);
+
                 continue;
             }
 

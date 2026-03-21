@@ -243,5 +243,4 @@ class SyncPlayerStats extends AbstractFootballSyncPlayerStats
 
         return null;
     }
-
 }

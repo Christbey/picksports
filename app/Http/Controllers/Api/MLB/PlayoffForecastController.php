@@ -6,9 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\MLB\PlayoffForecastResource;
 use App\Models\MLB\PlayoffForecast;
 use App\Models\MLB\TeamMetric;
-use App\Support\SportsViewCache;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Support\SportsViewCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 

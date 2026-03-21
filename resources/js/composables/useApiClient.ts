@@ -1,4 +1,7 @@
-export async function fetchJson<T>(url: string, init: RequestInit = {}): Promise<T | null> {
+export async function fetchJson<T>(
+    url: string,
+    init: RequestInit = {},
+): Promise<T | null> {
     const headers = new Headers(init.headers ?? {});
     if (!headers.has('Accept')) {
         headers.set('Accept', 'application/json');

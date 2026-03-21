@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use Throwable;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
 
 class SiteAssetStorage
 {

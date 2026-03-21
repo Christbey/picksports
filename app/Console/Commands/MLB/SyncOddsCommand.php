@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands\MLB;
 
-use App\Console\Commands\Sports\AbstractSyncOddsCommand;
 use App\Console\Commands\MLB\Concerns\ResolvesMlbOddsSportKey;
+use App\Console\Commands\Sports\AbstractSyncOddsCommand;
 
 class SyncOddsCommand extends AbstractSyncOddsCommand
 {

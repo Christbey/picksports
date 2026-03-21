@@ -115,10 +115,6 @@ class SportsViewCache
         return 'sports_view_cache:segment_namespace:'.$segment;
     }
 
-    /**
-     * @param  mixed  $value
-     * @return mixed
-     */
     private function normalize(mixed $value): mixed
     {
         if (is_array($value)) {

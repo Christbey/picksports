@@ -28,4 +28,3 @@ class PredictionAccessController extends Controller
         ]);
     }
 }
-

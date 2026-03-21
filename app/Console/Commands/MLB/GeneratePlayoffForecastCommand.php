@@ -56,4 +56,3 @@ class GeneratePlayoffForecastCommand extends Command
         return self::SUCCESS;
     }
 }
-

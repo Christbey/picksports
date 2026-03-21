@@ -30,8 +30,8 @@ abstract class AbstractCollegeGeneratePredictionsCommand extends AbstractGenerat
         $driver = $query->getConnection()->getDriverName();
 
         $expression = match ($driver) {
-            'mysql', 'mariadb' => "timestamp(game_date, game_time)",
-            'pgsql' => "(game_date + game_time)",
+            'mysql', 'mariadb' => 'timestamp(game_date, game_time)',
+            'pgsql' => '(game_date + game_time)',
             default => "datetime(date(game_date) || ' ' || game_time)",
         };
 

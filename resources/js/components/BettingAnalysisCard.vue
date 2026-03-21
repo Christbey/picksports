@@ -1,54 +1,20 @@
 <script setup lang="ts">
-export interface BettingRecommendation {
-    type: 'spread' | 'total' | 'moneyline';
-    recommendation: string;
-    bet_team?: string;
-    model_line?: number;
-    market_line?: number;
-    model_home_line?: number;
-    market_home_line?: number;
-    home_team?: string;
-    away_team?: string;
-    model_probability?: number;
-    implied_probability?: number;
-    edge: number;
-    odds: number;
-    kelly_bet_size_percent?: number;
-    confidence: number;
-    reasoning: string;
-}
-
-export interface LivePredictionData {
-    isLive: boolean;
-    homeScore?: number | null;
-    awayScore?: number | null;
-    period?: number | null;
-    inning?: number | null;
-    gameClock?: string | null;
-    inningState?: string | null;
-    status?: string | null;
-    liveWinProbability?: number | null;
-    livePredictedSpread?: number | null;
-    livePredictedTotal?: number | null;
-    liveSecondsRemaining?: number | null;
-    liveOutsRemaining?: number | null;
-    preGameWinProbability: number;
-    preGamePredictedSpread: number;
-    preGamePredictedTotal: number;
-}
-
 import { computed } from 'vue';
+import type { BettingRecommendation, LivePredictionData } from '@/types';
 
-const props = withDefaults(defineProps<{
-    bettingValue?: BettingRecommendation[];
-    livePrediction?: LivePredictionData;
-    winnerCorrect?: boolean | null;
-    actualTotal?: number | null;
-    showDraftKingsLabel?: boolean;
-    compact?: boolean;
-}>(), {
-    compact: false,
-});
+const props = withDefaults(
+    defineProps<{
+        bettingValue?: BettingRecommendation[];
+        livePrediction?: LivePredictionData;
+        winnerCorrect?: boolean | null;
+        actualTotal?: number | null;
+        showDraftKingsLabel?: boolean;
+        compact?: boolean;
+    }>(),
+    {
+        compact: false,
+    },
+);
 
 const fallbackLivePrediction: LivePredictionData = {
     isLive: false,
@@ -63,8 +29,10 @@ const livePrediction = computed<LivePredictionData>(
 
 const hasLivePredictionData = computed(() => {
     if (!livePrediction.value.isLive) return false;
-    return livePrediction.value.liveWinProbability !== null
-        && livePrediction.value.liveWinProbability !== undefined;
+    return (
+        livePrediction.value.liveWinProbability !== null &&
+        livePrediction.value.liveWinProbability !== undefined
+    );
 });
 
 function formatSpread(spread: number | string | null | undefined): string {
@@ -80,7 +48,8 @@ function formatHomeSideSpreadLine(
     awayTeam?: string,
 ): string {
     if (homeLine === null || homeLine === undefined) return '-';
-    const numericLine = typeof homeLine === 'string' ? parseFloat(homeLine) : homeLine;
+    const numericLine =
+        typeof homeLine === 'string' ? parseFloat(homeLine) : homeLine;
     if (isNaN(numericLine)) return '-';
     if (numericLine === 0) return 'PK';
 
@@ -94,7 +63,10 @@ function formatHomeSideSpreadLine(
     return `${awayLabel} -${numericLine.toFixed(1)}`;
 }
 
-function formatNumber(value: number | string | null | undefined, decimals = 1): string {
+function formatNumber(
+    value: number | string | null | undefined,
+    decimals = 1,
+): string {
     if (value === null || value === undefined) return '-';
     const numValue = typeof value === 'string' ? parseFloat(value) : value;
     if (isNaN(numValue)) return '-';
@@ -105,7 +77,10 @@ function formatOdds(odds: number): string {
     return odds > 0 ? `+${odds}` : odds.toString();
 }
 
-function formatPeriod(period: number | null | undefined, status: string | null | undefined): string {
+function formatPeriod(
+    period: number | null | undefined,
+    status: string | null | undefined,
+): string {
     if (!period) return '';
     if (status === 'STATUS_HALFTIME') return 'Half';
     if (status === 'STATUS_END_PERIOD') return `End Q${period}`;
@@ -113,9 +88,13 @@ function formatPeriod(period: number | null | undefined, status: string | null |
     return ordinals[period] || `OT${period - 4}`;
 }
 
-function formatInning(inning: number | null | undefined, inningState: string | null | undefined): string {
+function formatInning(
+    inning: number | null | undefined,
+    inningState: string | null | undefined,
+): string {
     if (!inning) return '';
-    const state = inningState === 'top' ? 'Top' : inningState === 'bottom' ? 'Bot' : '';
+    const state =
+        inningState === 'top' ? 'Top' : inningState === 'bottom' ? 'Bot' : '';
     return `${state} ${inning}`;
 }
 
@@ -147,7 +126,8 @@ function getBetTypeColor(type: string): string {
     const colors: Record<string, string> = {
         spread: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
         total: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200',
-        moneyline: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+        moneyline:
+            'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
     };
     return colors[type] || 'bg-gray-100 text-gray-800';
 }
@@ -170,7 +150,9 @@ function winnerResultClass(): string {
     return '';
 }
 
-function parseTotalPickDirection(recommendation: string): 'over' | 'under' | null {
+function parseTotalPickDirection(
+    recommendation: string,
+): 'over' | 'under' | null {
     const normalized = recommendation.toLowerCase();
     if (normalized.includes('over')) return 'over';
     if (normalized.includes('under')) return 'under';
@@ -180,7 +162,8 @@ function parseTotalPickDirection(recommendation: string): 'over' | 'under' | nul
 
 function totalResultLabel(bet: BettingRecommendation): string | null {
     if (bet.type !== 'total') return null;
-    if (props.actualTotal === null || props.actualTotal === undefined) return null;
+    if (props.actualTotal === null || props.actualTotal === undefined)
+        return null;
     if (bet.market_line === null || bet.market_line === undefined) return null;
 
     const direction = parseTotalPickDirection(bet.recommendation);
@@ -241,10 +224,7 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
 <template>
     <div class="space-y-3">
         <!-- Live Prediction Card (only when actual live data exists) -->
-        <div
-            v-if="hasLivePredictionData"
-            class="ui-surface-subtle p-3"
-        >
+        <div v-if="hasLivePredictionData" class="ui-surface-subtle p-3">
             <div class="flex items-start justify-between gap-2">
                 <div class="flex-1 space-y-1">
                     <div class="flex items-center gap-2">
@@ -257,70 +237,141 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             Live Prediction
                         </span>
                         <span class="text-sm font-semibold">
-                            {{ livePrediction.homeScore }}-{{ livePrediction.awayScore }}
-                            <template v-if="livePrediction.liveSecondsRemaining !== null && livePrediction.liveSecondsRemaining !== undefined">
+                            {{ livePrediction.homeScore }}-{{
+                                livePrediction.awayScore
+                            }}
+                            <template
+                                v-if="
+                                    livePrediction.liveSecondsRemaining !==
+                                        null &&
+                                    livePrediction.liveSecondsRemaining !==
+                                        undefined
+                                "
+                            >
                                 <span class="font-normal text-muted-foreground">
-                                    • {{ formatTimeRemaining(livePrediction.liveSecondsRemaining) }} remaining
+                                    •
+                                    {{
+                                        formatTimeRemaining(
+                                            livePrediction.liveSecondsRemaining,
+                                        )
+                                    }}
+                                    remaining
                                 </span>
                             </template>
-                            <template v-else-if="livePrediction.liveOutsRemaining !== null && livePrediction.liveOutsRemaining !== undefined">
+                            <template
+                                v-else-if="
+                                    livePrediction.liveOutsRemaining !== null &&
+                                    livePrediction.liveOutsRemaining !==
+                                        undefined
+                                "
+                            >
                                 <span class="font-normal text-muted-foreground">
-                                    • {{ formatOutsRemaining(livePrediction.liveOutsRemaining) }}
+                                    •
+                                    {{
+                                        formatOutsRemaining(
+                                            livePrediction.liveOutsRemaining,
+                                        )
+                                    }}
                                 </span>
                             </template>
-                            <template v-else-if="livePrediction.inning && livePrediction.inningState">
+                            <template
+                                v-else-if="
+                                    livePrediction.inning &&
+                                    livePrediction.inningState
+                                "
+                            >
                                 •
-                                {{ formatInning(livePrediction.inning, livePrediction.inningState) }}
+                                {{
+                                    formatInning(
+                                        livePrediction.inning,
+                                        livePrediction.inningState,
+                                    )
+                                }}
                             </template>
-                            <template v-else-if="livePrediction.period || livePrediction.gameClock">
+                            <template
+                                v-else-if="
+                                    livePrediction.period ||
+                                    livePrediction.gameClock
+                                "
+                            >
                                 •
-                                {{ formatPeriod(livePrediction.period, livePrediction.status) }}
+                                {{
+                                    formatPeriod(
+                                        livePrediction.period,
+                                        livePrediction.status,
+                                    )
+                                }}
                                 {{ livePrediction.gameClock }}
                             </template>
                         </span>
                     </div>
-                    <div v-if="!props.compact" class="text-xs text-muted-foreground">
+                    <div
+                        v-if="!props.compact"
+                        class="text-xs text-muted-foreground"
+                    >
                         Real-time prediction updates based on current game state
                     </div>
                     <div class="flex flex-wrap gap-2 text-xs">
-                        <div class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16">
+                        <div
+                            class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16"
+                        >
                             <span class="text-muted-foreground">Win Prob:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
                                     formatNumber(
-                                        ((livePrediction.liveWinProbability ?? livePrediction.preGameWinProbability) as number) * 100,
-                                        1
+                                        ((livePrediction.liveWinProbability ??
+                                            livePrediction.preGameWinProbability) as number) *
+                                            100,
+                                        1,
                                     )
                                 }}%
                             </span>
                             <span class="text-muted-foreground">
-                                {{ props.compact ? `(${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)` : `(was ${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)` }}
+                                {{
+                                    props.compact
+                                        ? `(${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)`
+                                        : `(was ${formatNumber(livePrediction.preGameWinProbability * 100, 1)}%)`
+                                }}
                             </span>
                         </div>
-                        <div class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16">
+                        <div
+                            class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16"
+                        >
                             <span class="text-muted-foreground">Spread:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
                                     formatSpread(
-                                        livePrediction.livePredictedSpread ?? livePrediction.preGamePredictedSpread
+                                        livePrediction.livePredictedSpread ??
+                                            livePrediction.preGamePredictedSpread,
                                     )
                                 }}
                             </span>
                             <span class="text-muted-foreground">
-                                {{ props.compact ? `(${formatSpread(livePrediction.preGamePredictedSpread)})` : `(was ${formatSpread(livePrediction.preGamePredictedSpread)})` }}
+                                {{
+                                    props.compact
+                                        ? `(${formatSpread(livePrediction.preGamePredictedSpread)})`
+                                        : `(was ${formatSpread(livePrediction.preGamePredictedSpread)})`
+                                }}
                             </span>
                         </div>
-                        <div class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16">
+                        <div
+                            class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16"
+                        >
                             <span class="text-muted-foreground">Total:</span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
                                     formatNumber(
-                                        livePrediction.livePredictedTotal ?? livePrediction.preGamePredictedTotal
+                                        livePrediction.livePredictedTotal ??
+                                            livePrediction.preGamePredictedTotal,
                                     )
                                 }}
                             </span>
                             <span class="text-muted-foreground">
-                                {{ props.compact ? `(${formatNumber(livePrediction.preGamePredictedTotal)})` : `(was ${formatNumber(livePrediction.preGamePredictedTotal)})` }}
+                                {{
+                                    props.compact
+                                        ? `(${formatNumber(livePrediction.preGamePredictedTotal)})`
+                                        : `(was ${formatNumber(livePrediction.preGamePredictedTotal)})`
+                                }}
                             </span>
                         </div>
                     </div>
@@ -344,7 +395,10 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             {{ getBetTypeLabel(bet.type) }}
                         </span>
                         <span
-                            v-if="props.winnerCorrect !== null && props.winnerCorrect !== undefined"
+                            v-if="
+                                props.winnerCorrect !== null &&
+                                props.winnerCorrect !== undefined
+                            "
                             class="rounded px-2 py-0.5 text-xs font-semibold"
                             :class="winnerResultClass()"
                         >
@@ -361,35 +415,52 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             {{ bet.recommendation }}
                         </span>
                     </div>
-                    <div v-if="!props.compact" class="text-xs text-muted-foreground">
+                    <div
+                        v-if="!props.compact"
+                        class="text-xs text-muted-foreground"
+                    >
                         {{ bet.reasoning }}
                     </div>
                     <div class="flex flex-wrap gap-2 text-xs">
-                        <div v-if="bet.model_line !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
+                        <div
+                            v-if="bet.model_line !== undefined"
+                            class="rounded-full bg-sidebar-accent px-2 py-1"
+                        >
                             <span class="text-muted-foreground">Model:</span>
                             <span class="ml-1 font-medium">
                                 {{ formatBetModelLine(bet) }}
                             </span>
                         </div>
-                        <div v-if="bet.market_line !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
+                        <div
+                            v-if="bet.market_line !== undefined"
+                            class="rounded-full bg-sidebar-accent px-2 py-1"
+                        >
                             <span class="text-muted-foreground">Market:</span>
                             <span class="ml-1 font-medium">
                                 {{ formatBetMarketLine(bet) }}
                             </span>
                         </div>
-                        <div v-if="bet.model_probability !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
+                        <div
+                            v-if="bet.model_probability !== undefined"
+                            class="rounded-full bg-sidebar-accent px-2 py-1"
+                        >
                             <span class="text-muted-foreground">Model:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.model_probability }}%
                             </span>
                         </div>
-                        <div v-if="bet.implied_probability !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
+                        <div
+                            v-if="bet.implied_probability !== undefined"
+                            class="rounded-full bg-sidebar-accent px-2 py-1"
+                        >
                             <span class="text-muted-foreground">Implied:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.implied_probability }}%
                             </span>
                         </div>
-                        <div class="rounded-full bg-emerald-100/80 px-2 py-1 dark:bg-emerald-900/30">
+                        <div
+                            class="rounded-full bg-emerald-100/80 px-2 py-1 dark:bg-emerald-900/30"
+                        >
                             <span class="text-muted-foreground">Edge:</span>
                             <span class="ml-1 font-semibold text-green-600">
                                 {{
@@ -405,7 +476,10 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                                 {{ formatOdds(bet.odds) }}
                             </span>
                         </div>
-                        <div v-if="bet.kelly_bet_size_percent !== undefined" class="rounded-full bg-sidebar-accent px-2 py-1">
+                        <div
+                            v-if="bet.kelly_bet_size_percent !== undefined"
+                            class="rounded-full bg-sidebar-accent px-2 py-1"
+                        >
                             <span class="text-muted-foreground">Kelly:</span>
                             <span class="ml-1 font-medium">
                                 {{ bet.kelly_bet_size_percent }}%

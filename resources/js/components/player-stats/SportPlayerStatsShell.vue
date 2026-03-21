@@ -200,14 +200,17 @@ const fetchPlayers = async () => {
             ? `?season=${encodeURIComponent(selectedSeason.value)}`
             : '';
         const params = new URLSearchParams(seasonQuery.replace(/^\?/, ''));
-        const minGames = activeCategory.value?.minGames ?? props.config.minGames;
+        const minGames =
+            activeCategory.value?.minGames ?? props.config.minGames;
         if (typeof minGames === 'number' && Number.isFinite(minGames)) {
             params.set('min_games', String(Math.max(0, Math.trunc(minGames))));
         }
         if (selectedSeasonType.value) {
             params.set('season_type', selectedSeasonType.value);
         }
-        const response = await fetch(`${props.config.leaderboardEndpoint}?${params.toString()}`);
+        const response = await fetch(
+            `${props.config.leaderboardEndpoint}?${params.toString()}`,
+        );
         if (!response.ok) {
             throw new Error('Failed to fetch player stats');
         }
@@ -309,17 +312,21 @@ const statColumns = computed(
 
 const activeSortLabel = computed(
     () =>
-        sortOptions.value.find((option) => option.key === sortBy.value)?.label
-        ?? sortBy.value,
+        sortOptions.value.find((option) => option.key === sortBy.value)
+            ?.label ?? sortBy.value,
 );
 
-const selectedSeasonTypeLabel = computed(() =>
-    props.config.seasonTypeOptions?.find((option) => option.value === selectedSeasonType.value)?.label
-    ?? null,
+const selectedSeasonTypeLabel = computed(
+    () =>
+        props.config.seasonTypeOptions?.find(
+            (option) => option.value === selectedSeasonType.value,
+        )?.label ?? null,
 );
 
-const showSeasonTypeHeaderBadge = computed(() =>
-    selectedSeasonType.value === '1' && selectedSeasonTypeLabel.value !== null,
+const showSeasonTypeHeaderBadge = computed(
+    () =>
+        selectedSeasonType.value === '1' &&
+        selectedSeasonTypeLabel.value !== null,
 );
 
 const formatColumnValue = (
@@ -395,10 +402,12 @@ watch(activeCategory, (category) => {
                 <div>
                     <p class="ui-kicker">Leaderboard</p>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-3xl font-semibold tracking-tight">{{ config.heading }}</h1>
+                        <h1 class="text-3xl font-semibold tracking-tight">
+                            {{ config.heading }}
+                        </h1>
                         <span
                             v-if="showSeasonTypeHeaderBadge"
-                            class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+                            class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-amber-800 uppercase dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
                         >
                             {{ selectedSeasonTypeLabel }}
                         </span>
@@ -425,7 +434,10 @@ watch(activeCategory, (category) => {
                                 :options="availableSeasons"
                             />
                         </div>
-                        <div v-if="config.seasonTypeOptions?.length" class="space-y-2">
+                        <div
+                            v-if="config.seasonTypeOptions?.length"
+                            class="space-y-2"
+                        >
                             <p class="ui-kicker">Season Type</p>
                             <select
                                 id="player-stats-season-type"
@@ -495,7 +507,9 @@ watch(activeCategory, (category) => {
                 </CardContent>
             </Card>
 
-            <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <div
+                class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+            >
                 <span class="ui-chip text-foreground/80">
                     {{ sortedPlayers.length }} players
                 </span>
@@ -505,8 +519,16 @@ watch(activeCategory, (category) => {
                 <span v-if="selectedSeason" class="ui-chip text-foreground/80">
                     Season: {{ selectedSeason }}
                 </span>
-                <span v-if="selectedSeasonType" class="ui-chip text-foreground/80">
-                    Season Type: {{ config.seasonTypeOptions?.find((option) => option.value === selectedSeasonType)?.label ?? selectedSeasonType }}
+                <span
+                    v-if="selectedSeasonType"
+                    class="ui-chip text-foreground/80"
+                >
+                    Season Type:
+                    {{
+                        config.seasonTypeOptions?.find(
+                            (option) => option.value === selectedSeasonType,
+                        )?.label ?? selectedSeasonType
+                    }}
                 </span>
                 <span v-if="searchQuery" class="ui-chip text-foreground/80">
                     Search: "{{ searchQuery }}"
@@ -524,7 +546,9 @@ watch(activeCategory, (category) => {
             <Card v-else>
                 <CardHeader>
                     <div class="ui-kicker">Standings</div>
-                    <CardTitle class="tracking-tight">Player Rankings</CardTitle>
+                    <CardTitle class="tracking-tight"
+                        >Player Rankings</CardTitle
+                    >
                 </CardHeader>
                 <CardContent>
                     <div class="ui-table-wrap">
@@ -558,7 +582,15 @@ watch(activeCategory, (category) => {
                                     class="border-b transition-colors odd:bg-muted/15 hover:bg-muted/40"
                                 >
                                     <td class="p-2 text-muted-foreground">
-                                        <span class="font-medium" :class="rankColorClass(index, sortedPlayers.length)">
+                                        <span
+                                            class="font-medium"
+                                            :class="
+                                                rankColorClass(
+                                                    index,
+                                                    sortedPlayers.length,
+                                                )
+                                            "
+                                        >
                                             {{ index + 1 }}
                                         </span>
                                     </td>
@@ -665,7 +697,12 @@ watch(activeCategory, (category) => {
                                         class="p-2 text-right"
                                         :class="[
                                             column.cellClass ?? '',
-                                            column.key === sortBy ? rankColorClass(index, sortedPlayers.length) : '',
+                                            column.key === sortBy
+                                                ? rankColorClass(
+                                                      index,
+                                                      sortedPlayers.length,
+                                                  )
+                                                : '',
                                         ]"
                                     >
                                         {{ formatColumnValue(entry, column) }}

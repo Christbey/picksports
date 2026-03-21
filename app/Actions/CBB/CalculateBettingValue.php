@@ -2,10 +2,13 @@
 
 namespace App\Actions\CBB;
 
+use App\Actions\Sports\Concerns\InteractsWithBettingMarkets;
 use App\Models\CBB\Game;
 
 class CalculateBettingValue
 {
+    use InteractsWithBettingMarkets;
+
     public function execute(Game $game): ?array
     {
         $prediction = $game->prediction;
@@ -255,42 +258,6 @@ class CalculateBettingValue
         ];
     }
 
-    protected function extractMarket(array $oddsData, string $marketKey): ?array
-    {
-        foreach ($oddsData['bookmakers'] as $bookmaker) {
-            foreach ($bookmaker['markets'] as $market) {
-                if ($market['key'] === $marketKey) {
-                    return $market;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    protected function americanToImplied(int|float $odds): float
-    {
-        if ($odds > 0) {
-            return 100 / ($odds + 100);
-        }
-
-        return abs($odds) / (abs($odds) + 100);
-    }
-
-    protected function kellyBet(float $probability, int|float $odds, float $fraction = 0.25): float
-    {
-        // Convert American odds to decimal
-        $decimalOdds = $odds > 0
-            ? ($odds / 100) + 1
-            : (100 / abs($odds)) + 1;
-
-        // Kelly Criterion: (probability * decimal_odds - 1) / (decimal_odds - 1)
-        $kelly = ($probability * $decimalOdds - 1) / ($decimalOdds - 1);
-
-        // Use fractional Kelly (more conservative)
-        return $kelly * $fraction;
-    }
-
     protected function calculateTotalConfidence(float $edge, float $threshold, ?Game $game = null, bool $betOver = false, float $marketTotal = 0.0): float
     {
         $confidence = 50 + (($edge / $threshold) * 10);
@@ -331,16 +298,4 @@ class CalculateBettingValue
         return in_array((string) ($game->tournament_round ?? ''), ['round_of_64', 'round_of_32'], true);
     }
 
-    protected function getSpreadReasoning(float $modelSpread, float $marketSpread, bool $betHome, string $homeTeam, string $awayTeam): string
-    {
-        $diff = round(abs($modelSpread - $marketSpread), 1);
-        $betTeam = $betHome ? $homeTeam : $awayTeam;
-
-        return "Model has {$diff}-point value on {$betTeam}";
-    }
-
-    protected function formatLine(float $line): string
-    {
-        return $line > 0 ? '+'.number_format($line, 1) : number_format($line, 1);
-    }
 }

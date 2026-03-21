@@ -17,9 +17,17 @@ defineProps<{
     >
         <Head title="Complete setup" />
 
-        <Form :action="submitUrl" method="post" v-slot="{ errors, processing }" class="flex flex-col gap-6">
+        <Form
+            :action="submitUrl"
+            method="post"
+            v-slot="{ errors, processing }"
+            class="flex flex-col gap-6"
+        >
             <div class="grid gap-4">
-                <label for="age_verified" class="flex items-start gap-3 text-sm leading-5 text-muted-foreground">
+                <label
+                    for="age_verified"
+                    class="flex items-start gap-3 text-sm leading-5 text-muted-foreground"
+                >
                     <input
                         id="age_verified"
                         type="checkbox"
@@ -29,8 +37,14 @@ defineProps<{
                         class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                     />
                     <span>
-                        I confirm that I am at least 18 years of age and agree to the
-                        <Link :href="termsUrl" target="_blank" class="text-primary hover:underline">Terms of Service</Link>.
+                        I confirm that I am at least 18 years of age and agree
+                        to the
+                        <Link
+                            :href="termsUrl"
+                            target="_blank"
+                            class="text-primary hover:underline"
+                            >Terms of Service</Link
+                        >.
                     </span>
                 </label>
 

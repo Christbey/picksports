@@ -22,8 +22,7 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
         EspnService $espnService,
         ?object $updateLivePrediction = null,
         protected ?SportsAssetStorage $sportsAssetStorage = null,
-    )
-    {
+    ) {
         $this->sportsAssetStorage ??= app(SportsAssetStorage::class);
 
         parent::__construct($espnService, $updateLivePrediction);

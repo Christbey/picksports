@@ -105,27 +105,36 @@ export function useNflDetailedGamePage(gameId: number) {
             game: currentGame,
             gameStatus,
             formatDate: computed(
-                () => (dateString: string | null) => formatDate(dateString || ''),
+                () => (dateString: string | null) =>
+                    formatDate(dateString || ''),
             ),
             venueLabel: computed(() => currentGame.value.venue),
             broadcastNetworks,
             extraInfoItems: computed(() =>
-                weekLabel.value ? [`${currentGame.value.season_type} - ${weekLabel.value}`] : [],
+                weekLabel.value
+                    ? [`${currentGame.value.season_type} - ${weekLabel.value}`]
+                    : [],
             ),
-            showScoreStatuses: ['STATUS_FINAL', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
+            showScoreStatuses: [
+                'STATUS_FINAL',
+                'STATUS_IN_PROGRESS',
+                'STATUS_HALFTIME',
+            ],
             badgePulseStatuses: ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME'],
             useTeamColorGlow: true,
             showLinescore: computed(
                 () =>
-                    homeLinescores.value.length > 0
-                    && awayLinescores.value.length > 0
-                    && currentGame.value.status === 'STATUS_FINAL',
+                    homeLinescores.value.length > 0 &&
+                    awayLinescores.value.length > 0 &&
+                    currentGame.value.status === 'STATUS_FINAL',
             ),
             awayLinescores,
             homeLinescores,
             awayScore: computed(() => currentGame.value.away_score),
             homeScore: computed(() => currentGame.value.home_score),
-            showTrends: computed(() => !!(homeTrends.value || awayTrends.value)),
+            showTrends: computed(
+                () => !!(homeTrends.value || awayTrends.value),
+            ),
             trendsSubtitle,
             trendsLoading: false,
             allTrendCategories,
@@ -147,8 +156,10 @@ export function useNflDetailedGamePage(gameId: number) {
             homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? null,
         ],
         () => {
-            const awayLabel = awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
-            const homeLabel = homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
+            const awayLabel =
+                awayTeam.value?.abbreviation ?? awayTeam.value?.name ?? 'Away';
+            const homeLabel =
+                homeTeam.value?.abbreviation ?? homeTeam.value?.name ?? 'Home';
 
             trackViewItem({
                 itemId: currentGame.value.id,

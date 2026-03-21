@@ -38,4 +38,3 @@ class TierAccessBypass
         return ! $this->tiersEnforced() || $this->userIsBypassed($user);
     }
 }
-

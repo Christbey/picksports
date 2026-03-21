@@ -2,10 +2,9 @@
 
 namespace App\Actions\CBB;
 
-use App\Models\CbbBracket;
 use App\Models\CBB\Game;
+use App\Models\CbbBracket;
 use App\Support\CbbBracketTree;
-use Illuminate\Support\Collection;
 
 class GradeBrackets
 {

@@ -55,14 +55,31 @@ function trackSignupStart(): void {
             v-slot="{ errors, processing }"
             class="flex flex-col gap-6"
         >
-            <input v-if="access?.token" type="hidden" :name="access.token_field" :value="access.token">
+            <input
+                v-if="access?.token"
+                type="hidden"
+                :name="access.token_field"
+                :value="access.token"
+            />
             <div class="grid gap-6">
-                <div v-if="access" class="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+                <div
+                    v-if="access"
+                    class="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground"
+                >
                     <template v-if="access.mode === 'invite'">
-                        You were invited to join <span class="font-medium text-foreground">{{ access.group_name ?? 'a bracket group' }}</span>. Age verification is already handled for this invite.
+                        You were invited to join
+                        <span class="font-medium text-foreground">{{
+                            access.group_name ?? 'a bracket group'
+                        }}</span
+                        >. Age verification is already handled for this invite.
                     </template>
                     <template v-else>
-                        You are joining <span class="font-medium text-foreground">{{ access.group_name ?? 'a bracket group' }}</span> through a shared group link. Age verification is already handled for this link.
+                        You are joining
+                        <span class="font-medium text-foreground">{{
+                            access.group_name ?? 'a bracket group'
+                        }}</span>
+                        through a shared group link. Age verification is already
+                        handled for this link.
                     </template>
                 </div>
 
@@ -91,8 +108,14 @@ function trackSignupStart(): void {
                         autocomplete="email"
                         name="email"
                         placeholder="email@example.com"
-                        :default-value="access?.mode === 'invite' ? (access.email ?? undefined) : undefined"
-                        :readonly="access?.mode === 'invite' && Boolean(access.email)"
+                        :default-value="
+                            access?.mode === 'invite'
+                                ? (access.email ?? undefined)
+                                : undefined
+                        "
+                        :readonly="
+                            access?.mode === 'invite' && Boolean(access.email)
+                        "
                     />
                     <InputError :message="errors.email" />
                 </div>
@@ -136,9 +159,18 @@ function trackSignupStart(): void {
                             :tabindex="5"
                             class="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                         />
-                        <label for="age_verified" class="text-sm leading-5 text-muted-foreground">
-                            I confirm that I am at least 18 years of age and have read and agree to the
-                            <Link :href="terms()" target="_blank" class="text-primary hover:underline">Terms of Service</Link>.
+                        <label
+                            for="age_verified"
+                            class="text-sm leading-5 text-muted-foreground"
+                        >
+                            I confirm that I am at least 18 years of age and
+                            have read and agree to the
+                            <Link
+                                :href="terms()"
+                                target="_blank"
+                                class="text-primary hover:underline"
+                                >Terms of Service</Link
+                            >.
                         </label>
                     </div>
                     <InputError :message="errors.age_verified" />

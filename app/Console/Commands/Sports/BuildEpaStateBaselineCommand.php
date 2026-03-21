@@ -7,7 +7,6 @@ use App\Services\NBA\TrueEpaCalculator as BasketballTrueEpaCalculator;
 use App\Services\NFL\TrueEpaCalculator as NflTrueEpaCalculator;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Collection;
 
 class BuildEpaStateBaselineCommand extends Command
 {
@@ -101,6 +100,7 @@ class BuildEpaStateBaselineCommand extends Command
 
             if ($plays->isEmpty()) {
                 $bar->advance();
+
                 continue;
             }
 
@@ -111,6 +111,7 @@ class BuildEpaStateBaselineCommand extends Command
                 }
 
                 $bar->advance();
+
                 continue;
             }
 
@@ -138,6 +139,7 @@ class BuildEpaStateBaselineCommand extends Command
             $count = (int) $bucket['count'];
             if ($count < $minSamples) {
                 $dropped++;
+
                 continue;
             }
 

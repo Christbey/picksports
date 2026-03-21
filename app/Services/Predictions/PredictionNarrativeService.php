@@ -37,8 +37,7 @@ class PredictionNarrativeService
         ?Game $game = null,
         bool $allowOpenAi = true,
         ?array $trendSnapshot = null
-    ): array
-    {
+    ): array {
         $game ??= $prediction->game;
         if ($game) {
             $game->loadMissing(['homeTeam', 'awayTeam']);
@@ -280,7 +279,7 @@ class PredictionNarrativeService
 
         $summary = $bestBet
             ? sprintf(
-                "Best bet: %s%s. Why: %s.",
+                'Best bet: %s%s. Why: %s.',
                 $bestBet['recommendation'],
                 $bestBet['odds_text'] !== '' ? " ({$bestBet['odds_text']})" : '',
                 $bestBet['reasoning']
@@ -466,8 +465,7 @@ class PredictionNarrativeService
         Prediction $prediction,
         ?Game $game = null,
         ?array $trendSnapshot = null
-    ): ?array
-    {
+    ): ?array {
         $apiKey = (string) config('services.openai.api_key', '');
         $baseUrl = rtrim((string) config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
         $model = (string) config('nba.prediction.narrative.model', 'gpt-4o-mini');
@@ -574,8 +572,7 @@ class PredictionNarrativeService
         string $homeName,
         string $awayName,
         ?array $trendSnapshot = null
-    ): string
-    {
+    ): string {
         $homeWinProb = (float) $prediction->win_probability;
         $awayWinProb = 1 - $homeWinProb;
         $homeRecentForm = (float) ($prediction->home_recent_form ?? 0);
@@ -734,8 +731,7 @@ class PredictionNarrativeService
         ?float $trendGap = null,
         ?string $efficiencyLeader = null,
         ?float $efficiencyGap = null
-    ): array
-    {
+    ): array {
         $restContext = $this->restContextSentence($homeTeam, $homeRest, $awayTeam, $awayRest);
         $whyContext = $this->buildWhyContext(
             pickedTeam: $pickedTeam,

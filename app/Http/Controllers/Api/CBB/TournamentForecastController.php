@@ -8,9 +8,9 @@ use App\Models\CBB\Game;
 use App\Models\CBB\Team;
 use App\Models\CBB\TournamentForecast;
 use App\Models\CBB\TournamentStateSnapshot;
-use App\Support\SportsViewCache;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Support\SportsViewCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 

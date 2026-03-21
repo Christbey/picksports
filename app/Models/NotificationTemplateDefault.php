@@ -17,4 +17,3 @@ class NotificationTemplateDefault extends Model
         return $this->belongsTo(NotificationTemplate::class, 'template_id');
     }
 }
-

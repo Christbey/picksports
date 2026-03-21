@@ -46,8 +46,8 @@ class BacktestTotalsCommand extends Command
                 ['Model MAE', number_format($summary['model_mae'], 2)],
                 ['O/U record', "{$summary['wins']}-{$summary['losses']}-{$summary['pushes']}"],
                 ['O/U win rate', number_format($summary['win_rate'], 1).'%'],
-                ['Under picks', "{$summary['under_picks']} (".number_format($summary['under_pick_rate'], 1)."%)"],
-                ['Over picks', "{$summary['over_picks']} (".number_format($summary['over_pick_rate'], 1)."%)"],
+                ['Under picks', "{$summary['under_picks']} (".number_format($summary['under_pick_rate'], 1).'%)'],
+                ['Over picks', "{$summary['over_picks']} (".number_format($summary['over_pick_rate'], 1).'%)'],
             ]
         );
 

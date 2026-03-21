@@ -13,15 +13,40 @@ defineProps<{
 <template>
     <Card v-if="seasonStats">
         <CardHeader>
-            <CardTitle>Season Averages ({{ seasonStats.games_played }} games)</CardTitle>
+            <CardTitle
+                >Season Averages ({{
+                    seasonStats.games_played
+                }}
+                games)</CardTitle
+            >
         </CardHeader>
         <CardContent>
-            <div class="grid grid-cols-2 gap-4" :class="gridClass || 'md:grid-cols-4 lg:grid-cols-6'">
-                <div v-for="tile in tiles" :key="tile.label" class="text-center p-4 bg-muted/50 rounded-lg">
-                    <div class="text-sm text-muted-foreground">{{ tile.label }}</div>
-                    <div class="text-2xl font-bold" :class="tile.class?.(seasonStats)">
+            <div
+                class="grid grid-cols-2 gap-4"
+                :class="gridClass || 'md:grid-cols-4 lg:grid-cols-6'"
+            >
+                <div
+                    v-for="tile in tiles"
+                    :key="tile.label"
+                    class="rounded-lg bg-muted/50 p-4 text-center"
+                >
+                    <div class="text-sm text-muted-foreground">
+                        {{ tile.label }}
+                    </div>
+                    <div
+                        class="text-2xl font-bold"
+                        :class="tile.class?.(seasonStats)"
+                    >
                         {{ tile.value(seasonStats) }}
-                        <span v-if="tile.rankingKey && statRankings && statRankings[tile.rankingKey]" class="text-xs font-normal text-muted-foreground">#{{ statRankings[tile.rankingKey] }}</span>
+                        <span
+                            v-if="
+                                tile.rankingKey &&
+                                statRankings &&
+                                statRankings[tile.rankingKey]
+                            "
+                            class="text-xs font-normal text-muted-foreground"
+                            >#{{ statRankings[tile.rankingKey] }}</span
+                        >
                     </div>
                 </div>
             </div>

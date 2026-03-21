@@ -287,6 +287,7 @@ class GeneratePlayoffForecast
         }
         if ($sum <= 0.0) {
             $equal = 1.0 / max(1, count($keys));
+
             return array_fill_keys($keys, $equal);
         }
         foreach ($resolved as $key => $value) {
@@ -354,6 +355,7 @@ class GeneratePlayoffForecast
             $ranked = $this->sortSimulatedStandings($teams
                 ->map(function (array $team) use ($noiseStd): array {
                     $team['sim_score'] = (float) $team['adjusted_selection_score'] + $this->randomNormal(0.0, $noiseStd);
+
                     return $team;
                 })
                 ->values(), $headToHead);
@@ -659,6 +661,7 @@ class GeneratePlayoffForecast
         $u = max(lcg_value(), 1e-12);
         $v = max(lcg_value(), 1e-12);
         $z = sqrt(-2.0 * log($u)) * cos(2.0 * M_PI * $v);
+
         return $mean + ($std * $z);
     }
 

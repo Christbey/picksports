@@ -20,14 +20,23 @@ type TeamGameStats = Record<string, unknown> & {
 };
 
 const getTeamStatsForGame = (game: Game): TeamGameStats | null => {
-    if (!props.teamId || !Array.isArray(game.team_stats) || game.team_stats.length === 0) return null;
+    if (
+        !props.teamId ||
+        !Array.isArray(game.team_stats) ||
+        game.team_stats.length === 0
+    )
+        return null;
 
     const statsRows = game.team_stats as TeamGameStats[];
-    const byTeamId = statsRows.find((s) => Number(s.team_id) === Number(props.teamId));
+    const byTeamId = statsRows.find(
+        (s) => Number(s.team_id) === Number(props.teamId),
+    );
     if (byTeamId) return byTeamId;
 
     const isHome = game.home_team_id === props.teamId;
-    const fallback = statsRows.find((s) => s.team_type === (isHome ? 'home' : 'away'));
+    const fallback = statsRows.find(
+        (s) => s.team_type === (isHome ? 'home' : 'away'),
+    );
     return fallback ?? null;
 };
 
@@ -51,7 +60,9 @@ const statChipsForGame = (game: Game): string[] => {
         const errors = toNum(stats.errors);
         const chips: string[] = [];
         if (runs !== null || hits !== null || errors !== null) {
-            chips.push(`R/H/E ${runs ?? '-'} / ${hits ?? '-'} / ${errors ?? '-'}`);
+            chips.push(
+                `R/H/E ${runs ?? '-'} / ${hits ?? '-'} / ${errors ?? '-'}`,
+            );
         }
         const lob = toNum(stats.left_on_base);
         if (lob !== null) chips.push(`LOB ${lob}`);
@@ -59,7 +70,11 @@ const statChipsForGame = (game: Game): string[] => {
     }
 
     // Football profile
-    if ('total_yards' in stats || 'passing_yards' in stats || 'rushing_yards' in stats) {
+    if (
+        'total_yards' in stats ||
+        'passing_yards' in stats ||
+        'rushing_yards' in stats
+    ) {
         const chips: string[] = [];
         const totalYards = toNum(stats.total_yards);
         const passYards = toNum(stats.passing_yards);
@@ -99,13 +114,17 @@ const statChipsForGame = (game: Game): string[] => {
                     v-for="game in games"
                     :key="game.id"
                     :href="gameLink(game.id)"
-                    class="flex items-center justify-between p-3 rounded-lg hover:bg-muted/50 transition-colors"
+                    class="flex items-center justify-between rounded-lg p-3 transition-colors hover:bg-muted/50"
                 >
-                    <div class="flex items-center gap-3 flex-1">
+                    <div class="flex flex-1 items-center gap-3">
                         <span
                             v-if="showScore && getGameResult"
-                            class="font-bold text-sm w-6"
-                            :class="getGameResult(game) === 'W' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'"
+                            class="w-6 text-sm font-bold"
+                            :class="
+                                getGameResult(game) === 'W'
+                                    ? 'text-green-600 dark:text-green-400'
+                                    : 'text-red-600 dark:text-red-400'
+                            "
                         >
                             {{ getGameResult(game) }}
                         </span>
@@ -113,9 +132,15 @@ const statChipsForGame = (game: Game): string[] => {
                             {{ game.home_team_id === teamId ? 'vs' : '@' }}
                         </span>
                         <span class="font-medium">
-                            {{ getOpponent(game, game.home_team_id === teamId)?.name }}
+                            {{
+                                getOpponent(game, game.home_team_id === teamId)
+                                    ?.name
+                            }}
                         </span>
-                        <div v-if="statChipsForGame(game).length > 0" class="flex flex-wrap items-center gap-1">
+                        <div
+                            v-if="statChipsForGame(game).length > 0"
+                            class="flex flex-wrap items-center gap-1"
+                        >
                             <span
                                 v-for="chip in statChipsForGame(game)"
                                 :key="`${game.id}-${chip}`"
@@ -127,8 +152,17 @@ const statChipsForGame = (game: Game): string[] => {
                     </div>
                     <div class="flex items-center gap-4">
                         <span v-if="showScore" class="text-sm font-medium">
-                            {{ game.home_team_id === teamId ? game.home_score : game.away_score }} -
-                            {{ game.home_team_id === teamId ? game.away_score : game.home_score }}
+                            {{
+                                game.home_team_id === teamId
+                                    ? game.home_score
+                                    : game.away_score
+                            }}
+                            -
+                            {{
+                                game.home_team_id === teamId
+                                    ? game.away_score
+                                    : game.home_score
+                            }}
                         </span>
                         <span class="text-sm text-muted-foreground">
                             {{ formatDate(game.game_date) }}

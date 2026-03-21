@@ -75,10 +75,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div v-if="games.length > 0" class="border-b border-sidebar-border/70 bg-background/55 px-2 py-2 backdrop-blur-lg md:px-4">
+    <div
+        v-if="games.length > 0"
+        class="border-b border-sidebar-border/70 bg-background/55 px-2 py-2 backdrop-blur-lg md:px-4"
+    >
         <div class="flex items-center gap-2 overflow-x-auto">
             <span
-                class="sticky left-0 z-10 inline-flex shrink-0 items-center gap-1 rounded-full border border-red-300/50 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-700 backdrop-blur dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300"
+                class="sticky left-0 z-10 inline-flex shrink-0 items-center gap-1 rounded-full border border-red-300/50 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-red-700 uppercase backdrop-blur dark:border-red-500/30 dark:bg-red-500/20 dark:text-red-300"
             >
                 <Radio class="size-3 animate-pulse" />
                 Live
@@ -92,9 +95,12 @@ onUnmounted(() => {
             >
                 <div class="min-w-0">
                     <p class="truncate font-semibold text-foreground/90">
-                        {{ game.away_team }} {{ game.away_score ?? '-' }} - {{ game.home_score ?? '-' }} {{ game.home_team }}
+                        {{ game.away_team }} {{ game.away_score ?? '-' }} -
+                        {{ game.home_score ?? '-' }} {{ game.home_team }}
                     </p>
-                    <p class="truncate text-[10px] uppercase tracking-wide text-muted-foreground">
+                    <p
+                        class="truncate text-[10px] tracking-wide text-muted-foreground uppercase"
+                    >
                         {{ game.sport }} · {{ statusLabel(game) }}
                     </p>
                 </div>

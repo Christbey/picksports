@@ -16,8 +16,8 @@ class SportValidator
     public function __construct()
     {
         $this->checks = [
-            new GameCoverageCheck(),
-            new TeamStatCoverageCheck(),
+            new GameCoverageCheck,
+            new TeamStatCoverageCheck,
         ];
     }
 

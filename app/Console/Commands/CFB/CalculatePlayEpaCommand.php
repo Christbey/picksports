@@ -78,6 +78,7 @@ class CalculatePlayEpaCommand extends Command
 
             if ($plays->isEmpty()) {
                 $bar->advance();
+
                 continue;
             }
 

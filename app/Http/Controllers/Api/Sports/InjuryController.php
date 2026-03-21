@@ -56,7 +56,7 @@ class InjuryController extends Controller
                 'i.is_active',
                 'i.updated_at',
                 't.abbreviation as team_abbreviation',
-                DB::raw($nameColumn." as player_name"),
+                DB::raw($nameColumn.' as player_name'),
             ]);
 
         $activeOnly = filter_var($request->query('active', true), FILTER_VALIDATE_BOOL);
@@ -108,4 +108,3 @@ class InjuryController extends Controller
         return "'Unknown Player'";
     }
 }
-

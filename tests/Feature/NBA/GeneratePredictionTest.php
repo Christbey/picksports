@@ -1,7 +1,7 @@
 <?php
 
-use App\Actions\NBA\GeneratePrediction;
 use App\Actions\NBA\CalculateBettingValue;
+use App\Actions\NBA\GeneratePrediction;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;

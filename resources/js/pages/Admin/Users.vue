@@ -44,7 +44,13 @@ interface PaginationMeta<T> {
 
 interface Filters {
     status: 'all' | 'active' | 'offline';
-    sort: 'created_desc' | 'created_asc' | 'last_active_desc' | 'last_active_asc' | 'name_asc' | 'name_desc';
+    sort:
+        | 'created_desc'
+        | 'created_asc'
+        | 'last_active_desc'
+        | 'last_active_asc'
+        | 'name_asc'
+        | 'name_desc';
 }
 
 interface Meta {
@@ -113,30 +119,45 @@ function formatRelativeTime(date: string | null): string {
     return `${days} day${days === 1 ? '' : 's'} ago`;
 }
 
-const activeStatusLabel = computed(() => `Within ${props.meta.active_window_minutes} minutes`);
+const activeStatusLabel = computed(
+    () => `Within ${props.meta.active_window_minutes} minutes`,
+);
 
 watch([statusFilter, sortBy], ([status, sort]) => {
-    router.get('/admin/users', {
-        status,
-        sort,
-    }, {
-        preserveState: true,
-        preserveScroll: true,
-        replace: true,
-    });
+    router.get(
+        '/admin/users',
+        {
+            status,
+            sort,
+        },
+        {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+        },
+    );
 });
 
-watch(() => props.filters.status, (value) => {
-    statusFilter.value = value;
-});
+watch(
+    () => props.filters.status,
+    (value) => {
+        statusFilter.value = value;
+    },
+);
 
-watch(() => props.filters.sort, (value) => {
-    sortBy.value = value;
-});
+watch(
+    () => props.filters.sort,
+    (value) => {
+        sortBy.value = value;
+    },
+);
 
-watch(() => props.meta.server_time, (value) => {
-    nowMs.value = Date.parse(value);
-});
+watch(
+    () => props.meta.server_time,
+    (value) => {
+        nowMs.value = Date.parse(value);
+    },
+);
 
 onMounted(() => {
     relativeTimeTimer = window.setInterval(() => {
@@ -180,17 +201,25 @@ function previewMessage(value: string): string {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <SettingsLayout :full-width="true">
-            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
+            <div
+                class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
+            >
                 <div>
                     <h1 class="text-2xl font-bold">Users & Submissions</h1>
                     <p class="mt-1 text-muted-foreground">
-                        Monitor user growth, current activity, and incoming feedback submissions.
+                        Monitor user growth, current activity, and incoming
+                        feedback submissions.
                     </p>
                 </div>
 
-                <div class="flex flex-col gap-3 rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar md:flex-row md:items-end">
+                <div
+                    class="flex flex-col gap-3 rounded-xl border border-sidebar-border bg-white p-4 md:flex-row md:items-end dark:bg-sidebar"
+                >
                     <div class="flex-1">
-                        <label for="status-filter" class="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <label
+                            for="status-filter"
+                            class="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
                             Status Filter
                         </label>
                         <select
@@ -204,7 +233,10 @@ function previewMessage(value: string): string {
                         </select>
                     </div>
                     <div class="flex-1">
-                        <label for="sort-by" class="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                        <label
+                            for="sort-by"
+                            class="mb-2 block text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
                             Sort By
                         </label>
                         <select
@@ -214,42 +246,93 @@ function previewMessage(value: string): string {
                         >
                             <option value="created_desc">Newest users</option>
                             <option value="created_asc">Oldest users</option>
-                            <option value="last_active_desc">Most recently active</option>
-                            <option value="last_active_asc">Least recently active</option>
+                            <option value="last_active_desc">
+                                Most recently active
+                            </option>
+                            <option value="last_active_asc">
+                                Least recently active
+                            </option>
                             <option value="name_asc">Name A-Z</option>
                             <option value="name_desc">Name Z-A</option>
                         </select>
                     </div>
                     <div class="text-sm text-muted-foreground">
                         Active now:
-                        <span class="font-medium text-foreground">{{ activeStatusLabel }}</span>
+                        <span class="font-medium text-foreground">{{
+                            activeStatusLabel
+                        }}</span>
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-                    <div class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                        <p class="text-xs uppercase tracking-wide text-muted-foreground">Total Users</p>
-                        <p class="mt-2 text-2xl font-semibold">{{ props.stats.total_users }}</p>
+                <div
+                    class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5"
+                >
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar"
+                    >
+                        <p
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                        >
+                            Total Users
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold">
+                            {{ props.stats.total_users }}
+                        </p>
                     </div>
-                    <div class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                        <p class="text-xs uppercase tracking-wide text-muted-foreground">New Users Today</p>
-                        <p class="mt-2 text-2xl font-semibold">{{ props.stats.new_users_today }}</p>
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar"
+                    >
+                        <p
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                        >
+                            New Users Today
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold">
+                            {{ props.stats.new_users_today }}
+                        </p>
                     </div>
-                    <div class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                        <p class="text-xs uppercase tracking-wide text-muted-foreground">Active Now</p>
-                        <p class="mt-2 text-2xl font-semibold">{{ props.stats.active_users_now }}</p>
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar"
+                    >
+                        <p
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                        >
+                            Active Now
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold">
+                            {{ props.stats.active_users_now }}
+                        </p>
                     </div>
-                    <div class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                        <p class="text-xs uppercase tracking-wide text-muted-foreground">Total Submissions</p>
-                        <p class="mt-2 text-2xl font-semibold">{{ props.stats.total_submissions }}</p>
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar"
+                    >
+                        <p
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                        >
+                            Total Submissions
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold">
+                            {{ props.stats.total_submissions }}
+                        </p>
                     </div>
-                    <div class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar">
-                        <p class="text-xs uppercase tracking-wide text-muted-foreground">Submissions Today</p>
-                        <p class="mt-2 text-2xl font-semibold">{{ props.stats.submissions_today }}</p>
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-4 dark:bg-sidebar"
+                    >
+                        <p
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
+                        >
+                            Submissions Today
+                        </p>
+                        <p class="mt-2 text-2xl font-semibold">
+                            {{ props.stats.submissions_today }}
+                        </p>
                     </div>
                 </div>
 
-                <div id="submissions" class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar">
+                <div
+                    id="submissions"
+                    class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar"
+                >
                     <div class="border-b border-sidebar-border px-4 py-3">
                         <h2 class="font-semibold">Users</h2>
                     </div>
@@ -257,11 +340,21 @@ function previewMessage(value: string): string {
                         <table class="w-full text-left text-sm">
                             <thead class="bg-sidebar-accent">
                                 <tr>
-                                    <th class="px-4 py-3 font-semibold">Name</th>
-                                    <th class="px-4 py-3 font-semibold">Email</th>
-                                    <th class="px-4 py-3 font-semibold">Status</th>
-                                    <th class="px-4 py-3 font-semibold">Last Active</th>
-                                    <th class="px-4 py-3 font-semibold">Created</th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Name
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Email
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Status
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Last Active
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Created
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -270,32 +363,65 @@ function previewMessage(value: string): string {
                                     :key="user.id"
                                     class="border-t border-sidebar-border"
                                 >
-                                    <td class="px-4 py-3 font-medium">{{ user.name }}</td>
-                                    <td class="px-4 py-3 text-muted-foreground">{{ user.email }}</td>
+                                    <td class="px-4 py-3 font-medium">
+                                        {{ user.name }}
+                                    </td>
+                                    <td class="px-4 py-3 text-muted-foreground">
+                                        {{ user.email }}
+                                    </td>
                                     <td class="px-4 py-3">
                                         <span
-                                            class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold uppercase tracking-wide"
-                                            :class="user.is_active ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-sidebar-accent text-foreground'"
+                                            class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold tracking-wide uppercase"
+                                            :class="
+                                                user.is_active
+                                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+                                                    : 'bg-sidebar-accent text-foreground'
+                                            "
                                         >
-                                            {{ user.is_active ? 'Active now' : 'Offline' }}
+                                            {{
+                                                user.is_active
+                                                    ? 'Active now'
+                                                    : 'Offline'
+                                            }}
                                         </span>
                                     </td>
                                     <td class="px-4 py-3">
-                                        <div>{{ formatRelativeTime(user.last_active_at) }}</div>
-                                        <div class="text-xs text-muted-foreground">{{ formatDate(user.last_active_at) }}</div>
+                                        <div>
+                                            {{
+                                                formatRelativeTime(
+                                                    user.last_active_at,
+                                                )
+                                            }}
+                                        </div>
+                                        <div
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{
+                                                formatDate(user.last_active_at)
+                                            }}
+                                        </div>
                                     </td>
-                                    <td class="px-4 py-3">{{ formatDate(user.created_at) }}</td>
+                                    <td class="px-4 py-3">
+                                        {{ formatDate(user.created_at) }}
+                                    </td>
                                 </tr>
                                 <tr v-if="props.users.data.length === 0">
-                                    <td colspan="5" class="px-4 py-4 text-center text-muted-foreground">
+                                    <td
+                                        colspan="5"
+                                        class="px-4 py-4 text-center text-muted-foreground"
+                                    >
                                         No users found.
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                    <div class="flex items-center justify-between border-t border-sidebar-border px-4 py-3 text-sm">
-                        <span class="text-muted-foreground">Total: {{ props.users.total }}</span>
+                    <div
+                        class="flex items-center justify-between border-t border-sidebar-border px-4 py-3 text-sm"
+                    >
+                        <span class="text-muted-foreground"
+                            >Total: {{ props.users.total }}</span
+                        >
                         <div class="flex items-center gap-2">
                             <Link
                                 v-if="props.users.prev_page_url"
@@ -305,7 +431,10 @@ function previewMessage(value: string): string {
                             >
                                 Previous
                             </Link>
-                            <span>Page {{ props.users.current_page }} of {{ props.users.last_page }}</span>
+                            <span
+                                >Page {{ props.users.current_page }} of
+                                {{ props.users.last_page }}</span
+                            >
                             <Link
                                 v-if="props.users.next_page_url"
                                 :href="props.users.next_page_url"
@@ -318,7 +447,9 @@ function previewMessage(value: string): string {
                     </div>
                 </div>
 
-                <div class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar">
+                <div
+                    class="rounded-xl border border-sidebar-border bg-white dark:bg-sidebar"
+                >
                     <div class="border-b border-sidebar-border px-4 py-3">
                         <h2 class="font-semibold">Form Submissions</h2>
                     </div>
@@ -326,12 +457,24 @@ function previewMessage(value: string): string {
                         <table class="w-full text-left text-sm">
                             <thead class="bg-sidebar-accent">
                                 <tr>
-                                    <th class="px-4 py-3 font-semibold">From</th>
-                                    <th class="px-4 py-3 font-semibold">Subject</th>
-                                    <th class="px-4 py-3 font-semibold">Message</th>
-                                    <th class="px-4 py-3 font-semibold">Page</th>
-                                    <th class="px-4 py-3 font-semibold">Status</th>
-                                    <th class="px-4 py-3 font-semibold">Created</th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        From
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Subject
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Message
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Page
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Status
+                                    </th>
+                                    <th class="px-4 py-3 font-semibold">
+                                        Created
+                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -341,11 +484,21 @@ function previewMessage(value: string): string {
                                     class="border-t border-sidebar-border"
                                 >
                                     <td class="px-4 py-3">
-                                        <div class="font-medium">{{ submission.name ?? 'Unknown' }}</div>
-                                        <div class="text-xs text-muted-foreground">{{ submission.email ?? 'N/A' }}</div>
+                                        <div class="font-medium">
+                                            {{ submission.name ?? 'Unknown' }}
+                                        </div>
+                                        <div
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{ submission.email ?? 'N/A' }}
+                                        </div>
                                     </td>
-                                    <td class="px-4 py-3">{{ submission.subject ?? 'N/A' }}</td>
-                                    <td class="px-4 py-3 max-w-md">{{ previewMessage(submission.message) }}</td>
+                                    <td class="px-4 py-3">
+                                        {{ submission.subject ?? 'N/A' }}
+                                    </td>
+                                    <td class="max-w-md px-4 py-3">
+                                        {{ previewMessage(submission.message) }}
+                                    </td>
                                     <td class="px-4 py-3">
                                         <a
                                             v-if="submission.page_url"
@@ -356,25 +509,40 @@ function previewMessage(value: string): string {
                                         >
                                             Open
                                         </a>
-                                        <span v-else class="text-muted-foreground">N/A</span>
+                                        <span
+                                            v-else
+                                            class="text-muted-foreground"
+                                            >N/A</span
+                                        >
                                     </td>
                                     <td class="px-4 py-3">
-                                        <span class="inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-semibold uppercase tracking-wide">
+                                        <span
+                                            class="inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-semibold tracking-wide uppercase"
+                                        >
                                             {{ submission.status }}
                                         </span>
                                     </td>
-                                    <td class="px-4 py-3">{{ formatDate(submission.created_at) }}</td>
+                                    <td class="px-4 py-3">
+                                        {{ formatDate(submission.created_at) }}
+                                    </td>
                                 </tr>
                                 <tr v-if="props.submissions.data.length === 0">
-                                    <td colspan="6" class="px-4 py-4 text-center text-muted-foreground">
+                                    <td
+                                        colspan="6"
+                                        class="px-4 py-4 text-center text-muted-foreground"
+                                    >
                                         No submissions found.
                                     </td>
                                 </tr>
                             </tbody>
                         </table>
                     </div>
-                    <div class="flex items-center justify-between border-t border-sidebar-border px-4 py-3 text-sm">
-                        <span class="text-muted-foreground">Total: {{ props.submissions.total }}</span>
+                    <div
+                        class="flex items-center justify-between border-t border-sidebar-border px-4 py-3 text-sm"
+                    >
+                        <span class="text-muted-foreground"
+                            >Total: {{ props.submissions.total }}</span
+                        >
                         <div class="flex items-center gap-2">
                             <Link
                                 v-if="props.submissions.prev_page_url"
@@ -384,7 +552,10 @@ function previewMessage(value: string): string {
                             >
                                 Previous
                             </Link>
-                            <span>Page {{ props.submissions.current_page }} of {{ props.submissions.last_page }}</span>
+                            <span
+                                >Page {{ props.submissions.current_page }} of
+                                {{ props.submissions.last_page }}</span
+                            >
                             <Link
                                 v-if="props.submissions.next_page_url"
                                 :href="props.submissions.next_page_url"

@@ -82,10 +82,14 @@ const potentialProfit = computed(() => {
     }
 
     if (americanOdds.value > 0) {
-        return Number(((wagerAmount.value * americanOdds.value) / 100).toFixed(2));
+        return Number(
+            ((wagerAmount.value * americanOdds.value) / 100).toFixed(2),
+        );
     }
 
-    return Number(((wagerAmount.value * 100) / Math.abs(americanOdds.value)).toFixed(2));
+    return Number(
+        ((wagerAmount.value * 100) / Math.abs(americanOdds.value)).toFixed(2),
+    );
 });
 
 const totalPayout = computed(() => {
@@ -107,18 +111,27 @@ const selectionLabel = computed(() => {
         return `${props.option.teamLabel} ML`;
     }
 
-    if (props.option.betType === 'total_over' || props.option.betType === 'total_under') {
+    if (
+        props.option.betType === 'total_over' ||
+        props.option.betType === 'total_under'
+    ) {
         return `${props.option.selectionSide === 'over' ? 'Over' : 'Under'} ${lineValue}`.trim();
     }
 
     const prefix = props.option.teamLabel;
-    const numericLine = typeof lineValue === 'number' ? lineValue : Number(lineValue);
-    const formattedLine = Number.isFinite(numericLine) && numericLine > 0 ? `+${lineValue}` : `${lineValue}`;
+    const numericLine =
+        typeof lineValue === 'number' ? lineValue : Number(lineValue);
+    const formattedLine =
+        Number.isFinite(numericLine) && numericLine > 0
+            ? `+${lineValue}`
+            : `${lineValue}`;
 
     return `${prefix} ${formattedLine}`.trim();
 });
 
-const isEditing = computed(() => props.existingBet !== null && props.existingBet !== undefined);
+const isEditing = computed(
+    () => props.existingBet !== null && props.existingBet !== undefined,
+);
 
 function formatCurrency(amount: number): string {
     return new Intl.NumberFormat('en-US', {
@@ -141,13 +154,17 @@ function syncForm(): void {
     }
 
     form.value = {
-        bet_amount: props.existingBet ? String(props.existingBet.bet_amount ?? '') : '',
+        bet_amount: props.existingBet
+            ? String(props.existingBet.bet_amount ?? '')
+            : '',
         odds: props.existingBet?.odds ?? '',
-        line: props.existingBet?.line !== null && props.existingBet?.line !== undefined
-            ? String(props.existingBet.line)
-            : props.option.defaultLine !== null
-                ? String(props.option.defaultLine)
-                : '',
+        line:
+            props.existingBet?.line !== null &&
+            props.existingBet?.line !== undefined
+                ? String(props.existingBet.line)
+                : props.option.defaultLine !== null
+                  ? String(props.option.defaultLine)
+                  : '',
         notes: props.existingBet?.notes ?? '',
     };
     errorMessage.value = null;
@@ -179,13 +196,17 @@ async function submit(): Promise<void> {
         selection_label: selectionLabel.value,
         line: form.value.line === '' ? null : Number(form.value.line),
         odds: form.value.odds,
-        bet_amount: form.value.bet_amount === '' ? null : Number(form.value.bet_amount),
+        bet_amount:
+            form.value.bet_amount === '' ? null : Number(form.value.bet_amount),
         notes: form.value.notes || null,
     };
 
     try {
         if (props.existingBet) {
-            await axios.put(`/api/v1/user-bets/${props.existingBet.id}`, payload);
+            await axios.put(
+                `/api/v1/user-bets/${props.existingBet.id}`,
+                payload,
+            );
         } else {
             await axios.post('/api/v1/user-bets', payload);
         }
@@ -208,21 +229,33 @@ async function submit(): Promise<void> {
     <Dialog :open="open" @update:open="emit('update:open', $event)">
         <DialogContent v-if="option" class="sm:max-w-md">
             <DialogHeader>
-                <DialogTitle>{{ isEditing ? 'Edit tracked pick' : 'Track this pick' }}</DialogTitle>
+                <DialogTitle>{{
+                    isEditing ? 'Edit tracked pick' : 'Track this pick'
+                }}</DialogTitle>
                 <DialogDescription>
                     {{ option.title }}
                 </DialogDescription>
             </DialogHeader>
 
             <div class="space-y-4">
-                <div class="rounded-lg border border-sidebar-border/70 bg-sidebar/20 p-3">
-                    <div class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Selection</div>
-                    <div class="mt-1 text-sm font-semibold text-foreground">{{ selectionLabel || option.title }}</div>
+                <div
+                    class="rounded-lg border border-sidebar-border/70 bg-sidebar/20 p-3"
+                >
+                    <div
+                        class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                    >
+                        Selection
+                    </div>
+                    <div class="mt-1 text-sm font-semibold text-foreground">
+                        {{ selectionLabel || option.title }}
+                    </div>
                     <div
                         v-if="publicConsensus"
                         class="mt-2 text-xs text-muted-foreground"
                     >
-                        <span class="font-medium text-foreground/80">{{ publicConsensus.summary }}</span>
+                        <span class="font-medium text-foreground/80">{{
+                            publicConsensus.summary
+                        }}</span>
                         <span class="ml-1">{{ publicConsensus.detail }}</span>
                     </div>
                 </div>
@@ -250,10 +283,7 @@ async function submit(): Promise<void> {
                     </div>
                 </div>
 
-                <div
-                    v-if="option.betType !== 'moneyline'"
-                    class="space-y-2"
-                >
+                <div v-if="option.betType !== 'moneyline'" class="space-y-2">
                     <Label for="bet-line">Line</Label>
                     <Input
                         id="bet-line"
@@ -270,7 +300,7 @@ async function submit(): Promise<void> {
                         id="bet-notes"
                         v-model="form.notes"
                         rows="3"
-                        class="flex min-h-[88px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        class="flex min-h-[88px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
                         placeholder="Optional notes"
                     />
                 </div>
@@ -280,21 +310,47 @@ async function submit(): Promise<void> {
                     class="grid gap-3 rounded-lg border border-sidebar-border/70 bg-sidebar/20 p-3 sm:grid-cols-3"
                 >
                     <div>
-                        <div class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Stake</div>
+                        <div
+                            class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            Stake
+                        </div>
                         <div class="mt-1 text-sm font-semibold text-foreground">
-                            {{ wagerAmount !== null ? formatCurrency(wagerAmount) : '--' }}
+                            {{
+                                wagerAmount !== null
+                                    ? formatCurrency(wagerAmount)
+                                    : '--'
+                            }}
                         </div>
                     </div>
                     <div>
-                        <div class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Potential Profit</div>
-                        <div class="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                            {{ potentialProfit !== null ? formatCurrency(potentialProfit) : '--' }}
+                        <div
+                            class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            Potential Profit
+                        </div>
+                        <div
+                            class="mt-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400"
+                        >
+                            {{
+                                potentialProfit !== null
+                                    ? formatCurrency(potentialProfit)
+                                    : '--'
+                            }}
                         </div>
                     </div>
                     <div>
-                        <div class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Total Return</div>
+                        <div
+                            class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            Total Return
+                        </div>
                         <div class="mt-1 text-sm font-semibold text-foreground">
-                            {{ totalPayout !== null ? formatCurrency(totalPayout) : '--' }}
+                            {{
+                                totalPayout !== null
+                                    ? formatCurrency(totalPayout)
+                                    : '--'
+                            }}
                         </div>
                     </div>
                 </div>
@@ -308,11 +364,21 @@ async function submit(): Promise<void> {
             </div>
 
             <DialogFooter>
-                <Button type="button" variant="outline" @click="emit('update:open', false)">
+                <Button
+                    type="button"
+                    variant="outline"
+                    @click="emit('update:open', false)"
+                >
                     Cancel
                 </Button>
                 <Button type="button" :disabled="saving" @click="submit">
-                    {{ saving ? 'Saving...' : (isEditing ? 'Update Pick' : 'Save Pick') }}
+                    {{
+                        saving
+                            ? 'Saving...'
+                            : isEditing
+                              ? 'Update Pick'
+                              : 'Save Pick'
+                    }}
                 </Button>
             </DialogFooter>
         </DialogContent>

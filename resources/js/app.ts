@@ -19,9 +19,7 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         const app = createApp({ render: () => h(App, props) });
 
-        app.component('FontAwesomeIcon', FontAwesomeIcon)
-            .use(plugin)
-            .mount(el);
+        app.component('FontAwesomeIcon', FontAwesomeIcon).use(plugin).mount(el);
 
         const initialPage = props.initialPage;
         trackPageView(initialPage);

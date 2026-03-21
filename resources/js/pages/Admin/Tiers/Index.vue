@@ -51,7 +51,7 @@ function editTier(tier: Tier) {
 }
 
 function deleteTier(tier: Tier) {
-    if (! confirm(`Are you sure you want to delete the "${tier.name}" tier?`)) {
+    if (!confirm(`Are you sure you want to delete the "${tier.name}" tier?`)) {
         return;
     }
 
@@ -69,95 +69,116 @@ function formatPrice(price: string | null): string {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <SettingsLayout :full-width="true">
-            <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-2xl font-bold">Subscription Tiers</h1>
-                    <p class="mt-1 text-muted-foreground">
-                        Manage subscription plans and pricing
-                    </p>
+            <div
+                class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4"
+            >
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h1 class="text-2xl font-bold">Subscription Tiers</h1>
+                        <p class="mt-1 text-muted-foreground">
+                            Manage subscription plans and pricing
+                        </p>
+                    </div>
+                    <button
+                        @click="router.get('/admin/tiers/create')"
+                        class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+                    >
+                        Create New Tier
+                    </button>
                 </div>
-                <button
-                    @click="router.get('/admin/tiers/create')"
-                    class="rounded-lg bg-primary px-4 py-2 font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-                >
-                    Create New Tier
-                </button>
-            </div>
 
-            <div class="overflow-x-auto rounded-xl border border-sidebar-border bg-white dark:bg-sidebar">
-                <table class="w-full">
-                    <thead>
-                        <tr class="border-b border-sidebar-border bg-sidebar-accent text-left text-sm">
-                            <th class="p-4 font-semibold">Name</th>
-                            <th class="p-4 font-semibold">Slug</th>
-                            <th class="p-4 font-semibold">Monthly Price</th>
-                            <th class="p-4 font-semibold">Yearly Price</th>
-                            <th class="p-4 font-semibold">Status</th>
-                            <th class="p-4 font-semibold">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr
-                            v-if="tiers.length === 0"
-                            class="border-b border-sidebar-border"
-                        >
-                            <td colspan="6" class="p-4 text-center text-muted-foreground">
-                                No subscription tiers found. Create one to get started.
-                            </td>
-                        </tr>
-                        <tr
-                            v-for="tier in tiers"
-                            :key="tier.id"
-                            class="border-b border-sidebar-border last:border-0 hover:bg-sidebar-accent/50 transition-colors"
-                        >
-                            <td class="p-4">
-                                <div class="font-medium">{{ tier.name }}</div>
-                                <div v-if="tier.is_default" class="text-xs text-muted-foreground">
-                                    (Default)
-                                </div>
-                            </td>
-                            <td class="p-4">
-                                <span class="font-mono text-sm">{{ tier.slug }}</span>
-                            </td>
-                            <td class="p-4">
-                                {{ formatPrice(tier.price_monthly) }}
-                            </td>
-                            <td class="p-4">
-                                {{ formatPrice(tier.price_yearly) }}
-                            </td>
-                            <td class="p-4">
-                                <span
-                                    :class="[
-                                        'inline-block rounded-full px-3 py-1 text-sm font-medium',
-                                        tier.is_active
-                                            ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-                                            : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
-                                    ]"
+                <div
+                    class="overflow-x-auto rounded-xl border border-sidebar-border bg-white dark:bg-sidebar"
+                >
+                    <table class="w-full">
+                        <thead>
+                            <tr
+                                class="border-b border-sidebar-border bg-sidebar-accent text-left text-sm"
+                            >
+                                <th class="p-4 font-semibold">Name</th>
+                                <th class="p-4 font-semibold">Slug</th>
+                                <th class="p-4 font-semibold">Monthly Price</th>
+                                <th class="p-4 font-semibold">Yearly Price</th>
+                                <th class="p-4 font-semibold">Status</th>
+                                <th class="p-4 font-semibold">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr
+                                v-if="tiers.length === 0"
+                                class="border-b border-sidebar-border"
+                            >
+                                <td
+                                    colspan="6"
+                                    class="p-4 text-center text-muted-foreground"
                                 >
-                                    {{ tier.is_active ? 'Active' : 'Inactive' }}
-                                </span>
-                            </td>
-                            <td class="p-4">
-                                <div class="flex gap-2">
-                                    <button
-                                        @click="editTier(tier)"
-                                        class="rounded-lg bg-sidebar-accent px-3 py-1 text-sm font-medium hover:bg-sidebar-accent/80 transition-colors"
+                                    No subscription tiers found. Create one to
+                                    get started.
+                                </td>
+                            </tr>
+                            <tr
+                                v-for="tier in tiers"
+                                :key="tier.id"
+                                class="border-b border-sidebar-border transition-colors last:border-0 hover:bg-sidebar-accent/50"
+                            >
+                                <td class="p-4">
+                                    <div class="font-medium">
+                                        {{ tier.name }}
+                                    </div>
+                                    <div
+                                        v-if="tier.is_default"
+                                        class="text-xs text-muted-foreground"
                                     >
-                                        Edit
-                                    </button>
-                                    <button
-                                        @click="deleteTier(tier)"
-                                        class="rounded-lg bg-red-600 px-3 py-1 text-sm font-medium text-white hover:bg-red-700 transition-colors"
+                                        (Default)
+                                    </div>
+                                </td>
+                                <td class="p-4">
+                                    <span class="font-mono text-sm">{{
+                                        tier.slug
+                                    }}</span>
+                                </td>
+                                <td class="p-4">
+                                    {{ formatPrice(tier.price_monthly) }}
+                                </td>
+                                <td class="p-4">
+                                    {{ formatPrice(tier.price_yearly) }}
+                                </td>
+                                <td class="p-4">
+                                    <span
+                                        :class="[
+                                            'inline-block rounded-full px-3 py-1 text-sm font-medium',
+                                            tier.is_active
+                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
+                                                : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400',
+                                        ]"
                                     >
-                                        Delete
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                                        {{
+                                            tier.is_active
+                                                ? 'Active'
+                                                : 'Inactive'
+                                        }}
+                                    </span>
+                                </td>
+                                <td class="p-4">
+                                    <div class="flex gap-2">
+                                        <button
+                                            @click="editTier(tier)"
+                                            class="rounded-lg bg-sidebar-accent px-3 py-1 text-sm font-medium transition-colors hover:bg-sidebar-accent/80"
+                                        >
+                                            Edit
+                                        </button>
+                                        <button
+                                            @click="deleteTier(tier)"
+                                            class="rounded-lg bg-red-600 px-3 py-1 text-sm font-medium text-white transition-colors hover:bg-red-700"
+                                        >
+                                            Delete
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </SettingsLayout>
     </AppLayout>

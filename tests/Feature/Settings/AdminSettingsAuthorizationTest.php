@@ -2,8 +2,8 @@
 
 use App\Models\CbbBracket;
 use App\Models\Group;
-use App\Models\OddsApiTeamMapping;
 use App\Models\OddsApiPlayerMapping;
+use App\Models\OddsApiTeamMapping;
 use App\Models\User;
 use App\Services\Settings\FoundingUsersSettingsService;
 use Inertia\Testing\AssertableInertia as Assert;

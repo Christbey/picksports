@@ -23,26 +23,47 @@ defineProps<{
             </div>
 
             <div v-else-if="allTrendCategories.length > 0" class="space-y-6">
-                <div v-for="category in allTrendCategories" :key="category" class="border-b pb-4 last:border-b-0">
-                    <h4 class="font-medium mb-3">{{ trendLabel(category) }}</h4>
+                <div
+                    v-for="category in allTrendCategories"
+                    :key="category"
+                    class="border-b pb-4 last:border-b-0"
+                >
+                    <h4 class="mb-3 font-medium">{{ trendLabel(category) }}</h4>
 
-                    <div v-if="lockedTrends && lockedTrends[category]" class="text-center py-4 bg-muted/50 rounded-lg">
+                    <div
+                        v-if="lockedTrends && lockedTrends[category]"
+                        class="rounded-lg bg-muted/50 py-4 text-center"
+                    >
                         <div class="text-sm text-muted-foreground">
-                            Upgrade to {{ lockedTrends[category].charAt(0).toUpperCase() + lockedTrends[category].slice(1) }} to unlock this trend
+                            Upgrade to
+                            {{
+                                lockedTrends[category].charAt(0).toUpperCase() +
+                                lockedTrends[category].slice(1)
+                            }}
+                            to unlock this trend
                         </div>
                     </div>
 
-                    <ul v-else-if="trendsData?.[category]?.length" class="space-y-1 text-sm">
-                        <li v-for="(trend, idx) in trendsData[category]" :key="idx" class="flex items-start gap-2">
+                    <ul
+                        v-else-if="trendsData?.[category]?.length"
+                        class="space-y-1 text-sm"
+                    >
+                        <li
+                            v-for="(trend, idx) in trendsData[category]"
+                            :key="idx"
+                            class="flex items-start gap-2"
+                        >
                             <span class="text-muted-foreground">&bull;</span>
                             <span>{{ trend }}</span>
                         </li>
                     </ul>
-                    <p v-else class="text-sm text-muted-foreground">No trends available</p>
+                    <p v-else class="text-sm text-muted-foreground">
+                        No trends available
+                    </p>
                 </div>
             </div>
 
-            <div v-else class="text-center py-8 text-muted-foreground">
+            <div v-else class="py-8 text-center text-muted-foreground">
                 No trends available for this team
             </div>
         </CardContent>

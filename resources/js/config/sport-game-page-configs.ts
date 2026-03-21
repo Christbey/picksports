@@ -1,6 +1,12 @@
 import type { BreadcrumbItem, SportGamePageConfig } from '@/types';
 
-export type SupportedGameSport = 'nba' | 'cbb' | 'wnba' | 'wcbb' | 'nfl' | 'mlb';
+export type SupportedGameSport =
+    | 'nba'
+    | 'cbb'
+    | 'wnba'
+    | 'wcbb'
+    | 'nfl'
+    | 'mlb';
 
 const defaultLabels: Record<SupportedGameSport, string> = {
     nba: 'NBA',
@@ -11,9 +17,28 @@ const defaultLabels: Record<SupportedGameSport, string> = {
     mlb: 'MLB',
 };
 
-const defaultTheme: Partial<Record<SupportedGameSport, Pick<SportGamePageConfig, 'gradientClass' | 'awayBarClass' | 'homeBarClass' | 'projectedLabel' | 'metricsTitle' | 'topPerformersMode' | 'trendsTitle' | 'linescoreTitle' | 'linescoreUsePeriodNumbers' | 'linescorePeriodPrefix' | 'trendsEmptyText'>>> = {
+const defaultTheme: Partial<
+    Record<
+        SupportedGameSport,
+        Pick<
+            SportGamePageConfig,
+            | 'gradientClass'
+            | 'awayBarClass'
+            | 'homeBarClass'
+            | 'projectedLabel'
+            | 'metricsTitle'
+            | 'topPerformersMode'
+            | 'trendsTitle'
+            | 'linescoreTitle'
+            | 'linescoreUsePeriodNumbers'
+            | 'linescorePeriodPrefix'
+            | 'trendsEmptyText'
+        >
+    >
+> = {
     nba: {
-        gradientClass: 'bg-gradient-to-r from-orange-600 to-orange-800 dark:from-orange-800 dark:to-orange-950',
+        gradientClass:
+            'bg-gradient-to-r from-orange-600 to-orange-800 dark:from-orange-800 dark:to-orange-950',
         awayBarClass: 'bg-orange-500 dark:bg-orange-600',
         homeBarClass: 'bg-orange-800 dark:bg-orange-400',
         projectedLabel: 'Projected points',
@@ -25,7 +50,8 @@ const defaultTheme: Partial<Record<SupportedGameSport, Pick<SportGamePageConfig,
         trendsEmptyText: 'No trends available for this matchup',
     },
     cbb: {
-        gradientClass: 'bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-950',
+        gradientClass:
+            'bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-950',
         awayBarClass: 'bg-blue-500 dark:bg-blue-600',
         homeBarClass: 'bg-blue-800 dark:bg-blue-400',
         projectedLabel: 'Projected points',
@@ -37,7 +63,8 @@ const defaultTheme: Partial<Record<SupportedGameSport, Pick<SportGamePageConfig,
         trendsEmptyText: 'No trends available for this matchup',
     },
     wnba: {
-        gradientClass: 'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-800 dark:to-purple-950',
+        gradientClass:
+            'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-800 dark:to-purple-950',
         awayBarClass: 'bg-purple-500 dark:bg-purple-600',
         homeBarClass: 'bg-purple-800 dark:bg-purple-400',
         projectedLabel: 'Projected points',
@@ -45,7 +72,8 @@ const defaultTheme: Partial<Record<SupportedGameSport, Pick<SportGamePageConfig,
         metricsTitle: 'Team Stats Comparison',
     },
     wcbb: {
-        gradientClass: 'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-800 dark:to-purple-950',
+        gradientClass:
+            'bg-gradient-to-r from-purple-600 to-purple-800 dark:from-purple-800 dark:to-purple-950',
         awayBarClass: 'bg-purple-500 dark:bg-purple-600',
         homeBarClass: 'bg-purple-800 dark:bg-purple-400',
         projectedLabel: 'Projected points',
@@ -53,14 +81,16 @@ const defaultTheme: Partial<Record<SupportedGameSport, Pick<SportGamePageConfig,
         metricsTitle: 'Team Stats Comparison',
     },
     nfl: {
-        gradientClass: 'bg-gradient-to-r from-green-600 to-green-800 dark:from-green-800 dark:to-green-950',
+        gradientClass:
+            'bg-gradient-to-r from-green-600 to-green-800 dark:from-green-800 dark:to-green-950',
         projectedLabel: 'Projected points',
         linescoreTitle: 'Quarter by Quarter',
         linescoreUsePeriodNumbers: true,
         trendsEmptyText: 'No trends available for this matchup',
     },
     mlb: {
-        gradientClass: 'bg-gradient-to-r from-orange-600 to-orange-800 dark:from-orange-800 dark:to-orange-950',
+        gradientClass:
+            'bg-gradient-to-r from-orange-600 to-orange-800 dark:from-orange-800 dark:to-orange-950',
         awayBarClass: 'bg-orange-500 dark:bg-orange-600',
         homeBarClass: 'bg-orange-800 dark:bg-orange-400',
         projectedLabel: 'Projected runs',
@@ -90,13 +120,16 @@ interface CreateSportGamePageConfigParams {
     trendsEmptyText?: string;
 }
 
-export function createSportGamePageConfig(params: CreateSportGamePageConfigParams): SportGamePageConfig {
+export function createSportGamePageConfig(
+    params: CreateSportGamePageConfigParams,
+): SportGamePageConfig {
     const defaults = defaultTheme[params.sport] ?? {};
 
     return {
         sport: params.sport,
         sportLabel: params.sportLabel ?? defaultLabels[params.sport],
-        predictionsHref: params.predictionsHref ?? `/${params.sport}/predictions`,
+        predictionsHref:
+            params.predictionsHref ?? `/${params.sport}/predictions`,
         gameHrefPrefix: params.gameHrefPrefix ?? `/${params.sport}/games`,
         teamLink: params.teamLink,
         gradientClass: params.gradientClass ?? defaults.gradientClass,
@@ -104,16 +137,23 @@ export function createSportGamePageConfig(params: CreateSportGamePageConfigParam
         homeBarClass: params.homeBarClass ?? defaults.homeBarClass,
         projectedLabel: params.projectedLabel ?? defaults.projectedLabel,
         metricsTitle: params.metricsTitle ?? defaults.metricsTitle,
-        topPerformersMode: params.topPerformersMode ?? defaults.topPerformersMode,
+        topPerformersMode:
+            params.topPerformersMode ?? defaults.topPerformersMode,
         trendsTitle: params.trendsTitle ?? defaults.trendsTitle,
         linescoreTitle: params.linescoreTitle ?? defaults.linescoreTitle,
-        linescoreUsePeriodNumbers: params.linescoreUsePeriodNumbers ?? defaults.linescoreUsePeriodNumbers,
-        linescorePeriodPrefix: params.linescorePeriodPrefix ?? defaults.linescorePeriodPrefix,
+        linescoreUsePeriodNumbers:
+            params.linescoreUsePeriodNumbers ??
+            defaults.linescoreUsePeriodNumbers,
+        linescorePeriodPrefix:
+            params.linescorePeriodPrefix ?? defaults.linescorePeriodPrefix,
         trendsEmptyText: params.trendsEmptyText ?? defaults.trendsEmptyText,
     };
 }
 
-export function buildSportGameBreadcrumbs(config: SportGamePageConfig, gameId: number): BreadcrumbItem[] {
+export function buildSportGameBreadcrumbs(
+    config: SportGamePageConfig,
+    gameId: number,
+): BreadcrumbItem[] {
     return [
         { title: config.sportLabel, href: `/${config.sport}` },
         { title: 'Games', href: config.predictionsHref },

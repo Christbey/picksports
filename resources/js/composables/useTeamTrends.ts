@@ -2,7 +2,9 @@ import { computed, type Ref } from 'vue';
 import { formatTierName } from '@/composables/useFormatters';
 import type { TeamTrendData } from '@/types';
 
-export const formatTrendCategoryName = (key: string | null | undefined): string => {
+export const formatTrendCategoryName = (
+    key: string | null | undefined,
+): string => {
     if (!key) return 'General';
 
     const names: Record<string, string> = {
@@ -25,7 +27,10 @@ export const formatTrendCategoryName = (key: string | null | undefined): string 
         clutch_performance: 'Clutch Performance',
     };
 
-    return names[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    return (
+        names[key] ||
+        key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
+    );
 };
 
 export function useTeamTrends<T extends TeamTrendData>(
@@ -38,7 +43,9 @@ export function useTeamTrends<T extends TeamTrendData>(
 
         const percentMatches = [...message.matchAll(/(\d+(?:\.\d+)?)%/g)];
         if (percentMatches.length > 0) {
-            const maxPercent = Math.max(...percentMatches.map((m) => Number(m[1]) || 0));
+            const maxPercent = Math.max(
+                ...percentMatches.map((m) => Number(m[1]) || 0),
+            );
             score = Math.max(score, maxPercent);
         }
 
@@ -49,14 +56,21 @@ export function useTeamTrends<T extends TeamTrendData>(
             score = Math.max(score, (wins / total) * 100);
         }
 
-        const volumeMatch = normalized.match(/in\s+(\d+)\s+of\s+(?:their\s+)?last\s+(\d+)/);
+        const volumeMatch = normalized.match(
+            /in\s+(\d+)\s+of\s+(?:their\s+)?last\s+(\d+)/,
+        );
         if (volumeMatch) {
             const wins = Number(volumeMatch[1]) || 0;
             const total = Number(volumeMatch[2]) || 1;
             score = Math.max(score, (wins / total) * 100);
         }
 
-        const emphasisKeywords = ['winning streak', 'primetime', 'underdogs', 'average'];
+        const emphasisKeywords = [
+            'winning streak',
+            'primetime',
+            'underdogs',
+            'average',
+        ];
         if (emphasisKeywords.some((keyword) => normalized.includes(keyword))) {
             score += 8;
         }
@@ -65,7 +79,12 @@ export function useTeamTrends<T extends TeamTrendData>(
     };
 
     const topMatchupEdges = computed(() => {
-        const candidates: Array<{ team: string; category: string; message: string; score: number }> = [];
+        const candidates: Array<{
+            team: string;
+            category: string;
+            message: string;
+            score: number;
+        }> = [];
 
         const append = (data: TeamTrendData | null, fallbackLabel: string) => {
             if (!data?.trends) return;
@@ -96,7 +115,9 @@ export function useTeamTrends<T extends TeamTrendData>(
             const key = `${candidate.team}:${candidate.category}`;
             if (seenCategoryTeam.has(key)) continue;
 
-            selected.push(`${candidate.team} (${formatTrendCategoryName(candidate.category)}): ${candidate.message}`);
+            selected.push(
+                `${candidate.team} (${formatTrendCategoryName(candidate.category)}): ${candidate.message}`,
+            );
             seenCategoryTeam.add(key);
 
             if (selected.length >= 3) break;
@@ -110,7 +131,9 @@ export function useTeamTrends<T extends TeamTrendData>(
 
         const append = (data: TeamTrendData | null) => {
             if (!data) return;
-            Object.keys(data.trends ?? {}).forEach((key) => categories.add(key));
+            Object.keys(data.trends ?? {}).forEach((key) =>
+                categories.add(key),
+            );
         };
 
         append(homeTrends.value);
@@ -119,11 +142,11 @@ export function useTeamTrends<T extends TeamTrendData>(
         return Array.from(categories).sort();
     });
 
-    const isLockedCategory = (_category: string): boolean => {
+    const isLockedCategory = (): boolean => {
         return false;
     };
 
-    const getRequiredTier = (_category: string): string => {
+    const getRequiredTier = (): string => {
         return 'free';
     };
 

@@ -67,4 +67,3 @@ class TournamentForecast extends Model
         return $this->belongsTo(Team::class, 'team_id');
     }
 }
-

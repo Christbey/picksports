@@ -1,7 +1,7 @@
 <script setup lang="ts">
+import type { UrlMethodPair } from '@inertiajs/core';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
-import type { UrlMethodPair } from '@inertiajs/core';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import AppLayout from '@/layouts/AppLayout.vue';
@@ -134,36 +134,62 @@ const toNumber = (value: unknown): number => {
 const defaultSummaryCards: SummaryCard[] = [
     {
         label: 'PPG',
-        value: (stats) => (stats.reduce((acc, s) => acc + toNumber(s.points), 0) / stats.length).toFixed(1),
+        value: (stats) =>
+            (
+                stats.reduce((acc, s) => acc + toNumber(s.points), 0) /
+                stats.length
+            ).toFixed(1),
         rankKey: 'points_per_game',
     },
     {
         label: 'RPG',
-        value: (stats) => (
-            stats.reduce((acc, s) => acc + toNumber(s.rebounds ?? s.rebounds_total), 0) / stats.length
-        ).toFixed(1),
+        value: (stats) =>
+            (
+                stats.reduce(
+                    (acc, s) => acc + toNumber(s.rebounds ?? s.rebounds_total),
+                    0,
+                ) / stats.length
+            ).toFixed(1),
         rankKey: 'rebounds_per_game',
     },
     {
         label: 'APG',
-        value: (stats) => (stats.reduce((acc, s) => acc + toNumber(s.assists), 0) / stats.length).toFixed(1),
+        value: (stats) =>
+            (
+                stats.reduce((acc, s) => acc + toNumber(s.assists), 0) /
+                stats.length
+            ).toFixed(1),
         rankKey: 'assists_per_game',
     },
     {
         label: 'SPG',
-        value: (stats) => (stats.reduce((acc, s) => acc + toNumber(s.steals), 0) / stats.length).toFixed(1),
+        value: (stats) =>
+            (
+                stats.reduce((acc, s) => acc + toNumber(s.steals), 0) /
+                stats.length
+            ).toFixed(1),
         rankKey: 'steals_per_game',
     },
     {
         label: 'BPG',
-        value: (stats) => (stats.reduce((acc, s) => acc + toNumber(s.blocks), 0) / stats.length).toFixed(1),
+        value: (stats) =>
+            (
+                stats.reduce((acc, s) => acc + toNumber(s.blocks), 0) /
+                stats.length
+            ).toFixed(1),
         rankKey: 'blocks_per_game',
     },
     {
         label: 'FG%',
         value: (stats) => {
-            const fgm = stats.reduce((acc, s) => acc + toNumber(s.field_goals_made), 0);
-            const fga = stats.reduce((acc, s) => acc + toNumber(s.field_goals_attempted), 0);
+            const fgm = stats.reduce(
+                (acc, s) => acc + toNumber(s.field_goals_made),
+                0,
+            );
+            const fga = stats.reduce(
+                (acc, s) => acc + toNumber(s.field_goals_attempted),
+                0,
+            );
             return fga > 0 ? ((fgm / fga) * 100).toFixed(1) : '-';
         },
         rankKey: 'field_goal_percentage',
@@ -171,8 +197,14 @@ const defaultSummaryCards: SummaryCard[] = [
     {
         label: '3P%',
         value: (stats) => {
-            const tpm = stats.reduce((acc, s) => acc + toNumber(s.three_point_made), 0);
-            const tpa = stats.reduce((acc, s) => acc + toNumber(s.three_point_attempted), 0);
+            const tpm = stats.reduce(
+                (acc, s) => acc + toNumber(s.three_point_made),
+                0,
+            );
+            const tpa = stats.reduce(
+                (acc, s) => acc + toNumber(s.three_point_attempted),
+                0,
+            );
             return tpa > 0 ? ((tpm / tpa) * 100).toFixed(1) : '-';
         },
         rankKey: 'three_point_percentage',
@@ -180,22 +212,36 @@ const defaultSummaryCards: SummaryCard[] = [
     {
         label: 'FT%',
         value: (stats) => {
-            const ftm = stats.reduce((acc, s) => acc + toNumber(s.free_throws_made), 0);
-            const fta = stats.reduce((acc, s) => acc + toNumber(s.free_throws_attempted), 0);
+            const ftm = stats.reduce(
+                (acc, s) => acc + toNumber(s.free_throws_made),
+                0,
+            );
+            const fta = stats.reduce(
+                (acc, s) => acc + toNumber(s.free_throws_attempted),
+                0,
+            );
             return fta > 0 ? ((ftm / fta) * 100).toFixed(1) : '-';
         },
         rankKey: 'free_throw_percentage',
     },
     {
         label: 'MPG',
-        value: (stats) => (stats.reduce((acc, s) => acc + toNumber(s.minutes_played), 0) / stats.length).toFixed(1),
+        value: (stats) =>
+            (
+                stats.reduce((acc, s) => acc + toNumber(s.minutes_played), 0) /
+                stats.length
+            ).toFixed(1),
         rankKey: 'minutes_per_game',
     },
 ];
 
-const summaryCards = computed(() => props.config.summaryCards ?? defaultSummaryCards);
+const summaryCards = computed(
+    () => props.config.summaryCards ?? defaultSummaryCards,
+);
 
-const rankForMetric = (metricKey: string): { rank: number; total: number } | null => {
+const rankForMetric = (
+    metricKey: string,
+): { rank: number; total: number } | null => {
     if (leaderboardRows.value.length === 0 || !playerData.value) return null;
 
     const eligibleRows = leaderboardRows.value
@@ -204,7 +250,9 @@ const rankForMetric = (metricKey: string): { rank: number; total: number } | nul
 
     if (eligibleRows.length === 0) return null;
 
-    const rankIndex = eligibleRows.findIndex((row) => toNumber(row.player_id) === playerData.value?.id);
+    const rankIndex = eligibleRows.findIndex(
+        (row) => toNumber(row.player_id) === playerData.value?.id,
+    );
 
     if (rankIndex === -1) return null;
 
@@ -222,33 +270,68 @@ const seasonSummaryValues = computed(() => {
 });
 
 const defaultGameLogColumns: GameLogColumn[] = [
-    { label: 'MIN', value: (stat) => toNumber(stat.minutes_played) || '-', className: 'py-2 pr-2 text-right' },
-    { label: 'PTS', value: (stat) => toNumber(stat.points) || '-', className: 'py-2 pr-2 text-right font-medium' },
-    { label: 'REB', value: (stat) => toNumber(stat.rebounds ?? stat.rebounds_total) || '-', className: 'py-2 pr-2 text-right' },
-    { label: 'AST', value: (stat) => toNumber(stat.assists) || '-', className: 'py-2 pr-2 text-right' },
-    { label: 'STL', value: (stat) => toNumber(stat.steals) || '-', className: 'py-2 pr-2 text-right' },
-    { label: 'BLK', value: (stat) => toNumber(stat.blocks) || '-', className: 'py-2 pr-2 text-right' },
+    {
+        label: 'MIN',
+        value: (stat) => toNumber(stat.minutes_played) || '-',
+        className: 'py-2 pr-2 text-right',
+    },
+    {
+        label: 'PTS',
+        value: (stat) => toNumber(stat.points) || '-',
+        className: 'py-2 pr-2 text-right font-medium',
+    },
+    {
+        label: 'REB',
+        value: (stat) => toNumber(stat.rebounds ?? stat.rebounds_total) || '-',
+        className: 'py-2 pr-2 text-right',
+    },
+    {
+        label: 'AST',
+        value: (stat) => toNumber(stat.assists) || '-',
+        className: 'py-2 pr-2 text-right',
+    },
+    {
+        label: 'STL',
+        value: (stat) => toNumber(stat.steals) || '-',
+        className: 'py-2 pr-2 text-right',
+    },
+    {
+        label: 'BLK',
+        value: (stat) => toNumber(stat.blocks) || '-',
+        className: 'py-2 pr-2 text-right',
+    },
     {
         label: 'FG',
-        value: (stat) => `${toNumber(stat.field_goals_made)}-${toNumber(stat.field_goals_attempted)}`,
+        value: (stat) =>
+            `${toNumber(stat.field_goals_made)}-${toNumber(stat.field_goals_attempted)}`,
         className: 'py-2 pr-2 text-right whitespace-nowrap',
     },
     {
         label: '3PT',
-        value: (stat) => `${toNumber(stat.three_point_made)}-${toNumber(stat.three_point_attempted)}`,
+        value: (stat) =>
+            `${toNumber(stat.three_point_made)}-${toNumber(stat.three_point_attempted)}`,
         className: 'py-2 pr-2 text-right whitespace-nowrap',
     },
     {
         label: 'FT',
-        value: (stat) => `${toNumber(stat.free_throws_made)}-${toNumber(stat.free_throws_attempted)}`,
+        value: (stat) =>
+            `${toNumber(stat.free_throws_made)}-${toNumber(stat.free_throws_attempted)}`,
         className: 'py-2 pr-2 text-right whitespace-nowrap',
     },
-    { label: 'TO', value: (stat) => toNumber(stat.turnovers) || '-', className: 'py-2 text-right' },
+    {
+        label: 'TO',
+        value: (stat) => toNumber(stat.turnovers) || '-',
+        className: 'py-2 text-right',
+    },
 ];
 
-const gameLogColumns = computed(() => props.config.gameLogColumns ?? defaultGameLogColumns);
+const gameLogColumns = computed(
+    () => props.config.gameLogColumns ?? defaultGameLogColumns,
+);
 
-const getOpponent = (stat: PlayerStat): { label: string; name: string } | null => {
+const getOpponent = (
+    stat: PlayerStat,
+): { label: string; name: string } | null => {
     if (!stat.game || !playerData.value) return null;
     const isHome = stat.game.home_team_id === playerData.value.team_id;
     const opp = isHome ? stat.game.away_team : stat.game.home_team;
@@ -295,7 +378,8 @@ onMounted(async () => {
 
         await Promise.all(requests);
     } catch (e) {
-        error.value = e instanceof Error ? e.message : 'Failed to load player data';
+        error.value =
+            e instanceof Error ? e.message : 'Failed to load player data';
     } finally {
         loading.value = false;
     }
@@ -307,7 +391,10 @@ onMounted(async () => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
-            <div v-if="playerData" class="ui-surface flex items-start gap-4 p-4 md:p-5">
+            <div
+                v-if="playerData"
+                class="ui-surface flex items-start gap-4 p-4 md:p-5"
+            >
                 <img
                     v-if="playerData.headshot_url"
                     :src="playerData.headshot_url"
@@ -318,16 +405,35 @@ onMounted(async () => {
                     v-else
                     class="flex h-24 w-24 items-center justify-center rounded-xl bg-muted text-2xl font-bold text-muted-foreground"
                 >
-                    {{ playerData.first_name?.[0] }}{{ playerData.last_name?.[0] }}
+                    {{ playerData.first_name?.[0]
+                    }}{{ playerData.last_name?.[0] }}
                 </div>
                 <div class="flex-1">
-                    <h1 class="text-3xl font-semibold tracking-tight">{{ playerData.name }}</h1>
-                    <div class="mt-1 flex items-center gap-2 text-muted-foreground">
-                        <span v-if="playerData.jersey_number" class="font-semibold">#{{ playerData.jersey_number }}</span>
-                        <span v-if="playerData.jersey_number && playerData.position">·</span>
-                        <span v-if="playerData.position">{{ playerData.position }}</span>
+                    <h1 class="text-3xl font-semibold tracking-tight">
+                        {{ playerData.name }}
+                    </h1>
+                    <div
+                        class="mt-1 flex items-center gap-2 text-muted-foreground"
+                    >
+                        <span
+                            v-if="playerData.jersey_number"
+                            class="font-semibold"
+                            >#{{ playerData.jersey_number }}</span
+                        >
+                        <span
+                            v-if="
+                                playerData.jersey_number && playerData.position
+                            "
+                            >·</span
+                        >
+                        <span v-if="playerData.position">{{
+                            playerData.position
+                        }}</span>
                     </div>
-                    <div v-if="playerData.team && playerData.team.id != null" class="mt-1">
+                    <div
+                        v-if="playerData.team && playerData.team.id != null"
+                        class="mt-1"
+                    >
                         <Link
                             v-if="config.teamLink"
                             :href="config.teamLink(playerData.team.id)"
@@ -335,12 +441,23 @@ onMounted(async () => {
                         >
                             {{ playerData.team.name }}
                         </Link>
-                        <span v-else class="text-sm text-muted-foreground">{{ playerData.team.name }}</span>
+                        <span v-else class="text-sm text-muted-foreground">{{
+                            playerData.team.name
+                        }}</span>
                     </div>
-                    <div v-if="playerData.height || playerData.weight" class="mt-1 text-sm text-muted-foreground">
-                        <span v-if="playerData.height">{{ playerData.height }}</span>
-                        <span v-if="playerData.height && playerData.weight"> · </span>
-                        <span v-if="playerData.weight">{{ playerData.weight }} lbs</span>
+                    <div
+                        v-if="playerData.height || playerData.weight"
+                        class="mt-1 text-sm text-muted-foreground"
+                    >
+                        <span v-if="playerData.height">{{
+                            playerData.height
+                        }}</span>
+                        <span v-if="playerData.height && playerData.weight">
+                            ·
+                        </span>
+                        <span v-if="playerData.weight"
+                            >{{ playerData.weight }} lbs</span
+                        >
                     </div>
                 </div>
             </div>
@@ -360,20 +477,35 @@ onMounted(async () => {
                             class="space-y-2 rounded-lg border p-4"
                         >
                             <div class="flex items-center justify-between">
-                                <span class="text-sm font-semibold">{{ prop.market }}</span>
-                                <span class="text-xs text-muted-foreground">{{ prop.game.away_team }} @ {{ prop.game.home_team }}</span>
+                                <span class="text-sm font-semibold">{{
+                                    prop.market
+                                }}</span>
+                                <span class="text-xs text-muted-foreground"
+                                    >{{ prop.game.away_team }} @
+                                    {{ prop.game.home_team }}</span
+                                >
                             </div>
                             <div class="flex items-center justify-center py-2">
-                                <span class="text-2xl font-bold">{{ prop.line }}</span>
+                                <span class="text-2xl font-bold">{{
+                                    prop.line
+                                }}</span>
                             </div>
                             <div class="grid grid-cols-2 gap-2 text-sm">
                                 <div class="rounded bg-muted p-2 text-center">
-                                    <div class="text-xs text-muted-foreground">Over</div>
-                                    <div class="font-mono font-semibold">{{ formatOdds(prop.over_price) }}</div>
+                                    <div class="text-xs text-muted-foreground">
+                                        Over
+                                    </div>
+                                    <div class="font-mono font-semibold">
+                                        {{ formatOdds(prop.over_price) }}
+                                    </div>
                                 </div>
                                 <div class="rounded bg-muted p-2 text-center">
-                                    <div class="text-xs text-muted-foreground">Under</div>
-                                    <div class="font-mono font-semibold">{{ formatOdds(prop.under_price) }}</div>
+                                    <div class="text-xs text-muted-foreground">
+                                        Under
+                                    </div>
+                                    <div class="font-mono font-semibold">
+                                        {{ formatOdds(prop.under_price) }}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -389,19 +521,34 @@ onMounted(async () => {
             <template v-else>
                 <Card v-if="seasonSummaryValues">
                     <CardHeader>
-                        <CardTitle class="tracking-tight">Season Averages ({{ gameLogs.length }} games)</CardTitle>
+                        <CardTitle class="tracking-tight"
+                            >Season Averages ({{
+                                gameLogs.length
+                            }}
+                            games)</CardTitle
+                        >
                     </CardHeader>
                     <CardContent>
-                        <div class="grid grid-cols-3 gap-4 md:grid-cols-5 lg:grid-cols-9">
+                        <div
+                            class="grid grid-cols-3 gap-4 md:grid-cols-5 lg:grid-cols-9"
+                        >
                             <div
                                 v-for="card in seasonSummaryValues"
                                 :key="card.label"
                                 class="ui-surface-subtle p-3 text-center"
                             >
-                                <div class="text-sm text-muted-foreground">{{ card.label }}</div>
-                                <div class="text-2xl font-bold">{{ card.value }}</div>
-                                <div v-if="card.rank" class="mt-1 text-xs text-muted-foreground">
-                                    Rank {{ card.rank.rank }} / {{ card.rank.total }} eligible
+                                <div class="text-sm text-muted-foreground">
+                                    {{ card.label }}
+                                </div>
+                                <div class="text-2xl font-bold">
+                                    {{ card.value }}
+                                </div>
+                                <div
+                                    v-if="card.rank"
+                                    class="mt-1 text-xs text-muted-foreground"
+                                >
+                                    Rank {{ card.rank.rank }} /
+                                    {{ card.rank.total }} eligible
                                 </div>
                             </div>
                         </div>
@@ -416,12 +563,21 @@ onMounted(async () => {
                         <div v-if="error" class="mb-3 text-sm text-destructive">
                             {{ error }}
                         </div>
-                        <div v-if="gameLogs.length > 0" class="overflow-x-auto rounded-xl border border-border/70">
+                        <div
+                            v-if="gameLogs.length > 0"
+                            class="overflow-x-auto rounded-xl border border-border/70"
+                        >
                             <table class="w-full text-sm">
                                 <thead>
-                                    <tr class="border-b bg-muted/35 text-left text-muted-foreground">
-                                        <th class="pr-4 pb-2 font-medium">Date</th>
-                                        <th class="pr-4 pb-2 font-medium">OPP</th>
+                                    <tr
+                                        class="border-b bg-muted/35 text-left text-muted-foreground"
+                                    >
+                                        <th class="pr-4 pb-2 font-medium">
+                                            Date
+                                        </th>
+                                        <th class="pr-4 pb-2 font-medium">
+                                            OPP
+                                        </th>
                                         <th
                                             v-for="column in gameLogColumns"
                                             :key="column.label"
@@ -439,17 +595,37 @@ onMounted(async () => {
                                     >
                                         <td class="py-2 pr-4">
                                             <Link
-                                                v-if="stat.game && config.gameLink"
-                                                :href="config.gameLink(stat.game.id)"
+                                                v-if="
+                                                    stat.game && config.gameLink
+                                                "
+                                                :href="
+                                                    config.gameLink(
+                                                        stat.game.id,
+                                                    )
+                                                "
                                                 class="text-primary hover:underline"
                                             >
-                                                {{ formatDate(stat.game.game_date) }}
+                                                {{
+                                                    formatDate(
+                                                        stat.game.game_date,
+                                                    )
+                                                }}
                                             </Link>
-                                            <span v-else>{{ formatDate(stat.game?.game_date ?? null) }}</span>
+                                            <span v-else>{{
+                                                formatDate(
+                                                    stat.game?.game_date ??
+                                                        null,
+                                                )
+                                            }}</span>
                                         </td>
                                         <td class="py-2 pr-4">
                                             <template v-if="getOpponent(stat)">
-                                                <span class="text-muted-foreground">{{ getOpponent(stat)!.label }}</span>
+                                                <span
+                                                    class="text-muted-foreground"
+                                                    >{{
+                                                        getOpponent(stat)!.label
+                                                    }}</span
+                                                >
                                                 {{ getOpponent(stat)!.name }}
                                             </template>
                                             <span v-else>-</span>
@@ -457,7 +633,10 @@ onMounted(async () => {
                                         <td
                                             v-for="column in gameLogColumns"
                                             :key="column.label"
-                                            :class="column.className ?? 'py-2 pr-2 text-right'"
+                                            :class="
+                                                column.className ??
+                                                'py-2 pr-2 text-right'
+                                            "
                                         >
                                             {{ column.value(stat) }}
                                         </td>
@@ -465,7 +644,10 @@ onMounted(async () => {
                                 </tbody>
                             </table>
                         </div>
-                        <div v-else class="py-8 text-center text-muted-foreground">
+                        <div
+                            v-else
+                            class="py-8 text-center text-muted-foreground"
+                        >
                             <p>No game log data available.</p>
                         </div>
                     </CardContent>

@@ -157,7 +157,14 @@ class UpdateLivePrediction extends AbstractAdvancedBasketballUpdateLivePredictio
             return (float) $currentMargin;
         }
 
-        return $this->projectedFinalMargin($currentMargin, $secondsRemaining, $timeElapsedFraction, $preGameSpread);
+        $remainingFraction = max(0.0, min(1.0, $secondsRemaining / static::TOTAL_GAME_SECONDS));
+        $stateWeight = 0.20 + (0.70 * $timeElapsedFraction);
+        $scoreStateDampener = max(0.30, 1 - (abs($currentMargin) / 24));
+        $pregameCarryWeight = (0.60 + (0.25 * $remainingFraction)) * $scoreStateDampener;
+        $remainingPreGameContribution = $preGameSpread * $remainingFraction * $pregameCarryWeight;
+        $efficiencyMargin = (float) ($this->liveContext['expected_remaining_margin'] ?? 0.0) * $stateWeight * 0.75;
+
+        return $currentMargin + $remainingPreGameContribution + $efficiencyMargin;
     }
 
     private function calculateCbbLiveTotal(

@@ -1,7 +1,7 @@
 <?php
 
-use App\Services\SubscriptionCheckoutService;
 use App\Models\User;
+use App\Services\SubscriptionCheckoutService;
 
 use function Pest\Laravel\actingAs;
 

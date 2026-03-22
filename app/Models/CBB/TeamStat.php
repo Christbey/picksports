@@ -2,6 +2,7 @@
 
 namespace App\Models\CBB;
 
+use Database\Factories\CbbTeamStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,6 +42,11 @@ class TeamStat extends Model
         'times_tied',
         'lead_changes',
     ];
+
+    protected static function newFactory(): CbbTeamStatFactory
+    {
+        return CbbTeamStatFactory::new();
+    }
 
     public function team(): BelongsTo
     {

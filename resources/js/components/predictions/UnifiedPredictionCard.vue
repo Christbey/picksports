@@ -118,10 +118,6 @@ function homeLogo(): string | null {
     return predictionType?.game.home_team.logo ?? null;
 }
 
-function gameStatus(): string | null {
-    return normalizedLiveState.value.status;
-}
-
 function isLive(): boolean {
     return normalizedLiveState.value.isLive;
 }
@@ -136,22 +132,6 @@ function awayScore(): number | null {
 
 function homeScore(): number | null {
     return normalizedLiveState.value.homeScore;
-}
-
-function period(): number | null {
-    return normalizedLiveState.value.period;
-}
-
-function gameClock(): string | null {
-    return normalizedLiveState.value.gameClock;
-}
-
-function inning(): number | null {
-    return normalizedLiveState.value.inning;
-}
-
-function inningState(): string | null {
-    return normalizedLiveState.value.inningState;
 }
 
 function showAwayLogo(): boolean {

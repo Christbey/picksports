@@ -12,7 +12,7 @@ class SyncGames extends AbstractSyncGames
 
     protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
 
-    protected function buildGameAttributes(GameData $dto, array $gameData, Model $homeTeam, Model $awayTeam): array
+    protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
         $dateParts = GameData::extractDateParts($gameData['date'] ?? null);
 
@@ -26,8 +26,8 @@ class SyncGames extends AbstractSyncGames
             'game_time' => $dateParts['game_time'],
             'name' => $dto->name,
             'short_name' => $dto->shortName,
-            'home_team_id' => $homeTeam->getKey(),
-            'away_team_id' => $awayTeam->getKey(),
+            'home_team_id' => $homeTeam?->getKey(),
+            'away_team_id' => $awayTeam?->getKey(),
             'home_score' => $dto->homeScore,
             'away_score' => $dto->awayScore,
             'home_linescores' => $dto->homeLinescores,

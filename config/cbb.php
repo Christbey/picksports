@@ -302,9 +302,9 @@ return [
             'max_recent_pace_drop' => 8.0,
             'tournament_max_recent_pace_drop' => 4.0,
             'factor_adjustment_cap' => 6.0,
-            'base_adjustment' => 4.0,
-            'high_total_threshold' => 140.0,
-            'high_total_slope' => 1.0,
+            'base_adjustment' => 5.0,
+            'high_total_threshold' => 136.0,
+            'high_total_slope' => 1.15,
             'round_of_64_base_adjustment' => 3.5,
             'round_of_64_seed_gap_threshold' => 6,
             'round_of_64_seed_gap_points' => 0.8,
@@ -422,6 +422,10 @@ return [
             'tournament_under_min_edge' => 4.5,
             'tournament_under_market_total_floor' => 145.0,
             'tournament_under_skip_edge' => 18.0,
+            'high_total_under_market_floor' => 155.0,
+            'high_total_under_min_edge' => 5.5,
+            'high_total_under_skip_edge' => 15.0,
+            'high_total_under_confidence_penalty' => 10.0,
         ],
 
         // Kelly Criterion bet sizing

@@ -239,11 +239,11 @@ return [
             'pace_floor' => env('NBA_TOTAL_PACE_FLOOR', 95.0),
             'pace_floor_blend' => env('NBA_TOTAL_PACE_FLOOR_BLEND', 0.55),
             'max_recent_pace_drop' => env('NBA_TOTAL_MAX_RECENT_PACE_DROP', 7.0),
-            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 236.0),
-            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.58),
-            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 27.0),
-            'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 224.0),
-            'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.75),
+            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 238.0),
+            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.35),
+            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 26.0),
+            'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 218.0),
+            'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.5),
         ],
 
         'live_model' => [

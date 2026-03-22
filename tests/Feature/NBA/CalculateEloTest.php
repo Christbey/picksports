@@ -244,7 +244,7 @@ it('skips games that already have elo history', function () {
     expect($result3['skipped'])->toBeFalse();
     expect($result3['home_change'])->not->toBe(0);
 
-    // Elo should change and history should be added
+    // Elo should change and the existing per-game history should be updated in place
     expect($this->homeTeam->refresh()->elo_rating)->not->toBe($firstHomeElo);
-    expect(EloRating::count())->toBeGreaterThan($historyCount);
+    expect(EloRating::count())->toBe($historyCount);
 });

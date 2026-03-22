@@ -12,6 +12,7 @@ use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 
@@ -37,10 +38,7 @@ class LiveScoreboardController extends Controller
                 $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
                 $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
 
-                $todayGameScope = fn (Builder $q) => $q->whereRaw(
-                    'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-                    [$todayStartUtc, $todayEndUtc]
-                );
+                $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
 
                 $games = collect($this->sportConfigs())
                     ->flatMap(fn (array $config, string $sport) => $this->getScoreboardGamesForSport($sport, $config, $todayGameScope))
@@ -126,5 +124,26 @@ class LiveScoreboardController extends Controller
                 ->liveRemainingField($config['live_remaining_field'])
                 ->resolve();
         });
+    }
+
+    /**
+     * @param  Builder<\Illuminate\Database\Eloquent\Model>|QueryBuilder  $query
+     * @return Builder<\Illuminate\Database\Eloquent\Model>|QueryBuilder
+     */
+    private function applyTodayGameWindow(Builder|QueryBuilder $query, string $startUtc, string $endUtc): Builder|QueryBuilder
+    {
+        $driver = $query->getConnection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            return $query->whereRaw(
+                "datetime(game_date || ' ' || COALESCE(game_time, '00:00:00')) BETWEEN ? AND ?",
+                [$startUtc, $endUtc]
+            );
+        }
+
+        return $query->whereRaw(
+            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+            [$startUtc, $endUtc]
+        );
     }
 }

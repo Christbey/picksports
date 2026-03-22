@@ -25,6 +25,7 @@ use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -54,10 +55,7 @@ class DashboardController extends Controller
                 $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
                 $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
 
-                $todayGameScope = fn (Builder $q) => $q->whereRaw(
-                    'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-                    [$todayStartUtc, $todayEndUtc]
-                );
+                $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
 
                 $sportConfigs = $this->sportConfigs();
 
@@ -86,10 +84,7 @@ class DashboardController extends Controller
                     ->filter(fn (array $sport) => $sport['predictions']->isNotEmpty())
                     ->values();
 
-                $todayGameCount = fn (string $model) => $model::whereRaw(
-                    'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
-                    [$todayStartUtc, $todayEndUtc]
-                )->count();
+                $todayGameCount = fn (string $model) => $this->applyTodayGameWindow($model::query(), $todayStartUtc, $todayEndUtc)->count();
 
                 $stats = [
                     'total_predictions_today' => $predictionsBySport->sum(fn (Collection $predictions) => $predictions->count()),
@@ -238,6 +233,27 @@ class DashboardController extends Controller
 
             return $resource->resolve();
         });
+    }
+
+    /**
+     * @param  Builder<Model>|QueryBuilder  $query
+     * @return Builder<Model>|QueryBuilder
+     */
+    private function applyTodayGameWindow(Builder|QueryBuilder $query, string $startUtc, string $endUtc): Builder|QueryBuilder
+    {
+        $driver = $query->getConnection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            return $query->whereRaw(
+                "datetime(game_date || ' ' || COALESCE(game_time, '00:00:00')) BETWEEN ? AND ?",
+                [$startUtc, $endUtc]
+            );
+        }
+
+        return $query->whereRaw(
+            'TIMESTAMP(game_date, game_time) BETWEEN ? AND ?',
+            [$startUtc, $endUtc]
+        );
     }
 
     /**

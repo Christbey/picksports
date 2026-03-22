@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\NotificationTemplate;
+use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Notifications\BettingValueAlert;
@@ -16,12 +17,12 @@ test('notification uses template content when template is provided', function ()
         'email_body' => 'Hi {user.name}, we found a {prediction.edge_percentage} edge on {prediction.game_description}. Confidence: {prediction.confidence}',
     ]);
 
-    $game = \App\Models\NBA\Game::create([
+    $game = \App\Models\NBA\Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
-        'odds_data' => json_decode('{"home_team":"Lakers","away_team":"Celtics","bookmakers":[]}'),
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['school' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['school' => 'Celtics'])->id,
+        'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
+        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
     $prediction = \App\Models\NBA\Prediction::create([
@@ -44,18 +45,18 @@ test('notification uses template content when template is provided', function ()
         ->and($mailMessage->subject)->toContain('Celtics @ Lakers')
         ->and($mailMessage->introLines[0])->toContain('John Doe')
         ->and($mailMessage->introLines[0])->toContain('+7.5%')
-        ->and($mailMessage->introLines[0])->toContain('85%');
+        ->and($mailMessage->introLines[0])->toContain('85.00%');
 });
 
 test('notification falls back to hardcoded content when no template provided', function () {
     $user = User::factory()->create();
 
-    $game = \App\Models\NBA\Game::create([
+    $game = \App\Models\NBA\Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
-        'odds_data' => json_decode('{"home_team":"Lakers","away_team":"Celtics","bookmakers":[]}'),
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['school' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['school' => 'Celtics'])->id,
+        'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
+        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
     $prediction = \App\Models\NBA\Prediction::create([
@@ -89,12 +90,12 @@ test('notification includes push notification data with template', function () {
         'push_body' => '{user.name}, check out {prediction.game_description}',
     ]);
 
-    $game = \App\Models\NBA\Game::create([
+    $game = \App\Models\NBA\Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
-        'odds_data' => json_decode('{"home_team":"Lakers","away_team":"Celtics","bookmakers":[]}'),
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['school' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['school' => 'Celtics'])->id,
+        'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
+        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
     $prediction = \App\Models\NBA\Prediction::create([
@@ -122,6 +123,22 @@ test('notification includes push notification data with template', function () {
 
 test('alert service respects user template preferences', function () {
     Notification::fake();
+
+    SubscriptionTier::query()->create([
+        'name' => 'Free',
+        'slug' => 'free',
+        'description' => 'Default tier',
+        'features' => [
+            'predictions_per_day' => 25,
+            'sports_access' => ['NBA'],
+            'email_alerts' => true,
+        ],
+        'permissions' => [],
+        'data_permissions' => ['spread'],
+        'is_default' => true,
+        'is_active' => true,
+        'sort_order' => 0,
+    ]);
 
     $template = NotificationTemplate::factory()->create([
         'name' => 'Betting Value Alert',
@@ -155,7 +172,7 @@ test('alert service respects user template preferences', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $game = \App\Models\NBA\Game::create([
+    $game = \App\Models\NBA\Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => [
@@ -197,6 +214,22 @@ test('alert service respects user template preferences', function () {
 test('alert service filters users based on template preferences', function () {
     Notification::fake();
 
+    SubscriptionTier::query()->create([
+        'name' => 'Free',
+        'slug' => 'free',
+        'description' => 'Default tier',
+        'features' => [
+            'predictions_per_day' => 25,
+            'sports_access' => ['NBA'],
+            'email_alerts' => true,
+        ],
+        'permissions' => [],
+        'data_permissions' => ['spread'],
+        'is_default' => true,
+        'is_active' => true,
+        'sort_order' => 0,
+    ]);
+
     $template1 = NotificationTemplate::factory()->create([
         'name' => 'Betting Value Alert',
         'active' => true,
@@ -234,7 +267,7 @@ test('alert service filters users based on template preferences', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $game = \App\Models\NBA\Game::create([
+    $game = \App\Models\NBA\Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => [

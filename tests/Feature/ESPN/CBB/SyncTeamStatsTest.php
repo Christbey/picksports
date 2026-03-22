@@ -81,7 +81,7 @@ test('uses ESPN provided possessions when available', function () {
         ->where('game_id', $this->game->id)
         ->first();
 
-    expect($teamStat->possessions)->toBe(72);
+    expect($teamStat->possessions)->toBe(72.0);
 });
 
 test('handles edge case with zero stats gracefully', function () {

@@ -65,7 +65,7 @@ beforeEach(function () {
 });
 
 it('generates tournament make and championship probabilities', function () {
-    $action = new GenerateTournamentForecast;
+    $action = app(GenerateTournamentForecast::class);
     $forecasts = $action->execute(2026, 1200);
 
     expect($forecasts)->toHaveCount(10);

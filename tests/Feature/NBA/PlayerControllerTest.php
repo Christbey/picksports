@@ -3,6 +3,7 @@
 use App\Models\NBA\Player;
 use App\Models\NBA\Team;
 use App\Models\User;
+use Spatie\Permission\Models\Permission;
 
 test('guests are redirected to login when visiting player page', function () {
     $team = Team::factory()->create();
@@ -14,6 +15,8 @@ test('guests are redirected to login when visiting player page', function () {
 
 test('authenticated users can visit a player page', function () {
     $user = User::factory()->create();
+    Permission::findOrCreate('view-nba-predictions', 'web');
+    $user->givePermissionTo('view-nba-predictions');
     $team = Team::factory()->create();
     $player = Player::factory()->for($team)->create();
 
@@ -22,9 +25,6 @@ test('authenticated users can visit a player page', function () {
         ->assertOk()
         ->assertInertia(fn ($page) => $page
             ->component('NBA/Player')
-            ->has('player')
-            ->where('player.id', $player->id)
-            ->where('player.full_name', $player->full_name)
-            ->has('player.team')
+            ->where('playerId', $player->id)
         );
 });

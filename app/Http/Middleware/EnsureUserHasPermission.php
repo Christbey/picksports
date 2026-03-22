@@ -25,7 +25,7 @@ class EnsureUserHasPermission
             return redirect()->route('login');
         }
 
-        if (app(TierAccessBypass::class)->shouldBypassTierChecks($user)) {
+        if (app(TierAccessBypass::class)->userIsBypassed($user)) {
             return $next($request);
         }
 

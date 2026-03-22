@@ -11,9 +11,21 @@ it('hydrates conference and division from group refs during nfl team sync', func
     {
         protected const SPORT_KEY = 'nfl';
 
-        public function getTeams(): ?array
+        public function getTeamsPage(int $page = 1): ?array
         {
+            if ($page !== 1) {
+                return [
+                    'pageCount' => 1,
+                    'sports' => [[
+                        'leagues' => [[
+                            'teams' => [],
+                        ]],
+                    ]],
+                ];
+            }
+
             return [
+                'pageCount' => 1,
                 'sports' => [[
                     'leagues' => [[
                         'teams' => [
@@ -76,7 +88,6 @@ it('hydrates conference and division from group refs during nfl team sync', func
 
     $action = new SyncTeams($service);
     $count = $action->execute();
-
     expect($count)->toBe(1);
 
     $team = Team::where('espn_id', '1')->first();

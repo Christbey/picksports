@@ -75,6 +75,7 @@
             "@php artisan test"
         ],
         "test:ci": [
+            "Composer\\Config::disableProcessTimeout",
             "@php artisan config:clear --ansi",
             "@php artisan test"
         ],

@@ -1,7 +1,7 @@
 <?php
 
+use App\Services\SubscriptionCheckoutService;
 use App\Models\User;
-use Laravel\Cashier\Checkout;
 
 use function Pest\Laravel\actingAs;
 
@@ -57,19 +57,23 @@ it('prevents subscribing to free tier', function () {
 it('creates a checkout session for new subscription', function () {
     $user = User::factory()->create();
 
-    $this->mock(Checkout::class, function ($mock) {
-        $mock->shouldReceive('getAttribute')
-            ->with('url')
-            ->andReturn('https://checkout.stripe.com/test-session');
-    });
+    $checkoutService = \Mockery::mock(SubscriptionCheckoutService::class);
+    $checkoutService->shouldReceive('createCheckoutUrl')
+        ->once()
+        ->withArgs(function (User $checkoutUser, string $priceId, array $sessionOptions) use ($user): bool {
+            return $checkoutUser->is($user)
+                && $priceId === 'price_test_basic_monthly'
+                && $sessionOptions['success_url'] === route('subscription.success')
+                && $sessionOptions['cancel_url'] === route('subscription.plans');
+        })
+        ->andReturn('https://checkout.stripe.com/test-session');
+
+    $this->app->instance(SubscriptionCheckoutService::class, $checkoutService);
 
     actingAs($user)
-        ->postJson('/subscription/checkout', [
+        ->post('/subscription/checkout', [
             'tier' => 'basic',
             'billing_period' => 'monthly',
         ])
-        ->assertSuccessful()
-        ->assertJson([
-            'url' => 'https://checkout.stripe.com/test-session',
-        ]);
+        ->assertRedirect('https://checkout.stripe.com/test-session');
 });

@@ -21,13 +21,17 @@ class Player extends Model
         'first_name',
         'last_name',
         'full_name',
+        'name',
+        'display_name',
         'jersey_number',
+        'jersey',
         'position',
         'height',
         'weight',
         'year',
         'hometown',
         'headshot_url',
+        'headshot',
     ];
 
     protected function casts(): array
@@ -35,6 +39,26 @@ class Player extends Model
         return [
             'weight' => 'integer',
         ];
+    }
+
+    public function setNameAttribute(?string $value): void
+    {
+        $this->attributes['full_name'] = $value;
+    }
+
+    public function setDisplayNameAttribute(?string $value): void
+    {
+        $this->attributes['full_name'] ??= $value;
+    }
+
+    public function setJerseyAttribute(?string $value): void
+    {
+        $this->attributes['jersey_number'] = $value;
+    }
+
+    public function setHeadshotAttribute(?string $value): void
+    {
+        $this->attributes['headshot_url'] = $value;
     }
 
     public function team(): BelongsTo

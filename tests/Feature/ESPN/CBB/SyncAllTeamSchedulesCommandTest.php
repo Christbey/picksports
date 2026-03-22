@@ -36,11 +36,20 @@ it('handles case when no teams exist', function () {
 
 it('prevents past games from being reset to STATUS_SCHEDULED', function () {
     $team = Team::factory()->create(['espn_id' => '123']);
+    $opponent = Team::factory()->create(['espn_id' => '456']);
+
+    \App\Models\CBB\Game::factory()->create([
+        'espn_event_id' => 'event-1',
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'status' => 'STATUS_FINAL',
+        'game_date' => now()->subDays(7)->toDateString(),
+    ]);
 
     // Mock ESPN API response with a past game that's marked as scheduled
     $espnService = Mockery::mock(\App\Services\ESPN\CBB\EspnService::class);
     $espnService->shouldReceive('getSchedule')
-        ->with('123')
+        ->with('123', null)
         ->andReturn([
             'events' => [
                 [
@@ -66,12 +75,10 @@ it('prevents past games from being reset to STATUS_SCHEDULED', function () {
 
     $this->app->instance(\App\Services\ESPN\CBB\EspnService::class, $espnService);
 
-    Team::factory()->create(['espn_id' => '456']);
-
     $action = new \App\Actions\ESPN\CBB\SyncTeamSchedule($espnService);
     $action->execute('123');
 
-    // Verify the game was created with STATUS_FINAL (not STATUS_SCHEDULED)
+    // Verify the existing final game was not downgraded back to scheduled
     expect(\App\Models\CBB\Game::query()->where('espn_event_id', 'event-1')->first())
         ->status->toBe('STATUS_FINAL');
 });

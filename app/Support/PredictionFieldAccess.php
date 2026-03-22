@@ -10,7 +10,7 @@ class PredictionFieldAccess
 {
     public function canViewField(User $user, string $fieldOrPermission): bool
     {
-        if (app(TierAccessBypass::class)->shouldBypassTierChecks($user)) {
+        if (app(TierAccessBypass::class)->userIsBypassed($user)) {
             return true;
         }
 

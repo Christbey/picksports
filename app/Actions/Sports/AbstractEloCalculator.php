@@ -215,15 +215,31 @@ abstract class AbstractEloCalculator
     {
         $eloRatingClass = $this->getEloRatingModel();
 
-        $eloRatingClass::create([
-            'team_id' => $team->id,
-            'game_id' => $game->id,
+        $attributes = [
             'season' => $game->season,
             'week' => $game->week ?? null,
             'date' => $game->game_date,
             'game_date' => $game->game_date,
             'elo_rating' => $newElo,
             'elo_change' => $eloChange,
+        ];
+
+        if ($game->id !== null) {
+            $eloRatingClass::updateOrCreate(
+                [
+                    'team_id' => $team->id,
+                    'game_id' => $game->id,
+                ],
+                $attributes
+            );
+
+            return;
+        }
+
+        $eloRatingClass::create([
+            'team_id' => $team->id,
+            'game_id' => null,
+            ...$attributes,
         ]);
     }
 }

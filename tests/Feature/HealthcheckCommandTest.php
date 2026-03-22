@@ -68,6 +68,14 @@ it('records passing heartbeat checks when pipelines are fresh', function () {
         'ran_at' => now()->subHours(1),
     ]);
 
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'nba:sync-player-props',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subHours(1),
+    ]);
+
     artisan('healthcheck:run --sport=nba')->assertSuccessful();
 
     $types = [
@@ -76,6 +84,7 @@ it('records passing heartbeat checks when pipelines are fresh', function () {
         'heartbeat_prediction_pipeline',
         'heartbeat_model_pipeline',
         'heartbeat_odds',
+        'heartbeat_player_props',
     ];
 
     foreach ($types as $type) {

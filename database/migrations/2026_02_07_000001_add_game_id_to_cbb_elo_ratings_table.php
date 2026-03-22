@@ -11,6 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
+        if (Schema::hasColumn('cbb_elo_ratings', 'game_id')) {
+            return;
+        }
+
         if (DB::getDriverName() !== 'mysql') {
             return;
         }

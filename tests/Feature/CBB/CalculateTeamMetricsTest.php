@@ -10,6 +10,8 @@ use App\Models\CBB\TeamStat;
 uses()->group('cbb', 'team-metrics');
 
 beforeEach(function () {
+    config()->set('cbb.metrics.minimum_games', 2);
+
     $this->team = Team::factory()->create(['elo_rating' => 1500]);
     $this->opponent1 = Team::factory()->create(['elo_rating' => 1550]);
     $this->opponent2 = Team::factory()->create(['elo_rating' => 1450]);
@@ -316,6 +318,8 @@ it('marks metrics as meeting minimum when threshold is met', function () {
 });
 
 it('estimates possessions when not provided', function () {
+    config()->set('cbb.metrics.minimum_games', 1);
+
     $game = Game::factory()->create([
         'season' => 2026,
         'home_team_id' => $this->team->id,
@@ -415,6 +419,8 @@ it('updates existing metric instead of creating duplicate', function () {
 });
 
 it('calculates metrics for multiple seasons separately', function () {
+    config()->set('cbb.metrics.minimum_games', 1);
+
     // Game in 2025
     $game2025 = Game::factory()->create([
         'season' => 2025,

@@ -7,7 +7,6 @@ use App\Models\CBB\Play;
 use App\Models\CBB\PlayerInjury;
 use App\Models\CBB\TeamMetric;
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class AuditPredictionInputsCommand extends Command

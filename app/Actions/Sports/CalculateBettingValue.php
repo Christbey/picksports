@@ -268,5 +268,4 @@ class CalculateBettingValue
 
         return $outcome === $oddsApi;
     }
-
 }

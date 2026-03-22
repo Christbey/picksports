@@ -5,7 +5,6 @@ namespace App\Actions\OddsApi;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Collection;
 
 abstract class AbstractSyncOddsForGames
 {

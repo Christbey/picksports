@@ -327,5 +327,4 @@ class CalculateBettingValue
     {
         return in_array((string) ($game->tournament_round ?? ''), ['round_of_64', 'round_of_32'], true);
     }
-
 }

@@ -254,7 +254,14 @@ abstract class AbstractPredictionGenerator
 
     protected function shouldUsePriorSeasonMetricFallback(): bool
     {
-        return (bool) config("{$this->getSport()}.predictions.use_previous_season_metrics_fallback", false);
+        $sport = $this->getSport();
+
+        $predictionConfig = config("{$sport}.prediction.use_previous_season_metrics_fallback");
+        if (is_bool($predictionConfig)) {
+            return $predictionConfig;
+        }
+
+        return (bool) config("{$sport}.predictions.use_previous_season_metrics_fallback", false);
     }
 
     protected function shouldGeneratePredictionForGame(Model $game, Model $homeTeam, Model $awayTeam): bool

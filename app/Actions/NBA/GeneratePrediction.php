@@ -32,6 +32,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     protected const PREDICTION_MODEL = Prediction::class;
 
+    /**
+     * @return array<string, mixed>|null
+     */
+    public function preview(Game $game): ?array
+    {
+        return $this->makePredictionData($game);
+    }
+
     public function execute(Model $game): ?Model
     {
         $prediction = parent::execute($game);
@@ -86,7 +94,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $situationalAdj = $restAdj + $turnoverAdj + $reboundAdj;
         $injuryContext = $this->buildInjuryContext($game);
-        $injurySpreadAdj = $injuryContext['spread_adj'];
+        $usePersistedInjuryContext = $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics);
+        $injurySpreadAdj = $usePersistedInjuryContext ? 0.0 : $injuryContext['spread_adj'];
 
         // 5. Ensemble blend
         $modelSpread = ($config['elo_weight'] * $eloSpread)
@@ -128,7 +137,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'home_injuries_questionable' => $injuryContext['home_questionable'],
             'away_injuries_questionable' => $injuryContext['away_questionable'],
             'injury_spread_adj' => round($injurySpreadAdj, 2),
-            'injury_total_adj' => round($injuryContext['total_adj'], 2),
+            'injury_total_adj' => round($usePersistedInjuryContext ? 0.0 : $injuryContext['total_adj'], 2),
+            'injury_model_source' => $usePersistedInjuryContext ? 'persisted_team_rating' : 'raw_player_status',
         ];
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaSpreadMeta];
 
@@ -155,8 +165,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $homeSeasonScore = ($homeOffEff + $awayDefEff) / 2;
         $awaySeasonScore = ($awayOffEff + $homeDefEff) / 2;
-        $homeRecentScore = ($homeForm['off_eff'] + $awayForm['def_eff']) / 2;
-        $awayRecentScore = ($awayForm['off_eff'] + $homeForm['def_eff']) / 2;
+        $rawHomeRecentScore = ($homeForm['off_eff'] + $awayForm['def_eff']) / 2;
+        $rawAwayRecentScore = ($awayForm['off_eff'] + $homeForm['def_eff']) / 2;
+        $homeRecentScore = $this->sanitizeRecentScoreComponent($rawHomeRecentScore, $homeSeasonScore, $defaultEfficiency);
+        $awayRecentScore = $this->sanitizeRecentScoreComponent($rawAwayRecentScore, $awaySeasonScore, $defaultEfficiency);
         $homeVenueScore = $this->pairedVenueScore(
             $this->getVenueEfficiency($game->homeTeam, (int) $game->season, 'home'),
             $this->getVenueEfficiency($game->awayTeam, (int) $game->season, 'away')
@@ -183,13 +195,21 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $seasonPace /= 2;
 
         $formPace = ($homeForm['tempo'] + $awayForm['tempo']) / 2;
-
+        $calibration = (array) ($config['total_calibration'] ?? []);
+        $maxRecentPaceDrop = (float) ($calibration['max_recent_pace_drop'] ?? 7.0);
+        $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
+        $formPace = max($formPace, $recentPaceFloor);
         $pace = ($seasonPace + $formPace) / 2;
+        $paceFloor = (float) ($calibration['pace_floor'] ?? 95.0);
+        $paceFloorBlend = (float) ($calibration['pace_floor_blend'] ?? 0.55);
+        if ($pace < $paceFloor) {
+            $pace += ($paceFloor - $pace) * $paceFloorBlend;
+        }
 
         // B2B teams tend to play slower
         $restHome = $this->metadata['rest_days_home'] ?? null;
         $restAway = $this->metadata['rest_days_away'] ?? null;
-        $paceAdj = 0;
+        $paceAdj = 0.0;
         if ($restHome !== null && $restHome <= 1) {
             $paceAdj -= 1.0;
         }
@@ -204,23 +224,33 @@ class GeneratePrediction extends AbstractPredictionGenerator
             $homeMetrics,
             $awayMetrics
         );
-        $calibration = (array) ($config['total_calibration'] ?? []);
         $rangeAnchor = (float) ($calibration['range_anchor'] ?? 228.0);
         $rangeScale = (float) ($calibration['range_scale'] ?? 1.18);
         $baseAdjustment = (float) ($calibration['base_adjustment'] ?? 3.0);
-        $calibratedTotal = $rangeAnchor + (($blendedTotal - $rangeAnchor) * $rangeScale) + $baseAdjustment;
+        $highTotalThreshold = (float) ($calibration['high_total_threshold'] ?? 229.0);
+        $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 0.35);
+        $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
+        $calibratedTotal = $rangeAnchor + (($blendedTotal - $rangeAnchor) * $rangeScale) + $baseAdjustment + $highTotalBoost;
 
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
             'season_home_score_component' => round($homeSeasonScore, 3),
             'season_away_score_component' => round($awaySeasonScore, 3),
+            'recent_home_score_component_raw' => round($rawHomeRecentScore, 3),
+            'recent_away_score_component_raw' => round($rawAwayRecentScore, 3),
             'recent_home_score_component' => round($homeRecentScore, 3),
             'recent_away_score_component' => round($awayRecentScore, 3),
+            'recent_home_score_fallback_applied' => $homeRecentScore !== $rawHomeRecentScore,
+            'recent_away_score_fallback_applied' => $awayRecentScore !== $rawAwayRecentScore,
             'venue_home_score_component' => $homeVenueScore !== null ? round($homeVenueScore, 3) : null,
             'venue_away_score_component' => $awayVenueScore !== null ? round($awayVenueScore, 3) : null,
             'season_pace' => round($seasonPace, 3),
             'recent_pace' => round($formPace, 3),
+            'recent_pace_floor' => round($recentPaceFloor, 3),
+            'max_recent_pace_drop' => round($maxRecentPaceDrop, 3),
             'pace_adjustment' => round($paceAdj, 3),
+            'pace_floor' => round($paceFloor, 3),
+            'pace_floor_blend' => round($paceFloorBlend, 3),
             'blended_pace' => round($pace, 3),
             'injury_total_adjustment' => round($injuryTotalAdj, 3),
             'legacy_total' => round($legacyTotal, 3),
@@ -228,10 +258,23 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'range_anchor' => round($rangeAnchor, 3),
             'range_scale' => round($rangeScale, 3),
             'total_base_adjustment' => round($baseAdjustment, 3),
+            'high_total_boost' => round($highTotalBoost, 3),
             'calibrated_total' => round($calibratedTotal, 3),
         ];
 
         return round($calibratedTotal, 1);
+    }
+
+    private function sanitizeRecentScoreComponent(float $recentScore, float $seasonScore, float $defaultEfficiency): float
+    {
+        $minReasonableScore = max(80.0, $defaultEfficiency * 0.75);
+        $maxReasonableScore = min(145.0, $defaultEfficiency * 1.35);
+
+        if ($recentScore < $minReasonableScore || $recentScore > $maxReasonableScore) {
+            return $seasonScore;
+        }
+
+        return $recentScore;
     }
 
     protected function buildPredictionData(
@@ -264,6 +307,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'model' => 'nba_ensemble',
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
+                    'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
                 ],
             ]
         );

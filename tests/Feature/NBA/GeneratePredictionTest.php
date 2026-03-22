@@ -3,6 +3,8 @@
 use App\Actions\NBA\CalculateBettingValue;
 use App\Actions\NBA\GeneratePrediction;
 use App\Models\NBA\Game;
+use App\Models\NBA\Player;
+use App\Models\NBA\PlayerInjury;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
@@ -498,6 +500,105 @@ it('falls back gracefully when no recent form data exists', function () {
     expect((float) $prediction->form_spread_component)->toBe(
         config('nba.prediction.home_court_points')
     );
+});
+
+it('falls back to prior season team metrics when current season metrics are unavailable', function () {
+    config()->set('nba.prediction.use_previous_season_metrics_fallback', true);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2025,
+        'offensive_efficiency' => 117.0,
+        'defensive_efficiency' => 108.0,
+        'net_rating' => 9.0,
+        'tempo' => 99.0,
+        'strength_of_schedule' => 1502.0,
+        'calculation_date' => now()->subYear()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2025,
+        'offensive_efficiency' => 109.0,
+        'defensive_efficiency' => 113.0,
+        'net_rating' => -4.0,
+        'tempo' => 97.0,
+        'strength_of_schedule' => 1498.0,
+        'calculation_date' => now()->subYear()->toDateString(),
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    $prediction = (new GeneratePrediction)->execute($game);
+
+    expect($prediction)->not->toBeNull()
+        ->and((float) $prediction->home_off_eff)->toBe(117.0)
+        ->and((float) $prediction->away_def_eff)->toBe(113.0);
+});
+
+it('does not double count raw injury penalties when persisted injury-adjusted ratings exist', function () {
+    config()->set('nba.prediction.injury_spread_weight', 0.03);
+    config()->set('nba.prediction.injury_total_weight', 0.015);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 114.0,
+        'defensive_efficiency' => 108.0,
+        'net_rating' => 6.0,
+        'tempo' => 99.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1540.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 110.0,
+        'defensive_efficiency' => 111.0,
+        'net_rating' => -1.0,
+        'tempo' => 98.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1450.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $baselinePrediction = (new GeneratePrediction)->execute($game);
+
+    $player = Player::factory()->create(['team_id' => $this->homeTeam->id]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $this->homeTeam->id,
+        'injury_key' => 'test-ankle',
+        'status' => 'Out',
+        'detail' => 'Test injury',
+        'type' => 'Ankle',
+        'injury_date' => now()->toDateString(),
+        'is_active' => true,
+    ]);
+
+    $injuryPrediction = (new GeneratePrediction)->execute($game->fresh());
+
+    expect($injuryPrediction)->not->toBeNull()
+        ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
+        ->and((float) $injuryPrediction->predicted_total)->toBe((float) $baselinePrediction->predicted_total)
+        ->and((float) $injuryPrediction->injury_spread_adj)->toBe(0.0)
+        ->and((float) $injuryPrediction->injury_total_adj)->toBe(0.0)
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_model_source'))->toBe('persisted_team_rating')
+        ->and($injuryPrediction->home_injuries_out)->toBe(1);
 });
 
 it('applies true epa blend metadata when enabled and metrics are available', function () {

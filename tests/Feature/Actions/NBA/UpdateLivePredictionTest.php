@@ -96,6 +96,38 @@ test('updates live prediction for in-progress game', function () {
         ->and($prediction->live_updated_at)->not->toBeNull();
 });
 
+test('clears stale live data when game is no longer in progress', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'period' => 4,
+        'home_score' => 112,
+        'away_score' => 108,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'live_predicted_spread' => 4.5,
+        'live_win_probability' => 0.750,
+        'live_predicted_total' => 224.0,
+        'live_seconds_remaining' => 90,
+        'live_updated_at' => now(),
+    ]);
+
+    $result = $this->action->execute($game->fresh());
+
+    expect($result)->toBeNull();
+
+    $prediction->refresh();
+
+    expect($prediction->live_predicted_spread)->toBeNull()
+        ->and($prediction->live_win_probability)->toBeNull()
+        ->and($prediction->live_predicted_total)->toBeNull()
+        ->and($prediction->live_seconds_remaining)->toBeNull()
+        ->and($prediction->live_updated_at)->toBeNull();
+});
+
 test('calculates seconds remaining correctly for quarter 1', function () {
     $game = Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,

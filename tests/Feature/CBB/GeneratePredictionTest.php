@@ -1014,6 +1014,105 @@ it('requires a stronger tournament under edge for cbb', function () {
     expect($totalRec)->toBeNull();
 });
 
+it('filters out extreme high-total over outliers for cbb', function () {
+    config()->set('cbb.betting.edge_thresholds.total', 2.25);
+    config()->set('cbb.betting.filters.high_total_over_market_floor', 145.0);
+    config()->set('cbb.betting.filters.high_total_over_min_edge', 4.5);
+    config()->set('cbb.betting.filters.high_total_over_skip_edge', 16.5);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'totals',
+                            'outcomes' => [
+                                ['name' => 'Over', 'point' => 145.5, 'price' => -110],
+                                ['name' => 'Under', 'point' => 145.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'home_elo' => 1500,
+        'away_elo' => 1500,
+        'home_off_eff' => 112,
+        'home_def_eff' => 102,
+        'away_off_eff' => 111,
+        'away_def_eff' => 103,
+        'predicted_spread' => 1.0,
+        'predicted_total' => 162.6,
+        'win_probability' => 0.55,
+        'confidence_score' => 55.0,
+    ]);
+
+    $recommendations = app(CalculateBettingValue::class)->execute($game->fresh('prediction'));
+    $totalRec = collect($recommendations ?? [])->firstWhere('type', 'total');
+
+    expect($totalRec)->toBeNull();
+});
+
+it('reduces confidence for high-total over recommendations for cbb', function () {
+    config()->set('cbb.betting.edge_thresholds.total', 2.25);
+    config()->set('cbb.betting.filters.high_total_over_market_floor', 145.0);
+    config()->set('cbb.betting.filters.high_total_over_min_edge', 4.5);
+    config()->set('cbb.betting.filters.high_total_over_skip_edge', 20.0);
+    config()->set('cbb.betting.filters.high_total_over_confidence_penalty', 8.0);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'totals',
+                            'outcomes' => [
+                                ['name' => 'Over', 'point' => 145.5, 'price' => -110],
+                                ['name' => 'Under', 'point' => 145.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'home_elo' => 1500,
+        'away_elo' => 1500,
+        'home_off_eff' => 108,
+        'home_def_eff' => 101,
+        'away_off_eff' => 109,
+        'away_def_eff' => 102,
+        'predicted_spread' => 1.0,
+        'predicted_total' => 155.6,
+        'win_probability' => 0.54,
+        'confidence_score' => 54.0,
+    ]);
+
+    $recommendations = app(CalculateBettingValue::class)->execute($game->fresh('prediction'));
+    $totalRec = collect($recommendations ?? [])->firstWhere('type', 'total');
+
+    expect($totalRec)->not->toBeNull()
+        ->and($totalRec['recommendation'])->toBe('Bet Over')
+        ->and($totalRec['confidence'])->toBeLessThan(95.0);
+});
+
 it('filters out giant-dog tournament spread recommendations unless the edge is strong enough', function () {
     config()->set('cbb.betting.edge_thresholds.spread', 2.0);
     config()->set('cbb.betting.edge_thresholds.spread_away', 4.0);

@@ -426,6 +426,10 @@ return [
             'high_total_under_min_edge' => 5.5,
             'high_total_under_skip_edge' => 15.0,
             'high_total_under_confidence_penalty' => 10.0,
+            'high_total_over_market_floor' => 145.0,
+            'high_total_over_min_edge' => 4.5,
+            'high_total_over_skip_edge' => 16.5,
+            'high_total_over_confidence_penalty' => 8.0,
         ],
 
         // Kelly Criterion bet sizing

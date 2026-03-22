@@ -147,6 +147,9 @@ class CalculateBettingValue
         $highTotalMarketFloor = (float) config('cbb.betting.filters.high_total_under_market_floor', 155.0);
         $highTotalMinEdge = (float) config('cbb.betting.filters.high_total_under_min_edge', 5.5);
         $highTotalSkipEdge = (float) config('cbb.betting.filters.high_total_under_skip_edge', 15.0);
+        $highTotalOverMarketFloor = (float) config('cbb.betting.filters.high_total_over_market_floor', 145.0);
+        $highTotalOverMinEdge = (float) config('cbb.betting.filters.high_total_over_min_edge', 4.5);
+        $highTotalOverSkipEdge = (float) config('cbb.betting.filters.high_total_over_skip_edge', 16.5);
 
         if ($this->isTournamentRound($game) && ! $betOver) {
             $minEdge = max($minEdge, (float) config('cbb.betting.filters.tournament_under_min_edge', 4.5));
@@ -162,6 +165,14 @@ class CalculateBettingValue
             $minEdge = max($minEdge, $highTotalMinEdge);
 
             if ($edge >= $highTotalSkipEdge) {
+                return null;
+            }
+        }
+
+        if ($betOver && (float) $totalLine >= $highTotalOverMarketFloor) {
+            $minEdge = max($minEdge, $highTotalOverMinEdge);
+
+            if ($edge >= $highTotalOverSkipEdge) {
                 return null;
             }
         }
@@ -284,6 +295,10 @@ class CalculateBettingValue
 
         if (! $betOver && $marketTotal >= (float) config('cbb.betting.filters.high_total_under_market_floor', 155.0)) {
             $confidence -= (float) config('cbb.betting.filters.high_total_under_confidence_penalty', 10.0);
+        }
+
+        if ($betOver && $marketTotal >= (float) config('cbb.betting.filters.high_total_over_market_floor', 145.0)) {
+            $confidence -= (float) config('cbb.betting.filters.high_total_over_confidence_penalty', 8.0);
         }
 
         return round(max(50, min(95, $confidence)), 2);

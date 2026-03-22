@@ -184,6 +184,7 @@ return [
         'recency_decay' => 0.9,
         'total_recent_efficiency_weight' => 0.35,
         'total_venue_efficiency_weight' => 0.15,
+        'use_previous_season_metrics_fallback' => env('NBA_USE_PREVIOUS_SEASON_METRICS_FALLBACK', true),
 
         // Rest days
         'rest_day_adjustment' => 1.5,
@@ -215,6 +216,12 @@ return [
         'injury_epa_min_multiplier' => 0.50,
         'injury_epa_max_multiplier' => 2.00,
         'injury_epa_fallback_multiplier' => 1.00,
+        'recent_spread_weight' => 0.08,
+        'fatigue_spread_weight' => 0.18,
+        'injury_spread_weight' => 0.028,
+        'recent_total_weight' => 0.12,
+        'fatigue_total_weight' => 0.20,
+        'injury_total_weight' => 0.015,
 
         // Guarded rollout for true play-by-play EPA blend.
         'true_epa' => [
@@ -229,9 +236,21 @@ return [
         ],
 
         'total_calibration' => [
-            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 228.0),
-            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.18),
-            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 3.0),
+            'pace_floor' => env('NBA_TOTAL_PACE_FLOOR', 95.0),
+            'pace_floor_blend' => env('NBA_TOTAL_PACE_FLOOR_BLEND', 0.55),
+            'max_recent_pace_drop' => env('NBA_TOTAL_MAX_RECENT_PACE_DROP', 7.0),
+            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 236.0),
+            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.58),
+            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 27.0),
+            'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 224.0),
+            'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.75),
+        ],
+
+        'live_model' => [
+            'tight_game_total_boost' => env('NBA_LIVE_TIGHT_GAME_TOTAL_BOOST', 0.10),
+            'very_tight_game_total_boost' => env('NBA_LIVE_VERY_TIGHT_GAME_TOTAL_BOOST', 0.05),
+            'late_blowout_total_penalty' => env('NBA_LIVE_BLOWOUT_TOTAL_PENALTY', 0.10),
+            'pregame_total_floor_buffer' => env('NBA_LIVE_PREGAME_TOTAL_FLOOR_BUFFER', 20.0),
         ],
 
         // Narrative generation settings for prediction summaries.

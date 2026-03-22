@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Database\Factories\UserAlertPreferenceFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +10,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class UserAlertPreference extends Model
 {
     use HasFactory;
+
+    protected static function newFactory(): UserAlertPreferenceFactory
+    {
+        return UserAlertPreferenceFactory::new();
+    }
 
     protected $fillable = [
         'user_id',

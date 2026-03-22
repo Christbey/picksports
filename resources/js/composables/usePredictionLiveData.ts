@@ -105,7 +105,9 @@ export function normalizePredictionLiveState(
     };
 }
 
-export function hasPredictionLiveData(prediction: PredictionCardInput): boolean {
+export function hasPredictionLiveData(
+    prediction: PredictionCardInput,
+): boolean {
     const normalized = normalizePredictionLiveState(prediction);
 
     return normalized.isLive && normalized.liveWinProbability !== null;

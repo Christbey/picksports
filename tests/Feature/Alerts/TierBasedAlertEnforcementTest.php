@@ -14,6 +14,24 @@ use Illuminate\Support\Facades\Notification;
 
 uses(RefreshDatabase::class);
 
+function subscribeUserToTier(User $user, SubscriptionTier $tier): void
+{
+    $stripePrice = $tier->stripe_price_id_monthly ?: "test_{$tier->slug}_monthly";
+
+    if ($tier->stripe_price_id_monthly !== $stripePrice) {
+        $tier->update(['stripe_price_id_monthly' => $stripePrice]);
+        $tier->refresh();
+    }
+
+    $user->subscriptions()->create([
+        'type' => 'default',
+        'stripe_id' => "sub_{$tier->slug}_test",
+        'stripe_status' => 'active',
+        'stripe_price' => $stripePrice,
+        'quantity' => 1,
+    ]);
+}
+
 beforeEach(function () {
     // Sync tiers from config to database
     $this->artisan('tiers:sync');
@@ -79,17 +97,10 @@ test('free tier users do not receive email alerts', function () {
 test('basic tier users receive email alerts for allowed sports', function () {
     Notification::fake();
 
-    $basicTier = SubscriptionTier::where('slug', 'basic')->first();
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
     $user = User::factory()->create();
 
-    // Simulate subscription by creating a subscription record
-    $user->subscriptions()->create([
-        'type' => 'default',
-        'stripe_id' => 'sub_test',
-        'stripe_status' => 'active',
-        'stripe_price' => $basicTier->stripe_price_id_monthly,
-        'quantity' => 1,
-    ]);
+    subscribeUserToTier($user, $basicTier);
 
     UserAlertPreference::factory()->create([
         'user_id' => $user->id,
@@ -148,16 +159,10 @@ test('basic tier users receive email alerts for allowed sports', function () {
 test('users cannot receive alerts for sports outside their tier access', function () {
     Notification::fake();
 
-    $basicTier = SubscriptionTier::where('slug', 'basic')->first();
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
     $user = User::factory()->create();
 
-    $user->subscriptions()->create([
-        'type' => 'default',
-        'stripe_id' => 'sub_test',
-        'stripe_status' => 'active',
-        'stripe_price' => $basicTier->stripe_price_id_monthly,
-        'quantity' => 1,
-    ]);
+    subscribeUserToTier($user, $basicTier);
 
     UserAlertPreference::factory()->create([
         'user_id' => $user->id,
@@ -180,16 +185,10 @@ test('users cannot receive alerts for sports outside their tier access', functio
 test('users cannot exceed daily alert limit from their tier', function () {
     Notification::fake();
 
-    $basicTier = SubscriptionTier::where('slug', 'basic')->first();
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
     $user = User::factory()->create();
 
-    $user->subscriptions()->create([
-        'type' => 'default',
-        'stripe_id' => 'sub_test',
-        'stripe_status' => 'active',
-        'stripe_price' => $basicTier->stripe_price_id_monthly,
-        'quantity' => 1,
-    ]);
+    subscribeUserToTier($user, $basicTier);
 
     UserAlertPreference::factory()->create([
         'user_id' => $user->id,
@@ -219,16 +218,10 @@ test('users cannot exceed daily alert limit from their tier', function () {
 });
 
 test('pro tier users have unlimited alerts', function () {
-    $proTier = SubscriptionTier::where('slug', 'pro')->first();
+    $proTier = SubscriptionTier::where('slug', 'pro')->firstOrFail();
     $user = User::factory()->create();
 
-    $user->subscriptions()->create([
-        'type' => 'default',
-        'stripe_id' => 'sub_test',
-        'stripe_status' => 'active',
-        'stripe_price' => $proTier->stripe_price_id_monthly,
-        'quantity' => 1,
-    ]);
+    subscribeUserToTier($user, $proTier);
 
     // Create 1000 sent alerts
     for ($i = 0; $i < 1000; $i++) {
@@ -247,19 +240,13 @@ test('pro tier users have unlimited alerts', function () {
 });
 
 test('user tier feature checks work correctly', function () {
-    $freeTier = SubscriptionTier::where('slug', 'free')->first();
-    $basicTier = SubscriptionTier::where('slug', 'basic')->first();
+    $freeTier = SubscriptionTier::where('slug', 'free')->firstOrFail();
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
 
     $freeUser = User::factory()->create();
     $basicUser = User::factory()->create();
 
-    $basicUser->subscriptions()->create([
-        'type' => 'default',
-        'stripe_id' => 'sub_test',
-        'stripe_status' => 'active',
-        'stripe_price' => $basicTier->stripe_price_id_monthly,
-        'quantity' => 1,
-    ]);
+    subscribeUserToTier($basicUser, $basicTier);
 
     expect($freeUser->hasTierFeature('email_alerts'))->toBeFalse();
     expect($freeUser->hasTierFeature('advanced_analytics'))->toBeFalse();
@@ -273,16 +260,10 @@ test('user tier feature checks work correctly', function () {
 test('alert sent records include all required data', function () {
     Notification::fake();
 
-    $basicTier = SubscriptionTier::where('slug', 'basic')->first();
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
     $user = User::factory()->create();
 
-    $user->subscriptions()->create([
-        'type' => 'default',
-        'stripe_id' => 'sub_test',
-        'stripe_status' => 'active',
-        'stripe_price' => $basicTier->stripe_price_id_monthly,
-        'quantity' => 1,
-    ]);
+    subscribeUserToTier($user, $basicTier);
 
     UserAlertPreference::factory()->create([
         'user_id' => $user->id,

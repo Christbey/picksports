@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
     Storage::fake('public');
+    config()->set('app.name', 'PickSports');
     config()->set('site_assets.disk', 'public');
     config()->set('site_assets.directory', 'site-assets');
     config()->set('site_assets.mirror', true);

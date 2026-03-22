@@ -297,8 +297,8 @@ return [
             'offensive_rebound_rate' => 8.0,
         ],
         'total_calibration' => [
-            'pace_floor' => 62.0,
-            'pace_floor_blend' => 0.5,
+            'pace_floor' => 64.0,
+            'pace_floor_blend' => 0.7,
             'max_recent_pace_drop' => 8.0,
             'tournament_max_recent_pace_drop' => 4.0,
             'factor_adjustment_cap' => 6.0,

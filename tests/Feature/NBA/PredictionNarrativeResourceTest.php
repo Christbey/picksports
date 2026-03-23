@@ -139,3 +139,18 @@ test('falls back to template when stored narrative hash is stale', function () {
         ->and($data['narrative']['generated_by'])->toBe('template-v5')
         ->and($data['narrative']['betting_plan'])->toBeArray();
 });
+
+test('prediction narrative remains available without granular prediction field permissions', function () {
+    config()->set('nba.prediction.narrative.provider', 'template');
+
+    $user = User::factory()->create();
+    $prediction = makeNbaPredictionFixture();
+
+    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+
+    expect($data['narrative'])->toBeArray()
+        ->and($data['narrative']['generated_by'])->toBe('template-v5')
+        ->and($data['narrative']['betting_plan'])->toHaveKeys(['bet_pick', 'reasoning'])
+        ->and($data)->not->toHaveKey('confidence_score')
+        ->and($data)->not->toHaveKey('win_probability');
+});

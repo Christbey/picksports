@@ -100,7 +100,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'win_probability' => round($winProbability, 3),
                 'confidence_score' => round($confidenceScore, 2),
             ]
-        );
+        )->tap(function (Model $prediction) {
+            $this->dispatchNarrativeGeneration($prediction);
+        });
     }
 
     /**

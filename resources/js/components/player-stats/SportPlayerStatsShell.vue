@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { UrlMethodPair } from '@inertiajs/core';
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, ref, watch } from 'vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
@@ -12,7 +13,7 @@ import { useSeasonFilter } from '@/composables/useSeasonFilter';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 
-type HrefLike = string | Record<string, unknown>;
+type HrefLike = string | UrlMethodPair;
 
 interface PlayerLeaderboardEntry {
     player_id: number;
@@ -333,9 +334,10 @@ const formatColumnValue = (
     entry: PlayerLeaderboardEntry,
     column: StatColumn,
 ) => {
-    const value = (entry as Record<string, number | undefined>)[column.key];
-    if (column.format) return column.format(value, entry);
-    return Number(value ?? 0).toFixed(1);
+    const value = entry[column.key as keyof PlayerLeaderboardEntry];
+    const numericValue = typeof value === 'number' ? value : undefined;
+    if (column.format) return column.format(numericValue, entry);
+    return Number(numericValue ?? 0).toFixed(1);
 };
 
 const rankColorClass = (rankIndex: number, total: number): string => {

@@ -63,6 +63,8 @@ class PredictionResource extends AbstractPredictionResource
             $data['betting_value'] = $this->betting_value ?? app(CalculateBettingValue::class)->execute($this->game);
         }
 
+        $data = $this->appendNarrativeFields($data, $request, 'cbb');
+
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }
 }

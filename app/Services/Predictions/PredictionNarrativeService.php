@@ -6,7 +6,8 @@ use App\Actions\NBA\CalculateBettingValue;
 use App\Actions\NBA\CalculateTeamTrends;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
-use Illuminate\Support\Facades\Http;
+use App\Services\AI\SportsAiContentService;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use JsonException;
 use Throwable;
@@ -45,11 +46,49 @@ class PredictionNarrativeService
 
         $templateNarrative = $this->templateForNba($prediction, $game, $trendSnapshot);
 
-        if (! $allowOpenAi || ! $this->shouldUseOpenAi()) {
+        if (! $allowOpenAi || ! $this->shouldUseOpenAi('nba')) {
             return $templateNarrative;
         }
 
         $openAiNarrative = $this->generateWithOpenAiForNba($prediction, $game, $trendSnapshot);
+
+        return $openAiNarrative ?? $templateNarrative;
+    }
+
+    /**
+     * @return array{
+     *   summary:string,
+     *   key_points:array<int, string>,
+     *   risk_note:string,
+     *   generated_by:string,
+     *   betting_plan:array{bet_pick:string,reasoning:string},
+     *   social_caption:string|null
+     * }
+     */
+    public function forSport(
+        Model $prediction,
+        ?Model $game = null,
+        string $sport = 'nba',
+        bool $allowOpenAi = true
+    ): array {
+        $sport = strtolower($sport);
+
+        if ($sport === 'nba' && $prediction instanceof Prediction) {
+            return $this->forNba($prediction, $game instanceof Game ? $game : null, $allowOpenAi);
+        }
+
+        $game ??= $prediction->game;
+        if ($game) {
+            $game->loadMissing(['homeTeam', 'awayTeam']);
+        }
+
+        $templateNarrative = $this->templateForSport($prediction, $game, $sport);
+
+        if (! $allowOpenAi || ! $this->shouldUseOpenAi($sport)) {
+            return $templateNarrative;
+        }
+
+        $openAiNarrative = $this->generateWithOpenAiForSport($prediction, $game, $sport);
 
         return $openAiNarrative ?? $templateNarrative;
     }
@@ -92,6 +131,28 @@ class PredictionNarrativeService
             'form_spread_component' => (float) ($prediction->form_spread_component ?? 0),
             'vegas_spread' => $prediction->vegas_spread !== null ? (float) $prediction->vegas_spread : null,
         ];
+
+        try {
+            return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
+        } catch (JsonException) {
+            return hash('sha256', serialize($payload));
+        }
+    }
+
+    public function inputHashForSport(Model $prediction, ?Model $game = null, string $sport = 'nba'): string
+    {
+        $sport = strtolower($sport);
+
+        if ($sport === 'nba' && $prediction instanceof Prediction) {
+            return $this->inputHashForNba($prediction, $game instanceof Game ? $game : null);
+        }
+
+        $game ??= $prediction->game;
+        if ($game) {
+            $game->loadMissing(['homeTeam', 'awayTeam']);
+        }
+
+        $payload = $this->buildGenericNarrativeContext($prediction, $game, $sport);
 
         try {
             return hash('sha256', json_encode($payload, JSON_THROW_ON_ERROR));
@@ -467,11 +528,7 @@ class PredictionNarrativeService
         ?array $trendSnapshot = null
     ): ?array {
         $apiKey = (string) config('services.openai.api_key', '');
-        $baseUrl = rtrim((string) config('services.openai.base_url', 'https://api.openai.com/v1'), '/');
         $model = (string) config('nba.prediction.narrative.model', 'gpt-4o-mini');
-        $temperature = (float) config('nba.prediction.narrative.temperature', 0.2);
-        $maxTokens = (int) config('nba.prediction.narrative.max_tokens', 220);
-        $timeout = (int) config('nba.prediction.narrative.timeout_seconds', 8);
 
         $homeName = $this->teamName($game?->homeTeam, 'Home team');
         $awayName = $this->teamName($game?->awayTeam, 'Away team');
@@ -481,47 +538,21 @@ class PredictionNarrativeService
         $pickedTeam = $pickHome ? $homeName : $awayName;
 
         try {
-            $response = Http::withToken($apiKey)
-                ->acceptJson()
-                ->timeout($timeout)
-                ->post($baseUrl.'/chat/completions', [
-                    'model' => $model,
-                    'temperature' => $temperature,
-                    'max_tokens' => $maxTokens,
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => 'You are a sports analytics assistant. Return valid JSON only.',
-                        ],
-                        [
-                            'role' => 'user',
-                            'content' => $this->buildNbaPrompt($prediction, $homeName, $awayName, $trendSnapshot),
-                        ],
-                    ],
-                ]);
+            $decoded = app(SportsAiContentService::class)->generatePredictionNarrative(
+                $this->buildNbaPrompt($prediction, $homeName, $awayName, $trendSnapshot),
+                provider: 'openai',
+                model: $model,
+            );
 
-            if (! $response->successful()) {
-                Log::warning('Prediction narrative OpenAI request failed.', [
-                    'status' => $response->status(),
-                    'provider' => 'openai',
-                ]);
-
-                return null;
-            }
-
-            $content = (string) data_get($response->json(), 'choices.0.message.content', '');
-            $decoded = $this->decodeNarrativePayload($content);
             if (! $decoded) {
                 return null;
             }
-
-            $responseModel = (string) data_get($response->json(), 'model', $model);
 
             return [
                 'summary' => $decoded['summary'],
                 'key_points' => $decoded['key_points'],
                 'risk_note' => $decoded['risk_note'],
-                'generated_by' => 'openai:'.$responseModel,
+                'generated_by' => $decoded['generated_by'],
                 'betting_plan' => $decoded['betting_plan'] ?? $this->buildBettingPlan(
                     bestBet: $this->resolveBestBet($game),
                     pickedTeam: $pickedTeam,
@@ -547,7 +578,7 @@ class PredictionNarrativeService
                 'social_caption' => $decoded['social_caption'] ?? null,
             ];
         } catch (Throwable $exception) {
-            Log::warning('Prediction narrative OpenAI request threw exception.', [
+            Log::warning('Prediction narrative AI request threw exception.', [
                 'message' => $exception->getMessage(),
                 'provider' => 'openai',
             ]);
@@ -556,12 +587,189 @@ class PredictionNarrativeService
         }
     }
 
-    private function shouldUseOpenAi(): bool
+    /**
+     * @return array{
+     *   summary:string,
+     *   key_points:array<int,string>,
+     *   risk_note:string,
+     *   generated_by:string,
+     *   betting_plan:array{bet_pick:string,reasoning:string},
+     *   social_caption:string|null
+     * }|null
+     */
+    private function generateWithOpenAiForSport(
+        Model $prediction,
+        ?Model $game,
+        string $sport
+    ): ?array {
+        $model = (string) config('ai.features.sports_prediction_narratives.model', 'gpt-4o-mini');
+
+        return app(SportsAiContentService::class)->generatePredictionNarrative(
+            $this->buildSportPrompt($prediction, $game, $sport),
+            provider: 'openai',
+            model: $model,
+        );
+    }
+
+    private function shouldUseOpenAi(string $sport = 'nba'): bool
     {
-        $provider = (string) config('nba.prediction.narrative.provider', 'template');
+        $provider = $sport === 'nba'
+            ? (string) config('nba.prediction.narrative.provider', 'template')
+            : (string) config('ai.features.sports_prediction_narratives.provider', 'template');
         $apiKey = (string) config('services.openai.api_key', '');
 
         return $provider === 'openai' && $apiKey !== '';
+    }
+
+    /**
+     * @return array{
+     *   summary:string,
+     *   key_points:array<int,string>,
+     *   risk_note:string,
+     *   generated_by:string,
+     *   betting_plan:array{bet_pick:string,reasoning:string},
+     *   social_caption:string|null
+     * }
+     */
+    private function templateForSport(Model $prediction, ?Model $game, string $sport): array
+    {
+        $context = $this->buildGenericNarrativeContext($prediction, $game, $sport);
+        $pickLabel = $context['picked_team'].' moneyline';
+        $summary = sprintf(
+            '%s lean: %s (%s win probability). Projected spread %s with total %s.',
+            strtoupper($sport),
+            $context['picked_team'],
+            $this->percent((float) $context['picked_probability']),
+            $context['predicted_spread'] !== null ? $this->signedNumber((float) $context['predicted_spread']) : 'N/A',
+            $context['predicted_total'] !== null ? $this->number((float) $context['predicted_total']) : 'N/A'
+        );
+
+        $keyPoints = [
+            sprintf(
+                'Matchup: %s at %s.',
+                $context['away_team'],
+                $context['home_team']
+            ),
+            sprintf(
+                'Model win view: %s %s vs %s %s.',
+                $context['home_team'],
+                $this->percent((float) $context['home_win_probability']),
+                $context['away_team'],
+                $this->percent((float) $context['away_win_probability'])
+            ),
+            sprintf(
+                'Projected spread: %s. Projected total: %s.',
+                $context['predicted_spread'] !== null ? $this->signedNumber((float) $context['predicted_spread']) : 'N/A',
+                $context['predicted_total'] !== null ? $this->number((float) $context['predicted_total']) : 'N/A'
+            ),
+            sprintf(
+                'Confidence score: %.1f.',
+                (float) $context['confidence_score']
+            ),
+        ];
+
+        if ($context['home_metric'] !== null || $context['away_metric'] !== null) {
+            $keyPoints[] = sprintf(
+                'Rating snapshot: %s %s vs %s %s.',
+                $context['home_team'],
+                $context['home_metric'] ?? 'N/A',
+                $context['away_team'],
+                $context['away_metric'] ?? 'N/A'
+            );
+        }
+
+        return [
+            'summary' => $summary,
+            'key_points' => $keyPoints,
+            'risk_note' => sprintf(
+                'Risk note: confidence is %.1f, so treat this as a lean and stay alert for lineup or market movement.',
+                (float) $context['confidence_score']
+            ),
+            'generated_by' => 'template-generic-v1',
+            'betting_plan' => [
+                'bet_pick' => 'Bet '.$pickLabel.'.',
+                'reasoning' => sprintf(
+                    'The model gives %s the higher win probability at %s.',
+                    $context['picked_team'],
+                    $this->percent((float) $context['picked_probability'])
+                ),
+            ],
+            'social_caption' => sprintf(
+                '%s lean: %s at %s win probability.',
+                strtoupper($sport),
+                $context['picked_team'],
+                $this->percent((float) $context['picked_probability'])
+            ),
+        ];
+    }
+
+    private function buildSportPrompt(Model $prediction, ?Model $game, string $sport): string
+    {
+        $context = $this->buildGenericNarrativeContext($prediction, $game, $sport);
+
+        return implode("\n", array_filter([
+            'Create a concise sports betting narrative from this model data.',
+            'Return data that matches this exact structure: summary, key_points, risk_note, betting_plan, social_caption.',
+            'betting_plan keys: bet_pick (string), reasoning (string).',
+            'Do not include markdown, unsupported fields, or guarantees.',
+            'Keep the tone analytical, cautious, and specific.',
+            'Sport: '.strtoupper($sport),
+            'Home team: '.$context['home_team'],
+            'Away team: '.$context['away_team'],
+            'Home win probability: '.$this->percent((float) $context['home_win_probability']),
+            'Away win probability: '.$this->percent((float) $context['away_win_probability']),
+            $context['predicted_spread'] !== null ? 'Predicted spread (positive favors home): '.$this->signedNumber((float) $context['predicted_spread']) : null,
+            $context['predicted_total'] !== null ? 'Predicted total: '.$this->number((float) $context['predicted_total']) : null,
+            'Confidence score: '.$this->number((float) $context['confidence_score']),
+            $context['home_metric'] !== null ? 'Home model metric: '.$context['home_metric'] : null,
+            $context['away_metric'] !== null ? 'Away model metric: '.$context['away_metric'] : null,
+        ]));
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildGenericNarrativeContext(Model $prediction, ?Model $game, string $sport): array
+    {
+        $game ??= $prediction->game;
+        if ($game) {
+            $game->loadMissing(['homeTeam', 'awayTeam']);
+        }
+
+        $homeTeam = $this->teamName($game?->homeTeam, 'Home team');
+        $awayTeam = $this->teamName($game?->awayTeam, 'Away team');
+        $homeWinProb = max(0.0, min(1.0, (float) ($prediction->win_probability ?? 0)));
+        $awayWinProb = max(0.0, min(1.0, 1 - $homeWinProb));
+        $pickHome = $homeWinProb >= $awayWinProb;
+        $pickedTeam = $pickHome ? $homeTeam : $awayTeam;
+
+        return [
+            'template_version' => 'template-generic-v1',
+            'sport' => $sport,
+            'game_id' => (int) ($prediction->game_id ?? 0),
+            'home_team' => $homeTeam,
+            'away_team' => $awayTeam,
+            'home_win_probability' => $homeWinProb,
+            'away_win_probability' => $awayWinProb,
+            'picked_team' => $pickedTeam,
+            'picked_probability' => $pickHome ? $homeWinProb : $awayWinProb,
+            'predicted_spread' => $prediction->predicted_spread !== null ? (float) $prediction->predicted_spread : null,
+            'predicted_total' => $prediction->predicted_total !== null ? (float) $prediction->predicted_total : null,
+            'confidence_score' => (float) ($prediction->confidence_score ?? 0),
+            'home_metric' => $this->firstMetricValue($prediction, ['home_elo', 'home_team_elo', 'home_combined_elo', 'home_fpi', 'home_off_eff']),
+            'away_metric' => $this->firstMetricValue($prediction, ['away_elo', 'away_team_elo', 'away_combined_elo', 'away_fpi', 'away_off_eff']),
+        ];
+    }
+
+    private function firstMetricValue(Model $prediction, array $fields): ?string
+    {
+        foreach ($fields as $field) {
+            if (isset($prediction->{$field}) && $prediction->{$field} !== null) {
+                return $field.': '.$this->number((float) $prediction->{$field});
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -610,9 +818,9 @@ class PredictionNarrativeService
 
         return implode("\n", [
             'Create a concise NBA prediction narrative from this model data.',
-            'Return strict JSON with keys: summary (string), key_points (array of 4-7 strings), risk_note (string), betting_plan (object), social_caption (string).',
+            'Return data that matches this exact structure: summary, key_points, risk_note, betting_plan, social_caption.',
             'betting_plan keys: bet_pick (string), reasoning (string).',
-            'Do not include markdown or extra keys.',
+            'Do not include markdown, hedging disclaimers beyond the risk note, or unsupported fields.',
             'Include one key point on team stats comparison and one on team trend direction.',
             'Write in plain, punchy language for social sharing. Keep lines short and specific.',
             'Use betting_plan for the exact wager recommendation and the reason behind it.',
@@ -633,84 +841,6 @@ class PredictionNarrativeService
             ...$trendLines,
             'Tone: analytical, cautious, no guarantees.',
         ]);
-    }
-
-    /**
-     * @return array{
-     *   summary:string,
-     *   key_points:array<int,string>,
-     *   risk_note:string,
-     *   betting_plan:array{
-     *     bet_pick:string,
-     *     reasoning:string
-     *   }|null,
-     *   social_caption:string|null
-     * }|null
-     */
-    private function decodeNarrativePayload(string $content): ?array
-    {
-        $raw = trim($content);
-        if ($raw === '') {
-            return null;
-        }
-
-        $decoded = json_decode($raw, true);
-        if (! is_array($decoded)) {
-            if (! preg_match('/\{.*\}/s', $raw, $matches)) {
-                return null;
-            }
-            $decoded = json_decode($matches[0], true);
-            if (! is_array($decoded)) {
-                return null;
-            }
-        }
-
-        $summary = trim((string) ($decoded['summary'] ?? ''));
-        $riskNote = trim((string) ($decoded['risk_note'] ?? ''));
-        $socialCaption = trim((string) ($decoded['social_caption'] ?? ''));
-        $keyPoints = $decoded['key_points'] ?? null;
-
-        if ($summary === '' || $riskNote === '' || ! is_array($keyPoints)) {
-            return null;
-        }
-
-        $normalizedKeyPoints = array_values(array_filter(
-            array_map(fn ($point) => trim((string) $point), $keyPoints),
-            fn ($point) => $point !== ''
-        ));
-
-        if ($normalizedKeyPoints === []) {
-            return null;
-        }
-
-        $bettingPlan = $decoded['betting_plan'] ?? null;
-        $normalizedBettingPlan = null;
-        if (is_array($bettingPlan)) {
-            $betPick = trim((string) ($bettingPlan['bet_pick'] ?? ''));
-            $reasoning = trim((string) ($bettingPlan['reasoning'] ?? ''));
-
-            if ($betPick === '' && $reasoning === '') {
-                $legacySpreadLean = trim((string) ($bettingPlan['spread_lean'] ?? ''));
-                $legacyMoneylineHedge = trim((string) ($bettingPlan['moneyline_hedge'] ?? ''));
-                $betPick = $legacySpreadLean;
-                $reasoning = $legacyMoneylineHedge;
-            }
-
-            if ($betPick !== '' && $reasoning !== '') {
-                $normalizedBettingPlan = [
-                    'bet_pick' => $betPick,
-                    'reasoning' => $reasoning,
-                ];
-            }
-        }
-
-        return [
-            'summary' => $summary,
-            'key_points' => $normalizedKeyPoints,
-            'risk_note' => $riskNote,
-            'betting_plan' => $normalizedBettingPlan,
-            'social_caption' => $socialCaption !== '' ? $socialCaption : null,
-        ];
     }
 
     /**

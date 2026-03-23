@@ -1,0 +1,4 @@
+prediction_id,game_date,feature_home_elo,target_home_margin
+10,2026-02-01,1500,5
+11,2026-02-02,1501,6
+12,2026-02-03,1502,7

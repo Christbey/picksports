@@ -48,6 +48,8 @@ class PredictionResource extends AbstractPredictionResource
             $data['home_combined_elo'] = (float) $this->home_combined_elo;
         }
 
+        $data = $this->appendNarrativeFields($data, $request, 'mlb');
+
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }
 }

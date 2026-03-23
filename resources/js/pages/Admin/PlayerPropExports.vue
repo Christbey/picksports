@@ -2119,7 +2119,7 @@ const activeTabMeta = computed(() => tabMeta[activeTab.value]);
                                     class="h-11 w-11 border-2 border-border"
                                 >
                                     <AvatarImage
-                                        :src="rec.player.headshot ?? undefined"
+                                        :src="rec.player.headshot ?? ''"
                                         :alt="rec.player.name"
                                         class="object-cover"
                                     />

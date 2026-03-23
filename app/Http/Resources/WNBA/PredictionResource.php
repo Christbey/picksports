@@ -48,6 +48,8 @@ class PredictionResource extends AbstractPredictionResource
             $data['home_def_eff'] = $this->home_def_eff ? (float) $this->home_def_eff : null;
         }
 
+        $data = $this->appendNarrativeFields($data, $request, 'wnba');
+
         return $this->appendStandardTimestamps($data);
     }
 }

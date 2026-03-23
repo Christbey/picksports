@@ -21,6 +21,9 @@ class Prediction extends Model
         'predicted_total',
         'win_probability',
         'confidence_score',
+        'model_version',
+        'feature_version',
+        'blend_version',
         'model_metadata',
         'actual_spread',
         'actual_total',
@@ -34,6 +37,12 @@ class Prediction extends Model
         'live_predicted_total',
         'live_seconds_remaining',
         'live_updated_at',
+        'narrative_json',
+        'narrative_provider',
+        'narrative_model',
+        'narrative_input_hash',
+        'narrative_latency_ms',
+        'narrative_generated_at',
     ];
 
     protected function casts(): array
@@ -45,6 +54,9 @@ class Prediction extends Model
             'predicted_total' => 'decimal:1',
             'win_probability' => 'decimal:3',
             'confidence_score' => 'decimal:2',
+            'model_version' => 'string',
+            'feature_version' => 'string',
+            'blend_version' => 'string',
             'model_metadata' => 'array',
             'actual_spread' => 'decimal:1',
             'actual_total' => 'decimal:1',
@@ -58,6 +70,9 @@ class Prediction extends Model
             'live_predicted_total' => 'decimal:1',
             'live_seconds_remaining' => 'integer',
             'live_updated_at' => 'datetime',
+            'narrative_json' => 'array',
+            'narrative_latency_ms' => 'integer',
+            'narrative_generated_at' => 'datetime',
         ];
     }
 

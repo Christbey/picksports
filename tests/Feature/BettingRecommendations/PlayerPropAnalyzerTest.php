@@ -1,5 +1,6 @@
 <?php
 
+use App\AI\Agents\PlayerPropNarrativeAgent;
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
 use App\Models\NBA\PlayerProp;
@@ -460,4 +461,145 @@ test('filters recommendations by prop market', function () {
     expect($all->count())->toBeGreaterThanOrEqual(2);
     expect($pointsOnly)->toHaveCount(1);
     expect($pointsOnly->first()['prop']->market)->toBe('player_points');
+});
+
+test('persists template player prop narrative when ai provider is template', function () {
+    config()->set('ai.features.player_prop_narratives.provider', 'template');
+    config()->set('services.openai.api_key', null);
+
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Narrative Template Player',
+        'first_name' => 'Narrative',
+        'last_name' => 'Template Player',
+    ]);
+
+    for ($i = 0; $i < 6; $i++) {
+        $historicalGame = Game::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 3)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        PlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'points' => 31,
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-02-25',
+        'season' => 2026,
+    ]);
+
+    $prop = PlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Narrative Template Player',
+        'market' => 'player_points',
+        'line' => 24.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $recommendations = app(PlayerPropAnalyzer::class)->analyzeProps('NBA', 3, '2026-02-25');
+
+    $prop->refresh();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($recommendations->first()['narrative'])->toBeArray()
+        ->and($recommendations->first()['narrative']['generated_by'])->toBe('template-player-prop-v1')
+        ->and($prop->narrative_json)->toBeArray()
+        ->and($prop->narrative_input_hash)->not->toBeEmpty()
+        ->and($prop->narrative_generated_at)->not->toBeNull();
+});
+
+test('uses ai structured agent for player prop narratives when openai provider is enabled', function () {
+    config()->set('ai.features.player_prop_narratives.provider', 'openai');
+    config()->set('ai.features.player_prop_narratives.model', 'gpt-4o-mini');
+    config()->set('services.openai.api_key', 'test-openai-key');
+    config()->set('ai.providers.openai.key', 'test-openai-key');
+
+    PlayerPropNarrativeAgent::fake([
+        [
+            'summary' => 'NBA prop lean: Over 24.5 Points for Narrative AI Player.',
+            'key_points' => [
+                'Model over probability leads the market.',
+                'Recent form supports the over angle.',
+                'Projection clears the line with room.',
+            ],
+            'risk_note' => 'Risk note: minutes volatility can still drag the over.',
+            'betting_plan' => [
+                'bet_pick' => 'Bet Over 24.5 Points.',
+                'reasoning' => 'The model keeps the over probability above the market baseline.',
+            ],
+            'social_caption' => 'Narrative AI Player over 24.5 is the lean.',
+        ],
+    ])->preventStrayPrompts();
+
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Narrative AI Player',
+        'first_name' => 'Narrative',
+        'last_name' => 'AI Player',
+    ]);
+
+    for ($i = 0; $i < 6; $i++) {
+        $historicalGame = Game::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 3)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        PlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'points' => 32,
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-02-25',
+        'season' => 2026,
+    ]);
+
+    $prop = PlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Narrative AI Player',
+        'market' => 'player_points',
+        'line' => 24.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $recommendations = app(PlayerPropAnalyzer::class)->analyzeProps('NBA', 3, '2026-02-25');
+
+    $prop->refresh();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($recommendations->first()['narrative'])->toBeArray()
+        ->and($recommendations->first()['narrative']['generated_by'])->toBe('openai:gpt-4o-mini')
+        ->and($recommendations->first()['narrative']['summary'])->toContain('Over 24.5 Points')
+        ->and($prop->narrative_provider)->toBe('openai')
+        ->and($prop->narrative_model)->toBe('gpt-4o-mini');
 });

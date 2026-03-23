@@ -1,0 +1,80 @@
+{
+    "report_type": "nba_win_probability_calibration_rolling_evaluation",
+    "generated_at": "2026-03-22T18:06:18-05:00",
+    "config": {
+        "input": "/Users/bey/Herd/github/picksports/storage/app/ml/test_nba_rolling_calibration_dataset.csv",
+        "min_train_size": 4,
+        "test_window_size": 2,
+        "step_size": 2,
+        "learning_rate": 0.05,
+        "iterations": 2000
+    },
+    "summary": {
+        "window_count": 2,
+        "avg_baseline_brier": 0.30795,
+        "avg_challenger_brier": 0.1792205126547746,
+        "avg_brier_delta": -0.1287294873452254,
+        "avg_baseline_log_loss": 0.8203932106536048,
+        "avg_challenger_log_loss": 0.549972344656293,
+        "avg_log_loss_delta": -0.27042086599731185,
+        "challenger_better_window_count": 2
+    },
+    "windows": [
+        {
+            "window": 1,
+            "train_rows": 4,
+            "evaluation_rows": 2,
+            "train_range": {
+                "start": "2026-02-01",
+                "end": "2026-02-04"
+            },
+            "evaluation_range": {
+                "start": "2026-02-05",
+                "end": "2026-02-06"
+            },
+            "model": {
+                "alpha": 1.4220538523506123,
+                "beta": -1.8736777066139996
+            },
+            "metrics": {
+                "count": 2,
+                "baseline_brier": 0.31265,
+                "challenger_brier": 0.19873212979910682,
+                "brier_delta": -0.11391787020089317,
+                "baseline_log_loss": 0.83406345439139,
+                "challenger_log_loss": 0.5901204850574575,
+                "log_loss_delta": -0.24394296933393245,
+                "baseline_accuracy": 0.5,
+                "challenger_accuracy": 1
+            }
+        },
+        {
+            "window": 2,
+            "train_rows": 6,
+            "evaluation_rows": 2,
+            "train_range": {
+                "start": "2026-02-01",
+                "end": "2026-02-06"
+            },
+            "evaluation_range": {
+                "start": "2026-02-07",
+                "end": "2026-02-08"
+            },
+            "model": {
+                "alpha": 1.8982604521338502,
+                "beta": -2.499838064963101
+            },
+            "metrics": {
+                "count": 2,
+                "baseline_brier": 0.30325,
+                "challenger_brier": 0.15970889551044237,
+                "brier_delta": -0.14354110448955765,
+                "baseline_log_loss": 0.8067229669158197,
+                "challenger_log_loss": 0.5098242042551284,
+                "log_loss_delta": -0.29689876266069126,
+                "baseline_accuracy": 0.5,
+                "challenger_accuracy": 1
+            }
+        }
+    ]
+}

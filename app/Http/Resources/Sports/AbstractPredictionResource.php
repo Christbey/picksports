@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Sports;
 
+use App\Services\Predictions\PredictionNarrativeService;
 use App\Support\PredictionFieldAccess;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -118,6 +119,25 @@ abstract class AbstractPredictionResource extends JsonResource
             : null;
         $data[$remainingField] = $isLive ? $this->{$remainingField} : null;
         $data['live_updated_at'] = $isLive ? $this->live_updated_at?->toIso8601String() : null;
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function appendNarrativeFields(array $data, Request $request, string $sport): array
+    {
+        $game = $this->relationLoaded('game') ? $this->game : null;
+        $narrativeService = app(PredictionNarrativeService::class);
+        $currentHash = $narrativeService->inputHashForSport($this->resource, $game, $sport);
+        $storedNarrative = is_array($this->narrative_json ?? null) ? $this->narrative_json : null;
+        $storedHash = (string) ($this->narrative_input_hash ?? '');
+
+        $data['narrative'] = $storedNarrative && $storedHash !== '' && hash_equals($storedHash, $currentHash)
+            ? $storedNarrative
+            : $narrativeService->forSport($this->resource, $game, $sport, false);
 
         return $data;
     }

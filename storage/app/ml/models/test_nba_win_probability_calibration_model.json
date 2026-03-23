@@ -1,0 +1,38 @@
+{
+    "model_type": "nba_win_probability_platt_calibration",
+    "trained_at": "2026-03-22T18:06:18-05:00",
+    "alpha": 4.064297781443479,
+    "beta": -5.660505825976172,
+    "learning_rate": 0.05,
+    "iterations": 4000,
+    "metrics": {
+        "validation": {
+            "count": 4,
+            "baseline_brier": 0.342875,
+            "challenger_brier": 0.2703464923288118,
+            "brier_delta": -0.07252850767118818,
+            "baseline_log_loss": 0.9310773363799537,
+            "challenger_log_loss": 0.7437932306755626,
+            "log_loss_delta": -0.18728410570439114,
+            "baseline_accuracy": 0.5,
+            "challenger_accuracy": 0.5
+        },
+        "test": {
+            "count": 4,
+            "baseline_brier": 0.349225,
+            "challenger_brier": 0.30483739742333726,
+            "brier_delta": -0.044387602576662744,
+            "baseline_log_loss": 0.9458546827850448,
+            "challenger_log_loss": 0.8058931711603015,
+            "log_loss_delta": -0.13996151162474335,
+            "baseline_accuracy": 0.5,
+            "challenger_accuracy": 0.5
+        }
+    },
+    "source": {
+        "input_dir": "/Users/bey/Herd/github/picksports/storage/app/ml/train-calibration-splits",
+        "train_file": "nba_snapshot_train.csv",
+        "validation_file": "nba_snapshot_validation.csv",
+        "test_file": "nba_snapshot_test.csv"
+    }
+}

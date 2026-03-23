@@ -1,0 +1,107 @@
+{
+    "model_type": "nba_spread_residual_ridge",
+    "trained_at": "2026-03-22T17:59:59-05:00",
+    "selection_metric": "validation_challenger_mae",
+    "feature_columns": [
+        "feature_elo_diff",
+        "feature_recent_form_diff",
+        "feature_rest_day_diff",
+        "feature_injury_spread_adj",
+        "feature_market_home_spread",
+        "feature_model_predicted_spread",
+        "feature_confidence_score"
+    ],
+    "best_ridge_lambda": 10,
+    "intercept": -3.9015303002510366,
+    "coefficients": {
+        "feature_elo_diff": 0.03360851219959487,
+        "feature_recent_form_diff": 0.014209930899528496,
+        "feature_rest_day_diff": 0.028763835381886444,
+        "feature_injury_spread_adj": 0,
+        "feature_market_home_spread": 0.03999419066837741,
+        "feature_model_predicted_spread": 0.048588943924660906,
+        "feature_confidence_score": 0.06279887482419634
+    },
+    "metrics": {
+        "validation": {
+            "count": 2,
+            "baseline_mae": 1.15,
+            "challenger_mae": 0.030979789641045086,
+            "mae_delta": -1.1190202103589548
+        },
+        "test": {
+            "count": 2,
+            "baseline_mae": 1.1999999999999997,
+            "challenger_mae": 0.03513116859292165,
+            "mae_delta": -1.164868831407078
+        }
+    },
+    "sweep_results": [
+        {
+            "ridge_lambda": 10,
+            "validation": {
+                "count": 2,
+                "baseline_mae": 1.15,
+                "challenger_mae": 0.030979789641045086,
+                "mae_delta": -1.1190202103589548
+            },
+            "test": {
+                "count": 2,
+                "baseline_mae": 1.1999999999999997,
+                "challenger_mae": 0.03513116859292165,
+                "mae_delta": -1.164868831407078
+            }
+        },
+        {
+            "ridge_lambda": 1,
+            "validation": {
+                "count": 2,
+                "baseline_mae": 1.15,
+                "challenger_mae": 0.05935618710102686,
+                "mae_delta": -1.090643812898973
+            },
+            "test": {
+                "count": 2,
+                "baseline_mae": 1.1999999999999997,
+                "challenger_mae": 0.03272745859743109,
+                "mae_delta": -1.1672725414025686
+            }
+        },
+        {
+            "ridge_lambda": 0.1,
+            "validation": {
+                "count": 2,
+                "baseline_mae": 1.15,
+                "challenger_mae": 0.0848090531644412,
+                "mae_delta": -1.0651909468355587
+            },
+            "test": {
+                "count": 2,
+                "baseline_mae": 1.1999999999999997,
+                "challenger_mae": 0.08293812695645997,
+                "mae_delta": -1.1170618730435398
+            }
+        },
+        {
+            "ridge_lambda": 0,
+            "validation": {
+                "count": 2,
+                "baseline_mae": 1.15,
+                "challenger_mae": 0.17000000000001037,
+                "mae_delta": -0.9799999999999895
+            },
+            "test": {
+                "count": 2,
+                "baseline_mae": 1.1999999999999997,
+                "challenger_mae": 0.20000000000001217,
+                "mae_delta": -0.9999999999999876
+            }
+        }
+    ],
+    "source": {
+        "input_dir": "/Users/bey/Herd/github/picksports/storage/app/ml/tune-model-splits",
+        "train_file": "nba_snapshot_train.csv",
+        "validation_file": "nba_snapshot_validation.csv",
+        "test_file": "nba_snapshot_test.csv"
+    }
+}

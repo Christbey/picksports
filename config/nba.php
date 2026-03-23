@@ -253,13 +253,19 @@ return [
             'pregame_total_floor_buffer' => env('NBA_LIVE_PREGAME_TOTAL_FLOOR_BUFFER', 20.0),
         ],
 
+        'win_probability_calibration' => [
+            'enabled' => env('NBA_WIN_PROBABILITY_CALIBRATION_ENABLED', false),
+            'apply_to_live_output' => env('NBA_WIN_PROBABILITY_CALIBRATION_APPLY_TO_LIVE_OUTPUT', false),
+            'artifact_path' => env('NBA_WIN_PROBABILITY_CALIBRATION_ARTIFACT', storage_path('app/ml/models/nba_win_probability_calibration_model.json')),
+        ],
+
         // Narrative generation settings for prediction summaries.
         'narrative' => [
-            'provider' => env('NBA_PREDICTION_NARRATIVE_PROVIDER', 'template'),
-            'model' => env('NBA_PREDICTION_NARRATIVE_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+            'provider' => env('NBA_PREDICTION_NARRATIVE_PROVIDER', env('AI_SPORTS_NARRATIVE_PROVIDER', 'template')),
+            'model' => env('NBA_PREDICTION_NARRATIVE_MODEL', env('AI_SPORTS_NARRATIVE_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini'))),
             'temperature' => env('NBA_PREDICTION_NARRATIVE_TEMPERATURE', 0.2),
             'max_tokens' => env('NBA_PREDICTION_NARRATIVE_MAX_TOKENS', 220),
-            'timeout_seconds' => env('NBA_PREDICTION_NARRATIVE_TIMEOUT_SECONDS', 8),
+            'timeout_seconds' => env('NBA_PREDICTION_NARRATIVE_TIMEOUT_SECONDS', env('AI_SPORTS_NARRATIVE_TIMEOUT_SECONDS', 8)),
             'trends_sample_size' => env('NBA_PREDICTION_NARRATIVE_TRENDS_SAMPLE_SIZE', 16),
             'trends_tier' => env('NBA_PREDICTION_NARRATIVE_TRENDS_TIER', 'basic'),
         ],

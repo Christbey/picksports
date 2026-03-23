@@ -14,11 +14,13 @@ class DailyPredictionsDigestMail extends Mailable
     use Queueable, SerializesModels;
 
     /**
+     * @param  array{headline:string,intro:string,highlights:array<int,string>}  $summary
      * @param  array<int, array<string, mixed>>  $predictions
      * @param  array<int, array<string, mixed>>  $playerProps
      */
     public function __construct(
         public User $user,
+        public array $summary,
         public array $predictions,
         public array $playerProps,
     ) {}
@@ -36,6 +38,7 @@ class DailyPredictionsDigestMail extends Mailable
             markdown: 'mail.daily-predictions-digest',
             with: [
                 'user' => $this->user,
+                'summary' => $this->summary,
                 'predictions' => $this->predictions,
                 'playerProps' => $this->playerProps,
                 'dashboardUrl' => route('dashboard'),

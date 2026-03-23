@@ -10,9 +10,11 @@ use Illuminate\Support\Collection;
 class PlayerPropAnalyzer
 {
     public function __construct(
-        protected ?OddsApiService $oddsApiService = null
+        protected ?OddsApiService $oddsApiService = null,
+        protected ?PlayerPropNarrativeService $playerPropNarrativeService = null
     ) {
         $this->oddsApiService ??= app(OddsApiService::class);
+        $this->playerPropNarrativeService ??= app(PlayerPropNarrativeService::class);
     }
 
     /**
@@ -91,7 +93,7 @@ class PlayerPropAnalyzer
         $recommendations = collect();
 
         foreach ($props as $prop) {
-            $recommendation = $this->analyzeProp($prop, $minGames, $sportConfig);
+            $recommendation = $this->analyzeProp($prop, $minGames, $sportConfig, $sport);
 
             if ($recommendation && $recommendation['confidence'] >= 60) {
                 $recommendations->push($recommendation);
@@ -104,7 +106,7 @@ class PlayerPropAnalyzer
     /**
      * Analyze a single prop and generate recommendation
      */
-    protected function analyzeProp(Model $prop, int $minGames, array $sportConfig): ?array
+    protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport): ?array
     {
         // Try to find player by name fuzzy matching
         $playerMatch = $this->findPlayerByName(
@@ -193,7 +195,7 @@ class PlayerPropAnalyzer
 
         $this->persistPredictionSnapshot($prop, $analysis, $dataQualityScore, $matchQualityScore, $context['combined_factor']);
 
-        return [
+        return $this->playerPropNarrativeService->attachNarrative([
             'prop' => $prop,
             'player' => $player,
             'game' => $prop->game,
@@ -221,7 +223,7 @@ class PlayerPropAnalyzer
             'data_quality_score' => $dataQualityScore,
             'match_quality_score' => $matchQualityScore,
             'confidence_decomposition' => $analysis['confidence_decomposition'] ?? null,
-        ];
+        ], $sport);
     }
 
     /**

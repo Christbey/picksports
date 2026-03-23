@@ -85,6 +85,9 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             'predicted_total' => $predictedTotal,
             'win_probability' => $winProbability,
             'confidence_score' => $confidenceScore,
+            'model_version' => $this->modelVersion(),
+            'feature_version' => $this->featureVersion(),
+            'blend_version' => $this->blendVersion(),
         ];
     }
 

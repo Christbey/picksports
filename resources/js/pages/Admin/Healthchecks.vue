@@ -344,7 +344,8 @@ function displayMessage(message: string): string {
 function metadataEntries(
     check: Healthcheck,
 ): Array<{ key: string; label: string; value: string; raw: unknown }> {
-    if (!check.metadata) return [];
+    const metadata = check.metadata;
+    if (!metadata) return [];
 
     const keys = [
         'in_season',
@@ -367,12 +368,12 @@ function metadataEntries(
     ];
 
     return keys
-        .filter((key) => key in check.metadata)
+        .filter((key) => key in metadata)
         .map((key) => ({
             key,
             label: formatMetadataLabel(key),
-            value: formatMetadataValue(key, check.metadata?.[key]),
-            raw: check.metadata?.[key],
+            value: formatMetadataValue(key, metadata[key]),
+            raw: metadata[key],
         }))
         .filter((entry) => entry.value !== '');
 }

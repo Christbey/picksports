@@ -6,6 +6,7 @@ use App\Http\Resources\BettingRecommendationResource;
 use App\Mail\DailyPredictionsDigestMail;
 use App\Models\DailyDigestSend;
 use App\Models\User;
+use App\Services\AI\SportsAiContentService;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\TierAccessBypass;
 use Carbon\CarbonInterface;
@@ -42,6 +43,7 @@ class DailyDigestService
     public function __construct(
         private readonly PlayerPropAnalyzer $playerPropAnalyzer,
         private readonly TierAccessBypass $tierAccessBypass,
+        private readonly SportsAiContentService $sportsAiContentService,
     ) {}
 
     public function sendDueDigests(?CarbonInterface $now = null): int
@@ -77,6 +79,7 @@ class DailyDigestService
             try {
                 Mail::to($user)->send(new DailyPredictionsDigestMail(
                     user: $user,
+                    summary: $payload['summary'],
                     predictions: $payload['predictions'],
                     playerProps: $payload['player_props'],
                 ));
@@ -127,7 +130,11 @@ class DailyDigestService
     }
 
     /**
-     * @return array{predictions: array<int, array<string, mixed>>, player_props: array<int, array<string, mixed>>}|null
+     * @return array{
+     *   summary: array{headline:string,intro:string,highlights:array<int,string>},
+     *   predictions: array<int, array<string, mixed>>,
+     *   player_props: array<int, array<string, mixed>>
+     * }|null
      */
     public function buildDigestForUser(User $user, ?CarbonInterface $now = null): ?array
     {
@@ -156,7 +163,14 @@ class DailyDigestService
             return null;
         }
 
+        $summary = $this->sportsAiContentService->generateDailyDigestSummary(
+            $predictions,
+            $playerProps,
+            $sports->all(),
+        ) ?? $this->buildDigestSummaryFallback($predictions, $playerProps, $sports->all());
+
         return [
+            'summary' => $summary,
             'predictions' => $predictions,
             'player_props' => $playerProps,
         ];
@@ -305,6 +319,66 @@ class DailyDigestService
             'predicted_total' => $prediction->predicted_total !== null ? (float) $prediction->predicted_total : null,
             'game_time' => $game->game_date?->format('M j, g:i A'),
             'url' => url("/{$sport}/games/{$game->id}"),
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $predictions
+     * @param  array<int, array<string, mixed>>  $playerProps
+     * @param  array<int, string>  $sports
+     * @return array{headline:string,intro:string,highlights:array<int,string>}
+     */
+    private function buildDigestSummaryFallback(array $predictions, array $playerProps, array $sports): array
+    {
+        $sportsLabel = collect($sports)
+            ->map(fn (string $sport) => strtoupper($sport))
+            ->unique()
+            ->values()
+            ->implode(', ');
+
+        $highlights = [];
+
+        if ($predictions !== []) {
+            $topPrediction = $predictions[0];
+            $highlights[] = sprintf(
+                '%s %s leans %s at %s confidence.',
+                $topPrediction['sport'],
+                $topPrediction['matchup'],
+                $topPrediction['pick'],
+                number_format((float) $topPrediction['confidence'], 1).'%'
+            );
+        }
+
+        if ($playerProps !== []) {
+            $topProp = $playerProps[0];
+            $highlights[] = sprintf(
+                '%s: %s %s for %s.',
+                $topProp['sport'],
+                $topProp['player_name'],
+                $topProp['recommendation'],
+                $topProp['matchup']
+            );
+        }
+
+        if (count($predictions) > 1) {
+            $secondPrediction = $predictions[1];
+            $highlights[] = sprintf(
+                'Another board to watch: %s %s with projected total %s.',
+                $secondPrediction['sport'],
+                $secondPrediction['matchup'],
+                $secondPrediction['predicted_total'] !== null
+                    ? number_format((float) $secondPrediction['predicted_total'], 1)
+                    : 'N/A'
+            );
+        }
+
+        return [
+            'headline' => $sportsLabel !== '' ? "{$sportsLabel} Daily Digest" : 'Daily Picks Digest',
+            'intro' => sprintf(
+                'Here is a quick scan of today\'s strongest model-driven spots%s, with a mix of game picks and player props where available.',
+                $sportsLabel !== '' ? " across {$sportsLabel}" : ''
+            ),
+            'highlights' => array_values(array_slice($highlights, 0, 3)),
         ];
     }
 }

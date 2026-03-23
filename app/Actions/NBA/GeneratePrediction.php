@@ -11,6 +11,7 @@ use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
+use App\Services\NBA\WinProbabilityCalibrationInferenceService;
 use Illuminate\Database\Eloquent\Model;
 
 class GeneratePrediction extends AbstractPredictionGenerator
@@ -25,6 +26,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     /** @var array<string, mixed> Total model rollout metadata */
     private array $totalMetadata = [];
+
+    /** @var array<string, mixed> Win probability calibration metadata */
+    private array $winProbabilityCalibrationMetadata = [];
 
     protected const SPORT_KEY = 'nba';
 
@@ -61,6 +65,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $this->metadata = [];
         $this->trueEpaMetadata = [];
         $this->totalMetadata = [];
+        $this->winProbabilityCalibrationMetadata = [];
 
         $config = config('nba.prediction');
         $homeCourtAdvantage = config('nba.elo.home_court_advantage');
@@ -139,6 +144,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'injury_spread_adj' => round($injurySpreadAdj, 2),
             'injury_total_adj' => round($usePersistedInjuryContext ? 0.0 : $injuryContext['total_adj'], 2),
             'injury_model_source' => $usePersistedInjuryContext ? 'persisted_team_rating' : 'raw_player_status',
+            'baseline_model_spread' => round($modelSpread, 2),
         ];
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaSpreadMeta];
 
@@ -288,6 +294,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
         float $confidenceScore
     ): array {
         $defaultEfficiency = config('nba.prediction.default_efficiency');
+        $calibration = app(WinProbabilityCalibrationInferenceService::class)
+            ->calibrate($this->getSport(), $winProbability);
+        $this->winProbabilityCalibrationMetadata = $calibration;
+
+        $activeWinProbability = round((float) ($calibration['active_win_probability'] ?? $winProbability), 3);
+        $activeConfidenceScore = round((float) ($calibration['active_confidence_score'] ?? $confidenceScore), 2);
+        $baselineWinProbability = round((float) ($calibration['baseline_win_probability'] ?? $winProbability), 3);
+        $baselineConfidenceScore = round((float) ($calibration['baseline_confidence_score'] ?? $confidenceScore), 2);
+        $calibratedWinProbability = round((float) ($calibration['calibrated_win_probability'] ?? $winProbability), 3);
+        $calibratedConfidenceScore = round((float) ($calibration['calibrated_confidence_score'] ?? $confidenceScore), 2);
 
         return array_merge(
             parent::buildPredictionData(
@@ -297,17 +313,54 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 $awayMetrics,
                 $predictedSpread,
                 $predictedTotal,
-                $winProbability,
-                $confidenceScore
+                $activeWinProbability,
+                $activeConfidenceScore
             ),
             $this->efficiencyPredictionData($homeMetrics, $awayMetrics, $defaultEfficiency),
             $this->metadata,
             [
+                'model_version' => $this->modelVersion(),
+                'feature_version' => $this->featureVersion(),
+                'blend_version' => $this->blendVersion(),
                 'model_metadata' => [
                     'model' => 'nba_ensemble',
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
                     'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+                    'win_probability_calibration' => $calibration,
+                ],
+                '_snapshot' => [
+                    'model_version' => $this->modelVersion(),
+                    'feature_version' => $this->featureVersion(),
+                    'blend_version' => $this->blendVersion(),
+                    'features' => $this->metadata,
+                    'outputs' => [
+                        'baseline_predicted_spread' => round($this->metadata['baseline_model_spread'] ?? $predictedSpread, 3),
+                        'baseline_predicted_total' => round($this->totalMetadata['legacy_total'] ?? $predictedTotal, 3),
+                        'market_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'market_total' => null,
+                        'blended_predicted_spread' => $predictedSpread,
+                        'blended_predicted_total' => $predictedTotal,
+                        'predicted_spread' => $predictedSpread,
+                        'predicted_total' => $predictedTotal,
+                        'baseline_win_probability' => $baselineWinProbability,
+                        'baseline_confidence_score' => $baselineConfidenceScore,
+                        'calibrated_win_probability' => $calibratedWinProbability,
+                        'calibrated_confidence_score' => $calibratedConfidenceScore,
+                        'win_probability' => $activeWinProbability,
+                        'confidence_score' => $activeConfidenceScore,
+                        'active_win_probability_source' => $calibration['active_source'] ?? 'baseline',
+                    ],
+                    'market_context' => [
+                        'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                    ],
+                    'model_metadata' => [
+                        'model' => 'nba_ensemble',
+                        'true_epa' => $this->trueEpaMetadata,
+                        'total_model' => $this->totalMetadata,
+                        'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+                        'win_probability_calibration' => $calibration,
+                    ],
                 ],
             ]
         );

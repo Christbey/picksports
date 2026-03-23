@@ -1,0 +1,137 @@
+{
+    "model_type": "nba_spread_residual_ridge",
+    "trained_at": "2026-03-22T17:56:59-05:00",
+    "selection_metric": "validation_challenger_mae",
+    "feature_columns": [
+        "feature_elo_diff",
+        "feature_recent_form_diff",
+        "feature_rest_day_diff",
+        "feature_injury_spread_adj",
+        "feature_market_home_spread",
+        "feature_model_predicted_spread",
+        "feature_confidence_score"
+    ],
+    "best_ridge_lambda": 100,
+    "intercept": -1.8093641236255884,
+    "coefficients": {
+        "feature_elo_diff": -0.001529519171504225,
+        "feature_recent_form_diff": -0.17410521250619893,
+        "feature_rest_day_diff": -0.6728280011160738,
+        "feature_injury_spread_adj": 0.2924988185734355,
+        "feature_market_home_spread": 0.7750951823210179,
+        "feature_model_predicted_spread": 0.8713885855083151,
+        "feature_confidence_score": -0.0518382379345088
+    },
+    "metrics": {
+        "validation": {
+            "count": 36,
+            "baseline_mae": 8.18611111111111,
+            "challenger_mae": 9.35452241286988,
+            "mae_delta": 1.1684113017587698
+        },
+        "test": {
+            "count": 37,
+            "baseline_mae": 11.048648648648648,
+            "challenger_mae": 10.455270317767058,
+            "mae_delta": -0.5933783308815901
+        }
+    },
+    "sweep_results": [
+        {
+            "ridge_lambda": 100,
+            "validation": {
+                "count": 36,
+                "baseline_mae": 8.18611111111111,
+                "challenger_mae": 9.35452241286988,
+                "mae_delta": 1.1684113017587698
+            },
+            "test": {
+                "count": 37,
+                "baseline_mae": 11.048648648648648,
+                "challenger_mae": 10.455270317767058,
+                "mae_delta": -0.5933783308815901
+            }
+        },
+        {
+            "ridge_lambda": 10,
+            "validation": {
+                "count": 36,
+                "baseline_mae": 8.18611111111111,
+                "challenger_mae": 9.501288381231682,
+                "mae_delta": 1.3151772701205715
+            },
+            "test": {
+                "count": 37,
+                "baseline_mae": 11.048648648648648,
+                "challenger_mae": 10.295917224147564,
+                "mae_delta": -0.7527314245010839
+            }
+        },
+        {
+            "ridge_lambda": 1,
+            "validation": {
+                "count": 36,
+                "baseline_mae": 8.18611111111111,
+                "challenger_mae": 9.536285010427818,
+                "mae_delta": 1.350173899316708
+            },
+            "test": {
+                "count": 37,
+                "baseline_mae": 11.048648648648648,
+                "challenger_mae": 10.261854746966348,
+                "mae_delta": -0.7867939016822998
+            }
+        },
+        {
+            "ridge_lambda": 0.1,
+            "validation": {
+                "count": 36,
+                "baseline_mae": 8.18611111111111,
+                "challenger_mae": 9.540357369562217,
+                "mae_delta": 1.3542462584511075
+            },
+            "test": {
+                "count": 37,
+                "baseline_mae": 11.048648648648648,
+                "challenger_mae": 10.258042639683767,
+                "mae_delta": -0.7906060089648808
+            }
+        },
+        {
+            "ridge_lambda": 0.01,
+            "validation": {
+                "count": 36,
+                "baseline_mae": 8.18611111111111,
+                "challenger_mae": 9.54077155751774,
+                "mae_delta": 1.3546604464066299
+            },
+            "test": {
+                "count": 37,
+                "baseline_mae": 11.048648648648648,
+                "challenger_mae": 10.257656812430804,
+                "mae_delta": -0.7909918362178434
+            }
+        },
+        {
+            "ridge_lambda": 0,
+            "validation": {
+                "count": 36,
+                "baseline_mae": 8.18611111111111,
+                "challenger_mae": 9.540817658120272,
+                "mae_delta": 1.3547065470091617
+            },
+            "test": {
+                "count": 37,
+                "baseline_mae": 11.048648648648648,
+                "challenger_mae": 10.257613890191255,
+                "mae_delta": -0.7910347584573927
+            }
+        }
+    ],
+    "source": {
+        "input_dir": "/Users/bey/Herd/github/picksports/storage/app/ml/splits",
+        "train_file": "nba_snapshot_train.csv",
+        "validation_file": "nba_snapshot_validation.csv",
+        "test_file": "nba_snapshot_test.csv"
+    }
+}

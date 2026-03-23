@@ -1,0 +1,5 @@
+prediction_id,game_date,feature_model_win_probability,target_home_win
+11,2026-02-11,0.82,0
+12,2026-02-12,0.78,1
+13,2026-02-13,0.80,0
+14,2026-02-14,0.81,1

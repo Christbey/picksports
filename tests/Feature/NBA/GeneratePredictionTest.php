@@ -9,6 +9,7 @@ use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
+use App\Models\PredictionFeatureSnapshot;
 
 uses()->group('nba', 'predictions');
 
@@ -35,6 +36,89 @@ it('generates prediction for an upcoming game', function () {
     expect((float) $prediction->away_elo)->toBe(1450.0);
     expect((float) $prediction->predicted_spread)->toBeGreaterThan(0); // Home team favored
     expect((float) $prediction->win_probability)->toBeGreaterThan(0.5); // Home team more likely to win
+    expect($prediction->model_version)->toBe('rules-v1')
+        ->and($prediction->feature_version)->toBe('core-v1')
+        ->and($prediction->blend_version)->toBe('baseline-v1');
+
+    $snapshot = PredictionFeatureSnapshot::query()
+        ->where('prediction_table', 'nba_predictions')
+        ->where('prediction_id', $prediction->id)
+        ->first();
+
+    expect($snapshot)->not->toBeNull()
+        ->and($snapshot->sport)->toBe('nba')
+        ->and($snapshot->outputs['predicted_spread'])->toBeNumeric()
+        ->and($snapshot->outputs['blended_predicted_spread'])->toBeNumeric();
+});
+
+it('stores baseline and challenger win probability side by side when calibration is enabled', function () {
+    $artifactPath = storage_path('app/ml/models/test_inline_nba_calibration_model.json');
+    @mkdir(dirname($artifactPath), 0777, true);
+    file_put_contents($artifactPath, json_encode([
+        'model_type' => 'nba_win_probability_platt_calibration',
+        'alpha' => 1.0,
+        'beta' => -0.4,
+    ], JSON_PRETTY_PRINT));
+
+    config()->set('nba.prediction.win_probability_calibration.enabled', true);
+    config()->set('nba.prediction.win_probability_calibration.apply_to_live_output', false);
+    config()->set('nba.prediction.win_probability_calibration.artifact_path', $artifactPath);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game);
+
+    $snapshot = PredictionFeatureSnapshot::query()
+        ->where('prediction_table', 'nba_predictions')
+        ->where('prediction_id', $prediction->id)
+        ->first();
+
+    expect($prediction)->not->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.enabled'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.active_source'))->toBe('baseline')
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.reason'))->toBe('calibrated')
+        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.baseline_win_probability'))->toBe((float) $prediction->win_probability)
+        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.calibrated_win_probability'))->not->toBe((float) $prediction->win_probability)
+        ->and($snapshot)->not->toBeNull()
+        ->and($snapshot->outputs)->toHaveKeys([
+            'baseline_win_probability',
+            'calibrated_win_probability',
+            'active_win_probability_source',
+        ])
+        ->and($snapshot->outputs['active_win_probability_source'])->toBe('baseline');
+});
+
+it('can promote calibrated win probability to the live output behind config', function () {
+    $artifactPath = storage_path('app/ml/models/test_inline_nba_calibration_model_apply.json');
+    @mkdir(dirname($artifactPath), 0777, true);
+    file_put_contents($artifactPath, json_encode([
+        'model_type' => 'nba_win_probability_platt_calibration',
+        'alpha' => 1.0,
+        'beta' => -0.5,
+    ], JSON_PRETTY_PRINT));
+
+    config()->set('nba.prediction.win_probability_calibration.enabled', true);
+    config()->set('nba.prediction.win_probability_calibration.apply_to_live_output', true);
+    config()->set('nba.prediction.win_probability_calibration.artifact_path', $artifactPath);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game);
+
+    expect($prediction)->not->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.active_source'))->toBe('calibrated')
+        ->and(round((float) data_get($prediction->model_metadata, 'win_probability_calibration.calibrated_win_probability'), 3))->toBe((float) $prediction->win_probability)
+        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.baseline_win_probability'))->not->toBe((float) $prediction->win_probability);
 });
 
 it('does not generate prediction for completed game', function () {

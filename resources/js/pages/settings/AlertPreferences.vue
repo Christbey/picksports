@@ -157,6 +157,12 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     return outputArray;
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return copy.buffer;
+}
+
 async function enableWebPush() {
     webPushBusy.value = true;
     webPushError.value = null;
@@ -187,8 +193,8 @@ async function enableWebPush() {
         if (!subscription) {
             subscription = await registration.pushManager.subscribe({
                 userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(
-                    props.webPush.publicKey,
+                applicationServerKey: toArrayBuffer(
+                    urlBase64ToUint8Array(props.webPush.publicKey),
                 ),
             });
         }

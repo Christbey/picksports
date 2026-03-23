@@ -171,8 +171,6 @@ onMounted(() => {
 
         router.reload({
             only: ['stats', 'users', 'filters', 'meta'],
-            preserveState: true,
-            preserveScroll: true,
         });
     }, 60_000);
 });

@@ -30,6 +30,12 @@ abstract class AbstractPlayerProp extends Model
         'match_quality_score',
         'context_adjustment_factor',
         'confidence_decomposition',
+        'narrative_json',
+        'narrative_provider',
+        'narrative_model',
+        'narrative_input_hash',
+        'narrative_latency_ms',
+        'narrative_generated_at',
         'graded_at',
     ];
 
@@ -52,6 +58,9 @@ abstract class AbstractPlayerProp extends Model
             'match_quality_score' => 'integer',
             'context_adjustment_factor' => 'decimal:3',
             'confidence_decomposition' => 'array',
+            'narrative_json' => 'array',
+            'narrative_latency_ms' => 'integer',
+            'narrative_generated_at' => 'datetime',
             'graded_at' => 'datetime',
         ];
     }

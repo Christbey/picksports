@@ -2,6 +2,7 @@
 
 namespace App\Actions\Sports;
 
+use App\Services\Predictions\PredictionEvaluationRecorder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -78,6 +79,14 @@ abstract class AbstractGradePredictions
                 ...$updates,
                 ...$this->additionalGradingUpdates($prediction, $actualSpread, $actualTotal),
             ]);
+
+            app(PredictionEvaluationRecorder::class)->record(
+                $prediction->fresh(),
+                $prediction->game,
+                $this->inferSportFromPrediction($prediction),
+                (float) $actualSpread,
+                (float) $actualTotal
+            );
 
             if ($isWinnerCorrect) {
                 $winnerCorrect++;
@@ -168,5 +177,10 @@ abstract class AbstractGradePredictions
             'avg_spread_error' => 0,
             'avg_total_error' => 0,
         ];
+    }
+
+    private function inferSportFromPrediction(Model $prediction): string
+    {
+        return strtolower((string) strtok($prediction->getTable(), '_'));
     }
 }

@@ -154,12 +154,6 @@ function assignTier(userId: number, tierSlug: string) {
         },
         {
             preserveScroll: true,
-            onSuccess: () => {
-                console.log('Tier assigned successfully');
-            },
-            onError: (errors) => {
-                console.error('Error assigning tier:', errors);
-            },
             onFinish: () => {
                 assigningTierUserId.value = null;
             },

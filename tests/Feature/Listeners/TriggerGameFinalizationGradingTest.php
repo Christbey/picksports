@@ -5,6 +5,7 @@ use App\Listeners\TriggerGameFinalizationGrading;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
+use App\Models\PredictionEvaluation;
 
 it('grades nba predictions when nba game finalized event is handled', function () {
     $home = Team::factory()->create();
@@ -23,8 +24,16 @@ it('grades nba predictions when nba game finalized event is handled', function (
         'game_id' => $game->id,
         'predicted_spread' => 6.5,
         'predicted_total' => 210.5,
-        'win_probability' => 0.63,
+        'win_probability' => 0.58,
         'confidence_score' => 70,
+        'model_metadata' => [
+            'win_probability_calibration' => [
+                'enabled' => true,
+                'active_source' => 'calibrated',
+                'baseline_win_probability' => 0.63,
+                'calibrated_win_probability' => 0.58,
+            ],
+        ],
         'graded_at' => null,
     ]);
 
@@ -61,6 +70,19 @@ it('grades nba predictions when nba game finalized event is handled', function (
     expect((float) $prediction->actual_spread)->toBe(8.0);
     expect((float) $prediction->actual_total)->toBe(208.0);
     expect($prediction->winner_correct)->toBeTrue();
+
+    $evaluation = PredictionEvaluation::query()
+        ->where('prediction_table', 'nba_predictions')
+        ->where('prediction_id', $prediction->id)
+        ->first();
+
+    expect($evaluation)->not->toBeNull()
+        ->and((float) $evaluation->actuals['actual_spread'])->toBe(8.0)
+        ->and($evaluation->errors['winner_correct'])->toBeTrue()
+        ->and(round((float) $evaluation->errors['baseline_brier_score'], 4))->toBe(0.1369)
+        ->and(round((float) $evaluation->errors['calibrated_brier_score'], 4))->toBe(0.1764)
+        ->and($evaluation->errors['calibration_beats_baseline_brier'])->toBeFalse()
+        ->and($evaluation->errors['active_win_probability_source'])->toBe('calibrated');
 
     $otherPrediction->refresh();
     expect($otherPrediction->graded_at)->toBeNull();

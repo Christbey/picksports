@@ -46,6 +46,8 @@ class PredictionResource extends AbstractPredictionResource
             $data['home_fpi'] = $this->home_fpi ? (float) $this->home_fpi : null;
         }
 
+        $data = $this->appendNarrativeFields($data, $request, 'cfb');
+
         return $this->appendStandardTimestamps($data);
     }
 }

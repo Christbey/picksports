@@ -2,8 +2,12 @@
 
 namespace App\Actions\Sports;
 
+use App\Jobs\NBA\GeneratePredictionNarrative as GenerateNbaPredictionNarrativeJob;
+use App\Jobs\Predictions\GeneratePredictionNarrative as GenerateGenericPredictionNarrativeJob;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
+use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -14,6 +18,12 @@ abstract class AbstractPredictionGenerator
     protected const TEAM_METRIC_MODEL = '';
 
     protected const PREDICTION_MODEL = '';
+
+    protected const MODEL_VERSION = 'rules-v1';
+
+    protected const FEATURE_VERSION = 'core-v1';
+
+    protected const BLEND_VERSION = 'baseline-v1';
 
     /**
      * Get the sport identifier for config lookups
@@ -81,12 +91,26 @@ abstract class AbstractPredictionGenerator
             return null;
         }
 
+        $snapshotPayload = Arr::pull($predictionData, '_snapshot', []);
+
         $predictionModel = $this->getPredictionModel();
 
-        return $predictionModel::updateOrCreate(
+        $prediction = $predictionModel::updateOrCreate(
             ['game_id' => $game->id],
             $predictionData
         );
+
+        app(PredictionFeatureSnapshotRecorder::class)->record(
+            $prediction,
+            $game,
+            $this->getSport(),
+            $predictionData,
+            is_array($snapshotPayload) ? $snapshotPayload : []
+        );
+
+        $this->dispatchNarrativeGeneration($prediction);
+
+        return $prediction;
     }
 
     /**
@@ -200,7 +224,59 @@ abstract class AbstractPredictionGenerator
             'predicted_total' => $predictedTotal,
             'win_probability' => $winProbability,
             'confidence_score' => $confidenceScore,
+            'model_version' => $this->modelVersion(),
+            'feature_version' => $this->featureVersion(),
+            'blend_version' => $this->blendVersion(),
         ];
+    }
+
+    protected function dispatchNarrativeGeneration(Model $prediction): void
+    {
+        if (! $this->predictionSupportsNarratives()) {
+            return;
+        }
+
+        if ($this->getSport() === 'nba') {
+            GenerateNbaPredictionNarrativeJob::dispatch((int) $prediction->getKey());
+
+            return;
+        }
+
+        GenerateGenericPredictionNarrativeJob::dispatch(
+            $prediction::class,
+            (int) $prediction->getKey(),
+            $this->getSport()
+        );
+    }
+
+    protected function predictionSupportsNarratives(): bool
+    {
+        $predictionModel = $this->getPredictionModel();
+        $table = (new $predictionModel)->getTable();
+
+        return Schema::hasColumns($table, [
+            'narrative_json',
+            'narrative_provider',
+            'narrative_model',
+            'narrative_input_hash',
+            'narrative_latency_ms',
+            'narrative_generated_at',
+        ]);
+    }
+
+    protected function modelVersion(): string
+    {
+        return static::MODEL_VERSION;
+    }
+
+    protected function featureVersion(): string
+    {
+        return static::FEATURE_VERSION;
+    }
+
+    protected function blendVersion(): string
+    {
+        return static::BLEND_VERSION;
     }
 
     /**

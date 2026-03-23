@@ -63,6 +63,26 @@ return [
             ]) : [],
         ],
 
+        'nba_snapshot' => [
+            'driver' => 'mysql',
+            'url' => env('NBA_SNAPSHOT_DB_URL'),
+            'host' => env('NBA_SNAPSHOT_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('NBA_SNAPSHOT_DB_PORT', env('DB_PORT', '3306')),
+            'database' => env('NBA_SNAPSHOT_DB_DATABASE', 'picksports_prod_nba_snapshot'),
+            'username' => env('NBA_SNAPSHOT_DB_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('NBA_SNAPSHOT_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'unix_socket' => env('NBA_SNAPSHOT_DB_SOCKET', ''),
+            'charset' => env('NBA_SNAPSHOT_DB_CHARSET', env('DB_CHARSET', 'utf8mb4')),
+            'collation' => env('NBA_SNAPSHOT_DB_COLLATION', env('DB_COLLATION', 'utf8mb4_unicode_ci')),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => true,
+            'engine' => null,
+            'options' => extension_loaded('pdo_mysql') ? array_filter([
+                (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('NBA_SNAPSHOT_MYSQL_ATTR_SSL_CA'),
+            ]) : [],
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

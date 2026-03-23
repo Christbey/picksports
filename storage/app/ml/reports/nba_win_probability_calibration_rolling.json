@@ -1,0 +1,192 @@
+{
+    "report_type": "nba_win_probability_calibration_rolling_evaluation",
+    "generated_at": "2026-03-22T18:06:28-05:00",
+    "config": {
+        "input": "/Users/bey/Herd/github/picksports/storage/app/ml/nba_snapshot_dataset.csv",
+        "min_train_size": 120,
+        "test_window_size": 24,
+        "step_size": 24,
+        "learning_rate": 0.01,
+        "iterations": 3000
+    },
+    "summary": {
+        "window_count": 6,
+        "avg_baseline_brier": 0.25018888888888885,
+        "avg_challenger_brier": 0.2432557827499934,
+        "avg_brier_delta": -0.006933106138895459,
+        "avg_baseline_log_loss": 0.7177402289293849,
+        "avg_challenger_log_loss": 0.675704930592905,
+        "avg_log_loss_delta": -0.042035298336480044,
+        "challenger_better_window_count": 3
+    },
+    "windows": [
+        {
+            "window": 1,
+            "train_rows": 120,
+            "evaluation_rows": 24,
+            "train_range": {
+                "start": "2026-02-19",
+                "end": "2026-03-06"
+            },
+            "evaluation_range": {
+                "start": "2026-03-06",
+                "end": "2026-03-09"
+            },
+            "model": {
+                "alpha": 1.0915951266646093,
+                "beta": -0.9611722788302529
+            },
+            "metrics": {
+                "count": 24,
+                "baseline_brier": 0.20339166666666667,
+                "challenger_brier": 0.2765384911277848,
+                "brier_delta": 0.07314682446111812,
+                "baseline_log_loss": 0.6448724937627317,
+                "challenger_log_loss": 0.8007119419029719,
+                "log_loss_delta": 0.1558394481402402,
+                "baseline_accuracy": 0.6666666666666666,
+                "challenger_accuracy": 0.5416666666666666
+            }
+        },
+        {
+            "window": 2,
+            "train_rows": 144,
+            "evaluation_rows": 24,
+            "train_range": {
+                "start": "2026-02-19",
+                "end": "2026-03-09"
+            },
+            "evaluation_range": {
+                "start": "2026-03-10",
+                "end": "2026-03-12"
+            },
+            "model": {
+                "alpha": 0.9407034380359235,
+                "beta": -0.642689931767756
+            },
+            "metrics": {
+                "count": 24,
+                "baseline_brier": 0.13094166666666665,
+                "challenger_brier": 0.13347982726991725,
+                "brier_delta": 0.0025381606032506,
+                "baseline_log_loss": 0.4207294736093439,
+                "challenger_log_loss": 0.42460470810609263,
+                "log_loss_delta": 0.0038752344967487584,
+                "baseline_accuracy": 0.7916666666666666,
+                "challenger_accuracy": 0.875
+            }
+        },
+        {
+            "window": 3,
+            "train_rows": 168,
+            "evaluation_rows": 24,
+            "train_range": {
+                "start": "2026-02-19",
+                "end": "2026-03-12"
+            },
+            "evaluation_range": {
+                "start": "2026-03-12",
+                "end": "2026-03-15"
+            },
+            "model": {
+                "alpha": 1.001654634351219,
+                "beta": -0.6410123243405936
+            },
+            "metrics": {
+                "count": 24,
+                "baseline_brier": 0.14788333333333334,
+                "challenger_brier": 0.16754318164781423,
+                "brier_delta": 0.019659848314480893,
+                "baseline_log_loss": 0.4480489689479183,
+                "challenger_log_loss": 0.48813588542206054,
+                "log_loss_delta": 0.04008691647414225,
+                "baseline_accuracy": 0.75,
+                "challenger_accuracy": 0.75
+            }
+        },
+        {
+            "window": 4,
+            "train_rows": 192,
+            "evaluation_rows": 24,
+            "train_range": {
+                "start": "2026-02-19",
+                "end": "2026-03-15"
+            },
+            "evaluation_range": {
+                "start": "2026-03-16",
+                "end": "2026-03-18"
+            },
+            "model": {
+                "alpha": 0.9907779853664621,
+                "beta": -0.5556757323187671
+            },
+            "metrics": {
+                "count": 24,
+                "baseline_brier": 0.11013333333333336,
+                "challenger_brier": 0.10511656093054444,
+                "brier_delta": -0.005016772402788916,
+                "baseline_log_loss": 0.36448594052326655,
+                "challenger_log_loss": 0.35002075886169165,
+                "log_loss_delta": -0.0144651816615749,
+                "baseline_accuracy": 0.875,
+                "challenger_accuracy": 0.8333333333333334
+            }
+        },
+        {
+            "window": 5,
+            "train_rows": 216,
+            "evaluation_rows": 24,
+            "train_range": {
+                "start": "2026-02-19",
+                "end": "2026-03-18"
+            },
+            "evaluation_range": {
+                "start": "2026-03-18",
+                "end": "2026-03-21"
+            },
+            "model": {
+                "alpha": 1.0664987341622423,
+                "beta": -0.594943930184525
+            },
+            "metrics": {
+                "count": 24,
+                "baseline_brier": 0.18628333333333333,
+                "challenger_brier": 0.17758889245554818,
+                "brier_delta": -0.008694440877785148,
+                "baseline_log_loss": 0.5311845118471685,
+                "challenger_log_loss": 0.5029878278190333,
+                "log_loss_delta": -0.028196684028135244,
+                "baseline_accuracy": 0.7083333333333334,
+                "challenger_accuracy": 0.6666666666666666
+            }
+        },
+        {
+            "window": 6,
+            "train_rows": 240,
+            "evaluation_rows": 1,
+            "train_range": {
+                "start": "2026-02-19",
+                "end": "2026-03-21"
+            },
+            "evaluation_range": {
+                "start": "2026-03-21",
+                "end": "2026-03-21"
+            },
+            "model": {
+                "alpha": 1.04877128983781,
+                "beta": -0.5874547234250307
+            },
+            "metrics": {
+                "count": 1,
+                "baseline_brier": 0.7224999999999999,
+                "challenger_brier": 0.5992677430683516,
+                "brier_delta": -0.1232322569316483,
+                "baseline_log_loss": 1.897119984885881,
+                "challenger_log_loss": 1.4877684614455797,
+                "log_loss_delta": -0.40935152344030135,
+                "baseline_accuracy": 0,
+                "challenger_accuracy": 0
+            }
+        }
+    ]
+}

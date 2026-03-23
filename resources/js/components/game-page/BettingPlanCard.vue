@@ -28,13 +28,14 @@ defineProps<{
         <template v-else>
             <p class="mt-2 text-sm text-foreground/90">
                 {{
-                    lockedMessage ||
-                    'Betting plan unavailable for the current access tier.'
+                    lockedMessage || 'Betting plan is not available yet.'
                 }}
             </p>
-            <p class="mt-1 text-xs text-muted-foreground">
-                Requires prediction data access to spread, win probability, and
-                confidence score.
+            <p v-if="lockedMessage" class="mt-1 text-xs text-muted-foreground">
+                Additional access may be required for this betting plan.
+            </p>
+            <p v-else class="mt-1 text-xs text-muted-foreground">
+                Check back after the latest prediction narrative refresh.
             </p>
         </template>
     </section>

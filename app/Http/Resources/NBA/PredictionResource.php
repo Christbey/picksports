@@ -4,8 +4,6 @@ namespace App\Http\Resources\NBA;
 
 use App\Actions\NBA\CalculateBettingValue;
 use App\Http\Resources\Sports\AbstractPredictionResource;
-use App\Models\NBA\Game;
-use App\Services\Predictions\PredictionNarrativeService;
 use Illuminate\Http\Request;
 
 class PredictionResource extends AbstractPredictionResource
@@ -71,26 +69,7 @@ class PredictionResource extends AbstractPredictionResource
             $data['betting_value'] = $this->betting_value ?? app(CalculateBettingValue::class)->execute($this->game);
         }
 
-        // Template-backed narrative summary (safe fallback; can be swapped for LLM later).
-        if (
-            $this->hasTierPermission($request, 'spread')
-            && $this->hasTierPermission($request, 'win_probability')
-            && $this->hasTierPermission($request, 'confidence_score')
-        ) {
-            /** @var Game|null $game */
-            $game = $this->relationLoaded('game') ? $this->game : null;
-            $narrativeService = app(PredictionNarrativeService::class);
-            $currentHash = $narrativeService->inputHashForNba($this->resource, $game);
-            $storedNarrative = is_array($this->narrative_json) ? $this->narrative_json : null;
-            $storedHash = (string) ($this->narrative_input_hash ?? '');
-
-            if ($storedNarrative && $storedHash !== '' && hash_equals($storedHash, $currentHash)) {
-                $data['narrative'] = $storedNarrative;
-            } else {
-                // Request-path fallback remains deterministic and fast.
-                $data['narrative'] = $narrativeService->forNba($this->resource, $game, false);
-            }
-        }
+        $data = $this->appendNarrativeFields($data, $request, 'nba');
 
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }

@@ -1,9 +1,16 @@
 <x-mail::message>
-# Daily Picks Digest
+# {{ $summary['headline'] ?? 'Daily Picks Digest' }}
 
 Hi {{ $user->name }},
 
-Here are a few picks for today from the boards you can access.
+{{ $summary['intro'] ?? 'Here are a few picks for today from the boards you can access.' }}
+
+@if (!empty($summary['highlights']))
+@foreach ($summary['highlights'] as $highlight)
+- {{ $highlight }}
+@endforeach
+
+@endif
 
 @if (count($predictions) > 0)
 ## Predictions

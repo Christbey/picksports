@@ -55,6 +55,8 @@ class PredictionResource extends AbstractPredictionResource
             $data['home_def_eff'] = (float) $this->home_def_eff;
         }
 
+        $data = $this->appendNarrativeFields($data, $request, 'wcbb');
+
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }
 }

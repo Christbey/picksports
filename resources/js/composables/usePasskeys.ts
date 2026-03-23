@@ -78,6 +78,12 @@ function base64UrlDecode(value: string): Uint8Array {
     return bytes;
 }
 
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return copy.buffer;
+}
+
 function csrfToken(): string {
     const token = document
         .querySelector('meta[name="csrf-token"]')
@@ -272,10 +278,14 @@ export async function registerPasskey(
     );
 
     const publicKey: PublicKeyCredentialCreationOptions = {
-        challenge: base64UrlDecode(optionsResponse.publicKey.challenge),
+        challenge: toArrayBuffer(
+            base64UrlDecode(optionsResponse.publicKey.challenge),
+        ),
         rp: optionsResponse.publicKey.rp,
         user: {
-            id: base64UrlDecode(optionsResponse.publicKey.user.id),
+            id: toArrayBuffer(
+                base64UrlDecode(optionsResponse.publicKey.user.id),
+            ),
             name: optionsResponse.publicKey.user.name,
             displayName: optionsResponse.publicKey.user.displayName,
         },
@@ -287,7 +297,7 @@ export async function registerPasskey(
         excludeCredentials: optionsResponse.publicKey.excludeCredentials.map(
             (credential) => ({
                 ...credential,
-                id: base64UrlDecode(credential.id),
+                id: toArrayBuffer(base64UrlDecode(credential.id)),
             }),
         ),
     };
@@ -347,14 +357,16 @@ async function signInWithPasskeyAttempt(
     );
 
     const publicKey: PublicKeyCredentialRequestOptions = {
-        challenge: base64UrlDecode(optionsResponse.publicKey.challenge),
+        challenge: toArrayBuffer(
+            base64UrlDecode(optionsResponse.publicKey.challenge),
+        ),
         rpId: optionsResponse.publicKey.rpId,
         timeout: optionsResponse.publicKey.timeout,
         userVerification: optionsResponse.publicKey.userVerification,
         allowCredentials: optionsResponse.publicKey.allowCredentials.map(
             (credential) => ({
                 ...credential,
-                id: base64UrlDecode(credential.id),
+                id: toArrayBuffer(base64UrlDecode(credential.id)),
             }),
         ),
     };

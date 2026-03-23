@@ -131,6 +131,7 @@ type Group = {
     type: string;
     sport: string | null;
     season: number | null;
+    owner_id: number | null;
 };
 
 type LeaderboardEntry = {
@@ -382,7 +383,9 @@ const firstFourMatchupsById = computed(
         ),
 );
 
-const resolveSlotParticipant = (slot: BracketSlot | null) => {
+const resolveSlotParticipant = (
+    slot: BracketSlot | null,
+): BracketParticipant | null => {
     if (!slot) return null;
     if (slot.participant) return slot.participant;
     if (!slot.sourceMatchupId) return null;
@@ -413,7 +416,9 @@ const sourceMatchupLabel = (slot: BracketSlot | null) => {
     return `Winner of ${participants[0].name} / ${participants[1].name}`;
 };
 
-const selectedParticipant = (matchup: BracketMatchup | null) => {
+const selectedParticipant = (
+    matchup: BracketMatchup | null,
+): BracketParticipant | null => {
     if (!matchup) return null;
 
     const selectedId = picks.value[matchup.id];

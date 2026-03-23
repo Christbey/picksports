@@ -213,10 +213,39 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'predicted_total' => $predictedTotal,
             'win_probability' => $winProbability,
             'confidence_score' => $confidenceScore,
+            'model_version' => $this->modelVersion(),
+            'feature_version' => $this->featureVersion(),
+            'blend_version' => $this->blendVersion(),
             'model_metadata' => [
                 'model' => "{$this->getSport()}_ensemble",
                 'true_epa' => $this->trueEpaMetadata,
                 'total_model' => $this->totalMetadata,
+            ],
+            '_snapshot' => [
+                'model_version' => $this->modelVersion(),
+                'feature_version' => $this->featureVersion(),
+                'blend_version' => $this->blendVersion(),
+                'features' => $this->metadata,
+                'outputs' => [
+                    'baseline_predicted_spread' => round($this->metadata['baseline_model_spread'] ?? $predictedSpread, 3),
+                    'baseline_predicted_total' => round($this->totalMetadata['legacy_total'] ?? $predictedTotal, 3),
+                    'market_spread' => $this->metadata['vegas_spread'] ?? null,
+                    'market_total' => null,
+                    'blended_predicted_spread' => $predictedSpread,
+                    'blended_predicted_total' => $predictedTotal,
+                    'predicted_spread' => $predictedSpread,
+                    'predicted_total' => $predictedTotal,
+                    'win_probability' => $winProbability,
+                    'confidence_score' => $confidenceScore,
+                ],
+                'market_context' => [
+                    'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                ],
+                'model_metadata' => [
+                    'model' => "{$this->getSport()}_ensemble",
+                    'true_epa' => $this->trueEpaMetadata,
+                    'total_model' => $this->totalMetadata,
+                ],
             ],
         ], $this->metadata);
     }

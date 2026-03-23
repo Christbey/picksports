@@ -9,7 +9,9 @@
         "format": "prettier --write resources/",
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
-        "lint:check": "eslint ."
+        "lint:check": "eslint .",
+        "quality:fix": "npm run format && npm run lint -- --fix",
+        "quality:check": "npm run format:check && npm run lint:check"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",

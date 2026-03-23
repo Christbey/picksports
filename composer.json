@@ -70,6 +70,14 @@
         "test:lint": [
             "pint --parallel --test"
         ],
+        "quality:fix": [
+            "@lint",
+            "npm run quality:fix"
+        ],
+        "quality:check": [
+            "@test:lint",
+            "npm run quality:check"
+        ],
         "test": [
             "@php artisan config:clear --ansi",
             "@test:lint",

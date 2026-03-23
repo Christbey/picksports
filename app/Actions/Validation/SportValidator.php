@@ -2,10 +2,10 @@
 
 namespace App\Actions\Validation;
 
+use App\Actions\Validation\Checks\FinalizedDataCompletenessCheck;
 use App\Actions\Validation\Checks\GameCoverageCheck;
 use App\Actions\Validation\Checks\OddsCompletenessCheck;
 use App\Actions\Validation\Checks\PredictionCompletenessCheck;
-use App\Actions\Validation\Checks\FinalizedDataCompletenessCheck;
 use App\Actions\Validation\Checks\TeamStatCoverageCheck;
 use App\Actions\Validation\Contracts\ValidationCheck;
 

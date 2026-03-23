@@ -7,7 +7,6 @@ use App\AI\Agents\PlayerPropNarrativeAgent;
 use App\AI\Agents\SportsPredictionNarrativeAgent;
 use App\AI\Agents\ValidationReviewSummaryAgent;
 use App\Models\ValidationFinding;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Laravel\Ai\Responses\StructuredAgentResponse;
@@ -30,8 +29,8 @@ class SportsAiContentService
         ?string $provider = null,
         ?string $model = null,
     ): ?array {
-        $provider = $provider ?: (string) config('ai.features.sports_prediction_narratives.provider', 'openai');
-        $model = $model ?: (string) config('ai.features.sports_prediction_narratives.model', 'gpt-4o-mini');
+        $provider ??= (string) config('ai.features.sports_prediction_narratives.provider', 'openai');
+        $model ??= (string) config('ai.features.sports_prediction_narratives.model', 'gpt-4o-mini');
 
         if (! $this->providerIsConfigured($provider)) {
             return null;
@@ -95,8 +94,8 @@ class SportsAiContentService
         ?string $provider = null,
         ?string $model = null,
     ): ?array {
-        $provider = $provider ?: (string) config('ai.features.player_prop_narratives.provider', 'openai');
-        $model = $model ?: (string) config('ai.features.player_prop_narratives.model', 'gpt-4o-mini');
+        $provider ??= (string) config('ai.features.player_prop_narratives.provider', 'openai');
+        $model ??= (string) config('ai.features.player_prop_narratives.model', 'gpt-4o-mini');
 
         if (! $this->providerIsConfigured($provider)) {
             return null;

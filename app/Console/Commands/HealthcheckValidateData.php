@@ -22,8 +22,7 @@ class HealthcheckValidateData extends Command
         private readonly SportValidator $sportValidator,
         private readonly ValidationReviewSummaryService $validationReviewSummaryService,
         private readonly ValidationRegressionAlertService $validationRegressionAlertService,
-    )
-    {
+    ) {
         parent::__construct();
     }
 

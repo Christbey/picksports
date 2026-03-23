@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import CBBGameController from '@/actions/App/Http/Controllers/CBB/GameController';
 import SportTeam from '@/components/SportTeam.vue';
 import { createCbbTeamConfig } from '@/config/team-page-configs';
+import CBBGameController from '@/actions/App/Http/Controllers/CBB/GameController';
 
 const props = defineProps<{ teamId: number }>();
 

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { Form, Head, Link, usePage } from '@inertiajs/vue3';
 import { onMounted, ref } from 'vue';
-import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import DeleteUser from '@/components/DeleteUser.vue';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -19,9 +18,10 @@ import {
 import { signalCurrentUserDetails } from '@/composables/useWebAuthnSignal';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
+import { type BreadcrumbItem } from '@/types';
+import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import { edit } from '@/routes/profile';
 import { send } from '@/routes/verification';
-import { type BreadcrumbItem } from '@/types';
 
 type Props = {
     mustVerifyEmail: boolean;

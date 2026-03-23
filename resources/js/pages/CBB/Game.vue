@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
 import BasketballGameInsights from '@/components/game-page/BasketballGameInsights.vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
@@ -8,6 +7,7 @@ import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisC
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
 import { type TopPerformer } from '@/types';
+import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
 
 const props = defineProps<{
     gameId: number;

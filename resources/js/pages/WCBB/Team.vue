@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import WCBBGameController from '@/actions/App/Http/Controllers/WCBB/GameController';
 import SportTeam from '@/components/SportTeam.vue';
 import { createWcbbTeamConfig } from '@/config/team-page-configs';
+import WCBBGameController from '@/actions/App/Http/Controllers/WCBB/GameController';
 
 const props = defineProps<{ teamId: number }>();
 

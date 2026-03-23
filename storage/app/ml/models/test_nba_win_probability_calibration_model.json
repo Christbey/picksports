@@ -1,6 +1,6 @@
 {
     "model_type": "nba_win_probability_platt_calibration",
-    "trained_at": "2026-03-22T22:34:07-05:00",
+    "trained_at": "2026-03-22T22:50:40-05:00",
     "alpha": 4.064297781443479,
     "beta": -5.660505825976172,
     "learning_rate": 0.05,

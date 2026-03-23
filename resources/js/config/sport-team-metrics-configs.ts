@@ -1,9 +1,3 @@
-import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
-import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
-import NBATeamController from '@/actions/App/Http/Controllers/NBA/TeamController';
-import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
-import WCBBTeamController from '@/actions/App/Http/Controllers/WCBB/TeamController';
-import WNBATeamController from '@/actions/App/Http/Controllers/WNBA/TeamController';
 import {
     formatBattingAverage,
     formatNumber,
@@ -11,6 +5,12 @@ import {
     ratingClass,
 } from '@/components/sport-team-metrics-helpers';
 import type { MetricsConfig } from '@/components/SportTeamMetrics.vue';
+import CBBTeamController from '@/actions/App/Http/Controllers/CBB/TeamController';
+import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
+import NBATeamController from '@/actions/App/Http/Controllers/NBA/TeamController';
+import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
+import WCBBTeamController from '@/actions/App/Http/Controllers/WCBB/TeamController';
+import WNBATeamController from '@/actions/App/Http/Controllers/WNBA/TeamController';
 
 type SupportedMetricsSport = 'nba' | 'cbb' | 'wnba' | 'wcbb' | 'nfl' | 'mlb';
 

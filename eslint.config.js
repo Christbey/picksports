@@ -31,16 +31,7 @@ export default defineConfigWithVueTs(
                     fixStyle: 'separate-type-imports',
                 },
             ],
-            'import/order': [
-                'error',
-                {
-                    groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
-                    alphabetize: {
-                        order: 'asc',
-                        caseInsensitive: true,
-                    },
-                },
-            ],
+            'import/order': 'off',
         },
     },
     prettier,

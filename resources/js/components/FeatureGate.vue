@@ -4,8 +4,8 @@ import { Lock } from 'lucide-vue-next';
 import { computed } from 'vue';
 import { Button } from '@/components/ui/button';
 import { useSubscription } from '@/composables/useSubscription';
-import { plans as subscriptionPlans } from '@/routes/subscription';
 import type { SubscriptionTier } from '@/types';
+import { plans as subscriptionPlans } from '@/routes/subscription';
 
 interface Props {
     requiredTier: Exclude<SubscriptionTier, 'free'>;

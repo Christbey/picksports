@@ -19,6 +19,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import AppLogo from './AppLogo.vue';
 import {
     dashboard,
     nflPredictions,
@@ -52,7 +53,6 @@ import {
     mlbFutures,
 } from '@/routes';
 import { type NavItem } from '@/types';
-import AppLogo from './AppLogo.vue';
 
 const footballIconProps = { icon: faFootball };
 const basketballIconProps = { icon: faBasketball };

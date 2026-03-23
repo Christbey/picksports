@@ -1,9 +1,9 @@
 import { computed, watch } from 'vue';
-import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { useNflGamePage } from '@/composables/useNflGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
 import { trackViewItem } from '@/lib/analytics';
+import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
 
 const formatSpread = (spread: number | string): string => {
     const numSpread = typeof spread === 'string' ? parseFloat(spread) : spread;

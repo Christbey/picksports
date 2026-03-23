@@ -1,5 +1,4 @@
 import { computed, watch } from 'vue';
-import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 import { formatNumber } from '@/composables/useFormatters';
 import {
     formatVenueLabel,
@@ -9,6 +8,7 @@ import { useMlbGamePage } from '@/composables/useMlbGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
 import { trackViewItem } from '@/lib/analytics';
 import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
+import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 
 export function useMlbDetailedGamePage(gameId: number) {
     const {

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import NBAGameController from '@/actions/App/Http/Controllers/NBA/GameController';
 import SportTeam from '@/components/SportTeam.vue';
 import { createNbaTeamConfig } from '@/config/team-page-configs';
+import NBAGameController from '@/actions/App/Http/Controllers/NBA/GameController';
 
 const props = defineProps<{ teamId: number }>();
 

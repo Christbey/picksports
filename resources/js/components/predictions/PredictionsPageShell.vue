@@ -4,8 +4,8 @@ import { computed } from 'vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { responsibleGambling } from '@/routes';
 import { type BreadcrumbItem } from '@/types';
+import { responsibleGambling } from '@/routes';
 
 const props = defineProps<{
     title: string;

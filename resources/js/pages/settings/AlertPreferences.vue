@@ -10,8 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
-import { update } from '@/routes/alert-preferences';
 import { type BreadcrumbItem } from '@/types';
+import { update } from '@/routes/alert-preferences';
 
 interface Preference {
     enabled: boolean;

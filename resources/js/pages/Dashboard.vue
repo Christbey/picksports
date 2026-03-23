@@ -9,12 +9,12 @@ import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useDashboardPolling } from '@/composables/useDashboardView';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { dashboard } from '@/routes';
 import {
     type BreadcrumbItem,
     type DashboardSport,
     type DashboardStats,
 } from '@/types';
+import { dashboard } from '@/routes';
 
 const props = defineProps<{
     sports: DashboardSport[];

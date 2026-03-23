@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import WNBATeamController from '@/actions/App/Http/Controllers/WNBA/TeamController';
 import BasketballGameInsights from '@/components/game-page/BasketballGameInsights.vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
+import WNBATeamController from '@/actions/App/Http/Controllers/WNBA/TeamController';
 
 const props = defineProps<{
     gameId: number;

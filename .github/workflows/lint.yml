@@ -1,4 +1,4 @@
-name: linter
+name: quality
 
 on:
   push:
@@ -42,11 +42,5 @@ jobs:
           composer install -q --no-ansi --no-interaction --no-scripts --no-progress --prefer-dist
           npm ci
 
-      - name: Run Pint
-        run: composer test:lint
-
-      - name: Check Frontend Formatting
-        run: npm run format:check
-
-      - name: Check Frontend Lint
-        run: npm run lint:check
+      - name: Run Quality Checks
+        run: composer quality:check

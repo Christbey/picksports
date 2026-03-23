@@ -11,8 +11,16 @@ use App\Models\CBB\TeamStat;
 uses()->group('cbb', 'predictions');
 
 beforeEach(function () {
-    $this->homeTeam = Team::factory()->create(['elo_rating' => 1550]);
-    $this->awayTeam = Team::factory()->create(['elo_rating' => 1450]);
+    $this->homeTeam = Team::factory()->create([
+        'elo_rating' => 1550,
+        'school' => 'Kansas',
+        'mascot' => 'Jayhawks',
+    ]);
+    $this->awayTeam = Team::factory()->create([
+        'elo_rating' => 1450,
+        'school' => 'Baylor',
+        'mascot' => 'Bears',
+    ]);
 });
 
 it('generates prediction for an upcoming game', function () {
@@ -545,6 +553,13 @@ it('blends vegas spread when odds data available', function () {
                             'outcomes' => [
                                 ['name' => $this->homeTeam->school, 'price' => -200],
                                 ['name' => $this->awayTeam->school, 'price' => 170],
+                            ],
+                        ],
+                        [
+                            'key' => 'spreads',
+                            'outcomes' => [
+                                ['name' => $this->homeTeam->school, 'point' => -4.5, 'price' => -110],
+                                ['name' => $this->awayTeam->school, 'point' => 4.5, 'price' => -110],
                             ],
                         ],
                     ],

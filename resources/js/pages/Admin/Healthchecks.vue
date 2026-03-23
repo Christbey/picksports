@@ -666,9 +666,7 @@ function metadataEntries(
                                     }}
                                 </h2>
                                 <p class="mt-2 text-sm text-muted-foreground">
-                                    {{
-                                        latest_validation_run.ai_summary.intro
-                                    }}
+                                    {{ latest_validation_run.ai_summary.intro }}
                                 </p>
                             </div>
                             <div
@@ -698,9 +696,7 @@ function metadataEntries(
                                         .length > 0
                                 "
                             >
-                                <p class="text-sm font-medium">
-                                    Highlights
-                                </p>
+                                <p class="text-sm font-medium">Highlights</p>
                                 <ul
                                     class="mt-2 space-y-2 text-sm text-muted-foreground"
                                 >
@@ -730,7 +726,7 @@ function metadataEntries(
                                     <li
                                         v-for="action in latest_validation_run
                                             .ai_summary.recommended_actions ??
-                                            []"
+                                        []"
                                         :key="action"
                                         class="rounded-lg border border-sidebar-border bg-white px-3 py-2 font-mono dark:bg-sidebar"
                                     >
@@ -742,9 +738,7 @@ function metadataEntries(
                     </div>
 
                     <div
-                        v-if="
-                            selectedView === 'validation' && validation_trend
-                        "
+                        v-if="selectedView === 'validation' && validation_trend"
                         class="grid gap-4 md:grid-cols-4"
                     >
                         <div
@@ -768,7 +762,9 @@ function metadataEntries(
                                 Failing Delta
                             </p>
                             <p class="mt-2 text-2xl font-bold">
-                                {{ formatDelta(validation_trend.delta.failing) }}
+                                {{
+                                    formatDelta(validation_trend.delta.failing)
+                                }}
                             </p>
                         </div>
                         <div
@@ -780,7 +776,9 @@ function metadataEntries(
                                 Warning Delta
                             </p>
                             <p class="mt-2 text-2xl font-bold">
-                                {{ formatDelta(validation_trend.delta.warning) }}
+                                {{
+                                    formatDelta(validation_trend.delta.warning)
+                                }}
                             </p>
                         </div>
                         <div
@@ -792,7 +790,9 @@ function metadataEntries(
                                 Passing Delta
                             </p>
                             <p class="mt-2 text-2xl font-bold">
-                                {{ formatDelta(validation_trend.delta.passing) }}
+                                {{
+                                    formatDelta(validation_trend.delta.passing)
+                                }}
                             </p>
                         </div>
                     </div>
@@ -838,19 +838,16 @@ function metadataEntries(
                                             v-if="run.completed_at"
                                             class="text-xs text-muted-foreground"
                                         >
-                                            {{
-                                                formatDate(run.completed_at)
-                                            }}
+                                            {{ formatDate(run.completed_at) }}
                                         </span>
                                     </div>
                                     <p class="mt-2 text-sm font-medium">
                                         {{
                                             run.scope === 'all_sports'
                                                 ? 'All sports'
-                                                : run.scope?.replace(
-                                                      'sport:',
-                                                      '',
-                                                  )?.toUpperCase()
+                                                : run.scope
+                                                      ?.replace('sport:', '')
+                                                      ?.toUpperCase()
                                         }}
                                     </p>
                                     <p
@@ -865,10 +862,10 @@ function metadataEntries(
                             </div>
                         </div>
 
-                            <div
-                                v-if="selected_validation_run"
-                                class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
-                            >
+                        <div
+                            v-if="selected_validation_run"
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
                             <div
                                 class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
                             >
@@ -876,7 +873,9 @@ function metadataEntries(
                                     <h2 class="text-lg font-semibold">
                                         Validation Run Details
                                     </h2>
-                                    <p class="mt-1 text-sm text-muted-foreground">
+                                    <p
+                                        class="mt-1 text-sm text-muted-foreground"
+                                    >
                                         {{
                                             selected_validation_run.scope ===
                                             'all_sports'
@@ -900,7 +899,9 @@ function metadataEntries(
                             </div>
 
                             <div
-                                v-if="selected_validation_run.findings.length > 0"
+                                v-if="
+                                    selected_validation_run.findings.length > 0
+                                "
                                 class="mt-4 space-y-3"
                             >
                                 <div
@@ -973,7 +974,9 @@ function metadataEntries(
                                         v-if="finding.facts"
                                     >
                                         <span
-                                            v-for="(value, key) in finding.facts"
+                                            v-for="(
+                                                value, key
+                                            ) in finding.facts"
                                             :key="`${finding.id}-${key}`"
                                             class="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-foreground dark:bg-sidebar"
                                         >
@@ -1004,9 +1007,7 @@ function metadataEntries(
                                 "
                                 class="mt-6 rounded-xl border border-sidebar-border bg-sidebar-accent p-4"
                             >
-                                <p class="text-sm font-medium">
-                                    Recent Trend
-                                </p>
+                                <p class="text-sm font-medium">Recent Trend</p>
                                 <div class="mt-3 space-y-2">
                                     <div
                                         v-for="point in validation_trend.points"

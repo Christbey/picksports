@@ -27,9 +27,7 @@ defineProps<{
 
         <template v-else>
             <p class="mt-2 text-sm text-foreground/90">
-                {{
-                    lockedMessage || 'Betting plan is not available yet.'
-                }}
+                {{ lockedMessage || 'Betting plan is not available yet.' }}
             </p>
             <p v-if="lockedMessage" class="mt-1 text-xs text-muted-foreground">
                 Additional access may be required for this betting plan.

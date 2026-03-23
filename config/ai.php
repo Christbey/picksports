@@ -20,6 +20,12 @@ $config['features'] = [
         'model' => env('AI_PLAYER_PROP_NARRATIVE_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
         'timeout_seconds' => env('AI_PLAYER_PROP_NARRATIVE_TIMEOUT_SECONDS', 8),
     ],
+    'validation_review_summary' => [
+        'enabled' => (bool) env('AI_VALIDATION_REVIEW_SUMMARY_ENABLED', false),
+        'provider' => env('AI_VALIDATION_REVIEW_SUMMARY_PROVIDER', 'openai'),
+        'model' => env('AI_VALIDATION_REVIEW_SUMMARY_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+        'timeout_seconds' => env('AI_VALIDATION_REVIEW_SUMMARY_TIMEOUT_SECONDS', 8),
+    ],
     'daily_digest_summary' => [
         'enabled' => (bool) env('AI_DAILY_DIGEST_SUMMARY_ENABLED', false),
         'provider' => env('AI_DAILY_DIGEST_SUMMARY_PROVIDER', 'openai'),

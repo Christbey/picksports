@@ -28,9 +28,85 @@ interface Props {
     checks_by_sport: Record<string, Healthcheck[]>;
     status_counts: Record<string, number>;
     sports: string[];
+    latest_validation_run: {
+        id: number;
+        scope: string | null;
+        status: string;
+        summary: Record<string, number> | null;
+        ai_summary: {
+            headline: string;
+            intro: string;
+            highlights: string[];
+            recommended_actions?: string[];
+            generated_by?: string;
+        } | null;
+        ai_generated_at: string | null;
+        completed_at: string | null;
+    } | null;
+    recent_validation_runs: Array<{
+        id: number;
+        scope: string | null;
+        status: string;
+        summary: Record<string, number> | null;
+        completed_at: string | null;
+    }>;
+    selected_validation_run: {
+        id: number;
+        scope: string | null;
+        status: string;
+        summary: Record<string, number> | null;
+        ai_summary: {
+            headline: string;
+            intro: string;
+            highlights: string[];
+            recommended_actions?: string[];
+            generated_by?: string;
+        } | null;
+        ai_generated_at: string | null;
+        completed_at: string | null;
+        findings: Array<{
+            id: number;
+            sport: string;
+            check_type: string;
+            status: string;
+            severity: string | null;
+            message: string;
+            facts: Record<string, any> | null;
+            recommended_action: string | null;
+            detected_at: string | null;
+        }>;
+    } | null;
+    validation_trend: {
+        current: {
+            failing: number;
+            warning: number;
+            passing: number;
+        };
+        previous: {
+            id: number;
+            failing: number;
+            warning: number;
+            passing: number;
+            completed_at: string | null;
+        } | null;
+        delta: {
+            failing: number;
+            warning: number;
+            passing: number;
+        };
+        direction: 'improving' | 'regressing' | 'stable';
+        points: Array<{
+            id: number;
+            failing: number;
+            warning: number;
+            passing: number;
+            completed_at: string | null;
+        }>;
+    } | null;
     filters: {
         sport: string | null;
         view: string | null;
+        validation_run: number | null;
     };
 }
 
@@ -58,9 +134,26 @@ function filterBySport() {
         {
             sport: selectedSport.value === 'all' ? null : selectedSport.value,
             view: selectedView.value,
+            validation_run: null,
         },
         {
             preserveState: true,
+            replace: true,
+        },
+    );
+}
+
+function selectValidationRun(runId: number) {
+    router.get(
+        '/admin/healthchecks',
+        {
+            sport: selectedSport.value === 'all' ? null : selectedSport.value,
+            view: 'validation',
+            validation_run: runId,
+        },
+        {
+            preserveState: true,
+            preserveScroll: true,
             replace: true,
         },
     );
@@ -129,6 +222,12 @@ function getSyncLabel(checkType: string): string {
             return 'Sync Odds';
         case 'heartbeat_player_props':
             return 'Sync Player Props';
+        case 'validation_prediction_completeness':
+            return 'Generate Predictions';
+        case 'validation_odds_completeness':
+            return 'Sync Odds';
+        case 'validation_finalized_data_completeness':
+            return 'Run Repair';
         default:
             return 'Run Command';
     }
@@ -227,6 +326,11 @@ function formatAbsoluteDate(dateString: string): string {
     });
 }
 
+function formatDelta(value: number): string {
+    if (value > 0) return `+${value}`;
+    return `${value}`;
+}
+
 const overallStatus = computed(() => {
     if ((props.status_counts.failing || 0) > 0) return 'failing';
     if ((props.status_counts.warning || 0) > 0) return 'warning';
@@ -277,6 +381,7 @@ function formatMetadataLabel(key: string): string {
         teams_missing_stats: 'Teams Missing Stats',
         upcoming_games: 'Upcoming Games',
         expected_upcoming_games: 'Expected Upcoming Games',
+        recommended_action: 'Recommended Command',
     };
 
     return (
@@ -365,6 +470,7 @@ function metadataEntries(
         'teams_missing_stats',
         'upcoming_games',
         'expected_upcoming_games',
+        'recommended_action',
     ];
 
     return keys
@@ -535,6 +641,396 @@ function metadataEntries(
                                 {{ formatSportName(sport) }}
                             </option>
                         </select>
+                    </div>
+
+                    <div
+                        v-if="
+                            selectedView === 'validation' &&
+                            latest_validation_run?.ai_summary
+                        "
+                        class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                    >
+                        <div
+                            class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+                        >
+                            <div>
+                                <p
+                                    class="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase"
+                                >
+                                    Validation Summary
+                                </p>
+                                <h2 class="mt-2 text-xl font-semibold">
+                                    {{
+                                        latest_validation_run.ai_summary
+                                            .headline
+                                    }}
+                                </h2>
+                                <p class="mt-2 text-sm text-muted-foreground">
+                                    {{
+                                        latest_validation_run.ai_summary.intro
+                                    }}
+                                </p>
+                            </div>
+                            <div
+                                class="text-sm text-muted-foreground"
+                                v-if="latest_validation_run.completed_at"
+                            >
+                                {{
+                                    formatDate(
+                                        latest_validation_run.completed_at,
+                                    )
+                                }}
+                            </div>
+                        </div>
+
+                        <div
+                            class="mt-4 grid gap-4 md:grid-cols-2"
+                            v-if="
+                                latest_validation_run.ai_summary.highlights
+                                    .length > 0 ||
+                                (latest_validation_run.ai_summary
+                                    .recommended_actions?.length ?? 0) > 0
+                            "
+                        >
+                            <div
+                                v-if="
+                                    latest_validation_run.ai_summary.highlights
+                                        .length > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Highlights
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="highlight in latest_validation_run
+                                            .ai_summary.highlights"
+                                        :key="highlight"
+                                        class="rounded-lg bg-sidebar-accent px-3 py-2"
+                                    >
+                                        {{ highlight }}
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
+                                v-if="
+                                    (latest_validation_run.ai_summary
+                                        .recommended_actions?.length ?? 0) > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Recommended Actions
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="action in latest_validation_run
+                                            .ai_summary.recommended_actions ??
+                                            []"
+                                        :key="action"
+                                        class="rounded-lg border border-sidebar-border bg-white px-3 py-2 font-mono dark:bg-sidebar"
+                                    >
+                                        {{ action }}
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="
+                            selectedView === 'validation' && validation_trend
+                        "
+                        class="grid gap-4 md:grid-cols-4"
+                    >
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Trend
+                            </p>
+                            <p class="mt-2 text-2xl font-bold capitalize">
+                                {{ validation_trend.direction }}
+                            </p>
+                        </div>
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Failing Delta
+                            </p>
+                            <p class="mt-2 text-2xl font-bold">
+                                {{ formatDelta(validation_trend.delta.failing) }}
+                            </p>
+                        </div>
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Warning Delta
+                            </p>
+                            <p class="mt-2 text-2xl font-bold">
+                                {{ formatDelta(validation_trend.delta.warning) }}
+                            </p>
+                        </div>
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <p
+                                class="text-sm font-medium text-muted-foreground"
+                            >
+                                Passing Delta
+                            </p>
+                            <p class="mt-2 text-2xl font-bold">
+                                {{ formatDelta(validation_trend.delta.passing) }}
+                            </p>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="
+                            selectedView === 'validation' &&
+                            recent_validation_runs.length > 0
+                        "
+                        class="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]"
+                    >
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <h2 class="text-lg font-semibold">
+                                Recent Validation Runs
+                            </h2>
+                            <div class="mt-4 space-y-3">
+                                <button
+                                    v-for="run in recent_validation_runs"
+                                    :key="run.id"
+                                    type="button"
+                                    @click="selectValidationRun(run.id)"
+                                    class="w-full rounded-lg border px-4 py-3 text-left transition-colors"
+                                    :class="
+                                        selected_validation_run?.id === run.id
+                                            ? 'border-primary bg-primary/5'
+                                            : 'border-sidebar-border bg-sidebar-accent hover:bg-sidebar-accent/80'
+                                    "
+                                >
+                                    <div
+                                        class="flex items-center justify-between gap-3"
+                                    >
+                                        <span
+                                            :class="[
+                                                'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                                                getStatusColor(run.status),
+                                            ]"
+                                        >
+                                            {{ formatStatus(run.status) }}
+                                        </span>
+                                        <span
+                                            v-if="run.completed_at"
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{
+                                                formatDate(run.completed_at)
+                                            }}
+                                        </span>
+                                    </div>
+                                    <p class="mt-2 text-sm font-medium">
+                                        {{
+                                            run.scope === 'all_sports'
+                                                ? 'All sports'
+                                                : run.scope?.replace(
+                                                      'sport:',
+                                                      '',
+                                                  )?.toUpperCase()
+                                        }}
+                                    </p>
+                                    <p
+                                        class="mt-1 text-xs text-muted-foreground"
+                                        v-if="run.summary"
+                                    >
+                                        {{ run.summary.failing ?? 0 }} failing,
+                                        {{ run.summary.warning ?? 0 }} warning,
+                                        {{ run.summary.passing ?? 0 }} passing
+                                    </p>
+                                </button>
+                            </div>
+                        </div>
+
+                            <div
+                                v-if="selected_validation_run"
+                                class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                            >
+                            <div
+                                class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between"
+                            >
+                                <div>
+                                    <h2 class="text-lg font-semibold">
+                                        Validation Run Details
+                                    </h2>
+                                    <p class="mt-1 text-sm text-muted-foreground">
+                                        {{
+                                            selected_validation_run.scope ===
+                                            'all_sports'
+                                                ? 'All sports'
+                                                : selected_validation_run.scope
+                                                      ?.replace('sport:', '')
+                                                      ?.toUpperCase()
+                                        }}
+                                    </p>
+                                </div>
+                                <div
+                                    class="text-sm text-muted-foreground"
+                                    v-if="selected_validation_run.completed_at"
+                                >
+                                    {{
+                                        formatAbsoluteDate(
+                                            selected_validation_run.completed_at,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="selected_validation_run.findings.length > 0"
+                                class="mt-4 space-y-3"
+                            >
+                                <div
+                                    v-for="finding in selected_validation_run.findings"
+                                    :key="finding.id"
+                                    class="rounded-lg border border-sidebar-border bg-sidebar-accent p-4"
+                                >
+                                    <div
+                                        class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between"
+                                    >
+                                        <div>
+                                            <div
+                                                class="flex items-center gap-3"
+                                            >
+                                                <span
+                                                    :class="[
+                                                        'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium',
+                                                        getStatusColor(
+                                                            finding.status,
+                                                        ),
+                                                    ]"
+                                                >
+                                                    {{
+                                                        formatStatus(
+                                                            finding.status,
+                                                        )
+                                                    }}
+                                                </span>
+                                                <span class="font-medium">
+                                                    {{
+                                                        formatCheckType(
+                                                            finding.check_type,
+                                                        )
+                                                    }}
+                                                </span>
+                                            </div>
+                                            <p
+                                                class="mt-2 text-sm text-muted-foreground"
+                                            >
+                                                {{ finding.message }}
+                                            </p>
+                                        </div>
+                                        <button
+                                            v-if="finding.recommended_action"
+                                            @click="
+                                                syncData(
+                                                    finding.sport,
+                                                    finding.check_type,
+                                                )
+                                            "
+                                            :disabled="
+                                                syncingCheck ===
+                                                `${finding.sport}-${finding.check_type}`
+                                            "
+                                            class="rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                                        >
+                                            {{
+                                                syncingCheck ===
+                                                `${finding.sport}-${finding.check_type}`
+                                                    ? 'Running...'
+                                                    : getSyncLabel(
+                                                          finding.check_type,
+                                                      )
+                                            }}
+                                        </button>
+                                    </div>
+
+                                    <div
+                                        class="mt-3 flex flex-wrap gap-2 text-xs"
+                                        v-if="finding.facts"
+                                    >
+                                        <span
+                                            v-for="(value, key) in finding.facts"
+                                            :key="`${finding.id}-${key}`"
+                                            class="inline-flex items-center gap-1 rounded bg-white px-2 py-1 text-foreground dark:bg-sidebar"
+                                        >
+                                            <span
+                                                class="font-medium text-muted-foreground"
+                                            >
+                                                {{
+                                                    formatMetadataLabel(
+                                                        String(key),
+                                                    )
+                                                }}
+                                            </span>
+                                            <span>{{
+                                                formatMetadataValue(
+                                                    String(key),
+                                                    value,
+                                                )
+                                            }}</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="
+                                    validation_trend &&
+                                    validation_trend.points.length > 0
+                                "
+                                class="mt-6 rounded-xl border border-sidebar-border bg-sidebar-accent p-4"
+                            >
+                                <p class="text-sm font-medium">
+                                    Recent Trend
+                                </p>
+                                <div class="mt-3 space-y-2">
+                                    <div
+                                        v-for="point in validation_trend.points"
+                                        :key="point.id"
+                                        class="flex items-center justify-between rounded-lg bg-white px-3 py-2 text-sm dark:bg-sidebar"
+                                    >
+                                        <span class="text-muted-foreground">
+                                            {{
+                                                point.completed_at
+                                                    ? formatDate(
+                                                          point.completed_at,
+                                                      )
+                                                    : `Run #${point.id}`
+                                            }}
+                                        </span>
+                                        <span class="font-medium">
+                                            {{ point.failing }} failing /
+                                            {{ point.warning }} warning /
+                                            {{ point.passing }} passing
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Health Checks by Sport -->
@@ -874,7 +1370,9 @@ function metadataEntries(
                                                 canSync(
                                                     check.sport,
                                                     check.check_type,
-                                                )
+                                                ) ||
+                                                !!check.metadata
+                                                    ?.recommended_action
                                             "
                                             @click="
                                                 syncData(

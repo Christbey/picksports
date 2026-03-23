@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\HealthcheckSummaryResource;
 use App\Models\Healthcheck;
+use App\Models\ValidationRun;
 use App\Services\CommandHeartbeatService;
 use App\Support\SportCatalog;
 use Illuminate\Http\Request;
@@ -79,6 +80,7 @@ class HealthcheckController extends Controller
     {
         $sport = $request->input('sport');
         $view = $request->input('view', 'heartbeat');
+        $validationRunId = $request->integer('validation_run');
         $prefix = $view === 'validation' ? 'validation_' : 'heartbeat_';
 
         // Get the latest check for each sport/check_type combination
@@ -105,13 +107,71 @@ class HealthcheckController extends Controller
         // Get sport filter options
         $sports = SportCatalog::ALL;
 
+        $latestValidationRun = $view === 'validation'
+            ? $this->latestValidationRun($sport)
+            : null;
+        $recentValidationRuns = $view === 'validation'
+            ? $this->recentValidationRuns($sport)
+            : collect();
+        $selectedValidationRun = $view === 'validation'
+            ? $this->selectedValidationRun($sport, $validationRunId, $latestValidationRun)
+            : null;
+        $validationTrend = $view === 'validation'
+            ? $this->validationTrend($selectedValidationRun)
+            : null;
+
         return Inertia::render('Admin/Healthchecks', [
             'checks_by_sport' => $checksBySport,
             'status_counts' => $statusCounts,
             'sports' => $sports,
+            'latest_validation_run' => $latestValidationRun ? [
+                'id' => $latestValidationRun->id,
+                'scope' => $latestValidationRun->scope,
+                'status' => $latestValidationRun->status,
+                'summary' => $latestValidationRun->summary,
+                'ai_summary' => $latestValidationRun->ai_summary,
+                'ai_generated_at' => $latestValidationRun->ai_generated_at?->toDateTimeString(),
+                'completed_at' => $latestValidationRun->completed_at?->toDateTimeString(),
+            ] : null,
+            'recent_validation_runs' => $recentValidationRuns->map(fn (ValidationRun $run) => [
+                'id' => $run->id,
+                'scope' => $run->scope,
+                'status' => $run->status,
+                'summary' => $run->summary,
+                'completed_at' => $run->completed_at?->toDateTimeString(),
+            ])->values(),
+            'selected_validation_run' => $selectedValidationRun ? [
+                'id' => $selectedValidationRun->id,
+                'scope' => $selectedValidationRun->scope,
+                'status' => $selectedValidationRun->status,
+                'summary' => $selectedValidationRun->summary,
+                'ai_summary' => $selectedValidationRun->ai_summary,
+                'ai_generated_at' => $selectedValidationRun->ai_generated_at?->toDateTimeString(),
+                'completed_at' => $selectedValidationRun->completed_at?->toDateTimeString(),
+                'findings' => $selectedValidationRun->findings
+                    ->sortByDesc(fn ($finding) => match ($finding->status) {
+                        'failing' => 3,
+                        'warning' => 2,
+                        default => 1,
+                    })
+                    ->values()
+                    ->map(fn ($finding) => [
+                        'id' => $finding->id,
+                        'sport' => $finding->sport,
+                        'check_type' => $finding->check_type,
+                        'status' => $finding->status,
+                        'severity' => $finding->severity,
+                        'message' => $finding->message,
+                        'facts' => $finding->facts,
+                        'recommended_action' => $finding->recommended_action,
+                        'detected_at' => $finding->detected_at?->toDateTimeString(),
+                    ]),
+            ] : null,
+            'validation_trend' => $validationTrend,
             'filters' => [
                 'sport' => $sport,
                 'view' => $view,
+                'validation_run' => $validationRunId,
             ],
         ]);
     }
@@ -170,19 +230,148 @@ class HealthcheckController extends Controller
 
     protected function getCommandForCheck(string $sport, string $checkType): ?string
     {
-        if (! isset(self::CHECK_COMMANDS[$checkType])) {
+        if (isset(self::CHECK_COMMANDS[$checkType])) {
+            $command = self::CHECK_COMMANDS[$checkType][$sport] ?? null;
+            if (! $command) {
+                return null;
+            }
+
+            if ($checkType === 'heartbeat_live_scoreboard' || ($checkType === 'heartbeat_sync' && str_contains($command, 'scoreboard'))) {
+                return $command.' '.now()->format('Ymd');
+            }
+
+            return $command;
+        }
+
+        $latestCheck = Healthcheck::query()
+            ->where('sport', $sport)
+            ->where('check_type', $checkType)
+            ->latest('id')
+            ->first();
+
+        $recommendedAction = trim((string) data_get($latestCheck?->metadata, 'recommended_action', ''));
+
+        if ($recommendedAction === '') {
             return null;
         }
 
-        $command = self::CHECK_COMMANDS[$checkType][$sport] ?? null;
-        if (! $command) {
+        return $recommendedAction;
+    }
+
+    protected function latestValidationRun(?string $sport): ?ValidationRun
+    {
+        return ValidationRun::query()
+            ->where('command_name', 'healthcheck:validate-data')
+            ->when(
+                $sport,
+                fn ($query) => $query->where('scope', 'sport:'.$sport),
+                fn ($query) => $query->where('scope', 'all_sports')
+            )
+            ->latest('id')
+            ->first();
+    }
+
+    protected function recentValidationRuns(?string $sport)
+    {
+        return ValidationRun::query()
+            ->where('command_name', 'healthcheck:validate-data')
+            ->when(
+                $sport,
+                fn ($query) => $query->where('scope', 'sport:'.$sport),
+                fn ($query) => $query->whereIn('scope', ['all_sports', ...collect(SportCatalog::ALL)->map(fn ($item) => 'sport:'.$item)->all()])
+            )
+            ->latest('id')
+            ->limit(8)
+            ->get();
+    }
+
+    protected function selectedValidationRun(?string $sport, ?int $validationRunId, ?ValidationRun $latestValidationRun): ?ValidationRun
+    {
+        $query = ValidationRun::query()
+            ->with('findings')
+            ->where('command_name', 'healthcheck:validate-data');
+
+        if ($sport) {
+            $query->where('scope', 'sport:'.$sport);
+        }
+
+        if ($validationRunId) {
+            return $query->whereKey($validationRunId)->first();
+        }
+
+        if ($latestValidationRun) {
+            return ValidationRun::query()
+                ->with('findings')
+                ->find($latestValidationRun->id);
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function validationTrend(?ValidationRun $selectedValidationRun): ?array
+    {
+        if (! $selectedValidationRun) {
             return null;
         }
 
-        if ($checkType === 'heartbeat_live_scoreboard' || ($checkType === 'heartbeat_sync' && str_contains($command, 'scoreboard'))) {
-            return $command.' '.now()->format('Ymd');
-        }
+        $previousRun = ValidationRun::query()
+            ->where('command_name', 'healthcheck:validate-data')
+            ->where('scope', $selectedValidationRun->scope)
+            ->where('id', '<', $selectedValidationRun->id)
+            ->latest('id')
+            ->first();
 
-        return $command;
+        $currentSummary = is_array($selectedValidationRun->summary) ? $selectedValidationRun->summary : [];
+        $previousSummary = is_array($previousRun?->summary) ? $previousRun->summary : [];
+
+        $currentFailing = (int) ($currentSummary['failing'] ?? 0);
+        $currentWarning = (int) ($currentSummary['warning'] ?? 0);
+        $currentPassing = (int) ($currentSummary['passing'] ?? 0);
+        $previousFailing = (int) ($previousSummary['failing'] ?? 0);
+        $previousWarning = (int) ($previousSummary['warning'] ?? 0);
+        $previousPassing = (int) ($previousSummary['passing'] ?? 0);
+
+        return [
+            'current' => [
+                'failing' => $currentFailing,
+                'warning' => $currentWarning,
+                'passing' => $currentPassing,
+            ],
+            'previous' => $previousRun ? [
+                'id' => $previousRun->id,
+                'failing' => $previousFailing,
+                'warning' => $previousWarning,
+                'passing' => $previousPassing,
+                'completed_at' => $previousRun->completed_at?->toDateTimeString(),
+            ] : null,
+            'delta' => [
+                'failing' => $currentFailing - $previousFailing,
+                'warning' => $currentWarning - $previousWarning,
+                'passing' => $currentPassing - $previousPassing,
+            ],
+            'direction' => match (true) {
+                $currentFailing < $previousFailing => 'improving',
+                $currentFailing > $previousFailing => 'regressing',
+                default => 'stable',
+            },
+            'points' => ValidationRun::query()
+                ->where('command_name', 'healthcheck:validate-data')
+                ->where('scope', $selectedValidationRun->scope)
+                ->latest('id')
+                ->limit(6)
+                ->get()
+                ->reverse()
+                ->values()
+                ->map(fn (ValidationRun $run) => [
+                    'id' => $run->id,
+                    'failing' => (int) (($run->summary ?? [])['failing'] ?? 0),
+                    'warning' => (int) (($run->summary ?? [])['warning'] ?? 0),
+                    'passing' => (int) (($run->summary ?? [])['passing'] ?? 0),
+                    'completed_at' => $run->completed_at?->toDateTimeString(),
+                ]),
+        ];
     }
 }

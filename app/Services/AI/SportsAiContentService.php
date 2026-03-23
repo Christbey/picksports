@@ -5,6 +5,8 @@ namespace App\Services\AI;
 use App\AI\Agents\DailyDigestSummaryAgent;
 use App\AI\Agents\PlayerPropNarrativeAgent;
 use App\AI\Agents\SportsPredictionNarrativeAgent;
+use App\AI\Agents\ValidationReviewSummaryAgent;
+use App\Models\ValidationFinding;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -202,6 +204,66 @@ class SportsAiContentService
         }
     }
 
+    /**
+     * @param  iterable<ValidationFinding>  $findings
+     * @return array{headline:string,intro:string,highlights:array<int,string>,recommended_actions:array<int,string>,generated_by:string}|null
+     */
+    public function generateValidationReviewSummary(iterable $findings): ?array
+    {
+        if (! config('ai.features.validation_review_summary.enabled', false)) {
+            return null;
+        }
+
+        $provider = (string) config('ai.features.validation_review_summary.provider', 'openai');
+        $model = (string) config('ai.features.validation_review_summary.model', 'gpt-4o-mini');
+
+        if (! $this->providerIsConfigured($provider)) {
+            return null;
+        }
+
+        try {
+            $response = app(ValidationReviewSummaryAgent::class)->prompt(
+                $this->buildValidationReviewPrompt($findings),
+                provider: $provider,
+                model: $model,
+            );
+
+            if (! $response instanceof StructuredAgentResponse) {
+                logger()->warning('Validation review summary agent returned an unexpected response type.', [
+                    'provider' => $provider,
+                    'response_class' => $response::class,
+                ]);
+
+                return null;
+            }
+
+            $payload = $this->normalizeValidationReviewPayload($response->toArray());
+
+            if (! $payload) {
+                logger()->warning('Validation review AI summary response failed normalization.', [
+                    'provider' => $provider,
+                    'model' => $response->meta->model ?? $model,
+                ]);
+
+                return null;
+            }
+
+            $payload['generated_by'] = (string) ($response->meta->provider ?? $provider)
+                .':'
+                .(string) ($response->meta->model ?? $model);
+
+            return $payload;
+        } catch (Throwable $exception) {
+            logger()->warning('Validation review AI summary request threw exception.', [
+                'provider' => $provider,
+                'model' => $model,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
     private function providerIsConfigured(string $provider): bool
     {
         $providerKey = trim((string) config("ai.providers.{$provider}.key", ''));
@@ -293,6 +355,35 @@ class SportsAiContentService
     }
 
     /**
+     * @param  array<string, mixed>  $decoded
+     * @return array{headline:string,intro:string,highlights:array<int,string>,recommended_actions:array<int,string>}|null
+     */
+    private function normalizeValidationReviewPayload(array $decoded): ?array
+    {
+        $headline = trim((string) ($decoded['headline'] ?? ''));
+        $intro = trim((string) ($decoded['intro'] ?? ''));
+        $highlights = $decoded['highlights'] ?? [];
+        $recommendedActions = $decoded['recommended_actions'] ?? [];
+
+        if ($headline === '' || $intro === '' || ! is_array($highlights) || ! is_array($recommendedActions)) {
+            return null;
+        }
+
+        return [
+            'headline' => $headline,
+            'intro' => $intro,
+            'highlights' => array_values(array_slice(array_filter(
+                array_map(fn ($highlight) => trim((string) $highlight), $highlights),
+                fn ($highlight) => $highlight !== ''
+            ), 0, 4)),
+            'recommended_actions' => array_values(array_slice(array_filter(
+                array_map(fn ($action) => trim((string) $action), $recommendedActions),
+                fn ($action) => $action !== ''
+            ), 0, 4)),
+        ];
+    }
+
+    /**
      * @param  array<int, array<string, mixed>>  $predictions
      * @param  array<int, array<string, mixed>>  $playerProps
      * @param  array<int, string>  $selectedSports
@@ -355,5 +446,48 @@ class SportsAiContentService
             $predictionLines !== '' ? "Predictions:\n{$predictionLines}" : null,
             $propLines !== '' ? "Player props:\n{$propLines}" : null,
         ]));
+    }
+
+    /**
+     * @param  iterable<ValidationFinding>  $findings
+     */
+    private function buildValidationReviewPrompt(iterable $findings): string
+    {
+        $lines = Collection::make($findings)
+            ->take(12)
+            ->map(function (ValidationFinding $finding): string {
+                $facts = is_array($finding->facts) ? $finding->facts : [];
+                $sampleGameIds = $facts['sample_game_ids'] ?? null;
+                $sampleSuffix = '';
+
+                if (is_array($sampleGameIds) && $sampleGameIds !== []) {
+                    $sampleSuffix = ' Sample game IDs: '.implode(', ', array_map('strval', array_slice($sampleGameIds, 0, 5))).'.';
+                }
+
+                return sprintf(
+                    '- [%s] %s / %s: %s Recommended action: %s.%s',
+                    strtoupper($finding->sport),
+                    $finding->status,
+                    $finding->check_type,
+                    $finding->message,
+                    $finding->recommended_action ?: 'review manually',
+                    $sampleSuffix
+                );
+            })
+            ->implode("\n");
+
+        return <<<PROMPT
+Summarize this sports data validation run for an internal admin dashboard.
+
+Focus on:
+- what data is missing or incomplete
+- which issues are the highest priority
+- which commands should be rerun first
+
+Use only the supplied findings. Do not invent new incidents.
+
+Findings:
+{$lines}
+PROMPT;
     }
 }

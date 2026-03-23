@@ -2,10 +2,11 @@
 
 namespace App\Http\Resources\Settings;
 
+use App\Models\OddsApiPlayerMapping;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin \App\Models\OddsApiPlayerMapping */
+/** @mixin OddsApiPlayerMapping */
 class OddsApiPlayerMappingResource extends JsonResource
 {
     /**

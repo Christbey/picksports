@@ -2,13 +2,14 @@
 
 namespace App\Models\CFB;
 
+use Database\Factories\CfbTeamStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamStat extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbTeamStatFactory> */
+    /** @use HasFactory<CfbTeamStatFactory> */
     use HasFactory;
 
     protected $table = 'cfb_team_stats';

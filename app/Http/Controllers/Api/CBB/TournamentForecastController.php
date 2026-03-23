@@ -218,7 +218,7 @@ class TournamentForecastController extends Controller
             ->where('is_ncaa_tournament', true)
             ->whereIn('tournament_round', ['first_four', 'round_of_64'])
             ->get()
-            ->reduce(function (array $field, \App\Models\CBB\Game $game): array {
+            ->reduce(function (array $field, Game $game): array {
                 foreach ([
                     ['team_id' => $game->home_team_id, 'seed' => $game->home_seed],
                     ['team_id' => $game->away_team_id, 'seed' => $game->away_seed],

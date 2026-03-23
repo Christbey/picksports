@@ -4,13 +4,14 @@ namespace App\Actions\ESPN\WCBB;
 
 use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
+use App\Models\WCBB\Game;
 use App\Models\WCBB\Team;
 use App\Services\SportsAssetStorage;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 {
-    protected const GAME_MODEL_CLASS = \App\Models\WCBB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
     public function __construct(protected ?SportsAssetStorage $sportsAssetStorage = null)
     {

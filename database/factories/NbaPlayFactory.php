@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\NBA\Play;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\NBA\Play>
+ * @extends Factory<Play>
  */
 class NbaPlayFactory extends Factory
 {
@@ -14,7 +15,7 @@ class NbaPlayFactory extends Factory
      *
      * @return array<string, mixed>
      */
-    protected $model = \App\Models\NBA\Play::class;
+    protected $model = Play::class;
 
     public function definition(): array
     {

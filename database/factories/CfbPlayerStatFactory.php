@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\CFB\PlayerStat;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CFB\PlayerStat>
+ * @extends Factory<PlayerStat>
  */
 class CfbPlayerStatFactory extends Factory
 {

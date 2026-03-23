@@ -2,10 +2,11 @@
 
 namespace App\Http\Resources\Admin;
 
+use App\Models\Healthcheck;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
-/** @mixin \App\Models\Healthcheck */
+/** @mixin Healthcheck */
 class HealthcheckSummaryResource extends JsonResource
 {
     /**

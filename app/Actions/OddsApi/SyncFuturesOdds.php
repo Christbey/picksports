@@ -2,10 +2,12 @@
 
 namespace App\Actions\OddsApi;
 
+use App\Models\NBA\Team;
 use App\Models\Sports\FuturesOdd;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 class SyncFuturesOdds
@@ -22,10 +24,10 @@ class SyncFuturesOdds
     ];
 
     /**
-     * @var array<string, class-string<\Illuminate\Database\Eloquent\Model>>
+     * @var array<string, class-string<Model>>
      */
     protected const TEAM_MODEL_BY_SPORT = [
-        'nba' => \App\Models\NBA\Team::class,
+        'nba' => Team::class,
         'mlb' => \App\Models\MLB\Team::class,
         'nfl' => \App\Models\NFL\Team::class,
         'cbb' => \App\Models\CBB\Team::class,
@@ -282,9 +284,9 @@ class SyncFuturesOdds
     }
 
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $teamModelClass
+     * @param  class-string<Model>  $teamModelClass
      */
-    protected function findTeamByName(string $teamModelClass, string $candidateName): ?\Illuminate\Database\Eloquent\Model
+    protected function findTeamByName(string $teamModelClass, string $candidateName): ?Model
     {
         $normalized = mb_strtolower(trim($candidateName));
 
@@ -307,9 +309,9 @@ class SyncFuturesOdds
     }
 
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $teamModelClass
+     * @param  class-string<Model>  $teamModelClass
      */
-    protected function findTeamByFuzzyName(string $teamModelClass, string $candidateName): ?\Illuminate\Database\Eloquent\Model
+    protected function findTeamByFuzzyName(string $teamModelClass, string $candidateName): ?Model
     {
         $normalizedTarget = $this->oddsApiService->normalizeTeamName($candidateName);
         if ($normalizedTarget === '') {
@@ -345,7 +347,7 @@ class SyncFuturesOdds
     /**
      * @return array<int, string>
      */
-    protected function teamNameVariants(\Illuminate\Database\Eloquent\Model $team): array
+    protected function teamNameVariants(Model $team): array
     {
         $location = (string) ($team->location ?? '');
         $name = (string) ($team->name ?? '');

@@ -3,6 +3,7 @@
 namespace App\Models\NBA;
 
 use App\Models\Concerns\ResolvesTeamLogoUrls;
+use Database\Factories\NbaTeamFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
-    /** @use HasFactory<\Database\Factories\NbaTeamFactory> */
+    /** @use HasFactory<NbaTeamFactory> */
     use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'nba_teams';
@@ -92,8 +93,8 @@ class Team extends Model
         return $this->hasMany(PlayoffForecast::class, 'team_id');
     }
 
-    protected static function newFactory(): \Database\Factories\NbaTeamFactory
+    protected static function newFactory(): NbaTeamFactory
     {
-        return \Database\Factories\NbaTeamFactory::new();
+        return NbaTeamFactory::new();
     }
 }

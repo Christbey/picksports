@@ -3,7 +3,10 @@
 namespace App\Console\Commands\CBB;
 
 use App\Actions\CBB\CalculateBettingValue;
+use App\Actions\CBB\GeneratePrediction;
 use App\Console\Commands\Sports\AbstractCollegeGeneratePredictionsCommand;
+use App\Models\CBB\Game;
+use App\Models\CBB\Prediction;
 use Illuminate\Support\Collection;
 
 class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsCommand
@@ -12,11 +15,11 @@ class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsComma
 
     protected const COMMAND_DESCRIPTION = 'Generate CBB game predictions based on Elo ratings and team metrics';
 
-    protected const GENERATE_ACTION_CLASS = \App\Actions\CBB\GeneratePrediction::class;
+    protected const GENERATE_ACTION_CLASS = GeneratePrediction::class;
 
-    protected const GAME_MODEL_CLASS = \App\Models\CBB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const PREDICTION_MODEL_CLASS = \App\Models\CBB\Prediction::class;
+    protected const PREDICTION_MODEL_CLASS = Prediction::class;
 
     protected const USES_EASTERN_DATE_WINDOW = true;
 
@@ -32,7 +35,7 @@ class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsComma
 
     protected function topPredictions(): Collection
     {
-        /** @var class-string<\App\Models\CBB\Prediction> $predictionModel */
+        /** @var class-string<Prediction> $predictionModel */
         $predictionModel = $this->predictionModelClass();
         $calculator = app(CalculateBettingValue::class);
 

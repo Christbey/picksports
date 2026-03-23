@@ -4,6 +4,7 @@ namespace App\Actions\CFB;
 
 use App\Actions\Sports\AbstractAmericanFootballPredictionGenerator;
 use App\Models\CFB\Prediction;
+use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Model;
@@ -118,7 +119,7 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
 
     protected function latestPriorSeasonMetric(string $teamMetricModel, int $teamId, int $season, ?Model $game = null): ?Model
     {
-        $team = \App\Models\CFB\Team::query()->find($teamId);
+        $team = Team::query()->find($teamId);
         if (! $team || ! $this->seasonAffiliationResolver->isFbs($team, $season)) {
             return null;
         }

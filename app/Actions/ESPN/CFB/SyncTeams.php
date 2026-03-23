@@ -3,6 +3,8 @@
 namespace App\Actions\ESPN\CFB;
 
 use App\Actions\ESPN\AbstractCollegeSyncTeams;
+use App\DataTransferObjects\ESPN\CollegeTeamData;
+use App\Models\CFB\Team;
 
 class SyncTeams extends AbstractCollegeSyncTeams
 {
@@ -10,9 +12,9 @@ class SyncTeams extends AbstractCollegeSyncTeams
 
     protected const CONFERENCE_API_BASE_URL = 'https://sports.core.api.espn.com/v2/sports/football/leagues/college-football/groups';
 
-    protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected const TEAM_DTO_CLASS = \App\DataTransferObjects\ESPN\CollegeTeamData::class;
+    protected const TEAM_DTO_CLASS = CollegeTeamData::class;
 
     /**
      * @param  array<string, mixed>  $response

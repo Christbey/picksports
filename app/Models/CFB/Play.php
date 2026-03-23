@@ -2,13 +2,14 @@
 
 namespace App\Models\CFB;
 
+use Database\Factories\CfbPlayFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Play extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbPlayFactory> */
+    /** @use HasFactory<CfbPlayFactory> */
     use HasFactory;
 
     protected $table = 'cfb_plays';

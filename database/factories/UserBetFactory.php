@@ -2,10 +2,12 @@
 
 namespace Database\Factories;
 
+use App\Models\User;
+use App\Models\UserBet;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\UserBet>
+ * @extends Factory<UserBet>
  */
 class UserBetFactory extends Factory
 {
@@ -24,7 +26,7 @@ class UserBetFactory extends Factory
         };
 
         return [
-            'user_id' => \App\Models\User::factory(),
+            'user_id' => User::factory(),
             'prediction_id' => fake()->numberBetween(1, 100),
             'prediction_type' => fake()->randomElement([
                 'App\Models\NBA\Prediction',

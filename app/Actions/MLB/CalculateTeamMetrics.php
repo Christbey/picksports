@@ -6,6 +6,7 @@ use App\Concerns\FiltersTeamGames;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
+use App\Models\MLB\TeamStat;
 use App\Services\MetricValidator;
 use Illuminate\Support\Facades\Log;
 
@@ -190,7 +191,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: 50-150 (configurable based on multipliers)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $teamStats  Team statistics records
+     * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Composite offensive rating
      */
     protected function calculateOffensiveRating(array $teamStats): float
@@ -245,7 +246,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: Varies based on configuration (typically 50-150)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $teamStats  Team statistics records
+     * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Composite pitching rating
      */
     protected function calculatePitchingRating(array $teamStats): float
@@ -302,7 +303,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: Varies based on configuration (typically 60-90)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $teamStats  Team statistics records
+     * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Composite defensive rating
      */
     protected function calculateDefensiveRating(array $teamStats): float
@@ -349,7 +350,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: 3-6 runs per game (MLB)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $teamStats  Team statistics records
+     * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Average runs scored per game
      */
     protected function calculateRunsPerGame(array $teamStats): float
@@ -375,7 +376,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: 3-6 runs per game (MLB)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $opponentStats  Opponent statistics records
+     * @param  array<int, TeamStat>  $opponentStats  Opponent statistics records
      * @return float Average runs allowed per game
      */
     protected function calculateRunsAllowedPerGame(array $opponentStats): float
@@ -402,7 +403,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: .230-.280 team batting average (MLB)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $teamStats  Team statistics records
+     * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Team batting average (decimal, e.g., 0.265)
      */
     protected function calculateBattingAverage(array $teamStats): float
@@ -485,7 +486,7 @@ class CalculateTeamMetrics
      *
      * Expected Range: 3.50-5.00 team ERA (MLB)
      *
-     * @param  array<int, \App\Models\MLB\TeamStat>  $teamStats  Team statistics records
+     * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Team ERA (e.g., 4.25)
      */
     protected function calculateTeamEra(array $teamStats): float

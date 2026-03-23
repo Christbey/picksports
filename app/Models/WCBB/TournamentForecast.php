@@ -2,20 +2,21 @@
 
 namespace App\Models\WCBB;
 
+use Database\Factories\WcbbTournamentForecastFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TournamentForecast extends Model
 {
-    /** @use HasFactory<\Database\Factories\WcbbTournamentForecastFactory> */
+    /** @use HasFactory<WcbbTournamentForecastFactory> */
     use HasFactory;
 
     protected $table = 'wcbb_tournament_forecasts';
 
-    protected static function newFactory(): \Database\Factories\WcbbTournamentForecastFactory
+    protected static function newFactory(): WcbbTournamentForecastFactory
     {
-        return \Database\Factories\WcbbTournamentForecastFactory::new();
+        return WcbbTournamentForecastFactory::new();
     }
 
     protected $fillable = [

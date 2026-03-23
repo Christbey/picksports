@@ -2,6 +2,7 @@
 
 namespace App\Models\Sports;
 
+use App\Models\NBA\Team;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -55,7 +56,7 @@ class FuturesOdd extends Model
 
     public function nbaTeam(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\NBA\Team::class, 'nba_team_id');
+        return $this->belongsTo(Team::class, 'nba_team_id');
     }
 
     public function mlbTeam(): BelongsTo

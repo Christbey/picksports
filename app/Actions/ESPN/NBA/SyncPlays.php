@@ -3,16 +3,20 @@
 namespace App\Actions\ESPN\NBA;
 
 use App\Actions\ESPN\AbstractSyncPlays;
+use App\DataTransferObjects\ESPN\BasketballPlayData;
+use App\Models\NBA\Game;
+use App\Models\NBA\Play;
+use App\Models\NBA\Team;
 
 class SyncPlays extends AbstractSyncPlays
 {
-    protected const GAME_MODEL_CLASS = \App\Models\NBA\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const PLAY_MODEL_CLASS = \App\Models\NBA\Play::class;
+    protected const PLAY_MODEL_CLASS = Play::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected const PLAY_DTO_CLASS = \App\DataTransferObjects\ESPN\BasketballPlayData::class;
+    protected const PLAY_DTO_CLASS = BasketballPlayData::class;
 
     protected const USE_GAME_PLAYS_PAYLOAD = true;
 

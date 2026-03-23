@@ -10,7 +10,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    \Mockery::close();
+    Mockery::close();
 });
 
 test('oauth users can be provisioned and redirected to onboarding', function () {
@@ -115,7 +115,7 @@ function fakeSocialiteUser(array $attributes): void
         ->setRefreshToken('refresh-token')
         ->setExpiresIn(3600);
 
-    $provider = \Mockery::mock();
+    $provider = Mockery::mock();
     $provider->shouldReceive('user')->once()->andReturn($socialiteUser);
 
     Socialite::shouldReceive('driver')

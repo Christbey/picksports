@@ -3,6 +3,7 @@
 namespace App\Services\BettingRecommendations;
 
 use App\Services\OddsApi\OddsApiService;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -1285,7 +1286,7 @@ class PlayerPropAnalyzer
 
                 return [
                     'value' => $date,
-                    'label' => \Carbon\Carbon::parse($date)->format('l, F j, Y'),
+                    'label' => Carbon::parse($date)->format('l, F j, Y'),
                 ];
             });
     }
@@ -1311,10 +1312,10 @@ class PlayerPropAnalyzer
             ->get()
             ->map(function ($game) {
                 // Ensure we get just the date part (Y-m-d)
-                $gameDate = \Carbon\Carbon::parse($game->game_date)->toDateString();
+                $gameDate = Carbon::parse($game->game_date)->toDateString();
 
                 // Parse the time separately
-                $gameTime = \Carbon\Carbon::parse($game->game_time);
+                $gameTime = Carbon::parse($game->game_time);
 
                 return [
                     'id' => $game->id,

@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\NFL\Player;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\NFL\Player>
+ * @extends Factory<Player>
  */
 class NflPlayerFactory extends Factory
 {
-    protected $model = \App\Models\NFL\Player::class;
+    protected $model = Player::class;
 
     /**
      * Define the model's default state.

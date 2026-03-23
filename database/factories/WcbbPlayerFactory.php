@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\WCBB\Player;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\WCBB\Player>
+ * @extends Factory<Player>
  */
 class WcbbPlayerFactory extends Factory
 {

@@ -2,13 +2,14 @@
 
 namespace App\Models\WNBA;
 
+use Database\Factories\WnbaPredictionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Prediction extends Model
 {
-    /** @use HasFactory<\Database\Factories\WnbaPredictionFactory> */
+    /** @use HasFactory<WnbaPredictionFactory> */
     use HasFactory;
 
     protected $table = 'wnba_predictions';

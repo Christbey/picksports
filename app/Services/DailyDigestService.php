@@ -5,10 +5,12 @@ namespace App\Services;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Mail\DailyPredictionsDigestMail;
 use App\Models\DailyDigestSend;
+use App\Models\NBA\Prediction;
 use App\Models\User;
 use App\Services\AI\SportsAiContentService;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\TierAccessBypass;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -21,7 +23,7 @@ class DailyDigestService
      * @var array<string, array<string, class-string<Model>|bool>>
      */
     private const SPORT_MAP = [
-        'nba' => ['prediction_model' => \App\Models\NBA\Prediction::class, 'player_props' => true],
+        'nba' => ['prediction_model' => Prediction::class, 'player_props' => true],
         'nfl' => ['prediction_model' => \App\Models\NFL\Prediction::class, 'player_props' => true],
         'cbb' => ['prediction_model' => \App\Models\CBB\Prediction::class, 'player_props' => true],
         'wcbb' => ['prediction_model' => \App\Models\WCBB\Prediction::class, 'player_props' => false],
@@ -275,11 +277,11 @@ class DailyDigestService
                     'edge' => $recommendation['edge'] ?? null,
                     'matchup' => trim(($recommendation['game']['away_team'] ?? 'Away').' @ '.($recommendation['game']['home_team'] ?? 'Home')),
                     'game_time' => isset($recommendation['game']['date'])
-                        ? \Carbon\Carbon::parse((string) $recommendation['game']['date'])->format('M j, g:i A')
+                        ? Carbon::parse((string) $recommendation['game']['date'])->format('M j, g:i A')
                         : null,
                     'url' => route("{$sport}.player-props", [
                         'date' => isset($recommendation['game']['date'])
-                            ? \Carbon\Carbon::parse((string) $recommendation['game']['date'])->toDateString()
+                            ? Carbon::parse((string) $recommendation['game']['date'])->toDateString()
                             : null,
                         'game' => $recommendation['game']['id'] ?? null,
                     ]),

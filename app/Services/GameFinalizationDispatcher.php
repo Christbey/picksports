@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\DataTransferObjects\ESPN\GameData;
 use App\Events\GameFinalized;
+use App\Models\NBA\Game;
 use Illuminate\Database\Eloquent\Model;
 
 class GameFinalizationDispatcher
@@ -12,7 +13,7 @@ class GameFinalizationDispatcher
      * @var array<class-string<Model>, string>
      */
     private const SPORT_BY_GAME_MODEL = [
-        \App\Models\NBA\Game::class => 'nba',
+        Game::class => 'nba',
         \App\Models\NFL\Game::class => 'nfl',
         \App\Models\MLB\Game::class => 'mlb',
         \App\Models\CBB\Game::class => 'cbb',

@@ -4,22 +4,24 @@ namespace App\Actions\ESPN\CBB;
 
 use App\Actions\CBB\UpdateLivePrediction;
 use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
+use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Services\ESPN\CBB\EspnService;
 use App\Support\CbbNcaaTournamentResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 {
-    protected const GAME_MODEL_CLASS = \App\Models\CBB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\CBB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
 
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
 
     public function __construct(
-        \App\Services\ESPN\CBB\EspnService $espnService,
+        EspnService $espnService,
         ?object $updateLivePrediction = null,
         protected ?CbbNcaaTournamentResolver $tournamentResolver = null,
         protected ?SyncTeams $syncTeams = null,
@@ -41,7 +43,7 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
             $this->tournamentResolver?->resolveFromEspnEvent($eventData) ?? [],
         );
 
-        $existingGame = \App\Models\CBB\Game::query()
+        $existingGame = Game::query()
             ->where('espn_event_id', $dto->espnEventId)
             ->first();
 

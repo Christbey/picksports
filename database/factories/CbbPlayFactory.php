@@ -2,14 +2,17 @@
 
 namespace Database\Factories;
 
+use App\Models\CBB\Game;
+use App\Models\CBB\Play;
+use App\Models\CBB\Team;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CBB\Play>
+ * @extends Factory<Play>
  */
 class CbbPlayFactory extends Factory
 {
-    protected $model = \App\Models\CBB\Play::class;
+    protected $model = Play::class;
 
     /**
      * Define the model's default state.
@@ -19,8 +22,8 @@ class CbbPlayFactory extends Factory
     public function definition(): array
     {
         return [
-            'game_id' => \App\Models\CBB\Game::factory(),
-            'possession_team_id' => \App\Models\CBB\Team::factory(),
+            'game_id' => Game::factory(),
+            'possession_team_id' => Team::factory(),
             'espn_play_id' => (string) $this->faker->unique()->numberBetween(100000, 999999),
             'sequence_number' => $this->faker->unique()->numberBetween(1, 500),
             'period' => 1,

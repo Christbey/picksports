@@ -5,6 +5,7 @@ namespace App\Console\Commands\ESPN;
 use App\Console\Commands\ESPN\Concerns\ResolvesJobClass;
 use App\Console\Commands\ESPN\Concerns\ResolvesSportCode;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncSchedulesCommand extends Command
@@ -131,7 +132,7 @@ abstract class AbstractSyncSchedulesCommand extends Command
         return $action->execute($teamEspnId, $season);
     }
 
-    protected function teamsToSync(int $season): \Illuminate\Database\Eloquent\Collection
+    protected function teamsToSync(int $season): Collection
     {
         $teamModelClass = $this->teamModelClass();
 

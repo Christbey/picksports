@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\NBA\Team;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -16,15 +17,15 @@ return new class extends Migration
         });
 
         DB::table('sports_futures_odds')
-            ->where('team_type', \App\Models\NBA\Team::class)
+            ->where('team_type', Team::class)
             ->update(['nba_team_id' => DB::raw('team_id')]);
 
         DB::table('sports_futures_odds')
-            ->where('team_type', \App\Models\MLB\Team::class)
+            ->where('team_type', App\Models\MLB\Team::class)
             ->update(['mlb_team_id' => DB::raw('team_id')]);
 
         DB::table('sports_futures_odds')
-            ->where('team_type', \App\Models\NFL\Team::class)
+            ->where('team_type', App\Models\NFL\Team::class)
             ->update(['nfl_team_id' => DB::raw('team_id')]);
 
         if (DB::getDriverName() === 'sqlite') {
@@ -47,21 +48,21 @@ return new class extends Migration
         DB::table('sports_futures_odds')
             ->whereNotNull('nba_team_id')
             ->update([
-                'team_type' => \App\Models\NBA\Team::class,
+                'team_type' => Team::class,
                 'team_id' => DB::raw('nba_team_id'),
             ]);
 
         DB::table('sports_futures_odds')
             ->whereNotNull('mlb_team_id')
             ->update([
-                'team_type' => \App\Models\MLB\Team::class,
+                'team_type' => App\Models\MLB\Team::class,
                 'team_id' => DB::raw('mlb_team_id'),
             ]);
 
         DB::table('sports_futures_odds')
             ->whereNotNull('nfl_team_id')
             ->update([
-                'team_type' => \App\Models\NFL\Team::class,
+                'team_type' => App\Models\NFL\Team::class,
                 'team_id' => DB::raw('nfl_team_id'),
             ]);
 

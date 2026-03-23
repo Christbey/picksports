@@ -5,6 +5,7 @@ use App\Models\WCBB\Game;
 use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
 use App\Models\WCBB\TournamentForecast;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 
@@ -151,5 +152,5 @@ it('regenerates stale or partial wcbb forecasts before responding', function () 
     expect(TournamentForecast::query()->where('season', 2026)->count())->toBe(6)
         ->and(count($response->json('data')))->toBe(6)
         ->and($oldestUpdatedAt)->not->toBeNull()
-        ->and(now()->diffInHours(\Illuminate\Support\Carbon::parse($oldestUpdatedAt)))->toBeLessThan(1);
+        ->and(now()->diffInHours(Carbon::parse($oldestUpdatedAt)))->toBeLessThan(1);
 });

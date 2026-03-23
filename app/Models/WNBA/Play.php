@@ -2,13 +2,14 @@
 
 namespace App\Models\WNBA;
 
+use Database\Factories\CbbPlayFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Play extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbPlayFactory> */
+    /** @use HasFactory<CbbPlayFactory> */
     use HasFactory;
 
     protected $table = 'wnba_plays';

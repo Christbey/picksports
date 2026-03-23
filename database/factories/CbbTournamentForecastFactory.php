@@ -3,14 +3,15 @@
 namespace Database\Factories;
 
 use App\Models\CBB\Team;
+use App\Models\CBB\TournamentForecast;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CBB\TournamentForecast>
+ * @extends Factory<TournamentForecast>
  */
 class CbbTournamentForecastFactory extends Factory
 {
-    protected $model = \App\Models\CBB\TournamentForecast::class;
+    protected $model = TournamentForecast::class;
 
     /**
      * Define the model's default state.

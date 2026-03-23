@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 class CalibrateAllParametersCommand extends Command
 {
@@ -119,7 +120,7 @@ class CalibrateAllParametersCommand extends Command
         return Command::SUCCESS;
     }
 
-    protected function generateParameterSets(bool $quick): \Illuminate\Support\Collection
+    protected function generateParameterSets(bool $quick): Collection
     {
         $sets = collect();
 

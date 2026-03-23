@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Actions\NFL\GradePredictions;
 use App\Console\Commands\Sports\AbstractGradePredictionsCommand;
 
 class GradePredictionsCommand extends AbstractGradePredictionsCommand
@@ -10,5 +11,5 @@ class GradePredictionsCommand extends AbstractGradePredictionsCommand
 
     protected const COMMAND_DESCRIPTION = 'Grade NFL predictions against actual game outcomes and display accuracy metrics';
 
-    protected const GRADE_ACTION_CLASS = \App\Actions\NFL\GradePredictions::class;
+    protected const GRADE_ACTION_CLASS = GradePredictions::class;
 }

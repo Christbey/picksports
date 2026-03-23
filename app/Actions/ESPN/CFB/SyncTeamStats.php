@@ -3,13 +3,15 @@
 namespace App\Actions\ESPN\CFB;
 
 use App\Actions\ESPN\AbstractFootballSyncTeamStats;
+use App\Models\CFB\Team;
+use App\Models\CFB\TeamStat;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncTeamStats extends AbstractFootballSyncTeamStats
 {
-    protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected const TEAM_STAT_MODEL_CLASS = \App\Models\CFB\TeamStat::class;
+    protected const TEAM_STAT_MODEL_CLASS = TeamStat::class;
 
     protected function parseTeamStats(array $statistics): array
     {

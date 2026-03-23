@@ -3,12 +3,13 @@
 namespace App\Models;
 
 use App\Support\SubscriptionTierCache;
+use Database\Factories\SubscriptionTierFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class SubscriptionTier extends Model
 {
-    /** @use HasFactory<\Database\Factories\SubscriptionTierFactory> */
+    /** @use HasFactory<SubscriptionTierFactory> */
     use HasFactory;
 
     protected $fillable = [

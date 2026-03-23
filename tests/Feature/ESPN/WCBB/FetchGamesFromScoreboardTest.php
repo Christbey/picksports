@@ -12,13 +12,13 @@ beforeEach(function () {
     $this->homeTeam = Team::factory()->create(['espn_id' => '1']);
     $this->awayTeam = Team::factory()->create(['espn_id' => '2']);
 
-    $predictionAction = \Mockery::mock(UpdateLivePrediction::class);
+    $predictionAction = Mockery::mock(UpdateLivePrediction::class);
     $predictionAction->shouldReceive('execute')->once()->andReturnNull();
     $this->app->instance(UpdateLivePrediction::class, $predictionAction);
 });
 
 afterEach(function () {
-    \Mockery::close();
+    Mockery::close();
 });
 
 it('syncs WCBB games from the scoreboard job without constructor type errors', function () {

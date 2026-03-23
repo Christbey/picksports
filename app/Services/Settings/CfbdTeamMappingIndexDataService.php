@@ -4,6 +4,7 @@ namespace App\Services\Settings;
 
 use App\Http\Resources\Settings\CfbdTeamMappingResource;
 use App\Http\Resources\Settings\EspnTeamOptionResource;
+use App\Models\CFB\Team;
 use App\Models\CfbdTeamMapping;
 use App\Support\ResourcePayload;
 use Illuminate\Database\Eloquent\Model;
@@ -53,7 +54,7 @@ class CfbdTeamMappingIndexDataService
     }
 
     /**
-     * @param  array{teamModel: class-string<\Illuminate\Database\Eloquent\Model>, teamField: string}  $config
+     * @param  array{teamModel: class-string<Model>, teamField: string}  $config
      * @return array<int, array<string, mixed>>
      */
     public function espnTeams(array $config): array
@@ -74,7 +75,7 @@ class CfbdTeamMappingIndexDataService
     protected function cfbConfig(): array
     {
         return [
-            'teamModel' => \App\Models\CFB\Team::class,
+            'teamModel' => Team::class,
             'teamField' => 'school',
         ];
     }

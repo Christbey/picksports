@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\WNBA\PlayerStat;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\WNBA\PlayerStat>
+ * @extends Factory<PlayerStat>
  */
 class WnbaPlayerStatFactory extends Factory
 {

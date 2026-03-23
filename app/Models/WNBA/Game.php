@@ -2,6 +2,7 @@
 
 namespace App\Models\WNBA;
 
+use Database\Factories\WnbaGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Game extends Model
 {
-    /** @use HasFactory<\Database\Factories\WnbaGameFactory> */
+    /** @use HasFactory<WnbaGameFactory> */
     use HasFactory;
 
     protected $table = 'wnba_games';
 
-    protected static function newFactory(): \Database\Factories\WnbaGameFactory
+    protected static function newFactory(): WnbaGameFactory
     {
-        return \Database\Factories\WnbaGameFactory::new();
+        return WnbaGameFactory::new();
     }
 
     protected $fillable = [

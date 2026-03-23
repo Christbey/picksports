@@ -4,6 +4,7 @@ namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
 use App\Services\SportsAssetStorage;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Log;
@@ -340,7 +341,7 @@ abstract class AbstractSyncTeams
     }
 
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $teamModel
+     * @param  class-string<Model>  $teamModel
      * @param  array<string, mixed>  $attributes
      */
     protected function resolveUniqueAbbreviation(string $teamModel, array $attributes, string $espnId): string
@@ -409,7 +410,7 @@ abstract class AbstractSyncTeams
 
     /**
      * @param  array<string, mixed>  $rawTeam
-     * @return \Illuminate\Database\Eloquent\Model|null
+     * @return Model|null
      */
     protected function persistTeamRecord(array $rawTeam): ?object
     {

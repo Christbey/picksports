@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\NotificationVariableRegistry;
 use Database\Factories\NotificationTemplateFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -63,7 +64,7 @@ class NotificationTemplate extends Model
     protected function replaceVariables(string $template, array $data): string
     {
         // Flatten data if it's in nested format
-        $flatData = \App\Services\NotificationVariableRegistry::flattenData($data);
+        $flatData = NotificationVariableRegistry::flattenData($data);
 
         $result = $template;
 

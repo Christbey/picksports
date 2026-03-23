@@ -2,13 +2,14 @@
 
 namespace App\Models\WNBA;
 
+use Database\Factories\CbbTeamStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamStat extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbTeamStatFactory> */
+    /** @use HasFactory<CbbTeamStatFactory> */
     use HasFactory;
 
     protected $table = 'wnba_team_stats';

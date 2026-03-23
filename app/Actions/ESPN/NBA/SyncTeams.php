@@ -3,13 +3,15 @@
 namespace App\Actions\ESPN\NBA;
 
 use App\Actions\ESPN\AbstractSyncTeams;
+use App\DataTransferObjects\ESPN\TeamData;
+use App\Models\NBA\Team;
 use Illuminate\Support\Facades\Log;
 
 class SyncTeams extends AbstractSyncTeams
 {
-    protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected const TEAM_DTO_CLASS = \App\DataTransferObjects\ESPN\TeamData::class;
+    protected const TEAM_DTO_CLASS = TeamData::class;
 
     /**
      * @var array<string, array{conference:string,division:string}>

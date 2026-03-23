@@ -2,6 +2,7 @@
 
 namespace App\Models\CBB;
 
+use Database\Factories\CbbGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Game extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbGameFactory> */
+    /** @use HasFactory<CbbGameFactory> */
     use HasFactory;
 
     protected $table = 'cbb_games';
 
-    protected static function newFactory(): \Database\Factories\CbbGameFactory
+    protected static function newFactory(): CbbGameFactory
     {
-        return \Database\Factories\CbbGameFactory::new();
+        return CbbGameFactory::new();
     }
 
     protected $fillable = [
@@ -112,6 +113,6 @@ class Game extends Model
 
     public function playerProps(): HasMany
     {
-        return $this->hasMany(\App\Models\CBB\PlayerProp::class, 'game_id');
+        return $this->hasMany(PlayerProp::class, 'game_id');
     }
 }

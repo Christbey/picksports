@@ -3,6 +3,7 @@
 namespace App\Models\CFB;
 
 use App\Models\Concerns\ResolvesPlayerHeadshotUrls;
+use Database\Factories\CfbPlayerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Player extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbPlayerFactory> */
+    /** @use HasFactory<CfbPlayerFactory> */
     use HasFactory, ResolvesPlayerHeadshotUrls;
 
     protected $table = 'cfb_players';

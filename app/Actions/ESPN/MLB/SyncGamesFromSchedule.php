@@ -4,12 +4,13 @@ namespace App\Actions\ESPN\MLB;
 
 use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
+use App\Models\MLB\Game;
 use App\Models\MLB\Team;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 {
-    protected const GAME_MODEL_CLASS = \App\Models\MLB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
     {

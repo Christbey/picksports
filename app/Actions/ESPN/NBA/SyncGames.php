@@ -4,13 +4,15 @@ namespace App\Actions\ESPN\NBA;
 
 use App\Actions\ESPN\AbstractSyncGames;
 use App\DataTransferObjects\ESPN\GameData;
+use App\Models\NBA\Game;
+use App\Models\NBA\Team;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGames extends AbstractSyncGames
 {
-    protected const GAME_MODEL_CLASS = \App\Models\NBA\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {

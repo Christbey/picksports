@@ -3,12 +3,15 @@
 namespace App\Actions\ESPN\WCBB;
 
 use App\Actions\ESPN\AbstractSyncPlayers;
+use App\DataTransferObjects\ESPN\CollegePlayerData;
+use App\Models\WCBB\Player;
+use App\Models\WCBB\Team;
 
 class SyncPlayers extends AbstractSyncPlayers
 {
-    protected const PLAYER_MODEL_CLASS = \App\Models\WCBB\Player::class;
+    protected const PLAYER_MODEL_CLASS = Player::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\WCBB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected const PLAYER_DTO_CLASS = \App\DataTransferObjects\ESPN\CollegePlayerData::class;
+    protected const PLAYER_DTO_CLASS = CollegePlayerData::class;
 }

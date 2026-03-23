@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\Actions\MLB\GeneratePrediction;
 use App\Console\Commands\Sports\AbstractGenerateSeasonScheduledPredictionsCommand;
 
 class GeneratePredictionsCommand extends AbstractGenerateSeasonScheduledPredictionsCommand
@@ -12,5 +13,5 @@ class GeneratePredictionsCommand extends AbstractGenerateSeasonScheduledPredicti
 
     protected const SEASON_OPTION_DESCRIPTION = 'Generate predictions for a specific season (required)';
 
-    protected const GENERATE_ACTION_CLASS = \App\Actions\MLB\GeneratePrediction::class;
+    protected const GENERATE_ACTION_CLASS = GeneratePrediction::class;
 }

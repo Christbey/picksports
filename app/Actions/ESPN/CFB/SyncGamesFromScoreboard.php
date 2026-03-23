@@ -4,21 +4,24 @@ namespace App\Actions\ESPN\CFB;
 
 use App\Actions\CFB\UpdateLivePrediction;
 use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
+use App\Models\CFB\Game;
+use App\Models\CFB\Team;
+use App\Services\ESPN\CFB\EspnService;
 use App\Support\CfbPostseasonRoundResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 {
-    protected const GAME_MODEL_CLASS = \App\Models\CFB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
 
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
 
     public function __construct(
-        \App\Services\ESPN\CFB\EspnService $espnService,
+        EspnService $espnService,
         ?object $updateLivePrediction = null,
         protected ?CfbPostseasonRoundResolver $postseasonRoundResolver = null,
     ) {

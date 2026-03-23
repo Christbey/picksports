@@ -28,7 +28,7 @@ return new class extends Migration
             Schema::table('odds_api_team_mappings', function (Blueprint $table) {
                 $table->unique(['espn_team_name', 'sport']);
             });
-        } catch (\Exception $e) {
+        } catch (Exception $e) {
             // Constraint already exists, ignore
         }
     }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Actions\OddsApi\NFL\SyncOddsForGames;
 use App\Console\Commands\NFL\Concerns\ResolvesNflOddsSportKey;
 use App\Console\Commands\Sports\AbstractSyncOddsCommand;
 
@@ -13,7 +14,7 @@ class SyncOddsCommand extends AbstractSyncOddsCommand
 
     protected const COMMAND_DESCRIPTION = 'Sync betting odds from The Odds API for NFL games';
 
-    protected const SYNC_ACTION_CLASS = \App\Actions\OddsApi\NFL\SyncOddsForGames::class;
+    protected const SYNC_ACTION_CLASS = SyncOddsForGames::class;
 
     protected function defaultOddsSportKey(): ?string
     {

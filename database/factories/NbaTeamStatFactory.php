@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\NBA\TeamStat;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\NBA\TeamStat>
+ * @extends Factory<TeamStat>
  */
 class NbaTeamStatFactory extends Factory
 {
-    protected $model = \App\Models\NBA\TeamStat::class;
+    protected $model = TeamStat::class;
 
     public function definition(): array
     {

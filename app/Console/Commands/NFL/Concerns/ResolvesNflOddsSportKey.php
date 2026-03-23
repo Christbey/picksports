@@ -3,6 +3,7 @@
 namespace App\Console\Commands\NFL\Concerns;
 
 use App\Console\Commands\Sports\Concerns\ResolvesSeasonalOddsSportKey;
+use App\Models\NFL\Game;
 
 trait ResolvesNflOddsSportKey
 {
@@ -17,7 +18,7 @@ trait ResolvesNflOddsSportKey
     protected function resolveAutomaticNflOddsSportKey(): string
     {
         return $this->resolveAutomaticSeasonalOddsSportKey(
-            \App\Models\NFL\Game::class,
+            Game::class,
             'nfl',
             self::NFL_REGULAR_ODDS_SPORT_KEY,
             self::NFL_PRESEASON_ODDS_SPORT_KEY,

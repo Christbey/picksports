@@ -2,13 +2,14 @@
 
 namespace App\Models\WCBB;
 
+use Database\Factories\WcbbPredictionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Prediction extends Model
 {
-    /** @use HasFactory<\Database\Factories\WcbbPredictionFactory> */
+    /** @use HasFactory<WcbbPredictionFactory> */
     use HasFactory;
 
     protected $table = 'wcbb_predictions';
@@ -109,8 +110,8 @@ class Prediction extends Model
         return $this->belongsTo(Game::class, 'game_id');
     }
 
-    protected static function newFactory(): \Database\Factories\WcbbPredictionFactory
+    protected static function newFactory(): WcbbPredictionFactory
     {
-        return \Database\Factories\WcbbPredictionFactory::new();
+        return WcbbPredictionFactory::new();
     }
 }

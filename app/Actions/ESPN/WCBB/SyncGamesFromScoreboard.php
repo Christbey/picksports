@@ -4,15 +4,17 @@ namespace App\Actions\ESPN\WCBB;
 
 use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
 use App\Actions\WCBB\UpdateLivePrediction;
+use App\Models\WCBB\Game;
+use App\Models\WCBB\Team;
 use App\Services\ESPN\WCBB\EspnService;
 use App\Services\SportsAssetStorage;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 {
-    protected const GAME_MODEL_CLASS = \App\Models\WCBB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\WCBB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
 

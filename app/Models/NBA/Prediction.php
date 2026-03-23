@@ -2,13 +2,14 @@
 
 namespace App\Models\NBA;
 
+use Database\Factories\NbaPredictionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Prediction extends Model
 {
-    /** @use HasFactory<\Database\Factories\NbaPredictionFactory> */
+    /** @use HasFactory<NbaPredictionFactory> */
     use HasFactory;
 
     protected $table = 'nba_predictions';

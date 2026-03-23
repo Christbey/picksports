@@ -18,7 +18,7 @@ class Game extends Model
 
     public function playerProps(): HasMany
     {
-        return $this->hasMany(\App\Models\MLB\PlayerProp::class, 'game_id');
+        return $this->hasMany(PlayerProp::class, 'game_id');
     }
 
     protected static function newFactory(): MlbGameFactory

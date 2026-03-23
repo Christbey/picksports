@@ -1,5 +1,8 @@
 <?php
 
+use App\Models\NBA\Game;
+use App\Models\NBA\Prediction;
+use App\Models\NBA\Team;
 use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Notifications\BettingValueAlert;
@@ -14,9 +17,9 @@ test('betting value alert includes whatsapp channel when enabled in user prefere
         'phone_number' => '+1234567890',
     ]);
 
-    $homeTeam = \App\Models\NBA\Team::factory()->create(['name' => 'Lakers']);
-    $awayTeam = \App\Models\NBA\Team::factory()->create(['name' => 'Celtics']);
-    $game = \App\Models\NBA\Game::factory()->create([
+    $homeTeam = Team::factory()->create(['name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['name' => 'Celtics']);
+    $game = Game::factory()->create([
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'game_date' => now()->addDay(),
@@ -29,7 +32,7 @@ test('betting value alert includes whatsapp channel when enabled in user prefere
         ],
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::query()->create([
+    $prediction = Prediction::query()->create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -5.5,
@@ -55,9 +58,9 @@ test('betting value alert renders whatsapp message body with prediction url', fu
         'phone_number' => '+1234567890',
     ]);
 
-    $homeTeam = \App\Models\NBA\Team::factory()->create(['name' => 'Lakers']);
-    $awayTeam = \App\Models\NBA\Team::factory()->create(['name' => 'Celtics']);
-    $game = \App\Models\NBA\Game::factory()->create([
+    $homeTeam = Team::factory()->create(['name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['name' => 'Celtics']);
+    $game = Game::factory()->create([
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'game_date' => now()->addDay(),
@@ -70,7 +73,7 @@ test('betting value alert renders whatsapp message body with prediction url', fu
         ],
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::query()->create([
+    $prediction = Prediction::query()->create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -5.5,

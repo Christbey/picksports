@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\NFL\Team;
 use Illuminate\Database\Seeder;
 
 class NflTeamSeeder extends Seeder
@@ -45,7 +46,7 @@ class NflTeamSeeder extends Seeder
         ];
 
         foreach ($teams as $team) {
-            \App\Models\NFL\Team::create($team);
+            Team::create($team);
         }
     }
 }

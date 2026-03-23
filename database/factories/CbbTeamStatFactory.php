@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\CBB\TeamStat;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CBB\TeamStat>
+ * @extends Factory<TeamStat>
  */
 class CbbTeamStatFactory extends Factory
 {
-    protected $model = \App\Models\CBB\TeamStat::class;
+    protected $model = TeamStat::class;
 
     /**
      * Define the model's default state.

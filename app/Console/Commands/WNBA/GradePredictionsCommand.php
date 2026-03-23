@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\WNBA;
 
+use App\Actions\WNBA\GradePredictions;
 use App\Console\Commands\Sports\AbstractGradePredictionsCommand;
 
 class GradePredictionsCommand extends AbstractGradePredictionsCommand
@@ -10,5 +11,5 @@ class GradePredictionsCommand extends AbstractGradePredictionsCommand
 
     protected const COMMAND_DESCRIPTION = 'Grade WNBA predictions against actual game outcomes and display accuracy metrics';
 
-    protected const GRADE_ACTION_CLASS = \App\Actions\WNBA\GradePredictions::class;
+    protected const GRADE_ACTION_CLASS = GradePredictions::class;
 }

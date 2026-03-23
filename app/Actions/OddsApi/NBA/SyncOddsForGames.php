@@ -3,6 +3,7 @@
 namespace App\Actions\OddsApi\NBA;
 
 use App\Actions\OddsApi\AbstractSyncOddsForGames;
+use App\Models\NBA\Game;
 
 class SyncOddsForGames extends AbstractSyncOddsForGames
 {
@@ -10,7 +11,7 @@ class SyncOddsForGames extends AbstractSyncOddsForGames
 
     protected const PRESEASON_SPORT_KEY = 'basketball_nba_preseason';
 
-    protected const GAME_MODEL_CLASS = \App\Models\NBA\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
     protected const INCLUDE_ABBREVIATION_IN_TEAM_NAMES = true;
 

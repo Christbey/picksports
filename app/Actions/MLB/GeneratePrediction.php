@@ -3,6 +3,7 @@
 namespace App\Actions\MLB;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Models\MLB\Game;
 use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
@@ -178,7 +179,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     public function executeForAllScheduledGames(int $season): int
     {
-        $games = \App\Models\MLB\Game::query()
+        $games = Game::query()
             ->where('season', $season)
             ->where('status', 'STATUS_SCHEDULED')
             ->when(

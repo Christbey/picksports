@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\NFL\Game;
+use App\Models\NFL\Prediction;
 use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
@@ -10,7 +12,7 @@ use Illuminate\Database\Eloquent\Model;
 class AlertService
 {
     protected const SPORTS_MODELS = [
-        'nfl' => ['game' => \App\Models\NFL\Game::class, 'prediction' => \App\Models\NFL\Prediction::class],
+        'nfl' => ['game' => Game::class, 'prediction' => Prediction::class],
         'nba' => ['game' => \App\Models\NBA\Game::class, 'prediction' => \App\Models\NBA\Prediction::class],
         'cbb' => ['game' => \App\Models\CBB\Game::class, 'prediction' => \App\Models\CBB\Prediction::class],
         'wcbb' => ['game' => \App\Models\WCBB\Game::class, 'prediction' => \App\Models\WCBB\Prediction::class],

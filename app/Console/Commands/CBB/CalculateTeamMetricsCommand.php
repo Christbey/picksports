@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\CBB;
 
+use App\Actions\CBB\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractAdjustedBasketballTeamMetricsCommand;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
@@ -12,7 +13,7 @@ class CalculateTeamMetricsCommand extends AbstractAdjustedBasketballTeamMetricsC
 
     protected const COMMAND_DESCRIPTION = 'Calculate CBB team advanced metrics (offensive/defensive efficiency, tempo, net rating)';
 
-    protected const CALCULATE_METRICS_ACTION_CLASS = \App\Actions\CBB\CalculateTeamMetrics::class;
+    protected const CALCULATE_METRICS_ACTION_CLASS = CalculateTeamMetrics::class;
 
     protected const TEAM_MODEL_CLASS = Team::class;
 

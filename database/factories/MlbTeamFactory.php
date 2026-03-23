@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\MLB\Team;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\MLB\Team>
+ * @extends Factory<Team>
  */
 class MlbTeamFactory extends Factory
 {
-    protected $model = \App\Models\MLB\Team::class;
+    protected $model = Team::class;
 
     /**
      * Define the model's default state.

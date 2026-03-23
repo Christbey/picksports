@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands\CFB;
 
+use App\Actions\CFB\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractFootballTeamMetricsCommand;
+use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\CFB\TeamSeasonAffiliation;
 use Illuminate\Database\Eloquent\Builder;
@@ -13,9 +15,9 @@ class CalculateTeamMetricsCommand extends AbstractFootballTeamMetricsCommand
 
     protected const COMMAND_DESCRIPTION = 'Calculate CFB team metrics (offensive/defensive ratings, yards, turnovers, SOS)';
 
-    protected const CALCULATE_METRICS_ACTION_CLASS = \App\Actions\CFB\CalculateTeamMetrics::class;
+    protected const CALCULATE_METRICS_ACTION_CLASS = CalculateTeamMetrics::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\CFB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
 

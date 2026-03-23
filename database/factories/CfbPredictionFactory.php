@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\CFB\Prediction;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CFB\Prediction>
+ * @extends Factory<Prediction>
  */
 class CfbPredictionFactory extends Factory
 {

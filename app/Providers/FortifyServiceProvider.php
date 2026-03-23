@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Http\Responses\BracketInviteRegisterResponse;
 use App\Models\GroupInvitation;
 use App\Models\GroupJoinLink;
 use Illuminate\Cache\RateLimiting\Limit;
@@ -23,7 +24,7 @@ class FortifyServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->app->singleton(RegisterResponse::class, \App\Http\Responses\BracketInviteRegisterResponse::class);
+        $this->app->singleton(RegisterResponse::class, BracketInviteRegisterResponse::class);
     }
 
     /**

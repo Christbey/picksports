@@ -2,13 +2,14 @@
 
 namespace App\Models\NFL;
 
+use Database\Factories\NflEloRatingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EloRating extends Model
 {
-    /** @use HasFactory<\Database\Factories\NflEloRatingFactory> */
+    /** @use HasFactory<NflEloRatingFactory> */
     use HasFactory;
 
     protected $table = 'nfl_elo_ratings';

@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\CFB\EloRating;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CFB\EloRating>
+ * @extends Factory<EloRating>
  */
 class CfbEloRatingFactory extends Factory
 {

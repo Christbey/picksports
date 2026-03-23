@@ -2,13 +2,14 @@
 
 namespace App\Models\WNBA;
 
+use Database\Factories\CbbEloRatingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EloRating extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbEloRatingFactory> */
+    /** @use HasFactory<CbbEloRatingFactory> */
     use HasFactory;
 
     protected $table = 'wnba_elo_ratings';

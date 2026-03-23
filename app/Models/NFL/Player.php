@@ -3,6 +3,7 @@
 namespace App\Models\NFL;
 
 use App\Models\Concerns\ResolvesPlayerHeadshotUrls;
+use Database\Factories\NflPlayerFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Player extends Model
 {
-    /** @use HasFactory<\Database\Factories\NflPlayerFactory> */
+    /** @use HasFactory<NflPlayerFactory> */
     use HasFactory, ResolvesPlayerHeadshotUrls;
 
     protected $table = 'nfl_players';
@@ -54,8 +55,8 @@ class Player extends Model
             ->orderByDesc('updated_at');
     }
 
-    protected static function newFactory(): \Database\Factories\NflPlayerFactory
+    protected static function newFactory(): NflPlayerFactory
     {
-        return \Database\Factories\NflPlayerFactory::new();
+        return NflPlayerFactory::new();
     }
 }

@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\CFB\Team;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CFB\Team>
+ * @extends Factory<Team>
  */
 class CfbTeamFactory extends Factory
 {
-    protected $model = \App\Models\CFB\Team::class;
+    protected $model = Team::class;
 
     /**
      * Define the model's default state.

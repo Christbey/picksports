@@ -2,7 +2,10 @@
 
 namespace App\Console\Commands\CFB;
 
+use App\Actions\CFB\GeneratePrediction;
 use App\Console\Commands\Sports\AbstractCollegeGeneratePredictionsCommand;
+use App\Models\CFB\Game;
+use App\Models\CFB\Prediction;
 
 class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsCommand
 {
@@ -10,11 +13,11 @@ class GeneratePredictionsCommand extends AbstractCollegeGeneratePredictionsComma
 
     protected const COMMAND_DESCRIPTION = 'Generate CFB game predictions based on Elo ratings and team metrics';
 
-    protected const GENERATE_ACTION_CLASS = \App\Actions\CFB\GeneratePrediction::class;
+    protected const GENERATE_ACTION_CLASS = GeneratePrediction::class;
 
-    protected const GAME_MODEL_CLASS = \App\Models\CFB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const PREDICTION_MODEL_CLASS = \App\Models\CFB\Prediction::class;
+    protected const PREDICTION_MODEL_CLASS = Prediction::class;
 
     protected const USES_EASTERN_DATE_WINDOW = true;
 

@@ -5,6 +5,7 @@ namespace App\Actions\ESPN;
 use App\Services\ESPN\BaseEspnService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
@@ -126,7 +127,7 @@ abstract class AbstractSyncPlayerInjuries
     {
         $playerModel = $this->playerModelClass();
 
-        /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model> $players */
+        /** @var Collection<int, Model> $players */
         $players = $playerModel::query()
             ->where('team_id', $teamId)
             ->get(['id', 'espn_id']);

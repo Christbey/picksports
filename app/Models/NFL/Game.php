@@ -2,6 +2,7 @@
 
 namespace App\Models\NFL;
 
+use Database\Factories\NflGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Game extends Model
 {
-    /** @use HasFactory<\Database\Factories\NflGameFactory> */
+    /** @use HasFactory<NflGameFactory> */
     use HasFactory;
 
     protected $table = 'nfl_games';
@@ -90,11 +91,11 @@ class Game extends Model
 
     public function playerProps(): HasMany
     {
-        return $this->hasMany(\App\Models\NFL\PlayerProp::class, 'game_id');
+        return $this->hasMany(PlayerProp::class, 'game_id');
     }
 
-    protected static function newFactory(): \Database\Factories\NflGameFactory
+    protected static function newFactory(): NflGameFactory
     {
-        return \Database\Factories\NflGameFactory::new();
+        return NflGameFactory::new();
     }
 }

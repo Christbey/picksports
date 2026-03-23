@@ -3,6 +3,7 @@
 namespace App\Jobs\ESPN\CBB;
 
 use App\Actions\ESPN\CBB\SyncPlayers;
+use App\Models\CBB\Team;
 use App\Services\ESPN\CBB\EspnService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -29,7 +30,7 @@ class FetchPlayers implements ShouldQueue
             Log::info("CBB: Synced {$count} players for team {$this->teamEspnId} from ESPN");
         } else {
             // Dispatch individual jobs for each team to avoid timeouts
-            $teams = \App\Models\CBB\Team::all();
+            $teams = Team::all();
             foreach ($teams as $team) {
                 FetchPlayers::dispatch($team->espn_id);
             }

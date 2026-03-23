@@ -1,8 +1,9 @@
 <?php
 
 use App\Support\EspnGameStatusResolver;
+use Tests\TestCase;
 
-uses(Tests\TestCase::class);
+uses(TestCase::class);
 
 it('does not let schedule finalize an existing non-final game', function () {
     $resolver = new EspnGameStatusResolver;

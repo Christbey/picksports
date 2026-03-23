@@ -4,8 +4,9 @@ namespace App\Http\Resources\Admin;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Spatie\Permission\Models\Permission;
 
-/** @mixin \Spatie\Permission\Models\Permission */
+/** @mixin Permission */
 class PermissionSummaryResource extends JsonResource
 {
     /**

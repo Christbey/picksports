@@ -3,6 +3,8 @@
 namespace App\Models\CFB;
 
 use App\Models\Concerns\ResolvesTeamLogoUrls;
+use App\Support\CfbSeasonAffiliationResolver;
+use Database\Factories\CfbTeamFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,14 +12,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbTeamFactory> */
+    /** @use HasFactory<CfbTeamFactory> */
     use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'cfb_teams';
 
-    protected static function newFactory(): \Database\Factories\CfbTeamFactory
+    protected static function newFactory(): CfbTeamFactory
     {
-        return \Database\Factories\CfbTeamFactory::new();
+        return CfbTeamFactory::new();
     }
 
     protected $fillable = [
@@ -119,6 +121,6 @@ class Team extends Model
             return $affiliation->isFbs();
         }
 
-        return app(\App\Support\CfbSeasonAffiliationResolver::class)->isFbs($this, $season);
+        return app(CfbSeasonAffiliationResolver::class)->isFbs($this, $season);
     }
 }

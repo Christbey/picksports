@@ -2,13 +2,14 @@
 
 namespace App\Models\CFB;
 
+use Database\Factories\CfbEloRatingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class EloRating extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbEloRatingFactory> */
+    /** @use HasFactory<CfbEloRatingFactory> */
     use HasFactory;
 
     protected $table = 'cfb_elo_ratings';

@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\WCBB\Prediction;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\WCBB\Prediction>
+ * @extends Factory<Prediction>
  */
 class WcbbPredictionFactory extends Factory
 {
-    protected $model = \App\Models\WCBB\Prediction::class;
+    protected $model = Prediction::class;
 
     /**
      * Define the model's default state.

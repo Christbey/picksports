@@ -1,10 +1,14 @@
 <?php
 
+use App\Models\NBA\Game;
+use App\Models\NBA\Prediction;
+use App\Models\NBA\Team;
 use App\Models\NotificationTemplate;
 use App\Models\SubscriptionTier;
 use App\Models\User;
 use App\Models\UserAlertPreference;
 use App\Notifications\BettingValueAlert;
+use App\Services\AlertService;
 use Illuminate\Support\Facades\Notification;
 
 test('notification uses template content when template is provided', function () {
@@ -17,15 +21,15 @@ test('notification uses template content when template is provided', function ()
         'email_body' => 'Hi {user.name}, we found a {prediction.edge_percentage} edge on {prediction.game_description}. Confidence: {prediction.confidence}',
     ]);
 
-    $game = \App\Models\NBA\Game::factory()->create([
+    $game = Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
+        'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::create([
+    $prediction = Prediction::create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -5.5,
@@ -51,15 +55,15 @@ test('notification uses template content when template is provided', function ()
 test('notification falls back to hardcoded content when no template provided', function () {
     $user = User::factory()->create();
 
-    $game = \App\Models\NBA\Game::factory()->create([
+    $game = Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
+        'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::create([
+    $prediction = Prediction::create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -5.5,
@@ -90,15 +94,15 @@ test('notification includes push notification data with template', function () {
         'push_body' => '{user.name}, check out {prediction.game_description}',
     ]);
 
-    $game = \App\Models\NBA\Game::factory()->create([
+    $game = Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => ['home_team' => 'Lakers', 'away_team' => 'Celtics', 'bookmakers' => []],
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
+        'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::create([
+    $prediction = Prediction::create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -5.5,
@@ -172,7 +176,7 @@ test('alert service respects user template preferences', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $game = \App\Models\NBA\Game::factory()->create([
+    $game = Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => [
@@ -192,17 +196,17 @@ test('alert service respects user template preferences', function () {
                 ],
             ],
         ],
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
+        'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::create([
+    $prediction = Prediction::create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -8.5,
     ]);
 
-    $alertService = app(\App\Services\AlertService::class);
+    $alertService = app(AlertService::class);
     $alertsSent = $alertService->checkForValueOpportunities('nba');
 
     expect($alertsSent)->toBeGreaterThan(0);
@@ -267,7 +271,7 @@ test('alert service filters users based on template preferences', function () {
         'digest_mode' => 'realtime',
     ]);
 
-    $game = \App\Models\NBA\Game::factory()->create([
+    $game = Game::factory()->create([
         'game_date' => now()->addDay(),
         'status' => 'scheduled',
         'odds_data' => [
@@ -287,17 +291,17 @@ test('alert service filters users based on template preferences', function () {
                 ],
             ],
         ],
-        'home_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Lakers'])->id,
-        'away_team_id' => \App\Models\NBA\Team::factory()->create(['name' => 'Celtics'])->id,
+        'home_team_id' => Team::factory()->create(['name' => 'Lakers'])->id,
+        'away_team_id' => Team::factory()->create(['name' => 'Celtics'])->id,
     ]);
 
-    $prediction = \App\Models\NBA\Prediction::create([
+    $prediction = Prediction::create([
         'game_id' => $game->id,
         'confidence_score' => 85,
         'predicted_spread' => -8.5,
     ]);
 
-    $alertService = app(\App\Services\AlertService::class);
+    $alertService = app(AlertService::class);
     $alertsSent = $alertService->checkForValueOpportunities('nba');
 
     Notification::assertSentTo($user1, BettingValueAlert::class);

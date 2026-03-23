@@ -1,7 +1,10 @@
 <?php
 
+use App\Actions\ESPN\CBB\SyncTeamSchedule;
 use App\Jobs\ESPN\CBB\FetchTeamSchedule;
+use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Services\ESPN\CBB\EspnService;
 use Illuminate\Support\Facades\Queue;
 
 use function Pest\Laravel\artisan;
@@ -38,7 +41,7 @@ it('prevents past games from being reset to STATUS_SCHEDULED', function () {
     $team = Team::factory()->create(['espn_id' => '123']);
     $opponent = Team::factory()->create(['espn_id' => '456']);
 
-    \App\Models\CBB\Game::factory()->create([
+    Game::factory()->create([
         'espn_event_id' => 'event-1',
         'home_team_id' => $team->id,
         'away_team_id' => $opponent->id,
@@ -47,7 +50,7 @@ it('prevents past games from being reset to STATUS_SCHEDULED', function () {
     ]);
 
     // Mock ESPN API response with a past game that's marked as scheduled
-    $espnService = Mockery::mock(\App\Services\ESPN\CBB\EspnService::class);
+    $espnService = Mockery::mock(EspnService::class);
     $espnService->shouldReceive('getSchedule')
         ->with('123', null)
         ->andReturn([
@@ -73,12 +76,12 @@ it('prevents past games from being reset to STATUS_SCHEDULED', function () {
             ],
         ]);
 
-    $this->app->instance(\App\Services\ESPN\CBB\EspnService::class, $espnService);
+    $this->app->instance(EspnService::class, $espnService);
 
-    $action = new \App\Actions\ESPN\CBB\SyncTeamSchedule($espnService);
+    $action = new SyncTeamSchedule($espnService);
     $action->execute('123');
 
     // Verify the existing final game was not downgraded back to scheduled
-    expect(\App\Models\CBB\Game::query()->where('espn_event_id', 'event-1')->first())
+    expect(Game::query()->where('espn_event_id', 'event-1')->first())
         ->status->toBe('STATUS_FINAL');
 });

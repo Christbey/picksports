@@ -2,6 +2,9 @@
 
 namespace App\Actions;
 
+use App\Models\NBA\Game;
+use App\Models\NBA\PlayerProp;
+use App\Models\NBA\PlayerStat;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -14,9 +17,9 @@ class GradePlayerProps
      */
     private const SPORT_CONFIG = [
         'basketball_nba' => [
-            'game_model' => \App\Models\NBA\Game::class,
-            'player_stat_model' => \App\Models\NBA\PlayerStat::class,
-            'player_prop_model' => \App\Models\NBA\PlayerProp::class,
+            'game_model' => Game::class,
+            'player_stat_model' => PlayerStat::class,
+            'player_prop_model' => PlayerProp::class,
         ],
         'basketball_ncaab' => [
             'game_model' => \App\Models\CBB\Game::class,
@@ -381,7 +384,7 @@ class GradePlayerProps
     protected function sportFromProp(Model $prop): string
     {
         return match ($prop::class) {
-            \App\Models\NBA\PlayerProp::class => 'basketball_nba',
+            PlayerProp::class => 'basketball_nba',
             \App\Models\CBB\PlayerProp::class => 'basketball_ncaab',
             \App\Models\NFL\PlayerProp::class => 'americanfootball_nfl',
             \App\Models\MLB\PlayerProp::class => 'baseball_mlb',

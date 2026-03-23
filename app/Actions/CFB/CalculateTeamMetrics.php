@@ -5,6 +5,7 @@ namespace App\Actions\CFB;
 use App\Actions\Sports\Concerns\CalculatesGridironTeamMetrics;
 use App\Actions\Sports\Concerns\CalculatesTeamTrueEpaFromPlays;
 use App\Concerns\FiltersTeamGames;
+use App\Models\CFB\EloRating;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Play;
@@ -529,7 +530,7 @@ class CalculateTeamMetrics
             return [];
         }
 
-        return \App\Models\CFB\EloRating::query()
+        return EloRating::query()
             ->whereIn('game_id', $games->pluck('id'))
             ->get()
             ->mapWithKeys(function ($record): array {

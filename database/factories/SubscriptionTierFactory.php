@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\SubscriptionTier;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\SubscriptionTier>
+ * @extends Factory<SubscriptionTier>
  */
 class SubscriptionTierFactory extends Factory
 {

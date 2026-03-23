@@ -8,6 +8,7 @@ use App\Models\Healthcheck;
 use App\Models\ValidationRun;
 use App\Services\CommandHeartbeatService;
 use App\Support\SportCatalog;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -176,7 +177,7 @@ class HealthcheckController extends Controller
         ]);
     }
 
-    public function run(Request $request): \Illuminate\Http\RedirectResponse
+    public function run(Request $request): RedirectResponse
     {
         $sport = $request->input('sport');
         $mode = $request->input('mode', 'heartbeat');
@@ -199,7 +200,7 @@ class HealthcheckController extends Controller
 
     public function __construct(private readonly CommandHeartbeatService $commandHeartbeatService) {}
 
-    public function sync(Request $request): \Illuminate\Http\RedirectResponse
+    public function sync(Request $request): RedirectResponse
     {
         $sport = $request->input('sport');
         $checkType = $request->input('check_type');

@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands\NBA;
 
+use App\Actions\NBA\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractProBasketballTeamMetricsCommand;
+use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 
 class CalculateTeamMetricsCommand extends AbstractProBasketballTeamMetricsCommand
@@ -11,9 +13,9 @@ class CalculateTeamMetricsCommand extends AbstractProBasketballTeamMetricsComman
 
     protected const COMMAND_DESCRIPTION = 'Calculate NBA team advanced metrics (offensive/defensive efficiency, tempo, SOS)';
 
-    protected const CALCULATE_METRICS_ACTION_CLASS = \App\Actions\NBA\CalculateTeamMetrics::class;
+    protected const CALCULATE_METRICS_ACTION_CLASS = CalculateTeamMetrics::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\NBA\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
 

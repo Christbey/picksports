@@ -2,13 +2,14 @@
 
 namespace App\Models\NFL;
 
+use Database\Factories\NflPredictionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Prediction extends Model
 {
-    /** @use HasFactory<\Database\Factories\NflPredictionFactory> */
+    /** @use HasFactory<NflPredictionFactory> */
     use HasFactory;
 
     protected $table = 'nfl_predictions';
@@ -91,8 +92,8 @@ class Prediction extends Model
         return $this->game?->awayTeam;
     }
 
-    protected static function newFactory(): \Database\Factories\NflPredictionFactory
+    protected static function newFactory(): NflPredictionFactory
     {
-        return \Database\Factories\NflPredictionFactory::new();
+        return NflPredictionFactory::new();
     }
 }

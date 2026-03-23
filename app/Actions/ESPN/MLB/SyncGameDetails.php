@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class SyncGameDetails extends AbstractSyncGameDetails
 {
-    protected const GAME_MODEL_CLASS = \App\Models\MLB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
     protected function includeGameUpdatedFlag(): bool
     {

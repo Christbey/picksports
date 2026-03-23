@@ -12,6 +12,7 @@ use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Prediction as WNBAPrediction;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
@@ -127,8 +128,8 @@ class LiveScoreboardController extends Controller
     }
 
     /**
-     * @param  Builder<\Illuminate\Database\Eloquent\Model>|QueryBuilder  $query
-     * @return Builder<\Illuminate\Database\Eloquent\Model>|QueryBuilder
+     * @param  Builder<Model>|QueryBuilder  $query
+     * @return Builder<Model>|QueryBuilder
      */
     private function applyTodayGameWindow(Builder|QueryBuilder $query, string $startUtc, string $endUtc): Builder|QueryBuilder
     {

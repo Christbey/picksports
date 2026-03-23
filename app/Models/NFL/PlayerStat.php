@@ -2,13 +2,14 @@
 
 namespace App\Models\NFL;
 
+use Database\Factories\NflPlayerStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PlayerStat extends Model
 {
-    /** @use HasFactory<\Database\Factories\NflPlayerStatFactory> */
+    /** @use HasFactory<NflPlayerStatFactory> */
     use HasFactory;
 
     protected $table = 'nfl_player_stats';

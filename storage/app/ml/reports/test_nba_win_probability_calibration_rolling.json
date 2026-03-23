@@ -1,6 +1,6 @@
 {
     "report_type": "nba_win_probability_calibration_rolling_evaluation",
-    "generated_at": "2026-03-22T22:07:42-05:00",
+    "generated_at": "2026-03-22T22:34:00-05:00",
     "config": {
         "input": "/Users/bey/Herd/github/picksports/storage/app/ml/test_nba_rolling_calibration_dataset.csv",
         "min_train_size": 4,

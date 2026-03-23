@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\NBA\TeamMetric;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\NBA\TeamMetric>
+ * @extends Factory<TeamMetric>
  */
 class NbaTeamMetricFactory extends Factory
 {

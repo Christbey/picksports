@@ -6,12 +6,13 @@ use App\Console\Commands\Concerns\ResolvesRequiredConfig;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 abstract class AbstractGeneratePredictionsCommand extends Command
 {
     use ResolvesRequiredConfig;
 
-    protected ?\Illuminate\Support\Collection $generatedGames = null;
+    protected ?Collection $generatedGames = null;
 
     protected const COMMAND_NAME = '';
 
@@ -238,7 +239,7 @@ abstract class AbstractGeneratePredictionsCommand extends Command
         return ['Game', 'Spread', 'Total', 'Win %', 'Confidence'];
     }
 
-    protected function topPredictions(): \Illuminate\Support\Collection
+    protected function topPredictions(): Collection
     {
         $predictionModel = $this->predictionModelClass();
 

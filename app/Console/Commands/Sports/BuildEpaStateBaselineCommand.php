@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands\Sports;
 
+use App\Models\NBA\Game;
+use App\Models\NBA\Play;
 use App\Services\Epa\StateBaselineService;
 use App\Services\NBA\TrueEpaCalculator as BasketballTrueEpaCalculator;
 use App\Services\NFL\TrueEpaCalculator as NflTrueEpaCalculator;
@@ -24,7 +26,7 @@ class BuildEpaStateBaselineCommand extends Command
      * @var array<string,array{game_model:class-string<Model>,play_model:class-string<Model>}>
      */
     private const SPORT_MODELS = [
-        'nba' => ['game_model' => \App\Models\NBA\Game::class, 'play_model' => \App\Models\NBA\Play::class],
+        'nba' => ['game_model' => Game::class, 'play_model' => Play::class],
         'cbb' => ['game_model' => \App\Models\CBB\Game::class, 'play_model' => \App\Models\CBB\Play::class],
         'wcbb' => ['game_model' => \App\Models\WCBB\Game::class, 'play_model' => \App\Models\WCBB\Play::class],
         'nfl' => ['game_model' => \App\Models\NFL\Game::class, 'play_model' => \App\Models\NFL\Play::class],

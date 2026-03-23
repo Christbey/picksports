@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\CFB\FpiRating;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CFB\FpiRating>
+ * @extends Factory<FpiRating>
  */
 class CfbFpiRatingFactory extends Factory
 {

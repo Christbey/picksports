@@ -6,6 +6,7 @@ use App\Http\Resources\Settings\EspnTeamOptionResource;
 use App\Http\Resources\Settings\OddsApiTeamMappingResource;
 use App\Models\OddsApiTeamMapping;
 use App\Support\ResourcePayload;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class OddsApiTeamMappingIndexDataService
@@ -53,7 +54,7 @@ class OddsApiTeamMappingIndexDataService
     }
 
     /**
-     * @param  array{teamModel: class-string<\Illuminate\Database\Eloquent\Model>, teamField: string}  $config
+     * @param  array{teamModel: class-string<Model>, teamField: string}  $config
      * @return array<int, array<string, mixed>>
      */
     public function espnTeams(array $config): array

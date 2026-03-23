@@ -2,13 +2,14 @@
 
 namespace App\Models\CFB;
 
+use Database\Factories\CfbFpiRatingFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class FpiRating extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbFpiRatingFactory> */
+    /** @use HasFactory<CfbFpiRatingFactory> */
     use HasFactory;
 
     protected $table = 'cfb_fpi_ratings';

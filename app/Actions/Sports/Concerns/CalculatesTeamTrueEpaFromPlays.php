@@ -2,13 +2,14 @@
 
 namespace App\Actions\Sports\Concerns;
 
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 trait CalculatesTeamTrueEpaFromPlays
 {
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playModelClass
-     * @param  Collection<int,\Illuminate\Database\Eloquent\Model>  $games
+     * @param  class-string<Model>  $playModelClass
+     * @param  Collection<int,Model>  $games
      * @return array{
      *   offensive_true_epa_per_play:?float,
      *   defensive_true_epa_per_play:?float,

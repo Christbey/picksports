@@ -6,6 +6,7 @@ use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CBB\Game;
 use App\Models\CBB\Team;
+use App\Services\ESPN\CBB\EspnService;
 use App\Support\CbbNcaaTournamentResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -14,7 +15,7 @@ class SyncTeamSchedule extends AbstractSyncGamesFromSchedule
     protected const GAME_MODEL_CLASS = Game::class;
 
     public function __construct(
-        \App\Services\ESPN\CBB\EspnService $espnService,
+        EspnService $espnService,
         protected ?CbbNcaaTournamentResolver $tournamentResolver = null,
         protected ?SyncTeams $syncTeams = null,
     ) {

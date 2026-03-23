@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\NBA\Game;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -20,25 +21,25 @@ return new class extends Migration
         if (Schema::hasTable('player_props')) {
             $this->copyLegacyProps(
                 fromSport: 'basketball_nba',
-                fromGameableType: \App\Models\NBA\Game::class,
+                fromGameableType: Game::class,
                 fromGameTable: 'nba_games',
                 toTable: 'nba_player_props'
             );
             $this->copyLegacyProps(
                 fromSport: 'basketball_ncaab',
-                fromGameableType: \App\Models\CBB\Game::class,
+                fromGameableType: App\Models\CBB\Game::class,
                 fromGameTable: 'cbb_games',
                 toTable: 'cbb_player_props'
             );
             $this->copyLegacyProps(
                 fromSport: 'americanfootball_nfl',
-                fromGameableType: \App\Models\NFL\Game::class,
+                fromGameableType: App\Models\NFL\Game::class,
                 fromGameTable: 'nfl_games',
                 toTable: 'nfl_player_props'
             );
             $this->copyLegacyProps(
                 fromSport: 'baseball_mlb',
-                fromGameableType: \App\Models\MLB\Game::class,
+                fromGameableType: App\Models\MLB\Game::class,
                 fromGameTable: 'mlb_games',
                 toTable: 'mlb_player_props'
             );

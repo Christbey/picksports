@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\CFB\Play;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CFB\Play>
+ * @extends Factory<Play>
  */
 class CfbPlayFactory extends Factory
 {

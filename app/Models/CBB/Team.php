@@ -3,6 +3,7 @@
 namespace App\Models\CBB;
 
 use App\Models\Concerns\ResolvesTeamLogoUrls;
+use Database\Factories\CbbTeamFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbTeamFactory> */
+    /** @use HasFactory<CbbTeamFactory> */
     use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'cbb_teams';
 
     protected static function newFactory()
     {
-        return \Database\Factories\CbbTeamFactory::new();
+        return CbbTeamFactory::new();
     }
 
     protected $fillable = [

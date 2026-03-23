@@ -2,20 +2,21 @@
 
 namespace App\Models\WCBB;
 
+use Database\Factories\WcbbTeamStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamStat extends Model
 {
-    /** @use HasFactory<\Database\Factories\WcbbTeamStatFactory> */
+    /** @use HasFactory<WcbbTeamStatFactory> */
     use HasFactory;
 
     protected $table = 'wcbb_team_stats';
 
-    protected static function newFactory(): \Database\Factories\WcbbTeamStatFactory
+    protected static function newFactory(): WcbbTeamStatFactory
     {
-        return \Database\Factories\WcbbTeamStatFactory::new();
+        return WcbbTeamStatFactory::new();
     }
 
     protected $fillable = [

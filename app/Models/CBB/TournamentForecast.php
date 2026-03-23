@@ -2,20 +2,21 @@
 
 namespace App\Models\CBB;
 
+use Database\Factories\CbbTournamentForecastFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TournamentForecast extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbTournamentForecastFactory> */
+    /** @use HasFactory<CbbTournamentForecastFactory> */
     use HasFactory;
 
     protected $table = 'cbb_tournament_forecasts';
 
-    protected static function newFactory(): \Database\Factories\CbbTournamentForecastFactory
+    protected static function newFactory(): CbbTournamentForecastFactory
     {
-        return \Database\Factories\CbbTournamentForecastFactory::new();
+        return CbbTournamentForecastFactory::new();
     }
 
     protected $fillable = [

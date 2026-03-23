@@ -3,6 +3,9 @@
 namespace App\Actions\OddsApi\MLB;
 
 use App\Actions\OddsApi\AbstractSportKeySyncPlayerPropsForGames;
+use App\Models\MLB\Game;
+use App\Models\MLB\Player;
+use App\Models\MLB\PlayerProp;
 
 class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
 {
@@ -12,11 +15,11 @@ class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
 
     protected const DEFAULT_MARKETS = self::MARKETS_STANDARD;
 
-    protected const GAME_MODEL_CLASS = \App\Models\MLB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const PLAYER_PROP_MODEL_CLASS = \App\Models\MLB\PlayerProp::class;
+    protected const PLAYER_PROP_MODEL_CLASS = PlayerProp::class;
 
-    protected const PLAYER_MODEL_CLASS = \App\Models\MLB\Player::class;
+    protected const PLAYER_MODEL_CLASS = Player::class;
 
     protected function seasonTypeForOddsSportKey(string $oddsSportKey): ?int
     {

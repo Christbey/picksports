@@ -4,17 +4,20 @@ namespace App\Actions\ESPN\CBB;
 
 use App\Actions\ESPN\AbstractSyncGames;
 use App\DataTransferObjects\ESPN\GameData;
+use App\Models\CBB\Game;
+use App\Models\CBB\Team;
+use App\Services\ESPN\CBB\EspnService;
 use App\Support\CbbNcaaTournamentResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGames extends AbstractSyncGames
 {
-    protected const GAME_MODEL_CLASS = \App\Models\CBB\Game::class;
+    protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\CBB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     public function __construct(
-        \App\Services\ESPN\CBB\EspnService $espnService,
+        EspnService $espnService,
         protected CbbNcaaTournamentResolver $tournamentResolver,
     ) {
         parent::__construct($espnService);
@@ -27,7 +30,7 @@ class SyncGames extends AbstractSyncGames
             $this->tournamentResolver->resolveFromEspnEvent($gameData),
         );
 
-        $existingGame = \App\Models\CBB\Game::query()
+        $existingGame = Game::query()
             ->where('espn_event_id', $dto->espnEventId)
             ->first();
 

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\WCBB;
 
+use App\Actions\WCBB\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractAdjustedBasketballTeamMetricsCommand;
 use App\Models\WCBB\Team;
 use App\Models\WCBB\TeamMetric;
@@ -12,7 +13,7 @@ class CalculateTeamMetricsCommand extends AbstractAdjustedBasketballTeamMetricsC
 
     protected const COMMAND_DESCRIPTION = 'Calculate WCBB team advanced metrics (offensive/defensive efficiency, tempo, net rating)';
 
-    protected const CALCULATE_METRICS_ACTION_CLASS = \App\Actions\WCBB\CalculateTeamMetrics::class;
+    protected const CALCULATE_METRICS_ACTION_CLASS = CalculateTeamMetrics::class;
 
     protected const TEAM_MODEL_CLASS = Team::class;
 

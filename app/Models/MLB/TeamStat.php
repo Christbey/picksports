@@ -2,20 +2,21 @@
 
 namespace App\Models\MLB;
 
+use Database\Factories\MlbTeamStatFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamStat extends Model
 {
-    /** @use HasFactory<\Database\Factories\MlbTeamStatFactory> */
+    /** @use HasFactory<MlbTeamStatFactory> */
     use HasFactory;
 
     protected $table = 'mlb_team_stats';
 
-    protected static function newFactory(): \Database\Factories\MlbTeamStatFactory
+    protected static function newFactory(): MlbTeamStatFactory
     {
-        return \Database\Factories\MlbTeamStatFactory::new();
+        return MlbTeamStatFactory::new();
     }
 
     protected $fillable = [

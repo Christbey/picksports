@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamStat extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbTeamStatFactory> */
+    /** @use HasFactory<CbbTeamStatFactory> */
     use HasFactory;
 
     protected $table = 'cbb_team_stats';

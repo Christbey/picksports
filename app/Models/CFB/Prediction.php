@@ -2,13 +2,14 @@
 
 namespace App\Models\CFB;
 
+use Database\Factories\CfbPredictionFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Prediction extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbPredictionFactory> */
+    /** @use HasFactory<CfbPredictionFactory> */
     use HasFactory;
 
     protected $table = 'cfb_predictions';

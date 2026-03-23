@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Actions\NFL\CalculateBettingValue;
+use App\Models\NFL\Game;
 use App\Models\NotificationTemplate;
 use App\Models\User;
 use Carbon\Carbon;
@@ -18,7 +20,7 @@ class NotificationTemplatePreviewService
     ) {}
 
     private const SPORT_GAME_MODELS = [
-        'nfl' => \App\Models\NFL\Game::class,
+        'nfl' => Game::class,
         'nba' => \App\Models\NBA\Game::class,
         'cbb' => \App\Models\CBB\Game::class,
         'wcbb' => \App\Models\WCBB\Game::class,
@@ -28,7 +30,7 @@ class NotificationTemplatePreviewService
     ];
 
     private const SPORT_CALCULATORS = [
-        'nfl' => \App\Actions\NFL\CalculateBettingValue::class,
+        'nfl' => CalculateBettingValue::class,
         'nba' => \App\Actions\NBA\CalculateBettingValue::class,
         'cbb' => \App\Actions\CBB\CalculateBettingValue::class,
     ];

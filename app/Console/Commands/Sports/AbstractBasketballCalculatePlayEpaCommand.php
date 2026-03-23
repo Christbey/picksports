@@ -4,18 +4,19 @@ namespace App\Console\Commands\Sports;
 
 use App\Services\NBA\TrueEpaCalculator;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
 {
     abstract protected function sportKey(): string;
 
     /**
-     * @return class-string<\Illuminate\Database\Eloquent\Model>
+     * @return class-string<Model>
      */
     abstract protected function gameModelClass(): string;
 
     /**
-     * @return class-string<\Illuminate\Database\Eloquent\Model>
+     * @return class-string<Model>
      */
     abstract protected function playModelClass(): string;
 

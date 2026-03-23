@@ -4,6 +4,7 @@ namespace App\Actions\CBB;
 
 use App\Actions\Sports\AbstractGradePredictions;
 use App\Models\CBB\Prediction;
+use Illuminate\Database\Eloquent\Model;
 
 class GradePredictions extends AbstractGradePredictions
 {
@@ -13,7 +14,7 @@ class GradePredictions extends AbstractGradePredictions
 
     protected const GAMES_TABLE = 'cbb_games';
 
-    protected function additionalGradingUpdates(\Illuminate\Database\Eloquent\Model $prediction, float $actualSpread, float $actualTotal): array
+    protected function additionalGradingUpdates(Model $prediction, float $actualSpread, float $actualTotal): array
     {
         $marketSpread = $prediction->vegas_spread;
         if (! is_numeric($marketSpread) || ! is_numeric($prediction->predicted_spread)) {

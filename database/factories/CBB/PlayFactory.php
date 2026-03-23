@@ -2,4 +2,6 @@
 
 namespace Database\Factories\CBB;
 
-class PlayFactory extends \Database\Factories\CbbPlayFactory {}
+use Database\Factories\CbbPlayFactory;
+
+class PlayFactory extends CbbPlayFactory {}

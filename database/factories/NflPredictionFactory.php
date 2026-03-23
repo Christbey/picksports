@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\NFL\Prediction;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\NFL\Prediction>
+ * @extends Factory<Prediction>
  */
 class NflPredictionFactory extends Factory
 {
-    protected $model = \App\Models\NFL\Prediction::class;
+    protected $model = Prediction::class;
 
     /**
      * Define the model's default state.

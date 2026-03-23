@@ -6,6 +6,7 @@ use App\Actions\Sports\Concerns\CalculatesGridironTeamMetrics;
 use App\Actions\Sports\Concerns\CalculatesTeamTrueEpaFromPlays;
 use App\Concerns\FiltersTeamGames;
 use App\Models\NFL\Game;
+use App\Models\NFL\Play;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Services\MetricValidator;
@@ -136,7 +137,7 @@ class CalculateTeamMetrics
 
         $firstHalfRating = $this->averageFromContexts($gameContexts, 'first_half_margin');
         $secondHalfRating = $this->averageFromContexts($gameContexts, 'second_half_margin');
-        $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(\App\Models\NFL\Play::class, (int) $team->id, $games, true);
+        $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games, true);
 
         $leagueAverageElo = (float) (Team::query()->avg('elo_rating') ?? 1500.0);
         $predictiveRating = $this->calculatePredictiveRating(

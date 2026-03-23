@@ -2,6 +2,7 @@
 
 namespace App\Models\CFB;
 
+use Database\Factories\CfbGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Game extends Model
 {
-    /** @use HasFactory<\Database\Factories\CfbGameFactory> */
+    /** @use HasFactory<CfbGameFactory> */
     use HasFactory;
 
     protected $table = 'cfb_games';
 
-    protected static function newFactory(): \Database\Factories\CfbGameFactory
+    protected static function newFactory(): CfbGameFactory
     {
-        return \Database\Factories\CfbGameFactory::new();
+        return CfbGameFactory::new();
     }
 
     protected $fillable = [

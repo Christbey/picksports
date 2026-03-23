@@ -3,6 +3,7 @@
 namespace App\Models\NFL;
 
 use App\Models\Concerns\ResolvesTeamLogoUrls;
+use Database\Factories\NflTeamFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
-    /** @use HasFactory<\Database\Factories\NflTeamFactory> */
+    /** @use HasFactory<NflTeamFactory> */
     use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'nfl_teams';
@@ -90,8 +91,8 @@ class Team extends Model
             ->orderByDesc('updated_at');
     }
 
-    protected static function newFactory(): \Database\Factories\NflTeamFactory
+    protected static function newFactory(): NflTeamFactory
     {
-        return \Database\Factories\NflTeamFactory::new();
+        return NflTeamFactory::new();
     }
 }

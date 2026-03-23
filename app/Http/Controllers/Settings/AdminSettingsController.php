@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 use Spatie\Permission\Models\Role;
@@ -187,7 +188,7 @@ class AdminSettingsController extends Controller
         ]);
 
         $joinLink->forceFill([
-            'token' => (string) \Illuminate\Support\Str::uuid(),
+            'token' => (string) Str::uuid(),
             'created_by' => $request->user()->id,
             'revoked_at' => null,
         ])->save();

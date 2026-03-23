@@ -2,13 +2,14 @@
 
 namespace App\Models\WCBB;
 
+use Database\Factories\CbbTeamMetricFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class TeamMetric extends Model
 {
-    /** @use HasFactory<\Database\Factories\CbbTeamMetricFactory> */
+    /** @use HasFactory<CbbTeamMetricFactory> */
     use HasFactory;
 
     protected $table = 'wcbb_team_metrics';

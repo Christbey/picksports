@@ -57,7 +57,7 @@ it('prevents subscribing to free tier', function () {
 it('creates a checkout session for new subscription', function () {
     $user = User::factory()->create();
 
-    $checkoutService = \Mockery::mock(SubscriptionCheckoutService::class);
+    $checkoutService = Mockery::mock(SubscriptionCheckoutService::class);
     $checkoutService->shouldReceive('createCheckoutUrl')
         ->once()
         ->withArgs(function (User $checkoutUser, string $priceId, array $sessionOptions) use ($user): bool {

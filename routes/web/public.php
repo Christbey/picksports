@@ -3,6 +3,8 @@
 use App\Http\Controllers\PerformanceController;
 use App\Http\Controllers\PublicSportPageController;
 use App\Models\CBB\Game as CbbGame;
+use App\Services\PerformanceStatistics;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -62,7 +64,7 @@ Route::get('/sitemap-news.xml', function () {
 })->name('sitemap-news');
 
 Route::get('/', function () {
-    $performanceStats = app(\App\Services\PerformanceStatistics::class);
+    $performanceStats = app(PerformanceStatistics::class);
     $overall = $performanceStats->getOverallStats();
     $recent = $performanceStats->getRecentPerformance();
     $roi = $performanceStats->calculateROI();
@@ -233,6 +235,6 @@ foreach ([
 }
 
 foreach (array_keys((array) config('sports.domains', [])) as $sport) {
-    Route::get($sport, fn (\Illuminate\Http\Request $request) => app(PublicSportPageController::class)($request, $sport))
+    Route::get($sport, fn (Request $request) => app(PublicSportPageController::class)($request, $sport))
         ->name("{$sport}.home");
 }

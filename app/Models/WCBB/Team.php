@@ -3,6 +3,7 @@
 namespace App\Models\WCBB;
 
 use App\Models\Concerns\ResolvesTeamLogoUrls;
+use Database\Factories\WcbbTeamFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -10,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Team extends Model
 {
-    /** @use HasFactory<\Database\Factories\WcbbTeamFactory> */
+    /** @use HasFactory<WcbbTeamFactory> */
     use HasFactory, ResolvesTeamLogoUrls;
 
     protected $table = 'wcbb_teams';
 
-    protected static function newFactory(): \Database\Factories\WcbbTeamFactory
+    protected static function newFactory(): WcbbTeamFactory
     {
-        return \Database\Factories\WcbbTeamFactory::new();
+        return WcbbTeamFactory::new();
     }
 
     protected $fillable = [

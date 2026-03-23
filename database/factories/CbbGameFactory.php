@@ -2,14 +2,15 @@
 
 namespace Database\Factories;
 
+use App\Models\CBB\Game;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CBB\Game>
+ * @extends Factory<Game>
  */
 class CbbGameFactory extends Factory
 {
-    protected $model = \App\Models\CBB\Game::class;
+    protected $model = Game::class;
 
     /**
      * Define the model's default state.

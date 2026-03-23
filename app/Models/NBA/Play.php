@@ -2,13 +2,14 @@
 
 namespace App\Models\NBA;
 
+use Database\Factories\NbaPlayFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Play extends Model
 {
-    /** @use HasFactory<\Database\Factories\NbaPlayFactory> */
+    /** @use HasFactory<NbaPlayFactory> */
     use HasFactory;
 
     protected $table = 'nba_plays';
@@ -61,8 +62,8 @@ class Play extends Model
         return $this->belongsTo(Team::class, 'possession_team_id');
     }
 
-    protected static function newFactory(): \Database\Factories\NbaPlayFactory
+    protected static function newFactory(): NbaPlayFactory
     {
-        return \Database\Factories\NbaPlayFactory::new();
+        return NbaPlayFactory::new();
     }
 }

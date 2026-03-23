@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Services\Admin\TierPermissionSyncService;
 use App\Support\SubscriptionTierCache;
 use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -44,7 +46,7 @@ class SubscriptionController extends Controller
         ]);
     }
 
-    public function sync(User $user): \Illuminate\Http\RedirectResponse
+    public function sync(User $user): RedirectResponse
     {
         if (! $user->subscribed()) {
             return $this->backError('User does not have an active subscription.');
@@ -60,7 +62,7 @@ class SubscriptionController extends Controller
         }
     }
 
-    public function syncAll(): \Illuminate\Http\RedirectResponse
+    public function syncAll(): RedirectResponse
     {
         $subscriptions = Subscription::whereNotNull('stripe_id')->get();
         $synced = 0;
@@ -84,7 +86,7 @@ class SubscriptionController extends Controller
         return $this->backSuccess($message);
     }
 
-    public function assignTier(Request $request, User $user): \Illuminate\Http\RedirectResponse
+    public function assignTier(Request $request, User $user): RedirectResponse
     {
         $request->validate([
             'tier_slug' => 'required|exists:subscription_tiers,slug',
@@ -133,7 +135,7 @@ class SubscriptionController extends Controller
         }
     }
 
-    private function usersQuery(?string $search): \Illuminate\Database\Eloquent\Builder
+    private function usersQuery(?string $search): Builder
     {
         return User::query()
             ->with(['subscriptions' => fn ($q) => $q->latest()])

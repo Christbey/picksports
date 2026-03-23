@@ -2,6 +2,7 @@
 
 namespace App\Models\WCBB;
 
+use Database\Factories\WcbbGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Game extends Model
 {
-    /** @use HasFactory<\Database\Factories\WcbbGameFactory> */
+    /** @use HasFactory<WcbbGameFactory> */
     use HasFactory;
 
     protected $table = 'wcbb_games';
 
-    protected static function newFactory(): \Database\Factories\WcbbGameFactory
+    protected static function newFactory(): WcbbGameFactory
     {
-        return \Database\Factories\WcbbGameFactory::new();
+        return WcbbGameFactory::new();
     }
 
     protected $fillable = [

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\NBA\Player;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -57,10 +58,10 @@ class PlayerProp extends Model
     private function resolvePlayerModelClass(): string
     {
         return match ($this->sport) {
-            'basketball_nba' => \App\Models\NBA\Player::class,
-            'basketball_ncaab' => \App\Models\CBB\Player::class,
-            'americanfootball_nfl' => \App\Models\NFL\Player::class,
-            'baseball_mlb' => \App\Models\MLB\Player::class,
+            'basketball_nba' => Player::class,
+            'basketball_ncaab' => CBB\Player::class,
+            'americanfootball_nfl' => NFL\Player::class,
+            'baseball_mlb' => MLB\Player::class,
             default => throw new InvalidArgumentException("Unsupported sport for player relation: {$this->sport}"),
         };
     }

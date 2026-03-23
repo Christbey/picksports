@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\NFL;
 
+use App\Actions\NFL\CalculateBettingValue;
 use App\Http\Resources\Sports\AbstractPredictionResource;
 use Illuminate\Http\Request;
 
@@ -46,7 +47,7 @@ class PredictionResource extends AbstractPredictionResource
 
         // Betting Value
         if ($this->hasTierPermission($request, 'betting_value') && $this->game) {
-            $data['betting_value'] = app(\App\Actions\NFL\CalculateBettingValue::class)->execute($this->game);
+            $data['betting_value'] = app(CalculateBettingValue::class)->execute($this->game);
         }
 
         $data = $this->appendNarrativeFields($data, $request, 'nfl');

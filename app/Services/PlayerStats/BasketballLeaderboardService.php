@@ -3,13 +3,14 @@
 namespace App\Services\PlayerStats;
 
 use App\Support\StatsMath;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 class BasketballLeaderboardService
 {
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playerStatModel
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playerModel
+     * @param  class-string<Model>  $playerStatModel
+     * @param  class-string<Model>  $playerModel
      */
     public function execute(
         string $playerStatModel,
@@ -118,7 +119,7 @@ class BasketballLeaderboardService
     }
 
     /**
-     * @param  class-string<\Illuminate\Database\Eloquent\Model>  $playerStatModel
+     * @param  class-string<Model>  $playerStatModel
      * @param  array<int,int|string>  $playerIds
      * @return array<int,float>
      */

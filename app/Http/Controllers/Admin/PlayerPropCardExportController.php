@@ -12,6 +12,7 @@ use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
 use App\Models\NBA\Prediction as NbaPrediction;
 use App\Models\NFL\Prediction as NflPrediction;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -116,7 +117,7 @@ class PlayerPropCardExportController extends Controller
             ->get()
             ->map(fn ($row) => [
                 'value' => $row->game_date,
-                'label' => \Carbon\Carbon::parse($row->game_date)->format('M j, Y'),
+                'label' => Carbon::parse($row->game_date)->format('M j, Y'),
             ])
             ->values()
             ->all();

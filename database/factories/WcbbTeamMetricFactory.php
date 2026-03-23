@@ -2,10 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Models\WCBB\TeamMetric;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\WCBB\TeamMetric>
+ * @extends Factory<TeamMetric>
  */
 class WcbbTeamMetricFactory extends Factory
 {

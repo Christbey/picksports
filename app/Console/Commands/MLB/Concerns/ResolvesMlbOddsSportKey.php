@@ -3,6 +3,7 @@
 namespace App\Console\Commands\MLB\Concerns;
 
 use App\Console\Commands\Sports\Concerns\ResolvesSeasonalOddsSportKey;
+use App\Models\MLB\Game;
 
 trait ResolvesMlbOddsSportKey
 {
@@ -17,7 +18,7 @@ trait ResolvesMlbOddsSportKey
     protected function resolveAutomaticMlbOddsSportKey(): string
     {
         return $this->resolveAutomaticSeasonalOddsSportKey(
-            \App\Models\MLB\Game::class,
+            Game::class,
             'mlb',
             self::MLB_REGULAR_ODDS_SPORT_KEY,
             self::MLB_PRESEASON_ODDS_SPORT_KEY,

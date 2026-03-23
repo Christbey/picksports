@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\Actions\MLB\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractCalculateTeamMetricsCommand;
+use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use Illuminate\Support\Facades\DB;
 
@@ -12,9 +14,9 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
 
     protected const COMMAND_DESCRIPTION = 'Calculate MLB team metrics (ratings, run profile, OBP/SLG/OPS, K/G, WHIP)';
 
-    protected const CALCULATE_METRICS_ACTION_CLASS = \App\Actions\MLB\CalculateTeamMetrics::class;
+    protected const CALCULATE_METRICS_ACTION_CLASS = CalculateTeamMetrics::class;
 
-    protected const TEAM_MODEL_CLASS = \App\Models\MLB\Team::class;
+    protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
 

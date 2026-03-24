@@ -5,9 +5,12 @@ namespace App\Actions\OddsApi;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 abstract class AbstractSyncOddsForGames
 {
+    protected const MAX_EVENT_TIME_DIFFERENCE_MINUTES = 360;
+
     protected const SPORT_KEY = '';
 
     protected const GAME_MODEL_CLASS = Model::class;
@@ -132,14 +135,29 @@ abstract class AbstractSyncOddsForGames
 
     protected function matchEvent(array $event, string $oddsSportKey, ?int $daysAhead = null): ?Model
     {
-        $gameDate = date('Y-m-d', strtotime($event['commence_time']));
+        $eventTime = $this->eventCommenceTime($event);
+
+        if ($eventTime === null) {
+            return null;
+        }
+
         $query = $this->localGamesQuery($oddsSportKey, $daysAhead)
             ->with(['homeTeam', 'awayTeam'])
-            ->whereDate('game_date', $gameDate);
+            ->whereDate('game_date', '>=', $eventTime->copy()->subDay()->toDateString())
+            ->whereDate('game_date', '<=', $eventTime->copy()->addDay()->toDateString());
 
         $games = $query->get();
+        $mappedGame = $this->matchEventUsingMappedTeams($games, $event, $oddsSportKey, $eventTime);
+
+        if ($mappedGame !== null) {
+            return $mappedGame;
+        }
 
         foreach ($games as $game) {
+            if (! $this->gameFallsWithinEventTimeTolerance($game, $eventTime)) {
+                continue;
+            }
+
             if ($this->oddsApiService->fuzzyMatchTeams(
                 $event['home_team'],
                 $event['away_team'],
@@ -153,6 +171,98 @@ abstract class AbstractSyncOddsForGames
         }
 
         return null;
+    }
+
+    protected function matchEventUsingMappedTeams(iterable $games, array $event, string $oddsSportKey, Carbon $eventTime): ?Model
+    {
+        $mappedHomeTeam = $this->oddsApiService->mappedEspnTeamName($oddsSportKey, (string) $event['home_team']);
+        $mappedAwayTeam = $this->oddsApiService->mappedEspnTeamName($oddsSportKey, (string) $event['away_team']);
+
+        if ($mappedHomeTeam === null && $mappedAwayTeam === null) {
+            return null;
+        }
+
+        foreach ($games as $game) {
+            if (! $this->gameFallsWithinEventTimeTolerance($game, $eventTime)) {
+                continue;
+            }
+
+            $homeMatch = $mappedHomeTeam === null
+                || $this->teamNameMatchesMappedEspnName($mappedHomeTeam, $this->homeTeamNames($game));
+            $awayMatch = $mappedAwayTeam === null
+                || $this->teamNameMatchesMappedEspnName($mappedAwayTeam, $this->awayTeamNames($game));
+
+            if ($homeMatch && $awayMatch) {
+                return $game;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int,string>  $teamNames
+     */
+    protected function teamNameMatchesMappedEspnName(string $mappedEspnName, array $teamNames): bool
+    {
+        $normalizedMappedName = $this->oddsApiService->normalizeTeamName($mappedEspnName);
+
+        foreach ($teamNames as $teamName) {
+            $normalizedTeamName = $this->oddsApiService->normalizeTeamName($teamName);
+
+            if (
+                $normalizedMappedName === $normalizedTeamName
+                || str_contains($normalizedMappedName, $normalizedTeamName)
+                || str_contains($normalizedTeamName, $normalizedMappedName)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function eventCommenceTime(array $event): ?Carbon
+    {
+        $commenceTime = $event['commence_time'] ?? null;
+
+        if (! is_string($commenceTime) || $commenceTime === '') {
+            return null;
+        }
+
+        return Carbon::parse($commenceTime)->utc();
+    }
+
+    protected function gameFallsWithinEventTimeTolerance(Model $game, Carbon $eventTime): bool
+    {
+        $gameTime = $this->gameScheduledTime($game);
+
+        if ($gameTime === null) {
+            return true;
+        }
+
+        return abs($gameTime->diffInMinutes($eventTime, false)) <= $this->maxEventTimeDifferenceMinutes();
+    }
+
+    protected function gameScheduledTime(Model $game): ?Carbon
+    {
+        $gameDate = $game->game_date;
+        $gameTime = $game->game_time;
+
+        if ($gameDate === null || $gameTime === null) {
+            return null;
+        }
+
+        $dateString = $gameDate instanceof Carbon
+            ? $gameDate->toDateString()
+            : Carbon::parse((string) $gameDate)->toDateString();
+
+        return Carbon::parse(sprintf('%s %s', $dateString, $gameTime), 'UTC');
+    }
+
+    protected function maxEventTimeDifferenceMinutes(): int
+    {
+        return static::MAX_EVENT_TIME_DIFFERENCE_MINUTES;
     }
 
     protected function eventFallsWithinWindow(array $event, ?int $daysAhead): bool

@@ -1,0 +1,66 @@
+<?php
+
+use App\Actions\ESPN\MLB\SyncGames;
+use App\Models\MLB\Game;
+use App\Models\MLB\Team;
+use App\Services\ESPN\BaseEspnService;
+
+uses()->group('espn', 'mlb');
+
+it('stores probable pitcher ids from mlb schedule sync', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'mlb';
+
+        public function getGames(int $season, int $seasonType, int $week): ?array
+        {
+            return [
+                'items' => [[
+                    'id' => '401999101',
+                    'uid' => 's:1~l:10~e:401999101',
+                    'date' => '2026-03-25T18:05:00Z',
+                    'name' => 'Texas Rangers at Seattle Mariners',
+                    'shortName' => 'TEX @ SEA',
+                    'season' => ['year' => $season, 'type' => $seasonType],
+                    'week' => ['number' => $week],
+                    'competitions' => [[
+                        'status' => ['type' => ['name' => 'STATUS_SCHEDULED']],
+                        'competitors' => [
+                            [
+                                'homeAway' => 'home',
+                                'team' => ['id' => '10'],
+                                'probables' => [[
+                                    'name' => 'probableStartingPitcher',
+                                    'playerId' => '8001',
+                                ]],
+                            ],
+                            [
+                                'homeAway' => 'away',
+                                'team' => ['id' => '20'],
+                                'probables' => [[
+                                    'name' => 'probableStartingPitcher',
+                                    'athlete' => ['id' => '8002'],
+                                ]],
+                            ],
+                        ],
+                    ]],
+                ]],
+            ];
+        }
+    };
+
+    $synced = (new SyncGames($service))->execute(2026, 2, 1);
+
+    expect($synced)->toBe(1);
+
+    $game = Game::query()->where('espn_event_id', '401999101')->first();
+
+    expect($game)->not->toBeNull()
+        ->and($game->home_team_id)->toBe($homeTeam->id)
+        ->and($game->away_team_id)->toBe($awayTeam->id)
+        ->and($game->probable_home_pitcher_espn_id)->toBe('8001')
+        ->and($game->probable_away_pitcher_espn_id)->toBe('8002');
+});

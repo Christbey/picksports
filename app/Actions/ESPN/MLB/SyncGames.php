@@ -14,9 +14,10 @@ class SyncGames extends AbstractSyncGames
 
     protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected function buildGameAttributes(GameData $dto, array $gameData, Model $homeTeam, Model $awayTeam): array
+    protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
         $dateParts = GameData::extractDateParts($gameData['date'] ?? null);
+        [$homeCompetitor, $awayCompetitor] = $this->resolveCompetitors($gameData);
 
         return [
             'espn_event_id' => $dto->espnEventId,
@@ -40,10 +41,38 @@ class SyncGames extends AbstractSyncGames
             'balls' => null,
             'strikes' => null,
             'outs' => null,
+            'probable_home_pitcher_espn_id' => $this->probablePitcherEspnId($homeCompetitor),
+            'probable_away_pitcher_espn_id' => $this->probablePitcherEspnId($awayCompetitor),
             'venue_name' => $dto->venueName,
             'venue_city' => $dto->venueCity,
             'venue_state' => $dto->venueState,
             'broadcast_networks' => $dto->broadcastNetworks,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $competitor
+     */
+    private function probablePitcherEspnId(array $competitor): ?string
+    {
+        $probables = $competitor['probables'] ?? null;
+
+        if (! is_array($probables)) {
+            return null;
+        }
+
+        foreach ($probables as $probable) {
+            $playerId = data_get($probable, 'playerId');
+            if (is_scalar($playerId) && (string) $playerId !== '') {
+                return (string) $playerId;
+            }
+
+            $athleteId = data_get($probable, 'athlete.id');
+            if (is_scalar($athleteId) && (string) $athleteId !== '') {
+                return (string) $athleteId;
+            }
+        }
+
+        return null;
     }
 }

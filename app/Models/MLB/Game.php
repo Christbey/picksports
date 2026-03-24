@@ -3,6 +3,7 @@
 namespace App\Models\MLB;
 
 use Database\Factories\MlbGameFactory;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -48,6 +49,8 @@ class Game extends Model
         'balls',
         'strikes',
         'outs',
+        'probable_home_pitcher_espn_id',
+        'probable_away_pitcher_espn_id',
         'venue_name',
         'venue_city',
         'venue_state',
@@ -67,6 +70,14 @@ class Game extends Model
             'odds_data' => 'array',
             'odds_updated_at' => 'datetime',
         ];
+    }
+
+    protected function inningState(): Attribute
+    {
+        return Attribute::make(
+            get: fn (): ?string => $this->inning_half,
+            set: fn (?string $value): array => ['inning_half' => $value]
+        );
     }
 
     public function homeTeam(): BelongsTo

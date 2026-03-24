@@ -230,6 +230,15 @@ return [
         'injury_questionable_spread_penalty' => 0.10,
         'injury_out_total_penalty' => 0.15,
         'injury_questionable_total_penalty' => 0.05,
+        'early_season' => [
+            'ramp_games' => env('MLB_EARLY_SEASON_RAMP_GAMES', 20),
+            'team_weight_start' => env('MLB_EARLY_SEASON_TEAM_WEIGHT_START', 0.45),
+            'context_scale_min' => env('MLB_EARLY_SEASON_CONTEXT_SCALE_MIN', 0.35),
+        ],
+        'probable_pitcher_out_spread_penalty' => env('MLB_PROBABLE_PITCHER_OUT_SPREAD_PENALTY', 1.1),
+        'probable_pitcher_questionable_spread_penalty' => env('MLB_PROBABLE_PITCHER_QUESTIONABLE_SPREAD_PENALTY', 0.45),
+        'probable_pitcher_out_total_boost' => env('MLB_PROBABLE_PITCHER_OUT_TOTAL_BOOST', 0.7),
+        'probable_pitcher_questionable_total_boost' => env('MLB_PROBABLE_PITCHER_QUESTIONABLE_TOTAL_BOOST', 0.25),
     ],
 
     /*

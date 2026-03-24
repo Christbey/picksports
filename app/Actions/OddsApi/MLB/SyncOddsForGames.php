@@ -4,6 +4,7 @@ namespace App\Actions\OddsApi\MLB;
 
 use App\Actions\OddsApi\AbstractSyncOddsForGames;
 use App\Models\MLB\Game;
+use Illuminate\Database\Eloquent\Builder;
 
 class SyncOddsForGames extends AbstractSyncOddsForGames
 {
@@ -26,5 +27,50 @@ class SyncOddsForGames extends AbstractSyncOddsForGames
         }
 
         return null;
+    }
+
+    protected function localGamesQuery(string $oddsSportKey, ?int $daysAhead = null): Builder
+    {
+        $gameModel = $this->gameModelClass();
+        $query = $gameModel::query();
+
+        if ($daysAhead !== null) {
+            $query->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
+                ->whereDate('game_date', '<=', now()->startOfDay()->addDays($daysAhead)->toDateString())
+                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME']);
+        }
+
+        $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
+
+        if ($seasonType === null) {
+            return $query;
+        }
+
+        $query->where(function (Builder $seasonTypeQuery) use ($seasonType, $oddsSportKey): void {
+            $seasonTypeQuery->where('season_type', (string) $seasonType)
+                ->orWhere('season_type', $seasonType);
+
+            foreach ($this->seasonTypeAliases($oddsSportKey) as $alias) {
+                $seasonTypeQuery->orWhere('season_type', $alias);
+            }
+        });
+
+        return $query;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function seasonTypeAliases(string $oddsSportKey): array
+    {
+        if ($oddsSportKey === self::PRESEASON_SPORT_KEY) {
+            return ['Preseason', 'Spring Training', 'SpringTraining'];
+        }
+
+        if ($oddsSportKey === self::SPORT_KEY) {
+            return ['Regular Season', 'Regular'];
+        }
+
+        return [];
     }
 }

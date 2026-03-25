@@ -226,6 +226,7 @@ return [
     |--------------------------------------------------------------------------
     */
     'prediction' => [
+        'use_previous_season_metrics_fallback' => true,
         'injury_out_spread_penalty' => 0.30,
         'injury_questionable_spread_penalty' => 0.10,
         'injury_out_total_penalty' => 0.15,

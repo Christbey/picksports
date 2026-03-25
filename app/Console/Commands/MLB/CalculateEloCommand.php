@@ -7,6 +7,8 @@ use App\Console\Commands\Sports\AbstractCalculateEloCommand;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Support\MlbRegularSeasonWindow;
+use Illuminate\Database\Eloquent\Builder;
 
 class CalculateEloCommand extends AbstractCalculateEloCommand
 {
@@ -27,5 +29,18 @@ class CalculateEloCommand extends AbstractCalculateEloCommand
     protected function getAnalyticsSeasonTypes(): ?array
     {
         return config('mlb.season.analytics_types');
+    }
+
+    protected function applyAdditionalAnalyticsFilters(Builder $query): void
+    {
+        $season = $this->option('season');
+        if (! is_numeric($season)) {
+            return;
+        }
+
+        $openerDate = MlbRegularSeasonWindow::openerDate((int) $season);
+        if ($openerDate !== null) {
+            $query->whereDate('game_date', '>=', $openerDate);
+        }
     }
 }

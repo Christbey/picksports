@@ -3,6 +3,7 @@
 namespace App\Actions\MLB;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
 use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
@@ -10,6 +11,7 @@ use App\Models\MLB\PlayerInjury;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
+use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
 
 class GeneratePrediction extends AbstractPredictionGenerator
@@ -39,8 +41,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             return null;
         }
 
-        $homeTeamElo = $homeTeam->elo_rating ?? config('mlb.elo.default_rating');
-        $awayTeamElo = $awayTeam->elo_rating ?? config('mlb.elo.default_rating');
+        $homeTeamElo = $this->getTeamElo($game, $homeTeam);
+        $awayTeamElo = $this->getTeamElo($game, $awayTeam);
 
         $homePitcherResult = $this->getPitcherElo($game, $homeTeam, 'home');
         $awayPitcherResult = $this->getPitcherElo($game, $awayTeam, 'away');
@@ -153,7 +155,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
             if ($probablePitcher) {
                 $probablePitcherElo = PitcherEloRating::query()
                     ->where('player_id', $probablePitcher->id)
+                    ->tap(fn ($query) => MlbRegularSeasonWindow::applyCarryoverFilter(
+                        $query,
+                        (int) $game->season,
+                        'season',
+                        'date',
+                        (string) $game->game_date
+                    ))
+                    ->orderByDesc('season')
                     ->orderByDesc('date')
+                    ->orderByDesc('id')
                     ->value('elo_rating');
 
                 if ($probablePitcherElo !== null) {
@@ -171,7 +182,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // so traded pitchers are attributed to the team they pitched for)
         $recentPitcherElos = PitcherEloRating::query()
             ->where('team_id', $team->id)
+            ->tap(fn ($query) => MlbRegularSeasonWindow::applyCarryoverFilter(
+                $query,
+                (int) $game->season,
+                'season',
+                'date',
+                (string) $game->game_date
+            ))
+            ->orderByDesc('season')
             ->orderByDesc('date')
+            ->orderByDesc('id')
             ->limit(config('mlb.elo.recent_starts_limit'))
             ->pluck('elo_rating');
 
@@ -192,6 +212,43 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'source' => $probablePitcherEspnId ? 'league_average_missing_probable_rating' : 'league_average',
             'probable_pitcher_espn_id' => $probablePitcherEspnId,
         ];
+    }
+
+    protected function teamMetricsForGame(Model $game, int $homeTeamId, int $awayTeamId): array
+    {
+        if ($game instanceof Game && ! MlbRegularSeasonWindow::hasCompletedGamesBefore($game)) {
+            return [
+                $this->latestPriorSeasonMetric(TeamMetric::class, $homeTeamId, (int) $game->season, $game),
+                $this->latestPriorSeasonMetric(TeamMetric::class, $awayTeamId, (int) $game->season, $game),
+            ];
+        }
+
+        return parent::teamMetricsForGame($game, $homeTeamId, $awayTeamId);
+    }
+
+    protected function getTeamElo(Game $game, Team $team): float
+    {
+        $defaultElo = (float) config('mlb.elo.default_rating');
+
+        $elo = EloRating::query()
+            ->where('team_id', $team->id)
+            ->tap(fn ($query) => MlbRegularSeasonWindow::applyCarryoverFilter(
+                $query,
+                (int) $game->season,
+                'season',
+                'date',
+                (string) $game->game_date
+            ))
+            ->orderByDesc('season')
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->value('elo_rating');
+
+        if ($elo !== null) {
+            return (float) $elo;
+        }
+
+        return (float) ($team->elo_rating ?? $defaultElo);
     }
 
     protected function calculatePredictedSpread(

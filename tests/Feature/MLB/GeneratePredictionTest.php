@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\MLB\GeneratePrediction;
+use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
 use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
@@ -77,6 +78,8 @@ it('generates an mlb prediction with version metadata and snapshot data', functi
 
     $game = Game::factory()->create([
         'season' => 2026,
+        'week' => 13,
+        'game_date' => '2026-03-26',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -97,6 +100,17 @@ it('generates an mlb prediction with version metadata and snapshot data', functi
         ],
     ]);
 
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 13,
+        'game_date' => '2026-03-25',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 4,
+        'away_score' => 3,
+    ]);
+
     $homePitcher = Player::factory()->pitcher()->create([
         'team_id' => $homeTeam->id,
         'espn_id' => '9001',
@@ -110,7 +124,7 @@ it('generates an mlb prediction with version metadata and snapshot data', functi
         'player_id' => $homePitcher->id,
         'team_id' => $homeTeam->id,
         'season' => 2026,
-        'date' => now()->toDateString(),
+        'date' => '2026-03-25',
         'elo_rating' => 1575,
         'elo_change' => 8,
         'games_started' => 1,
@@ -120,7 +134,7 @@ it('generates an mlb prediction with version metadata and snapshot data', functi
         'player_id' => $awayPitcher->id,
         'team_id' => $awayTeam->id,
         'season' => 2026,
-        'date' => now()->subDay()->toDateString(),
+        'date' => '2026-03-25',
         'elo_rating' => 1480,
         'elo_change' => -5,
         'games_started' => 1,
@@ -205,7 +219,7 @@ it('prefers probable starter elo over team recent average pitcher elo', function
         'player_id' => $homeProbablePitcher->id,
         'team_id' => $homeTeam->id,
         'season' => 2026,
-        'date' => now()->toDateString(),
+        'date' => '2026-03-25',
         'elo_rating' => 1620,
         'elo_change' => 10,
         'games_started' => 2,
@@ -214,7 +228,7 @@ it('prefers probable starter elo over team recent average pitcher elo', function
         'player_id' => $awayProbablePitcher->id,
         'team_id' => $awayTeam->id,
         'season' => 2026,
-        'date' => now()->toDateString(),
+        'date' => '2026-03-25',
         'elo_rating' => 1460,
         'elo_change' => -4,
         'games_started' => 2,
@@ -223,7 +237,7 @@ it('prefers probable starter elo over team recent average pitcher elo', function
         'player_id' => $otherHomePitcher->id,
         'team_id' => $homeTeam->id,
         'season' => 2026,
-        'date' => now()->subDay()->toDateString(),
+        'date' => '2026-03-24',
         'elo_rating' => 1490,
         'elo_change' => 1,
         'games_started' => 3,
@@ -232,7 +246,7 @@ it('prefers probable starter elo over team recent average pitcher elo', function
         'player_id' => $otherAwayPitcher->id,
         'team_id' => $awayTeam->id,
         'season' => 2026,
-        'date' => now()->subDay()->toDateString(),
+        'date' => '2026-03-24',
         'elo_rating' => 1525,
         'elo_change' => 1,
         'games_started' => 3,
@@ -240,11 +254,24 @@ it('prefers probable starter elo over team recent average pitcher elo', function
 
     $game = Game::factory()->create([
         'season' => 2026,
+        'week' => 13,
+        'game_date' => '2026-03-26',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'probable_home_pitcher_espn_id' => '81001',
         'probable_away_pitcher_espn_id' => '81002',
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 13,
+        'game_date' => '2026-03-25',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 4,
     ]);
 
     $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
@@ -281,7 +308,7 @@ it('leans more on pitchers and dampens context early in the mlb season', functio
         'player_id' => $homeProbablePitcher->id,
         'team_id' => $homeTeam->id,
         'season' => 2026,
-        'date' => now()->toDateString(),
+        'date' => '2026-03-25',
         'elo_rating' => 1650,
         'elo_change' => 12,
         'games_started' => 1,
@@ -290,7 +317,7 @@ it('leans more on pitchers and dampens context early in the mlb season', functio
         'player_id' => $awayProbablePitcher->id,
         'team_id' => $awayTeam->id,
         'season' => 2026,
-        'date' => now()->toDateString(),
+        'date' => '2026-03-25',
         'elo_rating' => 1350,
         'elo_change' => -10,
         'games_started' => 1,
@@ -354,11 +381,24 @@ it('leans more on pitchers and dampens context early in the mlb season', functio
 
     $game = Game::factory()->create([
         'season' => 2026,
+        'week' => 13,
         'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-26',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'probable_home_pitcher_espn_id' => '91001',
         'probable_away_pitcher_espn_id' => '91002',
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 13,
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-25',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 4,
+        'away_score' => 2,
     ]);
 
     $createMetricSet(2, 1);
@@ -375,6 +415,229 @@ it('leans more on pitchers and dampens context early in the mlb season', functio
         ->and(data_get($earlyPrediction->model_metadata, 'season_context.pitcher_weight'))->toBeGreaterThan(data_get($latePrediction->model_metadata, 'season_context.pitcher_weight'))
         ->and(data_get($earlyPrediction->model_metadata, 'season_context.context_weight_scale'))->toBeLessThan(1.0)
         ->and((float) $earlyPrediction->home_combined_elo)->toBeGreaterThan((float) $latePrediction->home_combined_elo);
+});
+
+it('uses prior-season elo, metrics, and pitcher history for opening day instead of spring training data', function () {
+    $homeTeam = Team::factory()->create([
+        'elo_rating' => 1610,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'elo_rating' => 1390,
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2025,
+        'wins' => 92,
+        'losses' => 70,
+        'offensive_rating' => 111.0,
+        'pitching_rating' => 108.0,
+        'defensive_rating' => 103.0,
+        'runs_per_game' => 4.9,
+        'runs_allowed_per_game' => 4.1,
+        'run_differential_per_game' => 0.8,
+        'home_runs_per_game' => 1.3,
+        'batting_average' => 0.258,
+        'on_base_percentage' => 0.331,
+        'slugging_percentage' => 0.419,
+        'ops' => 0.75,
+        'team_era' => 3.84,
+        'strikeouts_pitched_per_game' => 8.7,
+        'whip' => 1.18,
+        'strength_of_schedule' => 1502,
+        'recent_form_rating' => 0.2,
+        'injury_adjusted_team_rating' => 1518,
+        'rest_travel_fatigue' => 0.0,
+        'calculation_date' => '2025-10-01',
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2025,
+        'wins' => 84,
+        'losses' => 78,
+        'offensive_rating' => 106.0,
+        'pitching_rating' => 104.0,
+        'defensive_rating' => 101.0,
+        'runs_per_game' => 4.4,
+        'runs_allowed_per_game' => 4.3,
+        'run_differential_per_game' => 0.1,
+        'home_runs_per_game' => 1.1,
+        'batting_average' => 0.249,
+        'on_base_percentage' => 0.319,
+        'slugging_percentage' => 0.401,
+        'ops' => 0.72,
+        'team_era' => 4.02,
+        'strikeouts_pitched_per_game' => 8.5,
+        'whip' => 1.24,
+        'strength_of_schedule' => 1496,
+        'recent_form_rating' => -0.1,
+        'injury_adjusted_team_rating' => 1491,
+        'rest_travel_fatigue' => 0.0,
+        'calculation_date' => '2025-10-01',
+    ]);
+
+    // Contaminated current-season rows that should be ignored before opening day.
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2026,
+        'wins' => 18,
+        'losses' => 12,
+        'offensive_rating' => 130.0,
+        'pitching_rating' => 90.0,
+        'defensive_rating' => 95.0,
+        'runs_per_game' => 6.1,
+        'runs_allowed_per_game' => 5.8,
+        'run_differential_per_game' => 0.3,
+        'home_runs_per_game' => 2.0,
+        'batting_average' => 0.295,
+        'on_base_percentage' => 0.372,
+        'slugging_percentage' => 0.481,
+        'ops' => 0.853,
+        'team_era' => 5.11,
+        'strikeouts_pitched_per_game' => 7.1,
+        'whip' => 1.42,
+        'strength_of_schedule' => 1470,
+        'recent_form_rating' => 1.1,
+        'injury_adjusted_team_rating' => 1601,
+        'rest_travel_fatigue' => 0.0,
+        'calculation_date' => '2026-03-24',
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2026,
+        'wins' => 19,
+        'losses' => 9,
+        'offensive_rating' => 128.0,
+        'pitching_rating' => 92.0,
+        'defensive_rating' => 94.0,
+        'runs_per_game' => 5.9,
+        'runs_allowed_per_game' => 5.4,
+        'run_differential_per_game' => 0.5,
+        'home_runs_per_game' => 1.9,
+        'batting_average' => 0.289,
+        'on_base_percentage' => 0.361,
+        'slugging_percentage' => 0.472,
+        'ops' => 0.833,
+        'team_era' => 4.94,
+        'strikeouts_pitched_per_game' => 7.4,
+        'whip' => 1.39,
+        'strength_of_schedule' => 1465,
+        'recent_form_rating' => 1.0,
+        'injury_adjusted_team_rating' => 1595,
+        'rest_travel_fatigue' => 0.0,
+        'calculation_date' => '2026-03-24',
+    ]);
+
+    EloRating::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2025,
+        'game_id' => null,
+        'date' => '2025-10-01',
+        'elo_rating' => 1525,
+        'elo_change' => 3,
+    ]);
+
+    EloRating::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2025,
+        'game_id' => null,
+        'date' => '2025-10-01',
+        'elo_rating' => 1495,
+        'elo_change' => -2,
+    ]);
+
+    // Spring-training pitcher history that should be ignored.
+    PitcherEloRating::query()->create([
+        'player_id' => Player::factory()->pitcher()->create(['team_id' => $homeTeam->id])->id,
+        'team_id' => $homeTeam->id,
+        'season' => 2026,
+        'date' => '2026-03-20',
+        'elo_rating' => 1630,
+        'elo_change' => 5,
+        'games_started' => 1,
+    ]);
+    PitcherEloRating::query()->create([
+        'player_id' => Player::factory()->pitcher()->create(['team_id' => $awayTeam->id])->id,
+        'team_id' => $awayTeam->id,
+        'season' => 2026,
+        'date' => '2026-03-20',
+        'elo_rating' => 1375,
+        'elo_change' => -6,
+        'games_started' => 1,
+    ]);
+
+    // Prior-season pitcher history that should be used for opening-day fallback.
+    PitcherEloRating::query()->create([
+        'player_id' => Player::factory()->pitcher()->create(['team_id' => $homeTeam->id])->id,
+        'team_id' => $homeTeam->id,
+        'season' => 2025,
+        'date' => '2025-09-28',
+        'elo_rating' => 1510,
+        'elo_change' => 2,
+        'games_started' => 32,
+    ]);
+    PitcherEloRating::query()->create([
+        'player_id' => Player::factory()->pitcher()->create(['team_id' => $homeTeam->id])->id,
+        'team_id' => $homeTeam->id,
+        'season' => 2025,
+        'date' => '2025-09-22',
+        'elo_rating' => 1490,
+        'elo_change' => -1,
+        'games_started' => 31,
+    ]);
+    PitcherEloRating::query()->create([
+        'player_id' => Player::factory()->pitcher()->create(['team_id' => $awayTeam->id])->id,
+        'team_id' => $awayTeam->id,
+        'season' => 2025,
+        'date' => '2025-09-28',
+        'elo_rating' => 1505,
+        'elo_change' => 1,
+        'games_started' => 31,
+    ]);
+    PitcherEloRating::query()->create([
+        'player_id' => Player::factory()->pitcher()->create(['team_id' => $awayTeam->id])->id,
+        'team_id' => $awayTeam->id,
+        'season' => 2025,
+        'date' => '2025-09-21',
+        'elo_rating' => 1495,
+        'elo_change' => -2,
+        'games_started' => 30,
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 1,
+        'season_type' => config('mlb.season.types.regular'),
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-20',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 8,
+        'away_score' => 3,
+    ]);
+
+    $openingDayGame = Game::factory()->create([
+        'season' => 2026,
+        'week' => 13,
+        'season_type' => config('mlb.season.types.regular'),
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-25',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($openingDayGame->fresh(['homeTeam', 'awayTeam']));
+
+    expect($prediction)->not->toBeNull()
+        ->and((float) $prediction->home_team_elo)->toBe(1525.0)
+        ->and((float) $prediction->away_team_elo)->toBe(1495.0)
+        ->and((float) $prediction->home_pitcher_elo)->toBe(1500.0)
+        ->and((float) $prediction->away_pitcher_elo)->toBe(1500.0)
+        ->and(data_get($prediction->model_metadata, 'season_context.sample_games'))->toBe(0)
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.home_source'))->toBe('team_recent_average')
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.away_source'))->toBe('team_recent_average');
 });
 
 it('keeps vegas spread null when draftkings only has moneyline but still captures market total', function () {

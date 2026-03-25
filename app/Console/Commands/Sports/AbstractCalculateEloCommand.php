@@ -4,6 +4,7 @@ namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractCalculateEloCommand extends Command
@@ -164,6 +165,8 @@ abstract class AbstractCalculateEloCommand extends Command
             $query->whereIn('season_type', $analyticsTypes);
         }
 
+        $this->applyAdditionalAnalyticsFilters($query);
+
         // Apply filters
         if ($season = $this->option('season')) {
             $query->where('season', $season);
@@ -217,6 +220,8 @@ abstract class AbstractCalculateEloCommand extends Command
 
         return Command::SUCCESS;
     }
+
+    protected function applyAdditionalAnalyticsFilters(Builder $query): void {}
 
     protected function seasonAlreadyInitialized(int $season): bool
     {

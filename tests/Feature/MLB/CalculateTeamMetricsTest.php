@@ -179,6 +179,7 @@ it('calculates runs per game correctly', function () {
     for ($i = 0; $i < 3; $i++) {
         $game = Game::factory()->create([
             'season' => $this->season,
+            'week' => 13,
             'status' => 'STATUS_FINAL',
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
@@ -229,6 +230,48 @@ it('calculates runs allowed per game correctly', function () {
 
     // Average: (2 + 3 + 4) / 3 = 3.0
     expect($metric->runs_allowed_per_game)->toBe(3.0);
+});
+
+it('ignores opening-day spring training finals when calculating current-season metrics', function () {
+    $opponent = Team::factory()->create();
+
+    $springGame = Game::factory()->create([
+        'season' => 2026,
+        'week' => 1,
+        'season_type' => config('mlb.season.types.regular'),
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-20',
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $opponent->id,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $springGame->id,
+        'runs' => 9,
+        'hits' => 14,
+        'at_bats' => 36,
+    ]);
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $springGame->id,
+        'runs' => 3,
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 13,
+        'season_type' => config('mlb.season.types.regular'),
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-25',
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $opponent->id,
+    ]);
+
+    $metric = $this->action->execute($this->team, 2026);
+
+    expect($metric)->toBeNull()
+        ->and(TeamMetric::query()->where('team_id', $this->team->id)->where('season', 2026)->exists())->toBeFalse();
 });
 
 it('calculates offensive rating based on runs, batting, and power', function () {

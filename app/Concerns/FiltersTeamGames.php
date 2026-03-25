@@ -2,6 +2,7 @@
 
 namespace App\Concerns;
 
+use App\Support\MlbRegularSeasonWindow;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -28,6 +29,10 @@ trait FiltersTeamGames
             ->when(
                 $analyticsTypeCandidates !== [],
                 fn ($query) => $query->whereIn('season_type', $analyticsTypeCandidates)
+            )
+            ->when(
+                $sportSlug === 'mlb' && ($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null,
+                fn ($query) => $query->whereDate('game_date', '>=', $openerDate)
             )
             ->where(function ($query) use ($team) {
                 $query->where('home_team_id', $team->id)

@@ -7,6 +7,7 @@ use App\Console\Commands\Sports\AbstractCalculateTeamMetricsCommand;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Model;
 
 class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
 {
@@ -21,6 +22,102 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
     protected const TEAM_METRIC_MODEL_CLASS = TeamMetric::class;
 
     protected const TEAM_DISPLAY_FIELDS = ['location', 'name'];
+
+    private ?string $activeSeasonType = null;
+
+    protected function buildSignature(): string
+    {
+        return sprintf(
+            "%s\n {--season= : Calculate metrics for a specific season (defaults to current year)}\n {--team= : Calculate metrics for a specific team ID}\n {--season-type= : Limit MLB team metrics to a specific season type}",
+            $this->commandName()
+        );
+    }
+
+    public function handle(): int
+    {
+        $calculateMetrics = app($this->calculateMetricsActionClass());
+        $season = (int) ($this->option('season') ?? date('Y'));
+        $seasonTypes = $this->seasonTypesForRun($season);
+
+        if ($seasonTypes === []) {
+            $this->info("Calculating metrics for all teams ({$season})...");
+            $this->warn('No completed MLB games found for the requested season type(s).');
+            $this->displayNoRecalculationDiagnostics($season);
+
+            return self::SUCCESS;
+        }
+
+        $singleTeamResult = $this->handleSingleTeamMetricsCalculation(
+            $season,
+            function (Model $team, int|string $seasonValue) use ($calculateMetrics, $seasonTypes) {
+                $metrics = collect();
+
+                foreach ($seasonTypes as $seasonType) {
+                    $metric = $calculateMetrics->execute($team, (int) $seasonValue, $seasonType);
+                    if ($metric) {
+                        $metrics->push($metric);
+                    }
+                }
+
+                if ($metrics->isEmpty()) {
+                    return null;
+                }
+
+                foreach ($metrics as $metric) {
+                    $this->line('Season Type: '.(string) $metric->season_type);
+                    $this->displayTeamMetric($metric);
+                }
+
+                return $metrics->first();
+            },
+            fn (Model $team) => $this->teamDisplayName($team)
+        );
+        if ($singleTeamResult !== null) {
+            return $singleTeamResult;
+        }
+
+        $this->info("Calculating metrics for all teams ({$season})...");
+
+        $teamModelClass = $this->teamModelClass();
+        $teams = $this->modifyTeamsQuery($teamModelClass::query(), $season)->get();
+        $calculated = 0;
+        $attempted = 0;
+        $bar = $this->output->createProgressBar($teams->count() * count($seasonTypes));
+        $bar->start();
+
+        foreach ($teams as $team) {
+            foreach ($seasonTypes as $seasonType) {
+                $attempted++;
+                if ($calculateMetrics->execute($team, $season, $seasonType)) {
+                    $calculated++;
+                }
+                $bar->advance();
+            }
+        }
+
+        $bar->finish();
+        $this->newLine(2);
+
+        $this->info("Recalculated metrics for {$calculated} of {$attempted} team/season-type combinations.");
+
+        $this->activeSeasonType = $this->displaySeasonType($seasonTypes);
+
+        $this->newLine();
+        $this->info($this->topTeamsTitle());
+
+        $this->displayTopTeamsByRating(
+            $season,
+            $this->teamMetricModelClass(),
+            $this->topRatingColumn(),
+            10,
+            [
+                'headers' => $this->topTableHeaders(),
+                'fields' => $this->topTableFields(),
+            ]
+        );
+
+        return self::SUCCESS;
+    }
 
     protected function topTeamsTitle(): string
     {
@@ -57,6 +154,7 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
         $this->table(
             ['Metric', 'Value'],
             [
+                ['Season Type', $metric->season_type ?? 'N/A'],
                 ['Offensive Rating', round($metric->offensive_rating, 2)],
                 ['Pitching Rating', round($metric->pitching_rating, 2)],
                 ['Defensive Rating', round($metric->defensive_rating, 2)],
@@ -137,6 +235,15 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
         }
     }
 
+    protected function modifyTopTeamsQuery(mixed $query, int|string $season): mixed
+    {
+        if ($this->activeSeasonType !== null) {
+            $query->where('season_type', $this->activeSeasonType);
+        }
+
+        return $query;
+    }
+
     /**
      * @return array<int, int|string>
      */
@@ -182,5 +289,47 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
             $candidates,
             fn ($value) => $value !== null && $value !== ''
         )));
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function seasonTypesForRun(int $season): array
+    {
+        $requestedSeasonType = $this->option('season-type');
+
+        if (is_string($requestedSeasonType) && trim($requestedSeasonType) !== '') {
+            return [trim($requestedSeasonType)];
+        }
+
+        return DB::table('mlb_games')
+            ->where('season', $season)
+            ->where('status', config('mlb.statuses.final'))
+            ->whereNotNull('season_type')
+            ->distinct()
+            ->orderBy('season_type')
+            ->pluck('season_type')
+            ->map(fn ($seasonType) => (string) $seasonType)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $seasonTypes
+     */
+    private function displaySeasonType(array $seasonTypes): ?string
+    {
+        $requestedSeasonType = $this->option('season-type');
+        if (is_string($requestedSeasonType) && trim($requestedSeasonType) !== '') {
+            return trim($requestedSeasonType);
+        }
+
+        $regularSeasonType = (string) config('mlb.season.types.regular', 2);
+
+        if (in_array($regularSeasonType, $seasonTypes, true)) {
+            return $regularSeasonType;
+        }
+
+        return $seasonTypes[0] ?? null;
     }
 }

@@ -12,6 +12,7 @@ class TeamMetric extends Model
     protected $fillable = [
         'team_id',
         'season',
+        'season_type',
         'wins',
         'losses',
         'offensive_rating',
@@ -41,6 +42,7 @@ class TeamMetric extends Model
             'offensive_rating' => 'float',
             'pitching_rating' => 'float',
             'defensive_rating' => 'float',
+            'season_type' => 'string',
             'wins' => 'integer',
             'losses' => 'integer',
             'runs_per_game' => 'float',

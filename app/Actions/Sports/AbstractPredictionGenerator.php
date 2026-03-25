@@ -305,6 +305,11 @@ abstract class AbstractPredictionGenerator
 
         $metrics = $teamMetricModel::query()
             ->where('season', $game->season)
+            ->when(
+                isset($game->season_type)
+                    && Schema::hasColumn((new $teamMetricModel)->getTable(), 'season_type'),
+                fn ($query) => $query->where('season_type', (string) $game->season_type)
+            )
             ->whereIn('team_id', [$homeTeamId, $awayTeamId])
             ->get()
             ->keyBy('team_id');
@@ -351,6 +356,12 @@ abstract class AbstractPredictionGenerator
         return $teamMetricModel::query()
             ->where('team_id', $teamId)
             ->where('season', '<', $season)
+            ->when(
+                $game !== null
+                    && isset($game->season_type)
+                    && Schema::hasColumn((new $teamMetricModel)->getTable(), 'season_type'),
+                fn ($query) => $query->where('season_type', (string) $game->season_type)
+            )
             ->orderByDesc('season')
             ->first();
     }

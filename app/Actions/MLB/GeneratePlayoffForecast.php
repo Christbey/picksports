@@ -120,6 +120,7 @@ class GeneratePlayoffForecast
         $metrics = TeamMetric::query()
             ->with('team')
             ->where('season', $season)
+            ->where('season_type', (string) config('mlb.season.types.regular', 2))
             ->get();
 
         if ($metrics->isEmpty()) {
@@ -159,6 +160,7 @@ class GeneratePlayoffForecast
     {
         $sourceSeason = TeamMetric::query()
             ->where('season', '<', $targetSeason)
+            ->where('season_type', (string) config('mlb.season.types.regular', 2))
             ->max('season');
 
         if (! $sourceSeason) {
@@ -168,6 +170,7 @@ class GeneratePlayoffForecast
         $metrics = TeamMetric::query()
             ->with('team')
             ->where('season', (int) $sourceSeason)
+            ->where('season_type', (string) config('mlb.season.types.regular', 2))
             ->get();
 
         if ($metrics->isEmpty()) {

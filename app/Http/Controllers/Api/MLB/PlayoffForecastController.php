@@ -68,12 +68,14 @@ class PlayoffForecastController extends Controller
 
                 $hasCurrentSeasonMetrics = TeamMetric::query()
                     ->where('season', $season)
+                    ->where('season_type', (string) config('mlb.season.types.regular', 2))
                     ->exists();
 
                 $projectionSourceSeason = $hasCurrentSeasonMetrics
                     ? $season
                     : TeamMetric::query()
                         ->where('season', '<', $season)
+                        ->where('season_type', (string) config('mlb.season.types.regular', 2))
                         ->max('season');
 
                 $usedRegression = ! $hasCurrentSeasonMetrics && $projectionSourceSeason !== null;

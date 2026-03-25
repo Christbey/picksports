@@ -18,6 +18,7 @@ class TeamMetricResource extends JsonResource
             'id' => $this->id,
             'team_id' => $this->team_id,
             'season' => $this->season,
+            'season_type' => $this->season_type,
             'offensive_rating' => $this->offensive_rating,
             'pitching_rating' => $this->pitching_rating,
             'defensive_rating' => $this->defensive_rating,

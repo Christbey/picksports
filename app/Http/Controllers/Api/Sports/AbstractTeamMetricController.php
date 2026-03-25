@@ -100,6 +100,11 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
         return 'season';
     }
 
+    protected function getSeasonTypeColumn(): string
+    {
+        return 'season_type';
+    }
+
     protected function modifyIndexQuery(Builder $query): Builder
     {
         return $query;
@@ -113,6 +118,19 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
 
         if (! array_key_exists($cacheKey, self::$seasonColumnPresence)) {
             self::$seasonColumnPresence[$cacheKey] = Schema::hasColumn($instance->getTable(), $this->getSeasonColumn());
+        }
+
+        return self::$seasonColumnPresence[$cacheKey];
+    }
+
+    protected function hasSeasonTypeColumn(): bool
+    {
+        $model = $this->getTeamMetricModel();
+        $instance = new $model;
+        $cacheKey = $instance->getTable().':'.$this->getSeasonTypeColumn();
+
+        if (! array_key_exists($cacheKey, self::$seasonColumnPresence)) {
+            self::$seasonColumnPresence[$cacheKey] = Schema::hasColumn($instance->getTable(), $this->getSeasonTypeColumn());
         }
 
         return self::$seasonColumnPresence[$cacheKey];
@@ -152,7 +170,15 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
                     $query->where($this->getSeasonColumn(), $request->query('season'));
                 }
 
-                if ($this->hasSeasonColumn() && $request->filled('season_type')) {
+                if ($request->filled('season_type') && $this->hasSeasonTypeColumn()) {
+                    $query->whereIn(
+                        $this->getSeasonTypeColumn(),
+                        $this->resolveSeasonTypeCandidates(
+                            $this->sportSlugFromGamesTable($this->gamesTable()) ?? '',
+                            (string) $request->query('season_type')
+                        )
+                    );
+                } elseif ($this->hasSeasonColumn() && $request->filled('season_type')) {
                     $gamesTable = $this->gamesTable();
                     $sportSlug = $this->sportSlugFromGamesTable($gamesTable);
                     $seasonTypeCandidates = $sportSlug
@@ -301,6 +327,16 @@ abstract class AbstractTeamMetricController extends AbstractSportsApiController
 
                 if ($request->filled('season') && $this->hasSeasonColumn()) {
                     $query->where($this->getSeasonColumn(), $request->input('season'));
+                }
+
+                if ($request->filled('season_type') && $this->hasSeasonTypeColumn()) {
+                    $query->whereIn(
+                        $this->getSeasonTypeColumn(),
+                        $this->resolveSeasonTypeCandidates(
+                            $this->sportSlugFromGamesTable($this->gamesTable()) ?? '',
+                            (string) $request->query('season_type')
+                        )
+                    );
                 }
 
                 if ($this->byTeamReturnsLatestOnly()) {

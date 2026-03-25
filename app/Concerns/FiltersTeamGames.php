@@ -17,21 +17,27 @@ trait FiltersTeamGames
     protected function getCompletedGamesForTeam(
         Model $team,
         int $season,
-        string $sport
+        string $sport,
+        int|string|null $seasonType = null
     ): Collection {
         $gameModel = "App\\Models\\{$sport}\\Game";
         $sportSlug = strtolower($sport);
         $analyticsTypeCandidates = $this->resolveAnalyticsSeasonTypeCandidates($sportSlug);
+        $seasonTypeCandidates = $seasonType !== null
+            ? $this->resolveSeasonTypeCandidates($sportSlug, $seasonType)
+            : $analyticsTypeCandidates;
 
         return $gameModel::query()
             ->where('season', $season)
             ->where('status', config("{$sportSlug}.statuses.final"))
             ->when(
-                $analyticsTypeCandidates !== [],
-                fn ($query) => $query->whereIn('season_type', $analyticsTypeCandidates)
+                $seasonTypeCandidates !== [],
+                fn ($query) => $query->whereIn('season_type', $seasonTypeCandidates)
             )
             ->when(
-                $sportSlug === 'mlb' && ($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null,
+                $sportSlug === 'mlb'
+                    && ! in_array((string) $seasonType, [(string) config('mlb.season.types.spring_training', 1), 'spring_training'], true)
+                    && ($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null,
                 fn ($query) => $query->whereDate('game_date', '>=', $openerDate)
             )
             ->where(function ($query) use ($team) {
@@ -54,32 +60,49 @@ trait FiltersTeamGames
             return [];
         }
 
+        $candidates = [];
+
+        foreach ($configuredTypes as $type) {
+            $candidates = [...$candidates, ...$this->resolveSeasonTypeCandidates($sportSlug, $type)];
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    protected function resolveSeasonTypeCandidates(string $sportSlug, int|string $seasonType): array
+    {
+        $configuredType = $seasonType;
+
         $typeNames = config("{$sportSlug}.season.type_names", []);
         $typesByKey = config("{$sportSlug}.season.types", []);
         $candidates = [];
 
-        foreach ($configuredTypes as $type) {
-            if ($type === null || $type === '') {
-                continue;
-            }
+        if ($configuredType === null || $configuredType === '') {
+            return [];
+        }
 
-            $candidates[] = $type;
-            $candidates[] = (string) $type;
+        $candidates[] = $configuredType;
+        $candidates[] = (string) $configuredType;
 
-            if (is_string($type) && isset($typeNames[$type])) {
-                $candidates[] = $typeNames[$type];
-            }
+        if (is_string($configuredType) && isset($typeNames[$configuredType])) {
+            $candidates[] = $typeNames[$configuredType];
+        }
 
-            if (is_string($type) && isset($typesByKey[$type])) {
-                $resolved = $typesByKey[$type];
-                $candidates[] = $resolved;
-                $candidates[] = (string) $resolved;
-            }
+        if (is_string($configuredType) && isset($typesByKey[$configuredType])) {
+            $resolved = $typesByKey[$configuredType];
+            $candidates[] = $resolved;
+            $candidates[] = (string) $resolved;
+        }
 
-            if (is_numeric($type)) {
-                $code = (int) $type;
-                $matchedKey = array_search($code, $typesByKey, true);
-                if ($matchedKey !== false && isset($typeNames[$matchedKey])) {
+        if (is_numeric($configuredType)) {
+            $code = (int) $configuredType;
+            $matchedKey = array_search($code, $typesByKey, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
                     $candidates[] = $typeNames[$matchedKey];
                 }
             }

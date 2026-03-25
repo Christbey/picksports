@@ -14,17 +14,19 @@ class CalculateTeamMetrics
 {
     use FiltersTeamGames;
 
-    public function execute(Team $team, int $season): ?TeamMetric
+    public function execute(Team $team, int $season, int|string|null $seasonType = null): ?TeamMetric
     {
-        $games = $this->getCompletedGamesForTeam($team, $season, 'MLB');
+        $games = $this->getCompletedGamesForTeam($team, $season, 'MLB', $seasonType);
+        $resolvedSeasonType = $this->resolveMetricSeasonType($games, $seasonType);
 
         if ($games->isEmpty()) {
             Log::warning('No completed games found for team metrics calculation', [
                 'team_id' => $team->id,
                 'team_name' => "{$team->city} {$team->name}",
                 'season' => $season,
+                'season_type' => $resolvedSeasonType,
                 'sport' => 'mlb',
-                'diagnostics' => $this->buildNoGamesDiagnostics($team, $season),
+                'diagnostics' => $this->buildNoGamesDiagnostics($team, $season, $seasonType),
             ]);
 
             return null;
@@ -62,6 +64,7 @@ class CalculateTeamMetrics
             'team_id' => $team->id,
             'team_name' => "{$team->city} {$team->name}",
             'season' => $season,
+            'season_type' => $resolvedSeasonType,
             'sport' => 'mlb',
             'games_count' => count($teamStats),
             'offensive_rating' => round($offensiveRating, 1),
@@ -80,6 +83,7 @@ class CalculateTeamMetrics
             'team_id' => $team->id,
             'team_name' => "{$team->city} {$team->name}",
             'season' => $season,
+            'season_type' => $resolvedSeasonType,
         ]);
 
         // Update or create team metric
@@ -87,8 +91,10 @@ class CalculateTeamMetrics
             [
                 'team_id' => $team->id,
                 'season' => $season,
+                'season_type' => $resolvedSeasonType,
             ],
             [
+                'season_type' => $resolvedSeasonType,
                 // Rating metrics: 1 decimal
                 'wins' => $record['wins'],
                 'losses' => $record['losses'],
@@ -121,10 +127,12 @@ class CalculateTeamMetrics
     /**
      * @return array<string, mixed>
      */
-    private function buildNoGamesDiagnostics(Team $team, int $season): array
+    private function buildNoGamesDiagnostics(Team $team, int $season, int|string|null $seasonType = null): array
     {
         $finalStatus = (string) config('mlb.statuses.final');
-        $analyticsCandidates = $this->resolveAnalyticsSeasonTypeCandidates('mlb');
+        $seasonTypeCandidates = $seasonType !== null
+            ? $this->resolveSeasonTypeCandidates('mlb', $seasonType)
+            : $this->resolveAnalyticsSeasonTypeCandidates('mlb');
         $baseQuery = Game::query()
             ->where('season', $season)
             ->where(function ($query) use ($team) {
@@ -161,13 +169,14 @@ class CalculateTeamMetrics
             'team_games_with_final_and_analytics_type' => (clone $baseQuery)
                 ->where('status', $finalStatus)
                 ->when(
-                    $analyticsCandidates !== [],
-                    fn ($query) => $query->whereIn('season_type', $analyticsCandidates)
+                    $seasonTypeCandidates !== [],
+                    fn ($query) => $query->whereIn('season_type', $seasonTypeCandidates)
                 )
                 ->count(),
             'configured_final_status' => $finalStatus,
             'configured_analytics_types' => config('mlb.season.analytics_types', []),
-            'resolved_analytics_candidates' => $analyticsCandidates,
+            'requested_season_type' => $seasonType,
+            'resolved_analytics_candidates' => $seasonTypeCandidates,
             'status_breakdown' => $statusBreakdown,
             'final_season_type_breakdown' => $finalSeasonTypeBreakdown,
         ];
@@ -538,18 +547,37 @@ class CalculateTeamMetrics
         return ($totalWalksAllowed + $totalHitsAllowed) / $totalInningsPitched;
     }
 
-    public function executeForAllTeams(int $season): int
+    public function executeForAllTeams(int $season, int|string|null $seasonType = null): int
     {
         $teams = Team::all();
         $calculated = 0;
 
         foreach ($teams as $team) {
-            $metric = $this->execute($team, $season);
+            $metric = $this->execute($team, $season, $seasonType);
             if ($metric) {
                 $calculated++;
             }
         }
 
         return $calculated;
+    }
+
+    private function resolveMetricSeasonType($games, int|string|null $seasonType): string
+    {
+        if ($seasonType !== null) {
+            return (string) collect($this->resolveSeasonTypeCandidates('mlb', $seasonType))
+                ->first(fn ($candidate) => is_numeric($candidate) || ctype_digit((string) $candidate), (string) $seasonType);
+        }
+
+        $resolved = $games
+            ->pluck('season_type')
+            ->filter(fn ($type) => $type !== null && $type !== '')
+            ->map(fn ($type) => (string) $type)
+            ->unique()
+            ->values();
+
+        return $resolved->count() === 1
+            ? (string) $resolved->first()
+            : (string) config('mlb.season.types.regular');
     }
 }

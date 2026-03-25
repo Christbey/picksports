@@ -7,6 +7,7 @@ use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Support\MlbSeasonTypeResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
@@ -32,7 +33,12 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
             'espn_uid' => $rawGame['uid'] ?? null,
             'season' => $dto->season,
             'week' => $dto->week,
-            'season_type' => $dto->seasonType,
+            'season_type' => MlbSeasonTypeResolver::normalize(
+                seasonType: data_get($rawGame, 'season.type', $dto->seasonType),
+                week: $dto->week,
+                gameDate: $dateParts['game_date'],
+                season: $dto->season,
+            ),
             'game_date' => $dateParts['game_date'],
             'game_time' => $dateParts['game_time'],
             'name' => $dto->name,
@@ -64,6 +70,12 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
         $attributes = parent::partialGameAttributes($dto, $rawGame, $homeTeam, $awayTeam);
         $dateParts = $this->resolveMlbGameDateParts($rawGame);
 
+        $attributes['season_type'] = MlbSeasonTypeResolver::normalize(
+            seasonType: data_get($rawGame, 'season.type', $dto->seasonType),
+            week: $dto->week,
+            gameDate: $dateParts['game_date'],
+            season: $dto->season,
+        );
         $attributes['game_date'] = $dateParts['game_date'];
         $attributes['game_time'] = $dateParts['game_time'];
 

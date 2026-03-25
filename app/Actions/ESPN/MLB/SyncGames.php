@@ -7,6 +7,7 @@ use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
+use App\Support\MlbSeasonTypeResolver;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGames extends AbstractSyncGames
@@ -27,7 +28,12 @@ class SyncGames extends AbstractSyncGames
             'espn_uid' => $gameData['uid'] ?? null,
             'season' => $dto->season,
             'week' => $dto->week,
-            'season_type' => $dto->seasonType,
+            'season_type' => MlbSeasonTypeResolver::normalize(
+                seasonType: data_get($gameData, 'season.type', $dto->seasonType),
+                week: $dto->week,
+                gameDate: $dateParts['game_date'],
+                season: $dto->season,
+            ),
             'game_date' => $dateParts['game_date'],
             'game_time' => $dateParts['game_time'],
             'name' => $dto->name,

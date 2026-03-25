@@ -118,3 +118,56 @@ it('stores mlb west coast night games on the local venue date', function () {
         ->and($game->game_date?->format('Y-m-d'))->toBe('2026-03-25')
         ->and($game->game_time)->toBe('17:05:00');
 });
+
+it('normalizes mislabeled pre-opener mlb games to spring training during sync', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    Game::factory()->create([
+        'espn_event_id' => '401814702',
+        'season' => 2026,
+        'week' => 12,
+        'season_type' => (string) config('mlb.season.types.regular'),
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-25',
+        'game_time' => '17:05:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'mlb';
+
+        public function getGames(int $season, int $seasonType, int $week): ?array
+        {
+            return [
+                'items' => [[
+                    'id' => '401833330',
+                    'uid' => 's:1~l:10~e:401833330',
+                    'date' => '2026-03-24T19:40:00Z',
+                    'name' => 'Cleveland Guardians at Arizona Diamondbacks',
+                    'shortName' => 'CLE @ ARI',
+                    'season' => ['year' => $season, 'type' => 2],
+                    'week' => ['number' => 1],
+                    'competitions' => [[
+                        'status' => ['type' => ['name' => 'STATUS_FINAL']],
+                        'competitors' => [
+                            ['homeAway' => 'home', 'team' => ['id' => '10']],
+                            ['homeAway' => 'away', 'team' => ['id' => '20']],
+                        ],
+                    ]],
+                ]],
+            ];
+        }
+    };
+
+    $synced = (new SyncGames($service))->execute(2026, 2, 1);
+
+    expect($synced)->toBe(1);
+
+    $game = Game::query()->where('espn_event_id', '401833330')->first();
+
+    expect($game)->not->toBeNull()
+        ->and((string) $game->season_type)->toBe((string) config('mlb.season.types.spring_training'));
+});

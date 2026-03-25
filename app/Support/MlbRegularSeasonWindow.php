@@ -10,15 +10,15 @@ class MlbRegularSeasonWindow
 {
     public static function openerDate(int $season): ?string
     {
-        $date = Game::query()
-            ->where('season', $season)
-            ->whereNotNull('game_date')
-            ->where(function (Builder $query) {
-                $query->whereNull('week')
-                    ->orWhere('week', '!=', 1);
-            })
-            ->orderBy('game_date')
-            ->value('game_date');
+        $date = MlbSeasonTypeResolver::inferredRegularSeasonOpenerDate($season)
+            ?? self::normalizeDate(
+                Game::query()
+                    ->where('season', $season)
+                    ->where('season_type', MlbSeasonTypeResolver::regularSeasonType())
+                    ->whereNotNull('game_date')
+                    ->orderBy('game_date')
+                    ->value('game_date')
+            );
 
         return self::normalizeDate($date);
     }

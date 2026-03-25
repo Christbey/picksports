@@ -479,10 +479,10 @@ it('blends vegas spread when odds data available', function () {
                     'title' => 'DraftKings',
                     'markets' => [
                         [
-                            'key' => 'h2h',
+                            'key' => 'spreads',
                             'outcomes' => [
-                                ['name' => $this->homeTeam->location, 'price' => -200],
-                                ['name' => $this->awayTeam->location, 'price' => 170],
+                                ['name' => $this->homeTeam->location, 'point' => -5.5, 'price' => -110],
+                                ['name' => $this->awayTeam->location, 'point' => 5.5, 'price' => -110],
                             ],
                         ],
                     ],
@@ -497,6 +497,42 @@ it('blends vegas spread when odds data available', function () {
     expect($prediction)->not->toBeNull();
     expect($prediction->vegas_spread)->not->toBeNull();
     expect((float) $prediction->vegas_spread)->not->toBe(0.0);
+    expect(data_get($prediction->model_metadata, 'market_context.has_spreads'))->toBeTrue();
+});
+
+it('does not infer vegas spread from moneyline-only odds data', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'bookmakers' => [
+                [
+                    'key' => 'draftkings',
+                    'title' => 'DraftKings',
+                    'markets' => [
+                        [
+                            'key' => 'h2h',
+                            'outcomes' => [
+                                ['name' => $this->homeTeam->location, 'price' => -200],
+                                ['name' => $this->awayTeam->location, 'price' => 170],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $prediction = (new GeneratePrediction)->execute($game);
+
+    expect($prediction)->not->toBeNull()
+        ->and($prediction->vegas_spread)->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'market_context.bookmaker'))->toBe('draftkings')
+        ->and(data_get($prediction->model_metadata, 'market_context.has_h2h'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'market_context.has_spreads'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'market_context.has_totals'))->toBeFalse();
 });
 
 it('generates prediction without vegas spread when no odds data', function () {

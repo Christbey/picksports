@@ -64,3 +64,57 @@ it('stores probable pitcher ids from mlb schedule sync', function () {
         ->and($game->probable_home_pitcher_espn_id)->toBe('8001')
         ->and($game->probable_away_pitcher_espn_id)->toBe('8002');
 });
+
+it('stores mlb west coast night games on the local venue date', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'mlb';
+
+        public function getGames(int $season, int $seasonType, int $week): ?array
+        {
+            return [
+                'items' => [[
+                    'id' => '401814702',
+                    'uid' => 's:1~l:10~e:401814702',
+                    'date' => '2026-03-26T00:05:00Z',
+                    'name' => 'New York Yankees at San Francisco Giants',
+                    'shortName' => 'NYY @ SF',
+                    'season' => ['year' => $season, 'type' => $seasonType],
+                    'week' => ['number' => $week],
+                    'competitions' => [[
+                        'venue' => [
+                            'address' => [
+                                'city' => 'San Francisco',
+                                'state' => 'CA',
+                            ],
+                        ],
+                        'status' => ['type' => ['name' => 'STATUS_SCHEDULED']],
+                        'competitors' => [
+                            [
+                                'homeAway' => 'home',
+                                'team' => ['id' => '10'],
+                            ],
+                            [
+                                'homeAway' => 'away',
+                                'team' => ['id' => '20'],
+                            ],
+                        ],
+                    ]],
+                ]],
+            ];
+        }
+    };
+
+    $synced = (new SyncGames($service))->execute(2026, 2, 12);
+
+    expect($synced)->toBe(1);
+
+    $game = Game::query()->where('espn_event_id', '401814702')->first();
+
+    expect($game)->not->toBeNull()
+        ->and($game->game_date?->format('Y-m-d'))->toBe('2026-03-25')
+        ->and($game->game_time)->toBe('17:05:00');
+});

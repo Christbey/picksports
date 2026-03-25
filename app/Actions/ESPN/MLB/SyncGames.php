@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN\MLB;
 
 use App\Actions\ESPN\AbstractSyncGames;
+use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
@@ -10,13 +11,15 @@ use Illuminate\Database\Eloquent\Model;
 
 class SyncGames extends AbstractSyncGames
 {
+    use ResolvesMlbGameDateParts;
+
     protected const GAME_MODEL_CLASS = Game::class;
 
     protected const TEAM_MODEL_CLASS = Team::class;
 
     protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
-        $dateParts = GameData::extractDateParts($gameData['date'] ?? null);
+        $dateParts = $this->resolveMlbGameDateParts($gameData);
         [$homeCompetitor, $awayCompetitor] = $this->resolveCompetitors($gameData);
 
         return [

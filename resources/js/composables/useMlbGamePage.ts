@@ -39,6 +39,125 @@ const fallbackGame = (gameId: number): MlbPageGame => ({
     season_type: '',
 });
 
+const toNumber = (value: unknown): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toOptionalNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeMlbPrediction = (
+    rawPrediction: unknown,
+): MlbPagePrediction | null => {
+    const source = Array.isArray(rawPrediction)
+        ? rawPrediction[0]
+        : rawPrediction;
+
+    if (!source || typeof source !== 'object') {
+        return null;
+    }
+
+    const record = source as Record<string, unknown>;
+    if (
+        record.home_win_probability === undefined ||
+        record.away_win_probability === undefined
+    ) {
+        return null;
+    }
+
+    const confidenceScore = toOptionalNumber(record.confidence_score);
+    const confidenceLevel =
+        typeof record.confidence_level === 'string'
+            ? record.confidence_level
+            : confidenceScore === null
+              ? 'unavailable'
+              : confidenceScore >= 75
+                ? 'high'
+                : confidenceScore >= 60
+                  ? 'medium'
+                  : 'low';
+
+    const rawNarrative = record.narrative;
+    const narrative =
+        rawNarrative && typeof rawNarrative === 'object'
+            ? {
+                  summary:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .summary === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .summary as string)
+                          : '',
+                  key_points: Array.isArray(
+                      (rawNarrative as Record<string, unknown>).key_points,
+                  )
+                      ? (
+                            (rawNarrative as Record<string, unknown>)
+                                .key_points as unknown[]
+                        )
+                            .map((point) => String(point))
+                            .filter((point) => point.length > 0)
+                      : [],
+                  risk_note:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .risk_note === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .risk_note as string)
+                          : '',
+                  generated_by:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .generated_by === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .generated_by as string)
+                          : '',
+                  social_caption:
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .social_caption === 'string'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .social_caption as string)
+                          : null,
+                  betting_plan: (() => {
+                      const plan = (rawNarrative as Record<string, unknown>)
+                          .betting_plan;
+                      if (!plan || typeof plan !== 'object') return null;
+
+                      const betPick =
+                          typeof (plan as Record<string, unknown>).bet_pick ===
+                          'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .bet_pick as string)
+                              : '';
+                      const reasoning =
+                          typeof (plan as Record<string, unknown>).reasoning ===
+                          'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .reasoning as string)
+                              : '';
+
+                      return betPick !== '' && reasoning !== ''
+                          ? {
+                                bet_pick: betPick,
+                                reasoning,
+                            }
+                          : null;
+                  })(),
+              }
+            : null;
+
+    return {
+        home_win_probability: toNumber(record.home_win_probability),
+        away_win_probability: toNumber(record.away_win_probability),
+        predicted_spread: toNumber(record.predicted_spread),
+        predicted_total: toNumber(record.predicted_total),
+        confidence_level: confidenceLevel,
+        confidence_score: confidenceScore,
+        narrative,
+    };
+};
+
 export function useMlbGamePage(gameId: number) {
     const currentGame = ref<MlbPageGame>(fallbackGame(gameId));
     const homeTeam = ref<MlbPageTeam | null>(null);
@@ -144,7 +263,7 @@ export function useMlbGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
-                prediction.value = predictionData.data;
+                prediction.value = normalizeMlbPrediction(predictionData.data);
             }
 
             const teamRequests: Promise<void>[] = [];

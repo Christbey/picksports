@@ -324,7 +324,44 @@ class OddsApiService
             }
         }
 
+        $oddsData['market_context'] = $this->marketAvailability($oddsData);
+
         return $oddsData;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $oddsData
+     * @return array{bookmaker:?string,available_markets:array<int,string>,has_h2h:bool,has_spreads:bool,has_totals:bool}
+     */
+    public function marketAvailability(?array $oddsData): array
+    {
+        $bookmaker = null;
+        $marketKeys = [];
+
+        if (is_array($oddsData) && isset($oddsData['bookmakers']) && is_array($oddsData['bookmakers'])) {
+            $primaryBookmaker = $oddsData['bookmakers'][0] ?? null;
+
+            if (is_array($primaryBookmaker)) {
+                $bookmaker = isset($primaryBookmaker['key']) && is_string($primaryBookmaker['key'])
+                    ? $primaryBookmaker['key']
+                    : null;
+
+                $marketKeys = collect($primaryBookmaker['markets'] ?? [])
+                    ->pluck('key')
+                    ->filter(fn ($key) => is_string($key) && $key !== '')
+                    ->unique()
+                    ->values()
+                    ->all();
+            }
+        }
+
+        return [
+            'bookmaker' => $bookmaker,
+            'available_markets' => $marketKeys,
+            'has_h2h' => in_array('h2h', $marketKeys, true),
+            'has_spreads' => in_array('spreads', $marketKeys, true),
+            'has_totals' => in_array('totals', $marketKeys, true),
+        ];
     }
 
     /**

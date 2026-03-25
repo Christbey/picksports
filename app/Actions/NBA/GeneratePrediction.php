@@ -68,6 +68,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $this->winProbabilityCalibrationMetadata = [];
 
         $config = config('nba.prediction');
+        $oddsMarketAvailability = $this->oddsMarketAvailability($game);
         $homeCourtAdvantage = config('nba.elo.home_court_advantage');
 
         // 1. ELO spread component
@@ -145,6 +146,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'injury_total_adj' => round($usePersistedInjuryContext ? 0.0 : $injuryContext['total_adj'], 2),
             'injury_model_source' => $usePersistedInjuryContext ? 'persisted_team_rating' : 'raw_player_status',
             'baseline_model_spread' => round($modelSpread, 2),
+            'odds_market_availability' => $oddsMarketAvailability,
         ];
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaSpreadMeta];
 
@@ -328,6 +330,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'total_model' => $this->totalMetadata,
                     'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
                     'win_probability_calibration' => $calibration,
+                    'market_context' => [
+                        'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        ...($this->metadata['odds_market_availability'] ?? []),
+                    ],
                 ],
                 '_snapshot' => [
                     'model_version' => $this->modelVersion(),
@@ -353,6 +359,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     ],
                     'market_context' => [
                         'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        ...($this->metadata['odds_market_availability'] ?? []),
                     ],
                     'model_metadata' => [
                         'model' => 'nba_ensemble',
@@ -360,6 +367,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'total_model' => $this->totalMetadata,
                         'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
                         'win_probability_calibration' => $calibration,
+                        'market_context' => [
+                            'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                            ...($this->metadata['odds_market_availability'] ?? []),
+                        ],
                     ],
                 ],
             ]
@@ -687,10 +698,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     }
                 }
 
-                // Fall back to h2h moneyline → implied spread
-                if ($market['key'] === 'h2h') {
-                    return $this->moneylineToSpread($market['outcomes'], $game);
-                }
             }
         }
 
@@ -710,65 +717,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return str_contains($name, strtolower($homeTeam->location ?? ''))
             || str_contains($name, $mascot)
             || $name === $teamName;
-    }
-
-    /**
-     * Convert moneyline odds to an approximate spread.
-     */
-    private function moneylineToSpread(array $outcomes, Model $game): ?float
-    {
-        $homeOdds = null;
-        $awayOdds = null;
-
-        foreach ($outcomes as $outcome) {
-            if ($this->isHomeTeamOutcome($outcome['name'], $game)) {
-                $homeOdds = (float) $outcome['price'];
-            } else {
-                $awayOdds = (float) $outcome['price'];
-            }
-        }
-
-        if ($homeOdds === null || $awayOdds === null) {
-            return null;
-        }
-
-        // Convert moneyline to implied probability then to spread
-        $homeProb = $this->moneylineToProbability($homeOdds);
-        $awayProb = $this->moneylineToProbability($awayOdds);
-
-        if ($homeProb + $awayProb === 0.0) {
-            return null;
-        }
-
-        // Normalize (remove vig)
-        $total = $homeProb + $awayProb;
-        $homeProb /= $total;
-
-        // Convert probability to approximate spread using logistic inverse
-        // spread ≈ -coefficient * ln((1/prob) - 1)
-        if ($homeProb <= 0 || $homeProb >= 1) {
-            return null;
-        }
-
-        $coefficient = config('nba.prediction.spread_to_probability_coefficient');
-
-        return round(-$coefficient * log((1 / $homeProb) - 1), 2);
-    }
-
-    /**
-     * Convert American moneyline odds to implied probability.
-     */
-    private function moneylineToProbability(float $odds): float
-    {
-        if ($odds > 0) {
-            return 100 / ($odds + 100);
-        }
-
-        if ($odds < 0) {
-            return abs($odds) / (abs($odds) + 100);
-        }
-
-        return 0.5;
     }
 
     /**

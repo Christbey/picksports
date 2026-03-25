@@ -377,7 +377,7 @@ it('leans more on pitchers and dampens context early in the mlb season', functio
         ->and((float) $earlyPrediction->home_combined_elo)->toBeGreaterThan((float) $latePrediction->home_combined_elo);
 });
 
-it('falls back to moneyline-implied spread and captures market total when spreads are unavailable', function () {
+it('keeps vegas spread null when draftkings only has moneyline but still captures market total', function () {
     $homeTeam = Team::factory()->create([
         'location' => 'Los Angeles',
         'name' => 'Dodgers',
@@ -421,8 +421,11 @@ it('falls back to moneyline-implied spread and captures market total when spread
     $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 
     expect($prediction)->not->toBeNull()
-        ->and($prediction->vegas_spread)->not->toBeNull()
-        ->and(data_get($prediction->model_metadata, 'market_context.market_total'))->toBe(8.5);
+        ->and($prediction->vegas_spread)->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'market_context.market_total'))->toBe(8.5)
+        ->and(data_get($prediction->model_metadata, 'market_context.has_h2h'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'market_context.has_spreads'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'market_context.has_totals'))->toBeTrue();
 
     $snapshot = PredictionFeatureSnapshot::query()
         ->where('prediction_table', 'mlb_predictions')

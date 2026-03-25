@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN\MLB;
 
 use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
+use App\Actions\ESPN\MLB\Concerns\ResolvesMlbGameDateParts;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 {
+    use ResolvesMlbGameDateParts;
+
     protected const GAME_MODEL_CLASS = Game::class;
 
     protected function resolveTeams(GameData $dto, array $rawGame): array
@@ -22,7 +25,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 
     protected function gameAttributes(GameData $dto, array $rawGame, Model $homeTeam, Model $awayTeam): array
     {
-        $dateParts = GameData::extractDateParts($rawGame['date'] ?? null);
+        $dateParts = $this->resolveMlbGameDateParts($rawGame);
 
         return [
             'espn_event_id' => $dto->espnEventId,
@@ -51,5 +54,19 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
             'venue_state' => $dto->venueState,
             'broadcast_networks' => $dto->broadcastNetworks,
         ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    protected function partialGameAttributes(GameData $dto, array $rawGame, ?Model $homeTeam, ?Model $awayTeam): array
+    {
+        $attributes = parent::partialGameAttributes($dto, $rawGame, $homeTeam, $awayTeam);
+        $dateParts = $this->resolveMlbGameDateParts($rawGame);
+
+        $attributes['game_date'] = $dateParts['game_date'];
+        $attributes['game_time'] = $dateParts['game_time'];
+
+        return $attributes;
     }
 }

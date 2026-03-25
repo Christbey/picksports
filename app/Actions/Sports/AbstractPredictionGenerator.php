@@ -4,6 +4,7 @@ namespace App\Actions\Sports;
 
 use App\Jobs\NBA\GeneratePredictionNarrative as GenerateNbaPredictionNarrativeJob;
 use App\Jobs\Predictions\GeneratePredictionNarrative as GenerateGenericPredictionNarrativeJob;
+use App\Services\OddsApi\OddsApiService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Database\Eloquent\Model;
@@ -698,5 +699,15 @@ abstract class AbstractPredictionGenerator
             'mlb' => 0.05,
             default => 0.15,
         };
+    }
+
+    /**
+     * @return array{bookmaker:?string,available_markets:array<int,string>,has_h2h:bool,has_spreads:bool,has_totals:bool}
+     */
+    protected function oddsMarketAvailability(Model $game): array
+    {
+        $oddsData = is_array($game->odds_data ?? null) ? $game->odds_data : null;
+
+        return app(OddsApiService::class)->marketAvailability($oddsData);
     }
 }

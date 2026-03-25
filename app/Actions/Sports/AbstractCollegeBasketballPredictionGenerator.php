@@ -53,6 +53,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
+        $oddsMarketAvailability = $this->oddsMarketAvailability($game);
         $homeCourtAdvantage = config("{$sport}.elo.home_court_advantage");
 
         $eloSpread = ($homeElo + $homeCourtAdvantage - $awayElo) / $config['elo_to_spread_divisor'];
@@ -106,6 +107,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'elo_spread_component' => round($eloSpread, 2),
             'efficiency_spread_component' => round($efficiencySpread, 2),
             'form_spread_component' => round($formSpread, 2),
+            'odds_market_availability' => $oddsMarketAvailability,
         ];
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaSpreadMeta];
 
@@ -220,6 +222,10 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                 'model' => "{$this->getSport()}_ensemble",
                 'true_epa' => $this->trueEpaMetadata,
                 'total_model' => $this->totalMetadata,
+                'market_context' => [
+                    'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                    ...($this->metadata['odds_market_availability'] ?? []),
+                ],
             ],
             '_snapshot' => [
                 'model_version' => $this->modelVersion(),
@@ -240,11 +246,16 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                 ],
                 'market_context' => [
                     'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                    ...($this->metadata['odds_market_availability'] ?? []),
                 ],
                 'model_metadata' => [
                     'model' => "{$this->getSport()}_ensemble",
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
+                    'market_context' => [
+                        'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        ...($this->metadata['odds_market_availability'] ?? []),
+                    ],
                 ],
             ],
         ], $this->metadata);
@@ -514,9 +525,6 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                     }
                 }
 
-                if ($market['key'] === 'h2h') {
-                    return $this->moneylineToSpread($market['outcomes'], $game);
-                }
             }
         }
 
@@ -533,54 +541,6 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         return str_contains($name, $school)
             || str_contains($name, $mascot)
             || $name === strtolower(trim($school.' '.$mascot));
-    }
-
-    private function moneylineToSpread(array $outcomes, Model $game): ?float
-    {
-        $homeOdds = null;
-        $awayOdds = null;
-
-        foreach ($outcomes as $outcome) {
-            if ($this->isHomeTeamOutcome($outcome['name'], $game)) {
-                $homeOdds = (float) $outcome['price'];
-            } else {
-                $awayOdds = (float) $outcome['price'];
-            }
-        }
-
-        if ($homeOdds === null || $awayOdds === null) {
-            return null;
-        }
-
-        $homeProb = $this->moneylineToProbability($homeOdds);
-        $awayProb = $this->moneylineToProbability($awayOdds);
-
-        if ($homeProb + $awayProb === 0.0) {
-            return null;
-        }
-
-        $homeProb /= ($homeProb + $awayProb);
-
-        if ($homeProb <= 0 || $homeProb >= 1) {
-            return null;
-        }
-
-        $coefficient = config("{$this->getSport()}.prediction.spread_to_probability_coefficient");
-
-        return round(-$coefficient * log((1 / $homeProb) - 1), 2);
-    }
-
-    private function moneylineToProbability(float $odds): float
-    {
-        if ($odds > 0) {
-            return 100 / ($odds + 100);
-        }
-
-        if ($odds < 0) {
-            return abs($odds) / (abs($odds) + 100);
-        }
-
-        return 0.5;
     }
 
     private function pairedVenueScore(mixed $offense, mixed $defense): ?float

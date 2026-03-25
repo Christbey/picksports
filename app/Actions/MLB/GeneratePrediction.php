@@ -93,6 +93,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $confidenceScore = $this->calculateConfidence($winProbability);
         $vegasSpread = $this->getVegasSpread($game);
+        $oddsMarketAvailability = $this->oddsMarketAvailability($game);
 
         $this->metadata = [
             'home_pitcher_confidence' => $homePitcherResult['confidence'],
@@ -113,6 +114,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'baseline_model_total' => round($predictedTotal, 2),
             'vegas_spread' => $vegasSpread !== null ? round($vegasSpread, 2) : null,
             'market_total' => ($marketTotal = $this->getMarketTotal($game)) !== null ? round($marketTotal, 2) : null,
+            'odds_market_availability' => $oddsMarketAvailability,
         ];
 
         return $this->buildMlbPredictionData(
@@ -313,6 +315,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'market_context' => [
                     'vegas_spread' => $vegasSpread,
                     'market_total' => $this->metadata['market_total'] ?? null,
+                    ...($this->metadata['odds_market_availability'] ?? []),
                 ],
                 'model_metadata' => $this->buildModelMetadata(),
             ],
@@ -341,9 +344,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     }
                 }
 
-                if (($market['key'] ?? null) === 'h2h' && isset($market['outcomes']) && is_array($market['outcomes'])) {
-                    return $this->moneylineToSpread($market['outcomes'], $game);
-                }
             }
         }
 
@@ -394,62 +394,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
     }
 
     /**
-     * @param  array<int, array<string, mixed>>  $outcomes
-     */
-    private function moneylineToSpread(array $outcomes, Model $game): ?float
-    {
-        $homeOdds = null;
-        $awayOdds = null;
-
-        foreach ($outcomes as $outcome) {
-            if (! is_array($outcome) || ! is_numeric($outcome['price'] ?? null)) {
-                continue;
-            }
-
-            if ($this->isHomeTeamOutcome((string) ($outcome['name'] ?? ''), $game)) {
-                $homeOdds = (float) $outcome['price'];
-            } else {
-                $awayOdds = (float) $outcome['price'];
-            }
-        }
-
-        if ($homeOdds === null || $awayOdds === null) {
-            return null;
-        }
-
-        $homeProb = $this->moneylineToProbability($homeOdds);
-        $awayProb = $this->moneylineToProbability($awayOdds);
-        $totalProb = $homeProb + $awayProb;
-
-        if ($totalProb <= 0.0) {
-            return null;
-        }
-
-        $homeProb /= $totalProb;
-
-        if ($homeProb <= 0.0 || $homeProb >= 1.0) {
-            return null;
-        }
-
-        $coefficient = config('mlb.prediction.spread_to_probability_coefficient', 7.0);
-
-        return round(-$coefficient * log((1 / $homeProb) - 1), 2);
-    }
-
-    private function moneylineToProbability(float $odds): float
-    {
-        if ($odds > 0) {
-            return 100 / ($odds + 100);
-        }
-
-        if ($odds < 0) {
-            return abs($odds) / (abs($odds) + 100);
-        }
-
-        return 0.5;
-    }
-
-    /**
      * @return array<string, mixed>
      */
     private function buildModelMetadata(): array
@@ -478,6 +422,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'market_context' => [
                 'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
                 'market_total' => $this->metadata['market_total'] ?? null,
+                ...($this->metadata['odds_market_availability'] ?? []),
             ],
         ];
     }

@@ -61,7 +61,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $adjustedHomeElo = $homeCombinedElo + config('mlb.elo.home_field_advantage');
 
-        $winProbability = $this->calculateWinProbability($adjustedHomeElo - $awayCombinedElo);
         $eloDiff = $adjustedHomeElo - $awayCombinedElo;
         $predictedSpread = $this->calculateSpread($eloDiff);
         $predictedTotal = $this->calculateTotal($homeCombinedElo, $awayCombinedElo);
@@ -93,6 +92,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             $predictedTotal
         );
 
+        // Convert the final model spread, not raw Elo points, into win probability.
+        $winProbability = $this->calculateWinProbability($predictedSpread);
         $confidenceScore = $this->calculateConfidence($winProbability);
         $vegasSpread = $this->getVegasSpread($game);
         $oddsMarketAvailability = $this->oddsMarketAvailability($game);

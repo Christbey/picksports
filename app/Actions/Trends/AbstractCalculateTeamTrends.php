@@ -30,13 +30,20 @@ abstract class AbstractCalculateTeamTrends
     /**
      * @return array{trends: array<string, array<int, string>>, locked: array<string, string>}
      */
-    public function execute(object $team, int $gameCount = 0, ?int $season = null, ?string $beforeDate = null, string $userTier = 'free'): array
+    public function execute(
+        object $team,
+        int $gameCount = 0,
+        ?int $season = null,
+        ?string $seasonType = null,
+        ?string $beforeDate = null,
+        string $userTier = 'free'
+    ): array
     {
         if ($gameCount <= 0) {
             $gameCount = $this->defaultGameCount();
         }
 
-        $games = $this->fetchRecentGames($team, $gameCount, $season, $beforeDate);
+        $games = $this->fetchRecentGames($team, $gameCount, $season, $seasonType, $beforeDate);
 
         if ($games->isEmpty()) {
             return ['trends' => [], 'locked' => []];
@@ -90,9 +97,15 @@ abstract class AbstractCalculateTeamTrends
         return $trends;
     }
 
-    protected function fetchRecentGames(object $team, int $count, ?int $season = null, ?string $beforeDate = null): Collection
+    protected function fetchRecentGames(
+        object $team,
+        int $count,
+        ?int $season = null,
+        ?string $seasonType = null,
+        ?string $beforeDate = null
+    ): Collection
     {
-        $query = $this->baseGamesQuery($team, $season, $beforeDate)
+        $query = $this->baseGamesQuery($team, $season, $seasonType, $beforeDate)
             ->with($this->gameRelations())
             ->orderByDesc('game_date')
             ->limit($count);
@@ -100,12 +113,17 @@ abstract class AbstractCalculateTeamTrends
         return $query->get();
     }
 
-    public function countAvailableGames(object $team, ?int $season = null, ?string $beforeDate = null): int
+    public function countAvailableGames(object $team, ?int $season = null, ?string $seasonType = null, ?string $beforeDate = null): int
     {
-        return (int) $this->baseGamesQuery($team, $season, $beforeDate)->count();
+        return (int) $this->baseGamesQuery($team, $season, $seasonType, $beforeDate)->count();
     }
 
-    protected function baseGamesQuery(object $team, ?int $season = null, ?string $beforeDate = null): Builder
+    protected function baseGamesQuery(
+        object $team,
+        ?int $season = null,
+        ?string $seasonType = null,
+        ?string $beforeDate = null
+    ): Builder
     {
         $model = $this->gameModel();
         $query = $model::query()
@@ -114,9 +132,10 @@ abstract class AbstractCalculateTeamTrends
                 ->where('home_team_id', $team->id)
                 ->orWhere('away_team_id', $team->id))
             ->when($season, fn ($q) => $q->where('season', $season))
+            ->when($seasonType, fn ($q) => $q->where('season_type', $seasonType))
             ->when($beforeDate, fn ($q) => $q->where('game_date', '<', $beforeDate));
 
-        if ($this->usesAnalyticsSeasonTypes()) {
+        if ($seasonType === null && $this->usesAnalyticsSeasonTypes()) {
             $query->when(
                 config($this->analyticsSeasonTypesConfigKey()),
                 fn ($q, $types) => $q->whereIn('season_type', $types)

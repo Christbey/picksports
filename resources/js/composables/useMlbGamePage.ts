@@ -305,11 +305,23 @@ export function useMlbGamePage(gameId: number) {
             if (homeTeam.value?.id || awayTeam.value?.id) {
                 trendsLoading.value = true;
                 const beforeDate = currentGame.value.game_date || '';
+                const trendQuery = new URLSearchParams({
+                    games: 'season',
+                    season: String(currentGame.value.season),
+                    before_date: beforeDate,
+                });
+
+                if (currentGame.value.season_type) {
+                    trendQuery.set(
+                        'season_type',
+                        String(currentGame.value.season_type),
+                    );
+                }
 
                 if (homeTeam.value?.id) {
                     teamRequests.push(
                         fetchJson<TeamTrendData>(
-                            `/api/v1/mlb/teams/${homeTeam.value.id}/trends?games=season&season=${currentGame.value.season}&before_date=${beforeDate}`,
+                            `/api/v1/mlb/teams/${homeTeam.value.id}/trends?${trendQuery.toString()}`,
                         )
                             .then((data) => {
                                 homeTrends.value = data;
@@ -323,7 +335,7 @@ export function useMlbGamePage(gameId: number) {
                 if (awayTeam.value?.id) {
                     teamRequests.push(
                         fetchJson<TeamTrendData>(
-                            `/api/v1/mlb/teams/${awayTeam.value.id}/trends?games=season&season=${currentGame.value.season}&before_date=${beforeDate}`,
+                            `/api/v1/mlb/teams/${awayTeam.value.id}/trends?${trendQuery.toString()}`,
                         )
                             .then((data) => {
                                 awayTrends.value = data;

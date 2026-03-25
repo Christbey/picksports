@@ -110,6 +110,10 @@ abstract class AbstractTeamController extends AbstractSportsApiController
         }
 
         $season = $request->integer('season') ?: null;
+        $seasonType = $request->query('season_type');
+        $seasonType = is_string($seasonType) && trim($seasonType) !== ''
+            ? trim($seasonType)
+            : null;
         $beforeDate = $request->string('before_date')->toString() ?: null;
         $gamesParam = strtolower(trim((string) $request->query('games', '')));
         $userTier = app(UserTierResolver::class)->resolveTierSlug($request->user());
@@ -120,6 +124,7 @@ abstract class AbstractTeamController extends AbstractSportsApiController
             'controller' => static::class,
             'team_id' => $teamId,
             'season' => $season,
+            'season_type' => $seasonType,
             'before_date' => $beforeDate,
             'games' => $gamesParam !== '' ? $gamesParam : $request->integer('games', config('trends.defaults.sample_size', 20)),
             'tier' => $userTier,
@@ -129,13 +134,13 @@ abstract class AbstractTeamController extends AbstractSportsApiController
             segment: 'team_trends',
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.team_trends_seconds', 120),
-            resolver: function () use ($teamModel, $teamId, $calculatorClass, $season, $beforeDate, $gamesParam, $userTier, $request): array {
+            resolver: function () use ($teamModel, $teamId, $calculatorClass, $season, $seasonType, $beforeDate, $gamesParam, $userTier, $request): array {
                 $team = $teamModel::findOrFail($teamId);
                 $calculator = app($calculatorClass);
 
                 $isSeasonSample = in_array($gamesParam, ['season', 'all'], true);
                 if ($isSeasonSample && method_exists($calculator, 'countAvailableGames')) {
-                    $gameCount = max(1, (int) $calculator->countAvailableGames($team, $season, $beforeDate));
+                    $gameCount = max(1, (int) $calculator->countAvailableGames($team, $season, $seasonType, $beforeDate));
                 } else {
                     $gameCount = $request->integer('games', config('trends.defaults.sample_size', 20));
                     $gameCount = min(
@@ -144,7 +149,7 @@ abstract class AbstractTeamController extends AbstractSportsApiController
                     );
                 }
 
-                $result = $calculator->execute($team, $gameCount, $season, $beforeDate, $userTier);
+                $result = $calculator->execute($team, $gameCount, $season, $seasonType, $beforeDate, $userTier);
 
                 return [
                     'team_id' => $team->id,

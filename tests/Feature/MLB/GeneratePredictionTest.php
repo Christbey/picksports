@@ -640,6 +640,84 @@ it('uses prior-season elo, metrics, and pitcher history for opening day instead 
         ->and(data_get($prediction->model_metadata, 'pitcher_inputs.away_source'))->toBe('team_recent_average');
 });
 
+it('derives mlb win probability from final spread rather than raw elo gap', function () {
+    $homeTeam = Team::factory()->create([
+        'elo_rating' => 1459,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'elo_rating' => 1573,
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2025,
+        'wins' => 81,
+        'losses' => 81,
+        'offensive_rating' => 104,
+        'pitching_rating' => 101,
+        'defensive_rating' => 100,
+        'runs_per_game' => 4.4,
+        'runs_allowed_per_game' => 4.4,
+        'run_differential_per_game' => 0,
+        'home_runs_per_game' => 1.1,
+        'batting_average' => 0.249,
+        'on_base_percentage' => 0.319,
+        'slugging_percentage' => 0.398,
+        'ops' => 0.717,
+        'team_era' => 4.12,
+        'strikeouts_pitched_per_game' => 8.5,
+        'whip' => 1.27,
+        'strength_of_schedule' => 1500,
+        'recent_form_rating' => 0,
+        'injury_adjusted_team_rating' => 1459,
+        'rest_travel_fatigue' => 0,
+        'calculation_date' => '2025-09-28',
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2025,
+        'wins' => 95,
+        'losses' => 67,
+        'offensive_rating' => 112,
+        'pitching_rating' => 108,
+        'defensive_rating' => 104,
+        'runs_per_game' => 5.3,
+        'runs_allowed_per_game' => 3.9,
+        'run_differential_per_game' => 1.4,
+        'home_runs_per_game' => 1.4,
+        'batting_average' => 0.266,
+        'on_base_percentage' => 0.339,
+        'slugging_percentage' => 0.432,
+        'ops' => 0.771,
+        'team_era' => 3.61,
+        'strikeouts_pitched_per_game' => 9.1,
+        'whip' => 1.16,
+        'strength_of_schedule' => 1502,
+        'recent_form_rating' => 0.3,
+        'injury_adjusted_team_rating' => 1573,
+        'rest_travel_fatigue' => 0,
+        'calculation_date' => '2025-09-28',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 13,
+        'season_type' => config('mlb.season.types.regular'),
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-25',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    expect($prediction)->not->toBeNull()
+        ->and(abs((float) $prediction->predicted_spread))->toBeLessThan(1.0)
+        ->and((float) $prediction->win_probability)->toBeGreaterThan(0.4)
+        ->and((float) $prediction->win_probability)->toBeLessThan(0.6);
+});
+
 it('keeps vegas spread null when draftkings only has moneyline but still captures market total', function () {
     $homeTeam = Team::factory()->create([
         'location' => 'Los Angeles',

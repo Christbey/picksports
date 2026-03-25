@@ -186,15 +186,28 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             if (homeTeamId && awayTeamId) {
                 trendsLoading.value = true;
                 const beforeDate = game.value?.game_date || '';
-                const seasonParam = game.value?.season
-                    ? `&season=${game.value.season}`
-                    : '';
+                const trendQuery = new URLSearchParams({
+                    games: 'season',
+                    before_date: beforeDate,
+                });
+
+                if (game.value?.season) {
+                    trendQuery.set('season', String(game.value.season));
+                }
+
+                if (game.value?.season_type) {
+                    trendQuery.set(
+                        'season_type',
+                        String(game.value.season_type),
+                    );
+                }
+
                 const [homeTrendsData, awayTrendsData] = await Promise.all([
                     fetchJson<TeamTrendData>(
-                        `/api/v1/${options.sport}/teams/${homeTeamId}/trends?games=season&before_date=${beforeDate}${seasonParam}`,
+                        `/api/v1/${options.sport}/teams/${homeTeamId}/trends?${trendQuery.toString()}`,
                     ),
                     fetchJson<TeamTrendData>(
-                        `/api/v1/${options.sport}/teams/${awayTeamId}/trends?games=season&before_date=${beforeDate}${seasonParam}`,
+                        `/api/v1/${options.sport}/teams/${awayTeamId}/trends?${trendQuery.toString()}`,
                     ),
                 ]);
 

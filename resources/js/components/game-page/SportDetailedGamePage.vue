@@ -3,6 +3,7 @@ import GamePageErrorBoundary from '@/components/game-page/GamePageErrorBoundary.
 import GamePageShell from '@/components/game-page/GamePageShell.vue';
 import LinescoreCard from '@/components/game-page/LinescoreCard.vue';
 import MatchupHero from '@/components/game-page/MatchupHero.vue';
+import MatchupContextCard from '@/components/game-page/MatchupContextCard.vue';
 import PredictionSummaryCard from '@/components/game-page/PredictionSummaryCard.vue';
 import TrendsComparisonCard from '@/components/game-page/TrendsComparisonCard.vue';
 import type {
@@ -10,6 +11,7 @@ import type {
     GamePageGame,
     GamePageHrefLike,
     GamePageTeam,
+    MatchupContextData,
     PredictionSummary,
     TeamTrendData,
 } from '@/types';
@@ -37,6 +39,9 @@ withDefaults(
         linkTeams?: boolean;
         useTeamColorGlow?: boolean;
         showLinescore?: boolean;
+        showMatchupContext?: boolean;
+        matchupContext?: MatchupContextData | null;
+        matchupContextTitle?: string;
         linescoreTitle?: string;
         awayLinescores?: Array<{ period?: number; value: number | string }>;
         homeLinescores?: Array<{ period?: number; value: number | string }>;
@@ -82,6 +87,9 @@ withDefaults(
         linkTeams: true,
         useTeamColorGlow: false,
         showLinescore: false,
+        showMatchupContext: false,
+        matchupContext: null,
+        matchupContextTitle: 'Matchup Records',
         linescoreTitle: 'Linescore',
         awayLinescores: () => [],
         homeLinescores: () => [],
@@ -159,6 +167,14 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
             />
 
             <slot name="afterHero" />
+
+            <MatchupContextCard
+                v-if="showMatchupContext && matchupContext"
+                :title="matchupContextTitle"
+                :away-label="awayLabel"
+                :home-label="homeLabel"
+                :matchup-context="matchupContext"
+            />
 
             <LinescoreCard
                 v-if="showLinescore"

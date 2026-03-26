@@ -60,12 +60,33 @@ export interface Game {
     home_linescores: Array<{ period: number; value: number }> | null;
     away_linescores: Array<{ period: number; value: number }> | null;
     broadcast_networks: string[] | null;
+    matchup_context?: MatchupContextData | null;
     created_at: string | null;
     updated_at: string | null;
     home_team?: Team;
     away_team?: Team;
     team_stats?: Array<Record<string, unknown>>;
     prediction?: Prediction;
+}
+
+export interface MatchupContextRecord {
+    wins: number;
+    losses: number;
+    ties: number;
+    games: number;
+    display: string;
+}
+
+export interface MatchupContextRow {
+    key: string;
+    label: string;
+    subtitle?: string;
+    away: MatchupContextRecord;
+    home: MatchupContextRecord;
+}
+
+export interface MatchupContextData {
+    rows: MatchupContextRow[];
 }
 
 export interface TeamMetric {

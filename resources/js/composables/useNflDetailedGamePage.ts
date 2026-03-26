@@ -110,6 +110,12 @@ export function useNflDetailedGamePage(gameId: number) {
             ),
             venueLabel: computed(() => currentGame.value.venue),
             broadcastNetworks,
+            showMatchupContext: computed(
+                () => !!currentGame.value.matchup_context?.rows?.length,
+            ),
+            matchupContext: computed(
+                () => currentGame.value.matchup_context ?? null,
+            ),
             extraInfoItems: computed(() =>
                 weekLabel.value
                     ? [`${currentGame.value.season_type} - ${weekLabel.value}`]

@@ -43,6 +43,7 @@ class GameResource extends JsonResource
             'venue_city' => $this->venue_city,
             'venue_state' => $this->venue_state,
             'broadcast_networks' => $this->broadcast_networks,
+            'matchup_context' => $this->resource->getAttribute('matchup_context'),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'home_team' => TeamResource::make($this->whenLoaded('homeTeam')),

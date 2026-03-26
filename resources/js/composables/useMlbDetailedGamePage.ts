@@ -79,6 +79,12 @@ export function useMlbDetailedGamePage(gameId: number) {
                 ),
             ),
             broadcastNetworks,
+            showMatchupContext: computed(
+                () => !!currentGame.value.matchup_context?.rows?.length,
+            ),
+            matchupContext: computed(
+                () => currentGame.value.matchup_context ?? null,
+            ),
             showLinescore: computed(
                 () =>
                     homeLinescores.value.length > 0 &&

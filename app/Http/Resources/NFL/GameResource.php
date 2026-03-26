@@ -37,6 +37,7 @@ class GameResource extends JsonResource
             'home_linescores' => $this->home_linescores,
             'away_linescores' => $this->away_linescores,
             'broadcast_networks' => $this->broadcast_networks,
+            'matchup_context' => $this->resource->getAttribute('matchup_context'),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
             'home_team' => TeamResource::make($this->whenLoaded('homeTeam')),

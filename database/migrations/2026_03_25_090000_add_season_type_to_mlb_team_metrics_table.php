@@ -11,6 +11,7 @@ return new class extends Migration
     {
         Schema::table('mlb_team_metrics', function (Blueprint $table) {
             $table->string('season_type')->nullable()->after('season');
+            $table->index('team_id', 'mlb_team_metrics_team_id_idx');
         });
 
         DB::table('mlb_team_metrics')
@@ -29,6 +30,7 @@ return new class extends Migration
         Schema::table('mlb_team_metrics', function (Blueprint $table) {
             $table->dropUnique(['team_id', 'season', 'season_type']);
             $table->unique(['team_id', 'season']);
+            $table->dropIndex('mlb_team_metrics_team_id_idx');
             $table->dropColumn('season_type');
         });
     }

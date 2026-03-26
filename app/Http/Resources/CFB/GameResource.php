@@ -37,6 +37,7 @@ class GameResource extends JsonResource
             'home_linescores' => $this->home_linescores,
             'away_linescores' => $this->away_linescores,
             'broadcast_networks' => $this->broadcast_networks,
+            'matchup_context' => $this->resource->getAttribute('matchup_context'),
             'completed_at' => $this->completed_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),

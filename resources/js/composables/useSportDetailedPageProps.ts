@@ -4,6 +4,7 @@ import type {
     GamePageGame,
     GamePageTeam,
     LineScoreEntry,
+    MatchupContextData,
     PredictionSummary,
     SportGamePageConfig,
     TeamTrendData,
@@ -30,6 +31,9 @@ export interface UseSportDetailedPagePropsOptions {
     linkTeams?: MaybeRefOrGetter<boolean>;
     useTeamColorGlow?: MaybeRefOrGetter<boolean>;
     showLinescore?: MaybeRefOrGetter<boolean>;
+    showMatchupContext?: MaybeRefOrGetter<boolean>;
+    matchupContext?: MaybeRefOrGetter<MatchupContextData | null>;
+    matchupContextTitle?: MaybeRefOrGetter<string>;
     linescoreTitle?: MaybeRefOrGetter<string>;
     awayLinescores?: MaybeRefOrGetter<LineScoreEntry[]>;
     homeLinescores?: MaybeRefOrGetter<LineScoreEntry[]>;
@@ -118,6 +122,15 @@ export function useSportDetailedPageProps(
             showLinescore: options.showLinescore
                 ? toValue(options.showLinescore)
                 : false,
+            showMatchupContext: options.showMatchupContext
+                ? toValue(options.showMatchupContext)
+                : false,
+            matchupContext: options.matchupContext
+                ? toValue(options.matchupContext)
+                : null,
+            matchupContextTitle: options.matchupContextTitle
+                ? toValue(options.matchupContextTitle)
+                : 'Matchup Records',
             linescoreTitle: options.linescoreTitle
                 ? toValue(options.linescoreTitle)
                 : 'Linescore',

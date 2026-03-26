@@ -136,6 +136,12 @@ export function useBasketballDetailedGamePage(
             homeRecentForm,
             venueLabel: computed(() => resolveVenueLabel(currentGame.value)),
             broadcastNetworks,
+            showMatchupContext: computed(
+                () => !!currentGame.value.matchup_context?.rows?.length,
+            ),
+            matchupContext: computed(
+                () => currentGame.value.matchup_context ?? null,
+            ),
             showLinescore: computed(() =>
                 resolveShowLinescore(
                     currentGame.value,

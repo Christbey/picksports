@@ -1,4 +1,5 @@
 import type { UrlMethodPair } from '@inertiajs/core';
+import type { MatchupContextData } from './models';
 
 export type GamePageHrefLike = string | UrlMethodPair;
 
@@ -184,6 +185,7 @@ export interface GamePageGame {
     game_date: string | null;
     away_score?: number | null;
     home_score?: number | null;
+    matchup_context?: MatchupContextData | null;
 }
 
 export interface PredictionSummary {

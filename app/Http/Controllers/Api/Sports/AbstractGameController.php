@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Services\Sports\GameMatchupContextService;
 use App\Support\SportsViewCache;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -104,6 +105,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $gameId = $this->requireNumericId($game);
 
         $game = $gameModel::query()->with($this->gameRelations(true))->findOrFail($gameId);
+        $game->setAttribute('matchup_context', app(GameMatchupContextService::class)->forGame($game));
 
         return new $resourceClass($game);
     }

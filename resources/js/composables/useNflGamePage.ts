@@ -32,6 +32,150 @@ const fallbackGame = (gameId: number): NflPageGame => ({
     venue: '',
 });
 
+const toNumber = (value: unknown): number => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toOptionalNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const normalizeDepthChartContext = (
+    rawContext: unknown,
+): NflPagePrediction['depth_chart_context'] => {
+    if (!rawContext || typeof rawContext !== 'object') return null;
+
+    const source = rawContext as Record<string, unknown>;
+    const type =
+        source.type === 'injury_weighting' ||
+        source.type === 'starter_fallback'
+            ? source.type
+            : null;
+
+    if (!type) return null;
+
+    return {
+        type,
+        applied:
+            typeof source.applied === 'boolean' ? source.applied : undefined,
+        home_out_weighted: toOptionalNumber(source.home_out_weighted),
+        away_out_weighted: toOptionalNumber(source.away_out_weighted),
+        home_questionable_weighted: toOptionalNumber(
+            source.home_questionable_weighted,
+        ),
+        away_questionable_weighted: toOptionalNumber(
+            source.away_questionable_weighted,
+        ),
+        spread_adjustment: toOptionalNumber(source.spread_adjustment),
+        total_adjustment: toOptionalNumber(source.total_adjustment),
+        win_probability_adjustment: toOptionalNumber(
+            source.win_probability_adjustment,
+        ),
+        home_pitcher_source:
+            typeof source.home_pitcher_source === 'string'
+                ? source.home_pitcher_source
+                : null,
+        away_pitcher_source:
+            typeof source.away_pitcher_source === 'string'
+                ? source.away_pitcher_source
+                : null,
+        home_depth_chart_fallback_used:
+            typeof source.home_depth_chart_fallback_used === 'boolean'
+                ? source.home_depth_chart_fallback_used
+                : undefined,
+        away_depth_chart_fallback_used:
+            typeof source.away_depth_chart_fallback_used === 'boolean'
+                ? source.away_depth_chart_fallback_used
+                : undefined,
+        probable_pitcher_injury_applied:
+            typeof source.probable_pitcher_injury_applied === 'boolean'
+                ? source.probable_pitcher_injury_applied
+                : undefined,
+    };
+};
+
+const normalizeNarrative = (
+    rawNarrative: unknown,
+): NflPagePrediction['narrative'] => {
+    if (!rawNarrative || typeof rawNarrative !== 'object') return null;
+
+    const source = rawNarrative as Record<string, unknown>;
+    const plan = source.betting_plan;
+
+    return {
+        summary: typeof source.summary === 'string' ? source.summary : '',
+        key_points: Array.isArray(source.key_points)
+            ? source.key_points
+                  .map((point) => String(point))
+                  .filter((point) => point.length > 0)
+            : [],
+        risk_note: typeof source.risk_note === 'string' ? source.risk_note : '',
+        generated_by:
+            typeof source.generated_by === 'string' ? source.generated_by : '',
+        social_caption:
+            typeof source.social_caption === 'string'
+                ? source.social_caption
+                : null,
+        betting_plan:
+            plan && typeof plan === 'object'
+                ? {
+                      bet_pick:
+                          typeof (plan as Record<string, unknown>).bet_pick ===
+                          'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .bet_pick as string)
+                              : '',
+                      reasoning:
+                          typeof (plan as Record<string, unknown>).reasoning ===
+                          'string'
+                              ? ((plan as Record<string, unknown>)
+                                    .reasoning as string)
+                              : '',
+                  }
+                : null,
+    };
+};
+
+const normalizePrediction = (rawPrediction: unknown): NflPagePrediction | null => {
+    if (!rawPrediction || typeof rawPrediction !== 'object') return null;
+
+    const source = rawPrediction as Record<string, unknown>;
+
+    return {
+        id: toNumber(source.id),
+        game_id: toNumber(source.game_id),
+        home_elo: toNumber(source.home_elo),
+        away_elo: toNumber(source.away_elo),
+        predicted_spread: toNumber(source.predicted_spread),
+        predicted_total: toOptionalNumber(source.predicted_total) ?? 0,
+        win_probability: toNumber(source.win_probability),
+        confidence_score: toNumber(source.confidence_score),
+        betting_value: Array.isArray(source.betting_value)
+            ? (source.betting_value as NflPagePrediction['betting_value'])
+            : undefined,
+        winner_correct:
+            typeof source.winner_correct === 'boolean'
+                ? source.winner_correct
+                : null,
+        actual_total: toOptionalNumber(source.actual_total),
+        live_predicted_spread: toOptionalNumber(source.live_predicted_spread),
+        live_win_probability: toOptionalNumber(source.live_win_probability),
+        live_predicted_total: toOptionalNumber(source.live_predicted_total),
+        live_seconds_remaining: toOptionalNumber(source.live_seconds_remaining),
+        live_updated_at:
+            typeof source.live_updated_at === 'string'
+                ? source.live_updated_at
+                : null,
+        narrative: normalizeNarrative(source.narrative),
+        depth_chart_context: normalizeDepthChartContext(
+            source.depth_chart_context,
+        ),
+    };
+};
+
 export function useNflGamePage(gameId: number) {
     const currentGame = ref<NflPageGame>(fallbackGame(gameId));
     const homeTeam = ref<NflPageTeam | null>(null);
@@ -219,9 +363,10 @@ export function useNflGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
-                prediction.value = Array.isArray(predictionData.data)
+                const raw = Array.isArray(predictionData.data)
                     ? (predictionData.data[0] ?? null)
                     : predictionData.data;
+                prediction.value = normalizePrediction(raw);
             }
 
             if (teamStatsData?.data) {

@@ -329,6 +329,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
                     'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+                    'depth_chart_injuries' => [
+                        'applied' => ((float) ($this->metadata['injury_spread_adj'] ?? 0.0)) !== 0.0
+                            || ((float) ($this->metadata['injury_total_adj'] ?? 0.0)) !== 0.0,
+                        'home_out_weighted' => $injuryContext['home_out_weighted'] ?? 0.0,
+                        'away_out_weighted' => $injuryContext['away_out_weighted'] ?? 0.0,
+                        'home_questionable_weighted' => $injuryContext['home_questionable_weighted'] ?? 0.0,
+                        'away_questionable_weighted' => $injuryContext['away_questionable_weighted'] ?? 0.0,
+                        'spread_adjustment' => $this->metadata['injury_spread_adj'] ?? 0.0,
+                        'total_adjustment' => $this->metadata['injury_total_adj'] ?? 0.0,
+                    ],
                     'win_probability_calibration' => $calibration,
                     'market_context' => [
                         'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
@@ -366,6 +376,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'true_epa' => $this->trueEpaMetadata,
                         'total_model' => $this->totalMetadata,
                         'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+                        'depth_chart_injuries' => [
+                            'applied' => ((float) ($this->metadata['injury_spread_adj'] ?? 0.0)) !== 0.0
+                                || ((float) ($this->metadata['injury_total_adj'] ?? 0.0)) !== 0.0,
+                            'home_out_weighted' => $injuryContext['home_out_weighted'] ?? 0.0,
+                            'away_out_weighted' => $injuryContext['away_out_weighted'] ?? 0.0,
+                            'home_questionable_weighted' => $injuryContext['home_questionable_weighted'] ?? 0.0,
+                            'away_questionable_weighted' => $injuryContext['away_questionable_weighted'] ?? 0.0,
+                            'spread_adjustment' => $this->metadata['injury_spread_adj'] ?? 0.0,
+                            'total_adjustment' => $this->metadata['injury_total_adj'] ?? 0.0,
+                        ],
                         'win_probability_calibration' => $calibration,
                         'market_context' => [
                             'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
@@ -770,8 +790,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $config = config('nba.prediction');
         $homeRaw = $this->nbaRawInjuryCountsForTeam((int) $game->home_team_id);
         $awayRaw = $this->nbaRawInjuryCountsForTeam((int) $game->away_team_id);
-        $homeWeighted = $this->nbaWeightedInjuryCountsForTeam((int) $game->home_team_id);
-        $awayWeighted = $this->nbaWeightedInjuryCountsForTeam((int) $game->away_team_id);
+        $season = isset($game->season) ? (int) $game->season : null;
+        $homeWeighted = $this->nbaWeightedInjuryCountsForTeam((int) $game->home_team_id, $season);
+        $awayWeighted = $this->nbaWeightedInjuryCountsForTeam((int) $game->away_team_id, $season);
 
         $outSpreadPenalty = (float) ($config['injury_out_spread_penalty'] ?? 0.75);
         $questionableSpreadPenalty = (float) ($config['injury_questionable_spread_penalty'] ?? 0.30);
@@ -793,6 +814,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'away_out' => $awayRaw['out'],
             'home_questionable' => $homeRaw['questionable'],
             'away_questionable' => $awayRaw['questionable'],
+            'home_out_weighted' => round($homeWeighted['out'], 2),
+            'away_out_weighted' => round($awayWeighted['out'], 2),
+            'home_questionable_weighted' => round($homeWeighted['questionable'], 2),
+            'away_questionable_weighted' => round($awayWeighted['questionable'], 2),
             'spread_adj' => round($spreadAdj, 2),
             'total_adj' => round($totalAdj, 2),
         ];
@@ -801,7 +826,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
     /**
      * @return array{out:float, questionable:float}
      */
-    private function nbaWeightedInjuryCountsForTeam(int $teamId): array
+    private function nbaWeightedInjuryCountsForTeam(int $teamId, ?int $season = null): array
     {
         $counts = ['out' => 0, 'questionable' => 0];
         if ($teamId <= 0) {
@@ -816,7 +841,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
             if ($bucket !== null) {
-                $counts[$bucket] += $this->injuryImpactMultiplier('nba', (int) ($injury->player_id ?? 0));
+                $impact = $this->injuryImpactMultiplier('nba', (int) ($injury->player_id ?? 0));
+                $depthChart = $this->depthChartInjuryMultiplier('nba', $teamId, (int) ($injury->player_id ?? 0), $season);
+
+                $counts[$bucket] += $impact * $depthChart;
             }
         }
 

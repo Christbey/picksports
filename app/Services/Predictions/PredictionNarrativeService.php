@@ -245,6 +245,7 @@ class PredictionNarrativeService
         $turnoverAdj = (float) ($prediction->turnover_diff_adj ?? 0);
         $reboundAdj = (float) ($prediction->rebound_margin_adj ?? 0);
         $homeAwayAdj = (float) ($prediction->home_away_split_adj ?? 0);
+        $depthChartNote = $this->depthChartNarrativeNote($prediction);
 
         $pickHome = $homeWinProb >= $awayWinProb;
         $pickedTeam = $pickHome ? $homeName : $awayName;
@@ -414,6 +415,10 @@ class PredictionNarrativeService
                 $this->signedNumber($situationalAdj)
             ),
         ];
+
+        if ($depthChartNote !== null) {
+            $keyPoints[] = $depthChartNote;
+        }
 
         if ($hasTrendSignals) {
             $keyPoints[] = sprintf(
@@ -668,6 +673,10 @@ class PredictionNarrativeService
             ),
         ];
 
+        if ($context['depth_chart_note'] !== null) {
+            $keyPoints[] = $context['depth_chart_note'];
+        }
+
         if ($context['home_metric'] !== null || $context['away_metric'] !== null) {
             $keyPoints[] = sprintf(
                 'Rating snapshot: %s %s vs %s %s.',
@@ -723,6 +732,7 @@ class PredictionNarrativeService
             'Confidence score: '.$this->number((float) $context['confidence_score']),
             $context['home_metric'] !== null ? 'Home model metric: '.$context['home_metric'] : null,
             $context['away_metric'] !== null ? 'Away model metric: '.$context['away_metric'] : null,
+            $context['depth_chart_prompt_line'] ?? null,
         ]));
     }
 
@@ -758,7 +768,48 @@ class PredictionNarrativeService
             'confidence_score' => (float) ($prediction->confidence_score ?? 0),
             'home_metric' => $this->firstMetricValue($prediction, ['home_elo', 'home_team_elo', 'home_combined_elo', 'home_fpi', 'home_off_eff']),
             'away_metric' => $this->firstMetricValue($prediction, ['away_elo', 'away_team_elo', 'away_combined_elo', 'away_fpi', 'away_off_eff']),
+            'depth_chart_note' => $this->depthChartNarrativeNote($prediction),
+            'depth_chart_prompt_line' => $this->depthChartPromptLine($prediction),
         ];
+    }
+
+    private function depthChartNarrativeNote(Model $prediction): ?string
+    {
+        $metadata = is_array($prediction->model_metadata ?? null) ? $prediction->model_metadata : [];
+
+        if (is_array($metadata['depth_chart_injuries'] ?? null)) {
+            $injuries = $metadata['depth_chart_injuries'];
+
+            return sprintf(
+                'Depth-chart weighting: home %.2f out / %.2f questionable, away %.2f out / %.2f questionable, shifting spread %s.',
+                (float) ($injuries['home_out_weighted'] ?? 0.0),
+                (float) ($injuries['home_questionable_weighted'] ?? 0.0),
+                (float) ($injuries['away_out_weighted'] ?? 0.0),
+                (float) ($injuries['away_questionable_weighted'] ?? 0.0),
+                $this->signedNumber((float) ($injuries['spread_adjustment'] ?? 0.0))
+            );
+        }
+
+        if (is_array($metadata['depth_chart_context'] ?? null)) {
+            $context = $metadata['depth_chart_context'];
+            $homeSource = (string) ($context['home_pitcher_source'] ?? 'unknown');
+            $awaySource = (string) ($context['away_pitcher_source'] ?? 'unknown');
+
+            return sprintf(
+                'Depth-chart starter context: home pitcher source %s, away pitcher source %s.',
+                str_replace('_', ' ', $homeSource),
+                str_replace('_', ' ', $awaySource)
+            );
+        }
+
+        return null;
+    }
+
+    private function depthChartPromptLine(Model $prediction): ?string
+    {
+        $note = $this->depthChartNarrativeNote($prediction);
+
+        return $note !== null ? 'Depth chart context: '.$note : null;
     }
 
     private function firstMetricValue(Model $prediction, array $fields): ?string
@@ -838,6 +889,7 @@ class PredictionNarrativeService
             'Home recent-form rating: '.number_format($homeRecentForm, 3),
             'Away recent-form rating: '.number_format($awayRecentForm, 3),
             'Confidence score: '.$this->number((float) $prediction->confidence_score),
+            $this->depthChartPromptLine($prediction),
             ...$trendLines,
             'Tone: analytical, cautious, no guarantees.',
         ]);

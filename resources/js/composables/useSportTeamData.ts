@@ -1,6 +1,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { fetchJson } from '@/composables/useApiClient';
 import type { BreadcrumbItem, Game } from '@/types';
+import type { GameDepthChartTeam } from '@/types';
 import type { TeamPageConfig } from '@/types/sport-team';
 
 export interface UseSportTeamDataProps {
@@ -29,6 +30,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     const metricRankings = ref<Record<string, number>>({});
     const metricRankingTotalTeams = ref(0);
     const rosterPlayers = ref<any[]>([]);
+    const depthChart = ref<GameDepthChartTeam | null>(null);
     const rosterLoading = ref(false);
     const trendsData = ref<Record<string, string[]> | null>(null);
     const lockedTrends = ref<Record<string, string> | null>(null);
@@ -442,6 +444,22 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                     rosterLoading.value = false;
                 }
             }
+
+            if (props.config.showDepthCharts) {
+                const season = toNumber(teamMetrics.value?.season);
+                const query = new URLSearchParams();
+                if (season !== null) {
+                    query.set('season', String(season));
+                }
+
+                const depthChartResponse = await fetchJson<{
+                    data: GameDepthChartTeam;
+                }>(
+                    `${props.config.apiBase}/teams/${fetchId}/depth-charts${query.toString() ? `?${query.toString()}` : ''}`,
+                );
+
+                depthChart.value = depthChartResponse?.data ?? null;
+            }
         } catch (e) {
             error.value =
                 e instanceof Error
@@ -464,6 +482,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
         metricRankings,
         metricRankingTotalTeams,
         rosterPlayers,
+        depthChart,
         rosterLoading,
         trendsData,
         lockedTrends,

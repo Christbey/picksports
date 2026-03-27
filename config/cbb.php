@@ -269,7 +269,7 @@ return [
         'elo_to_spread_divisor' => 30,
         'average_pace' => 70.0,
         'default_efficiency' => 100.0,
-        'spread_to_probability_coefficient' => 4.8,
+        'spread_to_probability_coefficient' => 5.6,
 
         // Ensemble weights (sum to 1.0)
         'elo_weight' => 0.25,
@@ -302,9 +302,9 @@ return [
             'max_recent_pace_drop' => 8.0,
             'tournament_max_recent_pace_drop' => 4.0,
             'factor_adjustment_cap' => 6.0,
-            'base_adjustment' => 5.0,
+            'base_adjustment' => 3.0,
             'high_total_threshold' => 136.0,
-            'high_total_slope' => 1.15,
+            'high_total_slope' => 0.8,
             'round_of_64_base_adjustment' => 3.5,
             'round_of_64_seed_gap_threshold' => 6,
             'round_of_64_seed_gap_points' => 0.8,
@@ -349,6 +349,11 @@ return [
             'late_game_ppp_weight' => env('CBB_LIVE_POSSESSION_LATE_GAME_PPP', 0.60),
             'live_total_metrics_weight' => env('CBB_LIVE_POSSESSION_TOTAL_WEIGHT', 0.65),
             'minimum_sample_possessions' => env('CBB_LIVE_POSSESSION_MIN_SAMPLE', 40),
+        ],
+        'win_probability_calibration' => [
+            'enabled' => env('CBB_WIN_PROBABILITY_CALIBRATION_ENABLED', false),
+            'apply_to_live_output' => env('CBB_WIN_PROBABILITY_CALIBRATION_APPLY_TO_LIVE_OUTPUT', false),
+            'artifact_path' => env('CBB_WIN_PROBABILITY_CALIBRATION_ARTIFACT', storage_path('app/ml/models/cbb_win_probability_calibration_model.json')),
         ],
     ],
 

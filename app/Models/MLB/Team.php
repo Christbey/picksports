@@ -95,6 +95,11 @@ class Team extends Model
             ->orderByDesc('updated_at');
     }
 
+    public function depthChartEntries(): HasMany
+    {
+        return $this->hasMany(DepthChartEntry::class, 'team_id');
+    }
+
     public function getDisplayNameAttribute(): string
     {
         return $this->location.' '.$this->name;

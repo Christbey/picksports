@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
+import TeamDepthChartCard from '@/components/sport-team/TeamDepthChartCard.vue';
 import TeamGamesCard from '@/components/sport-team/TeamGamesCard.vue';
 import TeamHeader from '@/components/sport-team/TeamHeader.vue';
 import TeamMetricsCard from '@/components/sport-team/TeamMetricsCard.vue';
@@ -33,6 +34,7 @@ const {
     metricRankings,
     metricRankingTotalTeams,
     rosterPlayers,
+    depthChart,
     trendsData,
     lockedTrends,
     loading,
@@ -219,6 +221,11 @@ const sportsTeamSchema = computed(() =>
                             <TabsTrigger v-if="config.showRoster" value="roster"
                                 >Roster</TabsTrigger
                             >
+                            <TabsTrigger
+                                v-if="config.showDepthCharts"
+                                value="depth-chart"
+                                >Depth Chart</TabsTrigger
+                            >
                             <TabsTrigger value="schedule">Schedule</TabsTrigger>
                         </TabsList>
 
@@ -306,6 +313,13 @@ const sportsTeamSchema = computed(() =>
                             />
                         </TabsContent>
 
+                        <TabsContent
+                            v-if="config.showDepthCharts"
+                            value="depth-chart"
+                        >
+                            <TeamDepthChartCard :depth-chart="depthChart" />
+                        </TabsContent>
+
                         <TabsContent value="schedule">
                             <div class="space-y-4">
                                 <TeamGamesCard
@@ -351,6 +365,11 @@ const sportsTeamSchema = computed(() =>
                             config.seasonStatsGridCols ||
                             'md:grid-cols-4 lg:grid-cols-6'
                         "
+                    />
+
+                    <TeamDepthChartCard
+                        v-if="config.showDepthCharts"
+                        :depth-chart="depthChart"
                     />
 
                     <div

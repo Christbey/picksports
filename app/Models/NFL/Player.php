@@ -55,6 +55,11 @@ class Player extends Model
             ->orderByDesc('updated_at');
     }
 
+    public function depthChartEntries(): HasMany
+    {
+        return $this->hasMany(DepthChartEntry::class, 'player_id');
+    }
+
     protected static function newFactory(): NflPlayerFactory
     {
         return NflPlayerFactory::new();

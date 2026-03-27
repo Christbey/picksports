@@ -161,7 +161,7 @@ return [
     'prediction' => [
         // Elo points per point of spread
         // Calibrated so 28 Elo = 1 point spread
-        'elo_to_spread_divisor' => 28,
+        'elo_to_spread_divisor' => 26,
 
         // Average NBA pace (possessions per game)
         'average_pace' => 100.0,
@@ -216,6 +216,10 @@ return [
         'injury_epa_min_multiplier' => 0.50,
         'injury_epa_max_multiplier' => 2.00,
         'injury_epa_fallback_multiplier' => 1.00,
+        'depth_chart' => [
+            'starter_multiplier' => 1.35,
+            'rotation_multiplier' => 1.10,
+        ],
         'recent_spread_weight' => 0.08,
         'fatigue_spread_weight' => 0.18,
         'injury_spread_weight' => 0.028,
@@ -239,11 +243,11 @@ return [
             'pace_floor' => env('NBA_TOTAL_PACE_FLOOR', 95.0),
             'pace_floor_blend' => env('NBA_TOTAL_PACE_FLOOR_BLEND', 0.55),
             'max_recent_pace_drop' => env('NBA_TOTAL_MAX_RECENT_PACE_DROP', 7.0),
-            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 238.0),
-            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.35),
-            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 26.0),
-            'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 218.0),
-            'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.5),
+            'range_anchor' => env('NBA_TOTAL_RANGE_ANCHOR', 229.0),
+            'range_scale' => env('NBA_TOTAL_RANGE_SCALE', 1.0),
+            'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 2.0),
+            'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 232.0),
+            'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.25),
         ],
 
         'live_model' => [

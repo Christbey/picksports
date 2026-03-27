@@ -3,9 +3,11 @@
 namespace App\Actions\NFL;
 
 use App\Models\NFL\EloRating;
+use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\TeamMetric;
+use App\Services\Sports\DepthChartImpactService;
 
 class GeneratePredictionFromHistoricalElo
 {
@@ -13,6 +15,11 @@ class GeneratePredictionFromHistoricalElo
      * @var array<string,mixed>
      */
     protected array $lastModelMetadata = [];
+
+    public function __construct(protected ?DepthChartImpactService $depthChartImpactService = null)
+    {
+        $this->depthChartImpactService ??= app(DepthChartImpactService::class);
+    }
 
     public function execute(Game $game): string
     {
@@ -45,6 +52,12 @@ class GeneratePredictionFromHistoricalElo
             legacySpread: $legacySpread,
             legacyWinProbability: $legacyWinProbability,
             legacyTotal: $legacyTotal
+        );
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyDepthChartInjuryAdjustments(
+            $game,
+            $predictedSpread,
+            $winProbability,
+            $predictedTotal
         );
         $confidenceScore = max($winProbability, 1 - $winProbability) * 100;
 
@@ -239,6 +252,106 @@ class GeneratePredictionFromHistoricalElo
         ];
 
         return [$blendedSpread, $blendedWinProbability, $blendedTotal];
+    }
+
+    /**
+     * @return array{0:float,1:float,2:float}
+     */
+    protected function applyDepthChartInjuryAdjustments(
+        Game $game,
+        float $predictedSpread,
+        float $winProbability,
+        float $predictedTotal
+    ): array {
+        $homeCounts = $this->injuryCountsForTeam((int) $game->home_team_id, (int) $game->season);
+        $awayCounts = $this->injuryCountsForTeam((int) $game->away_team_id, (int) $game->season);
+
+        $outSpreadPenalty = (float) config('nfl.predictions.injury_out_spread_penalty', 0.50);
+        $questionableSpreadPenalty = (float) config('nfl.predictions.injury_questionable_spread_penalty', 0.20);
+        $outTotalPenalty = (float) config('nfl.predictions.injury_out_total_penalty', 0.30);
+        $questionableTotalPenalty = (float) config('nfl.predictions.injury_questionable_total_penalty', 0.10);
+
+        $homePenalty = ($homeCounts['out'] * $outSpreadPenalty) + ($homeCounts['questionable'] * $questionableSpreadPenalty);
+        $awayPenalty = ($awayCounts['out'] * $outSpreadPenalty) + ($awayCounts['questionable'] * $questionableSpreadPenalty);
+
+        $spreadAdj = $awayPenalty - $homePenalty;
+        $totalAdj = -(
+            (($homeCounts['out'] + $awayCounts['out']) * $outTotalPenalty)
+            + (($homeCounts['questionable'] + $awayCounts['questionable']) * $questionableTotalPenalty)
+        );
+
+        $winAdjPerPoint = (float) config('nfl.predictions.depth_chart.win_probability_adjustment_per_point', 0.03);
+
+        $adjustedSpread = round($predictedSpread + $spreadAdj, 1);
+        $adjustedTotal = round($predictedTotal + $totalAdj, 1);
+        $adjustedWin = $this->clamp($winProbability + ($spreadAdj * $winAdjPerPoint), 0.01, 0.99);
+
+        $this->lastModelMetadata['depth_chart_injuries'] = [
+            'applied' => round($spreadAdj, 3) !== 0.0 || round($totalAdj, 3) !== 0.0,
+            'home_out_weighted' => round($homeCounts['out'], 2),
+            'away_out_weighted' => round($awayCounts['out'], 2),
+            'home_questionable_weighted' => round($homeCounts['questionable'], 2),
+            'away_questionable_weighted' => round($awayCounts['questionable'], 2),
+            'spread_adjustment' => round($spreadAdj, 2),
+            'total_adjustment' => round($totalAdj, 2),
+            'win_probability_adjustment' => round($spreadAdj * $winAdjPerPoint, 4),
+        ];
+
+        return [$adjustedSpread, $adjustedWin, $adjustedTotal];
+    }
+
+    /**
+     * @return array{out:float,questionable:float}
+     */
+    protected function injuryCountsForTeam(int $teamId, int $season): array
+    {
+        $counts = ['out' => 0.0, 'questionable' => 0.0];
+
+        if ($teamId <= 0) {
+            return $counts;
+        }
+
+        $injuries = PlayerInjury::query()
+            ->where('team_id', $teamId)
+            ->where('is_active', true)
+            ->get(['player_id', 'status']);
+
+        foreach ($injuries as $injury) {
+            $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
+            if ($bucket === null) {
+                continue;
+            }
+
+            $counts[$bucket] += $this->depthChartImpactService->injuryMultiplier(
+                'nfl',
+                $teamId,
+                (int) ($injury->player_id ?? 0),
+                $season
+            );
+        }
+
+        $counts['out'] = round($counts['out'], 2);
+        $counts['questionable'] = round($counts['questionable'], 2);
+
+        return $counts;
+    }
+
+    protected function injuryStatusBucket(string $status): ?string
+    {
+        $normalized = strtolower(trim($status));
+
+        return match (true) {
+            $normalized === '' => null,
+            str_contains($normalized, 'out'),
+            str_contains($normalized, 'inactive'),
+            str_contains($normalized, 'injured reserve'),
+            str_contains($normalized, 'ir') => 'out',
+            str_contains($normalized, 'questionable'),
+            str_contains($normalized, 'doubtful'),
+            str_contains($normalized, 'probable'),
+            str_contains($normalized, 'day-to-day') => 'questionable',
+            default => null,
+        };
     }
 
     protected function getEloAtDate(int $teamId, mixed $gameDate): float

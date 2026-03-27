@@ -27,6 +27,7 @@ return function (string $sport, string $namespace) {
         'elo' => "{$controllerNamespace}\\EloRatingController",
         'team_metric' => "{$controllerNamespace}\\TeamMetricController",
         'prediction' => "{$controllerNamespace}\\PredictionController",
+        'depth_chart' => "{$controllerNamespace}\\DepthChartController",
     ];
     $capabilities = (array) data_get(config('sports.domains'), "{$sport}.capabilities", []);
 
@@ -44,6 +45,9 @@ return function (string $sport, string $namespace) {
     $registerIndexShowResource('teams', $controllers['team']);
     Route::middleware(['auth:sanctum', "permission:view-{$sport}-predictions"])
         ->get('teams/{team}/trends', [$controllers['team'], 'trends']);
+    if (($capabilities['depth_charts'] ?? false) === true) {
+        Route::get('teams/{team}/depth-charts', [$controllers['depth_chart'], 'byTeam']);
+    }
 
     // Players
     $registerIndexShowResource('players', $controllers['player']);
@@ -59,6 +63,9 @@ return function (string $sport, string $namespace) {
         ['games/season/{season}', $controllers['game'], 'bySeason'],
         ['games/season/{season}/week/{week}', $controllers['game'], 'byWeek'],
     ]);
+    if (($capabilities['depth_charts'] ?? false) === true) {
+        Route::get('games/{game}/depth-charts', [$controllers['depth_chart'], 'byGame']);
+    }
 
     // Plays
     $registerIndexShowResource('plays', $controllers['play']);

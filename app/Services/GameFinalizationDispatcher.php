@@ -5,6 +5,7 @@ namespace App\Services;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Events\GameFinalized;
 use App\Models\NBA\Game;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 class GameFinalizationDispatcher
@@ -22,6 +23,29 @@ class GameFinalizationDispatcher
         \App\Models\WCBB\Game::class => 'wcbb',
     ];
 
+    /**
+     * @var array<string, class-string<Model>>
+     */
+    private const PREDICTION_MODEL_BY_SPORT = [
+        'nba' => \App\Models\NBA\Prediction::class,
+        'nfl' => \App\Models\NFL\Prediction::class,
+        'mlb' => \App\Models\MLB\Prediction::class,
+        'cbb' => \App\Models\CBB\Prediction::class,
+        'cfb' => \App\Models\CFB\Prediction::class,
+        'wnba' => \App\Models\WNBA\Prediction::class,
+        'wcbb' => \App\Models\WCBB\Prediction::class,
+    ];
+
+    /**
+     * @var array<string, class-string<Model>>
+     */
+    private const PLAYER_PROP_MODEL_BY_SPORT = [
+        'nba' => \App\Models\NBA\PlayerProp::class,
+        'nfl' => \App\Models\NFL\PlayerProp::class,
+        'mlb' => \App\Models\MLB\PlayerProp::class,
+        'cbb' => \App\Models\CBB\PlayerProp::class,
+    ];
+
     public function dispatchIfFinalizedTransition(Model $game, ?string $previousStatus): void
     {
         $currentStatus = (string) ($game->status ?? '');
@@ -29,7 +53,7 @@ class GameFinalizationDispatcher
         $wasFinal = in_array((string) $previousStatus, GameData::finalStatuses(), true);
         $isFinal = in_array($currentStatus, GameData::finalStatuses(), true);
 
-        if ($wasFinal || ! $isFinal) {
+        if (! $isFinal) {
             return;
         }
 
@@ -44,11 +68,40 @@ class GameFinalizationDispatcher
             return;
         }
 
+        if ($wasFinal && ! $this->hasUngradedFinalizationWork($game, $sport)) {
+            return;
+        }
+
         event(new GameFinalized(
             sport: $sport,
             gameId: (int) $game->getKey(),
             season: isset($game->season) ? (int) $game->season : null,
             gameModelClass: $game::class,
         ));
+    }
+
+    private function hasUngradedFinalizationWork(Model $game, string $sport): bool
+    {
+        $predictionModel = self::PREDICTION_MODEL_BY_SPORT[$sport] ?? null;
+        if ($predictionModel !== null && $this->hasUngradedRows($predictionModel, $game)) {
+            return true;
+        }
+
+        $playerPropModel = self::PLAYER_PROP_MODEL_BY_SPORT[$sport] ?? null;
+
+        return $playerPropModel !== null && $this->hasUngradedRows($playerPropModel, $game);
+    }
+
+    /**
+     * @param  class-string<Model>  $modelClass
+     */
+    private function hasUngradedRows(string $modelClass, Model $game): bool
+    {
+        return $modelClass::query()
+            ->where('game_id', $game->getKey())
+            ->where(function (Builder $query): void {
+                $query->whereNull('graded_at');
+            })
+            ->exists();
     }
 }

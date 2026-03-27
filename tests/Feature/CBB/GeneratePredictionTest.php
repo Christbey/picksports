@@ -7,6 +7,7 @@ use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TeamStat;
+use App\Models\PredictionFeatureSnapshot;
 
 uses()->group('cbb', 'predictions');
 
@@ -86,6 +87,48 @@ it('calculates confidence from win probability', function () {
     $wp2 = (float) $prediction2->win_probability;
     $expectedConfidence2 = round(max($wp2, 1 - $wp2) * 100, 2);
     expect((float) $prediction2->confidence_score)->toBe($expectedConfidence2);
+});
+
+it('stores baseline and challenger win probability side by side for cbb when calibration is enabled', function () {
+    $artifactPath = storage_path('app/ml/models/test_inline_cbb_calibration_model.json');
+    @mkdir(dirname($artifactPath), 0777, true);
+    file_put_contents($artifactPath, json_encode([
+        'model_type' => 'cbb_win_probability_platt_calibration',
+        'alpha' => 1.0,
+        'beta' => -0.35,
+    ], JSON_PRETTY_PRINT));
+
+    config()->set('cbb.prediction.win_probability_calibration.enabled', true);
+    config()->set('cbb.prediction.win_probability_calibration.apply_to_live_output', false);
+    config()->set('cbb.prediction.win_probability_calibration.artifact_path', $artifactPath);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game);
+
+    $snapshot = PredictionFeatureSnapshot::query()
+        ->where('prediction_table', 'cbb_predictions')
+        ->where('prediction_id', $prediction->id)
+        ->first();
+
+    expect($prediction)->not->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.enabled'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.active_source'))->toBe('baseline')
+        ->and(data_get($prediction->model_metadata, 'win_probability_calibration.reason'))->toBe('calibrated')
+        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.baseline_win_probability'))->toBe((float) $prediction->win_probability)
+        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.calibrated_win_probability'))->not->toBe((float) $prediction->win_probability)
+        ->and($snapshot)->not->toBeNull()
+        ->and($snapshot->outputs)->toHaveKeys([
+            'baseline_win_probability',
+            'calibrated_win_probability',
+            'active_win_probability_source',
+        ])
+        ->and($snapshot->outputs['active_win_probability_source'])->toBe('baseline');
 });
 
 it('does not generate prediction for completed game', function () {

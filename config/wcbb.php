@@ -252,7 +252,7 @@ return [
         'elo_to_spread_divisor' => 30,
         'average_pace' => 70.0,
         'default_efficiency' => 100.0,
-        'spread_to_probability_coefficient' => 4.0,
+        'spread_to_probability_coefficient' => 5.2,
 
         // Ensemble weights (sum to 1.0)
         'elo_weight' => 0.25,
@@ -300,6 +300,11 @@ return [
             'total_points_per_epa_component' => env('WCBB_TRUE_EPA_TOTAL_POINTS_PER_COMP', 25.0),
             'min_predicted_total' => env('WCBB_TRUE_EPA_MIN_TOTAL', 110.0),
             'max_predicted_total' => env('WCBB_TRUE_EPA_MAX_TOTAL', 190.0),
+        ],
+        'win_probability_calibration' => [
+            'enabled' => env('WCBB_WIN_PROBABILITY_CALIBRATION_ENABLED', false),
+            'apply_to_live_output' => env('WCBB_WIN_PROBABILITY_CALIBRATION_APPLY_TO_LIVE_OUTPUT', false),
+            'artifact_path' => env('WCBB_WIN_PROBABILITY_CALIBRATION_ARTIFACT', storage_path('app/ml/models/wcbb_win_probability_calibration_model.json')),
         ],
     ],
 

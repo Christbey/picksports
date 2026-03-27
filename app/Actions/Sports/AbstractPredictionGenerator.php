@@ -5,6 +5,7 @@ namespace App\Actions\Sports;
 use App\Jobs\NBA\GeneratePredictionNarrative as GenerateNbaPredictionNarrativeJob;
 use App\Jobs\Predictions\GeneratePredictionNarrative as GenerateGenericPredictionNarrativeJob;
 use App\Services\OddsApi\OddsApiService;
+use App\Services\Sports\DepthChartImpactService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Database\Eloquent\Model;
@@ -383,8 +384,9 @@ abstract class AbstractPredictionGenerator
             return [$predictedSpread, $predictedTotal];
         }
 
-        $homeCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->home_team_id ?? 0), $sport);
-        $awayCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->away_team_id ?? 0), $sport);
+        $season = isset($game->season) ? (int) $game->season : null;
+        $homeCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->home_team_id ?? 0), $sport, $season);
+        $awayCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->away_team_id ?? 0), $sport, $season);
 
         $outSpreadPenalty = $this->injuryPenaltyConfig($sport, 'injury_out_spread_penalty', $this->defaultOutSpreadPenalty($sport));
         $questionableSpreadPenalty = $this->injuryPenaltyConfig($sport, 'injury_questionable_spread_penalty', $this->defaultQuestionableSpreadPenalty($sport));
@@ -509,7 +511,7 @@ abstract class AbstractPredictionGenerator
     /**
      * @return array{out:float,questionable:float}
      */
-    protected function injuryCountsForTeam(string $injuryTable, int $teamId, ?string $sport = null): array
+    protected function injuryCountsForTeam(string $injuryTable, int $teamId, ?string $sport = null, ?int $season = null): array
     {
         $counts = ['out' => 0, 'questionable' => 0];
         if ($teamId <= 0) {
@@ -524,7 +526,10 @@ abstract class AbstractPredictionGenerator
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
             if ($bucket !== null) {
-                $counts[$bucket] += $this->injuryImpactMultiplier($sport, (int) ($injury->player_id ?? 0));
+                $impact = $this->injuryImpactMultiplier($sport, (int) ($injury->player_id ?? 0));
+                $depthChart = $this->depthChartInjuryMultiplier($sport, $teamId, (int) ($injury->player_id ?? 0), $season);
+
+                $counts[$bucket] += $impact * $depthChart;
             }
         }
 
@@ -605,6 +610,15 @@ abstract class AbstractPredictionGenerator
         }
 
         return round(max($min, min($max, $multiplier)), 2);
+    }
+
+    protected function depthChartInjuryMultiplier(?string $sport, int $teamId, int $playerId, ?int $season = null): float
+    {
+        if (! is_string($sport) || $sport === '' || $teamId <= 0 || $playerId <= 0) {
+            return 1.0;
+        }
+
+        return app(DepthChartImpactService::class)->injuryMultiplier($sport, $teamId, $playerId, $season);
     }
 
     protected function supportsEpaWeightedInjuryImpact(?string $sport): bool

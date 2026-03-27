@@ -93,6 +93,11 @@ class Team extends Model
         return $this->hasMany(PlayoffForecast::class, 'team_id');
     }
 
+    public function depthChartEntries(): HasMany
+    {
+        return $this->hasMany(DepthChartEntry::class, 'team_id');
+    }
+
     protected static function newFactory(): NbaTeamFactory
     {
         return NbaTeamFactory::new();

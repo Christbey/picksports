@@ -119,6 +119,7 @@ export const createNbaTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     showRecentForm: true,
     showTrends: true,
     showRoster: true,
+    showDepthCharts: true,
     playerLink: (id) => `/nba/players/${id}`,
     trendsGames: 20,
     recentGamesLimit: 10,
@@ -182,6 +183,7 @@ const createSimpleBasketballConfig = (
     showPowerRanking: true,
     showRecentForm: true,
     showTrends: true,
+    showDepthCharts: true,
     recentGamesLimit: 5,
     upcomingGamesLimit: 5,
     metricTiles: basketballMetricTiles,
@@ -344,6 +346,7 @@ export const createMlbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     showPowerRanking: true,
     showRecentForm: true,
     showTrends: true,
+    showDepthCharts: true,
     metricsGridCols: 'md:grid-cols-4 lg:grid-cols-8',
     seasonStatsGridCols: 'md:grid-cols-4 lg:grid-cols-7',
     headerInfo: (team) => {

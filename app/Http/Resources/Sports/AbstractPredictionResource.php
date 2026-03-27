@@ -141,4 +141,47 @@ abstract class AbstractPredictionResource extends JsonResource
 
         return $data;
     }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function appendDepthChartContext(array $data): array
+    {
+        $metadata = is_array($this->model_metadata ?? null) ? $this->model_metadata : [];
+        $context = null;
+
+        if (is_array($metadata['depth_chart_injuries'] ?? null)) {
+            $injuries = $metadata['depth_chart_injuries'];
+            $context = [
+                'type' => 'injury_weighting',
+                'applied' => (bool) ($injuries['applied'] ?? false),
+                'home_out_weighted' => (float) ($injuries['home_out_weighted'] ?? 0.0),
+                'away_out_weighted' => (float) ($injuries['away_out_weighted'] ?? 0.0),
+                'home_questionable_weighted' => (float) ($injuries['home_questionable_weighted'] ?? 0.0),
+                'away_questionable_weighted' => (float) ($injuries['away_questionable_weighted'] ?? 0.0),
+                'spread_adjustment' => (float) ($injuries['spread_adjustment'] ?? 0.0),
+                'total_adjustment' => (float) ($injuries['total_adjustment'] ?? 0.0),
+                'win_probability_adjustment' => isset($injuries['win_probability_adjustment'])
+                    ? (float) $injuries['win_probability_adjustment']
+                    : null,
+            ];
+        } elseif (is_array($metadata['depth_chart_context'] ?? null)) {
+            $source = $metadata['depth_chart_context'];
+            $context = [
+                'type' => 'starter_fallback',
+                'home_pitcher_source' => $source['home_pitcher_source'] ?? null,
+                'away_pitcher_source' => $source['away_pitcher_source'] ?? null,
+                'home_depth_chart_fallback_used' => (bool) ($source['home_depth_chart_fallback_used'] ?? false),
+                'away_depth_chart_fallback_used' => (bool) ($source['away_depth_chart_fallback_used'] ?? false),
+                'probable_pitcher_injury_applied' => (bool) ($source['probable_pitcher_injury_applied'] ?? false),
+            ];
+        }
+
+        if ($context !== null) {
+            $data['depth_chart_context'] = $context;
+        }
+
+        return $data;
+    }
 }

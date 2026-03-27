@@ -227,6 +227,13 @@ return [
     */
     'prediction' => [
         'use_previous_season_metrics_fallback' => true,
+        'spread_to_probability_coefficient' => env('MLB_SPREAD_TO_PROBABILITY_COEFFICIENT', 7.0),
+        'elo_diff_to_spread_divisor' => env('MLB_ELO_DIFF_TO_SPREAD_DIVISOR', 44.0),
+        'total_model' => [
+            'base_runs' => env('MLB_TOTAL_MODEL_BASE_RUNS', 9.7),
+            'average_elo_baseline' => env('MLB_TOTAL_MODEL_AVERAGE_ELO_BASELINE', 1500.0),
+            'average_elo_divisor' => env('MLB_TOTAL_MODEL_AVERAGE_ELO_DIVISOR', 80.0),
+        ],
         'injury_out_spread_penalty' => 0.30,
         'injury_questionable_spread_penalty' => 0.10,
         'injury_out_total_penalty' => 0.15,
@@ -238,6 +245,11 @@ return [
         ],
         'probable_pitcher_out_spread_penalty' => env('MLB_PROBABLE_PITCHER_OUT_SPREAD_PENALTY', 1.1),
         'probable_pitcher_questionable_spread_penalty' => env('MLB_PROBABLE_PITCHER_QUESTIONABLE_SPREAD_PENALTY', 0.45),
+        'depth_chart' => [
+            'starter_multiplier' => 1.20,
+            'rotation_multiplier' => 1.05,
+            'pitcher_multiplier' => 1.60,
+        ],
         'probable_pitcher_out_total_boost' => env('MLB_PROBABLE_PITCHER_OUT_TOTAL_BOOST', 0.7),
         'probable_pitcher_questionable_total_boost' => env('MLB_PROBABLE_PITCHER_QUESTIONABLE_TOTAL_BOOST', 0.25),
     ],

@@ -91,6 +91,11 @@ class Team extends Model
             ->orderByDesc('updated_at');
     }
 
+    public function depthChartEntries(): HasMany
+    {
+        return $this->hasMany(DepthChartEntry::class, 'team_id');
+    }
+
     protected static function newFactory(): NflTeamFactory
     {
         return NflTeamFactory::new();

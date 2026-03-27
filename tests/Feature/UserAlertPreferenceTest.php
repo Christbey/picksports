@@ -150,3 +150,13 @@ test('notification types attribute is cast to array', function () {
     expect($this->preference->notification_types)->toBeArray();
     expect($this->preference->notification_types)->toContain('email', 'push');
 });
+
+test('user routes vonage notifications to alert preference phone number', function () {
+    $this->preference->phone_number = '+1234567890';
+    $this->preference->save();
+
+    $notification = new class extends \Illuminate\Notifications\Notification {};
+
+    expect($this->user->fresh()->routeNotificationForVonage($notification))
+        ->toBe('+1234567890');
+});

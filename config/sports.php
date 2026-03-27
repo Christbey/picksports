@@ -15,6 +15,7 @@ return [
             'namespace' => 'NFL',
             'capabilities' => [
                 'player_stats_leaderboard' => true,
+                'depth_charts' => true,
             ],
             'web' => [
                 'predictions_page' => 'NFL/Predictions',
@@ -102,6 +103,7 @@ return [
                 'team_stats_all_season_averages' => true,
                 'team_stats_team_season_averages' => true,
                 'playoff_forecasts' => true,
+                'depth_charts' => true,
             ],
             'web' => [
                 'predictions_page' => 'NBA/Predictions',
@@ -142,6 +144,7 @@ return [
                 'player_stats_leaderboard' => true,
                 'team_stats_team_season_averages' => true,
                 'playoff_forecasts' => true,
+                'depth_charts' => true,
             ],
             'web' => [
                 'predictions_page' => 'MLB/Predictions',

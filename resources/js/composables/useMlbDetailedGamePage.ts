@@ -1,5 +1,6 @@
 import { computed, watch } from 'vue';
 import { formatNumber } from '@/composables/useFormatters';
+import { useGameDepthCharts } from '@/composables/useGameDepthCharts';
 import {
     formatVenueLabel,
     getWinLossRecord,
@@ -11,6 +12,7 @@ import { isMlbSpringTrainingType } from '@/lib/mlbSeasonType';
 import MLBTeamController from '@/actions/App/Http/Controllers/MLB/TeamController';
 
 export function useMlbDetailedGamePage(gameId: number) {
+    const { depthCharts } = useGameDepthCharts('mlb', gameId);
     const {
         game: currentGame,
         homeTeam,
@@ -151,5 +153,5 @@ export function useMlbDetailedGamePage(gameId: number) {
         { immediate: true },
     );
 
-    return { pageProps, recentSectionProps };
+    return { pageProps, recentSectionProps, depthCharts };
 }

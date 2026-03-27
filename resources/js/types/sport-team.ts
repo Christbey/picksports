@@ -57,4 +57,5 @@ export interface TeamPageConfig {
 
     showRoster?: boolean;
     playerLink?: (playerId: number) => HrefLike;
+    showDepthCharts?: boolean;
 }

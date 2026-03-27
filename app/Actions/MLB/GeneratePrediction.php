@@ -11,6 +11,7 @@ use App\Models\MLB\PlayerInjury;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
+use App\Services\Sports\DepthChartImpactService;
 use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
 
@@ -179,6 +180,34 @@ class GeneratePrediction extends AbstractPredictionGenerator
             }
         }
 
+        $depthChartPitcherId = app(DepthChartImpactService::class)
+            ->mlbLikelyStarterPitcherId($team->id, (int) $game->season);
+
+        if ($depthChartPitcherId) {
+            $depthChartPitcherElo = PitcherEloRating::query()
+                ->where('player_id', $depthChartPitcherId)
+                ->tap(fn ($query) => MlbRegularSeasonWindow::applyCarryoverFilter(
+                    $query,
+                    (int) $game->season,
+                    'season',
+                    'date',
+                    (string) $game->game_date
+                ))
+                ->orderByDesc('season')
+                ->orderByDesc('date')
+                ->orderByDesc('id')
+                ->value('elo_rating');
+
+            if ($depthChartPitcherElo !== null) {
+                return [
+                    'elo' => (float) $depthChartPitcherElo,
+                    'confidence' => 0.9,
+                    'source' => $probablePitcherEspnId ? 'depth_chart_starter_missing_probable_rating' : 'depth_chart_starter',
+                    'probable_pitcher_espn_id' => $probablePitcherEspnId,
+                ];
+            }
+        }
+
         // Get recent pitcher Elo ratings for this team (uses team_id on history row,
         // so traded pitchers are attributed to the team they pitched for)
         $recentPitcherElos = PitcherEloRating::query()
@@ -276,7 +305,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
     {
         // Convert Elo difference to runs (approximately 25 Elo points = 0.5 run)
         // Positive spread means home team is favored
-        return $eloDiff / 50;
+        $divisor = (float) config('mlb.prediction.elo_diff_to_spread_divisor', 50.0);
+        $divisor = $divisor === 0.0 ? 50.0 : $divisor;
+
+        return $eloDiff / $divisor;
     }
 
     protected function calculateTotal(float $homeElo, float $awayElo): float
@@ -284,9 +316,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // Base total on average runs per game, adjusted by combined team strength
         // Higher Elo teams tend to score more runs
         $avgElo = ($homeElo + $awayElo) / 2;
-        $eloAdjustment = ($avgElo - config('mlb.elo.default_rating')) / 100;
+        $eloBaseline = (float) config('mlb.prediction.total_model.average_elo_baseline', config('mlb.elo.default_rating'));
+        $eloDivisor = (float) config('mlb.prediction.total_model.average_elo_divisor', 100.0);
+        $eloDivisor = $eloDivisor === 0.0 ? 100.0 : $eloDivisor;
+        $eloAdjustment = ($avgElo - $eloBaseline) / $eloDivisor;
 
-        return config('mlb.elo.average_runs_per_game') + $eloAdjustment;
+        return (float) config('mlb.prediction.total_model.base_runs', config('mlb.elo.average_runs_per_game')) + $eloAdjustment;
     }
 
     public function executeForAllScheduledGames(int $season): int
@@ -476,6 +511,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'away_probable_pitcher_injury_status' => $this->metadata['away_probable_pitcher_injury_status'] ?? null,
                 'probable_pitcher_spread_adjustment' => $this->metadata['probable_pitcher_spread_adjustment'] ?? 0.0,
                 'probable_pitcher_total_adjustment' => $this->metadata['probable_pitcher_total_adjustment'] ?? 0.0,
+            ],
+            'depth_chart_context' => [
+                'home_pitcher_source' => $this->metadata['home_pitcher_source'] ?? null,
+                'away_pitcher_source' => $this->metadata['away_pitcher_source'] ?? null,
+                'home_depth_chart_fallback_used' => str_contains((string) ($this->metadata['home_pitcher_source'] ?? ''), 'depth_chart'),
+                'away_depth_chart_fallback_used' => str_contains((string) ($this->metadata['away_pitcher_source'] ?? ''), 'depth_chart'),
+                'probable_pitcher_injury_applied' => (($this->metadata['probable_pitcher_spread_adjustment'] ?? 0.0) != 0.0)
+                    || (($this->metadata['probable_pitcher_total_adjustment'] ?? 0.0) != 0.0),
             ],
             'market_context' => [
                 'vegas_spread' => $this->metadata['vegas_spread'] ?? null,

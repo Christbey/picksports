@@ -106,3 +106,36 @@ test('nfl prediction resource uses stored narrative when generic hash matches cu
         ->and($data['narrative']['generated_by'])->toBe('openai:gpt-4o-mini')
         ->and($data['narrative']['summary'])->toBe('Chicago is favored by the model.');
 });
+
+test('nfl prediction resource exposes depth chart context in api and template narrative', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo([
+        'view-prediction-spread',
+        'view-prediction-win-probability',
+        'view-prediction-confidence-score',
+    ]);
+
+    $prediction = makeNflPredictionFixture();
+    $prediction->forceFill([
+        'model_metadata' => [
+            'depth_chart_injuries' => [
+                'applied' => true,
+                'home_out_weighted' => 3.0,
+                'away_out_weighted' => 1.0,
+                'home_questionable_weighted' => 0.0,
+                'away_questionable_weighted' => 0.5,
+                'spread_adjustment' => -1.0,
+                'total_adjustment' => -0.3,
+                'win_probability_adjustment' => -0.03,
+            ],
+        ],
+    ])->save();
+
+    $data = PredictionResource::make($prediction->fresh(['game.homeTeam', 'game.awayTeam']))->toArray(makeAuthorizedNflRequest($user));
+
+    expect($data['depth_chart_context'])->toBeArray()
+        ->and($data['depth_chart_context']['type'])->toBe('injury_weighting')
+        ->and($data['depth_chart_context']['home_out_weighted'])->toBe(3.0)
+        ->and(collect($data['narrative']['key_points'])->contains(fn ($point) => str_contains($point, 'Depth-chart weighting')))
+            ->toBeTrue();
+});

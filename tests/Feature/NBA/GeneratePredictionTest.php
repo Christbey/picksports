@@ -2,6 +2,7 @@
 
 use App\Actions\NBA\CalculateBettingValue;
 use App\Actions\NBA\GeneratePrediction;
+use App\Models\NBA\DepthChartEntry;
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
 use App\Models\NBA\PlayerInjury;
@@ -719,6 +720,80 @@ it('does not double count raw injury penalties when persisted injury-adjusted ra
         ->and((float) $injuryPrediction->injury_total_adj)->toBe(0.0)
         ->and(data_get($injuryPrediction->model_metadata, 'injury_model_source'))->toBe('persisted_team_rating')
         ->and($injuryPrediction->home_injuries_out)->toBe(1);
+});
+
+it('weights nba starter injuries more heavily than reserve injuries when depth chart data exists', function () {
+    config()->set('nba.prediction.depth_chart.starter_multiplier', 2.0);
+    config()->set('nba.prediction.depth_chart.rotation_multiplier', 1.0);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    $starter = Player::factory()->create(['team_id' => $this->homeTeam->id, 'position' => 'G']);
+    $reserve = Player::factory()->create(['team_id' => $this->homeTeam->id, 'position' => 'G']);
+
+    DepthChartEntry::query()->create([
+        'team_id' => $this->homeTeam->id,
+        'player_id' => $starter->id,
+        'season' => 2026,
+        'position_slot_key' => 'pg',
+        'position_code' => 'PG',
+        'position_name' => 'Point Guard',
+        'position_display_name' => 'Point Guard',
+        'espn_athlete_id' => $starter->espn_id,
+        'depth_rank' => 1,
+        'is_starter' => true,
+    ]);
+
+    DepthChartEntry::query()->create([
+        'team_id' => $this->homeTeam->id,
+        'player_id' => $reserve->id,
+        'season' => 2026,
+        'position_slot_key' => 'pg',
+        'position_code' => 'PG',
+        'position_name' => 'Point Guard',
+        'position_display_name' => 'Point Guard',
+        'espn_athlete_id' => $reserve->espn_id,
+        'depth_rank' => 3,
+        'is_starter' => false,
+    ]);
+
+    PlayerInjury::query()->create([
+        'player_id' => $reserve->id,
+        'team_id' => $this->homeTeam->id,
+        'injury_key' => 'reserve-out',
+        'status' => 'Out',
+        'detail' => 'Reserve test injury',
+        'type' => 'Leg',
+        'injury_date' => now()->toDateString(),
+        'is_active' => true,
+    ]);
+
+    $reservePrediction = (new GeneratePrediction)->execute($game->fresh());
+
+    PlayerInjury::query()->delete();
+
+    PlayerInjury::query()->create([
+        'player_id' => $starter->id,
+        'team_id' => $this->homeTeam->id,
+        'injury_key' => 'starter-out',
+        'status' => 'Out',
+        'detail' => 'Starter test injury',
+        'type' => 'Leg',
+        'injury_date' => now()->toDateString(),
+        'is_active' => true,
+    ]);
+
+    $starterPrediction = (new GeneratePrediction)->execute($game->fresh());
+
+    expect($reservePrediction)->not->toBeNull()
+        ->and($starterPrediction)->not->toBeNull()
+        ->and(abs((float) $starterPrediction->injury_spread_adj))->toBeGreaterThan(abs((float) $reservePrediction->injury_spread_adj))
+        ->and((float) $starterPrediction->predicted_spread)->toBeLessThan((float) $reservePrediction->predicted_spread);
 });
 
 it('applies true epa blend metadata when enabled and metrics are available', function () {

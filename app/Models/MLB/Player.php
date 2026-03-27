@@ -59,4 +59,9 @@ class Player extends Model
             ->where('is_active', true)
             ->orderByDesc('updated_at');
     }
+
+    public function depthChartEntries(): HasMany
+    {
+        return $this->hasMany(DepthChartEntry::class, 'player_id');
+    }
 }

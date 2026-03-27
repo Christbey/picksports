@@ -1,5 +1,5 @@
 import type { UrlMethodPair } from '@inertiajs/core';
-import type { MatchupContextData } from './models';
+import type { GameDepthChartsData, MatchupContextData } from './models';
 
 export type GamePageHrefLike = string | UrlMethodPair;
 
@@ -186,6 +186,7 @@ export interface GamePageGame {
     away_score?: number | null;
     home_score?: number | null;
     matchup_context?: MatchupContextData | null;
+    depth_charts?: GameDepthChartsData | null;
 }
 
 export interface PredictionSummary {
@@ -208,6 +209,22 @@ export interface PredictionSummary {
             bet_pick: string;
             reasoning: string;
         } | null;
+    } | null;
+    depth_chart_context?: {
+        type: 'injury_weighting' | 'starter_fallback';
+        applied?: boolean;
+        home_out_weighted?: number | null;
+        away_out_weighted?: number | null;
+        home_questionable_weighted?: number | null;
+        away_questionable_weighted?: number | null;
+        spread_adjustment?: number | null;
+        total_adjustment?: number | null;
+        win_probability_adjustment?: number | null;
+        home_pitcher_source?: string | null;
+        away_pitcher_source?: string | null;
+        home_depth_chart_fallback_used?: boolean;
+        away_depth_chart_fallback_used?: boolean;
+        probable_pitcher_injury_applied?: boolean;
     } | null;
 }
 
@@ -299,6 +316,8 @@ export interface NflPagePrediction {
     live_predicted_total?: number | string | null;
     live_seconds_remaining?: number | null;
     live_updated_at?: string | null;
+    narrative?: PredictionSummary['narrative'];
+    depth_chart_context?: PredictionSummary['depth_chart_context'];
 }
 
 export interface NflTeamStats {

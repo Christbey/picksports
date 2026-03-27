@@ -17,6 +17,56 @@ export interface Team {
     updated_at: string | null;
 }
 
+export interface DepthChartMetric {
+    key: string;
+    label: string;
+    value: string;
+}
+
+export interface TeamDepthChartEntry {
+    id: number;
+    player_id: number | null;
+    espn_athlete_id: string | null;
+    full_name: string | null;
+    jersey_number: string | null;
+    headshot_url: string | null;
+    player_position: string | null;
+    position_slot_key: string;
+    position_code: string | null;
+    position_name: string | null;
+    depth_chart_name: string | null;
+    slot_order: number | null;
+    depth_rank: number;
+    is_starter: boolean;
+    stats: {
+        games_played: number;
+        metrics: DepthChartMetric[];
+    };
+}
+
+export interface GameDepthChartTeam {
+    team: {
+        id: number;
+        espn_id: string | null;
+        abbreviation: string | null;
+        display_name: string | null;
+        logo: string | null;
+    };
+    season: number;
+    season_type: number | string | null;
+    before_date: string | null;
+    entries: TeamDepthChartEntry[];
+}
+
+export interface GameDepthChartsData {
+    game_id: number;
+    season: number;
+    season_type: number | string | null;
+    game_date: string | null;
+    away_team: GameDepthChartTeam | null;
+    home_team: GameDepthChartTeam | null;
+}
+
 export interface PlayerInjury {
     id: number;
     player_id: number;
@@ -136,6 +186,22 @@ export interface Prediction {
             bet_pick: string;
             reasoning: string;
         } | null;
+    } | null;
+    depth_chart_context?: {
+        type: 'injury_weighting' | 'starter_fallback';
+        applied?: boolean;
+        home_out_weighted?: number | null;
+        away_out_weighted?: number | null;
+        home_questionable_weighted?: number | null;
+        away_questionable_weighted?: number | null;
+        spread_adjustment?: number | null;
+        total_adjustment?: number | null;
+        win_probability_adjustment?: number | null;
+        home_pitcher_source?: string | null;
+        away_pitcher_source?: string | null;
+        home_depth_chart_fallback_used?: boolean;
+        away_depth_chart_fallback_used?: boolean;
+        probable_pitcher_injury_applied?: boolean;
     } | null;
     model_version: string | null;
     created_at: string | null;

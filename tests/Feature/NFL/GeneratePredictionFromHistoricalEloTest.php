@@ -1,8 +1,11 @@
 <?php
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
+use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
+use App\Models\NFL\Player;
+use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
@@ -156,4 +159,87 @@ it('blends nfl true epa into prediction outputs when rollout is enabled', functi
         ->and(data_get($prediction->model_metadata, 'true_epa.applied'))->toBeTrue()
         ->and((float) data_get($prediction->model_metadata, 'true_epa.weight'))->toBe(1.0)
         ->and((float) data_get($prediction->model_metadata, 'blended.spread'))->toBe(round($expectedSpread, 4));
+});
+
+it('weights nfl qb1 injuries more heavily than reserve injuries when depth chart data exists', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.depth_chart.qb_multiplier' => 3.0,
+        'nfl.predictions.depth_chart.starter_multiplier' => 1.5,
+        'nfl.predictions.depth_chart.rotation_multiplier' => 1.0,
+        'nfl.predictions.depth_chart.win_probability_adjustment_per_point' => 0.03,
+    ]);
+
+    $game = createNflPredictionTestGame();
+
+    $qb = Player::factory()->create([
+        'team_id' => $game->home_team_id,
+        'position' => 'QB',
+    ]);
+    $reserve = Player::factory()->create([
+        'team_id' => $game->home_team_id,
+        'position' => 'WR',
+    ]);
+
+    DepthChartEntry::query()->create([
+        'team_id' => $game->home_team_id,
+        'player_id' => $qb->id,
+        'season' => 2025,
+        'position_slot_key' => 'qb',
+        'position_code' => 'QB',
+        'position_name' => 'Quarterback',
+        'position_display_name' => 'Quarterback',
+        'espn_athlete_id' => $qb->espn_id,
+        'depth_rank' => 1,
+        'is_starter' => true,
+    ]);
+
+    DepthChartEntry::query()->create([
+        'team_id' => $game->home_team_id,
+        'player_id' => $reserve->id,
+        'season' => 2025,
+        'position_slot_key' => 'wr',
+        'position_code' => 'WR',
+        'position_name' => 'Wide Receiver',
+        'position_display_name' => 'Wide Receiver',
+        'espn_athlete_id' => $reserve->espn_id,
+        'depth_rank' => 4,
+        'is_starter' => false,
+    ]);
+
+    PlayerInjury::query()->create([
+        'player_id' => $reserve->id,
+        'team_id' => $game->home_team_id,
+        'injury_key' => 'reserve-test',
+        'status' => 'Out',
+        'detail' => 'Reserve injury',
+        'type' => 'Leg',
+        'injury_date' => '2025-10-14',
+        'is_active' => true,
+    ]);
+
+    $action = app(GeneratePredictionFromHistoricalElo::class);
+    $action->execute($game->fresh(['homeTeam', 'awayTeam']));
+    $reservePrediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    PlayerInjury::query()->delete();
+
+    PlayerInjury::query()->create([
+        'player_id' => $qb->id,
+        'team_id' => $game->home_team_id,
+        'injury_key' => 'qb-test',
+        'status' => 'Out',
+        'detail' => 'QB injury',
+        'type' => 'Shoulder',
+        'injury_date' => '2025-10-14',
+        'is_active' => true,
+    ]);
+
+    $action->execute($game->fresh(['homeTeam', 'awayTeam']));
+    $qbPrediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect($qbPrediction->predicted_spread)->toBeLessThan($reservePrediction->predicted_spread)
+        ->and($qbPrediction->win_probability)->toBeLessThan($reservePrediction->win_probability)
+        ->and(abs((float) data_get($qbPrediction->model_metadata, 'depth_chart_injuries.spread_adjustment')))
+            ->toBeGreaterThan(abs((float) data_get($reservePrediction->model_metadata, 'depth_chart_injuries.spread_adjustment')));
 });

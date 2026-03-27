@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Notifications\Notification;
 use Laravel\Cashier\Billable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
@@ -190,6 +191,17 @@ class User extends Authenticatable
     public function webPushSubscriptions(): HasMany
     {
         return $this->hasMany(WebPushSubscription::class);
+    }
+
+    public function routeNotificationForVonage(Notification $notification): ?string
+    {
+        $phoneNumber = $this->alertPreference?->phone_number;
+
+        if (! is_string($phoneNumber) || trim($phoneNumber) === '') {
+            return null;
+        }
+
+        return $phoneNumber;
     }
 
     public function hasTierFeature(string $feature): bool

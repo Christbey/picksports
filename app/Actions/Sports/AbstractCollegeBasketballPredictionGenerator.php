@@ -3,6 +3,7 @@
 namespace App\Actions\Sports;
 
 use App\Actions\Sports\Concerns\AppliesTrueEpaPredictionBlend;
+use App\Services\NBA\WinProbabilityCalibrationInferenceService;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPredictionGenerator
@@ -21,6 +22,9 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
 
     /** @var array<string, mixed> Total model metadata */
     private array $totalMetadata = [];
+
+    /** @var array<string, mixed> Win probability calibration metadata */
+    private array $winProbabilityCalibrationMetadata = [];
 
     protected function getGameModel(): string
     {
@@ -50,6 +54,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $this->metadata = [];
         $this->trueEpaMetadata = [];
         $this->totalMetadata = [];
+        $this->winProbabilityCalibrationMetadata = [];
 
         $sport = $this->getSport();
         $config = config("{$sport}.prediction");
@@ -203,6 +208,16 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         float $confidenceScore
     ): array {
         $defaultEfficiency = config("{$this->getSport()}.prediction.default_efficiency");
+        $calibration = app(WinProbabilityCalibrationInferenceService::class)
+            ->calibrate($this->getSport(), $winProbability);
+        $this->winProbabilityCalibrationMetadata = $calibration;
+
+        $activeWinProbability = round((float) ($calibration['active_win_probability'] ?? $winProbability), 3);
+        $activeConfidenceScore = round((float) ($calibration['active_confidence_score'] ?? $confidenceScore), 2);
+        $baselineWinProbability = round((float) ($calibration['baseline_win_probability'] ?? $winProbability), 3);
+        $baselineConfidenceScore = round((float) ($calibration['baseline_confidence_score'] ?? $confidenceScore), 2);
+        $calibratedWinProbability = round((float) ($calibration['calibrated_win_probability'] ?? $winProbability), 3);
+        $calibratedConfidenceScore = round((float) ($calibration['calibrated_confidence_score'] ?? $confidenceScore), 2);
 
         return array_merge([
             'home_elo' => $homeElo,
@@ -213,8 +228,8 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'away_def_eff' => $awayMetrics?->defensive_efficiency ?? $defaultEfficiency,
             'predicted_spread' => $predictedSpread,
             'predicted_total' => $predictedTotal,
-            'win_probability' => $winProbability,
-            'confidence_score' => $confidenceScore,
+            'win_probability' => $activeWinProbability,
+            'confidence_score' => $activeConfidenceScore,
             'model_version' => $this->modelVersion(),
             'feature_version' => $this->featureVersion(),
             'blend_version' => $this->blendVersion(),
@@ -222,6 +237,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                 'model' => "{$this->getSport()}_ensemble",
                 'true_epa' => $this->trueEpaMetadata,
                 'total_model' => $this->totalMetadata,
+                'win_probability_calibration' => $calibration,
                 'market_context' => [
                     'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
                     ...($this->metadata['odds_market_availability'] ?? []),
@@ -241,8 +257,13 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                     'blended_predicted_total' => $predictedTotal,
                     'predicted_spread' => $predictedSpread,
                     'predicted_total' => $predictedTotal,
-                    'win_probability' => $winProbability,
-                    'confidence_score' => $confidenceScore,
+                    'baseline_win_probability' => $baselineWinProbability,
+                    'baseline_confidence_score' => $baselineConfidenceScore,
+                    'calibrated_win_probability' => $calibratedWinProbability,
+                    'calibrated_confidence_score' => $calibratedConfidenceScore,
+                    'win_probability' => $activeWinProbability,
+                    'confidence_score' => $activeConfidenceScore,
+                    'active_win_probability_source' => $calibration['active_source'] ?? 'baseline',
                 ],
                 'market_context' => [
                     'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
@@ -252,6 +273,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                     'model' => "{$this->getSport()}_ensemble",
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
+                    'win_probability_calibration' => $calibration,
                     'market_context' => [
                         'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
                         ...($this->metadata['odds_market_availability'] ?? []),

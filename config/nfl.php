@@ -197,6 +197,13 @@ return [
         'injury_questionable_spread_penalty' => 0.20,
         'injury_out_total_penalty' => 0.30,
         'injury_questionable_total_penalty' => 0.10,
+        'depth_chart' => [
+            'starter_multiplier' => 1.35,
+            'rotation_multiplier' => 1.10,
+            'qb_multiplier' => 2.40,
+            'skill_multiplier' => 1.45,
+            'win_probability_adjustment_per_point' => 0.03,
+        ],
 
         /*
         |--------------------------------------------------------------------------

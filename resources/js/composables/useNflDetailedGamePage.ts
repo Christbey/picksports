@@ -1,4 +1,5 @@
 import { computed, watch } from 'vue';
+import { useGameDepthCharts } from '@/composables/useGameDepthCharts';
 import { formatNumber, getBetterValue } from '@/composables/useFormatters';
 import { useNflGamePage } from '@/composables/useNflGamePage';
 import { useSportGameLayout } from '@/composables/useSportGameLayout';
@@ -12,6 +13,7 @@ const formatSpread = (spread: number | string): string => {
 };
 
 export function useNflDetailedGamePage(gameId: number) {
+    const { depthCharts } = useGameDepthCharts('nfl', gameId);
     const {
         game: currentGame,
         homeTeam,
@@ -183,5 +185,6 @@ export function useNflDetailedGamePage(gameId: number) {
         predictionSectionProps,
         analysisSectionProps,
         recentSectionProps,
+        depthCharts,
     };
 }

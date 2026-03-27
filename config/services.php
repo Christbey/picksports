@@ -52,6 +52,12 @@ return [
         ],
     ],
 
+    'vonage' => [
+        'sms_from' => env('VONAGE_SMS_FROM'),
+        'key' => env('VONAGE_KEY'),
+        'secret' => env('VONAGE_SECRET'),
+    ],
+
     'odds_api' => [
         'key' => env('ODDS_API_KEY'),
         'base_url' => 'https://api.the-odds-api.com/v4',

@@ -72,6 +72,36 @@ class BaseEspnService
         return $this->get($this->buildUrl('site', 'team', ['teamId' => $teamId]));
     }
 
+    public function getTeamBySeason(string $teamId, int $season): ?array
+    {
+        if (! isset($this->config['core']['team_by_season'])) {
+            return null;
+        }
+
+        return $this->get($this->buildUrl('core', 'team_by_season', [
+            'year' => (string) $season,
+            'teamId' => $teamId,
+        ]));
+    }
+
+    public function getTeamDepthCharts(string $teamId, int $season): ?array
+    {
+        if (isset($this->config['core']['team_depthcharts'])) {
+            return $this->get($this->buildUrl('core', 'team_depthcharts', [
+                'year' => (string) $season,
+                'teamId' => $teamId,
+            ]));
+        }
+
+        $teamBySeason = $this->getTeamBySeason($teamId, $season);
+        $depthChartRef = trim((string) data_get($teamBySeason, 'depthCharts.$ref', ''));
+        if ($depthChartRef !== '') {
+            return $this->getByRef($depthChartRef);
+        }
+
+        return null;
+    }
+
     public function getRoster(string $teamId): ?array
     {
         return $this->get($this->buildUrl('site', 'roster', ['teamId' => $teamId]));

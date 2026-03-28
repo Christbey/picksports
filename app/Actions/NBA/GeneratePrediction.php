@@ -162,6 +162,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $defaultEfficiency = $config['default_efficiency'];
         $recentWeight = (float) ($config['total_recent_efficiency_weight'] ?? 0.35);
         $venueWeight = (float) ($config['total_venue_efficiency_weight'] ?? 0.15);
+        $averagePace = (float) ($config['average_pace'] ?? 100.0);
+        $seasonTempoRegressionWeight = (float) ($config['total_season_tempo_regression_weight'] ?? 0.0);
+        $recentTempoRegressionWeight = (float) ($config['total_recent_tempo_regression_weight'] ?? 0.0);
 
         $homeOffEff = $homeMetrics?->offensive_efficiency ?? $defaultEfficiency;
         $homeDefEff = $homeMetrics?->defensive_efficiency ?? $defaultEfficiency;
@@ -198,11 +201,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ]);
 
         // Blend season tempo with recent form tempo
-        $seasonPace = ($homeMetrics?->tempo ?? $config['average_pace'])
-            + ($awayMetrics?->tempo ?? $config['average_pace']);
-        $seasonPace /= 2;
+        $seasonPaceRaw = (($homeMetrics?->tempo ?? $averagePace)
+            + ($awayMetrics?->tempo ?? $averagePace)) / 2;
+        $seasonPace = $this->regressTotalPace($seasonPaceRaw, $averagePace, $seasonTempoRegressionWeight);
 
-        $formPace = ($homeForm['tempo'] + $awayForm['tempo']) / 2;
+        $formPaceRaw = ($homeForm['tempo'] + $awayForm['tempo']) / 2;
+        $formPace = $this->regressTotalPace($formPaceRaw, $averagePace, $recentTempoRegressionWeight);
         $calibration = (array) ($config['total_calibration'] ?? []);
         $maxRecentPaceDrop = (float) ($calibration['max_recent_pace_drop'] ?? 7.0);
         $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
@@ -239,7 +243,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 0.35);
         $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
         $calibratedTotal = $rangeAnchor + (($blendedTotal - $rangeAnchor) * $rangeScale) + $baseAdjustment + $highTotalBoost;
-        $vegasTotal = $this->getVegasTotal($game);
+        $vegasTotal = $this->extractMarketTotal($game);
+        $this->metadata['market_total'] = $vegasTotal !== null ? round($vegasTotal, 2) : null;
         $highMarketTotalThreshold = (float) ($calibration['high_market_total_threshold'] ?? 235.0);
         $highMarketTotalBlendWeight = (float) ($calibration['high_market_total_blend_weight'] ?? 0.55);
         $marketTotalBlendApplied = false;
@@ -260,8 +265,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'recent_away_score_fallback_applied' => $awayRecentScore !== $rawAwayRecentScore,
             'venue_home_score_component' => $homeVenueScore !== null ? round($homeVenueScore, 3) : null,
             'venue_away_score_component' => $awayVenueScore !== null ? round($awayVenueScore, 3) : null,
+            'season_pace_raw' => round($seasonPaceRaw, 3),
             'season_pace' => round($seasonPace, 3),
+            'recent_pace_raw' => round($formPaceRaw, 3),
             'recent_pace' => round($formPace, 3),
+            'season_tempo_regression_weight' => round($seasonTempoRegressionWeight, 3),
+            'recent_tempo_regression_weight' => round($recentTempoRegressionWeight, 3),
             'recent_pace_floor' => round($recentPaceFloor, 3),
             'max_recent_pace_drop' => round($maxRecentPaceDrop, 3),
             'pace_adjustment' => round($paceAdj, 3),
@@ -352,6 +361,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'win_probability_calibration' => $calibration,
                     'market_context' => [
                         'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'market_total' => $this->metadata['market_total'] ?? null,
                         ...($this->metadata['odds_market_availability'] ?? []),
                     ],
                 ],
@@ -364,7 +374,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'baseline_predicted_spread' => round($this->metadata['baseline_model_spread'] ?? $predictedSpread, 3),
                         'baseline_predicted_total' => round($this->totalMetadata['legacy_total'] ?? $predictedTotal, 3),
                         'market_spread' => $this->metadata['vegas_spread'] ?? null,
-                        'market_total' => null,
+                        'market_total' => $this->metadata['market_total'] ?? null,
                         'blended_predicted_spread' => $predictedSpread,
                         'blended_predicted_total' => $predictedTotal,
                         'predicted_spread' => $predictedSpread,
@@ -377,6 +387,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     ],
                     'market_context' => [
                         'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'market_total' => $this->metadata['market_total'] ?? null,
                         ...($this->metadata['odds_market_availability'] ?? []),
                     ],
                     'model_metadata' => [
@@ -397,6 +408,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'win_probability_calibration' => $calibration,
                         'market_context' => [
                             'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                            'market_total' => $this->metadata['market_total'] ?? null,
                             ...($this->metadata['odds_market_availability'] ?? []),
                         ],
                     ],
@@ -735,35 +747,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
     /**
      * Extract total from odds_data JSON if available.
      */
-    private function getVegasTotal(Model $game): ?float
-    {
-        $oddsData = $game->odds_data;
-
-        if (empty($oddsData) || ! isset($oddsData['bookmakers'])) {
-            return null;
-        }
-
-        foreach ($oddsData['bookmakers'] as $bookmaker) {
-            if (! isset($bookmaker['markets'])) {
-                continue;
-            }
-
-            foreach ($bookmaker['markets'] as $market) {
-                if ($market['key'] !== 'totals' || ! isset($market['outcomes'])) {
-                    continue;
-                }
-
-                foreach ($market['outcomes'] as $outcome) {
-                    if (isset($outcome['point'])) {
-                        return (float) $outcome['point'];
-                    }
-                }
-            }
-        }
-
-        return null;
-    }
-
     /**
      * Check if an outcome name matches the home team.
      */

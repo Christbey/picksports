@@ -184,6 +184,8 @@ return [
         'recency_decay' => 0.9,
         'total_recent_efficiency_weight' => 0.35,
         'total_venue_efficiency_weight' => 0.15,
+        'total_season_tempo_regression_weight' => 0.55,
+        'total_recent_tempo_regression_weight' => 0.45,
         'use_previous_season_metrics_fallback' => env('NBA_USE_PREVIOUS_SEASON_METRICS_FALLBACK', true),
 
         // Rest days

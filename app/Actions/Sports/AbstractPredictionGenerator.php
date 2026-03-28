@@ -352,6 +352,48 @@ abstract class AbstractPredictionGenerator
         return true;
     }
 
+    protected function regressTotalPace(float $rawPace, float $baselinePace, float $weight): float
+    {
+        $weight = max(0.0, min(1.0, $weight));
+
+        return ($rawPace * (1 - $weight)) + ($baselinePace * $weight);
+    }
+
+    protected function extractMarketTotal(Model $game): ?float
+    {
+        $oddsData = $game->odds_data;
+
+        if (! is_array($oddsData) || ! isset($oddsData['bookmakers'])) {
+            return null;
+        }
+
+        foreach ($oddsData['bookmakers'] as $bookmaker) {
+            if (! isset($bookmaker['markets'])) {
+                continue;
+            }
+
+            foreach ($bookmaker['markets'] as $market) {
+                if (($market['key'] ?? null) !== 'totals' || ! isset($market['outcomes'])) {
+                    continue;
+                }
+
+                foreach ($market['outcomes'] as $outcome) {
+                    if (($outcome['name'] ?? null) === 'Over' && is_numeric($outcome['point'] ?? null)) {
+                        return (float) $outcome['point'];
+                    }
+                }
+
+                foreach ($market['outcomes'] as $outcome) {
+                    if (is_numeric($outcome['point'] ?? null)) {
+                        return (float) $outcome['point'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
     protected function latestPriorSeasonMetric(string $teamMetricModel, int $teamId, int $season, ?Model $game = null): ?Model
     {
         return $teamMetricModel::query()

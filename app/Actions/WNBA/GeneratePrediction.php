@@ -45,7 +45,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // Calculate predicted total using efficiency metrics
         $homePredictedScore = ($homeOffEff + $awayDefEff) / 2;
         $awayPredictedScore = ($awayOffEff + $homeDefEff) / 2;
-        $pace = $homeMetrics?->tempo ?? $awayMetrics?->tempo ?? config('wnba.prediction.average_pace');
+        $averagePace = (float) config('wnba.prediction.average_pace');
+        $paceRaw = (($homeMetrics?->tempo ?? $averagePace) + ($awayMetrics?->tempo ?? $averagePace)) / 2;
+        $pace = $this->regressTotalPace(
+            $paceRaw,
+            $averagePace,
+            (float) config('wnba.prediction.total_tempo_regression_weight', 0.0)
+        );
 
         return round(($homePredictedScore + $awayPredictedScore) * ($pace / 100), 1);
     }

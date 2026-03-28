@@ -1049,12 +1049,19 @@ it('blends toward the market total for high-total nba games', function () {
     $action = new GeneratePrediction;
     $highMarketPrediction = $action->execute($highMarketGame);
     $lowMarketPrediction = $action->execute($lowMarketGame);
+    $highMarketSnapshot = PredictionFeatureSnapshot::query()
+        ->where('prediction_table', 'nba_predictions')
+        ->where('prediction_id', $highMarketPrediction?->id)
+        ->first();
 
     expect($highMarketPrediction)->not->toBeNull()
         ->and($lowMarketPrediction)->not->toBeNull()
+        ->and($highMarketSnapshot)->not->toBeNull()
         ->and((float) $highMarketPrediction->predicted_total)->toBeGreaterThan((float) $lowMarketPrediction->predicted_total)
         ->and(data_get($highMarketPrediction->model_metadata, 'total_model.market_total_blend_applied'))->toBeTrue()
         ->and(data_get($highMarketPrediction->model_metadata, 'total_model.vegas_total'))->toBe(241.5)
+        ->and(data_get($highMarketPrediction->model_metadata, 'market_context.market_total'))->toBe(241.5)
+        ->and(data_get($highMarketSnapshot?->outputs, 'market_total'))->toBe(241.5)
         ->and(data_get($lowMarketPrediction->model_metadata, 'total_model.market_total_blend_applied'))->toBeFalse();
 });
 

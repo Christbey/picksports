@@ -290,6 +290,8 @@ return [
         'rebound_margin_weight' => 0.25,
         'total_recent_efficiency_weight' => 0.35,
         'total_venue_efficiency_weight' => 0.15,
+        'total_season_tempo_regression_weight' => 0.8,
+        'total_recent_tempo_regression_weight' => 0.8,
         'total_factor_weights' => [
             'effective_fg_pct' => 34.0,
             'free_throw_rate' => 15.0,

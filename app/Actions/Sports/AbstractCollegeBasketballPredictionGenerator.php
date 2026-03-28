@@ -165,6 +165,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             $awayMetrics
         );
         $calibrationResult = $this->calibrateTotalForGame($game, $blendedTotal, $calibration);
+        $this->metadata['market_total'] = ($marketTotal = $this->extractMarketTotal($game)) !== null ? round($marketTotal, 2) : null;
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
             'season_home_score_component' => round($scoreComponents['home_season_score'], 3),
@@ -177,8 +178,12 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
             'away_total_factor_adjustment_raw' => round($factorAdjustments['away_adjustment'], 3),
             'home_total_factor_adjustment' => round($homeFactorAdjustment, 3),
             'away_total_factor_adjustment' => round($awayFactorAdjustment, 3),
+            'season_pace_raw' => round($paceContext['season_pace_raw'], 3),
             'season_pace' => round($paceContext['season_pace'], 3),
+            'recent_pace_raw' => round($paceContext['recent_pace_raw'], 3),
             'recent_pace' => round($paceContext['recent_pace'], 3),
+            'season_tempo_regression_weight' => round($paceContext['season_tempo_regression_weight'], 3),
+            'recent_tempo_regression_weight' => round($paceContext['recent_tempo_regression_weight'], 3),
             'recent_pace_floor' => round($paceContext['recent_pace_floor'], 3),
             'max_recent_pace_drop' => round($paceContext['max_recent_pace_drop'], 3),
             'rest_pace_adjustment' => round($paceContext['rest_pace_adjustment'], 3),
@@ -238,6 +243,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                 'win_probability_calibration' => $calibration,
                 'market_context' => [
                     'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                    'market_total' => $this->metadata['market_total'] ?? null,
                     ...($this->metadata['odds_market_availability'] ?? []),
                 ],
             ],
@@ -250,7 +256,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                     'baseline_predicted_spread' => round($this->metadata['baseline_model_spread'] ?? $predictedSpread, 3),
                     'baseline_predicted_total' => round($this->totalMetadata['legacy_total'] ?? $predictedTotal, 3),
                     'market_spread' => $this->metadata['vegas_spread'] ?? null,
-                    'market_total' => null,
+                    'market_total' => $this->metadata['market_total'] ?? null,
                     'blended_predicted_spread' => $predictedSpread,
                     'blended_predicted_total' => $predictedTotal,
                     'predicted_spread' => $predictedSpread,
@@ -263,6 +269,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                 ],
                 'market_context' => [
                     'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                    'market_total' => $this->metadata['market_total'] ?? null,
                     ...($this->metadata['odds_market_availability'] ?? []),
                 ],
                 'model_metadata' => [
@@ -272,6 +279,7 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
                     'win_probability_calibration' => $calibration,
                     'market_context' => [
                         'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'market_total' => $this->metadata['market_total'] ?? null,
                         ...($this->metadata['odds_market_availability'] ?? []),
                     ],
                 ],
@@ -643,8 +651,12 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
      * @param  array<string, mixed>  $config
      * @param  array<string, mixed>  $calibration
      * @return array{
+     *   season_pace_raw: float,
      *   season_pace: float,
+     *   recent_pace_raw: float,
      *   recent_pace: float,
+     *   season_tempo_regression_weight: float,
+     *   recent_tempo_regression_weight: float,
      *   recent_pace_floor: float,
      *   max_recent_pace_drop: float,
      *   rest_pace_adjustment: float,
@@ -663,11 +675,16 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         array $calibration,
         float $recentWeight
     ): array {
-        $seasonPace = (($homeMetrics?->tempo ?? $config['average_pace']) + ($awayMetrics?->tempo ?? $config['average_pace'])) / 2;
+        $baselinePace = (float) ($config['average_pace'] ?? 70.0);
+        $seasonTempoRegressionWeight = (float) ($config['total_season_tempo_regression_weight'] ?? 0.0);
+        $recentTempoRegressionWeight = (float) ($config['total_recent_tempo_regression_weight'] ?? 0.0);
+        $seasonPaceRaw = (($homeMetrics?->tempo ?? $baselinePace) + ($awayMetrics?->tempo ?? $baselinePace)) / 2;
+        $seasonPace = $this->regressTotalPace($seasonPaceRaw, $baselinePace, $seasonTempoRegressionWeight);
         $recentPaceRaw = (
             (float) ($homeMetrics?->rolling_tempo ?? $homeForm['tempo'])
             + (float) ($awayMetrics?->rolling_tempo ?? $awayForm['tempo'])
         ) / 2;
+        $recentPaceRaw = $this->regressTotalPace($recentPaceRaw, $baselinePace, $recentTempoRegressionWeight);
         $maxRecentPaceDrop = $this->maxRecentPaceDropForGame($game, $calibration);
         $recentPaceFloor = max(0.0, $seasonPace - $maxRecentPaceDrop);
         $recentPace = max($recentPaceRaw, $recentPaceFloor);
@@ -693,8 +710,12 @@ abstract class AbstractCollegeBasketballPredictionGenerator extends AbstractPred
         $pace += $restPaceAdjustment;
 
         return [
+            'season_pace_raw' => $seasonPaceRaw,
             'season_pace' => $seasonPace,
+            'recent_pace_raw' => $recentPaceRaw,
             'recent_pace' => $recentPace,
+            'season_tempo_regression_weight' => $seasonTempoRegressionWeight,
+            'recent_tempo_regression_weight' => $recentTempoRegressionWeight,
             'recent_pace_floor' => $recentPaceFloor,
             'max_recent_pace_drop' => $maxRecentPaceDrop,
             'rest_pace_adjustment' => $restPaceAdjustment,

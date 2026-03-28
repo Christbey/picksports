@@ -166,6 +166,7 @@ return [
         // League average efficiency (points per 100 possessions)
         // WNBA typically has lower scoring than NBA
         'default_efficiency' => 98.0,
+        'total_tempo_regression_weight' => 0.35,
 
         // Logistic function coefficient for win probability
         'spread_to_probability_coefficient' => 4,

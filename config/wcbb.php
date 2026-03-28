@@ -271,6 +271,8 @@ return [
         'home_away_split_weight' => 0.15,
         'turnover_diff_weight' => 0.4,
         'rebound_margin_weight' => 0.25,
+        'total_season_tempo_regression_weight' => 0.15,
+        'total_recent_tempo_regression_weight' => 0.15,
 
         // Vegas integration
         'vegas_weight' => 0.25,

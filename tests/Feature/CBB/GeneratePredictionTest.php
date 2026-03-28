@@ -1223,3 +1223,65 @@ it('filters out giant-dog tournament spread recommendations unless the edge is s
 
     expect($spreadRec)->toBeNull();
 });
+
+it('regresses cbb total pace toward the sport baseline and records market totals in snapshots', function () {
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 110.0,
+        'defensive_efficiency' => 102.0,
+        'net_rating' => 8.0,
+        'tempo' => 56.0,
+        'rolling_tempo' => 57.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 108.0,
+        'defensive_efficiency' => 104.0,
+        'net_rating' => 4.0,
+        'tempo' => 58.0,
+        'rolling_tempo' => 59.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'odds_data' => [
+            'bookmakers' => [
+                [
+                    'key' => 'draftkings',
+                    'markets' => [
+                        [
+                            'key' => 'totals',
+                            'outcomes' => [
+                                ['name' => 'Over', 'point' => 149.5, 'price' => -110],
+                                ['name' => 'Under', 'point' => 149.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game);
+    $snapshot = PredictionFeatureSnapshot::query()
+        ->where('prediction_table', 'cbb_predictions')
+        ->where('prediction_id', $prediction?->id)
+        ->first();
+
+    expect($prediction)->not->toBeNull()
+        ->and($snapshot)->not->toBeNull()
+        ->and((float) data_get($prediction->model_metadata, 'total_model.season_pace_raw'))->toBe(57.0)
+        ->and(data_get($prediction->model_metadata, 'total_model.season_pace'))->toBeGreaterThan(57.0)
+        ->and(data_get($prediction->model_metadata, 'market_context.market_total'))->toBe(149.5)
+        ->and(data_get($snapshot?->outputs, 'market_total'))->toBe(149.5);
+});

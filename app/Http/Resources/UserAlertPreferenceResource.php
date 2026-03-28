@@ -19,6 +19,7 @@ class UserAlertPreferenceResource extends JsonResource
             'time_window_end' => $this->time_window_end?->format('H:i'),
             'digest_mode' => $this->digest_mode,
             'digest_time' => $this->digest_time?->format('H:i'),
+            'daily_digest_subscribed' => $this->daily_digest_subscribed,
             'phone_number' => $this->phone_number,
             'created_at' => $this->created_at,
             'updated_at' => $this->updated_at,

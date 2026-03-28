@@ -20,6 +20,7 @@ class AlertPreferenceRules
             'time_window_end' => 'required|date_format:H:i',
             'digest_mode' => 'required|in:realtime,daily_summary',
             'digest_time' => 'nullable|date_format:H:i',
+            'daily_digest_subscribed' => 'sometimes|boolean',
             'phone_number' => 'nullable|string|max:20',
         ];
     }
@@ -40,6 +41,7 @@ class AlertPreferenceRules
             'time_window_end' => 'sometimes|date_format:H:i',
             'digest_mode' => 'sometimes|in:realtime,daily_summary',
             'digest_time' => 'nullable|date_format:H:i',
+            'daily_digest_subscribed' => 'sometimes|boolean',
             'phone_number' => 'nullable|string|max:20',
         ];
     }
@@ -62,6 +64,7 @@ class AlertPreferenceRules
             'time_window_end' => 'required|date_format:H:i',
             'digest_mode' => 'required|in:realtime,daily_summary',
             'digest_time' => 'nullable|date_format:H:i',
+            'daily_digest_subscribed' => 'required|boolean',
             'phone_number' => 'nullable|string|max:20',
         ];
     }

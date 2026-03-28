@@ -59,6 +59,7 @@ class AlertPreferencePageDataService
             'time_window_end' => $preference->time_window_end?->format('H:i'),
             'digest_mode' => $preference->digest_mode,
             'digest_time' => $preference->digest_time?->format('H:i'),
+            'daily_digest_subscribed' => $preference->daily_digest_subscribed ?? true,
             'phone_number' => $preference->phone_number,
         ];
     }

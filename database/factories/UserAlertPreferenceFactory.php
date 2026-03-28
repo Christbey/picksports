@@ -28,6 +28,7 @@ class UserAlertPreferenceFactory extends Factory
             'time_window_end' => '23:00:00',
             'digest_mode' => $this->faker->randomElement(['realtime', 'daily_summary']),
             'digest_time' => null,
+            'daily_digest_subscribed' => true,
             'phone_number' => null,
         ];
     }

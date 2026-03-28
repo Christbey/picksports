@@ -78,6 +78,7 @@ test('update creates new preference for user without existing preference', funct
             'time_window_end' => '23:00',
             'digest_mode' => 'realtime',
             'digest_time' => null,
+            'daily_digest_subscribed' => true,
             'phone_number' => null,
         ]);
 
@@ -109,6 +110,7 @@ test('update modifies existing preference', function () {
             'time_window_end' => '22:00',
             'digest_mode' => 'daily_summary',
             'digest_time' => '08:00',
+            'daily_digest_subscribed' => false,
             'phone_number' => '+1234567890',
         ]);
 
@@ -118,6 +120,7 @@ test('update modifies existing preference', function () {
         'user_id' => $user->id,
         'enabled' => true,
         'minimum_edge' => 10.0,
+        'daily_digest_subscribed' => false,
         'phone_number' => '+1234567890',
     ]);
 
@@ -137,6 +140,7 @@ test('update accepts whatsapp notification type', function () {
             'time_window_end' => '22:00',
             'digest_mode' => 'daily_summary',
             'digest_time' => '08:00',
+            'daily_digest_subscribed' => true,
             'phone_number' => '+1234567890',
         ]);
 
@@ -162,6 +166,7 @@ test('update validates required fields', function () {
         'time_window_start',
         'time_window_end',
         'digest_mode',
+        'daily_digest_subscribed',
     ]);
 });
 
@@ -178,6 +183,7 @@ test('update rejects sports payload changes', function () {
             'time_window_start' => '09:00',
             'time_window_end' => '23:00',
             'digest_mode' => 'realtime',
+            'daily_digest_subscribed' => true,
         ]);
 
     $response->assertSessionHasErrors('sports');
@@ -195,6 +201,7 @@ test('update validates notification types are valid', function () {
             'time_window_start' => '09:00',
             'time_window_end' => '23:00',
             'digest_mode' => 'realtime',
+            'daily_digest_subscribed' => true,
         ]);
 
     $response->assertSessionHasErrors('notification_types.0');

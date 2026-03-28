@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Actions\Sports\CalculateBettingValue as GenericCalculateBettingValue;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\User;
@@ -19,6 +20,12 @@ class AlertService
         'mlb' => ['game' => \App\Models\MLB\Game::class, 'prediction' => \App\Models\MLB\Prediction::class],
         'cfb' => ['game' => \App\Models\CFB\Game::class, 'prediction' => \App\Models\CFB\Prediction::class],
         'wnba' => ['game' => \App\Models\WNBA\Game::class, 'prediction' => \App\Models\WNBA\Prediction::class],
+    ];
+
+    protected const SPORT_CALCULATORS = [
+        'nfl' => \App\Actions\NFL\CalculateBettingValue::class,
+        'nba' => \App\Actions\NBA\CalculateBettingValue::class,
+        'cbb' => \App\Actions\CBB\CalculateBettingValue::class,
     ];
 
     public function __construct(private readonly NotificationTemplateDefaultService $templateDefaultService) {}
@@ -41,7 +48,6 @@ class AlertService
                     ->whereNotNull('odds_data')
                     ->where('status', '!=', 'completed');
             })
-            ->where('confidence_score', '>=', 60)
             ->get();
 
         $alertsSent = 0;
@@ -65,170 +71,40 @@ class AlertService
     protected function analyzeOpportunities(Model $prediction): array
     {
         $game = $prediction->game;
-        $opportunities = [];
-
-        if (! $game->odds_data || ! isset($game->odds_data['bookmakers'][0])) {
-            return $opportunities;
+        if (! $game || ! $game->odds_data) {
+            return [];
         }
 
-        $bookmaker = $game->odds_data['bookmakers'][0];
-        $markets = collect($bookmaker['markets'] ?? []);
+        $sport = strtolower($this->inferSportFromPrediction($prediction));
+        $calculatorClass = self::SPORT_CALCULATORS[$sport] ?? GenericCalculateBettingValue::class;
+        $recommendations = $calculatorClass === GenericCalculateBettingValue::class
+            ? app($calculatorClass)->execute($game, $sport)
+            : app($calculatorClass)->execute($game);
 
-        $spreadMarket = $markets->firstWhere('key', 'spreads');
-        if ($spreadMarket && isset($prediction->predicted_spread)) {
-            $spreadEV = $this->calculateSpreadExpectedValue($prediction, $game, $spreadMarket);
-            if ($spreadEV['expected_value'] > 0) {
-                $opportunities[] = $spreadEV;
+        if (! is_array($recommendations)) {
+            return [];
+        }
+
+        return collect($recommendations)
+            ->filter(fn (array $recommendation) => is_numeric($recommendation['edge'] ?? null))
+            ->map(fn (array $recommendation) => [
+                'expected_value' => round((float) $recommendation['edge'], 2),
+                'recommendation' => (string) ($recommendation['recommendation'] ?? 'No recommendation available'),
+            ])
+            ->filter(fn (array $recommendation) => $recommendation['expected_value'] > 0)
+            ->values()
+            ->all();
+    }
+
+    protected function inferSportFromPrediction(Model $prediction): string
+    {
+        foreach (self::SPORTS_MODELS as $sport => $models) {
+            if (($models['prediction'] ?? null) === $prediction::class) {
+                return $sport;
             }
         }
 
-        $totalsMarket = $markets->firstWhere('key', 'totals');
-        if ($totalsMarket && isset($prediction->predicted_total)) {
-            $totalsEV = $this->calculateTotalsExpectedValue($prediction, $game, $totalsMarket);
-            if ($totalsEV['expected_value'] > 0) {
-                $opportunities[] = $totalsEV;
-            }
-        }
-
-        $moneylineMarket = $markets->firstWhere('key', 'h2h');
-        if ($moneylineMarket && isset($prediction->win_probability)) {
-            $moneylineEV = $this->calculateMoneylineExpectedValue($prediction, $game, $moneylineMarket);
-            if ($moneylineEV['expected_value'] > 0) {
-                $opportunities[] = $moneylineEV;
-            }
-        }
-
-        return $opportunities;
-    }
-
-    protected function calculateSpreadExpectedValue(Model $prediction, Model $game, array $market): array
-    {
-        $outcomes = $market['outcomes'] ?? [];
-        $homeOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['home_team']);
-        $awayOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['away_team']);
-
-        if (! $homeOutcome || ! $awayOutcome) {
-            return ['expected_value' => 0];
-        }
-
-        $predictedSpread = (float) $prediction->predicted_spread;
-        $marketSpread = (float) ($homeOutcome['point'] ?? 0);
-        $spreadDifference = abs($predictedSpread - $marketSpread);
-
-        if ($spreadDifference < 2) {
-            return ['expected_value' => 0];
-        }
-
-        $confidence = (float) $prediction->confidence_score;
-        $impliedProb = $this->americanOddsToProb($homeOutcome['price']);
-
-        if ($predictedSpread < $marketSpread) {
-            $expectedValue = (($confidence / 100) - $impliedProb) * 100;
-            $homeTeamName = $this->teamName($game->homeTeam);
-            $recommendation = "Bet HOME ({$homeTeamName}) at {$marketSpread}";
-        } else {
-            $awayImpliedProb = $this->americanOddsToProb($awayOutcome['price']);
-            $expectedValue = (((100 - $confidence) / 100) - $awayImpliedProb) * 100;
-            $awayTeamName = $this->teamName($game->awayTeam);
-            $recommendation = "Bet AWAY ({$awayTeamName}) at ".($marketSpread * -1);
-        }
-
-        return [
-            'expected_value' => $expectedValue,
-            'recommendation' => $recommendation,
-        ];
-    }
-
-    protected function calculateTotalsExpectedValue(Model $prediction, Model $game, array $market): array
-    {
-        $outcomes = $market['outcomes'] ?? [];
-        $overOutcome = collect($outcomes)->firstWhere('name', 'Over');
-        $underOutcome = collect($outcomes)->firstWhere('name', 'Under');
-
-        if (! $overOutcome || ! $underOutcome) {
-            return ['expected_value' => 0];
-        }
-
-        $predictedTotal = (float) $prediction->predicted_total;
-        $marketTotal = (float) ($overOutcome['point'] ?? 0);
-        $totalDifference = abs($predictedTotal - $marketTotal);
-
-        if ($totalDifference < 3) {
-            return ['expected_value' => 0];
-        }
-
-        $confidence = (float) $prediction->confidence_score;
-        $overImpliedProb = $this->americanOddsToProb($overOutcome['price']);
-        $underImpliedProb = $this->americanOddsToProb($underOutcome['price']);
-
-        if ($predictedTotal > $marketTotal) {
-            $expectedValue = (($confidence / 100) - $overImpliedProb) * 100;
-            $recommendation = "Bet OVER {$marketTotal}";
-        } else {
-            $expectedValue = (($confidence / 100) - $underImpliedProb) * 100;
-            $recommendation = "Bet UNDER {$marketTotal}";
-        }
-
-        return [
-            'expected_value' => $expectedValue,
-            'recommendation' => $recommendation,
-        ];
-    }
-
-    protected function calculateMoneylineExpectedValue(Model $prediction, Model $game, array $market): array
-    {
-        $outcomes = $market['outcomes'] ?? [];
-        $homeOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['home_team'] ?? null);
-        $awayOutcome = collect($outcomes)->firstWhere('name', $game->odds_data['away_team'] ?? null);
-
-        if (! $homeOutcome || ! $awayOutcome) {
-            return ['expected_value' => 0];
-        }
-
-        $homeModelProb = (float) $prediction->win_probability;
-        $awayModelProb = 1 - $homeModelProb;
-
-        // Safe side = team with higher model win probability.
-        $betHome = $homeModelProb >= $awayModelProb;
-        $selectedOutcome = $betHome ? $homeOutcome : $awayOutcome;
-        $modelProb = $betHome ? $homeModelProb : $awayModelProb;
-        $impliedProb = $this->americanOddsToProb((int) $selectedOutcome['price']);
-        $edge = $modelProb - $impliedProb;
-
-        if ($edge < 0.05) {
-            return ['expected_value' => 0];
-        }
-
-        $confidence = (float) $prediction->confidence_score;
-        $expectedValue = ($edge * $confidence) / 10;
-
-        $teamName = $betHome ? $this->teamName($game->homeTeam) : $this->teamName($game->awayTeam);
-        $price = (int) $selectedOutcome['price'];
-        $priceSign = $price > 0 ? '+' : '';
-        $recommendation = "Bet {$teamName} ML at {$priceSign}{$price}";
-
-        return [
-            'expected_value' => $expectedValue,
-            'recommendation' => $recommendation,
-        ];
-    }
-
-    protected function americanOddsToProb(int $odds): float
-    {
-        if ($odds > 0) {
-            return 100 / ($odds + 100);
-        }
-
-        return abs($odds) / (abs($odds) + 100);
-    }
-
-    protected function teamName(?Model $team): string
-    {
-        if (! $team) {
-            return 'Unknown';
-        }
-
-        return (string) ($team->name ?? $team->school ?? 'Unknown');
+        return '';
     }
 
     protected function sendAlertsToUsers(Model $prediction, string $sport, float $expectedValue, string $recommendation): int

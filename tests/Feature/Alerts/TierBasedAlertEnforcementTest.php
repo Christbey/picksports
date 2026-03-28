@@ -323,3 +323,190 @@ test('alert sent records include all required data', function () {
         ->and($sentAlert->expected_value)->toBeGreaterThan(0)
         ->and($sentAlert->sent_at)->not->toBeNull();
 });
+
+test('moneyline alerts use win probability edge instead of confidence score', function () {
+    Notification::fake();
+
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
+    $user = User::factory()->create();
+
+    subscribeUserToTier($user, $basicTier);
+
+    UserAlertPreference::factory()->create([
+        'user_id' => $user->id,
+        'enabled' => true,
+        'sports' => ['nba'],
+        'notification_types' => ['email'],
+        'minimum_edge' => 5.0,
+        'time_window_start' => '00:00',
+        'time_window_end' => '23:59',
+        'digest_mode' => 'realtime',
+    ]);
+
+    $homeTeam = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
+
+    $game = Game::factory()->create([
+        'game_date' => now()->addDay(),
+        'status' => 'scheduled',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'odds_data' => [
+            'home_team' => 'Lakers',
+            'away_team' => 'Celtics',
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'h2h',
+                            'outcomes' => [
+                                ['name' => 'Lakers', 'price' => 100],
+                                ['name' => 'Celtics', 'price' => -120],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $prediction = Prediction::create([
+        'game_id' => $game->id,
+        'confidence_score' => 40,
+        'win_probability' => 0.62,
+    ]);
+
+    $alertService = app(AlertService::class);
+    $alertsSent = $alertService->checkForValueOpportunities('nba');
+
+    expect($alertsSent)->toBeGreaterThan(0);
+
+    $sentAlert = UserAlertSent::where('user_id', $user->id)->first();
+
+    expect($sentAlert)->not->toBeNull()
+        ->and((float) $sentAlert->expected_value)->toBe(12.0)
+        ->and($sentAlert->prediction_id)->toBe($prediction->id);
+});
+
+test('moneyline alerts are not sent on high confidence alone without enough model edge', function () {
+    Notification::fake();
+
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
+    $user = User::factory()->create();
+
+    subscribeUserToTier($user, $basicTier);
+
+    UserAlertPreference::factory()->create([
+        'user_id' => $user->id,
+        'enabled' => true,
+        'sports' => ['nba'],
+        'notification_types' => ['email'],
+        'minimum_edge' => 5.0,
+        'time_window_start' => '00:00',
+        'time_window_end' => '23:59',
+        'digest_mode' => 'realtime',
+    ]);
+
+    $homeTeam = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
+
+    $game = Game::factory()->create([
+        'game_date' => now()->addDay(),
+        'status' => 'scheduled',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'odds_data' => [
+            'home_team' => 'Lakers',
+            'away_team' => 'Celtics',
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'h2h',
+                            'outcomes' => [
+                                ['name' => 'Lakers', 'price' => 100],
+                                ['name' => 'Celtics', 'price' => -120],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    Prediction::create([
+        'game_id' => $game->id,
+        'confidence_score' => 95,
+        'win_probability' => 0.53,
+    ]);
+
+    $alertService = app(AlertService::class);
+    $alertsSent = $alertService->checkForValueOpportunities('nba');
+
+    expect($alertsSent)->toBe(0);
+    Notification::assertNothingSent();
+});
+
+test('spread alerts use calculator edge instead of confidence score gating', function () {
+    Notification::fake();
+
+    $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
+    $user = User::factory()->create();
+
+    subscribeUserToTier($user, $basicTier);
+
+    UserAlertPreference::factory()->create([
+        'user_id' => $user->id,
+        'enabled' => true,
+        'sports' => ['nba'],
+        'notification_types' => ['email'],
+        'minimum_edge' => 2.5,
+        'time_window_start' => '00:00',
+        'time_window_end' => '23:59',
+        'digest_mode' => 'realtime',
+    ]);
+
+    $homeTeam = Team::factory()->create(['location' => 'Los Angeles', 'name' => 'Lakers']);
+    $awayTeam = Team::factory()->create(['location' => 'Boston', 'name' => 'Celtics']);
+
+    $game = Game::factory()->create([
+        'game_date' => now()->addDay(),
+        'status' => 'scheduled',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'odds_data' => [
+            'home_team' => 'Lakers',
+            'away_team' => 'Celtics',
+            'bookmakers' => [
+                [
+                    'markets' => [
+                        [
+                            'key' => 'spreads',
+                            'outcomes' => [
+                                ['name' => 'Lakers', 'point' => -5.5, 'price' => -110],
+                                ['name' => 'Celtics', 'point' => 5.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $prediction = Prediction::create([
+        'game_id' => $game->id,
+        'confidence_score' => 20,
+        'predicted_spread' => -8.5,
+    ]);
+
+    $alertService = app(AlertService::class);
+    $alertsSent = $alertService->checkForValueOpportunities('nba');
+
+    expect($alertsSent)->toBeGreaterThan(0);
+
+    $sentAlert = UserAlertSent::where('user_id', $user->id)->first();
+
+    expect($sentAlert)->not->toBeNull()
+        ->and((float) $sentAlert->expected_value)->toBe(14.0)
+        ->and($sentAlert->prediction_id)->toBe($prediction->id);
+});

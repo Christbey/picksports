@@ -313,11 +313,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $this->winProbabilityCalibrationMetadata = $calibration;
 
         $activeWinProbability = round((float) ($calibration['active_win_probability'] ?? $winProbability), 3);
-        $activeConfidenceScore = round((float) ($calibration['active_confidence_score'] ?? $confidenceScore), 2);
         $baselineWinProbability = round((float) ($calibration['baseline_win_probability'] ?? $winProbability), 3);
-        $baselineConfidenceScore = round((float) ($calibration['baseline_confidence_score'] ?? $confidenceScore), 2);
         $calibratedWinProbability = round((float) ($calibration['calibrated_win_probability'] ?? $winProbability), 3);
-        $calibratedConfidenceScore = round((float) ($calibration['calibrated_confidence_score'] ?? $confidenceScore), 2);
+        $activeConfidenceScore = $this->calculateConfidence($activeWinProbability);
 
         return array_merge(
             parent::buildPredictionData(
@@ -372,9 +370,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'predicted_spread' => $predictedSpread,
                         'predicted_total' => $predictedTotal,
                         'baseline_win_probability' => $baselineWinProbability,
-                        'baseline_confidence_score' => $baselineConfidenceScore,
                         'calibrated_win_probability' => $calibratedWinProbability,
-                        'calibrated_confidence_score' => $calibratedConfidenceScore,
                         'win_probability' => $activeWinProbability,
                         'confidence_score' => $activeConfidenceScore,
                         'active_win_probability_source' => $calibration['active_source'] ?? 'baseline',

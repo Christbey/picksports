@@ -27,6 +27,7 @@ class UserAlertPreference extends Model
         'time_window_end',
         'digest_mode',
         'digest_time',
+        'daily_digest_subscribed',
         'phone_number',
     ];
 
@@ -41,6 +42,7 @@ class UserAlertPreference extends Model
             'time_window_start' => 'datetime:H:i:s',
             'time_window_end' => 'datetime:H:i:s',
             'digest_time' => 'datetime:H:i:s',
+            'daily_digest_subscribed' => 'boolean',
         ];
     }
 

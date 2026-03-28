@@ -23,6 +23,7 @@ interface Preference {
     time_window_end: string;
     digest_mode: string;
     digest_time: string | null;
+    daily_digest_subscribed: boolean;
     phone_number: string | null;
 }
 
@@ -54,6 +55,7 @@ const defaultPreference: Preference = {
     time_window_end: '23:00',
     digest_mode: 'realtime',
     digest_time: null,
+    daily_digest_subscribed: true,
     phone_number: null,
 };
 
@@ -77,6 +79,9 @@ const selectedNotificationTypes = ref<string[]>(
     normalizeStringArray(currentPreference.value.notification_types),
 );
 const alertsEnabled = ref<boolean>(currentPreference.value.enabled);
+const dailyDigestSubscribed = ref<boolean>(
+    currentPreference.value.daily_digest_subscribed ?? true,
+);
 
 const notificationLabelMap = computed<Record<string, string>>(() =>
     Object.fromEntries(
@@ -107,6 +112,10 @@ const needsPhoneNumber = computed(
 
 function onEnabledChange(checked: boolean | 'indeterminate') {
     alertsEnabled.value = checked === true;
+}
+
+function onDailyDigestSubscribedChange(checked: boolean | 'indeterminate') {
+    dailyDigestSubscribed.value = checked === true;
 }
 
 function toggleNotificationType(
@@ -397,10 +406,61 @@ onMounted(() => {
                                     class="rounded bg-white px-2 py-1 dark:bg-sidebar"
                                     >Delivery: {{ digestModeLabel }}</span
                                 >
+                                <span
+                                    class="rounded bg-white px-2 py-1 dark:bg-sidebar"
+                                    >Daily Digest:
+                                    {{
+                                        dailyDigestSubscribed
+                                            ? 'Subscribed'
+                                            : 'Unsubscribed'
+                                    }}</span
+                                >
                             </div>
                         </div>
 
                         <!-- Notification Types -->
+                        <div
+                            class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                        >
+                            <div class="flex items-start gap-3">
+                                <input
+                                    type="hidden"
+                                    name="daily_digest_subscribed"
+                                    value="0"
+                                />
+                                <Checkbox
+                                    id="daily_digest_subscribed"
+                                    :model-value="dailyDigestSubscribed"
+                                    @update:model-value="
+                                        onDailyDigestSubscribedChange
+                                    "
+                                />
+                                <input
+                                    v-if="dailyDigestSubscribed"
+                                    type="hidden"
+                                    name="daily_digest_subscribed"
+                                    value="1"
+                                />
+                                <div class="grid gap-1.5 leading-none">
+                                    <Label
+                                        for="daily_digest_subscribed"
+                                        class="cursor-pointer text-sm leading-none font-medium peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Receive Daily Digest Emails
+                                    </Label>
+                                    <p class="text-sm text-muted-foreground">
+                                        Daily digests are on by default. Turn
+                                        this off to unsubscribe from the 10:00
+                                        AM digest email.
+                                    </p>
+                                </div>
+                            </div>
+                            <InputError
+                                class="mt-2"
+                                :message="errors.daily_digest_subscribed"
+                            />
+                        </div>
+
                         <div
                             class="space-y-3 rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
                         >

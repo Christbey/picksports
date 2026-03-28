@@ -32,6 +32,10 @@ class DailyDigestService
         'wnba' => ['prediction_model' => \App\Models\WNBA\Prediction::class, 'player_props' => false],
     ];
 
+    private const DIGEST_CONFIDENCE_FLOOR = 50.0;
+
+    private const DIGEST_CONFIDENCE_CAP = 95.0;
+
     /**
      * @var array<string, array<int, array<string, mixed>>>
      */
@@ -60,11 +64,7 @@ class DailyDigestService
 
         $users = User::query()
             ->with('alertPreference')
-            ->whereHas('alertPreference', function ($query) {
-                $query->where('enabled', true)
-                    ->where('digest_mode', 'daily_summary')
-                    ->whereJsonContains('notification_types', 'email');
-            })
+            ->whereNotNull('email')
             ->get();
 
         foreach ($users as $user) {
@@ -115,11 +115,11 @@ class DailyDigestService
 
         $preference = $user->alertPreference;
 
-        if (! $preference || ! $preference->enabled || ! $preference->shouldReceiveEmailNotifications()) {
+        if ($preference && $preference->daily_digest_subscribed === false) {
             return false;
         }
 
-        $targetTime = $preference->digest_time?->format('H:i') ?? '10:00';
+        $targetTime = $preference?->digest_time?->format('H:i') ?? '10:00';
 
         if ($targetTime !== $now->format('H:i')) {
             return false;
@@ -141,7 +141,7 @@ class DailyDigestService
     public function buildDigestForUser(User $user, ?CarbonInterface $now = null): ?array
     {
         $now ??= now();
-        $sports = $this->eligibleSportsForUser($user);
+        $sports = $this->eligibleSports();
 
         if ($sports->isEmpty()) {
             return null;
@@ -181,26 +181,15 @@ class DailyDigestService
     /**
      * @return Collection<int, string>
      */
-    private function eligibleSportsForUser(User $user): Collection
+    private function eligibleSports(): Collection
     {
-        $selectedSports = collect($user->alertPreference?->sports ?? [])
-            ->map(fn (mixed $sport) => strtolower((string) $sport))
-            ->filter()
-            ->values();
-
-        return $selectedSports
-            ->filter(fn (string $sport) => array_key_exists($sport, self::SPORT_MAP))
-            ->filter(fn (string $sport) => $this->canAccessSport($user, $sport))
+        return collect(array_keys(self::SPORT_MAP))
             ->values();
     }
 
     private function canReceiveDigestEmails(User $user): bool
     {
-        if ($this->tierAccessBypass->shouldBypassTierChecks($user)) {
-            return true;
-        }
-
-        return $user->hasTierFeature('email_alerts');
+        return is_string($user->email) && trim($user->email) !== '';
     }
 
     private function canAccessSport(User $user, string $sport): bool
@@ -228,8 +217,7 @@ class DailyDigestService
 
         $predictions = $modelClass::query()
             ->whereHas('game', function ($query) use ($now) {
-                $query->where('game_date', '>=', $now->copy()->startOfDay())
-                    ->where('game_date', '<=', $now->copy()->addDay()->endOfDay())
+                $query->whereDate('game_date', $now->toDateString())
                     ->whereNotIn('status', ['STATUS_FINAL', 'final']);
             })
             ->with(['game.homeTeam', 'game.awayTeam'])
@@ -309,8 +297,9 @@ class DailyDigestService
         $awayWinProbability = $winProbability;
         $homeWinProbability = max(0, min(1, 1 - $awayWinProbability));
         $pickSide = $awayWinProbability >= 0.5 ? $awayTeam : $homeTeam;
-        $pickConfidence = round(max($awayWinProbability, $homeWinProbability) * 100, 1);
+        $pickConfidence = $this->displayConfidence($prediction, $awayWinProbability, $homeWinProbability);
         $spread = $prediction->predicted_spread !== null ? (float) $prediction->predicted_spread : null;
+        $scheduledAt = $this->scheduledAt($game);
 
         return [
             'sport' => strtoupper($sport),
@@ -319,9 +308,38 @@ class DailyDigestService
             'confidence' => $pickConfidence,
             'predicted_spread' => $spread,
             'predicted_total' => $prediction->predicted_total !== null ? (float) $prediction->predicted_total : null,
-            'game_time' => $game->game_date?->format('M j, g:i A'),
+            'game_time' => $scheduledAt?->format('M j, g:i A'),
             'url' => url("/{$sport}/games/{$game->id}"),
         ];
+    }
+
+    private function displayConfidence(Model $prediction, float $awayWinProbability, float $homeWinProbability): float
+    {
+        $storedConfidence = (float) ($prediction->confidence_score ?? 0);
+        $derivedConfidence = max($awayWinProbability, $homeWinProbability) * 100;
+
+        $confidence = $storedConfidence > 0 ? $storedConfidence : $derivedConfidence;
+
+        return round(max(self::DIGEST_CONFIDENCE_FLOOR, min(self::DIGEST_CONFIDENCE_CAP, $confidence)), 1);
+    }
+
+    private function scheduledAt(Model $game): ?CarbonInterface
+    {
+        $gameDate = $game->game_date;
+
+        if (! $gameDate instanceof CarbonInterface) {
+            return null;
+        }
+
+        $scheduledAt = $gameDate->copy();
+        $gameTime = $game->game_time;
+
+        if (is_string($gameTime) && preg_match('/^\d{2}:\d{2}:\d{2}$/', $gameTime) === 1) {
+            [$hours, $minutes, $seconds] = array_map('intval', explode(':', $gameTime));
+            $scheduledAt = $scheduledAt->setTime($hours, $minutes, $seconds);
+        }
+
+        return $scheduledAt;
     }
 
     /**

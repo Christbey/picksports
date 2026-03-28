@@ -26,6 +26,7 @@ class TeamMetric extends Model
         'strength_of_schedule',
         'recent_form_rating',
         'injury_adjusted_team_rating',
+        'injury_total_adjustment',
         'rest_travel_fatigue',
         'calculation_date',
     ];
@@ -42,6 +43,7 @@ class TeamMetric extends Model
             'strength_of_schedule' => 'decimal:3',
             'recent_form_rating' => 'decimal:3',
             'injury_adjusted_team_rating' => 'decimal:3',
+            'injury_total_adjustment' => 'decimal:3',
             'rest_travel_fatigue' => 'decimal:3',
             'calculation_date' => 'date',
         ];

@@ -100,8 +100,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $situationalAdj = $restAdj + $turnoverAdj + $reboundAdj;
         $injuryContext = $this->buildInjuryContext($game);
-        $usePersistedInjuryContext = $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics);
-        $injurySpreadAdj = $usePersistedInjuryContext ? 0.0 : $injuryContext['spread_adj'];
+        $usePersistedSpreadInjuryContext = $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics);
+        $usePersistedTotalInjuryContext = $this->hasPersistedInjuryAdjustedTotal($homeMetrics, $awayMetrics);
+        $injurySpreadAdj = $usePersistedSpreadInjuryContext ? 0.0 : $injuryContext['spread_adj'];
+        $injuryTotalAdj = $usePersistedTotalInjuryContext
+            ? $this->persistedInjuryTotalAdjustment($homeMetrics, $awayMetrics)
+            : $injuryContext['total_adj'];
 
         // 5. Ensemble blend
         $modelSpread = ($config['elo_weight'] * $eloSpread)
@@ -143,8 +147,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'home_injuries_questionable' => $injuryContext['home_questionable'],
             'away_injuries_questionable' => $injuryContext['away_questionable'],
             'injury_spread_adj' => round($injurySpreadAdj, 2),
-            'injury_total_adj' => round($usePersistedInjuryContext ? 0.0 : $injuryContext['total_adj'], 2),
-            'injury_model_source' => $usePersistedInjuryContext ? 'persisted_team_rating' : 'raw_player_status',
+            'injury_total_adj' => round($injuryTotalAdj, 2),
+            'injury_model_source' => $usePersistedSpreadInjuryContext === $usePersistedTotalInjuryContext
+                ? ($usePersistedSpreadInjuryContext ? 'persisted_team_rating' : 'raw_player_status')
+                : 'mixed',
+            'injury_spread_model_source' => $usePersistedSpreadInjuryContext ? 'persisted_team_rating' : 'raw_player_status',
+            'injury_total_model_source' => $usePersistedTotalInjuryContext ? 'persisted_team_rating' : 'raw_player_status',
             'baseline_model_spread' => round($modelSpread, 2),
             'odds_market_availability' => $oddsMarketAvailability,
         ];
@@ -348,6 +356,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'true_epa' => $this->trueEpaMetadata,
                     'total_model' => $this->totalMetadata,
                     'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+                    'injury_spread_model_source' => $this->metadata['injury_spread_model_source'] ?? null,
+                    'injury_total_model_source' => $this->metadata['injury_total_model_source'] ?? null,
                     'depth_chart_injuries' => [
                         'applied' => ((float) ($this->metadata['injury_spread_adj'] ?? 0.0)) !== 0.0
                             || ((float) ($this->metadata['injury_total_adj'] ?? 0.0)) !== 0.0,
@@ -395,6 +405,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'true_epa' => $this->trueEpaMetadata,
                         'total_model' => $this->totalMetadata,
                         'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+                        'injury_spread_model_source' => $this->metadata['injury_spread_model_source'] ?? null,
+                        'injury_total_model_source' => $this->metadata['injury_total_model_source'] ?? null,
                         'depth_chart_injuries' => [
                             'applied' => ((float) ($this->metadata['injury_spread_adj'] ?? 0.0)) !== 0.0
                                 || ((float) ($this->metadata['injury_total_adj'] ?? 0.0)) !== 0.0,
@@ -844,6 +856,21 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'spread_adj' => round($spreadAdj, 2),
             'total_adj' => round($totalAdj, 2),
         ];
+    }
+
+    private function hasPersistedInjuryAdjustedTotal(?Model $homeMetrics, ?Model $awayMetrics): bool
+    {
+        return $homeMetrics?->injury_total_adjustment !== null
+            || $awayMetrics?->injury_total_adjustment !== null;
+    }
+
+    private function persistedInjuryTotalAdjustment(?Model $homeMetrics, ?Model $awayMetrics): float
+    {
+        return round(
+            (float) ($homeMetrics?->injury_total_adjustment ?? 0.0)
+            + (float) ($awayMetrics?->injury_total_adjustment ?? 0.0),
+            2
+        );
     }
 
     /**

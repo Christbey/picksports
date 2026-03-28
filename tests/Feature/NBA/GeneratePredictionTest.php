@@ -715,10 +715,72 @@ it('does not double count raw injury penalties when persisted injury-adjusted ra
 
     expect($injuryPrediction)->not->toBeNull()
         ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
+        ->and((float) $injuryPrediction->predicted_total)->toBeLessThan((float) $baselinePrediction->predicted_total)
+        ->and((float) $injuryPrediction->injury_spread_adj)->toBe(0.0)
+        ->and((float) $injuryPrediction->injury_total_adj)->toBeLessThan(0.0)
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_model_source'))->toBe('mixed')
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_spread_model_source'))->toBe('persisted_team_rating')
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_total_model_source'))->toBe('raw_player_status')
+        ->and($injuryPrediction->home_injuries_out)->toBe(1);
+});
+
+it('uses persisted total injury adjustments when available on team metrics', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 114.0,
+        'defensive_efficiency' => 108.0,
+        'net_rating' => 6.0,
+        'tempo' => 99.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1540.0,
+        'injury_total_adjustment' => -1.2,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 110.0,
+        'defensive_efficiency' => 111.0,
+        'net_rating' => -1.0,
+        'tempo' => 98.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1450.0,
+        'injury_total_adjustment' => 0.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $baselinePrediction = (new GeneratePrediction)->execute($game);
+
+    $player = Player::factory()->create(['team_id' => $this->homeTeam->id]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $this->homeTeam->id,
+        'injury_key' => 'persisted-total-test',
+        'status' => 'Out',
+        'detail' => 'Test injury',
+        'type' => 'Ankle',
+        'injury_date' => now()->toDateString(),
+        'is_active' => true,
+    ]);
+
+    $injuryPrediction = (new GeneratePrediction)->execute($game->fresh());
+
+    expect($injuryPrediction)->not->toBeNull()
+        ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
         ->and((float) $injuryPrediction->predicted_total)->toBe((float) $baselinePrediction->predicted_total)
         ->and((float) $injuryPrediction->injury_spread_adj)->toBe(0.0)
-        ->and((float) $injuryPrediction->injury_total_adj)->toBe(0.0)
+        ->and((float) $injuryPrediction->injury_total_adj)->toBe(-1.2)
         ->and(data_get($injuryPrediction->model_metadata, 'injury_model_source'))->toBe('persisted_team_rating')
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_total_model_source'))->toBe('persisted_team_rating')
         ->and($injuryPrediction->home_injuries_out)->toBe(1);
 });
 

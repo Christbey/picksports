@@ -353,11 +353,49 @@ trait FiltersTeamGames
     protected function calculateInjuryAdjustedTeamRating(Model $team, string $sport, ?float $baseRating = null, int $precision = 3): ?float
     {
         $sportKey = strtolower($sport);
-        $injuryTable = "{$sportKey}_player_injuries";
-
         $baseline = $baseRating ?? (float) ($team->elo_rating ?? 1500.0);
-        if (! Schema::hasTable($injuryTable)) {
+        $counts = $this->injuryMetricCountsForTeam($team, $sportKey);
+
+        if ($counts === null) {
             return round($baseline, $precision);
+        }
+
+        $outPenalty = (float) (config("{$sportKey}.metrics.injury_out_rating_penalty") ?? 18.0);
+        $questionablePenalty = (float) (config("{$sportKey}.metrics.injury_questionable_rating_penalty") ?? 7.0);
+        $adjusted = $baseline - (($counts['out'] * $outPenalty) + ($counts['questionable'] * $questionablePenalty));
+
+        return round($adjusted, $precision);
+    }
+
+    protected function calculateInjuryAdjustedTotalAdjustment(Model $team, string $sport, int $precision = 3): ?float
+    {
+        $sportKey = strtolower($sport);
+        $counts = $this->injuryMetricCountsForTeam($team, $sportKey);
+
+        if ($counts === null) {
+            return null;
+        }
+
+        $outPenalty = (float) (config("{$sportKey}.prediction.injury_out_total_penalty")
+            ?? config("{$sportKey}.predictions.injury_out_total_penalty")
+            ?? 0.40);
+        $questionablePenalty = (float) (config("{$sportKey}.prediction.injury_questionable_total_penalty")
+            ?? config("{$sportKey}.predictions.injury_questionable_total_penalty")
+            ?? 0.15);
+
+        $adjustment = -(($counts['out'] * $outPenalty) + ($counts['questionable'] * $questionablePenalty));
+
+        return round($adjustment, $precision);
+    }
+
+    /**
+     * @return array{out:float,questionable:float}|null
+     */
+    protected function injuryMetricCountsForTeam(Model $team, string $sportKey): ?array
+    {
+        $injuryTable = "{$sportKey}_player_injuries";
+        if (! Schema::hasTable($injuryTable)) {
+            return null;
         }
 
         $injuries = DB::table($injuryTable)
@@ -366,11 +404,10 @@ trait FiltersTeamGames
             ->get(['player_id', 'status']);
 
         if ($injuries->isEmpty()) {
-            return round($baseline, $precision);
+            return ['out' => 0.0, 'questionable' => 0.0];
         }
 
-        $out = 0.0;
-        $questionable = 0.0;
+        $counts = ['out' => 0.0, 'questionable' => 0.0];
 
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucketForMetrics((string) ($injury->status ?? ''));
@@ -379,18 +416,13 @@ trait FiltersTeamGames
             }
 
             $impact = $this->injuryImpactMultiplierForMetrics($sportKey, (int) ($injury->player_id ?? 0));
-            if ($bucket === 'out') {
-                $out += $impact;
-            } else {
-                $questionable += $impact;
-            }
+            $counts[$bucket] += $impact;
         }
 
-        $outPenalty = (float) (config("{$sportKey}.metrics.injury_out_rating_penalty") ?? 18.0);
-        $questionablePenalty = (float) (config("{$sportKey}.metrics.injury_questionable_rating_penalty") ?? 7.0);
-        $adjusted = $baseline - (($out * $outPenalty) + ($questionable * $questionablePenalty));
+        $counts['out'] = round($counts['out'], 2);
+        $counts['questionable'] = round($counts['questionable'], 2);
 
-        return round($adjusted, $precision);
+        return $counts;
     }
 
     protected function injuryStatusBucketForMetrics(string $status): ?string

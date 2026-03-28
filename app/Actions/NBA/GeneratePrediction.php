@@ -239,6 +239,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $highTotalSlope = (float) ($calibration['high_total_slope'] ?? 0.35);
         $highTotalBoost = max(0.0, $blendedTotal - $highTotalThreshold) * $highTotalSlope;
         $calibratedTotal = $rangeAnchor + (($blendedTotal - $rangeAnchor) * $rangeScale) + $baseAdjustment + $highTotalBoost;
+        $vegasTotal = $this->getVegasTotal($game);
+        $highMarketTotalThreshold = (float) ($calibration['high_market_total_threshold'] ?? 235.0);
+        $highMarketTotalBlendWeight = (float) ($calibration['high_market_total_blend_weight'] ?? 0.55);
+        $marketTotalBlendApplied = false;
+        if ($vegasTotal !== null && $vegasTotal >= $highMarketTotalThreshold) {
+            $calibratedTotal = ($calibratedTotal * (1 - $highMarketTotalBlendWeight)) + ($vegasTotal * $highMarketTotalBlendWeight);
+            $marketTotalBlendApplied = true;
+        }
 
         $this->trueEpaMetadata = [...$this->trueEpaMetadata, ...$trueEpaTotalMeta];
         $this->totalMetadata = [
@@ -267,6 +275,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'range_scale' => round($rangeScale, 3),
             'total_base_adjustment' => round($baseAdjustment, 3),
             'high_total_boost' => round($highTotalBoost, 3),
+            'vegas_total' => $vegasTotal !== null ? round($vegasTotal, 3) : null,
+            'high_market_total_threshold' => round($highMarketTotalThreshold, 3),
+            'high_market_total_blend_weight' => round($highMarketTotalBlendWeight, 3),
+            'market_total_blend_applied' => $marketTotalBlendApplied,
             'calibrated_total' => round($calibratedTotal, 3),
         ];
 
@@ -718,6 +730,38 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     }
                 }
 
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Extract total from odds_data JSON if available.
+     */
+    private function getVegasTotal(Model $game): ?float
+    {
+        $oddsData = $game->odds_data;
+
+        if (empty($oddsData) || ! isset($oddsData['bookmakers'])) {
+            return null;
+        }
+
+        foreach ($oddsData['bookmakers'] as $bookmaker) {
+            if (! isset($bookmaker['markets'])) {
+                continue;
+            }
+
+            foreach ($bookmaker['markets'] as $market) {
+                if ($market['key'] !== 'totals' || ! isset($market['outcomes'])) {
+                    continue;
+                }
+
+                foreach ($market['outcomes'] as $outcome) {
+                    if (isset($outcome['point'])) {
+                        return (float) $outcome['point'];
+                    }
+                }
             }
         }
 

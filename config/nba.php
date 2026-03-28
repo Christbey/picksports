@@ -248,6 +248,8 @@ return [
             'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 2.0),
             'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 232.0),
             'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.25),
+            'high_market_total_threshold' => env('NBA_TOTAL_HIGH_MARKET_THRESHOLD', 235.0),
+            'high_market_total_blend_weight' => env('NBA_TOTAL_HIGH_MARKET_BLEND_WEIGHT', 0.55),
         ],
 
         'live_model' => [

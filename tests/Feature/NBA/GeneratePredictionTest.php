@@ -973,6 +973,91 @@ it('uses recent efficiency context in nba total projection and stores total meta
         ->and(data_get($hotPrediction->model_metadata, 'total_model.calibrated_total'))->toBeNumeric();
 });
 
+it('blends toward the market total for high-total nba games', function () {
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 114.0,
+        'defensive_efficiency' => 111.0,
+        'net_rating' => 3.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 113.0,
+        'defensive_efficiency' => 112.0,
+        'net_rating' => 1.0,
+        'tempo' => 100.0,
+        'strength_of_schedule' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $highMarketGame = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'game_date' => now()->addDay(),
+        'odds_data' => [
+            'home_team' => trim($this->homeTeam->location.' '.$this->homeTeam->name),
+            'bookmakers' => [
+                [
+                    'key' => 'draftkings',
+                    'markets' => [
+                        [
+                            'key' => 'totals',
+                            'outcomes' => [
+                                ['name' => 'Over', 'point' => 241.5, 'price' => -110],
+                                ['name' => 'Under', 'point' => 241.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $lowMarketGame = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'game_date' => now()->addDays(2),
+        'odds_data' => [
+            'home_team' => trim($this->homeTeam->location.' '.$this->homeTeam->name),
+            'bookmakers' => [
+                [
+                    'key' => 'draftkings',
+                    'markets' => [
+                        [
+                            'key' => 'totals',
+                            'outcomes' => [
+                                ['name' => 'Over', 'point' => 229.5, 'price' => -110],
+                                ['name' => 'Under', 'point' => 229.5, 'price' => -110],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ]);
+
+    $action = new GeneratePrediction;
+    $highMarketPrediction = $action->execute($highMarketGame);
+    $lowMarketPrediction = $action->execute($lowMarketGame);
+
+    expect($highMarketPrediction)->not->toBeNull()
+        ->and($lowMarketPrediction)->not->toBeNull()
+        ->and((float) $highMarketPrediction->predicted_total)->toBeGreaterThan((float) $lowMarketPrediction->predicted_total)
+        ->and(data_get($highMarketPrediction->model_metadata, 'total_model.market_total_blend_applied'))->toBeTrue()
+        ->and(data_get($highMarketPrediction->model_metadata, 'total_model.vegas_total'))->toBe(241.5)
+        ->and(data_get($lowMarketPrediction->model_metadata, 'total_model.market_total_blend_applied'))->toBeFalse();
+});
+
 it('uses total-specific confidence for nba total recommendations', function () {
     $game = Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,

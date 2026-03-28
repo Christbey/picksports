@@ -1036,8 +1036,8 @@ it('blends toward the market total for high-total nba games', function () {
                         [
                             'key' => 'totals',
                             'outcomes' => [
-                                ['name' => 'Over', 'point' => 229.5, 'price' => -110],
-                                ['name' => 'Under', 'point' => 229.5, 'price' => -110],
+                                ['name' => 'Over', 'point' => 227.5, 'price' => -110],
+                                ['name' => 'Under', 'point' => 227.5, 'price' => -110],
                             ],
                         ],
                     ],

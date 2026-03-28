@@ -184,8 +184,8 @@ return [
         'recency_decay' => 0.9,
         'total_recent_efficiency_weight' => 0.35,
         'total_venue_efficiency_weight' => 0.15,
-        'total_season_tempo_regression_weight' => 0.55,
-        'total_recent_tempo_regression_weight' => 0.45,
+        'total_season_tempo_regression_weight' => 0.58,
+        'total_recent_tempo_regression_weight' => 0.5,
         'use_previous_season_metrics_fallback' => env('NBA_USE_PREVIOUS_SEASON_METRICS_FALLBACK', true),
 
         // Rest days
@@ -250,8 +250,8 @@ return [
             'base_adjustment' => env('NBA_TOTAL_BASE_ADJUSTMENT', 2.0),
             'high_total_threshold' => env('NBA_TOTAL_HIGH_TOTAL_THRESHOLD', 232.0),
             'high_total_slope' => env('NBA_TOTAL_HIGH_TOTAL_SLOPE', 0.25),
-            'high_market_total_threshold' => env('NBA_TOTAL_HIGH_MARKET_THRESHOLD', 235.0),
-            'high_market_total_blend_weight' => env('NBA_TOTAL_HIGH_MARKET_BLEND_WEIGHT', 0.55),
+            'high_market_total_threshold' => env('NBA_TOTAL_HIGH_MARKET_THRESHOLD', 229.0),
+            'high_market_total_blend_weight' => env('NBA_TOTAL_HIGH_MARKET_BLEND_WEIGHT', 0.68),
         ],
 
         'live_model' => [

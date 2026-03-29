@@ -77,11 +77,34 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $predictedSpread = round($predictedSpread + $contextSpreadAdj, 1);
         $predictedTotal = round($predictedTotal + $contextTotalAdj, 1);
 
-        if (! $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics)) {
-            [$predictedSpread, $predictedTotal] = $this->applyInjuryAdjustments(
+        $usePersistedSpreadInjuryContext = $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics);
+        $usePersistedTotalInjuryContext = $this->hasPersistedInjuryAdjustedTotal($homeMetrics, $awayMetrics);
+        $injurySpreadModelSource = $usePersistedSpreadInjuryContext ? 'persisted_team_rating' : 'raw_player_status';
+        $injuryTotalModelSource = $usePersistedTotalInjuryContext ? 'persisted_team_rating' : 'raw_player_status';
+        $injuryTotalAdjustment = 0.0;
+
+        if (! $usePersistedSpreadInjuryContext || ! $usePersistedTotalInjuryContext) {
+            [$rawInjuryAdjustedSpread, $rawInjuryAdjustedTotal] = $this->applyInjuryAdjustments(
                 $game,
                 $predictedSpread,
                 $predictedTotal
+            );
+
+            if (! $usePersistedSpreadInjuryContext) {
+                $predictedSpread = $rawInjuryAdjustedSpread;
+            }
+
+            if (! $usePersistedTotalInjuryContext) {
+                $injuryTotalAdjustment = round($rawInjuryAdjustedTotal - $predictedTotal, 2);
+                $predictedTotal = $rawInjuryAdjustedTotal;
+            }
+        }
+
+        if ($usePersistedTotalInjuryContext) {
+            $injuryTotalAdjustment = $this->persistedInjuryTotalAdjustment($homeMetrics, $awayMetrics);
+            $predictedTotal = round(
+                $predictedTotal + $injuryTotalAdjustment,
+                1
             );
         }
 
@@ -113,6 +136,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'context_weight_scale' => round($contextWeightScale, 3),
             'context_spread_adjustment' => $contextSpreadAdj,
             'context_total_adjustment' => $contextTotalAdj,
+            'injury_model_source' => $usePersistedSpreadInjuryContext === $usePersistedTotalInjuryContext
+                ? ($usePersistedSpreadInjuryContext ? 'persisted_team_rating' : 'raw_player_status')
+                : 'mixed',
+            'injury_spread_model_source' => $injurySpreadModelSource,
+            'injury_total_model_source' => $injuryTotalModelSource,
+            'injury_total_adjustment' => $injuryTotalAdjustment,
             ...$probablePitcherInjuryMetadata,
             'baseline_model_spread' => round($predictedSpread, 2),
             'baseline_model_total' => round($predictedTotal, 2),
@@ -519,6 +548,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'away_depth_chart_fallback_used' => str_contains((string) ($this->metadata['away_pitcher_source'] ?? ''), 'depth_chart'),
                 'probable_pitcher_injury_applied' => (($this->metadata['probable_pitcher_spread_adjustment'] ?? 0.0) != 0.0)
                     || (($this->metadata['probable_pitcher_total_adjustment'] ?? 0.0) != 0.0),
+            ],
+            'injury_model_source' => $this->metadata['injury_model_source'] ?? null,
+            'injury_spread_model_source' => $this->metadata['injury_spread_model_source'] ?? null,
+            'injury_total_model_source' => $this->metadata['injury_total_model_source'] ?? null,
+            'depth_chart_injuries' => [
+                'applied' => ((float) ($this->metadata['injury_total_adjustment'] ?? 0.0)) !== 0.0,
+                'total_adjustment' => $this->metadata['injury_total_adjustment'] ?? 0.0,
             ],
             'market_context' => [
                 'vegas_spread' => $this->metadata['vegas_spread'] ?? null,

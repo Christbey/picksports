@@ -175,6 +175,7 @@ it('falls back to default pitcher elo when no recent pitcher ratings exist', fun
 
     $game = Game::factory()->create([
         'season' => 2026,
+        'season_type' => '2',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -814,6 +815,7 @@ it('keeps vegas spread null when draftkings only has moneyline but still capture
 
     $game = Game::factory()->create([
         'season' => 2026,
+        'season_type' => '2',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
@@ -984,6 +986,152 @@ it('applies extra injury penalty when a probable starter is unavailable', functi
         ->and(data_get($injuredPrediction->model_metadata, 'pitcher_inputs.home_probable_pitcher_injury_status'))->toBe('Out')
         ->and((float) data_get($injuredPrediction->model_metadata, 'pitcher_inputs.probable_pitcher_spread_adjustment'))->toBeLessThan(0.0)
         ->and((float) data_get($injuredPrediction->model_metadata, 'pitcher_inputs.probable_pitcher_total_adjustment'))->toBeGreaterThan(0.0);
+});
+
+it('uses raw total injury adjustments for mlb when persisted spread context exists without persisted total context', function () {
+    $homeTeam = Team::factory()->create(['elo_rating' => 1510]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1495]);
+
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2026,
+        'season_type' => '2',
+        'wins' => 8,
+        'losses' => 7,
+        'recent_form_rating' => 0.2,
+        'injury_adjusted_team_rating' => 1512.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2026,
+        'season_type' => '2',
+        'wins' => 8,
+        'losses' => 7,
+        'recent_form_rating' => 0.1,
+        'injury_adjusted_team_rating' => 1494.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'game_date' => now()->subDay(),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 4,
+        'away_score' => 3,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'game_date' => now()->addDay(),
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $baselinePrediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $player = Player::factory()->create(['team_id' => $homeTeam->id]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $homeTeam->id,
+        'injury_key' => 'mlb-total-raw',
+        'espn_injury_id' => 'inj-mlb-total-raw',
+        'status' => 'Out',
+        'detail' => 'Hamstring',
+        'type' => 'Leg',
+        'injury_date' => now()->toDateString(),
+        'source_updated_at' => now(),
+        'is_active' => true,
+    ]);
+
+    $injuryPrediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    expect($injuryPrediction)->not->toBeNull()
+        ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
+        ->and((float) $injuryPrediction->predicted_total)->toBeLessThan((float) $baselinePrediction->predicted_total)
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_model_source'))->toBe('mixed')
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_total_model_source'))->toBe('raw_player_status')
+        ->and((float) data_get($injuryPrediction->model_metadata, 'depth_chart_injuries.total_adjustment'))->toBeLessThan(0.0);
+});
+
+it('uses persisted total injury adjustments for mlb when available on team metrics', function () {
+    $homeTeam = Team::factory()->create(['elo_rating' => 1510]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1495]);
+
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2026,
+        'season_type' => '2',
+        'wins' => 8,
+        'losses' => 7,
+        'recent_form_rating' => 0.2,
+        'injury_adjusted_team_rating' => 1512.0,
+        'injury_total_adjustment' => -0.8,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2026,
+        'season_type' => '2',
+        'wins' => 8,
+        'losses' => 7,
+        'recent_form_rating' => 0.1,
+        'injury_adjusted_team_rating' => 1494.0,
+        'injury_total_adjustment' => 0.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'game_date' => now()->subDay(),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 4,
+        'away_score' => 3,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'game_date' => now()->addDay(),
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $baselinePrediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $player = Player::factory()->create(['team_id' => $homeTeam->id]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $homeTeam->id,
+        'injury_key' => 'mlb-total-persisted',
+        'espn_injury_id' => 'inj-mlb-total-persisted',
+        'status' => 'Out',
+        'detail' => 'Hamstring',
+        'type' => 'Leg',
+        'injury_date' => now()->toDateString(),
+        'source_updated_at' => now(),
+        'is_active' => true,
+    ]);
+
+    $injuryPrediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    expect($injuryPrediction)->not->toBeNull()
+        ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
+        ->and((float) $injuryPrediction->predicted_total)->toBe((float) $baselinePrediction->predicted_total)
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_model_source'))->toBe('persisted_team_rating')
+        ->and(data_get($injuryPrediction->model_metadata, 'injury_total_model_source'))->toBe('persisted_team_rating')
+        ->and((float) data_get($injuryPrediction->model_metadata, 'depth_chart_injuries.total_adjustment'))->toBe(-0.8);
 });
 
 it('uses mlb depth chart starter as pitcher elo fallback before team recent average', function () {

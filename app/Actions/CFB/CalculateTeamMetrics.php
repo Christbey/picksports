@@ -89,6 +89,7 @@ class CalculateTeamMetrics
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
         $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'cfb', (float) ($team->elo_rating ?? 1500));
+        $injuryAdjustedTotalAdjustment = $this->calculateInjuryAdjustedTotalAdjustment($team, 'cfb');
         $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
         $pregameEloIndex = $this->pregameEloIndex($games);
         $powerRating = $this->calculatePowerRating(
@@ -127,6 +128,7 @@ class CalculateTeamMetrics
             'strength_of_schedule' => round($strengthOfSchedule, 3),
             'recent_form_rating' => $recentFormRating,
             'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
+            'injury_total_adjustment' => $injuryAdjustedTotalAdjustment,
             'rest_travel_fatigue' => $restTravelFatigue,
             'cfbd_wepa_offense' => $wepa['offense'],
             'cfbd_wepa_defense' => $wepa['defense'],

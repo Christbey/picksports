@@ -157,11 +157,29 @@ abstract class AbstractPredictionGenerator
         $predictedSpread = round($predictedSpread + $contextSpreadAdj, 1);
         $predictedTotal = round($predictedTotal + $contextTotalAdj, 1);
 
-        if (! $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics)) {
-            [$predictedSpread, $predictedTotal] = $this->applyInjuryAdjustments(
+        $usePersistedSpreadInjuryContext = $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics);
+        $usePersistedTotalInjuryContext = $this->hasPersistedInjuryAdjustedTotal($homeMetrics, $awayMetrics);
+
+        if (! $usePersistedSpreadInjuryContext || ! $usePersistedTotalInjuryContext) {
+            [$rawInjuryAdjustedSpread, $rawInjuryAdjustedTotal] = $this->applyInjuryAdjustments(
                 $game,
                 $predictedSpread,
                 $predictedTotal
+            );
+
+            if (! $usePersistedSpreadInjuryContext) {
+                $predictedSpread = $rawInjuryAdjustedSpread;
+            }
+
+            if (! $usePersistedTotalInjuryContext) {
+                $predictedTotal = $rawInjuryAdjustedTotal;
+            }
+        }
+
+        if ($usePersistedTotalInjuryContext) {
+            $predictedTotal = round(
+                $predictedTotal + $this->persistedInjuryTotalAdjustment($homeMetrics, $awayMetrics),
+                1
             );
         }
 
@@ -490,6 +508,21 @@ abstract class AbstractPredictionGenerator
     {
         return $homeMetrics?->injury_adjusted_team_rating !== null
             || $awayMetrics?->injury_adjusted_team_rating !== null;
+    }
+
+    protected function hasPersistedInjuryAdjustedTotal(?Model $homeMetrics, ?Model $awayMetrics): bool
+    {
+        return $homeMetrics?->injury_total_adjustment !== null
+            || $awayMetrics?->injury_total_adjustment !== null;
+    }
+
+    protected function persistedInjuryTotalAdjustment(?Model $homeMetrics, ?Model $awayMetrics): float
+    {
+        return round(
+            (float) ($homeMetrics?->injury_total_adjustment ?? 0.0)
+            + (float) ($awayMetrics?->injury_total_adjustment ?? 0.0),
+            2
+        );
     }
 
     protected function contextWeight(string $sport, string $key): float

@@ -858,13 +858,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ];
     }
 
-    private function hasPersistedInjuryAdjustedTotal(?Model $homeMetrics, ?Model $awayMetrics): bool
+    protected function hasPersistedInjuryAdjustedTotal(?Model $homeMetrics, ?Model $awayMetrics): bool
     {
         return $homeMetrics?->injury_total_adjustment !== null
             || $awayMetrics?->injury_total_adjustment !== null;
     }
 
-    private function persistedInjuryTotalAdjustment(?Model $homeMetrics, ?Model $awayMetrics): float
+    protected function persistedInjuryTotalAdjustment(?Model $homeMetrics, ?Model $awayMetrics): float
     {
         return round(
             (float) ($homeMetrics?->injury_total_adjustment ?? 0.0)

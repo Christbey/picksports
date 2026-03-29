@@ -107,6 +107,7 @@ abstract class AbstractCollegeBasketballCalculateTeamMetrics
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
         $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, $this->sportKey(), (float) ($team->elo_rating ?? 1500));
+        $injuryAdjustedTotalAdjustment = $this->calculateInjuryAdjustedTotalAdjustment($team, $this->sportKey());
         $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
         $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics($this->playModelClass(), (int) $team->id, $games);
         $rollingMetrics = $this->calculateRollingMetrics($teamStats, $opponentStats);
@@ -154,6 +155,7 @@ abstract class AbstractCollegeBasketballCalculateTeamMetrics
                 'strength_of_schedule' => $this->metricValue(round($strengthOfSchedule, 3), $meetsMinimum),
                 'recent_form_rating' => $recentFormRating,
                 'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
+                'injury_total_adjustment' => $injuryAdjustedTotalAdjustment,
                 'rest_travel_fatigue' => $restTravelFatigue,
                 'games_played' => $gamesPlayed,
                 'meets_minimum' => $meetsMinimum,

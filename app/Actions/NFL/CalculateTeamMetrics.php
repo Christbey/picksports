@@ -106,6 +106,7 @@ class CalculateTeamMetrics
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
         $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'nfl', (float) ($team->elo_rating ?? 1500));
+        $injuryAdjustedTotalAdjustment = $this->calculateInjuryAdjustedTotalAdjustment($team, 'nfl');
         $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
 
         $opponentRanks = $this->buildOpponentRankMap();
@@ -194,6 +195,7 @@ class CalculateTeamMetrics
                 'strength_of_schedule' => $this->roundOrNull($strengthOfSchedule, 3),
                 'recent_form_rating' => $this->roundOrNull($recentFormRating, 3),
                 'injury_adjusted_team_rating' => $this->roundOrNull($injuryAdjustedTeamRating, 3),
+                'injury_total_adjustment' => $this->roundOrNull($injuryAdjustedTotalAdjustment, 3),
                 'rest_travel_fatigue' => $this->roundOrNull($restTravelFatigue, 3),
                 'predictive_rating' => round($predictiveRating, 3),
                 'home_rating' => $this->roundOrNull($homeRating, 3),

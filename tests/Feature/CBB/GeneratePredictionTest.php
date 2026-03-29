@@ -3,6 +3,8 @@
 use App\Actions\CBB\CalculateBettingValue;
 use App\Actions\CBB\GeneratePrediction;
 use App\Models\CBB\Game;
+use App\Models\CBB\Player;
+use App\Models\CBB\PlayerInjury;
 use App\Models\CBB\Prediction;
 use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
@@ -184,6 +186,120 @@ it('uses team metrics when available', function () {
     expect((float) $prediction->home_def_eff)->toBe(105.0);
     expect((float) $prediction->away_off_eff)->toBe(108.0);
     expect((float) $prediction->away_def_eff)->toBe(112.0);
+});
+
+it('uses raw total injury adjustments when persisted spread context exists without persisted total context', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 115.0,
+        'defensive_efficiency' => 105.0,
+        'net_rating' => 10.0,
+        'tempo' => 70.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1540.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 108.0,
+        'defensive_efficiency' => 112.0,
+        'net_rating' => -4.0,
+        'tempo' => 68.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1460.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $baselinePrediction = app(GeneratePrediction::class)->execute($game);
+
+    $player = Player::factory()->create([
+        'team_id' => $this->homeTeam->id,
+        'espn_id' => 'cbb-raw-total-player',
+    ]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $this->homeTeam->id,
+        'injury_key' => 'cbb-total-raw',
+        'status' => 'Out',
+        'detail' => 'Test injury',
+        'type' => 'Ankle',
+        'injury_date' => now()->toDateString(),
+        'is_active' => true,
+    ]);
+
+    $injuryPrediction = app(GeneratePrediction::class)->execute($game->fresh());
+
+    expect($injuryPrediction)->not->toBeNull()
+        ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
+        ->and((float) $injuryPrediction->predicted_total)->toBeLessThan((float) $baselinePrediction->predicted_total);
+});
+
+it('uses persisted total injury adjustments when available on cbb team metrics', function () {
+    $game = Game::factory()->create([
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->homeTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 115.0,
+        'defensive_efficiency' => 105.0,
+        'net_rating' => 10.0,
+        'tempo' => 70.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1540.0,
+        'injury_total_adjustment' => -1.1,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    TeamMetric::create([
+        'team_id' => $this->awayTeam->id,
+        'season' => 2026,
+        'offensive_efficiency' => 108.0,
+        'defensive_efficiency' => 112.0,
+        'net_rating' => -4.0,
+        'tempo' => 68.0,
+        'strength_of_schedule' => 1500.0,
+        'injury_adjusted_team_rating' => 1460.0,
+        'injury_total_adjustment' => 0.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    $baselinePrediction = app(GeneratePrediction::class)->execute($game);
+
+    $player = Player::factory()->create([
+        'team_id' => $this->homeTeam->id,
+        'espn_id' => 'cbb-persisted-total-player',
+    ]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $this->homeTeam->id,
+        'injury_key' => 'cbb-total-persisted',
+        'status' => 'Out',
+        'detail' => 'Test injury',
+        'type' => 'Ankle',
+        'injury_date' => now()->toDateString(),
+        'is_active' => true,
+    ]);
+
+    $injuryPrediction = app(GeneratePrediction::class)->execute($game->fresh());
+
+    expect($injuryPrediction)->not->toBeNull()
+        ->and((float) $injuryPrediction->predicted_spread)->toBe((float) $baselinePrediction->predicted_spread)
+        ->and((float) $injuryPrediction->predicted_total)->toBe((float) $baselinePrediction->predicted_total);
 });
 
 it('raises predicted total when recent scoring factors improve', function () {

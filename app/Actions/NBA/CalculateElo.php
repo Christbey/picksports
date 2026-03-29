@@ -19,7 +19,7 @@ class CalculateElo extends AbstractEloCalculator
 
     protected function isPlayoffGame(Model $game): bool
     {
-        return $game->season_type === config('nba.season.types.postseason');
+        return $this->gameMatchesSeasonType($game, config('nba.season.types.postseason'));
     }
 
     protected function calculateMarginMultiplier(Model $game): float

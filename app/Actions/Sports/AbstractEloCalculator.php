@@ -76,11 +76,53 @@ abstract class AbstractEloCalculator
         $week = (int) ($game->week ?? 0);
         $recencyWeeks = (int) config("{$sport}.elo.recency_weeks", 0);
 
-        if ($week < 1 || $week > $recencyWeeks || $game->season_type != $regularSeasonType) {
+        if ($week < 1 || $week > $recencyWeeks || ! $this->gameMatchesSeasonType($game, $regularSeasonType)) {
             return $kFactor;
         }
 
         return $kFactor * (float) config("{$sport}.elo.recency_multiplier", 1.0);
+    }
+
+    protected function gameMatchesSeasonType(Model $game, mixed $seasonType): bool
+    {
+        return in_array((string) $game->season_type, $this->resolveSeasonTypeCandidates($seasonType), true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function resolveSeasonTypeCandidates(mixed $seasonType): array
+    {
+        if ($seasonType === null || $seasonType === '') {
+            return [];
+        }
+
+        $sportSlug = $this->getSport();
+        $typeNames = config("{$sportSlug}.season.type_names", []);
+        $typesByKey = config("{$sportSlug}.season.types", []);
+        $candidates = [(string) $seasonType];
+
+        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
+            $candidates[] = (string) $typeNames[$seasonType];
+        }
+
+        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
+            $resolved = $typesByKey[$seasonType];
+            $candidates[] = (string) $resolved;
+        }
+
+        if (is_numeric($seasonType)) {
+            $code = (int) $seasonType;
+            $matchedKey = array_search($code, $typesByKey, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = (string) $typeNames[$matchedKey];
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates, fn ($value) => $value !== '')));
     }
 
     protected function resolveLogMarginMultiplier(int $margin, float $coefficient, float $maxMultiplier): float

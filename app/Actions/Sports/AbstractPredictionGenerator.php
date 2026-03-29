@@ -327,7 +327,7 @@ abstract class AbstractPredictionGenerator
             ->when(
                 isset($game->season_type)
                     && Schema::hasColumn((new $teamMetricModel)->getTable(), 'season_type'),
-                fn ($query) => $query->where('season_type', (string) $game->season_type)
+                fn ($query) => $query->whereIn('season_type', $this->resolveSeasonTypeCandidates($game->season_type))
             )
             ->whereIn('team_id', [$homeTeamId, $awayTeamId])
             ->get()
@@ -421,10 +421,51 @@ abstract class AbstractPredictionGenerator
                 $game !== null
                     && isset($game->season_type)
                     && Schema::hasColumn((new $teamMetricModel)->getTable(), 'season_type'),
-                fn ($query) => $query->where('season_type', (string) $game->season_type)
+                fn ($query) => $query->whereIn('season_type', $this->resolveSeasonTypeCandidates($game->season_type))
             )
             ->orderByDesc('season')
             ->first();
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    protected function resolveSeasonTypeCandidates(mixed $seasonType): array
+    {
+        if ($seasonType === null || $seasonType === '') {
+            return [];
+        }
+
+        $sportSlug = $this->getSport();
+        $typeNames = config("{$sportSlug}.season.type_names", []);
+        $typesByKey = config("{$sportSlug}.season.types", []);
+        $candidates = [$seasonType, (string) $seasonType];
+
+        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
+            $candidates[] = $typeNames[$seasonType];
+        }
+
+        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
+            $resolved = $typesByKey[$seasonType];
+            $candidates[] = $resolved;
+            $candidates[] = (string) $resolved;
+        }
+
+        if (is_numeric($seasonType)) {
+            $code = (int) $seasonType;
+            $matchedKey = array_search($code, $typesByKey, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = $typeNames[$matchedKey];
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(
+            $candidates,
+            fn ($value) => $value !== null && $value !== ''
+        )));
     }
 
     /**

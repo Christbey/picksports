@@ -38,7 +38,7 @@ class CalculateElo extends AbstractEloCalculator
 
     protected function isPlayoffGame(Model $game): bool
     {
-        return $game->season_type == config('cfb.season.types.postseason');
+        return $this->gameMatchesSeasonType($game, config('cfb.season.types.postseason'));
     }
 
     protected function calculateMarginMultiplier(Model $game): float

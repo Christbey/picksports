@@ -132,7 +132,10 @@ abstract class AbstractCalculateTeamTrends
                 ->where('home_team_id', $team->id)
                 ->orWhere('away_team_id', $team->id))
             ->when($season, fn ($q) => $q->where('season', $season))
-            ->when($seasonType, fn ($q) => $q->where('season_type', $seasonType))
+            ->when(
+                $seasonType,
+                fn ($q) => $q->whereIn('season_type', $this->resolveSeasonTypeCandidates($seasonType))
+            )
             ->when($beforeDate, fn ($q) => $q->where('game_date', '<', $beforeDate));
 
         if ($seasonType === null && $this->usesAnalyticsSeasonTypes()) {
@@ -196,5 +199,42 @@ abstract class AbstractCalculateTeamTrends
     protected function defaultGameCount(): int
     {
         return static::DEFAULT_GAME_COUNT;
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    protected function resolveSeasonTypeCandidates(int|string $seasonType): array
+    {
+        $sportSlug = $this->sportKey();
+        $typeNames = config("{$sportSlug}.season.type_names", []);
+        $typesByKey = config("{$sportSlug}.season.types", []);
+        $candidates = [$seasonType, (string) $seasonType];
+
+        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
+            $candidates[] = $typeNames[$seasonType];
+        }
+
+        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
+            $resolved = $typesByKey[$seasonType];
+            $candidates[] = $resolved;
+            $candidates[] = (string) $resolved;
+        }
+
+        if (is_numeric($seasonType)) {
+            $code = (int) $seasonType;
+            $matchedKey = array_search($code, $typesByKey, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = $typeNames[$matchedKey];
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter(
+            $candidates,
+            fn ($value) => $value !== null && $value !== ''
+        )));
     }
 }

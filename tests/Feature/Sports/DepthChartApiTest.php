@@ -167,6 +167,26 @@ it('returns nba game depth charts with per-game stat summaries', function () {
         'blocks' => 1,
     ]);
 
+    $legacySeasonTypeGame = NbaGame::factory()->create([
+        'season' => 2025,
+        'season_type' => 'Regular Season',
+        'game_date' => '2025-10-25',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $awayTeam->id,
+        'away_team_id' => $homeTeam->id,
+    ]);
+
+    NbaPlayerStat::factory()->create([
+        'player_id' => $guard->id,
+        'game_id' => $legacySeasonTypeGame->id,
+        'team_id' => $awayTeam->id,
+        'points' => 20,
+        'rebounds_total' => 3,
+        'assists' => 5,
+        'steals' => 1,
+        'blocks' => 0,
+    ]);
+
     $targetGame = NbaGame::factory()->create([
         'season' => 2025,
         'season_type' => 2,
@@ -183,7 +203,7 @@ it('returns nba game depth charts with per-game stat summaries', function () {
         ->assertJsonPath('data.away_team.entries.0.full_name', 'Jalen Example')
         ->assertJsonPath('data.away_team.entries.0.is_starter', true)
         ->assertJsonPath('data.away_team.entries.0.stats.metrics.0.label', 'PPG')
-        ->assertJsonPath('data.away_team.entries.0.stats.metrics.0.value', '30.0');
+        ->assertJsonPath('data.away_team.entries.0.stats.metrics.0.value', '25.0');
 });
 
 it('returns mlb game depth charts with pitcher stat summaries', function () {

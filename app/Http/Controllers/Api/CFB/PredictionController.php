@@ -24,7 +24,17 @@ class PredictionController extends AbstractPredictionController
         }
 
         if ($request->filled('season_type') && $this->hasGameSeasonTypeColumn()) {
-            $query->whereHas('game', fn ($q) => $q->where($this->getGameSeasonTypeColumn(), $request->input('season_type')));
+            $seasonTypeCandidates = $this->resolveSeasonTypeCandidatesForSport($this->sportSlug(), (string) $request->input('season_type'));
+
+            $query->whereHas('game', function ($q) use ($request, $seasonTypeCandidates) {
+                if ($seasonTypeCandidates !== []) {
+                    $q->whereIn($this->getGameSeasonTypeColumn(), $seasonTypeCandidates);
+
+                    return;
+                }
+
+                $q->where($this->getGameSeasonTypeColumn(), $request->input('season_type'));
+            });
         }
 
         if ($request->filled('week')) {

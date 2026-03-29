@@ -227,12 +227,12 @@ class CalibrateAllParametersCommand extends Command
         $kFactor = $params['k_factor'];
 
         // Apply recency weighting for early season games
-        if ($game->week && $game->week <= 4 && $game->season_type === 'Regular Season') {
+        if ($game->week && $game->week <= 4 && $this->matchesSeasonType($game->season_type, config('nfl.season.types.regular'))) {
             $kFactor *= $params['recency_mult'];
         }
 
         // Apply playoff multiplier
-        if ($game->season_type === 'Postseason') {
+        if ($this->matchesSeasonType($game->season_type, config('nfl.season.types.postseason'))) {
             $kFactor *= $params['playoff_mult'];
         }
 
@@ -242,6 +242,45 @@ class CalibrateAllParametersCommand extends Command
         $kFactor *= $movMultiplier;
 
         return $kFactor;
+    }
+
+    protected function matchesSeasonType(mixed $actualSeasonType, mixed $targetSeasonType): bool
+    {
+        return in_array((string) $actualSeasonType, $this->seasonTypeCandidates($targetSeasonType), true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function seasonTypeCandidates(mixed $seasonType): array
+    {
+        if ($seasonType === null || $seasonType === '') {
+            return [];
+        }
+
+        $typeNames = config('nfl.season.type_names', []);
+        $typesByKey = config('nfl.season.types', []);
+        $candidates = [(string) $seasonType];
+
+        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
+            $candidates[] = (string) $typeNames[$seasonType];
+        }
+
+        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
+            $candidates[] = (string) $typesByKey[$seasonType];
+        }
+
+        if (is_numeric($seasonType)) {
+            $matchedKey = array_search((int) $seasonType, $typesByKey, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = (string) $typeNames[$matchedKey];
+                }
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates, fn ($value) => $value !== '')));
     }
 
     protected function calculateWinProbability(float $ratingA, float $ratingB): float

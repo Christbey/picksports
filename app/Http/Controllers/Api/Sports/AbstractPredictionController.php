@@ -64,8 +64,16 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
         }
 
         if ($request->filled('season_type') && $this->hasGameSeasonTypeColumn()) {
-            $query->whereHas('game', function ($q) {
-                $q->where($this->getGameSeasonTypeColumn(), request('season_type'));
+            $seasonTypeCandidates = $this->resolveSeasonTypeCandidatesForSport($this->sportSlug(), (string) $request->input('season_type'));
+
+            $query->whereHas('game', function ($q) use ($seasonTypeCandidates, $request) {
+                if ($seasonTypeCandidates !== []) {
+                    $q->whereIn($this->getGameSeasonTypeColumn(), $seasonTypeCandidates);
+
+                    return;
+                }
+
+                $q->where($this->getGameSeasonTypeColumn(), $request->input('season_type'));
             });
         }
 
@@ -110,6 +118,15 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     protected function getGameWeekColumn(): string
     {
         return 'week';
+    }
+
+    protected function sportSlug(): ?string
+    {
+        $gameModel = $this->getGameModel();
+        $parts = explode('\\', $gameModel);
+        $modelNamespace = $parts[count($parts) - 2] ?? null;
+
+        return $modelNamespace ? strtolower($modelNamespace) : null;
     }
 
     protected function hasGameSeasonColumn(): bool

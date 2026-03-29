@@ -126,6 +126,8 @@ return [
                 'seasons' => '/seasons',
                 'events' => '/events',
                 'weekly_events' => '/seasons/{year}/types/{seasonType}/weeks/{week}/events',
+                'team_by_season' => '/seasons/{year}/teams/{teamId}',
+                'team_depthcharts' => '/seasons/{year}/teams/{teamId}/depthcharts',
                 'team_injuries' => '/teams/{teamId}/injuries?limit=100',
                 'plays' => '/events/{eventId}/competitions/{competitionId}/plays?limit=300',
                 'odds' => '/events/{eventId}/competitions/{competitionId}/odds',

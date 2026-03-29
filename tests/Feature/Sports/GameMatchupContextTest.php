@@ -3,6 +3,8 @@
 use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\Team as MlbTeam;
+use App\Models\NBA\Game as NbaGame;
+use App\Models\NBA\Team as NbaTeam;
 use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\Player as NflPlayer;
 use App\Models\NFL\PlayerStat as NflPlayerStat;
@@ -186,4 +188,113 @@ it('returns matchup context rows for nfl game detail', function () {
     $starterRow = $rows->firstWhere('key', 'starter_matchup');
     expect($starterRow['away']['display'])->toBe('0-1')
         ->and($starterRow['home']['display'])->toBe('1-0');
+});
+
+it('treats equivalent nba season type values as the same matchup bucket', function () {
+    $homeTeam = NbaTeam::factory()->create([
+        'abbreviation' => 'CHA',
+        'conference' => 'Eastern',
+        'division' => 'Southeast',
+    ]);
+    $awayTeam = NbaTeam::factory()->create([
+        'abbreviation' => 'PHI',
+        'conference' => 'Eastern',
+        'division' => 'Atlantic',
+    ]);
+    $otherEastTeam = NbaTeam::factory()->create([
+        'conference' => 'Eastern',
+        'division' => 'Central',
+    ]);
+    $otherWestTeam = NbaTeam::factory()->create([
+        'conference' => 'Western',
+        'division' => 'Pacific',
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => 'Regular Season',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-02-19',
+        'game_time' => '18:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 110,
+        'away_score' => 104,
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => 'Regular Season',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-02-21',
+        'game_time' => '18:00:00',
+        'home_team_id' => $otherEastTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 99,
+        'away_score' => 108,
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-01',
+        'game_time' => '18:30:00',
+        'home_team_id' => $awayTeam->id,
+        'away_team_id' => $otherWestTeam->id,
+        'home_score' => 112,
+        'away_score' => 101,
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => 'Regular Season',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-02',
+        'game_time' => '18:30:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $otherEastTeam->id,
+        'home_score' => 115,
+        'away_score' => 109,
+    ]);
+
+    $currentGame = NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-28',
+        'game_time' => '17:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $response = $this->getJson("/api/v1/nba/games/{$currentGame->id}");
+
+    $response->assertOk();
+    $rows = collect($response->json('data.matchup_context.rows'));
+
+    $headToHead = $rows->firstWhere('key', 'head_to_head');
+    expect($headToHead['away']['display'])->toBe('0-1')
+        ->and($headToHead['home']['display'])->toBe('1-0');
+
+    $overall = $rows->firstWhere('key', 'overall');
+    expect($overall['away']['display'])->toBe('2-1')
+        ->and($overall['home']['display'])->toBe('2-0');
+
+    $role = $rows->firstWhere('key', 'role_record');
+    expect($role['away']['display'])->toBe('1-1')
+        ->and($role['home']['display'])->toBe('2-0');
+
+    $conference = $rows->firstWhere('key', 'conference_record');
+    expect($conference['away']['display'])->toBe('1-1')
+        ->and($conference['home']['display'])->toBe('2-0');
+
+    $division = $rows->firstWhere('key', 'division_record');
+    expect($division['away']['display'])->toBe('0-0')
+        ->and($division['home']['display'])->toBe('0-0');
+
+    $timeBucket = $rows->firstWhere('key', 'time_bucket_record');
+    expect($timeBucket['label'])->toBe('Night record')
+        ->and($timeBucket['away']['display'])->toBe('2-1')
+        ->and($timeBucket['home']['display'])->toBe('2-0');
 });

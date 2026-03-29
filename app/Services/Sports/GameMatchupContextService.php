@@ -175,9 +175,7 @@ class GameMatchupContextService
             ->with(['homeTeam', 'awayTeam'])
             ->where('status', 'STATUS_FINAL');
 
-        if ($game->getAttribute('season_type') !== null && $game->getAttribute('season_type') !== '') {
-            $query->where('season_type', $game->getAttribute('season_type'));
-        }
+        $this->applySeasonTypeFilter($query, $game);
 
         return $this->applyBeforeGameFilter($query, $game);
     }
@@ -360,6 +358,54 @@ class GameMatchupContextService
         }
 
         return substr((string) $value, 0, 8);
+    }
+
+    protected function applySeasonTypeFilter(Builder $query, Model $game, string $column = 'season_type'): void
+    {
+        $seasonTypes = $this->seasonTypeVariants($game->getAttribute('season_type'));
+
+        if ($seasonTypes === []) {
+            return;
+        }
+
+        $query->whereIn($column, $seasonTypes);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function seasonTypeVariants(mixed $seasonType): array
+    {
+        if ($seasonType === null) {
+            return [];
+        }
+
+        $value = trim((string) $seasonType);
+
+        if ($value === '') {
+            return [];
+        }
+
+        $variants = [$value];
+        $normalized = strtolower($value);
+
+        if (ctype_digit($value)) {
+            $variants = [...$variants, ...match ((int) $value) {
+                1 => ['Preseason', 'Pre Season'],
+                2 => ['Regular Season', 'Regular'],
+                3 => ['Postseason', 'Post Season', 'Playoffs'],
+                default => [],
+            }];
+        } else {
+            $variants = [...$variants, ...match ($normalized) {
+                'preseason', 'pre season' => ['1'],
+                'regular season', 'regular' => ['2'],
+                'postseason', 'post season', 'playoffs' => ['3'],
+                default => [],
+            }];
+        }
+
+        return array_values(array_unique($variants));
     }
 
     /**
@@ -554,9 +600,7 @@ class GameMatchupContextService
                 });
             });
 
-        if ($game->getAttribute('season_type') !== null && $game->getAttribute('season_type') !== '') {
-            $games->where("{$gameTable}.season_type", $game->getAttribute('season_type'));
-        }
+        $this->applySeasonTypeFilter($games, $game, "{$gameTable}.season_type");
 
         $games = $this->applyBeforeGameFilter($games, $game)
             ->distinct()

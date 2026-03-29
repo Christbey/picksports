@@ -108,6 +108,45 @@ it('returns nba game depth charts with per-game stat summaries', function () {
         'source_updated_at' => now(),
     ]);
 
+    NbaDepthChartEntry::create([
+        'team_id' => $awayTeam->id,
+        'player_id' => $guard->id,
+        'season' => 2025,
+        'espn_depth_chart_id' => '1',
+        'depth_chart_name' => 'Depth Chart',
+        'position_slot_key' => 'sg',
+        'position_code' => 'SG',
+        'position_name' => 'Shooting Guard',
+        'position_display_name' => 'Shooting Guard',
+        'espn_athlete_id' => '2200',
+        'depth_rank' => 1,
+        'is_starter' => true,
+        'source_updated_at' => now(),
+    ]);
+
+    $benchGuard = NbaPlayer::factory()->create([
+        'team_id' => $awayTeam->id,
+        'espn_id' => '2201',
+        'full_name' => 'Miles Reserve',
+        'position' => 'SG',
+    ]);
+
+    NbaDepthChartEntry::create([
+        'team_id' => $awayTeam->id,
+        'player_id' => $benchGuard->id,
+        'season' => 2025,
+        'espn_depth_chart_id' => '1',
+        'depth_chart_name' => 'Depth Chart',
+        'position_slot_key' => 'sg',
+        'position_code' => 'SG',
+        'position_name' => 'Shooting Guard',
+        'position_display_name' => 'Shooting Guard',
+        'espn_athlete_id' => '2201',
+        'depth_rank' => 2,
+        'is_starter' => false,
+        'source_updated_at' => now(),
+    ]);
+
     $priorGame = NbaGame::factory()->create([
         'season' => 2025,
         'season_type' => 2,
@@ -140,7 +179,9 @@ it('returns nba game depth charts with per-game stat summaries', function () {
     $response = $this->getJson("/api/v1/nba/games/{$targetGame->id}/depth-charts");
 
     $response->assertOk()
+        ->assertJsonCount(1, 'data.away_team.entries')
         ->assertJsonPath('data.away_team.entries.0.full_name', 'Jalen Example')
+        ->assertJsonPath('data.away_team.entries.0.is_starter', true)
         ->assertJsonPath('data.away_team.entries.0.stats.metrics.0.label', 'PPG')
         ->assertJsonPath('data.away_team.entries.0.stats.metrics.0.value', '30.0');
 });

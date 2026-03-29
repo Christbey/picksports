@@ -78,6 +78,7 @@ class DepthChartDataService
                 season: $season,
                 seasonType: $seasonType,
                 beforeDate: $beforeDate,
+                gameContext: true,
             ),
             'home_team' => $this->buildTeamPayload(
                 sport: $sport,
@@ -88,6 +89,7 @@ class DepthChartDataService
                 season: $season,
                 seasonType: $seasonType,
                 beforeDate: $beforeDate,
+                gameContext: true,
             ),
         ];
     }
@@ -107,6 +109,7 @@ class DepthChartDataService
         int $season,
         mixed $seasonType,
         ?string $beforeDate,
+        bool $gameContext = false,
     ): array {
         if (! $teamModelInstance) {
             return [
@@ -125,6 +128,10 @@ class DepthChartDataService
             ->orderBy('position_slot_key')
             ->orderBy('depth_rank')
             ->get();
+
+        if ($gameContext) {
+            $entries = $this->filterGameEntries($entries);
+        }
 
         $statsByPlayerId = $this->loadAggregatedStats(
             sport: $sport,
@@ -150,6 +157,28 @@ class DepthChartDataService
             'before_date' => $beforeDate,
             'entries' => $entries->map(fn ($entry) => $this->serializeEntry($sport, $entry, $statsByPlayerId))->values()->all(),
         ];
+    }
+
+    /**
+     * @param  Collection<int, Model>  $entries
+     * @return Collection<int, Model>
+     */
+    protected function filterGameEntries(Collection $entries): Collection
+    {
+        return $entries
+            ->filter(fn (Model $entry): bool => (bool) $entry->is_starter)
+            ->unique(function (Model $entry): string {
+                if ($entry->player_id) {
+                    return 'player:'.$entry->player_id;
+                }
+
+                $espnAthleteId = trim((string) ($entry->espn_athlete_id ?? ''));
+
+                return $espnAthleteId !== ''
+                    ? 'espn:'.$espnAthleteId
+                    : 'entry:'.$entry->getKey();
+            })
+            ->values();
     }
 
     /**

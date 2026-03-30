@@ -3,6 +3,7 @@
 namespace App\Models\Sports;
 
 use App\Models\NBA\Team;
+use App\Models\NFL\Player;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -21,6 +22,7 @@ class FuturesOdd extends Model
         'nba_team_id',
         'mlb_team_id',
         'nfl_team_id',
+        'nfl_player_id',
         'cbb_team_id',
         'wcbb_team_id',
         'bookmaker',
@@ -43,6 +45,7 @@ class FuturesOdd extends Model
             'nba_team_id' => 'integer',
             'mlb_team_id' => 'integer',
             'nfl_team_id' => 'integer',
+            'nfl_player_id' => 'integer',
             'cbb_team_id' => 'integer',
             'wcbb_team_id' => 'integer',
             'market_last_update' => 'datetime',
@@ -67,6 +70,11 @@ class FuturesOdd extends Model
     public function nflTeam(): BelongsTo
     {
         return $this->belongsTo(\App\Models\NFL\Team::class, 'nfl_team_id');
+    }
+
+    public function nflPlayer(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'nfl_player_id');
     }
 
     public function cbbTeam(): BelongsTo

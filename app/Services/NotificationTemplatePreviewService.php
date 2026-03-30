@@ -2,10 +2,10 @@
 
 namespace App\Services;
 
-use App\Actions\NFL\CalculateBettingValue;
 use App\Models\NFL\Game;
 use App\Models\NotificationTemplate;
 use App\Models\User;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use Carbon\Carbon;
 use Illuminate\Mail\Markdown;
 use Illuminate\Support\Facades\Blade;
@@ -17,6 +17,7 @@ class NotificationTemplatePreviewService
 {
     public function __construct(
         private readonly SiteAssetStorage $siteAssetStorage,
+        private readonly GameBettingRecommendationService $gameBettingRecommendationService,
     ) {}
 
     private const SPORT_GAME_MODELS = [
@@ -27,12 +28,6 @@ class NotificationTemplatePreviewService
         'mlb' => \App\Models\MLB\Game::class,
         'cfb' => \App\Models\CFB\Game::class,
         'wnba' => \App\Models\WNBA\Game::class,
-    ];
-
-    private const SPORT_CALCULATORS = [
-        'nfl' => CalculateBettingValue::class,
-        'nba' => \App\Actions\NBA\CalculateBettingValue::class,
-        'cbb' => \App\Actions\CBB\CalculateBettingValue::class,
     ];
 
     /**
@@ -88,12 +83,12 @@ class NotificationTemplatePreviewService
             return $this->fallbackBettingValuePayload($sport, 'No live game with prediction + odds found. Showing fallback sample.');
         }
 
-        $calculatorClass = self::SPORT_CALCULATORS[$sport] ?? null;
-        if (! $calculatorClass) {
+        $recommendations = $this->gameBettingRecommendationService->forGame($game, $sport);
+
+        if ($recommendations === []) {
             return $this->fallbackBettingValuePayload($sport, 'Betting value calculation is not configured for this sport yet.');
         }
 
-        $recommendations = app($calculatorClass)->execute($game) ?? [];
         $topRecommendation = collect($recommendations)->sortByDesc('edge')->first();
 
         $homeTeam = $this->teamDisplayName($game->homeTeam);

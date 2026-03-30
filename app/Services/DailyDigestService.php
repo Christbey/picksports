@@ -8,6 +8,7 @@ use App\Models\DailyDigestSend;
 use App\Models\NBA\Prediction;
 use App\Models\User;
 use App\Services\AI\SportsAiContentService;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\TierAccessBypass;
 use Carbon\Carbon;
@@ -47,6 +48,7 @@ class DailyDigestService
     private array $playerPropPoolCache = [];
 
     public function __construct(
+        private readonly GameBettingRecommendationService $gameBettingRecommendationService,
         private readonly PlayerPropAnalyzer $playerPropAnalyzer,
         private readonly TierAccessBypass $tierAccessBypass,
         private readonly SportsAiContentService $sportsAiContentService,
@@ -149,7 +151,21 @@ class DailyDigestService
 
         $predictions = $sports
             ->flatMap(fn (string $sport) => $this->predictionPoolForSport($sport, $now))
-            ->shuffle()
+            ->sort(function (array $a, array $b): int {
+                $edgeCompare = ((float) ($b['edge'] ?? 0)) <=> ((float) ($a['edge'] ?? 0));
+
+                if ($edgeCompare !== 0) {
+                    return $edgeCompare;
+                }
+
+                $confidenceCompare = ((float) ($b['confidence'] ?? 0)) <=> ((float) ($a['confidence'] ?? 0));
+
+                if ($confidenceCompare !== 0) {
+                    return $confidenceCompare;
+                }
+
+                return strcmp((string) ($a['matchup'] ?? ''), (string) ($b['matchup'] ?? ''));
+            })
             ->take(3)
             ->values()
             ->all();
@@ -220,12 +236,20 @@ class DailyDigestService
                 $query->whereDate('game_date', $now->toDateString())
                     ->whereNotIn('status', ['STATUS_FINAL', 'final']);
             })
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->inRandomOrder()
-            ->limit(18)
+            ->with(['game.homeTeam', 'game.awayTeam', 'game.prediction'])
+            ->limit(30)
             ->get()
             ->map(fn (Model $prediction) => $this->transformPrediction($sport, $prediction))
             ->filter()
+            ->sort(function (array $a, array $b): int {
+                $edgeCompare = ((float) ($b['edge'] ?? 0)) <=> ((float) ($a['edge'] ?? 0));
+
+                if ($edgeCompare !== 0) {
+                    return $edgeCompare;
+                }
+
+                return ((float) ($b['confidence'] ?? 0)) <=> ((float) ($a['confidence'] ?? 0));
+            })
             ->values()
             ->all();
 
@@ -296,16 +320,23 @@ class DailyDigestService
         $winProbability = (float) ($prediction->win_probability ?? 0);
         $awayWinProbability = $winProbability;
         $homeWinProbability = max(0, min(1, 1 - $awayWinProbability));
-        $pickSide = $awayWinProbability >= 0.5 ? $awayTeam : $homeTeam;
-        $pickConfidence = $this->displayConfidence($prediction, $awayWinProbability, $homeWinProbability);
+        $topRecommendation = $this->topRecommendation($sport, $game);
+
+        if ($topRecommendation === null) {
+            return null;
+        }
+
+        $pickConfidence = $this->displayConfidence($prediction, $topRecommendation, $awayWinProbability, $homeWinProbability);
         $spread = $prediction->predicted_spread !== null ? (float) $prediction->predicted_spread : null;
         $scheduledAt = $this->scheduledAt($game);
 
         return [
             'sport' => strtoupper($sport),
             'matchup' => "{$awayTeam} @ {$homeTeam}",
-            'pick' => "{$pickSide} moneyline",
+            'pick' => (string) ($topRecommendation['recommendation'] ?? 'No recommendation available'),
             'confidence' => $pickConfidence,
+            'edge' => round((float) ($topRecommendation['edge'] ?? 0), 1),
+            'pick_type' => (string) ($topRecommendation['type'] ?? 'pick'),
             'predicted_spread' => $spread,
             'predicted_total' => $prediction->predicted_total !== null ? (float) $prediction->predicted_total : null,
             'game_time' => $scheduledAt?->format('M j, g:i A'),
@@ -313,9 +344,38 @@ class DailyDigestService
         ];
     }
 
-    private function displayConfidence(Model $prediction, float $awayWinProbability, float $homeWinProbability): float
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function topRecommendation(string $sport, Model $game): ?array
     {
-        $storedConfidence = (float) ($prediction->confidence_score ?? 0);
+        return collect($this->gameBettingRecommendationService->forGame($game, $sport))
+            ->filter(fn (array $recommendation) => is_numeric($recommendation['edge'] ?? null))
+            ->filter(fn (array $recommendation) => trim((string) ($recommendation['recommendation'] ?? '')) !== '')
+            ->filter(fn (array $recommendation) => (float) $recommendation['edge'] > 0)
+            ->sort(function (array $a, array $b): int {
+                $edgeCompare = ((float) ($b['edge'] ?? 0)) <=> ((float) ($a['edge'] ?? 0));
+
+                if ($edgeCompare !== 0) {
+                    return $edgeCompare;
+                }
+
+                return ((float) ($b['confidence'] ?? 0)) <=> ((float) ($a['confidence'] ?? 0));
+            })
+            ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $recommendation
+     */
+    private function displayConfidence(Model $prediction, array $recommendation, float $awayWinProbability, float $homeWinProbability): float
+    {
+        $storedConfidence = (float) ($recommendation['confidence'] ?? 0);
+
+        if ($storedConfidence <= 0) {
+            $storedConfidence = (float) ($prediction->confidence_score ?? 0);
+        }
+
         $derivedConfidence = max($awayWinProbability, $homeWinProbability) * 100;
 
         $confidence = $storedConfidence > 0 ? $storedConfidence : $derivedConfidence;

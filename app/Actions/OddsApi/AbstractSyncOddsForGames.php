@@ -3,6 +3,7 @@
 namespace App\Actions\OddsApi;
 
 use App\Services\OddsApi\OddsApiService;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -25,7 +26,8 @@ abstract class AbstractSyncOddsForGames
 
     public function __construct(
         protected OddsApiService $oddsApiService,
-        protected SportsViewCache $sportsViewCache
+        protected SportsViewCache $sportsViewCache,
+        protected ?GameOddsSnapshotRecorder $gameOddsSnapshotRecorder = null,
     ) {}
 
     public function execute(?int $daysAhead = 7, ?string $oddsSportKey = null): int
@@ -55,9 +57,19 @@ abstract class AbstractSyncOddsForGames
                 continue;
             }
 
+            $extractedOddsData = $this->oddsApiService->extractOddsData($event);
+
+            $this->gameOddsSnapshotRecorder ??= app(GameOddsSnapshotRecorder::class);
+            $this->gameOddsSnapshotRecorder->record(
+                $this->snapshotSportKey(),
+                $game,
+                $event,
+                $extractedOddsData,
+            );
+
             $game->update([
                 'odds_api_event_id' => $event['id'],
-                'odds_data' => $this->oddsApiService->extractOddsData($event),
+                'odds_data' => $extractedOddsData,
                 'odds_updated_at' => now(),
             ]);
 
@@ -257,7 +269,9 @@ abstract class AbstractSyncOddsForGames
             ? $gameDate->toDateString()
             : Carbon::parse((string) $gameDate)->toDateString();
 
-        return Carbon::parse(sprintf('%s %s', $dateString, $gameTime), 'UTC');
+        $appTimezone = (string) config('app.timezone', 'UTC');
+
+        return Carbon::parse(sprintf('%s %s', $dateString, $gameTime), $appTimezone)->utc();
     }
 
     protected function maxEventTimeDifferenceMinutes(): int
@@ -372,6 +386,13 @@ abstract class AbstractSyncOddsForGames
         }
 
         return static::SPORT_KEY;
+    }
+
+    protected function snapshotSportKey(): string
+    {
+        $gameModel = new ($this->gameModelClass());
+
+        return str_replace('_games', '', $gameModel->getTable());
     }
 
     /**

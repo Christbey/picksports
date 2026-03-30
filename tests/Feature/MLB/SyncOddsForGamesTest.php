@@ -184,7 +184,7 @@ it('matches mlb odds events when odds commence date and stored utc game date spa
     $game = Game::factory()->create([
         'season' => 2026,
         'season_type' => '2',
-        'game_date' => '2026-03-26',
+        'game_date' => now()->addDays(2)->toDateString(),
         'game_time' => '00:05:00',
         'status' => 'STATUS_SCHEDULED',
         'home_team_id' => $homeTeam->id,
@@ -203,7 +203,7 @@ it('matches mlb odds events when odds commence date and stored utc game date spa
                 'id' => 'odds-evt-3',
                 'home_team' => 'San Francisco Giants',
                 'away_team' => 'New York Yankees',
-                'commence_time' => '2026-03-25T19:05:00-05:00',
+                'commence_time' => now()->addDays(1)->setTime(19, 5)->setTimezone('America/Chicago')->toIso8601String(),
                 'bookmakers' => [
                     [
                         'key' => 'draftkings',

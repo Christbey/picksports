@@ -4,6 +4,7 @@ use App\Models\Healthcheck;
 use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -71,7 +72,7 @@ test('admin healthchecks sync can run recommended validation action', function (
     Artisan::spy();
     Artisan::shouldReceive('call')
         ->once()
-        ->with('nba:generate-predictions')
+        ->with('nba:generate-predictions', [])
         ->andReturn(0);
 
     $this->actingAs($admin)
@@ -80,6 +81,27 @@ test('admin healthchecks sync can run recommended validation action', function (
             'check_type' => 'validation_prediction_completeness',
         ])
         ->assertRedirect();
+});
+
+test('admin healthchecks sync can run registry-backed live scoreboard action', function () {
+    $admin = User::factory()->admin()->create();
+
+    Carbon::setTestNow(Carbon::create(2026, 3, 29, 9, 0, 0));
+
+    Artisan::spy();
+    Artisan::shouldReceive('call')
+        ->once()
+        ->with('espn:sync-nba-games-scoreboard', ['date' => '20260329'])
+        ->andReturn(0);
+
+    $this->actingAs($admin)
+        ->post(route('admin.healthchecks.sync'), [
+            'sport' => 'nba',
+            'check_type' => 'heartbeat_live_scoreboard',
+        ])
+        ->assertRedirect();
+
+    Carbon::setTestNow();
 });
 
 test('admin healthchecks page exposes validation run history and selected run findings', function () {

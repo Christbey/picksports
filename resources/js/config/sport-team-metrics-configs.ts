@@ -28,6 +28,15 @@ interface CreateSportTeamMetricsConfigParams {
     seasonTypeOptions?: MetricsConfig['seasonTypeOptions'];
 }
 
+interface CreateProBasketballTeamMetricsConfigParams {
+    sport: 'nba' | 'wnba';
+    title: string;
+    subtitle: string;
+    teamLink: MetricsConfig['teamLink'];
+    seasonTypeOptions: MetricsConfig['seasonTypeOptions'];
+    includeNetEpa?: boolean;
+}
+
 export function createSportTeamMetricsConfig(
     params: CreateSportTeamMetricsConfigParams,
 ): MetricsConfig {
@@ -48,53 +57,10 @@ export function createSportTeamMetricsConfig(
     };
 }
 
-const eraClass = (value: number | null): string => {
-    if (value === null) return '';
-    if (value < 3.5) return 'text-green-600 dark:text-green-400 font-semibold';
-    if (value < 4.0) return 'text-green-600 dark:text-green-400';
-    if (value > 5.0) return 'text-red-600 dark:text-red-400 font-semibold';
-    if (value > 4.5) return 'text-red-600 dark:text-red-400';
-    return '';
-};
-
-const runsClass = (value: number | null): string => {
-    if (value === null) return '';
-    if (value > 5) return 'text-green-600 dark:text-green-400 font-semibold';
-    if (value > 4.5) return 'text-green-600 dark:text-green-400';
-    if (value < 3.5) return 'text-red-600 dark:text-red-400 font-semibold';
-    if (value < 4) return 'text-red-600 dark:text-red-400';
-    return '';
-};
-
-const turnoverClass = (value: number | null): string => {
-    if (value === null) return '';
-    if (value > 5) return 'text-green-600 dark:text-green-400 font-semibold';
-    if (value > 0) return 'text-green-600 dark:text-green-400';
-    if (value < -5) return 'text-red-600 dark:text-red-400 font-semibold';
-    if (value < 0) return 'text-red-600 dark:text-red-400';
-    return '';
-};
-
-const fatigueClass = (value: number | null): string => {
-    if (value === null) return '';
-    if (value <= 2) return 'text-green-600 dark:text-green-400';
-    if (value >= 6) return 'text-red-600 dark:text-red-400 font-semibold';
-    return 'text-muted-foreground';
-};
-
-export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
-    sport: 'nba',
-    title: 'NBA Team Metrics',
-    subtitle: 'Advanced efficiency metrics for NBA teams',
-    seasonTypeOptions: [
-        { value: '1', label: 'Preseason' },
-        { value: '2', label: 'Regular Season' },
-        { value: '3', label: 'Postseason' },
-        { value: '4', label: 'All-Star' },
-    ],
-    teamLink: (id: number) => NBATeamController.url(id),
-    defaultSort: 'net_rating',
-    sortOptions: [
+function createProBasketballTeamMetricsConfig(
+    params: CreateProBasketballTeamMetricsConfigParams,
+): MetricsConfig {
+    const sortOptions: MetricsConfig['sortOptions'] = [
         {
             key: 'net_rating',
             label: 'Net Rating',
@@ -111,13 +77,17 @@ export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
             getValue: (m: any) => m.defensive_efficiency,
             lowerIsBetter: true,
         },
-        {
+    ];
+
+    if (params.includeNetEpa) {
+        sortOptions.push({
             key: 'net_true_epa_per_play',
             label: 'Net EPA',
             getValue: (m: any) => m.net_true_epa_per_play,
-        },
-    ],
-    columns: [
+        });
+    }
+
+    const columns: MetricsConfig['columns'] = [
         {
             label: 'Record',
             value: (m: any) =>
@@ -162,15 +132,77 @@ export const nbaTeamMetricsConfig = createSportTeamMetricsConfig({
             value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
             class: (m: any) => fatigueClass(m.rest_travel_fatigue),
         },
-        {
+    ];
+
+    if (params.includeNetEpa) {
+        columns.push({
             label: 'Net EPA',
             value: (m: any) => formatNumber(m.net_true_epa_per_play, 3),
             class: () => 'text-muted-foreground',
-        },
+        });
+    }
+
+    return createSportTeamMetricsConfig({
+        sport: params.sport,
+        title: params.title,
+        subtitle: params.subtitle,
+        seasonTypeOptions: params.seasonTypeOptions,
+        teamLink: params.teamLink,
+        defaultSort: 'net_rating',
+        sortOptions,
+        columns,
+    });
+}
+
+const eraClass = (value: number | null): string => {
+    if (value === null) return '';
+    if (value < 3.5) return 'text-green-600 dark:text-green-400 font-semibold';
+    if (value < 4.0) return 'text-green-600 dark:text-green-400';
+    if (value > 5.0) return 'text-red-600 dark:text-red-400 font-semibold';
+    if (value > 4.5) return 'text-red-600 dark:text-red-400';
+    return '';
+};
+
+const runsClass = (value: number | null): string => {
+    if (value === null) return '';
+    if (value > 5) return 'text-green-600 dark:text-green-400 font-semibold';
+    if (value > 4.5) return 'text-green-600 dark:text-green-400';
+    if (value < 3.5) return 'text-red-600 dark:text-red-400 font-semibold';
+    if (value < 4) return 'text-red-600 dark:text-red-400';
+    return '';
+};
+
+const turnoverClass = (value: number | null): string => {
+    if (value === null) return '';
+    if (value > 5) return 'text-green-600 dark:text-green-400 font-semibold';
+    if (value > 0) return 'text-green-600 dark:text-green-400';
+    if (value < -5) return 'text-red-600 dark:text-red-400 font-semibold';
+    if (value < 0) return 'text-red-600 dark:text-red-400';
+    return '';
+};
+
+const fatigueClass = (value: number | null): string => {
+    if (value === null) return '';
+    if (value <= 2) return 'text-green-600 dark:text-green-400';
+    if (value >= 6) return 'text-red-600 dark:text-red-400 font-semibold';
+    return 'text-muted-foreground';
+};
+
+export const nbaTeamMetricsConfig = createProBasketballTeamMetricsConfig({
+    sport: 'nba',
+    title: 'NBA Team Metrics',
+    subtitle: 'Advanced efficiency metrics for NBA teams',
+    seasonTypeOptions: [
+        { value: '1', label: 'Preseason' },
+        { value: '2', label: 'Regular Season' },
+        { value: '3', label: 'Postseason' },
+        { value: '4', label: 'All-Star' },
     ],
+    teamLink: (id: number) => NBATeamController.url(id),
+    includeNetEpa: true,
 });
 
-export const wnbaTeamMetricsConfig = createSportTeamMetricsConfig({
+export const wnbaTeamMetricsConfig = createProBasketballTeamMetricsConfig({
     sport: 'wnba',
     title: 'WNBA Team Metrics',
     subtitle: 'Advanced efficiency metrics for WNBA teams',
@@ -181,92 +213,6 @@ export const wnbaTeamMetricsConfig = createSportTeamMetricsConfig({
         { value: '4', label: 'All-Star' },
     ],
     teamLink: (id: number) => WNBATeamController.url(id),
-    defaultSort: 'net_rating',
-    sortOptions: [
-        {
-            key: 'net_rating',
-            label: 'Net Rating',
-            getValue: (m: any) => m.net_rating,
-        },
-        {
-            key: 'offensive_rating',
-            label: 'Offense',
-            getValue: (m: any) => m.offensive_rating,
-        },
-        {
-            key: 'defensive_rating',
-            label: 'Defense',
-            getValue: (m: any) => m.defensive_rating,
-            lowerIsBetter: true,
-        },
-        {
-            key: 'true_shooting_percentage',
-            label: 'TS%',
-            getValue: (m: any) => m.true_shooting_percentage,
-        },
-    ],
-    columns: [
-        {
-            label: 'Record',
-            value: (m: any) =>
-                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
-            class: () => 'text-muted-foreground',
-        },
-        {
-            label: 'ORtg',
-            value: (m: any) => formatNumber(m.offensive_rating),
-        },
-        {
-            label: 'DRtg',
-            value: (m: any) => formatNumber(m.defensive_rating),
-        },
-        {
-            label: 'Net',
-            value: (m: any) => formatNumber(m.net_rating),
-            class: (m: any) => ratingClass(m.net_rating, 5),
-        },
-        {
-            label: 'Pace',
-            value: (m: any) => formatNumber(m.pace),
-            class: () => 'text-muted-foreground',
-        },
-        {
-            label: 'eFG%',
-            value: (m: any) => formatPercent(m.effective_field_goal_percentage),
-        },
-        {
-            label: 'TO%',
-            value: (m: any) => formatPercent(m.turnover_percentage),
-        },
-        {
-            label: 'OREB%',
-            value: (m: any) => formatPercent(m.offensive_rebound_percentage),
-        },
-        {
-            label: 'FTR',
-            value: (m: any) => formatPercent(m.free_throw_rate),
-        },
-        {
-            label: 'TS%',
-            value: (m: any) => formatPercent(m.true_shooting_percentage),
-            class: () => 'font-medium',
-        },
-        {
-            label: 'Form',
-            value: (m: any) => formatNumber(m.recent_form_rating, 2),
-            class: (m: any) => ratingClass(m.recent_form_rating, 3),
-        },
-        {
-            label: 'InjAdj',
-            value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
-            class: () => 'text-muted-foreground',
-        },
-        {
-            label: 'Fatigue',
-            value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
-            class: (m: any) => fatigueClass(m.rest_travel_fatigue),
-        },
-    ],
 });
 
 export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({

@@ -252,6 +252,178 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Player Futures Projection Defaults
+    |--------------------------------------------------------------------------
+    |
+    | Baselines for season-long player total projections. These are intentionally
+    | conservative priors so the model does not overreact to a tiny early sample.
+    |
+    */
+    'player_futures' => [
+        'default_regular_season_games' => 18,
+        'prior_games' => 4,
+        'prior_share_games' => 6,
+        'direct_rate_weight' => 0.45,
+        'usage_share_weight' => 0.55,
+        'schedule_adjustment_divisor' => 400.0,
+        'min_schedule_adjustment' => 0.90,
+        'max_schedule_adjustment' => 1.10,
+        'teammate_injury_boost_per_weight' => 0.08,
+        'max_teammate_injury_boost' => 0.18,
+        'role_multipliers' => [
+            'qb_starter' => 1.10,
+            'qb_backup' => 0.82,
+            'rb_lead' => 1.08,
+            'rb_rotation' => 0.92,
+            'wr_alpha' => 1.08,
+            'wr_secondary' => 0.95,
+            'te_primary' => 1.05,
+            'te_secondary' => 0.93,
+            'generic_starter' => 1.03,
+            'generic_backup' => 0.90,
+        ],
+        'injury_availability' => [
+            'out' => 0.0,
+            'doubtful' => 0.2,
+            'questionable' => 0.75,
+            'day-to-day' => 0.85,
+            'probable' => 0.95,
+            'injured reserve' => 0.0,
+            'ir' => 0.0,
+            'suspended' => 0.0,
+        ],
+        'markets' => [
+            'passing_yards' => [
+                'label' => 'Passing Yards',
+                'stat_field' => 'passing_yards',
+                'positions' => ['QB'],
+                'prior_per_game_by_position' => [
+                    'QB' => 225.0,
+                ],
+                'prior_share_by_archetype' => [
+                    'qb_starter' => 0.96,
+                    'qb_backup' => 0.18,
+                ],
+                'default_stddev_per_game' => 58.0,
+                'odds_market_keys' => ['player_pass_yds', 'season_player_pass_yds'],
+            ],
+            'passing_touchdowns' => [
+                'label' => 'Passing Touchdowns',
+                'stat_field' => 'passing_touchdowns',
+                'positions' => ['QB'],
+                'prior_per_game_by_position' => [
+                    'QB' => 1.45,
+                ],
+                'prior_share_by_archetype' => [
+                    'qb_starter' => 0.96,
+                    'qb_backup' => 0.18,
+                ],
+                'default_stddev_per_game' => 1.15,
+                'odds_market_keys' => ['player_pass_tds', 'season_player_pass_tds'],
+            ],
+            'rushing_yards' => [
+                'label' => 'Rushing Yards',
+                'stat_field' => 'rushing_yards',
+                'positions' => ['QB', 'RB', 'WR'],
+                'prior_per_game_by_position' => [
+                    'QB' => 22.0,
+                    'RB' => 52.0,
+                    'WR' => 6.0,
+                ],
+                'prior_share_by_archetype' => [
+                    'qb_starter' => 0.18,
+                    'rb_lead' => 0.46,
+                    'rb_rotation' => 0.22,
+                    'wr_alpha' => 0.08,
+                    'wr_secondary' => 0.04,
+                ],
+                'default_stddev_per_game' => 34.0,
+                'odds_market_keys' => ['player_rush_yds', 'season_player_rush_yds'],
+            ],
+            'rushing_touchdowns' => [
+                'label' => 'Rushing Touchdowns',
+                'stat_field' => 'rushing_touchdowns',
+                'positions' => ['QB', 'RB', 'WR'],
+                'prior_per_game_by_position' => [
+                    'QB' => 0.15,
+                    'RB' => 0.45,
+                    'WR' => 0.04,
+                ],
+                'prior_share_by_archetype' => [
+                    'qb_starter' => 0.14,
+                    'rb_lead' => 0.48,
+                    'rb_rotation' => 0.20,
+                    'wr_alpha' => 0.08,
+                    'wr_secondary' => 0.04,
+                ],
+                'default_stddev_per_game' => 0.55,
+                'odds_market_keys' => ['player_rush_tds', 'season_player_rush_tds'],
+            ],
+            'receptions' => [
+                'label' => 'Receptions',
+                'stat_field' => 'receptions',
+                'positions' => ['RB', 'WR', 'TE'],
+                'prior_per_game_by_position' => [
+                    'RB' => 2.7,
+                    'WR' => 4.3,
+                    'TE' => 3.6,
+                ],
+                'prior_share_by_archetype' => [
+                    'rb_lead' => 0.16,
+                    'rb_rotation' => 0.09,
+                    'wr_alpha' => 0.27,
+                    'wr_secondary' => 0.15,
+                    'te_primary' => 0.18,
+                    'te_secondary' => 0.10,
+                ],
+                'default_stddev_per_game' => 2.1,
+                'odds_market_keys' => ['player_receptions', 'season_player_receptions'],
+            ],
+            'receiving_yards' => [
+                'label' => 'Receiving Yards',
+                'stat_field' => 'receiving_yards',
+                'positions' => ['RB', 'WR', 'TE'],
+                'prior_per_game_by_position' => [
+                    'RB' => 21.0,
+                    'WR' => 53.0,
+                    'TE' => 41.0,
+                ],
+                'prior_share_by_archetype' => [
+                    'rb_lead' => 0.12,
+                    'rb_rotation' => 0.07,
+                    'wr_alpha' => 0.29,
+                    'wr_secondary' => 0.16,
+                    'te_primary' => 0.19,
+                    'te_secondary' => 0.11,
+                ],
+                'default_stddev_per_game' => 28.0,
+                'odds_market_keys' => ['player_reception_yds', 'season_player_reception_yds'],
+            ],
+            'receiving_touchdowns' => [
+                'label' => 'Receiving Touchdowns',
+                'stat_field' => 'receiving_touchdowns',
+                'positions' => ['RB', 'WR', 'TE'],
+                'prior_per_game_by_position' => [
+                    'RB' => 0.15,
+                    'WR' => 0.40,
+                    'TE' => 0.32,
+                ],
+                'prior_share_by_archetype' => [
+                    'rb_lead' => 0.14,
+                    'rb_rotation' => 0.08,
+                    'wr_alpha' => 0.28,
+                    'wr_secondary' => 0.16,
+                    'te_primary' => 0.19,
+                    'te_secondary' => 0.11,
+                ],
+                'default_stddev_per_game' => 0.48,
+                'odds_market_keys' => ['player_reception_tds', 'season_player_reception_tds'],
+            ],
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Calibration Defaults
     |--------------------------------------------------------------------------
     |

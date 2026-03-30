@@ -24,6 +24,45 @@ afterEach(function () {
     Carbon::setTestNow();
 });
 
+function makeDailyDigestOddsData(
+    string $homeTeam = 'Los Angeles Lakers',
+    string $awayTeam = 'Boston Celtics',
+    float $homeSpread = -2.5,
+    float $total = 226.5,
+    int $homeMoneyline = -130,
+    int $awayMoneyline = 110,
+): array {
+    return [
+        'home_team' => $homeTeam,
+        'away_team' => $awayTeam,
+        'bookmakers' => [[
+            'markets' => [
+                [
+                    'key' => 'spreads',
+                    'outcomes' => [
+                        ['name' => $homeTeam, 'point' => $homeSpread, 'price' => -110],
+                        ['name' => $awayTeam, 'point' => abs($homeSpread), 'price' => -110],
+                    ],
+                ],
+                [
+                    'key' => 'totals',
+                    'outcomes' => [
+                        ['name' => 'Over', 'point' => $total, 'price' => -110],
+                        ['name' => 'Under', 'point' => $total, 'price' => -110],
+                    ],
+                ],
+                [
+                    'key' => 'h2h',
+                    'outcomes' => [
+                        ['name' => $homeTeam, 'price' => $homeMoneyline],
+                        ['name' => $awayTeam, 'price' => $awayMoneyline],
+                    ],
+                ],
+            ],
+        ]],
+    ];
+}
+
 function makeDailyDigestUser(): User
 {
     $user = User::factory()->create();
@@ -63,6 +102,14 @@ function makeDailyDigestPrediction(): Prediction
         'away_team_id' => $away->id,
         'game_date' => now()->copy()->addHours(4),
         'status' => 'STATUS_SCHEDULED',
+        'odds_data' => makeDailyDigestOddsData(
+            homeTeam: 'Los Angeles Lakers',
+            awayTeam: 'Boston Celtics',
+            homeSpread: -2.5,
+            total: 226.5,
+            homeMoneyline: -130,
+            awayMoneyline: 110,
+        ),
     ]);
 
     return Prediction::query()->create([
@@ -175,6 +222,14 @@ test('daily digest uses game time and excludes next day games', function () {
         'game_date' => now()->copy()->startOfDay(),
         'game_time' => '19:30:00',
         'status' => 'STATUS_SCHEDULED',
+        'odds_data' => makeDailyDigestOddsData(
+            homeTeam: 'Houston Rockets',
+            awayTeam: 'Memphis Grizzlies',
+            homeSpread: -2.5,
+            total: 219.5,
+            homeMoneyline: -135,
+            awayMoneyline: 115,
+        ),
     ]);
 
     Prediction::query()->create([
@@ -202,6 +257,14 @@ test('daily digest uses game time and excludes next day games', function () {
         'game_date' => now()->copy()->addDay()->startOfDay(),
         'game_time' => '18:00:00',
         'status' => 'STATUS_SCHEDULED',
+        'odds_data' => makeDailyDigestOddsData(
+            homeTeam: 'Boston Celtics',
+            awayTeam: 'Chicago Bulls',
+            homeSpread: -4.5,
+            total: 228.5,
+            homeMoneyline: -150,
+            awayMoneyline: 130,
+        ),
     ]);
 
     Prediction::query()->create([
@@ -220,7 +283,7 @@ test('daily digest uses game time and excludes next day games', function () {
     expect($payload['predictions'][0]['game_time'])->toBe(now()->copy()->setTime(19, 30)->format('M j, g:i A'));
 });
 
-test('daily digest caps displayed prediction confidence below lock language', function () {
+test('daily digest uses recommendation confidence instead of raw lock-level probability', function () {
     $user = makeDailyDigestUser();
 
     $home = Team::factory()->create([
@@ -240,6 +303,14 @@ test('daily digest caps displayed prediction confidence below lock language', fu
         'game_date' => now()->copy()->startOfDay(),
         'game_time' => '19:10:00',
         'status' => 'STATUS_SCHEDULED',
+        'odds_data' => makeDailyDigestOddsData(
+            homeTeam: 'Miami Marlins',
+            awayTeam: 'Colorado Rockies',
+            homeSpread: -1.5,
+            total: 8.5,
+            homeMoneyline: -2000,
+            awayMoneyline: 900,
+        ),
     ]);
 
     Prediction::query()->create([
@@ -254,5 +325,102 @@ test('daily digest caps displayed prediction confidence below lock language', fu
 
     expect($payload)->not->toBeNull();
     expect($payload['predictions'])->toHaveCount(1);
-    expect($payload['predictions'][0]['confidence'])->toBe(95.0);
+    expect($payload['predictions'][0]['confidence'])->toBe(59.5);
+    expect($payload['predictions'][0]['confidence'])->toBeLessThan(95.0);
+});
+
+test('daily digest excludes predictions without a qualifying recommendation', function () {
+    $user = makeDailyDigestUser();
+
+    $home = Team::factory()->create([
+        'location' => 'Phoenix',
+        'name' => 'Suns',
+        'abbreviation' => 'PHX',
+    ]);
+    $away = Team::factory()->create([
+        'location' => 'Denver',
+        'name' => 'Nuggets',
+        'abbreviation' => 'DEN',
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'game_date' => now()->copy()->startOfDay(),
+        'game_time' => '20:00:00',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => -2.5,
+        'predicted_total' => 225.0,
+        'win_probability' => 0.58,
+        'confidence_score' => 72.0,
+    ]);
+
+    $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
+
+    expect($payload)->toBeNull();
+});
+
+test('daily digest ranks predictions by strongest recommendation edge', function () {
+    $user = makeDailyDigestUser();
+
+    $homeA = Team::factory()->create(['location' => 'New York', 'name' => 'Knicks', 'abbreviation' => 'NYK']);
+    $awayA = Team::factory()->create(['location' => 'Chicago', 'name' => 'Bulls', 'abbreviation' => 'CHI']);
+    $gameA = Game::factory()->create([
+        'home_team_id' => $homeA->id,
+        'away_team_id' => $awayA->id,
+        'game_date' => now()->copy()->startOfDay(),
+        'game_time' => '18:00:00',
+        'status' => 'STATUS_SCHEDULED',
+        'odds_data' => makeDailyDigestOddsData(
+            homeTeam: 'New York Knicks',
+            awayTeam: 'Chicago Bulls',
+            homeSpread: -2.5,
+            total: 219.5,
+            homeMoneyline: -140,
+            awayMoneyline: 120,
+        ),
+    ]);
+    Prediction::query()->create([
+        'game_id' => $gameA->id,
+        'predicted_spread' => -5.5,
+        'predicted_total' => 222.0,
+        'win_probability' => 0.60,
+        'confidence_score' => 68.0,
+    ]);
+
+    $homeB = Team::factory()->create(['location' => 'Dallas', 'name' => 'Mavericks', 'abbreviation' => 'DAL']);
+    $awayB = Team::factory()->create(['location' => 'San Antonio', 'name' => 'Spurs', 'abbreviation' => 'SAS']);
+    $gameB = Game::factory()->create([
+        'home_team_id' => $homeB->id,
+        'away_team_id' => $awayB->id,
+        'game_date' => now()->copy()->startOfDay(),
+        'game_time' => '20:30:00',
+        'status' => 'STATUS_SCHEDULED',
+        'odds_data' => makeDailyDigestOddsData(
+            homeTeam: 'Dallas Mavericks',
+            awayTeam: 'San Antonio Spurs',
+            homeSpread: -1.5,
+            total: 230.5,
+            homeMoneyline: -120,
+            awayMoneyline: 100,
+        ),
+    ]);
+    Prediction::query()->create([
+        'game_id' => $gameB->id,
+        'predicted_spread' => -7.5,
+        'predicted_total' => 236.5,
+        'win_probability' => 0.70,
+        'confidence_score' => 80.0,
+    ]);
+
+    $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
+
+    expect($payload)->not->toBeNull();
+    expect($payload['predictions'])->toHaveCount(2);
+    expect($payload['predictions'][0]['matchup'])->toBe('SAS @ DAL');
+    expect($payload['predictions'][0]['edge'])->toBeGreaterThan($payload['predictions'][1]['edge']);
 });

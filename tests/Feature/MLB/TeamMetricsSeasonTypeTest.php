@@ -105,3 +105,69 @@ it('filters mlb team metrics index by stored season type rows', function () {
         ->assertJsonPath('data.0.season_type', (string) config('mlb.season.types.spring_training', 1))
         ->assertJsonPath('data.0.offensive_rating', 110);
 });
+
+it('applies season-type-aware records on the mlb team metrics index', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo('view-mlb-predictions');
+    Sanctum::actingAs($user);
+
+    $team = Team::factory()->create();
+    $opponent = Team::factory()->create();
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.spring_training', 1),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 8,
+        'away_score' => 2,
+        'game_date' => '2026-03-10',
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'game_date' => '2026-03-27',
+        'week' => 13,
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $opponent->id,
+        'away_team_id' => $team->id,
+        'home_score' => 6,
+        'away_score' => 1,
+        'game_date' => '2026-03-28',
+        'week' => 13,
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.spring_training', 1),
+        'offensive_rating' => 110,
+    ]);
+
+    TeamMetric::query()->create([
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'offensive_rating' => 140,
+    ]);
+
+    $response = $this->getJson('/api/v1/mlb/team-metrics?season=2026&season_type=2');
+
+    $response->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.season_type', (string) config('mlb.season.types.regular', 2))
+        ->assertJsonPath('data.0.wins', 1)
+        ->assertJsonPath('data.0.losses', 1);
+});

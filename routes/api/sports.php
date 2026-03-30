@@ -106,7 +106,7 @@ return function (string $sport, string $namespace) {
     ]);
 
     // Protected endpoints (requires authentication for tier limits)
-    Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport, $capabilities, $namespace) {
+    Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport, $capabilities, $namespace, $controllerNamespace) {
         Route::get('injuries', [InjuryController::class, 'index'])
             ->defaults('sport', $sport)
             ->middleware(["permission:view-{$sport}-predictions"]);
@@ -147,6 +147,11 @@ return function (string $sport, string $namespace) {
                 ->middleware(["permission:view-{$sport}-predictions"]);
             Route::get('players/{player}/player-props', [PlayerPropController::class, 'byPlayer'])
                 ->defaults('sport', $sport)
+                ->middleware(["permission:view-{$sport}-predictions"]);
+        }
+
+        if (($capabilities['player_futures'] ?? false) === true) {
+            Route::get('player-futures', ["{$controllerNamespace}\\PlayerFutureController", 'index'])
                 ->middleware(["permission:view-{$sport}-predictions"]);
         }
 

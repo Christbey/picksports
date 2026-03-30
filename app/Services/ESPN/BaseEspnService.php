@@ -2,8 +2,10 @@
 
 namespace App\Services\ESPN;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class BaseEspnService
 {
@@ -221,11 +223,30 @@ class BaseEspnService
 
     protected function fetchFromApi(string $url): ?array
     {
-        $response = Http::timeout(30)->connectTimeout(30)->get($url);
+        try {
+            $response = Http::retry(2, 1000, throw: false)
+                ->timeout(20)
+                ->connectTimeout(10)
+                ->get($url);
+        } catch (ConnectionException $exception) {
+            Log::warning('ESPN API connection failed.', [
+                'sport' => $this->sport,
+                'url' => $url,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
 
         if ($response->successful()) {
             return $response->json();
         }
+
+        Log::warning('ESPN API request returned a non-success response.', [
+            'sport' => $this->sport,
+            'url' => $url,
+            'status' => $response->status(),
+        ]);
 
         return null;
     }

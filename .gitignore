@@ -22,8 +22,8 @@
 /vendor
 .DS_Store
 .env
-.env.backup
 .env.production
+.env.backup
 .phpactor.json
 .phpunit.result.cache
 Homestead.json
@@ -36,6 +36,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/scripts/prod-db-tunnel.sh
 
 # Large SQL dump files (exceed GitHub 100MB limit)
 /database/mysql_data.sql

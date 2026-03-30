@@ -52,7 +52,14 @@ class NormalizeSeasonTypesCommand extends Command
         });
 
         if (! $dryRun && $updated > 0) {
-            app(SportsViewCache::class)->bustSegment(SportsViewCache::SEGMENT_TEAM_TRENDS);
+            $sportsViewCache = app(SportsViewCache::class);
+            foreach ([
+                SportsViewCache::SEGMENT_TEAM_TRENDS,
+                SportsViewCache::SEGMENT_TEAM_METRICS_INDEX,
+                SportsViewCache::SEGMENT_TEAM_METRICS_BY_TEAM,
+            ] as $segment) {
+                $sportsViewCache->bustSegment($segment);
+            }
         }
 
         $this->info(sprintf(

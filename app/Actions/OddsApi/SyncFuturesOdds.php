@@ -148,10 +148,16 @@ class SyncFuturesOdds
                             : null;
 
                         $teamId = $this->resolveTeamId($sport, $sportKey, $outcomeName);
+                        $playerId = $this->resolvePlayerId(
+                            $sport,
+                            $sportKey,
+                            $outcomeDescription ?: $outcomeName
+                        );
                         $teamColumns = [
                             'nba_team_id' => null,
                             'mlb_team_id' => null,
                             'nfl_team_id' => null,
+                            'nfl_player_id' => null,
                             'cbb_team_id' => null,
                             'wcbb_team_id' => null,
                         ];
@@ -159,6 +165,10 @@ class SyncFuturesOdds
                         $teamForeignKey = self::TEAM_FOREIGN_KEY_BY_SPORT[$sport] ?? null;
                         if ($teamForeignKey !== null) {
                             $teamColumns[$teamForeignKey] = $teamId;
+                        }
+
+                        if ($sport === 'nfl') {
+                            $teamColumns['nfl_player_id'] = $playerId;
                         }
 
                         $rows[] = [
@@ -214,6 +224,7 @@ class SyncFuturesOdds
             'nba_team_id',
             'mlb_team_id',
             'nfl_team_id',
+            'nfl_player_id',
             'cbb_team_id',
             'wcbb_team_id',
             'bookmaker',
@@ -266,6 +277,67 @@ class SyncFuturesOdds
             if ($fuzzyMatch !== null) {
                 return (int) $fuzzyMatch->id;
             }
+        }
+
+        return null;
+    }
+
+    protected function resolvePlayerId(string $sport, string $oddsSportKey, string $playerName): ?int
+    {
+        if ($sport !== 'nfl') {
+            return null;
+        }
+
+        $playerName = trim($playerName);
+        if ($playerName === '' || in_array(strtolower($playerName), ['over', 'under'], true)) {
+            return null;
+        }
+
+        $mappedPlayerId = $this->oddsApiService->mappedEspnPlayerId($oddsSportKey, $playerName);
+        if ($mappedPlayerId) {
+            $mappedPlayer = \App\Models\NFL\Player::query()->find($mappedPlayerId);
+            if ($mappedPlayer !== null) {
+                return (int) $mappedPlayer->id;
+            }
+        }
+
+        $mappedPlayerName = $this->oddsApiService->mappedEspnPlayerName($oddsSportKey, $playerName);
+        if ($mappedPlayerName) {
+            $exactMapped = \App\Models\NFL\Player::query()
+                ->whereRaw('LOWER(full_name) = ?', [mb_strtolower($mappedPlayerName)])
+                ->first();
+
+            if ($exactMapped !== null) {
+                return (int) $exactMapped->id;
+            }
+        }
+
+        $exact = \App\Models\NFL\Player::query()
+            ->whereRaw('LOWER(full_name) = ?', [mb_strtolower($playerName)])
+            ->first();
+
+        if ($exact !== null) {
+            return (int) $exact->id;
+        }
+
+        $normalizedInput = $this->oddsApiService->normalizePlayerName($playerName);
+        $candidate = \App\Models\NFL\Player::query()
+            ->whereNotNull('full_name')
+            ->get()
+            ->map(function ($player) use ($normalizedInput) {
+                $normalizedCandidate = $this->oddsApiService->normalizePlayerName((string) $player->full_name);
+                similar_text($normalizedInput, $normalizedCandidate, $score);
+
+                return [
+                    'player' => $player,
+                    'score' => $score,
+                ];
+            })
+            ->sortByDesc('score')
+            ->first();
+
+        if ($candidate && ($candidate['score'] ?? 0) >= 90.0) {
+            return (int) $candidate['player']->id;
         }
 
         return null;

@@ -2,12 +2,12 @@
 
 namespace App\Services;
 
-use App\Actions\Sports\CalculateBettingValue as GenericCalculateBettingValue;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Notifications\BettingValueAlert;
+use App\Services\BettingRecommendations\GameBettingRecommendationService;
 use Illuminate\Database\Eloquent\Model;
 
 class AlertService
@@ -22,13 +22,10 @@ class AlertService
         'wnba' => ['game' => \App\Models\WNBA\Game::class, 'prediction' => \App\Models\WNBA\Prediction::class],
     ];
 
-    protected const SPORT_CALCULATORS = [
-        'nfl' => \App\Actions\NFL\CalculateBettingValue::class,
-        'nba' => \App\Actions\NBA\CalculateBettingValue::class,
-        'cbb' => \App\Actions\CBB\CalculateBettingValue::class,
-    ];
-
-    public function __construct(private readonly NotificationTemplateDefaultService $templateDefaultService) {}
+    public function __construct(
+        private readonly NotificationTemplateDefaultService $templateDefaultService,
+        private readonly GameBettingRecommendationService $gameBettingRecommendationService,
+    ) {}
 
     public function checkForValueOpportunities(string $sport): int
     {
@@ -76,16 +73,8 @@ class AlertService
         }
 
         $sport = strtolower($this->inferSportFromPrediction($prediction));
-        $calculatorClass = self::SPORT_CALCULATORS[$sport] ?? GenericCalculateBettingValue::class;
-        $recommendations = $calculatorClass === GenericCalculateBettingValue::class
-            ? app($calculatorClass)->execute($game, $sport)
-            : app($calculatorClass)->execute($game);
 
-        if (! is_array($recommendations)) {
-            return [];
-        }
-
-        return collect($recommendations)
+        return collect($this->gameBettingRecommendationService->forGame($game, $sport))
             ->filter(fn (array $recommendation) => is_numeric($recommendation['edge'] ?? null))
             ->map(fn (array $recommendation) => [
                 'expected_value' => round((float) $recommendation['edge'], 2),

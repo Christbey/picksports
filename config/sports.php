@@ -16,6 +16,7 @@ return [
             'capabilities' => [
                 'player_stats_leaderboard' => true,
                 'depth_charts' => true,
+                'player_futures' => true,
             ],
             'web' => [
                 'predictions_page' => 'NFL/Predictions',
@@ -24,6 +25,7 @@ return [
                     'team-metrics' => 'NFL/TeamMetrics',
                     'player-stats' => 'NFL/PlayerStats',
                     'injuries' => 'NFL/Injuries',
+                    'futures' => 'NFL/Futures',
                 ],
                 'details' => [
                     'team' => true,

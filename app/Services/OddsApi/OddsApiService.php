@@ -5,6 +5,7 @@ namespace App\Services\OddsApi;
 use App\Models\OddsApiPlayerMapping;
 use App\Models\OddsApiTeamMapping;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 
@@ -87,6 +88,34 @@ class OddsApiService
         }
 
         return $this->get($url, $params);
+    }
+
+    /**
+     * Get historical odds for a sport or a specific event at a point in time.
+     *
+     * @param  string  $date  ISO-8601 timestamp
+     * @return array<string, mixed>|array<int, array<string, mixed>>|null
+     */
+    public function getHistoricalOdds(
+        string $sport,
+        string $date,
+        ?string $eventId = null,
+        string $bookmaker = 'draftkings',
+        string $markets = 'h2h,spreads,totals'
+    ): ?array {
+        $url = $eventId !== null
+            ? $this->baseUrl."/historical/sports/{$sport}/events/{$eventId}/odds"
+            : $this->baseUrl."/historical/sports/{$sport}/odds";
+
+        $params = $this->withApiKey([
+            'regions' => 'us',
+            'markets' => $markets,
+            'bookmakers' => $bookmaker,
+            'oddsFormat' => 'american',
+            'date' => $this->historicalDateParameter($date),
+        ]);
+
+        return $this->get($url, $params, false);
     }
 
     /**
@@ -219,6 +248,11 @@ class OddsApiService
     protected function withApiKey(array $params = []): array
     {
         return ['apiKey' => $this->apiKey] + $params;
+    }
+
+    protected function historicalDateParameter(string $date): string
+    {
+        return Carbon::parse($date)->utc()->format('Y-m-d\TH:i:s\Z');
     }
 
     protected function fetchFromApi(string $url, array $params = []): ?array

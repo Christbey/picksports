@@ -11,6 +11,8 @@ use App\Models\MLB\PlayerInjury;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
+use App\Services\MLB\HistoricalPredictionContextService;
+use App\Services\MLB\SituationalPredictionContextService;
 use App\Services\Sports\DepthChartImpactService;
 use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
@@ -20,18 +22,34 @@ class GeneratePrediction extends AbstractPredictionGenerator
     /** @var array<string, mixed> */
     private array $metadata = [];
 
+    private bool $allowHistoricalGames = false;
+
     protected const SPORT_KEY = 'mlb';
+
+    protected const FEATURE_VERSION = 'core-v3';
 
     protected const TEAM_METRIC_MODEL = TeamMetric::class;
 
     protected const PREDICTION_MODEL = Prediction::class;
+
+    public function executeHistorical(Game $game, bool $dispatchNarratives = false): ?Model
+    {
+        $previous = $this->allowHistoricalGames;
+        $this->allowHistoricalGames = true;
+
+        try {
+            return parent::execute($game, $dispatchNarratives);
+        } finally {
+            $this->allowHistoricalGames = $previous;
+        }
+    }
 
     /**
      * @return array<string, mixed>|null
      */
     protected function makePredictionData(Model $game): ?array
     {
-        if ($game->status !== 'STATUS_SCHEDULED') {
+        if (! $this->allowHistoricalGames && $game->status !== 'STATUS_SCHEDULED') {
             return null;
         }
 
@@ -76,6 +94,21 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $contextTotalAdj = round($contextTotalAdj * $contextWeightScale, 2);
         $predictedSpread = round($predictedSpread + $contextSpreadAdj, 1);
         $predictedTotal = round($predictedTotal + $contextTotalAdj, 1);
+
+        $historicalContext = app(HistoricalPredictionContextService::class)
+            ->forGame($game, $homeTeam->id, $awayTeam->id);
+        $historicalWeight = $this->historicalContextWeight($seasonProgressScale, $historicalContext);
+        $historicalSpreadAdj = round(((float) ($historicalContext['spread_adjustment'] ?? 0.0)) * $historicalWeight, 2);
+        $historicalTotalAdj = round(((float) ($historicalContext['total_adjustment'] ?? 0.0)) * $historicalWeight, 2);
+        $predictedSpread = round($predictedSpread + $historicalSpreadAdj, 1);
+        $predictedTotal = round($predictedTotal + $historicalTotalAdj, 1);
+
+        $situationalContext = app(SituationalPredictionContextService::class)
+            ->forGame($game, $homeTeam->id, $awayTeam->id);
+        $situationalSpreadAdj = round((float) ($situationalContext['spread_adjustment'] ?? 0.0), 2);
+        $situationalTotalAdj = round((float) ($situationalContext['total_adjustment'] ?? 0.0), 2);
+        $predictedSpread = round($predictedSpread + $situationalSpreadAdj, 1);
+        $predictedTotal = round($predictedTotal + $situationalTotalAdj, 1);
 
         $usePersistedSpreadInjuryContext = $this->hasPersistedInjuryAdjustedRating($homeMetrics, $awayMetrics);
         $usePersistedTotalInjuryContext = $this->hasPersistedInjuryAdjustedTotal($homeMetrics, $awayMetrics);
@@ -136,6 +169,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'context_weight_scale' => round($contextWeightScale, 3),
             'context_spread_adjustment' => $contextSpreadAdj,
             'context_total_adjustment' => $contextTotalAdj,
+            'historical_context_available' => (bool) ($historicalContext['available'] ?? false),
+            'historical_context_weight' => round($historicalWeight, 3),
+            'historical_context_spread_adjustment' => $historicalSpreadAdj,
+            'historical_context_total_adjustment' => $historicalTotalAdj,
+            'historical_context_home' => $historicalContext['home'] ?? [],
+            'historical_context_away' => $historicalContext['away'] ?? [],
+            'situational_context' => $situationalContext,
+            'situational_context_spread_adjustment' => $situationalSpreadAdj,
+            'situational_context_total_adjustment' => $situationalTotalAdj,
             'injury_model_source' => $usePersistedSpreadInjuryContext === $usePersistedTotalInjuryContext
                 ? ($usePersistedSpreadInjuryContext ? 'persisted_team_rating' : 'raw_player_status')
                 : 'mixed',
@@ -151,6 +193,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ];
 
         return $this->buildMlbPredictionData(
+            $game,
             (int) round($homeTeamElo),
             (int) round($awayTeamElo),
             round($predictedSpread, 1),
@@ -180,7 +223,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
         if ($probablePitcherEspnId) {
             $probablePitcher = Player::query()
                 ->where('espn_id', $probablePitcherEspnId)
-                ->where('team_id', $team->id)
                 ->first();
 
             if ($probablePitcher) {
@@ -381,6 +423,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
      * @return array<string, mixed>
      */
     protected function buildMlbPredictionData(
+        Game $game,
         int $homeElo,
         int $awayElo,
         float $predictedSpread,
@@ -394,6 +437,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ?float $vegasSpread
     ): array {
         return [
+            'season' => $game->season,
+            'season_type' => (string) $game->season_type,
             'home_team_elo' => $homeElo,
             'away_team_elo' => $awayElo,
             'home_pitcher_elo' => $homePitcherElo,
@@ -528,6 +573,23 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'team_weight' => $this->metadata['team_weight'] ?? null,
                 'pitcher_weight' => $this->metadata['pitcher_weight'] ?? null,
                 'context_weight_scale' => $this->metadata['context_weight_scale'] ?? null,
+                'historical_context_weight' => $this->metadata['historical_context_weight'] ?? null,
+            ],
+            'historical_context' => [
+                'available' => $this->metadata['historical_context_available'] ?? false,
+                'spread_adjustment' => $this->metadata['historical_context_spread_adjustment'] ?? 0.0,
+                'total_adjustment' => $this->metadata['historical_context_total_adjustment'] ?? 0.0,
+                'home' => $this->metadata['historical_context_home'] ?? [],
+                'away' => $this->metadata['historical_context_away'] ?? [],
+            ],
+            'situational_context' => [
+                'spread_adjustment' => $this->metadata['situational_context_spread_adjustment'] ?? 0.0,
+                'total_adjustment' => $this->metadata['situational_context_total_adjustment'] ?? 0.0,
+                'bullpen' => data_get($this->metadata, 'situational_context.bullpen', []),
+                'bullpen_quality' => data_get($this->metadata, 'situational_context.bullpen_quality', []),
+                'handedness' => data_get($this->metadata, 'situational_context.handedness', []),
+                'advanced_ratings' => data_get($this->metadata, 'situational_context.advanced_ratings', []),
+                'starter_form' => data_get($this->metadata, 'situational_context.starter_form', []),
             ],
             'pitcher_inputs' => [
                 'home_confidence' => $this->metadata['home_pitcher_confidence'] ?? null,
@@ -574,8 +636,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         float $predictedSpread,
         float $predictedTotal
     ): array {
-        $homeStatus = $this->probablePitcherInjuryStatus($game->probable_home_pitcher_espn_id, $homeTeam);
-        $awayStatus = $this->probablePitcherInjuryStatus($game->probable_away_pitcher_espn_id, $awayTeam);
+        $homeStatus = $this->probablePitcherInjuryStatus($game, $game->probable_home_pitcher_espn_id, $homeTeam);
+        $awayStatus = $this->probablePitcherInjuryStatus($game, $game->probable_away_pitcher_espn_id, $awayTeam);
 
         $homeSpreadPenalty = $this->probablePitcherSpreadPenalty($homeStatus);
         $awaySpreadPenalty = $this->probablePitcherSpreadPenalty($awayStatus);
@@ -650,7 +712,22 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return $minimumScale + ((1.0 - $minimumScale) * $seasonProgressScale);
     }
 
-    private function probablePitcherInjuryStatus(?string $probablePitcherEspnId, Team $team): ?string
+    /**
+     * @param  array<string, mixed>  $historicalContext
+     */
+    private function historicalContextWeight(float $seasonProgressScale, array $historicalContext): float
+    {
+        if (($historicalContext['available'] ?? false) !== true) {
+            return 0.0;
+        }
+
+        $maxWeight = (float) config('mlb.prediction.historical_priors.max_weight', 0.35);
+        $maxWeight = max(0.0, min(1.0, $maxWeight));
+
+        return round($maxWeight * (1.0 - max(0.0, min(1.0, $seasonProgressScale))), 3);
+    }
+
+    private function probablePitcherInjuryStatus(Game $game, ?string $probablePitcherEspnId, Team $team): ?string
     {
         if (! $probablePitcherEspnId) {
             return null;
@@ -658,7 +735,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
         $player = Player::query()
             ->where('espn_id', $probablePitcherEspnId)
-            ->where('team_id', $team->id)
             ->first();
 
         if (! $player) {
@@ -669,6 +745,18 @@ class GeneratePrediction extends AbstractPredictionGenerator
             ->where('player_id', $player->id)
             ->where('team_id', $team->id)
             ->where('is_active', true)
+            ->where(function ($query) use ($game) {
+                $query->whereNull('injury_date')
+                    ->orWhereDate('injury_date', '<=', $game->game_date);
+            })
+            ->where(function ($query) use ($game) {
+                $query->whereNull('return_date')
+                    ->orWhereDate('return_date', '>=', $game->game_date);
+            })
+            ->where(function ($query) use ($game) {
+                $query->whereNull('source_updated_at')
+                    ->orWhereDate('source_updated_at', '<=', $game->game_date);
+            })
             ->latest('source_updated_at')
             ->value('status');
     }

@@ -73,6 +73,11 @@ class Team extends Model
         return $this->hasMany(TeamMetric::class, 'team_id');
     }
 
+    public function bullpenRatings(): HasMany
+    {
+        return $this->hasMany(BullpenRating::class, 'team_id');
+    }
+
     public function eloRatings(): HasMany
     {
         return $this->hasMany(EloRating::class, 'team_id');

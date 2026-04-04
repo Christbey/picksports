@@ -404,6 +404,22 @@ export interface MlbPageGame extends GamePageGame {
     broadcast_networks: string[] | null;
     season: number;
     season_type: string;
+    probable_home_pitcher_espn_id?: string | null;
+    probable_away_pitcher_espn_id?: string | null;
+    home_starting_pitcher?: {
+        id: number;
+        espn_id?: string | null;
+        full_name?: string | null;
+        headshot_url?: string | null;
+        elo_rating?: number | null;
+    } | null;
+    away_starting_pitcher?: {
+        id: number;
+        espn_id?: string | null;
+        full_name?: string | null;
+        headshot_url?: string | null;
+        elo_rating?: number | null;
+    } | null;
 }
 
 export type MlbPagePrediction = PredictionSummary;

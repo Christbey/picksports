@@ -208,29 +208,13 @@ abstract class AbstractSyncHistoricalOddsForGames extends AbstractSyncOddsForGam
      */
     protected function candidateSnapshotTimestamps(Model $game, int $hoursBefore): array
     {
-        $scheduledTime = $this->gameScheduledTime($game);
+        $targetTimestamp = $this->historicalSnapshotTimestamp($game, $hoursBefore);
 
-        if ($scheduledTime === null) {
+        if ($targetTimestamp === null) {
             return [];
         }
 
-        $fallbackHours = collect([
-            $hoursBefore,
-            12,
-            6,
-            3,
-            1,
-        ])
-            ->filter(fn (int $hours): bool => $hours >= 0)
-            ->unique()
-            ->sortDesc()
-            ->values();
-
-        return $fallbackHours
-            ->map(fn (int $hours): Carbon => $scheduledTime->copy()->subHours($hours))
-            ->filter(fn (Carbon $timestamp): bool => $timestamp->lt($scheduledTime))
-            ->values()
-            ->all();
+        return [$targetTimestamp];
     }
 
     /**

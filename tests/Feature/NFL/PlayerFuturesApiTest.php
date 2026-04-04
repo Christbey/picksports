@@ -181,3 +181,27 @@ it('returns projected nfl player futures with market odds and probabilities', fu
     expect($row['over_probability'])->toBeNumeric();
     expect($row['under_probability'])->toBeNumeric();
 });
+
+it('rejects unknown player futures markets', function () {
+    Permission::findOrCreate('view-nfl-predictions', 'web');
+
+    $user = User::factory()->create();
+    $user->givePermissionTo('view-nfl-predictions');
+    Sanctum::actingAs($user);
+
+    $this->getJson('/api/v1/nfl/player-futures?season=2025&market=passing_yds')
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['market']);
+});
+
+it('rejects historical player futures requests that ask for latest odds', function () {
+    Permission::findOrCreate('view-nfl-predictions', 'web');
+
+    $user = User::factory()->create();
+    $user->givePermissionTo('view-nfl-predictions');
+    Sanctum::actingAs($user);
+
+    $this->getJson('/api/v1/nfl/player-futures?season=2025&market=passing_yards&as_of_week=4')
+        ->assertStatus(422)
+        ->assertJsonValidationErrors(['only_with_odds']);
+});

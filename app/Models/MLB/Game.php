@@ -90,6 +90,16 @@ class Game extends Model
         return $this->belongsTo(Team::class, 'away_team_id');
     }
 
+    public function probableHomePitcher(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'probable_home_pitcher_espn_id', 'espn_id');
+    }
+
+    public function probableAwayPitcher(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'probable_away_pitcher_espn_id', 'espn_id');
+    }
+
     public function plays(): HasMany
     {
         return $this->hasMany(Play::class, 'game_id');

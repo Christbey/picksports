@@ -13,7 +13,14 @@ class GameOddsSnapshotRecorder
      * @param  array<string, mixed>  $rawEvent
      * @param  array<string, mixed>  $oddsData
      */
-    public function record(string $sport, Model $game, array $rawEvent, array $oddsData, ?Carbon $capturedAt = null): ?GameOddsSnapshot
+    public function record(
+        string $sport,
+        Model $game,
+        array $rawEvent,
+        array $oddsData,
+        ?Carbon $capturedAt = null,
+        string $source = 'odds_api'
+    ): ?GameOddsSnapshot
     {
         $capturedAt ??= now();
         $payloadHash = hash('sha256', json_encode($oddsData));
@@ -35,7 +42,7 @@ class GameOddsSnapshotRecorder
             'odds_api_event_id' => isset($rawEvent['id']) ? (string) $rawEvent['id'] : null,
             'bookmaker_key' => data_get($oddsData, 'bookmakers.0.key'),
             'bookmaker_title' => data_get($oddsData, 'bookmakers.0.title'),
-            'source' => 'odds_api',
+            'source' => $source,
             'commence_time' => $this->commenceTime($rawEvent['commence_time'] ?? null),
             'captured_at' => $this->storageTimestamp($capturedAt),
             'payload_hash' => $payloadHash,

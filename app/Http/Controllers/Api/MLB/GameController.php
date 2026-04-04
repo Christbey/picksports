@@ -20,6 +20,8 @@ class GameController extends AbstractGameController
         return [
             'homeTeam.activePlayerInjuries.player',
             'awayTeam.activePlayerInjuries.player',
+            'probableHomePitcher.activeInjuries.player',
+            'probableAwayPitcher.activeInjuries.player',
         ];
     }
 }

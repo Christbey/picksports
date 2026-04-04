@@ -5,6 +5,7 @@ import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import DepthChartImpactCard from '@/components/game-page/DepthChartImpactCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import MlbGameInsights from '@/components/game-page/MlbGameInsights.vue';
+import ProbableStartersCard from '@/components/game-page/ProbableStartersCard.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useMlbDetailedGamePage } from '@/composables/useMlbDetailedGamePage';
 
@@ -18,6 +19,13 @@ const awayInjuries = computed(
 );
 const homeInjuries = computed(
     () => pageProps.value.homeTeam?.active_injuries ?? [],
+);
+const hasDepthChartEntries = computed(() =>
+    Boolean(
+        depthCharts.value &&
+            ((depthCharts.value.away_team?.entries.length ?? 0) > 0 ||
+                (depthCharts.value.home_team?.entries.length ?? 0) > 0),
+    ),
 );
 </script>
 
@@ -33,9 +41,18 @@ const homeInjuries = computed(
         </template>
         <template #afterHero>
             <DepthChartCard
-                v-if="depthCharts"
+                v-if="hasDepthChartEntries && depthCharts"
                 :away-team="depthCharts.away_team"
                 :home-team="depthCharts.home_team"
+            />
+            <ProbableStartersCard
+                v-else
+                :away-team="pageProps.awayTeam"
+                :home-team="pageProps.homeTeam"
+                :away-starter-name="pageProps.awayStarterName"
+                :home-starter-name="pageProps.homeStarterName"
+                :away-starter-rating="pageProps.awayStarterRating"
+                :home-starter-rating="pageProps.homeStarterRating"
             />
             <InjuryReportCard
                 :away-team-abbr="pageProps.awayTeam?.abbreviation"

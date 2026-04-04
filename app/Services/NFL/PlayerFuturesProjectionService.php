@@ -25,21 +25,25 @@ class PlayerFuturesProjectionService
         bool $onlyWithOdds = true,
         string $sortBy = 'edge',
         string $direction = 'desc',
-        int $limit = 100
+        int $limit = 100,
+        ?int $asOfWeek = null
     ): array {
         $markets = $this->marketDefinitions();
         $selectedMarkets = $market !== null && isset($markets[$market])
             ? [$market => $markets[$market]]
             : $markets;
 
-        $aggregates = $this->seasonAggregates($season, $playerId);
-        $teamSchedule = $this->teamScheduleSummary($season);
-        $injuryStatuses = $this->activeInjuryStatuses();
-        $oddsByPlayer = $this->futuresOddsLookup->nflPlayerSeasonTotalsBySeason($season);
-        $depthChart = $this->depthChartContext($season);
+        $cutoffDate = $this->cutoffDate($season, $asOfWeek);
+        $aggregates = $this->seasonAggregates($season, $playerId, $asOfWeek);
+        $teamSchedule = $this->teamScheduleSummary($season, $asOfWeek);
+        $injuryStatuses = $this->activeInjuryStatuses($cutoffDate);
+        $oddsByPlayer = $asOfWeek === null
+            ? $this->futuresOddsLookup->nflPlayerSeasonTotalsBySeason($season)
+            : [];
+        $depthChart = $this->depthChartContext($season, $asOfWeek);
         $teamTotals = $this->teamTotalsByTeam($aggregates);
-        $teamMetrics = $this->teamMetricContext($season);
-        $remainingOpponents = $this->remainingOpponentsByTeam($season);
+        $teamMetrics = $this->teamMetricContext($season, $cutoffDate);
+        $remainingOpponents = $this->remainingOpponentsByTeam($season, $asOfWeek);
 
         $rows = [];
 
@@ -175,6 +179,24 @@ class PlayerFuturesProjectionService
     }
 
     /**
+     * @return array<int, array<string, float>>
+     */
+    public function actualSeasonTotals(int $season): array
+    {
+        $aggregates = $this->seasonAggregates($season);
+        $totals = [];
+
+        foreach ($aggregates as $aggregate) {
+            $totals[(int) $aggregate['player_id']] = array_map(
+                static fn ($value): float => (float) $value,
+                (array) ($aggregate['totals'] ?? [])
+            );
+        }
+
+        return $totals;
+    }
+
+    /**
      * @return array<string, array<string, mixed>>
      */
     protected function marketDefinitions(): array
@@ -185,7 +207,7 @@ class PlayerFuturesProjectionService
     /**
      * @return array<int, array<string, mixed>>
      */
-    protected function seasonAggregates(int $season, ?int $playerId = null): array
+    protected function seasonAggregates(int $season, ?int $playerId = null, ?int $asOfWeek = null): array
     {
         $rows = PlayerStat::query()
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
@@ -194,6 +216,7 @@ class PlayerFuturesProjectionService
             ->where('nfl_games.status', config('nfl.statuses.final'))
             ->where('nfl_games.season', $season)
             ->whereIn('nfl_games.season_type', $this->regularSeasonTypeCandidates())
+            ->when($asOfWeek !== null, fn ($query) => $query->where('nfl_games.week', '<=', $asOfWeek))
             ->when($playerId !== null, fn ($query) => $query->where('nfl_player_stats.player_id', $playerId))
             ->selectRaw('
                 nfl_player_stats.player_id,
@@ -234,6 +257,7 @@ class PlayerFuturesProjectionService
             ->where('nfl_games.status', config('nfl.statuses.final'))
             ->where('nfl_games.season', $season)
             ->whereIn('nfl_games.season_type', $this->regularSeasonTypeCandidates())
+            ->when($asOfWeek !== null, fn ($query) => $query->where('nfl_games.week', '<=', $asOfWeek))
             ->when($playerId !== null, fn ($query) => $query->where('nfl_player_stats.player_id', $playerId))
             ->get([
                 'nfl_player_stats.player_id',
@@ -315,12 +339,12 @@ class PlayerFuturesProjectionService
     /**
      * @return array<int, array{games_scheduled:int,games_completed:int}>
      */
-    protected function teamScheduleSummary(int $season): array
+    protected function teamScheduleSummary(int $season, ?int $asOfWeek = null): array
     {
         $games = Game::query()
             ->where('season', $season)
             ->whereIn('season_type', $this->regularSeasonTypeCandidates())
-            ->get(['home_team_id', 'away_team_id', 'status']);
+            ->get(['home_team_id', 'away_team_id', 'status', 'week']);
 
         $summary = [];
 
@@ -333,7 +357,10 @@ class PlayerFuturesProjectionService
                 $summary[$teamId] ??= ['games_scheduled' => 0, 'games_completed' => 0];
                 $summary[$teamId]['games_scheduled']++;
 
-                if ((string) $game->status === (string) config('nfl.statuses.final')) {
+                if (
+                    (string) $game->status === (string) config('nfl.statuses.final')
+                    && ($asOfWeek === null || (int) ($game->week ?? 0) <= $asOfWeek)
+                ) {
                     $summary[$teamId]['games_completed']++;
                 }
             }
@@ -345,11 +372,25 @@ class PlayerFuturesProjectionService
     /**
      * @return array<int, string>
      */
-    protected function activeInjuryStatuses(): array
+    protected function activeInjuryStatuses(?string $cutoffDate = null): array
     {
-        return PlayerInjury::query()
-            ->where('is_active', true)
+        $query = PlayerInjury::query()
             ->orderByDesc('updated_at')
+            ->orderByDesc('source_updated_at');
+
+        if ($cutoffDate === null) {
+            $query->where('is_active', true);
+        } else {
+            $query->where(function ($injuryQuery) use ($cutoffDate): void {
+                $injuryQuery->whereDate('injury_date', '<=', $cutoffDate)
+                    ->where(function ($returnQuery) use ($cutoffDate): void {
+                        $returnQuery->whereNull('return_date')
+                            ->orWhereDate('return_date', '>=', $cutoffDate);
+                    });
+            });
+        }
+
+        return $query
             ->get(['player_id', 'status'])
             ->unique('player_id')
             ->mapWithKeys(fn ($injury) => [(int) $injury->player_id => (string) $injury->status])
@@ -359,10 +400,14 @@ class PlayerFuturesProjectionService
     /**
      * @return array{by_player:array<int, array<string, mixed>>, by_team:array<int, array<int, array<string, mixed>>>}
      */
-    protected function depthChartContext(int $season): array
+    protected function depthChartContext(int $season, ?int $asOfWeek = null): array
     {
         $entries = DepthChartEntry::query()
-            ->where('season', '<=', $season)
+            ->when(
+                $asOfWeek !== null,
+                fn ($query) => $query->where('season', '<', $season),
+                fn ($query) => $query->where('season', '<=', $season)
+            )
             ->orderByDesc('season')
             ->orderByDesc('is_starter')
             ->orderBy('depth_rank')
@@ -417,10 +462,11 @@ class PlayerFuturesProjectionService
     /**
      * @return array{by_team:array<int, array<string, float>>, league_avg_predictive_rating:float}
      */
-    protected function teamMetricContext(int $season): array
+    protected function teamMetricContext(int $season, ?string $cutoffDate = null): array
     {
         $rows = TeamMetric::query()
             ->where('season', $season)
+            ->when($cutoffDate !== null, fn ($query) => $query->whereDate('calculation_date', '<=', $cutoffDate))
             ->orderByDesc('calculation_date')
             ->orderByDesc('id')
             ->get([
@@ -453,12 +499,16 @@ class PlayerFuturesProjectionService
     /**
      * @return array<int, array<int, int>>
      */
-    protected function remainingOpponentsByTeam(int $season): array
+    protected function remainingOpponentsByTeam(int $season, ?int $asOfWeek = null): array
     {
         $games = Game::query()
             ->where('season', $season)
             ->whereIn('season_type', $this->regularSeasonTypeCandidates())
-            ->where('status', '!=', config('nfl.statuses.final'))
+            ->when(
+                $asOfWeek !== null,
+                fn ($query) => $query->where('week', '>', $asOfWeek),
+                fn ($query) => $query->where('status', '!=', config('nfl.statuses.final'))
+            )
             ->get(['home_team_id', 'away_team_id']);
 
         $byTeam = [];
@@ -806,5 +856,28 @@ class PlayerFuturesProjectionService
             $depthRank <= 3 => 0.4,
             default => 0.2,
         };
+    }
+
+    protected function cutoffDate(int $season, ?int $asOfWeek): ?string
+    {
+        if ($asOfWeek === null) {
+            return null;
+        }
+
+        $value = Game::query()
+            ->where('season', $season)
+            ->whereIn('season_type', $this->regularSeasonTypeCandidates())
+            ->where('week', '<=', $asOfWeek)
+            ->max('game_date');
+
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if (is_string($value) && $value !== '') {
+            return substr($value, 0, 10);
+        }
+
+        return null;
     }
 }

@@ -11,6 +11,8 @@ class Prediction extends Model
 
     protected $fillable = [
         'game_id',
+        'season',
+        'season_type',
         'home_team_elo',
         'away_team_elo',
         'home_pitcher_elo',
@@ -48,6 +50,8 @@ class Prediction extends Model
     protected function casts(): array
     {
         return [
+            'season' => 'integer',
+            'season_type' => 'string',
             'home_team_elo' => 'decimal:1',
             'away_team_elo' => 'decimal:1',
             'home_pitcher_elo' => 'decimal:1',

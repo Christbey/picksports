@@ -578,7 +578,14 @@ $scheduleSportPipeline(
     'mlb:sync-player-props',
     11,
     16,
-    'MLB: Sync Player Props'
+    'MLB: Sync Player Props',
+    [
+        [
+            'command' => 'mlb:calculate-bullpen-ratings --season='.$currentYear.' --season-type='.config('mlb.season.types.regular').' --date='.date('Y-m-d'),
+            'time' => '05:45',
+            'name' => 'MLB: Calculate Bullpen Ratings',
+        ],
+    ]
 );
 $scheduleDailySeasonJob(
     "mlb:generate-playoff-forecast --season={$currentYear}",

@@ -1,6 +1,6 @@
 # Admin Runtime Config Design
 
-This document proposes the backend design for a DB-backed runtime config layer that can support a true admin panel, live-safe model tuning, and prediction previews without duplicating existing logic.
+This document proposes the backend design for a DB-backed runtime config layer that can support a true admin panel, live-safe model tuning, prediction previews, historical backfills, and futures-model workflows without duplicating existing logic.
 
 It is intentionally grounded in the current PickSports codebase.
 
@@ -14,12 +14,15 @@ Use this document before implementing:
 - prediction preview tooling
 - experiment and backtest UI workflows
 - draft vs active model configuration rollout
+- calibration-report and training-data admin tooling
+- futures-model tuning and historical snapshot workflows
 
 This document exists to answer:
 - what patterns already exist that we should reuse
 - where the current code is already close to the target design
 - what new tables and services should exist
 - what should not be rebuilt or duplicated
+- how recent MLB and NFL historical-model additions change the design target
 
 ## Short Answer
 
@@ -31,7 +34,7 @@ The DRY path is:
 - keep `config/*.php` as code-defined defaults
 - add DB-backed override/version/draft records
 - resolve runtime values through shared services
-- plug those services into existing prediction generators, previews, backtests, and admin pages
+- plug those services into existing prediction generators, previews, backtests, historical backfills, futures workflows, and admin pages
 
 ## Existing Reuse Points
 
@@ -94,7 +97,46 @@ Important behavior:
 
 This gives us a natural place to attach runtime-config versions later.
 
-### 5. Admin pages already have an implementation style
+### 5. Historical prediction and dataset workflows now exist
+
+Recent MLB additions materially change the design target.
+
+Current pattern:
+- [app/Console/Commands/MLB/BackfillHistoricalPredictionsCommand.php](/Users/bey/Herd/github/picksports/app/Console/Commands/MLB/BackfillHistoricalPredictionsCommand.php)
+- [app/Console/Commands/MLB/ExportTrainingDataCommand.php](/Users/bey/Herd/github/picksports/app/Console/Commands/MLB/ExportTrainingDataCommand.php)
+- [app/Console/Commands/MLB/ReportCalibrationCommand.php](/Users/bey/Herd/github/picksports/app/Console/Commands/MLB/ReportCalibrationCommand.php)
+- [app/Services/MLB/HistoricalPredictionContextService.php](/Users/bey/Herd/github/picksports/app/Services/MLB/HistoricalPredictionContextService.php)
+- [app/Services/MLB/SituationalPredictionContextService.php](/Users/bey/Herd/github/picksports/app/Services/MLB/SituationalPredictionContextService.php)
+- [app/Actions/MLB/GeneratePrediction.php](/Users/bey/Herd/github/picksports/app/Actions/MLB/GeneratePrediction.php)
+
+Important behavior:
+- historical backfills now reuse the same generator path instead of a separate historical engine
+- the MLB prediction model now carries richer historical and situational context metadata
+- feature snapshots and evaluations are now explicitly used as training-data export inputs
+- calibration reporting is already command-driven and summarizes graded prediction quality
+
+This means the admin panel should be designed as a model-ops surface, not just a config editor.
+
+### 6. Historical snapshot patterns now exist for futures workflows
+
+Recent NFL and sports-odds additions introduce another reusable pattern.
+
+Current pattern:
+- [app/Models/Sports/FuturesOddsSnapshot.php](/Users/bey/Herd/github/picksports/app/Models/Sports/FuturesOddsSnapshot.php)
+- [app/Models/NFL/TeamMetricSnapshot.php](/Users/bey/Herd/github/picksports/app/Models/NFL/TeamMetricSnapshot.php)
+- [app/Services/NFL/TeamMetricSnapshotService.php](/Users/bey/Herd/github/picksports/app/Services/NFL/TeamMetricSnapshotService.php)
+- [app/Services/NFL/TeamFuturesProjectionService.php](/Users/bey/Herd/github/picksports/app/Services/NFL/TeamFuturesProjectionService.php)
+- [app/Services/NFL/TeamFuturesBacktestService.php](/Users/bey/Herd/github/picksports/app/Services/NFL/TeamFuturesBacktestService.php)
+- [app/Services/NFL/PlayerFuturesBacktestService.php](/Users/bey/Herd/github/picksports/app/Services/NFL/PlayerFuturesBacktestService.php)
+
+Important behavior:
+- futures projections can already run against historical snapshots
+- backtests can already evaluate projections against actual totals and market lines
+- snapshot tables are now a first-class pattern for "as-of" model state
+
+This pattern is highly relevant to admin-side experiment history, preview provenance, and future tuning storage.
+
+### 7. Admin pages already have an implementation style
 
 Current pattern:
 - [routes/web/admin.php](/Users/bey/Herd/github/picksports/routes/web/admin.php)
@@ -142,6 +184,7 @@ What is missing:
 - a shared repository for versioned runtime config
 - a shared resolver for merging defaults and overrides
 - a registry defining what keys are editable and how they should be validated
+- a consistent way to tie config versions to backfill, training-export, calibration, and futures workflows
 
 ### Problem 3. Version strings are not yet tied to actual config records
 
@@ -156,6 +199,8 @@ That means the app can describe prediction artifacts, but it cannot yet answer:
 - which exact admin-edited tuning values produced this prediction
 - which config version is active for a given sport
 - what changed between active version A and draft version B
+- which config version generated a historical backfill or calibration report
+- which tuning profile was used for a futures backtest or betting report
 
 ## Design Goals
 
@@ -165,6 +210,7 @@ The runtime config layer should:
 - support draft, active, and archived versions
 - support one-off preview overrides without persistence
 - reuse existing prediction generator and preview logic
+- reuse existing historical backfill, export, calibration, and futures backtest flows
 - keep admin controllers thin
 - keep versioning compatible with snapshot and evaluation tables
 
@@ -172,6 +218,8 @@ The runtime config layer should not:
 - replace every `config()` call in the app immediately
 - move all app settings into SQL
 - create a separate prediction engine
+- create a second historical backfill or calibration path for admin-only workflows
+- create a separate futures projection engine for UI previews
 - introduce per-sport bespoke override tables unless a generic versioned shape fails
 
 ## Recommended Architecture
@@ -213,6 +261,13 @@ Introduce these core backend pieces:
 
 This is the service-oriented extension of the existing `FoundingUsersSettingsService` pattern.
 
+The same runtime layer should eventually be usable by:
+- scheduled generation commands
+- historical backfill commands
+- training-data export commands
+- calibration and report commands
+- futures projection and backtest services
+
 ### C. Use versioned records, not a single mutable settings blob
 
 Recommended minimum tables:
@@ -223,7 +278,7 @@ Represents a logical config family.
 
 Suggested columns:
 - `id`
-- `domain` (`prediction`, `forecast`, `betting`, later maybe `alerts`)
+- `domain` (`prediction`, `forecast`, `betting`, `futures`, later maybe `alerts`)
 - `sport` nullable (`nba`, `cbb`, etc. or null for shared)
 - `key` unique logical identifier such as `nba.prediction`
 - `name`
@@ -263,6 +318,10 @@ Suggested columns:
 - `home_court_points`
 - `total_calibration.base_adjustment`
 - `win_probability_calibration.enabled`
+- `historical_priors.max_weight`
+- `situational.bullpen.spread_weight`
+- `team_futures.rating_scale`
+- `team_futures.offseason_qb_continuity_weight`
 
 This shape keeps the schema generic while still allowing per-key diffs and validation.
 
@@ -289,6 +348,27 @@ Stores:
 - input scope
 - summary metrics
 - artifacts path or payload
+- started/completed by
+
+Likely modes now include:
+- `prediction_spread`
+- `prediction_total`
+- `prediction_calibration`
+- `forecast`
+- `futures_team`
+- `futures_player`
+
+#### `historical_generation_runs`
+
+Likely useful because the repo now supports historical generation and exports.
+
+Stores:
+- sport
+- run type (`prediction_backfill`, `snapshot_capture`, `training_export`, `calibration_report`)
+- config version id nullable
+- input scope
+- output artifact path nullable
+- summary payload
 - started/completed by
 
 These are valuable, but they are not required to ship the first runtime config layer.
@@ -328,7 +408,7 @@ Start with the shared prediction access points that already centralize config re
   Good for NBA-specific prediction weights and total-calibration rollout.
 
 - [app/Actions/MLB/GeneratePrediction.php](/Users/bey/Herd/github/picksports/app/Actions/MLB/GeneratePrediction.php)
-  Good for early-season weighting and pitcher adjustments.
+  Good for early-season weighting, historical priors, situational context, and pitcher adjustments.
 
 ### First helper method shape
 
@@ -375,6 +455,9 @@ Example groups:
 - market blend
 - forecast simulation
 - betting thresholds
+- historical priors
+- situational context
+- futures projection
 
 Example types:
 - boolean
@@ -407,6 +490,7 @@ Do not build:
 Reuse:
 - existing backtest command behavior
 - preview recomputation flow
+- existing futures backtest services
 
 Do not build:
 - a second analytics path that computes different outputs than the command layer
@@ -417,6 +501,7 @@ Reuse:
 - snapshot recording
 - evaluation recording
 - model/feature/blend version fields
+- existing command-produced reports and dataset exports where possible
 
 Do not build:
 - a second artifact schema just for admin experiments unless the existing tables are proven insufficient
@@ -440,6 +525,12 @@ Avoid these early mistakes:
 
 The right first target is tuneable prediction and forecast parameters only.
 
+That said, recent MLB and NFL work means the design should leave room for tuneable:
+- historical priors
+- situational context multipliers
+- futures projection defaults
+- betting probability calibration inputs
+
 ## Versioning Recommendation
 
 The current version fields are:
@@ -454,6 +545,10 @@ Example:
 - `feature_version = core-v1`
 - `blend_version = baseline-v1`
 - `runtime_config_version_id = 12`
+
+Important note:
+- some models are already moving independently at the feature level, for example MLB now uses `feature_version = core-v3`
+- runtime-config provenance should complement these model/feature version identifiers rather than replacing them
 
 Later, if helpful, expose a derived display string such as:
 
@@ -473,6 +568,8 @@ The eventual admin panel should have at least these sections:
 - draft versions
 - promote / archive actions
 - config diff viewer
+- historical generation runs
+- exported datasets and report artifacts
 
 ### Prediction Preview
 
@@ -482,16 +579,27 @@ The eventual admin panel should have at least these sections:
 - edit draft overrides
 - compare current vs preview output
 - inspect model metadata
+- for historical-capable models, optionally preview against past completed games using the shared historical execution path
 
 ### Experiments
 
 - run backtests against a selected version
 - compare metrics vs active version
 - persist results for review
+- generate calibration reports
+- export feature/evaluation datasets using the same versioned scope
 
 ### Forecast Tuning
 
 - start with CBB tournament forecast because the code already has a tuning store and calibration command
+
+### Futures Ops
+
+- team futures projections
+- player futures projections
+- odds snapshot coverage
+- as-of-date backtests
+- betting report generation
 
 ## Suggested Rollout Order
 
@@ -515,16 +623,26 @@ Reason:
 - command-driven calibration already exists
 - merge semantics are already understood
 
+Alternative near-term candidate:
+- MLB historical priors and situational context
+
+Reason:
+- the model has already gained richer context services
+- the model already advanced its feature version to `core-v3`
+- historical generation, export, and calibration commands now exist
+
 ### Phase 3. Migrate one prediction domain
 
 Best candidates:
 - NBA prediction config
 - CBB prediction config
+- MLB prediction config
 
 Reason:
 - preview methods already exist
 - versioned artifacts already exist
 - backtests already exist
+- MLB now also has historical backfill and training/export workflows that directly benefit from versioned config provenance
 
 ### Phase 4. Build admin preview UI
 
@@ -545,6 +663,8 @@ These questions should be answered before implementation:
 - Do we want one active version per profile, or staged active versions by environment?
 - Should preview overrides be persisted automatically as draft sessions, or remain ephemeral unless explicitly saved?
 - Do we want `runtime_config_values` stored path-by-path, or do we want one JSON payload per version plus a derived diff index?
+- Should command-produced artifacts such as MLB calibration reports or futures backtests store their resolved config version id automatically?
+- Do futures-model configs live under the same generic runtime layer as prediction configs, or as a sibling domain with the same repository and version model?
 
 ## Recommended First Implementation Slice
 
@@ -560,6 +680,16 @@ The safest first slice is:
    - preview overrides replace active values without persistence
    - existing forecast and prediction outputs still match when no overrides are present
 
+Immediately after that, the most valuable follow-up slice is:
+
+1. Add config provenance to command-driven historical workflows.
+2. Start with MLB because the repo now has:
+   - historical prediction backfills
+   - feature/evaluation dataset export
+   - calibration reporting
+   - richer model metadata for historical and situational context
+3. Ensure those commands can report which runtime config version they used.
+
 ## Rule Of Thumb
 
 If a new tuning feature:
@@ -567,5 +697,7 @@ If a new tuning feature:
 - stores values, go through shared runtime config services
 - previews values, call shared preview flows
 - compares results, reuse snapshot and evaluation artifacts
+- backfills history, reuse the existing historical execution path
+- exports datasets or reports, attach version provenance to the existing artifact workflow
 
 If a change introduces a second implementation of any of those behaviors, it is probably not DRY enough yet.

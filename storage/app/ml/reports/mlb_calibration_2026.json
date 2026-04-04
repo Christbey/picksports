@@ -1,0 +1,50 @@
+{
+    "report_type": "mlb_prediction_calibration",
+    "season": 2026,
+    "generated_at": "2026-04-01T20:00:18-05:00",
+    "summary": {
+        "count": 89,
+        "winner_accuracy": 61.8,
+        "spread_mae": 3.52,
+        "total_mae": 3.74,
+        "market_spread_sample": 59,
+        "market_total_sample": 89,
+        "market_spread_mae": 4.09,
+        "market_total_mae": 3.4,
+        "spread_bias_vs_market": 2.07,
+        "total_bias_vs_market": 0.96,
+        "avg_confidence": 55.89,
+        "min_confidence": 50.4,
+        "max_confidence": 66.8
+    },
+    "confidence_buckets": [
+        [
+            "50-54.9",
+            "37",
+            "62.2%",
+            "3.14",
+            "4.15"
+        ],
+        [
+            "55-59.9",
+            "44",
+            "61.4%",
+            "3.55",
+            "3.24"
+        ],
+        [
+            "60-64.9",
+            "6",
+            "83.3%",
+            "3.53",
+            "3.57"
+        ],
+        [
+            "65+",
+            "2",
+            "0.0%",
+            "9.70",
+            "7.65"
+        ]
+    ]
+}

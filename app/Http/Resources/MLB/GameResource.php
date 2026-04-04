@@ -39,6 +39,8 @@ class GameResource extends JsonResource
             'balls' => $this->balls,
             'strikes' => $this->strikes,
             'outs' => $this->outs,
+            'probable_home_pitcher_espn_id' => $this->probable_home_pitcher_espn_id,
+            'probable_away_pitcher_espn_id' => $this->probable_away_pitcher_espn_id,
             'venue_name' => $this->venue_name,
             'venue_city' => $this->venue_city,
             'venue_state' => $this->venue_state,
@@ -48,6 +50,8 @@ class GameResource extends JsonResource
             'updated_at' => $this->updated_at?->toIso8601String(),
             'home_team' => TeamResource::make($this->whenLoaded('homeTeam')),
             'away_team' => TeamResource::make($this->whenLoaded('awayTeam')),
+            'home_starting_pitcher' => PlayerResource::make($this->whenLoaded('probableHomePitcher')),
+            'away_starting_pitcher' => PlayerResource::make($this->whenLoaded('probableAwayPitcher')),
             'team_stats' => TeamStatResource::collection($this->whenLoaded('teamStats')),
         ];
     }

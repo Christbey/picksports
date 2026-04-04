@@ -131,12 +131,14 @@ const sportsEventSchema = computed(() =>
             name="twitter:image"
             :content="imageUrl"
         />
-        <script
+        <component
+            :is="'script'"
             head-key="schema-webpage-game"
             type="application/ld+json"
             v-text="webPageSchema"
         />
-        <script
+        <component
+            :is="'script'"
             head-key="schema-sportsevent-game"
             type="application/ld+json"
             v-text="sportsEventSchema"

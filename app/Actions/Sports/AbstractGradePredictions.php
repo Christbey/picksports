@@ -34,6 +34,27 @@ abstract class AbstractGradePredictions
         return $this->gradePredictionsCollection($predictions);
     }
 
+    /**
+     * @param  list<int>  $gameIds
+     */
+    public function executeForGameIds(array $gameIds): array
+    {
+        $normalizedIds = array_values(array_unique(array_map(
+            static fn (mixed $id): int => (int) $id,
+            array_filter($gameIds, static fn (mixed $id): bool => (int) $id > 0)
+        )));
+
+        if ($normalizedIds === []) {
+            return $this->emptyResults();
+        }
+
+        $predictions = $this->baseUngradedFinalPredictionsQuery()
+            ->whereIn($this->predictionTable().'.game_id', $normalizedIds)
+            ->get();
+
+        return $this->gradePredictionsCollection($predictions);
+    }
+
     protected function baseUngradedFinalPredictionsQuery()
     {
         return $this->newPredictionQuery()

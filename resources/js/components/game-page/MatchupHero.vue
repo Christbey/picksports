@@ -30,6 +30,10 @@ const props = withDefaults(
         actualTotal?: number | null;
         bettingValue?: BettingRecommendation[];
         contextBadgeLabel?: string | null;
+        awayStarterName?: string | null;
+        homeStarterName?: string | null;
+        awayStarterRating?: number | null;
+        homeStarterRating?: number | null;
     }>(),
     {
         extraInfoItems: () => [],
@@ -41,6 +45,10 @@ const props = withDefaults(
         actualTotal: null,
         bettingValue: () => [],
         contextBadgeLabel: null,
+        awayStarterName: null,
+        homeStarterName: null,
+        awayStarterRating: null,
+        homeStarterRating: null,
     },
 );
 
@@ -108,6 +116,18 @@ function totalClass(): string {
 
     return '';
 }
+
+function formatStarterLine(
+    name: string | null | undefined,
+    rating: number | null | undefined,
+): string | null {
+    if (!name) return null;
+    if (rating === null || rating === undefined || Number.isNaN(Number(rating))) {
+        return `SP: ${name}`;
+    }
+
+    return `SP: ${name} (${Math.round(Number(rating))})`;
+}
 </script>
 
 <template>
@@ -160,6 +180,22 @@ function totalClass(): string {
                             class="mt-1 text-xs text-white/60"
                         >
                             {{ awayRecentForm }}
+                        </div>
+                        <div
+                            v-if="
+                                formatStarterLine(
+                                    awayStarterName,
+                                    awayStarterRating,
+                                )
+                            "
+                            class="mt-1 text-xs text-white/75"
+                        >
+                            {{
+                                formatStarterLine(
+                                    awayStarterName,
+                                    awayStarterRating,
+                                )
+                            }}
                         </div>
                     </div>
                 </component>
@@ -256,6 +292,22 @@ function totalClass(): string {
                             class="mt-1 text-xs text-white/60"
                         >
                             {{ homeRecentForm }}
+                        </div>
+                        <div
+                            v-if="
+                                formatStarterLine(
+                                    homeStarterName,
+                                    homeStarterRating,
+                                )
+                            "
+                            class="mt-1 text-xs text-white/75"
+                        >
+                            {{
+                                formatStarterLine(
+                                    homeStarterName,
+                                    homeStarterRating,
+                                )
+                            }}
                         </div>
                     </div>
                 </component>

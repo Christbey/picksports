@@ -86,7 +86,7 @@ abstract class AbstractPredictionGenerator
     /**
      * Execute prediction generation for a game
      */
-    public function execute(Model $game): ?Model
+    public function execute(Model $game, bool $dispatchNarratives = true): ?Model
     {
         $predictionData = $this->makePredictionData($game);
         if ($predictionData === null) {
@@ -110,7 +110,9 @@ abstract class AbstractPredictionGenerator
             is_array($snapshotPayload) ? $snapshotPayload : []
         );
 
-        $this->dispatchNarrativeGeneration($prediction);
+        if ($dispatchNarratives) {
+            $this->dispatchNarrativeGeneration($prediction);
+        }
 
         return $prediction;
     }
@@ -486,8 +488,9 @@ abstract class AbstractPredictionGenerator
         }
 
         $season = isset($game->season) ? (int) $game->season : null;
-        $homeCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->home_team_id ?? 0), $sport, $season);
-        $awayCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->away_team_id ?? 0), $sport, $season);
+        $asOfDate = isset($game->game_date) ? (string) $game->game_date : null;
+        $homeCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->home_team_id ?? 0), $sport, $season, $asOfDate);
+        $awayCounts = $this->injuryCountsForTeam($injuryTable, (int) ($game->away_team_id ?? 0), $sport, $season, $asOfDate);
 
         $outSpreadPenalty = $this->injuryPenaltyConfig($sport, 'injury_out_spread_penalty', $this->defaultOutSpreadPenalty($sport));
         $questionableSpreadPenalty = $this->injuryPenaltyConfig($sport, 'injury_questionable_spread_penalty', $this->defaultQuestionableSpreadPenalty($sport));
@@ -627,17 +630,40 @@ abstract class AbstractPredictionGenerator
     /**
      * @return array{out:float,questionable:float}
      */
-    protected function injuryCountsForTeam(string $injuryTable, int $teamId, ?string $sport = null, ?int $season = null): array
+    protected function injuryCountsForTeam(
+        string $injuryTable,
+        int $teamId,
+        ?string $sport = null,
+        ?int $season = null,
+        ?string $asOfDate = null
+    ): array
     {
         $counts = ['out' => 0, 'questionable' => 0];
         if ($teamId <= 0) {
             return $counts;
         }
 
-        $injuries = DB::table($injuryTable)
+        $injuriesQuery = DB::table($injuryTable)
             ->where('team_id', $teamId)
-            ->where('is_active', true)
-            ->get(['player_id', 'status']);
+            ->where('is_active', true);
+
+        if ($asOfDate !== null && $asOfDate !== '') {
+            $injuriesQuery
+                ->where(function ($query) use ($asOfDate) {
+                    $query->whereNull('injury_date')
+                        ->orWhereDate('injury_date', '<=', $asOfDate);
+                })
+                ->where(function ($query) use ($asOfDate) {
+                    $query->whereNull('return_date')
+                        ->orWhereDate('return_date', '>=', $asOfDate);
+                })
+                ->where(function ($query) use ($asOfDate) {
+                    $query->whereNull('source_updated_at')
+                        ->orWhereDate('source_updated_at', '<=', $asOfDate);
+                });
+        }
+
+        $injuries = $injuriesQuery->get(['player_id', 'status']);
 
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));

@@ -1,0 +1,18 @@
+{
+    "report_type": "nfl_team_futures_backtest",
+    "season": 2025,
+    "market": "season_wins",
+    "from_date": null,
+    "to_date": null,
+    "summary": {
+        "count": 0,
+        "mae": null,
+        "rmse": null,
+        "bias": null,
+        "line_count": 0,
+        "over_accuracy": null,
+        "over_brier": null
+    },
+    "dates": [],
+    "markets": []
+}

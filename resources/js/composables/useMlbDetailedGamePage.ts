@@ -55,6 +55,18 @@ export function useMlbDetailedGamePage(gameId: number) {
             ? 'Spring Training'
             : null,
     );
+    const awayStarterName = computed(
+        () => currentGame.value.away_starting_pitcher?.full_name ?? null,
+    );
+    const homeStarterName = computed(
+        () => currentGame.value.home_starting_pitcher?.full_name ?? null,
+    );
+    const awayStarterRating = computed(
+        () => currentGame.value.away_starting_pitcher?.elo_rating ?? null,
+    );
+    const homeStarterRating = computed(
+        () => currentGame.value.home_starting_pitcher?.elo_rating ?? null,
+    );
 
     const { pageProps } = useSportGameLayout({
         sport: 'mlb',
@@ -105,6 +117,10 @@ export function useMlbDetailedGamePage(gameId: number) {
             formatNumber,
             showTrends: true,
             contextBadgeLabel,
+            awayStarterName,
+            homeStarterName,
+            awayStarterRating,
+            homeStarterRating,
             trendsSubtitle,
             trendsLoading,
             allTrendCategories,

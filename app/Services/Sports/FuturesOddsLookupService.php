@@ -3,6 +3,8 @@
 namespace App\Services\Sports;
 
 use App\Models\Sports\FuturesOdd;
+use App\Models\Sports\FuturesOddsSnapshot;
+use Carbon\CarbonInterface;
 
 class FuturesOddsLookupService
 {
@@ -59,6 +61,181 @@ class FuturesOddsLookupService
                 'fetched_at' => $row->fetched_at?->toIso8601String(),
                 'odds_api_sport_key' => (string) $row->odds_api_sport_key,
             ];
+        }
+
+        return $byTeam;
+    }
+
+    /**
+     * @return array<int, array{bookmaker:string,market_key:string,price:?int,implied_probability:?float,captured_at:?string,odds_api_sport_key:string}>
+     */
+    public function byTeamForSeasonAt(string $sport, int $season, CarbonInterface|string $capturedAt): array
+    {
+        $teamForeignKey = self::TEAM_FOREIGN_KEY_BY_SPORT[$sport] ?? null;
+        if ($teamForeignKey === null) {
+            return [];
+        }
+
+        $rows = FuturesOddsSnapshot::query()
+            ->where('sport', $sport)
+            ->where('season', $season)
+            ->whereNotNull($teamForeignKey)
+            ->where('captured_at', '<=', $capturedAt)
+            ->orderByDesc('captured_at')
+            ->orderByDesc('id')
+            ->get([
+                $teamForeignKey,
+                'bookmaker',
+                'market_key',
+                'price',
+                'implied_probability',
+                'captured_at',
+                'odds_api_sport_key',
+            ]);
+
+        $byTeam = [];
+
+        foreach ($rows as $row) {
+            $teamId = (int) ($row->{$teamForeignKey} ?? 0);
+            if ($teamId <= 0 || isset($byTeam[$teamId])) {
+                continue;
+            }
+
+            $byTeam[$teamId] = [
+                'bookmaker' => (string) $row->bookmaker,
+                'market_key' => (string) $row->market_key,
+                'price' => $row->price !== null ? (int) $row->price : null,
+                'implied_probability' => $row->implied_probability !== null ? (float) $row->implied_probability : null,
+                'captured_at' => $row->captured_at?->toIso8601String(),
+                'odds_api_sport_key' => (string) $row->odds_api_sport_key,
+            ];
+        }
+
+        return $byTeam;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function snapshotDatesForSeason(string $sport, int $season): array
+    {
+        return FuturesOddsSnapshot::query()
+            ->where('sport', $sport)
+            ->where('season', $season)
+            ->orderByDesc('captured_at')
+            ->distinct()
+            ->pluck('captured_at')
+            ->filter()
+            ->map(fn ($timestamp) => $timestamp instanceof \DateTimeInterface
+                ? $timestamp->format(\DateTimeInterface::ATOM)
+                : (string) $timestamp)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function snapshotDatesForSeasonMarket(string $sport, int $season, array|string $marketKeys): array
+    {
+        $resolvedMarketKeys = is_array($marketKeys) ? $marketKeys : [$marketKeys];
+        $resolvedMarketKeys = array_values(array_unique(array_filter(array_map(
+            static fn ($marketKey) => trim((string) $marketKey),
+            $resolvedMarketKeys
+        ))));
+
+        $query = FuturesOddsSnapshot::query()
+            ->where('sport', $sport)
+            ->where('season', $season);
+
+        if ($resolvedMarketKeys !== []) {
+            $query->whereIn('market_key', $resolvedMarketKeys);
+        }
+
+        return $query
+            ->orderBy('captured_at')
+            ->distinct()
+            ->pluck('captured_at')
+            ->filter()
+            ->map(fn ($timestamp) => $timestamp instanceof \DateTimeInterface
+                ? $timestamp->format(\DateTimeInterface::ATOM)
+                : (string) $timestamp)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function nflTeamWinTotalsBySeasonAt(int $season, CarbonInterface|string $capturedAt, ?array $marketKeys = null): array
+    {
+        $resolvedMarketKeys = $marketKeys ?? ['season_wins'];
+
+        $rows = FuturesOddsSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('season', $season)
+            ->whereNotNull('nfl_team_id')
+            ->whereNotNull('outcome_point')
+            ->where('captured_at', '<=', $capturedAt)
+            ->whereIn('market_key', $resolvedMarketKeys)
+            ->orderByDesc('captured_at')
+            ->orderByDesc('id')
+            ->get([
+                'nfl_team_id',
+                'bookmaker',
+                'market_key',
+                'price',
+                'implied_probability',
+                'captured_at',
+                'odds_api_sport_key',
+                'outcome_name',
+                'outcome_description',
+                'outcome_point',
+            ]);
+
+        $byTeam = [];
+
+        foreach ($rows as $row) {
+            $teamId = (int) ($row->nfl_team_id ?? 0);
+            if ($teamId <= 0) {
+                continue;
+            }
+
+            $side = strtolower(trim((string) $row->outcome_name));
+            if (! in_array($side, ['over', 'under'], true)) {
+                continue;
+            }
+
+            $line = $row->outcome_point !== null ? (float) $row->outcome_point : null;
+            if ($line === null) {
+                continue;
+            }
+
+            $existing = $byTeam[$teamId] ?? null;
+
+            if ($existing !== null && (float) ($existing['line'] ?? 0.0) !== $line) {
+                continue;
+            }
+
+            if ($existing === null) {
+                $byTeam[$teamId] = [
+                    'bookmaker' => (string) $row->bookmaker,
+                    'market_key' => (string) $row->market_key,
+                    'line' => $line,
+                    'over_price' => null,
+                    'under_price' => null,
+                    'over_implied_probability' => null,
+                    'under_implied_probability' => null,
+                    'captured_at' => $row->captured_at?->toIso8601String(),
+                    'odds_api_sport_key' => (string) $row->odds_api_sport_key,
+                    'team_name' => (string) ($row->outcome_description ?: ''),
+                ];
+            }
+
+            $byTeam[$teamId]["{$side}_price"] = $row->price !== null ? (int) $row->price : null;
+            $byTeam[$teamId]["{$side}_implied_probability"] = $row->implied_probability !== null
+                ? (float) $row->implied_probability
+                : null;
         }
 
         return $byTeam;

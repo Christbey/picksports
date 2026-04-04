@@ -1,0 +1,50 @@
+{
+    "report_type": "mlb_prediction_calibration",
+    "season": 2022,
+    "generated_at": "2026-04-02T21:02:39-05:00",
+    "summary": {
+        "count": 2430,
+        "winner_accuracy": 53.8,
+        "spread_mae": 3.56,
+        "total_mae": 3.6,
+        "market_spread_sample": 390,
+        "market_total_sample": 389,
+        "market_spread_mae": 3.84,
+        "market_total_mae": 3.5,
+        "spread_bias_vs_market": 0.97,
+        "total_bias_vs_market": -1.23,
+        "avg_confidence": 55.25,
+        "min_confidence": 50,
+        "max_confidence": 70.8
+    },
+    "confidence_buckets": [
+        [
+            "50-54.9",
+            "1236",
+            "51.6%",
+            "3.34",
+            "3.52"
+        ],
+        [
+            "55-59.9",
+            "897",
+            "55.6%",
+            "3.66",
+            "3.75"
+        ],
+        [
+            "60-64.9",
+            "272",
+            "57.0%",
+            "4.20",
+            "3.42"
+        ],
+        [
+            "65+",
+            "25",
+            "64.0%",
+            "4.31",
+            "4.10"
+        ]
+    ]
+}

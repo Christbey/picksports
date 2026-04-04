@@ -16,6 +16,11 @@ abstract class AbstractSyncGames
 
     protected const UNIQUE_GAME_KEY = 'espn_event_id';
 
+    /**
+     * @var array<string, array<string, mixed>|null>
+     */
+    protected array $refCache = [];
+
     public function __construct(
         protected BaseEspnService $espnService,
         protected ?EspnGameStatusResolver $statusResolver = null,
@@ -34,7 +39,22 @@ abstract class AbstractSyncGames
      */
     protected function getResponseItems(array $response): array
     {
-        return is_array($response['items'] ?? null) ? $response['items'] : [];
+        $items = is_array($response['items'] ?? null) ? $response['items'] : [];
+
+        return array_values(array_filter(array_map(function (array $item): ?array {
+            if (! empty($item['id'])) {
+                return $this->normalizeGamePayload($item);
+            }
+
+            $ref = trim((string) ($item['$ref'] ?? ''));
+            if ($ref === '') {
+                return null;
+            }
+
+            $payload = $this->resolveRefPayload($ref);
+
+            return is_array($payload) ? $this->normalizeGamePayload($payload) : null;
+        }, $items), static fn ($item) => is_array($item) && ! empty($item['id'])));
     }
 
     /**
@@ -273,5 +293,66 @@ abstract class AbstractSyncGames
         $parts = explode('\\', $this->gameModelClass());
 
         return strtolower($parts[2] ?? '');
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function resolveRefPayload(string $ref): ?array
+    {
+        $url = trim($ref);
+        if ($url === '') {
+            return null;
+        }
+
+        if (array_key_exists($url, $this->refCache)) {
+            return $this->refCache[$url];
+        }
+
+        try {
+            $payload = $this->espnService->getByRef($url);
+        } catch (\Throwable) {
+            return $this->refCache[$url] = null;
+        }
+
+        if (! is_array($payload)) {
+            return $this->refCache[$url] = null;
+        }
+
+        $eventId = (string) ($payload['id'] ?? '');
+        if ($eventId !== '') {
+            $summary = $this->espnService->getGame($eventId);
+            if (is_array($summary)) {
+                return $this->refCache[$url] = $summary;
+            }
+        }
+
+        return $this->refCache[$url] = $payload;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    protected function normalizeGamePayload(array $payload): array
+    {
+        if (! isset($payload['header']) || ! is_array($payload['header'])) {
+            return $payload;
+        }
+
+        $header = $payload['header'];
+        $competition = $header['competitions'][0] ?? [];
+
+        return array_filter([
+            'id' => $header['id'] ?? $payload['id'] ?? null,
+            'uid' => $header['uid'] ?? $payload['uid'] ?? null,
+            'date' => $competition['date'] ?? $header['date'] ?? $payload['date'] ?? null,
+            'name' => $competition['name'] ?? $header['name'] ?? $payload['name'] ?? null,
+            'shortName' => $competition['shortName'] ?? $header['shortName'] ?? $payload['shortName'] ?? null,
+            'season' => $header['season'] ?? $payload['season'] ?? null,
+            'week' => is_int($header['week'] ?? null) ? ['number' => $header['week']] : ($header['week'] ?? $payload['week'] ?? null),
+            'status' => $competition['status'] ?? $payload['status'] ?? null,
+            'competitions' => $header['competitions'] ?? $payload['competitions'] ?? null,
+        ], static fn ($value) => $value !== null);
     }
 }

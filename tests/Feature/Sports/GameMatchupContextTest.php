@@ -90,6 +90,11 @@ it('returns matchup context rows for mlb game detail', function () {
     $response = $this->getJson("/api/v1/mlb/games/{$currentGame->id}");
 
     $response->assertOk();
+    expect($response->json('data.probable_home_pitcher_espn_id'))->toBe('5001')
+        ->and($response->json('data.probable_away_pitcher_espn_id'))->toBe('5002')
+        ->and($response->json('data.home_starting_pitcher.full_name'))->toBe('Logan Webb')
+        ->and($response->json('data.away_starting_pitcher.full_name'))->toBe('Gerrit Cole');
+
     $rows = collect($response->json('data.matchup_context.rows'));
 
     expect($rows->pluck('key')->all())->toContain('head_to_head', 'overall', 'role_record', 'time_bucket_record', 'starter_matchup');

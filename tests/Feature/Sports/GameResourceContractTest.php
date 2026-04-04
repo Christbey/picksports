@@ -5,6 +5,7 @@ use App\Http\Resources\NBA\GameResource as NbaGameResource;
 use App\Http\Resources\NFL\GameResource as NflGameResource;
 use App\Http\Resources\WNBA\GameResource as WnbaGameResource;
 use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NBA\Team as NbaTeam;
@@ -111,6 +112,27 @@ test('wnba game resource exposes game time plus venue and clock aliases', functi
 });
 
 test('mlb game resource includes shared venue alias', function () {
+    $homePitcher = new MlbPlayer([
+        'id' => 11,
+        'team_id' => 1,
+        'espn_id' => '7001',
+        'full_name' => 'Shota Imanaga',
+        'first_name' => 'Shota',
+        'last_name' => 'Imanaga',
+        'position' => 'P',
+        'throwing_hand' => 'L',
+    ]);
+    $awayPitcher = new MlbPlayer([
+        'id' => 12,
+        'team_id' => 2,
+        'espn_id' => '7002',
+        'full_name' => 'Sonny Gray',
+        'first_name' => 'Sonny',
+        'last_name' => 'Gray',
+        'position' => 'P',
+        'throwing_hand' => 'R',
+    ]);
+
     $game = (new MlbGame)->forceFill([
         'id' => 30,
         'home_team_id' => 1,
@@ -120,16 +142,24 @@ test('mlb game resource includes shared venue alias', function () {
         'game_time' => '13:10:00',
         'venue_name' => 'Wrigley Field',
         'status' => 'STATUS_SCHEDULED',
+        'probable_home_pitcher_espn_id' => '7001',
+        'probable_away_pitcher_espn_id' => '7002',
     ])
         ->setRelation('homeTeam', new MlbTeam(['id' => 1, 'abbreviation' => 'CHC', 'location' => 'Chicago', 'name' => 'Cubs']))
-        ->setRelation('awayTeam', new MlbTeam(['id' => 2, 'abbreviation' => 'STL', 'location' => 'St. Louis', 'name' => 'Cardinals']));
+        ->setRelation('awayTeam', new MlbTeam(['id' => 2, 'abbreviation' => 'STL', 'location' => 'St. Louis', 'name' => 'Cardinals']))
+        ->setRelation('probableHomePitcher', $homePitcher)
+        ->setRelation('probableAwayPitcher', $awayPitcher);
 
     $data = MlbGameResource::make($game)->response()->getData(true)['data'];
 
     expect($data)->toMatchArray([
         'venue' => 'Wrigley Field',
         'venue_name' => 'Wrigley Field',
+        'probable_home_pitcher_espn_id' => '7001',
+        'probable_away_pitcher_espn_id' => '7002',
     ]);
     expect(data_get($data, 'home_team.abbreviation'))->toBe('CHC')
-        ->and(data_get($data, 'away_team.abbreviation'))->toBe('STL');
+        ->and(data_get($data, 'away_team.abbreviation'))->toBe('STL')
+        ->and(data_get($data, 'home_starting_pitcher.full_name'))->toBe('Shota Imanaga')
+        ->and(data_get($data, 'away_starting_pitcher.full_name'))->toBe('Sonny Gray');
 });

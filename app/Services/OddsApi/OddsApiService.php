@@ -4,6 +4,7 @@ namespace App\Services\OddsApi;
 
 use App\Models\OddsApiPlayerMapping;
 use App\Models\OddsApiTeamMapping;
+use App\Services\OddsApi\Exceptions\OddsApiException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -258,7 +259,7 @@ class OddsApiService
     protected function fetchFromApi(string $url, array $params = []): ?array
     {
         if (! $this->apiKey) {
-            throw new \RuntimeException(
+            throw new OddsApiException(
                 'Odds API key is not configured. Please set ODDS_API_KEY in your .env file. '.
                 'Get your free API key at https://the-odds-api.com/'
             );
@@ -272,7 +273,19 @@ class OddsApiService
             return $response->json();
         }
 
-        return null;
+        $payload = $response->json();
+        $message = is_array($payload)
+            ? (string) ($payload['message'] ?? 'The Odds API request failed.')
+            : 'The Odds API request failed.';
+        $errorCode = is_array($payload) ? ($payload['error_code'] ?? null) : null;
+
+        if (is_string($errorCode) && $errorCode !== '') {
+            $message .= " [{$errorCode}]";
+        }
+
+        throw new OddsApiException(
+            sprintf('The Odds API returned HTTP %d: %s', $response->status(), $message)
+        );
     }
 
     public function clearCache(): void

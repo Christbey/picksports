@@ -54,7 +54,7 @@ class SyncTeamStats
                 'left_on_base' => $stats['batting']['runnersLeftOnBase'] ?? null,
                 'batting_average' => $stats['batting']['avg'] ?? null,
                 // Pitching stats
-                'pitchers_used' => $stats['pitching']['gamesStarted'] ?? null,
+                'pitchers_used' => $this->resolvePitchersUsed($stats['pitching'] ?? []),
                 'innings_pitched' => $stats['pitching']['innings'] ?? null,
                 'hits_allowed' => $stats['pitching']['hits'] ?? null,
                 'runs_allowed' => $stats['pitching']['runs'] ?? null,
@@ -124,5 +124,49 @@ class SyncTeamStats
         }
 
         return $parsed;
+    }
+
+    /**
+     * @param  array<string, mixed>  $pitchingStats
+     */
+    protected function resolvePitchersUsed(array $pitchingStats): ?int
+    {
+        foreach (['pitchersUsed', 'pitchers', 'totalPitchersUsed', 'staffPitchersUsed'] as $key) {
+            $value = $pitchingStats[$key] ?? null;
+            if (is_numeric($value) && (int) $value > 0) {
+                return (int) $value;
+            }
+        }
+
+        $pitchCount = $pitchingStats['pitches'] ?? null;
+        $innings = $pitchingStats['innings'] ?? null;
+
+        return $this->estimatedPitchersUsed($pitchCount, $innings);
+    }
+
+    protected function estimatedPitchersUsed(mixed $pitchCount, mixed $innings): ?int
+    {
+        $pitchCount = is_numeric($pitchCount) ? (int) $pitchCount : null;
+        $innings = is_numeric($innings) ? (float) $innings : null;
+
+        if ($pitchCount === null && $innings === null) {
+            return null;
+        }
+
+        if ($pitchCount !== null) {
+            return match (true) {
+                $pitchCount >= 165 => 5,
+                $pitchCount >= 145 => 4,
+                $pitchCount >= 125 => 3,
+                $pitchCount >= 108 => 2,
+                default => 1,
+            };
+        }
+
+        if ($innings !== null && $innings < 8.0) {
+            return 2;
+        }
+
+        return 1;
     }
 }

@@ -1,0 +1,44 @@
+{
+    "report_type": "nfl_team_futures_backtest",
+    "season": 2025,
+    "market": "season_wins",
+    "from_date": "2025-08-01T12:00:00-05:00",
+    "to_date": "2025-08-01T12:00:00-05:00",
+    "summary": {
+        "count": 32,
+        "mae": 0.006,
+        "rmse": 0.036,
+        "bias": 0.006,
+        "line_count": 32,
+        "over_accuracy": 1,
+        "over_brier": 0.0346
+    },
+    "dates": [
+        {
+            "date": "2025-08-01T12:00:00-05:00",
+            "summary": {
+                "count": 32,
+                "mae": 0.006,
+                "rmse": 0.036,
+                "bias": 0.006,
+                "line_count": 32,
+                "over_accuracy": 1,
+                "over_brier": 0.0346
+            }
+        }
+    ],
+    "markets": [
+        {
+            "market": "season_wins",
+            "summary": {
+                "count": 32,
+                "mae": 0.006,
+                "rmse": 0.036,
+                "bias": 0.006,
+                "line_count": 32,
+                "over_accuracy": 1,
+                "over_brier": 0.0346
+            }
+        }
+    ]
+}

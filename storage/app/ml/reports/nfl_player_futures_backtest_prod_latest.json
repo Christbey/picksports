@@ -1,0 +1,42 @@
+{
+    "report_type": "nfl_player_futures_backtest",
+    "season": 2025,
+    "from_week": 1,
+    "to_week": 2,
+    "summary": {
+        "count": 0,
+        "mae": null,
+        "rmse": null,
+        "bias": null,
+        "line_count": 0,
+        "over_accuracy": null,
+        "over_brier": null
+    },
+    "weeks": [
+        {
+            "week": 1,
+            "summary": {
+                "count": 0,
+                "mae": null,
+                "rmse": null,
+                "bias": null,
+                "line_count": 0,
+                "over_accuracy": null,
+                "over_brier": null
+            }
+        },
+        {
+            "week": 2,
+            "summary": {
+                "count": 0,
+                "mae": null,
+                "rmse": null,
+                "bias": null,
+                "line_count": 0,
+                "over_accuracy": null,
+                "over_brier": null
+            }
+        }
+    ],
+    "markets": []
+}

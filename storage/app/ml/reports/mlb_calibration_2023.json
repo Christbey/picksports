@@ -1,0 +1,50 @@
+{
+    "report_type": "mlb_prediction_calibration",
+    "season": 2023,
+    "generated_at": "2026-04-02T21:02:39-05:00",
+    "summary": {
+        "count": 2430,
+        "winner_accuracy": 53.7,
+        "spread_mae": 3.69,
+        "total_mae": 4.01,
+        "market_spread_sample": 0,
+        "market_total_sample": 0,
+        "market_spread_mae": null,
+        "market_total_mae": null,
+        "spread_bias_vs_market": null,
+        "total_bias_vs_market": null,
+        "avg_confidence": 55.9,
+        "min_confidence": 50,
+        "max_confidence": 69.6
+    },
+    "confidence_buckets": [
+        [
+            "50-54.9",
+            "1162",
+            "50.6%",
+            "3.55",
+            "4.14"
+        ],
+        [
+            "55-59.9",
+            "810",
+            "55.8%",
+            "3.55",
+            "3.96"
+        ],
+        [
+            "60-64.9",
+            "389",
+            "56.8%",
+            "4.25",
+            "3.76"
+        ],
+        [
+            "65+",
+            "69",
+            "63.8%",
+            "4.53",
+            "3.63"
+        ]
+    ]
+}

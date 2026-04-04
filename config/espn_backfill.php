@@ -50,5 +50,13 @@ return [
             'season_start_month' => 8,
             'season_end_month' => 1,
         ],
+        'mlb' => [
+            'label' => 'MLB',
+            'game_model' => \App\Models\MLB\Game::class,
+            'scoreboard_job' => \App\Jobs\ESPN\MLB\FetchGamesFromScoreboard::class,
+            'detail_job' => \App\Jobs\ESPN\MLB\FetchGameDetails::class,
+            'season_start_month' => 2,
+            'season_end_month' => 10,
+        ],
     ],
 ];

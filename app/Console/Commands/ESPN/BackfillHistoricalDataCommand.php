@@ -9,7 +9,7 @@ use InvalidArgumentException;
 class BackfillHistoricalDataCommand extends Command
 {
     protected $signature = 'espn:backfill-historical
-        {sport : Sport key (nba, wnba, cbb, wcbb, nfl, cfb)}
+        {sport : Sport key (nba, wnba, cbb, wcbb, nfl, cfb, mlb)}
         {--season= : Season year using sport-specific season boundaries}
         {--from-date= : Start date in Y-m-d format}
         {--to-date= : End date in Y-m-d format}

@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Services\OddsApi\Exceptions\OddsApiException;
 use Illuminate\Console\Command;
 
 abstract class AbstractSyncHistoricalOddsCommand extends Command
@@ -53,15 +54,21 @@ abstract class AbstractSyncHistoricalOddsCommand extends Command
             $oddsSport !== null ? " using sport key [{$oddsSport}]" : ''
         ));
 
-        $result = app($this->syncActionClass())->executeHistorical(
-            hoursBefore: $hoursBefore,
-            season: $season !== null ? (int) $season : null,
-            fromDate: is_string($fromDate) && $fromDate !== '' ? $fromDate : null,
-            toDate: is_string($toDate) && $toDate !== '' ? $toDate : null,
-            limit: $limit,
-            oddsSportKey: $oddsSport,
-            hydrateCurrentWhenEmpty: $hydrateCurrentWhenEmpty,
-        );
+        try {
+            $result = app($this->syncActionClass())->executeHistorical(
+                hoursBefore: $hoursBefore,
+                season: $season !== null ? (int) $season : null,
+                fromDate: is_string($fromDate) && $fromDate !== '' ? $fromDate : null,
+                toDate: is_string($toDate) && $toDate !== '' ? $toDate : null,
+                limit: $limit,
+                oddsSportKey: $oddsSport,
+                hydrateCurrentWhenEmpty: $hydrateCurrentWhenEmpty,
+            );
+        } catch (OddsApiException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
 
         $this->info(sprintf(
             'Processed %d games, matched %d, created %d snapshots, hydrated %d current game rows.',

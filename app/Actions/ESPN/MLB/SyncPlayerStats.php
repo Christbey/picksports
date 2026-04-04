@@ -71,13 +71,17 @@ class SyncPlayerStats
                         continue;
                     }
 
-                    PlayerStat::create([
-                        'player_id' => $player->id,
-                        'game_id' => $game->id,
-                        'team_id' => $team->id,
-                        'stat_type' => $statType,
-                        ...$statData,
-                    ]);
+                    PlayerStat::query()->updateOrCreate(
+                        [
+                            'player_id' => $player->id,
+                            'game_id' => $game->id,
+                            'stat_type' => $statType,
+                        ],
+                        [
+                            'team_id' => $team->id,
+                            ...$statData,
+                        ]
+                    );
 
                     $synced++;
                 }

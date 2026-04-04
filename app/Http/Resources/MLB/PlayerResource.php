@@ -30,6 +30,7 @@ class PlayerResource extends JsonResource
             'weight' => $this->weight,
             'hometown' => $this->hometown,
             'headshot_url' => $this->headshot_url,
+            'elo_rating' => $this->elo_rating !== null ? (float) $this->elo_rating : null,
             'active_injuries_count' => $this->when(
                 $this->relationLoaded('activeInjuries'),
                 fn () => $this->activeInjuries->count()

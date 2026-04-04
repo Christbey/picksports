@@ -65,6 +65,10 @@ export interface UseSportDetailedPagePropsOptions {
     homeTrends?: MaybeRefOrGetter<TeamTrendData | null>;
     trendsEmptyText?: MaybeRefOrGetter<string>;
     contextBadgeLabel?: MaybeRefOrGetter<string | null>;
+    awayStarterName?: MaybeRefOrGetter<string | null>;
+    homeStarterName?: MaybeRefOrGetter<string | null>;
+    awayStarterRating?: MaybeRefOrGetter<number | null>;
+    homeStarterRating?: MaybeRefOrGetter<number | null>;
 }
 
 export function useSportDetailedPageProps(
@@ -193,6 +197,18 @@ export function useSportDetailedPageProps(
                 : 'No trends available for this matchup',
             contextBadgeLabel: options.contextBadgeLabel
                 ? toValue(options.contextBadgeLabel)
+                : null,
+            awayStarterName: options.awayStarterName
+                ? toValue(options.awayStarterName)
+                : null,
+            homeStarterName: options.homeStarterName
+                ? toValue(options.homeStarterName)
+                : null,
+            awayStarterRating: options.awayStarterRating
+                ? toValue(options.awayStarterRating)
+                : null,
+            homeStarterRating: options.homeStarterRating
+                ? toValue(options.homeStarterRating)
                 : null,
         };
     });

@@ -141,6 +141,18 @@ return function (string $sport, string $namespace) {
             Route::get('playoff-forecasts', [App\Http\Controllers\Api\MLB\PlayoffForecastController::class, 'index']);
         }
 
+        if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'NFL') {
+            Route::get('playoff-forecasts', [App\Http\Controllers\Api\NFL\PlayoffForecastController::class, 'index'])
+                ->middleware(["permission:view-{$sport}-predictions"]);
+        }
+
+        if ($namespace === 'MLB') {
+            Route::get('bullpen-ratings', ["{$controllerNamespace}\\BullpenRatingController", 'index'])
+                ->middleware(["permission:view-{$sport}-predictions"]);
+            Route::get('teams/{team}/bullpen-ratings', ["{$controllerNamespace}\\BullpenRatingController", 'byTeam'])
+                ->middleware(["permission:view-{$sport}-predictions"]);
+        }
+
         if ((bool) data_get(config('sports.domains'), "{$sport}.web.player_props", false) === true) {
             Route::get('player-props', [PlayerPropController::class, 'index'])
                 ->defaults('sport', $sport)

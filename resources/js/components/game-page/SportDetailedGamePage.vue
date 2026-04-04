@@ -74,6 +74,10 @@ withDefaults(
         homeTrends?: TeamTrendData | null;
         trendsEmptyText?: string;
         contextBadgeLabel?: string | null;
+        awayStarterName?: string | null;
+        homeStarterName?: string | null;
+        awayStarterRating?: number | null;
+        homeStarterRating?: number | null;
     }>(),
     {
         error: null,
@@ -119,6 +123,10 @@ withDefaults(
         homeTrends: null,
         trendsEmptyText: 'No trends available for this matchup',
         contextBadgeLabel: null,
+        awayStarterName: null,
+        homeStarterName: null,
+        awayStarterRating: null,
+        homeStarterRating: null,
     },
 );
 
@@ -164,6 +172,10 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :actual-total="prediction?.actual_total ?? null"
                 :betting-value="prediction?.betting_value ?? []"
                 :context-badge-label="contextBadgeLabel"
+                :away-starter-name="awayStarterName"
+                :home-starter-name="homeStarterName"
+                :away-starter-rating="awayStarterRating"
+                :home-starter-rating="homeStarterRating"
             />
 
             <slot name="afterHero" />

@@ -1,0 +1,13 @@
+{
+    "report_type": "nfl_team_playoff_forecast",
+    "season": 2025,
+    "as_of_date": null,
+    "summary": {
+        "teams": 0,
+        "simulations": 0
+    },
+    "teams": [],
+    "division_leaders": [],
+    "conference_leaders": [],
+    "super_bowl_leaders": []
+}

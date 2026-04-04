@@ -63,6 +63,10 @@ return [
         'base_url' => 'https://api.the-odds-api.com/v4',
     ],
 
+    'scores_and_odds' => [
+        'base_url' => env('SCORES_AND_ODDS_BASE_URL', 'https://www.scoresandodds.com'),
+    ],
+
     'collegefootballdata' => [
         'api_key' => env('COLLEGEFOOTBALLDATA_API_KEY'),
         'base_url' => env('COLLEGEFOOTBALLDATA_BASE_URL', 'https://api.collegefootballdata.com'),

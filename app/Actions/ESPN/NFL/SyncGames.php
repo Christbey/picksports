@@ -12,5 +12,5 @@ class SyncGames extends AbstractSyncGames
 
     protected const TEAM_MODEL_CLASS = Team::class;
 
-    protected const UNIQUE_GAME_KEY = 'espn_id';
+    protected const UNIQUE_GAME_KEY = 'espn_event_id';
 }

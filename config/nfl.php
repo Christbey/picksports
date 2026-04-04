@@ -424,6 +424,86 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Team Futures Projection Defaults
+    |--------------------------------------------------------------------------
+    |
+    | A first-pass team win totals model anchored to current team metrics. It
+    | blends current pace with predictive rating, future strength of schedule,
+    | recent form, and injury adjustments into a remaining-games win estimate.
+    |
+    */
+    'team_futures' => [
+        'default_regular_season_games' => 17,
+        'prior_win_pct' => 0.500,
+        'prior_games' => 4,
+        'strength_weight' => 0.55,
+        'pace_weight' => 0.30,
+        'prior_weight' => 0.15,
+        'rating_scale' => 40.0,
+        'recent_form_weight' => 18.0,
+        'injury_adjustment_weight' => 0.35,
+        'predictive_signal_scale' => 10.0,
+        'recent_form_signal_scale' => 20.0,
+        'sos_signal_scale' => 25.0,
+        'injury_signal_scale' => 1.5,
+        'win_total_probability_scale' => 0.90,
+        'win_total_variance_floor' => 0.85,
+        'preseason_prior_games' => 6,
+        'preseason_prior_lookback_seasons' => 3,
+        'preseason_prior_season_decay' => 0.55,
+        'preseason_prior_predictive_decay' => 1.00,
+        'preseason_prior_recent_form_decay' => 0.35,
+        'offseason_qb_continuity_weight' => 2.0,
+        'offseason_skill_continuity_weight' => 1.25,
+        'offseason_skill_top_players' => 5,
+        'offseason_skill_overlap_baseline' => 0.45,
+        'offseason_max_injury_adjustment' => 0.75,
+        'offseason_position_default_usage' => [
+            'qb' => 0.35,
+            'rb' => 0.10,
+            'wr' => 0.08,
+            'te' => 0.06,
+        ],
+        'offseason_injury_status_penalties' => [
+            'out' => 1.0,
+            'doubtful' => 0.7,
+            'questionable' => 0.35,
+            'day-to-day' => 0.2,
+            'probable' => 0.1,
+            'injured reserve' => 1.0,
+            'ir' => 1.0,
+            'suspended' => 0.85,
+        ],
+        'offseason_injury_position_weights' => [
+            'qb' => 1.75,
+            'rb' => 1.15,
+            'wr' => 1.10,
+            'te' => 1.0,
+        ],
+        'betting_probability_calibration' => [
+            'default_shrink' => 0.70,
+            'min_sample' => 20,
+            'min_shrink' => 0.20,
+            'max_shrink' => 1.00,
+            'step' => 0.05,
+        ],
+        'markets' => [
+            'season_wins' => [
+                'label' => 'Season Wins',
+                'odds_market_keys' => ['season_wins'],
+            ],
+        ],
+    ],
+
+    'team_playoff_forecast' => [
+        'simulations' => 5000,
+        'random_seed' => 20260402,
+        'playoff_home_field_advantage' => 0.35,
+        'win_probability_scale' => 1.6,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Calibration Defaults
     |--------------------------------------------------------------------------
     |

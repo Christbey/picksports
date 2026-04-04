@@ -17,6 +17,7 @@ return [
                 'player_stats_leaderboard' => true,
                 'depth_charts' => true,
                 'player_futures' => true,
+                'playoff_forecasts' => true,
             ],
             'web' => [
                 'predictions_page' => 'NFL/Predictions',

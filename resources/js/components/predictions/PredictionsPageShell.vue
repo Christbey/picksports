@@ -77,7 +77,8 @@ const breadcrumbs: BreadcrumbItem[] = [
             name="twitter:image"
             :content="imageUrl"
         />
-        <script
+        <component
+            :is="'script'"
             head-key="schema-webpage"
             type="application/ld+json"
             v-text="webPageSchema"

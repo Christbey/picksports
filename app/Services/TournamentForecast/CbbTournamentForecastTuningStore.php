@@ -4,6 +4,7 @@ namespace App\Services\TournamentForecast;
 
 use App\Models\ApplicationSetting;
 use Illuminate\Support\Facades\Schema;
+use RuntimeException;
 
 class CbbTournamentForecastTuningStore
 {
@@ -28,7 +29,7 @@ class CbbTournamentForecastTuningStore
     public function setForSeason(int $season, array $params): void
     {
         if (! $this->settingsTableExists()) {
-            return;
+            throw new RuntimeException('Application settings table is missing.');
         }
 
         $all = $this->all();

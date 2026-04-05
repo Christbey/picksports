@@ -6,6 +6,7 @@ use App\Actions\CBB\GenerateTournamentForecast;
 use App\Services\TournamentForecast\CbbTournamentForecastTuningStore;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
+use RuntimeException;
 
 class CalibrateTournamentForecastCommand extends Command
 {
@@ -108,7 +109,15 @@ class CalibrateTournamentForecastCommand extends Command
         $this->line('Overrides: '.json_encode($best['overrides'], JSON_UNESCAPED_SLASHES));
 
         if ($save) {
-            $tuningStore->setForSeason($season, $best['overrides']);
+            try {
+                $tuningStore->setForSeason($season, $best['overrides']);
+            } catch (RuntimeException $exception) {
+                $this->newLine();
+                $this->error('Failed to save tuned params: '.$exception->getMessage());
+
+                return self::FAILURE;
+            }
+
             $this->newLine();
             $this->info("Saved tuned params for season {$season} to ".CbbTournamentForecastTuningStore::SETTINGS_KEY.'.');
         } else {

@@ -7,7 +7,7 @@ echo "Pulling latest changes..."
 git pull origin staging
 
 echo "Installing Composer dependencies..."
-docker exec picksports-laravel.test-1 composer install --no-interaction --no-dev --optimize-autoloader
+docker exec picksports-laravel.test-1 composer install --no-interaction --optimize-autoloader
 
 echo "Installing NPM dependencies and building assets..."
 docker exec picksports-laravel.test-1 npm ci

@@ -1,0 +1,13 @@
+name: Deploy to Staging
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Deploy
+        run: /home/lab/docker/picksports/deploy.sh

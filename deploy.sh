@@ -6,6 +6,9 @@ cd /home/lab/docker/picksports
 echo "Pulling latest changes..."
 git pull origin staging
 
+echo "Ensuring storage directories exist..."
+docker exec picksports-laravel.test-1 mkdir -p storage/framework/{cache,sessions,views} bootstrap/cache
+
 echo "Installing Composer dependencies..."
 docker exec picksports-laravel.test-1 composer install --no-interaction --optimize-autoloader
 

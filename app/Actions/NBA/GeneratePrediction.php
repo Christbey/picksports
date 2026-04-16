@@ -44,11 +44,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return $this->makePredictionData($game);
     }
 
-    public function execute(Model $game): ?Model
+    public function execute(Model $game, bool $dispatchNarratives = true): ?Model
     {
-        $prediction = parent::execute($game);
+        $prediction = parent::execute($game, $dispatchNarratives);
 
-        if ($prediction instanceof Prediction) {
+        if ($prediction instanceof Prediction && $dispatchNarratives) {
             GeneratePredictionNarrativeJob::dispatch($prediction->id);
         }
 

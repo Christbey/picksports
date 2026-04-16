@@ -178,7 +178,7 @@ class SituationalPredictionContextService
             ->join('mlb_games', 'mlb_team_stats.game_id', '=', 'mlb_games.id')
             ->whereHas('game', function ($query) use ($game) {
                 $query->where('season', (int) $game->season)
-                    ->where('season_type', (string) config('mlb.season.types.regular', 2))
+                    ->whereIn('season_type', array_map('strval', (array) config('mlb.season.analytics_types', [2, 3])))
                     ->where('status', config('mlb.statuses.final', 'STATUS_FINAL'))
                     ->whereDate('game_date', '<', $game->game_date);
             })

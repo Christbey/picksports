@@ -71,3 +71,39 @@ it('stores probable pitcher ids from the mlb scoreboard job', function () {
         ->and($game->probable_home_pitcher_espn_id)->toBe('34973')
         ->and($game->probable_away_pitcher_espn_id)->toBe('4433874');
 });
+
+it('persists live inning and inning state from the mlb scoreboard job', function () {
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard*dates=20260403*' => Http::response([
+            'events' => [[
+                'id' => '401814796',
+                'uid' => 's:1~l:10~e:401814796',
+                'date' => '2026-04-03T17:05Z',
+                'name' => 'New York Mets at San Francisco Giants',
+                'shortName' => 'NYM @ SF',
+                'season' => ['year' => 2026, 'type' => 2],
+                'competitions' => [[
+                    'id' => '401814796',
+                    'status' => [
+                        'type' => ['name' => 'STATUS_IN_PROGRESS'],
+                        'period' => 5,
+                        'displayClock' => 'Top 5th',
+                    ],
+                    'competitors' => [
+                        ['homeAway' => 'home', 'team' => ['id' => '26']],
+                        ['homeAway' => 'away', 'team' => ['id' => '21']],
+                    ],
+                ]],
+            ]],
+        ]),
+    ]);
+
+    (new FetchGamesFromScoreboard('20260403'))->handle();
+
+    $game = Game::query()->where('espn_event_id', '401814796')->first();
+
+    expect($game)->not->toBeNull()
+        ->and($game->inning)->toBe(5)
+        ->and($game->inning_half)->toBe('Top 5th')
+        ->and($game->inning_state)->toBe('Top 5th');
+});

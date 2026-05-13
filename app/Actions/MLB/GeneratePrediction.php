@@ -78,7 +78,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $homeCombinedElo = ($homeTeamElo * $teamWeight) + ($homePitcherElo * $pitcherWeight);
         $awayCombinedElo = ($awayTeamElo * $teamWeight) + ($awayPitcherElo * $pitcherWeight);
 
-        $adjustedHomeElo = $homeCombinedElo + config('mlb.elo.home_field_advantage');
+        $adjustedHomeElo = $homeCombinedElo + (float) config(
+            'mlb.prediction.home_field_advantage',
+            config('mlb.elo.home_field_advantage')
+        );
 
         $eloDiff = $adjustedHomeElo - $awayCombinedElo;
         $predictedSpread = $this->calculateSpread($eloDiff);
@@ -149,6 +152,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
             $predictedTotal
         );
 
+        $parkTotalAdjustment = $this->parkFactorAdjustment($game);
+        $predictedTotal = round($predictedTotal + $parkTotalAdjustment, 1);
+
         // Convert the final model spread, not raw Elo points, into win probability.
         $winProbability = $this->calculateWinProbability($predictedSpread);
         $confidenceScore = $this->calculateConfidence($winProbability);
@@ -185,6 +191,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'injury_total_model_source' => $injuryTotalModelSource,
             'injury_total_adjustment' => $injuryTotalAdjustment,
             ...$probablePitcherInjuryMetadata,
+            'park_total_adjustment' => round($parkTotalAdjustment, 2),
+            'park_venue_name' => $game->venue_name,
             'baseline_model_spread' => round($predictedSpread, 2),
             'baseline_model_total' => round($predictedTotal, 2),
             'vegas_spread' => $vegasSpread !== null ? round($vegasSpread, 2) : null,
@@ -623,6 +631,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'market_total' => $this->metadata['market_total'] ?? null,
                 ...($this->metadata['odds_market_availability'] ?? []),
             ],
+            'park_context' => [
+                'venue_name' => $this->metadata['park_venue_name'] ?? null,
+                'total_adjustment' => $this->metadata['park_total_adjustment'] ?? 0.0,
+            ],
         ];
     }
 
@@ -759,6 +771,18 @@ class GeneratePrediction extends AbstractPredictionGenerator
             })
             ->latest('source_updated_at')
             ->value('status');
+    }
+
+    private function parkFactorAdjustment(Game $game): float
+    {
+        $venue = $game->venue_name;
+        if (! is_string($venue) || $venue === '') {
+            return 0.0;
+        }
+
+        $factors = (array) config('mlb.prediction.park_factors', []);
+
+        return (float) ($factors[$venue] ?? 0.0);
     }
 
     private function probablePitcherSpreadPenalty(?string $status): float

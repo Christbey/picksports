@@ -195,6 +195,7 @@ it('falls back to default pitcher elo when no recent pitcher ratings exist', fun
 });
 
 it('uses configurable mlb spread, total, and win probability tuning values', function () {
+    Config::set('mlb.prediction.home_field_advantage', 0);
     Config::set('mlb.elo.home_field_advantage', 0);
     Config::set('mlb.elo.team_weight', 1.0);
     Config::set('mlb.prediction.early_season.team_weight_start', 1.0);
@@ -274,6 +275,185 @@ it('uses configurable mlb spread, total, and win probability tuning values', fun
         ->and((float) $prediction->predicted_spread)->toBe(2.0)
         ->and((float) $prediction->predicted_total)->toBe(9.0)
         ->and((float) $prediction->win_probability)->toBe(0.731);
+});
+
+it('applies mlb.prediction.home_field_advantage to spread independently of mlb.elo.home_field_advantage', function () {
+    // Predictions use mlb.prediction.home_field_advantage; Elo updates use mlb.elo.home_field_advantage.
+    // Setting the prediction key to 0 and the Elo key to 100 should produce a spread of 0 — proving
+    // the prediction generator does NOT read the Elo HFA key once the prediction key is set.
+    Config::set('mlb.prediction.home_field_advantage', 0);
+    Config::set('mlb.elo.home_field_advantage', 100);
+    Config::set('mlb.elo.team_weight', 1.0);
+    Config::set('mlb.prediction.early_season.team_weight_start', 1.0);
+    Config::set('mlb.prediction.early_season.context_scale_min', 0.0);
+    Config::set('mlb.prediction.elo_diff_to_spread_divisor', 25.0);
+    Config::set('mlb.prediction.situational.advanced_ratings.enabled', false);
+    Config::set('mlb.prediction.situational.starter_form.enabled', false);
+
+    $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
+
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2026,
+        'season_type' => '2',
+        'wins' => 10, 'losses' => 5,
+        'recent_form_rating' => 0.0,
+        'injury_adjusted_team_rating' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2026,
+        'season_type' => '2',
+        'wins' => 10, 'losses' => 5,
+        'recent_form_rating' => 0.0,
+        'injury_adjusted_team_rating' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    // Prior completed game so the historical metric path is satisfied.
+    Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-25',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+        'home_score' => 4, 'away_score' => 3,
+    ]);
+    $game = Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-26',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+    ]);
+
+    EloRating::query()->create([
+        'team_id' => $homeTeam->id, 'season' => 2026, 'date' => '2026-03-25',
+        'elo_rating' => 1500, 'elo_change' => 0,
+    ]);
+    EloRating::query()->create([
+        'team_id' => $awayTeam->id, 'season' => 2026, 'date' => '2026-03-25',
+        'elo_rating' => 1500, 'elo_change' => 0,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    expect($prediction)->not->toBeNull()
+        ->and((float) $prediction->predicted_spread)->toBe(0.0);
+});
+
+it('falls back to mlb.elo.home_field_advantage when the prediction key is unset', function () {
+    // Removing the prediction key entirely should cause the generator to read the legacy Elo key.
+    Config::set('mlb.prediction.home_field_advantage', null);
+    Config::set('mlb.elo.home_field_advantage', 50);
+    Config::set('mlb.elo.team_weight', 1.0);
+    Config::set('mlb.prediction.early_season.team_weight_start', 1.0);
+    Config::set('mlb.prediction.early_season.context_scale_min', 0.0);
+    Config::set('mlb.prediction.elo_diff_to_spread_divisor', 25.0);
+    Config::set('mlb.prediction.situational.advanced_ratings.enabled', false);
+    Config::set('mlb.prediction.situational.starter_form.enabled', false);
+
+    $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
+
+    TeamMetric::query()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2026, 'season_type' => '2',
+        'wins' => 10, 'losses' => 5,
+        'recent_form_rating' => 0.0,
+        'injury_adjusted_team_rating' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+    TeamMetric::query()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2026, 'season_type' => '2',
+        'wins' => 10, 'losses' => 5,
+        'recent_form_rating' => 0.0,
+        'injury_adjusted_team_rating' => 1500.0,
+        'calculation_date' => now()->toDateString(),
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-25',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+        'home_score' => 4, 'away_score' => 3,
+    ]);
+    $game = Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-26',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+    ]);
+    EloRating::query()->create([
+        'team_id' => $homeTeam->id, 'season' => 2026, 'date' => '2026-03-25',
+        'elo_rating' => 1500, 'elo_change' => 0,
+    ]);
+    EloRating::query()->create([
+        'team_id' => $awayTeam->id, 'season' => 2026, 'date' => '2026-03-25',
+        'elo_rating' => 1500, 'elo_change' => 0,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    // HFA 50 / divisor 25 = 2.0 runs home advantage.
+    expect((float) $prediction->predicted_spread)->toBe(2.0);
+});
+
+it('applies a park factor to predicted_total when the venue is in mlb.prediction.park_factors', function () {
+    Config::set('mlb.prediction.home_field_advantage', 0);
+    Config::set('mlb.elo.home_field_advantage', 0);
+    Config::set('mlb.elo.team_weight', 1.0);
+    Config::set('mlb.prediction.early_season.team_weight_start', 1.0);
+    Config::set('mlb.prediction.early_season.context_scale_min', 0.0);
+    Config::set('mlb.prediction.elo_diff_to_spread_divisor', 25.0);
+    Config::set('mlb.prediction.spread_to_probability_coefficient', 10.0);
+    Config::set('mlb.prediction.total_model.base_runs', 9.0);
+    Config::set('mlb.prediction.total_model.average_elo_baseline', 1500.0);
+    Config::set('mlb.prediction.total_model.average_elo_divisor', 50.0);
+    Config::set('mlb.prediction.situational.advanced_ratings.enabled', false);
+    Config::set('mlb.prediction.situational.starter_form.enabled', false);
+    Config::set('mlb.prediction.park_factors', ['Coors Field' => 1.5, 'Generic Park' => -0.7]);
+
+    $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $today = now()->toDateString();
+
+    foreach ([$homeTeam, $awayTeam] as $team) {
+        TeamMetric::query()->create([
+            'team_id' => $team->id, 'season' => 2026, 'season_type' => '2',
+            'wins' => 10, 'losses' => 5, 'recent_form_rating' => 0.0,
+            'injury_adjusted_team_rating' => 1500.0, 'calculation_date' => $today,
+        ]);
+        EloRating::query()->create([
+            'team_id' => $team->id, 'season' => 2026, 'date' => '2026-03-25',
+            'elo_rating' => 1500, 'elo_change' => 0,
+        ]);
+    }
+
+    Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-25',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+        'home_score' => 4, 'away_score' => 3,
+    ]);
+
+    $coorsGame = Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-26',
+        'status' => 'STATUS_SCHEDULED', 'venue_name' => 'Coors Field',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+    ]);
+    $neutralGame = Game::factory()->create([
+        'season' => 2026, 'week' => 13, 'game_date' => '2026-03-26',
+        'status' => 'STATUS_SCHEDULED', 'venue_name' => 'Unknown Park',
+        'home_team_id' => $homeTeam->id, 'away_team_id' => $awayTeam->id,
+    ]);
+
+    $coorsPred = app(GeneratePrediction::class)->execute($coorsGame->fresh(['homeTeam', 'awayTeam']));
+    $neutralPred = app(GeneratePrediction::class)->execute($neutralGame->fresh(['homeTeam', 'awayTeam']));
+
+    expect((float) $coorsPred->predicted_total - (float) $neutralPred->predicted_total)->toBe(1.5);
+    expect((float) data_get($coorsPred->model_metadata, 'park_context.total_adjustment'))->toBe(1.5);
+    expect(data_get($coorsPred->model_metadata, 'park_context.venue_name'))->toBe('Coors Field');
+    expect((float) data_get($neutralPred->model_metadata, 'park_context.total_adjustment'))->toBe(0.0);
+    expect(data_get($neutralPred->model_metadata, 'park_context.venue_name'))->toBe('Unknown Park');
 });
 
 it('prefers probable starter elo over team recent average pitcher elo', function () {

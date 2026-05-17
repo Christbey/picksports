@@ -49,7 +49,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     protected function makePredictionData(Model $game): ?array
     {
-        if (! $this->allowHistoricalGames && $game->status !== 'STATUS_SCHEDULED') {
+        if (! $this->allowHistoricalGames && $game->status === 'STATUS_FINAL') {
             return null;
         }
 

@@ -1,2 +1,0 @@
-game_id,season,prediction_id,model_version,feature_version,blend_version,generated_at,feature_home_recent_form,feature_away_recent_form,output_predicted_spread,output_predicted_total,output_confidence_score,actual_actual_spread,actual_actual_total,error_spread_error,error_total_error,error_winner_correct,error_brier_score,market_model_beats_market_spread
-1,2026,1,rules-v1,core-v1,baseline-v1,2026-03-22T22:50:40-05:00,4.2,-1.1,6.5,210.5,70,8,208,1.5,2.5,1,0.1369,1

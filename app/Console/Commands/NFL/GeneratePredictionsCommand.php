@@ -10,7 +10,7 @@ use Illuminate\Console\Command;
 class GeneratePredictionsCommand extends Command
 {
     protected $signature = 'nfl:generate-predictions
-                            {--season=2025 : Season to generate predictions for}
+                            {--season= : Season to generate predictions for (defaults to config nfl.season.default)}
                             {--from-date= : Generate predictions starting from this date (YYYY-MM-DD)}
                             {--to-date= : Generate predictions up to this date (YYYY-MM-DD)}';
 
@@ -27,10 +27,8 @@ class GeneratePredictionsCommand extends Command
             ->orderBy('game_date')
             ->orderBy('id');
 
-        // Apply filters
-        if ($season = $this->option('season')) {
-            $query->where('season', $season);
-        }
+        $season = $this->option('season') ?? config('nfl.season.default');
+        $query->where('season', $season);
 
         if ($fromDate = $this->option('from-date')) {
             $query->where('game_date', '>=', $fromDate);

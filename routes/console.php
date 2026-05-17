@@ -605,6 +605,13 @@ $scheduleHalfHourlyWindowJob(
     $mlbInSeason,
     'MLB: Sync Injuries'
 );
+$scheduleHalfHourlyWindowJob(
+    'mlb:refresh-probable-pitchers --days-ahead=2',
+    '06:00',
+    '23:00',
+    $mlbInSeason,
+    'MLB: Refresh Probable Pitchers'
+);
 
 // WNBA
 $scheduleSportPipeline(

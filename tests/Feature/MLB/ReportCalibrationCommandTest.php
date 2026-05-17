@@ -49,7 +49,7 @@ it('writes an mlb calibration report with market metrics', function () {
         'confidence_score' => 59.0,
         'vegas_spread' => -1.5,
         'model_version' => 'rules-v1',
-        'feature_version' => 'core-v2',
+        'feature_version' => 'core-v3',
         'blend_version' => 'baseline-v1',
         'model_metadata' => [
             'market_context' => [
@@ -81,9 +81,12 @@ it('writes an mlb calibration report with market metrics', function () {
         ->and((float) $report['summary']['winner_accuracy'])->toBe(100.0)
         ->and((float) $report['summary']['spread_mae'])->toBe(0.5)
         ->and((float) $report['summary']['total_mae'])->toBe(0.8)
-        ->and((float) $report['summary']['market_spread_mae'])->toBe(3.5)
+        // vegas_spread is Vegas convention (-1.5 = home favored by 1.5); actual_margin = +2, predicted_spread = +1.5.
+        // market_spread_mae compares actual_margin vs the Vegas-implied home margin (= -vegas_spread).
+        // |2 - 1.5| = 0.5; predicted - implied = 1.5 - 1.5 = 0.0
+        ->and((float) $report['summary']['market_spread_mae'])->toBe(0.5)
         ->and((float) $report['summary']['market_total_mae'])->toBe(1.5)
-        ->and((float) $report['summary']['spread_bias_vs_market'])->toBe(3.0)
+        ->and((float) $report['summary']['spread_bias_vs_market'])->toBe(0.0)
         ->and((float) $report['summary']['total_bias_vs_market'])->toBe(0.7)
         ->and($report['confidence_buckets'])->toHaveCount(1);
 });

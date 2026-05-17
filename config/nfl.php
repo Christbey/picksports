@@ -30,7 +30,7 @@ return [
     */
 
     'season' => [
-        'default' => env('NFL_DEFAULT_SEASON', 2025),
+        'default' => env('NFL_DEFAULT_SEASON', 2026),
         'types' => [
             'preseason' => 1,
             'regular' => 2,
@@ -41,6 +41,7 @@ return [
             'regular' => 18,
             'postseason' => 5,
         ],
+        'analytics_types' => [2, 3],
     ],
 
     /*
@@ -114,6 +115,13 @@ return [
          * Default starting ELO rating for all teams
          */
         'default_rating' => 1500,
+
+        /**
+         * Fraction of each team's prior-season ending Elo that regresses toward
+         * the league mean during the offseason. 0.33 matches FiveThirtyEight's
+         * published NFL Elo model.
+         */
+        'offseason_regression_factor' => 0.33,
 
         /**
          * Base K-factor for regular season games
@@ -223,6 +231,39 @@ return [
             'total_points_per_epa_component' => env('NFL_TRUE_EPA_TOTAL_POINTS_PER_COMP', 20.0),
             'min_predicted_total' => env('NFL_TRUE_EPA_MIN_TOTAL', 28.0),
             'max_predicted_total' => env('NFL_TRUE_EPA_MAX_TOTAL', 66.0),
+        ],
+
+        /*
+        |--------------------------------------------------------------------------
+        | Preseason Signal Blend
+        |--------------------------------------------------------------------------
+        |
+        | Used when in-season EPA isn't available yet (typical for preseason and
+        | Week 1). Blends the Elo-derived spread with a predictive_rating-derived
+        | spread from the team metrics. predictive_rating already bakes in the
+        | offseason adjustment (QB/skill continuity, injuries) computed by
+        | HistoricalTeamMetricCalculator.
+        |
+        */
+        'preseason_signal' => [
+            'enabled' => env('NFL_PRESEASON_SIGNAL_ENABLED', true),
+            'blend_weight' => env('NFL_PRESEASON_SIGNAL_BLEND_WEIGHT', 0.25),
+        ],
+
+        /*
+        |--------------------------------------------------------------------------
+        | Market Blend
+        |--------------------------------------------------------------------------
+        |
+        | When nfl_games.odds_data has spread/total markets from a bookmaker,
+        | blend the model spread/total toward the market consensus. Higher weight
+        | values trust the model more; 1.0 means model only (no market blend).
+        |
+        */
+        'market_blend' => [
+            'enabled' => env('NFL_MARKET_BLEND_ENABLED', true),
+            'spread_model_weight' => env('NFL_MARKET_BLEND_SPREAD_WEIGHT', 0.5),
+            'total_model_weight' => env('NFL_MARKET_BLEND_TOTAL_WEIGHT', 0.6),
         ],
     ],
 

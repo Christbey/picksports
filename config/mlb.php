@@ -258,10 +258,16 @@ return [
     */
     'prediction' => [
         'use_previous_season_metrics_fallback' => true,
-        'spread_to_probability_coefficient' => env('MLB_SPREAD_TO_PROBABILITY_COEFFICIENT', 7.0),
+        /**
+         * Home-field advantage applied to the predicted spread only (in Elo points).
+         * Decoupled from `mlb.elo.home_field_advantage`, which governs Elo-update math.
+         * Falls back to the Elo HFA if unset, preserving prior behavior.
+         */
+        'home_field_advantage' => env('MLB_PREDICTION_HOME_FIELD_ADVANTAGE', 5),
+        'spread_to_probability_coefficient' => env('MLB_SPREAD_TO_PROBABILITY_COEFFICIENT', 10.0),
         'elo_diff_to_spread_divisor' => env('MLB_ELO_DIFF_TO_SPREAD_DIVISOR', 44.0),
         'total_model' => [
-            'base_runs' => env('MLB_TOTAL_MODEL_BASE_RUNS', 9.7),
+            'base_runs' => env('MLB_TOTAL_MODEL_BASE_RUNS', 10.6),
             'average_elo_baseline' => env('MLB_TOTAL_MODEL_AVERAGE_ELO_BASELINE', 1500.0),
             'average_elo_divisor' => env('MLB_TOTAL_MODEL_AVERAGE_ELO_DIVISOR', 80.0),
         ],
@@ -330,6 +336,35 @@ return [
         ],
         'probable_pitcher_out_total_boost' => env('MLB_PROBABLE_PITCHER_OUT_TOTAL_BOOST', 0.7),
         'probable_pitcher_questionable_total_boost' => env('MLB_PROBABLE_PITCHER_QUESTIONABLE_TOTAL_BOOST', 0.25),
+
+        /**
+         * Per-venue total run adjustments derived from observed bias (shrunk toward 0 with k=20).
+         * Positive = add runs (under-predicted park); negative = subtract (over-predicted park).
+         * Keys match mlb_games.venue_name. Refresh by re-running the derivation script periodically.
+         */
+        'park_factors' => [
+            'Angel Stadium' => -0.51,
+            'Citi Field' => 0.24,
+            'Citizens Bank Park' => 0.57,
+            'Comerica Park' => 0.32,
+            'Coors Field' => 0.90,
+            'Daikin Park' => 0.67,
+            'Dodger Stadium' => -0.76,
+            'Fenway Park' => -0.87,
+            'Globe Life Field' => -1.58,
+            'Kauffman Stadium' => 0.53,
+            'Nationals Park' => 1.48,
+            'Oracle Park' => -0.36,
+            'Oriole Park at Camden Yards' => 0.36,
+            'Petco Park' => -0.30,
+            'PNC Park' => 0.91,
+            'Progressive Field' => -0.80,
+            'Sutter Health Park' => 1.21,
+            'T-Mobile Park' => -0.57,
+            'Target Field' => 0.59,
+            'Tropicana Field' => -0.33,
+            'Yankee Stadium' => 0.93,
+        ],
     ],
 
     /*

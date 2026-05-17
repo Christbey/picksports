@@ -143,6 +143,7 @@ export interface TeamMetric {
     id: number;
     team_id: number;
     season: number;
+    season_type?: string | null;
     games_played: number;
     offensive_rating: number;
     defensive_rating: number;

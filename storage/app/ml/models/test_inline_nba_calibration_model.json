@@ -1,5 +1,0 @@
-{
-    "model_type": "nba_win_probability_platt_calibration",
-    "alpha": 1,
-    "beta": -0.4
-}

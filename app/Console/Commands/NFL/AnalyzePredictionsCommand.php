@@ -8,14 +8,14 @@ use Illuminate\Console\Command;
 class AnalyzePredictionsCommand extends Command
 {
     protected $signature = 'nfl:analyze-predictions
-                            {--season=2025 : Season to analyze}
+                            {--season= : Season to analyze (defaults to config nfl.season.default)}
                             {--detailed : Show detailed game-by-game results}';
 
     protected $description = 'Analyze prediction accuracy and calibration metrics';
 
     public function handle(): int
     {
-        $season = $this->option('season');
+        $season = $this->option('season') ?? config('nfl.season.default');
 
         $predictions = Prediction::query()
             ->with(['game.homeTeam', 'game.awayTeam'])

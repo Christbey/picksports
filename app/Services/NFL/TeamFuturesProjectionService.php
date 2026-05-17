@@ -202,6 +202,7 @@ class TeamFuturesProjectionService
 
         $query = TeamMetric::query()
             ->where('season', $season)
+            ->where('season_type', (string) config('nfl.season.types.regular', 2))
             ->orderByDesc('calculation_date')
             ->orderByDesc('id');
 

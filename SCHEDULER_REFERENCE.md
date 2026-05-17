@@ -102,6 +102,7 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Sync player props twice daily at `11:00` and `16:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
 - Sync futures odds every 4 hours between `08:00` and `23:00`
+- Refresh probable pitchers (next 48h scoreboard) every 30 minutes between `06:00` and `23:00`; regenerates predictions for games whose probable starter changed
 
 ### WNBA
 

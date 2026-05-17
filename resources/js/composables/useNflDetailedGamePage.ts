@@ -12,6 +12,14 @@ const formatSpread = (spread: number | string): string => {
     return numSpread > 0 ? `+${numSpread.toFixed(1)}` : numSpread.toFixed(1);
 };
 
+const seasonTypeLabel = (seasonType: string | number | null): string => {
+    const value = seasonType === null ? '' : String(seasonType);
+    if (value === '1' || value === 'Preseason') return 'Preseason';
+    if (value === '2' || value === 'Regular Season') return 'Regular Season';
+    if (value === '3' || value === 'Postseason') return 'Postseason';
+    return value;
+};
+
 export function useNflDetailedGamePage(gameId: number) {
     const { depthCharts } = useGameDepthCharts('nfl', gameId);
     const {
@@ -120,7 +128,9 @@ export function useNflDetailedGamePage(gameId: number) {
             ),
             extraInfoItems: computed(() =>
                 weekLabel.value
-                    ? [`${currentGame.value.season_type} - ${weekLabel.value}`]
+                    ? [
+                          `${seasonTypeLabel(currentGame.value.season_type)} - ${weekLabel.value}`,
+                      ]
                     : [],
             ),
             showScoreStatuses: [

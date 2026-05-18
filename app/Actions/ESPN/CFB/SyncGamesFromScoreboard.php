@@ -20,6 +20,8 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
 
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
 
+    protected const SYNC_ORPHANED_SCHEDULED_GAMES = true;
+
     public function __construct(
         EspnService $espnService,
         ?object $updateLivePrediction = null,

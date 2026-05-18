@@ -167,6 +167,49 @@ it('updates existing games instead of creating duplicates', function () {
     expect(Game::first()->away_score)->toBe(100);
 });
 
+it('reconciles a scheduled game that fell off the scoreboard via the summary endpoint', function () {
+    Game::factory()->create([
+        'espn_event_id' => '401871332',
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'game_date' => '2026-01-30',
+        'game_time' => '23:00:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=20260130*' => Http::response([
+            'events' => [],
+        ]),
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event=401871332*' => Http::response([
+            'header' => [
+                'competitions' => [
+                    [
+                        'date' => '2026-02-02T23:00Z',
+                        'competitors' => [
+                            ['team' => ['id' => '1'], 'homeAway' => 'home'],
+                            ['team' => ['id' => '2'], 'homeAway' => 'away'],
+                        ],
+                        'status' => ['type' => ['name' => 'STATUS_POSTPONED']],
+                    ],
+                ],
+            ],
+        ]),
+    ]);
+
+    artisan('espn:sync-nba-games-scoreboard', ['date' => '20260130'])
+        ->assertSuccessful();
+
+    $this->artisan('queue:work', ['--stop-when-empty' => true]);
+
+    $game = Game::where('espn_event_id', '401871332')->first();
+    expect($game)->not->toBeNull()
+        ->status->toBe('STATUS_POSTPONED')
+        ->game_date->toEqual('2026-02-02');
+});
+
 it('skips games without teams in database', function () {
     Http::fake([
         '*site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=20260130*' => Http::response([

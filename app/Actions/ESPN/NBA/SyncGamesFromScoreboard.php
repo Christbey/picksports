@@ -16,4 +16,6 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
     protected const UPDATE_LIVE_PREDICTION_ACTION_CLASS = UpdateLivePrediction::class;
 
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = true;
+
+    protected const SYNC_ORPHANED_SCHEDULED_GAMES = true;
 }

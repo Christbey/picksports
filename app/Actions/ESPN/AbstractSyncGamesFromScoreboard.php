@@ -18,6 +18,8 @@ abstract class AbstractSyncGamesFromScoreboard
 
     protected const SYNC_ORPHANED_IN_PROGRESS_GAMES = false;
 
+    protected const SYNC_ORPHANED_SCHEDULED_GAMES = false;
+
     protected object $updateLivePrediction;
 
     public function __construct(
@@ -55,6 +57,19 @@ abstract class AbstractSyncGamesFromScoreboard
     protected function shouldSyncOrphanedInProgressGames(): bool
     {
         return static::SYNC_ORPHANED_IN_PROGRESS_GAMES;
+    }
+
+    protected function shouldSyncOrphanedScheduledGames(): bool
+    {
+        return static::SYNC_ORPHANED_SCHEDULED_GAMES;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function getOrphanedScheduledStatuses(): array
+    {
+        return ['STATUS_SCHEDULED', 'STATUS_DELAYED'];
     }
 
     protected function shouldAutoCreateMissingTeams(): bool
@@ -220,7 +235,66 @@ abstract class AbstractSyncGamesFromScoreboard
             $synced += $this->syncOrphanedInProgressGames($scoreboardEventIds);
         }
 
+        if ($this->shouldSyncOrphanedScheduledGames()) {
+            $synced += $this->syncOrphanedScheduledGames($scoreboardEventIds, $date);
+        }
+
         return $synced;
+    }
+
+    /**
+     * @param  array<int, string>  $scoreboardEventIds
+     */
+    protected function syncOrphanedScheduledGames(array $scoreboardEventIds, string $date): int
+    {
+        $gameDate = $this->normalizeScoreboardDate($date);
+        if ($gameDate === null) {
+            return 0;
+        }
+
+        $gameModel = $this->gameModelClass();
+        $uniqueKey = $this->getUniqueGameKey();
+
+        $orphanedGames = $gameModel::query()
+            ->whereIn('status', $this->getOrphanedScheduledStatuses())
+            ->whereDate('game_date', $gameDate)
+            ->when($scoreboardEventIds, fn ($q) => $q->whereNotIn($uniqueKey, $scoreboardEventIds))
+            ->get();
+
+        $synced = 0;
+
+        foreach ($orphanedGames as $game) {
+            $gameData = $this->espnService->getGame((string) $game->{$uniqueKey});
+            if (! is_array($gameData)) {
+                usleep(300_000);
+
+                continue;
+            }
+
+            $this->updateGameFromSummary($gameData, $game);
+            $synced++;
+            usleep(300_000);
+        }
+
+        return $synced;
+    }
+
+    protected function normalizeScoreboardDate(string $date): ?string
+    {
+        $trimmed = trim($date);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (preg_match('/^\d{8}$/', $trimmed)) {
+            $timestamp = strtotime($trimmed);
+
+            return $timestamp === false ? null : date('Y-m-d', $timestamp);
+        }
+
+        $timestamp = strtotime($trimmed);
+
+        return $timestamp === false ? null : date('Y-m-d', $timestamp);
     }
 
     /**
@@ -277,7 +351,7 @@ abstract class AbstractSyncGamesFromScoreboard
             $this->sportKey(),
         );
 
-        $game->update([
+        $updates = [
             'status' => $resolvedStatus,
             'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : $game->home_score,
             'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : $game->away_score,
@@ -285,9 +359,43 @@ abstract class AbstractSyncGamesFromScoreboard
             'away_linescores' => $awayTeam['linescores'] ?? $game->away_linescores,
             'period' => isset($status['period']) ? (int) $status['period'] : $game->period,
             'game_clock' => $status['displayClock'] ?? $game->game_clock,
-        ]);
+        ];
+
+        $summaryDate = $this->extractSummaryDate($header, $competition);
+        if ($summaryDate !== null) {
+            $dateParts = GameData::extractDateParts($summaryDate);
+            if ($dateParts['game_date'] !== null) {
+                $updates['game_date'] = $dateParts['game_date'];
+            }
+            if ($dateParts['game_time'] !== null) {
+                $updates['game_time'] = $dateParts['game_time'];
+            }
+        }
+
+        $game->update($updates);
 
         app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     * @param  array<string, mixed>  $competition
+     */
+    protected function extractSummaryDate(array $header, array $competition): ?string
+    {
+        $candidates = [
+            $competition['date'] ?? null,
+            $header['competitions'][0]['date'] ?? null,
+            $header['date'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_string($candidate) && $candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return null;
     }
 
     /**

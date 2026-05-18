@@ -12,6 +12,7 @@ class ReportCalibrationCommand extends Command
     protected $signature = 'mlb:report-calibration
         {--season= : Filter by season}
         {--limit=500 : Limit number of most recent graded predictions to inspect}
+        {--feature-version=core-v3 : Filter to a single feature_version (use "any" to include all)}
         {--output= : Optional JSON report output path}';
 
     protected $description = 'Report MLB prediction accuracy and market calibration metrics';
@@ -83,6 +84,11 @@ class ReportCalibrationCommand extends Command
             $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', (int) $this->option('season')));
         }
 
+        $featureVersion = (string) $this->option('feature-version');
+        if ($featureVersion !== '' && strtolower($featureVersion) !== 'any') {
+            $query->where('feature_version', $featureVersion);
+        }
+
         $limit = max(1, (int) $this->option('limit'));
         $query->limit($limit);
 
@@ -136,14 +142,17 @@ class ReportCalibrationCommand extends Command
                 'total_mae' => round((float) $rows->avg('total_error'), 2),
                 'market_spread_sample' => $marketSpreadRows->count(),
                 'market_total_sample' => $marketTotalRows->count(),
+                // NOTE: `market_spread` is captured in Vegas convention (negative = home favored),
+                // while `predicted_spread` and `actual_margin` are home-perspective (positive = home won by N).
+                // We compare them by inverting the Vegas sign.
                 'market_spread_mae' => $marketSpreadRows->isNotEmpty()
-                    ? round((float) $marketSpreadRows->map(fn (array $row) => abs((float) $row['actual_margin'] - (float) $row['market_spread']))->avg(), 2)
+                    ? round((float) $marketSpreadRows->map(fn (array $row) => abs((float) $row['actual_margin'] + (float) $row['market_spread']))->avg(), 2)
                     : null,
                 'market_total_mae' => $marketTotalRows->isNotEmpty()
                     ? round((float) $marketTotalRows->map(fn (array $row) => abs((float) $row['actual_total'] - (float) $row['market_total']))->avg(), 2)
                     : null,
                 'spread_bias_vs_market' => $marketSpreadRows->isNotEmpty()
-                    ? round((float) $marketSpreadRows->avg('predicted_spread') - (float) $marketSpreadRows->avg('market_spread'), 2)
+                    ? round((float) $marketSpreadRows->avg('predicted_spread') + (float) $marketSpreadRows->avg('market_spread'), 2)
                     : null,
                 'total_bias_vs_market' => $marketTotalRows->isNotEmpty()
                     ? round((float) $marketTotalRows->avg('predicted_total') - (float) $marketTotalRows->avg('market_total'), 2)

@@ -260,7 +260,10 @@ class PredictionNarrativeService
         $efficiencyGap = abs($netGap);
         $restEdge = $homeRest - $awayRest;
         $restLeader = $restEdge > 0 ? $homeName : ($restEdge < 0 ? $awayName : null);
-        $marketEdge = $vegasSpread !== null ? ($spread - $vegasSpread) : null;
+        // `vegas_spread` is captured in Vegas convention (home favored = negative point),
+        // while `predicted_spread` is home-perspective (home favored = positive). Add, don't subtract,
+        // to get "extra home margin the model sees beyond the line".
+        $marketEdge = $vegasSpread !== null ? ($spread + $vegasSpread) : null;
         $modelVsMarketEdgeTeam = $marketEdge !== null
             ? (($marketEdge >= 0) ? $homeName : $awayName)
             : null;
@@ -564,7 +567,7 @@ class PredictionNarrativeService
                     spread: (float) $prediction->predicted_spread,
                     confidence: (float) $prediction->confidence_score,
                     marketEdge: $prediction->vegas_spread !== null
-                        ? ((float) $prediction->predicted_spread - (float) $prediction->vegas_spread)
+                        ? ((float) $prediction->predicted_spread + (float) $prediction->vegas_spread)
                         : null,
                     vegasSpread: $prediction->vegas_spread !== null ? (float) $prediction->vegas_spread : null,
                     homeTeam: $homeName,

@@ -1,3 +1,0 @@
-prediction_id,game_date,feature_elo_diff,feature_recent_form_diff,feature_rest_day_diff,feature_injury_spread_adj,feature_market_home_spread,feature_model_predicted_spread,feature_confidence_score,target_home_margin
-7,2026-02-07,12,1,1,0.0,4.2,6.2,69,7.6
-8,2026-02-08,-12,-2,-1,0.0,-3.2,-2.2,57,-3.2

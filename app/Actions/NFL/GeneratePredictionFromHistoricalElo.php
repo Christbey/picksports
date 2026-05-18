@@ -53,7 +53,18 @@ class GeneratePredictionFromHistoricalElo
             legacyWinProbability: $legacyWinProbability,
             legacyTotal: $legacyTotal
         );
+        [$predictedSpread, $winProbability] = $this->applyPreseasonSignalBlend(
+            $game,
+            $predictedSpread,
+            $winProbability
+        );
         [$predictedSpread, $winProbability, $predictedTotal] = $this->applyDepthChartInjuryAdjustments(
+            $game,
+            $predictedSpread,
+            $winProbability,
+            $predictedTotal
+        );
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyMarketBlend(
             $game,
             $predictedSpread,
             $winProbability,
@@ -111,13 +122,16 @@ class GeneratePredictionFromHistoricalElo
             return [$legacySpread, $legacyWinProbability, $legacyTotal];
         }
 
+        $regularSeasonType = (string) config('nfl.season.types.regular', 2);
         $homeMetric = TeamMetric::query()
             ->where('team_id', $game->home_team_id)
             ->where('season', $game->season)
+            ->where('season_type', $regularSeasonType)
             ->first();
         $awayMetric = TeamMetric::query()
             ->where('team_id', $game->away_team_id)
             ->where('season', $game->season)
+            ->where('season_type', $regularSeasonType)
             ->first();
 
         if (! $homeMetric || ! $awayMetric) {
@@ -252,6 +266,229 @@ class GeneratePredictionFromHistoricalElo
         ];
 
         return [$blendedSpread, $blendedWinProbability, $blendedTotal];
+    }
+
+    /**
+     * Blend the running spread with a predictive_rating-derived spread when in-season
+     * EPA hasn't kicked in yet. Pulls predictive_rating from the seeded preseason
+     * team metrics, which already includes the offseason adjustment (QB/skill
+     * continuity, injuries) computed by HistoricalTeamMetricCalculator.
+     *
+     * @return array{0:float,1:float}
+     */
+    protected function applyPreseasonSignalBlend(
+        Game $game,
+        float $predictedSpread,
+        float $winProbability
+    ): array {
+        $this->lastModelMetadata['preseason_signal'] = [
+            'enabled' => (bool) config('nfl.predictions.preseason_signal.enabled', true),
+            'applied' => false,
+        ];
+
+        if (! config('nfl.predictions.preseason_signal.enabled', true)) {
+            $this->lastModelMetadata['preseason_signal']['reason'] = 'feature_disabled';
+
+            return [$predictedSpread, $winProbability];
+        }
+
+        if (($this->lastModelMetadata['true_epa']['applied'] ?? false) === true) {
+            $this->lastModelMetadata['preseason_signal']['reason'] = 'true_epa_already_applied';
+
+            return [$predictedSpread, $winProbability];
+        }
+
+        $regularSeasonType = (string) config('nfl.season.types.regular', 2);
+        $homeMetric = TeamMetric::query()
+            ->where('team_id', $game->home_team_id)
+            ->where('season', $game->season)
+            ->where('season_type', $regularSeasonType)
+            ->first();
+        $awayMetric = TeamMetric::query()
+            ->where('team_id', $game->away_team_id)
+            ->where('season', $game->season)
+            ->where('season_type', $regularSeasonType)
+            ->first();
+
+        if (! $homeMetric || ! $awayMetric
+            || $homeMetric->predictive_rating === null
+            || $awayMetric->predictive_rating === null
+        ) {
+            $this->lastModelMetadata['preseason_signal']['reason'] = 'missing_predictive_rating';
+
+            return [$predictedSpread, $winProbability];
+        }
+
+        $homeFieldAdvantage = $game->neutral_site
+            ? 0
+            : (float) config('nfl.elo.home_field_advantage') * (float) config('nfl.predictions.points_per_elo');
+        $predictiveDiff = (float) $homeMetric->predictive_rating - (float) $awayMetric->predictive_rating;
+        $signalSpread = $predictiveDiff + $homeFieldAdvantage;
+
+        $weight = $this->clamp(
+            (float) config('nfl.predictions.preseason_signal.blend_weight', 0.25),
+            0.0,
+            1.0
+        );
+        $blendedSpread = $this->blend($predictedSpread, $signalSpread, $weight);
+        $blendedSpread = $this->clamp(
+            $blendedSpread,
+            (float) config('nfl.predictions.min_spread'),
+            (float) config('nfl.predictions.max_spread')
+        );
+
+        $spreadCoefficient = (float) config('nfl.prediction.spread_to_probability_coefficient', 7.0);
+        $blendedWinProbability = $this->clamp(1 / (1 + exp(-$blendedSpread / $spreadCoefficient)), 0.01, 0.99);
+
+        $this->lastModelMetadata['preseason_signal'] = [
+            'enabled' => true,
+            'applied' => true,
+            'weight' => round($weight, 4),
+            'predictive_diff' => round($predictiveDiff, 4),
+            'signal_spread' => round($signalSpread, 4),
+            'blended_spread' => round($blendedSpread, 4),
+        ];
+
+        return [$blendedSpread, $blendedWinProbability];
+    }
+
+    /**
+     * Anchor the model spread/total toward the market consensus when bookmaker
+     * lines exist for this game. Defaults: 50% model / 50% market on spreads,
+     * 60% model / 40% market on totals.
+     *
+     * @return array{0:float,1:float,2:float}
+     */
+    protected function applyMarketBlend(
+        Game $game,
+        float $predictedSpread,
+        float $winProbability,
+        float $predictedTotal
+    ): array {
+        $this->lastModelMetadata['market_blend'] = [
+            'enabled' => (bool) config('nfl.predictions.market_blend.enabled', true),
+            'applied' => false,
+        ];
+
+        if (! config('nfl.predictions.market_blend.enabled', true)) {
+            $this->lastModelMetadata['market_blend']['reason'] = 'feature_disabled';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
+        $oddsData = $game->odds_data;
+        if (is_string($oddsData)) {
+            $oddsData = json_decode($oddsData, true);
+        }
+        if (! is_array($oddsData) || empty($oddsData['bookmakers'])) {
+            $this->lastModelMetadata['market_blend']['reason'] = 'no_odds_data';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
+        [$marketSpread, $marketTotal] = $this->extractMarketSpreadAndTotal($oddsData);
+
+        if ($marketSpread === null && $marketTotal === null) {
+            $this->lastModelMetadata['market_blend']['reason'] = 'no_spread_or_total_market';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
+        $spreadModelWeight = $this->clamp(
+            (float) config('nfl.predictions.market_blend.spread_model_weight', 0.5),
+            0.0,
+            1.0
+        );
+        $totalModelWeight = $this->clamp(
+            (float) config('nfl.predictions.market_blend.total_model_weight', 0.6),
+            0.0,
+            1.0
+        );
+
+        $blendedSpread = $predictedSpread;
+        if ($marketSpread !== null) {
+            $blendedSpread = ($predictedSpread * $spreadModelWeight) + ($marketSpread * (1 - $spreadModelWeight));
+            $blendedSpread = $this->clamp(
+                $blendedSpread,
+                (float) config('nfl.predictions.min_spread'),
+                (float) config('nfl.predictions.max_spread')
+            );
+        }
+
+        $blendedTotal = $predictedTotal;
+        if ($marketTotal !== null) {
+            $blendedTotal = ($predictedTotal * $totalModelWeight) + ($marketTotal * (1 - $totalModelWeight));
+            $blendedTotal = $this->clamp(
+                $blendedTotal,
+                (float) config('nfl.predictions.true_epa.min_predicted_total', 28.0),
+                (float) config('nfl.predictions.true_epa.max_predicted_total', 66.0)
+            );
+        }
+
+        $spreadCoefficient = (float) config('nfl.prediction.spread_to_probability_coefficient', 7.0);
+        $blendedWinProbability = $this->clamp(
+            1 / (1 + exp(-$blendedSpread / $spreadCoefficient)),
+            0.01,
+            0.99
+        );
+
+        $this->lastModelMetadata['market_blend'] = [
+            'enabled' => true,
+            'applied' => true,
+            'spread_model_weight' => round($spreadModelWeight, 4),
+            'total_model_weight' => round($totalModelWeight, 4),
+            'market_spread' => $marketSpread !== null ? round($marketSpread, 2) : null,
+            'market_total' => $marketTotal !== null ? round($marketTotal, 2) : null,
+            'blended_spread' => round($blendedSpread, 2),
+            'blended_total' => round($blendedTotal, 2),
+        ];
+
+        return [$blendedSpread, $blendedWinProbability, $blendedTotal];
+    }
+
+    /**
+     * Extract the home-team spread (as home margin: positive = home favored)
+     * and the over/under total from an odds_data payload. Returns null for
+     * whichever market is absent.
+     *
+     * @param  array<string, mixed>  $oddsData
+     * @return array{0:?float,1:?float}
+     */
+    protected function extractMarketSpreadAndTotal(array $oddsData): array
+    {
+        $homeTeamName = $oddsData['home_team'] ?? null;
+        $marketSpread = null;
+        $marketTotal = null;
+
+        foreach ($oddsData['bookmakers'] ?? [] as $bookmaker) {
+            foreach ($bookmaker['markets'] ?? [] as $market) {
+                if ($market['key'] === 'spreads' && $homeTeamName !== null && $marketSpread === null) {
+                    foreach ($market['outcomes'] ?? [] as $outcome) {
+                        if (($outcome['name'] ?? null) === $homeTeamName && isset($outcome['point'])) {
+                            // Bookmaker's "home -3.5" means home favored by 3.5;
+                            // we represent home margin as positive when home is favored.
+                            $marketSpread = -1 * (float) $outcome['point'];
+                            break;
+                        }
+                    }
+                }
+
+                if ($market['key'] === 'totals' && $marketTotal === null) {
+                    foreach ($market['outcomes'] ?? [] as $outcome) {
+                        if (isset($outcome['point'])) {
+                            $marketTotal = (float) $outcome['point'];
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if ($marketSpread !== null && $marketTotal !== null) {
+                break;
+            }
+        }
+
+        return [$marketSpread, $marketTotal];
     }
 
     /**

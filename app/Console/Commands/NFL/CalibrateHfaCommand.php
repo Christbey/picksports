@@ -9,7 +9,7 @@ use Illuminate\Console\Command;
 class CalibrateHfaCommand extends Command
 {
     protected $signature = 'nfl:calibrate-hfa
-                            {--season=2025 : Season to test against}
+                            {--season= : Season to test against (defaults to config nfl.season.default)}
                             {--min= : Minimum HFA value to test (defaults to config)}
                             {--max= : Maximum HFA value to test (defaults to config)}
                             {--step= : Step size between values (defaults to config)}';
@@ -18,7 +18,7 @@ class CalibrateHfaCommand extends Command
 
     public function handle(): int
     {
-        $season = $this->option('season');
+        $season = $this->option('season') ?? config('nfl.season.default');
         $min = $this->option('min') ?? config('nfl.calibration.hfa.min');
         $max = $this->option('max') ?? config('nfl.calibration.hfa.max');
         $step = $this->option('step') ?? config('nfl.calibration.hfa.step');

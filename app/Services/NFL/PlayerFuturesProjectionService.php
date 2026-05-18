@@ -466,6 +466,7 @@ class PlayerFuturesProjectionService
     {
         $rows = TeamMetric::query()
             ->where('season', $season)
+            ->where('season_type', (string) config('nfl.season.types.regular', 2))
             ->when($cutoffDate !== null, fn ($query) => $query->whereDate('calculation_date', '<=', $cutoffDate))
             ->orderByDesc('calculation_date')
             ->orderByDesc('id')

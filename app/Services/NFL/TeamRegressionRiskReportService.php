@@ -61,6 +61,7 @@ class TeamRegressionRiskReportService
         $playoffByTeam = collect($forecast['teams'] ?? [])->keyBy('team_id');
         $actuals = TeamMetric::query()
             ->where('season', $previousSeason)
+            ->where('season_type', (string) config('nfl.season.types.regular', 2))
             ->get(['team_id', 'wins', 'losses', 'predictive_rating', 'recent_form_rating'])
             ->keyBy('team_id');
         $teams = Team::query()

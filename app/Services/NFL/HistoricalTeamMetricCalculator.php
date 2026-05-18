@@ -133,6 +133,7 @@ class HistoricalTeamMetricCalculator
 
         $rows = \App\Models\NFL\TeamMetric::query()
             ->whereIn('season', $priorSeasons->all())
+            ->where('season_type', (string) config('nfl.season.types.regular', 2))
             ->orderByDesc('calculation_date')
             ->orderByDesc('id')
             ->get([

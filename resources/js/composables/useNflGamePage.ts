@@ -208,8 +208,14 @@ export function useNflGamePage(gameId: number) {
         if (!currentGame.value.week || !currentGame.value.season_type)
             return '';
 
-        if (currentGame.value.season_type === 'Regular Season') {
+        const seasonType = String(currentGame.value.season_type);
+
+        if (seasonType === 'Regular Season' || seasonType === '2') {
             return `Week ${currentGame.value.week}`;
+        }
+
+        if (seasonType === 'Preseason' || seasonType === '1') {
+            return `Preseason Week ${currentGame.value.week}`;
         }
 
         const playoffRounds: Record<number, string> = {

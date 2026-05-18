@@ -78,7 +78,7 @@ class MLBGameData
             'away_linescores' => $this->awayLinescores,
             'status' => $this->status,
             'inning' => $this->inning,
-            'inning_state' => $this->inningState,
+            'inning_half' => $this->inningState,
             'venue_name' => $this->venueName,
             'venue_city' => $this->venueCity,
             'venue_state' => $this->venueState,

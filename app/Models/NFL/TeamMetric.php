@@ -12,6 +12,7 @@ class TeamMetric extends Model
     protected $fillable = [
         'team_id',
         'season',
+        'season_type',
         'wins',
         'losses',
         'offensive_rating',

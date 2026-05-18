@@ -59,15 +59,17 @@ class CalculateTeamMetrics
         'WSH' => ['conference' => 'nfc', 'division' => 'east'],
     ];
 
-    public function execute(Team $team, int $season): ?TeamMetric
+    public function execute(Team $team, int $season, int|string|null $seasonType = null): ?TeamMetric
     {
-        $games = $this->getCompletedGamesForTeam($team, $season, 'NFL');
+        $games = $this->getCompletedGamesForTeam($team, $season, 'NFL', $seasonType);
+        $resolvedSeasonType = $this->resolveMetricSeasonType($games, $seasonType);
 
         if ($games->isEmpty()) {
             Log::info('No completed games found for team', [
                 'team_id' => $team->id,
                 'team_name' => "{$team->city} {$team->name}",
                 'season' => $season,
+                'season_type' => $resolvedSeasonType,
                 'sport' => 'nfl',
             ]);
 
@@ -153,6 +155,7 @@ class CalculateTeamMetrics
             'team_id' => $team->id,
             'team_name' => "{$team->city} {$team->name}",
             'season' => $season,
+            'season_type' => $resolvedSeasonType,
             'sport' => 'nfl',
             'games_count' => $games->count(),
             'offensive_rating' => round($offensiveRating, 1),
@@ -172,14 +175,17 @@ class CalculateTeamMetrics
             'team_id' => $team->id,
             'team_name' => "{$team->city} {$team->name}",
             'season' => $season,
+            'season_type' => $resolvedSeasonType,
         ]);
 
         return TeamMetric::updateOrCreate(
             [
                 'team_id' => $team->id,
                 'season' => $season,
+                'season_type' => $resolvedSeasonType,
             ],
             [
+                'season_type' => $resolvedSeasonType,
                 'wins' => $record['wins'],
                 'losses' => $record['losses'],
                 'offensive_rating' => round($offensiveRating, 1),
@@ -227,19 +233,38 @@ class CalculateTeamMetrics
         );
     }
 
-    public function executeForAllTeams(int $season): int
+    public function executeForAllTeams(int $season, int|string|null $seasonType = null): int
     {
         $teams = Team::all();
         $calculated = 0;
 
         foreach ($teams as $team) {
-            $metric = $this->execute($team, $season);
+            $metric = $this->execute($team, $season, $seasonType);
             if ($metric) {
                 $calculated++;
             }
         }
 
         return $calculated;
+    }
+
+    private function resolveMetricSeasonType(Collection $games, int|string|null $seasonType): string
+    {
+        if ($seasonType !== null && $seasonType !== '') {
+            return (string) collect($this->resolveSeasonTypeCandidates('nfl', $seasonType))
+                ->first(fn ($candidate) => is_numeric($candidate) || ctype_digit((string) $candidate), (string) $seasonType);
+        }
+
+        $resolved = $games
+            ->pluck('season_type')
+            ->filter(fn ($type) => $type !== null && $type !== '')
+            ->map(fn ($type) => (string) $type)
+            ->unique()
+            ->values();
+
+        return $resolved->count() === 1
+            ? (string) $resolved->first()
+            : (string) config('nfl.season.types.regular', 2);
     }
 
     protected function calculatePredictiveRating(

@@ -20,7 +20,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // Wire MLB scoreboard sync with the MLB-specific EspnService so the container
+        // does not autowire the abstract BaseEspnService (which lacks MLB endpoints).
+        $this->app->bind(
+            \App\Actions\ESPN\MLB\SyncGamesFromScoreboard::class,
+            fn ($app) => new \App\Actions\ESPN\MLB\SyncGamesFromScoreboard(
+                new \App\Services\ESPN\MLB\EspnService
+            ),
+        );
     }
 
     /**

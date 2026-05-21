@@ -265,6 +265,118 @@ return [
             'spread_model_weight' => env('NFL_MARKET_BLEND_SPREAD_WEIGHT', 0.5),
             'total_model_weight' => env('NFL_MARKET_BLEND_TOTAL_WEIGHT', 0.6),
         ],
+
+        'spread_to_probability_coefficient' => env('NFL_SPREAD_TO_PROBABILITY_COEFFICIENT', 7.0),
+
+        'injury_scope' => [
+            'unknown_return_days' => env('NFL_INJURY_UNKNOWN_RETURN_DAYS', 21),
+        ],
+
+        'depth_chart_injuries' => [
+            'enabled' => env('NFL_DEPTH_CHART_INJURIES_ENABLED', true),
+        ],
+
+        'rolling_efficiency' => [
+            'enabled' => env('NFL_ROLLING_EFFICIENCY_ENABLED', false),
+            'min_games' => env('NFL_ROLLING_EFFICIENCY_MIN_GAMES', 2),
+            'blend_weight' => env('NFL_ROLLING_EFFICIENCY_BLEND_WEIGHT', 0.35),
+            'margin_weight' => env('NFL_ROLLING_EFFICIENCY_MARGIN_WEIGHT', 0.55),
+            'recent_margin_weight' => env('NFL_ROLLING_EFFICIENCY_RECENT_MARGIN_WEIGHT', 0.25),
+            'yard_diff_weight' => env('NFL_ROLLING_EFFICIENCY_YARD_DIFF_WEIGHT', 0.12),
+            'turnover_weight' => env('NFL_ROLLING_EFFICIENCY_TURNOVER_WEIGHT', 0.75),
+            'max_signal_spread' => env('NFL_ROLLING_EFFICIENCY_MAX_SIGNAL_SPREAD', 14.0),
+            'recent_games' => env('NFL_ROLLING_EFFICIENCY_RECENT_GAMES', 5),
+        ],
+
+        'qb_form' => [
+            'enabled' => env('NFL_QB_FORM_ENABLED', false),
+            'min_prior_attempts' => env('NFL_QB_FORM_MIN_PRIOR_ATTEMPTS', 30),
+            'blend_weight' => env('NFL_QB_FORM_BLEND_WEIGHT', 0.22),
+            'max_signal_spread' => env('NFL_QB_FORM_MAX_SIGNAL_SPREAD', 6.0),
+            'max_qb_score' => env('NFL_QB_FORM_MAX_QB_SCORE', 4.0),
+            'full_weight_attempts' => env('NFL_QB_FORM_FULL_WEIGHT_ATTEMPTS', 30),
+            'full_weight_games' => env('NFL_QB_FORM_FULL_WEIGHT_GAMES', 1),
+            'early_season_week' => env('NFL_QB_FORM_EARLY_SEASON_WEEK', 4),
+            'early_season_weight' => env('NFL_QB_FORM_EARLY_SEASON_WEIGHT', 1.0),
+            'baseline_yards_per_attempt' => env('NFL_QB_FORM_BASELINE_YPA', 6.9),
+            'baseline_td_rate' => env('NFL_QB_FORM_BASELINE_TD_RATE', 0.045),
+            'baseline_int_rate' => env('NFL_QB_FORM_BASELINE_INT_RATE', 0.025),
+            'baseline_sack_rate' => env('NFL_QB_FORM_BASELINE_SACK_RATE', 0.065),
+            'ypa_weight' => env('NFL_QB_FORM_YPA_WEIGHT', 1.2),
+            'td_rate_weight' => env('NFL_QB_FORM_TD_RATE_WEIGHT', 28.0),
+            'int_rate_weight' => env('NFL_QB_FORM_INT_RATE_WEIGHT', 35.0),
+            'sack_rate_weight' => env('NFL_QB_FORM_SACK_RATE_WEIGHT', 18.0),
+            'rush_yards_weight' => env('NFL_QB_FORM_RUSH_YARDS_WEIGHT', 0.03),
+            'experience_weight' => env('NFL_QB_FORM_EXPERIENCE_WEIGHT', 0.35),
+        ],
+
+        'line_matchup' => [
+            'enabled' => env('NFL_LINE_MATCHUP_ENABLED', false),
+            'min_games' => env('NFL_LINE_MATCHUP_MIN_GAMES', 2),
+            'blend_weight' => env('NFL_LINE_MATCHUP_BLEND_WEIGHT', 0.18),
+            'run_edge_weight' => env('NFL_LINE_MATCHUP_RUN_EDGE_WEIGHT', 1.35),
+            'pressure_edge_weight' => env('NFL_LINE_MATCHUP_PRESSURE_EDGE_WEIGHT', 34.0),
+            'max_signal_spread' => env('NFL_LINE_MATCHUP_MAX_SIGNAL_SPREAD', 4.0),
+            'total_run_edge_weight' => env('NFL_LINE_MATCHUP_TOTAL_RUN_EDGE_WEIGHT', 0.8),
+            'total_pressure_edge_weight' => env('NFL_LINE_MATCHUP_TOTAL_PRESSURE_EDGE_WEIGHT', 14.0),
+            'max_total_adjustment' => env('NFL_LINE_MATCHUP_MAX_TOTAL_ADJUSTMENT', 3.0),
+        ],
+
+        'contextual_factors' => [
+            'enabled' => env('NFL_CONTEXTUAL_FACTORS_ENABLED', false),
+            'home_away_min_games' => env('NFL_CONTEXT_HOME_AWAY_MIN_GAMES', 2),
+            'home_away_weight' => env('NFL_CONTEXT_HOME_AWAY_WEIGHT', 0.06),
+            'division_lookback_games' => env('NFL_CONTEXT_DIVISION_LOOKBACK_GAMES', 6),
+            'division_h2h_weight' => env('NFL_CONTEXT_DIVISION_H2H_WEIGHT', 0.05),
+            'division_total_penalty' => env('NFL_CONTEXT_DIVISION_TOTAL_PENALTY', -0.4),
+            'cold_weather_total_adjustment' => env('NFL_CONTEXT_COLD_WEATHER_TOTAL_ADJUSTMENT', -0.6),
+            'hot_weather_total_adjustment' => env('NFL_CONTEXT_HOT_WEATHER_TOTAL_ADJUSTMENT', -0.2),
+            'rest_diff_weight' => env('NFL_CONTEXT_REST_DIFF_WEIGHT', 0.09),
+            'short_rest_penalty' => env('NFL_CONTEXT_SHORT_REST_PENALTY', -0.25),
+            'short_rest_total_penalty' => env('NFL_CONTEXT_SHORT_REST_TOTAL_PENALTY', -0.2),
+            'consecutive_road_penalty' => env('NFL_CONTEXT_CONSECUTIVE_ROAD_PENALTY', -0.2),
+            'coaching_weight' => env('NFL_CONTEXT_COACHING_WEIGHT', 0.12),
+            'max_spread_adjustment' => env('NFL_CONTEXT_MAX_SPREAD_ADJUSTMENT', 2.0),
+            'max_total_adjustment' => env('NFL_CONTEXT_MAX_TOTAL_ADJUSTMENT', 2.5),
+            'coaching_priors' => [],
+            'cold_weather_states' => ['NY', 'NJ', 'PA', 'OH', 'MI', 'WI', 'IL', 'MA', 'MD', 'CO', 'WA', 'MO', 'MN'],
+            'hot_weather_states' => ['AZ', 'FL', 'TX', 'CA', 'NV'],
+            'indoor_venue_keywords' => [
+                'dome',
+                'superdome',
+                'ford field',
+                'u.s. bank',
+                'us bank',
+                'allegiant',
+                'sofi',
+                'state farm stadium',
+                'at&t stadium',
+                'lucas oil',
+                'mercedes-benz',
+                'nrg stadium',
+            ],
+        ],
+
+        'analysis_layer' => [
+            'enabled' => env('NFL_ANALYSIS_LAYER_ENABLED', true),
+            'low_confidence_threshold' => env('NFL_ANALYSIS_LOW_CONFIDENCE_THRESHOLD', 0.58),
+            'min_spread_edge' => env('NFL_ANALYSIS_MIN_SPREAD_EDGE', 2.0),
+            'min_total_edge' => env('NFL_ANALYSIS_MIN_TOTAL_EDGE', 3.0),
+            'risk_flag_penalty' => env('NFL_ANALYSIS_RISK_FLAG_PENALTY', 4.0),
+            'lean_model_signal_threshold' => env('NFL_ANALYSIS_LEAN_MODEL_SIGNAL_THRESHOLD', 55.0),
+            'strong_model_signal_threshold' => env('NFL_ANALYSIS_STRONG_MODEL_SIGNAL_THRESHOLD', 65.0),
+        ],
+
+        'adaptive_win_probability_calibration' => [
+            'enabled' => env('NFL_ADAPTIVE_WIN_PROBABILITY_CALIBRATION_ENABLED', true),
+            'lookback_games' => env('NFL_ADAPTIVE_WIN_PROBABILITY_LOOKBACK_GAMES', 512),
+            'bucket_width' => env('NFL_ADAPTIVE_WIN_PROBABILITY_BUCKET_WIDTH', 0.05),
+            'min_bucket_sample' => env('NFL_ADAPTIVE_WIN_PROBABILITY_MIN_BUCKET_SAMPLE', 30),
+            'blend_weight' => env('NFL_ADAPTIVE_WIN_PROBABILITY_BLEND_WEIGHT', 0.45),
+            'max_adjustment' => env('NFL_ADAPTIVE_WIN_PROBABILITY_MAX_ADJUSTMENT', 0.08),
+            'min_favorite_probability' => env('NFL_ADAPTIVE_WIN_PROBABILITY_MIN_FAVORITE_PROBABILITY', 0.501),
+            'coin_flip_tolerance' => env('NFL_ADAPTIVE_WIN_PROBABILITY_COIN_FLIP_TOLERANCE', 0.0005),
+        ],
     ],
 
     /*
@@ -288,6 +400,14 @@ return [
         'kelly' => [
             'fraction' => 0.25,   // Quarter Kelly (conservative)
             'max_percent' => 5.0, // Maximum recommended bet size
+        ],
+
+        'max_units' => 2.0,
+
+        'key_numbers' => [3, 7, 10],
+
+        'risk' => [
+            'early_season_weeks' => 2,
         ],
     ],
 

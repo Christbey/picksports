@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Support\PredictionDataPermissions;
+use App\Support\PredictionFieldAccess;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\JsonResponse;
@@ -191,6 +193,7 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
             'query' => $request->query(),
             'tier_limit' => $tierLimit,
             'tier_name' => $tierMetadata['tier_name'] ?? null,
+            'field_access' => $this->predictionFieldAccessCacheContext($request),
         ]);
 
         $payload = $sportsViewCache->remember(
@@ -333,6 +336,7 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
             'controller' => static::class,
             'game_id' => $gameId,
             'first_only' => $this->returnFirstPredictionOnly(),
+            'field_access' => $this->predictionFieldAccessCacheContext(request()),
         ]);
 
         $payload = $sportsViewCache->remember(
@@ -366,5 +370,24 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
         }
 
         return response()->json($payload, $status);
+    }
+
+    /**
+     * @return array<string, bool>
+     */
+    protected function predictionFieldAccessCacheContext($request): array
+    {
+        $user = $request->user();
+        if (! $user) {
+            return [];
+        }
+
+        $fieldAccess = app(PredictionFieldAccess::class);
+
+        return collect(PredictionDataPermissions::allFields())
+            ->mapWithKeys(fn (string $field): array => [
+                $field => $fieldAccess->canViewField($user, $field),
+            ])
+            ->all();
     }
 }

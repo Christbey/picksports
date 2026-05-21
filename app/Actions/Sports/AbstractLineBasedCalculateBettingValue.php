@@ -3,6 +3,7 @@
 namespace App\Actions\Sports;
 
 use App\Actions\Sports\Concerns\InteractsWithBettingMarkets;
+use App\Support\BettingRecommendationGrader;
 
 abstract class AbstractLineBasedCalculateBettingValue
 {
@@ -26,21 +27,21 @@ abstract class AbstractLineBasedCalculateBettingValue
         if ($spreadsMarket && $prediction->predicted_spread !== null) {
             $spreadRec = $this->analyzeSpread($game, $prediction, $spreadsMarket);
             if ($spreadRec) {
-                $recommendations[] = $spreadRec;
+                $recommendations[] = $this->gradeRecommendation($spreadRec, $game, $prediction);
             }
         }
 
         if ($totalsMarket && $prediction->predicted_total !== null) {
             $totalRec = $this->analyzeTotal($prediction, $totalsMarket);
             if ($totalRec) {
-                $recommendations[] = $totalRec;
+                $recommendations[] = $this->gradeRecommendation($totalRec, $game, $prediction);
             }
         }
 
         if ($moneylineMarket && $prediction->win_probability !== null) {
             $moneylineRec = $this->analyzeMoneyline($game, $prediction, $moneylineMarket);
             if ($moneylineRec) {
-                $recommendations[] = $moneylineRec;
+                $recommendations[] = $this->gradeRecommendation($moneylineRec, $game, $prediction);
             }
         }
 
@@ -52,6 +53,15 @@ abstract class AbstractLineBasedCalculateBettingValue
     abstract protected function getTeamDisplayName(object $team): string;
 
     abstract protected function teamMatchesOutcome(object $team, string $outcomeName, string $oddsApiTeamName): bool;
+
+    /**
+     * @param  array<string, mixed>  $recommendation
+     * @return array<string, mixed>
+     */
+    protected function gradeRecommendation(array $recommendation, object $game, object $prediction): array
+    {
+        return app(BettingRecommendationGrader::class)->grade($recommendation, $game, $prediction, $this->sportKey());
+    }
 
     protected function analyzeSpread(object $game, object $prediction, array $market): ?array
     {
@@ -67,7 +77,9 @@ abstract class AbstractLineBasedCalculateBettingValue
                 continue;
             }
 
-            if ($this->teamMatchesOutcome($game->homeTeam, (string) ($outcome['name'] ?? ''), (string) ($game->odds_data['home_team'] ?? ''))) {
+            $outcomeName = (string) ($outcome['name'] ?? '');
+
+            if ($this->teamMatchesOutcome($game->homeTeam, $outcomeName, '')) {
                 $homeSpread = $outcome['point'] ?? null;
                 $homePrice = $outcome['price'] ?? -110;
             } else {
@@ -170,7 +182,9 @@ abstract class AbstractLineBasedCalculateBettingValue
                 continue;
             }
 
-            if ($this->teamMatchesOutcome($game->homeTeam, (string) ($outcome['name'] ?? ''), (string) ($game->odds_data['home_team'] ?? ''))) {
+            $outcomeName = (string) ($outcome['name'] ?? '');
+
+            if ($this->teamMatchesOutcome($game->homeTeam, $outcomeName, '')) {
                 $homePrice = $outcome['price'] ?? null;
             } else {
                 $awayPrice = $outcome['price'] ?? null;

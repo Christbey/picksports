@@ -3,6 +3,7 @@
 namespace App\Actions\Sports;
 
 use App\Actions\Sports\Concerns\InteractsWithBettingMarkets;
+use App\Support\BettingRecommendationGrader;
 
 class CalculateBettingValue
 {
@@ -26,21 +27,21 @@ class CalculateBettingValue
         if ($spreadsMarket && $prediction->predicted_spread !== null) {
             $spreadRec = $this->analyzeSpread($game, $prediction, $spreadsMarket, $sportKey);
             if ($spreadRec) {
-                $recommendations[] = $spreadRec;
+                $recommendations[] = $this->gradeRecommendation($spreadRec, $game, $prediction, $sportKey);
             }
         }
 
         if ($totalsMarket && $prediction->predicted_total !== null) {
             $totalRec = $this->analyzeTotal($prediction, $totalsMarket, $sportKey);
             if ($totalRec) {
-                $recommendations[] = $totalRec;
+                $recommendations[] = $this->gradeRecommendation($totalRec, $game, $prediction, $sportKey);
             }
         }
 
         if ($moneylineMarket && $prediction->win_probability !== null) {
             $mlRec = $this->analyzeMoneyline($game, $prediction, $moneylineMarket, $sportKey);
             if ($mlRec) {
-                $recommendations[] = $mlRec;
+                $recommendations[] = $this->gradeRecommendation($mlRec, $game, $prediction, $sportKey);
             }
         }
 
@@ -61,7 +62,9 @@ class CalculateBettingValue
                 continue;
             }
 
-            if ($this->teamMatchesOutcome($game->homeTeam, (string) ($outcome['name'] ?? ''), (string) ($game->odds_data['home_team'] ?? ''))) {
+            $outcomeName = (string) ($outcome['name'] ?? '');
+
+            if ($this->teamMatchesOutcome($game->homeTeam, $outcomeName, '')) {
                 $homeSpread = $outcome['point'] ?? null;
                 $homePrice = $outcome['price'] ?? -110;
             } else {
@@ -102,6 +105,15 @@ class CalculateBettingValue
             'side_confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
             'reasoning' => 'Model spread diverges from market spread.',
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $recommendation
+     * @return array<string, mixed>
+     */
+    protected function gradeRecommendation(array $recommendation, object $game, object $prediction, string $sportKey): array
+    {
+        return app(BettingRecommendationGrader::class)->grade($recommendation, $game, $prediction, $sportKey);
     }
 
     protected function analyzeTotal(object $prediction, array $market, string $sportKey): ?array
@@ -160,7 +172,9 @@ class CalculateBettingValue
                 continue;
             }
 
-            if ($this->teamMatchesOutcome($game->homeTeam, (string) ($outcome['name'] ?? ''), (string) ($game->odds_data['home_team'] ?? ''))) {
+            $outcomeName = (string) ($outcome['name'] ?? '');
+
+            if ($this->teamMatchesOutcome($game->homeTeam, $outcomeName, '')) {
                 $homePrice = $outcome['price'] ?? null;
             } else {
                 $awayPrice = $outcome['price'] ?? null;

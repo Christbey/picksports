@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import axios from 'axios';
-import { ChevronDown, Sparkles, Target } from 'lucide-vue-next';
+import { ChevronDown, ShieldCheck, Sparkles, Target } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
 import SavePickDialog from '@/components/predictions/SavePickDialog.vue';
@@ -239,6 +239,93 @@ function moneylineTeamLabel(): string {
 
 function edgeBarWidth(): number {
     return Math.min(100, Math.abs(edgePercent()) * 2);
+}
+
+function predictionAnalysis() {
+    return props.prediction.prediction_analysis ?? null;
+}
+
+function hasPredictionAnalysis(): boolean {
+    return predictionAnalysis() !== null;
+}
+
+function trustScoreLabel(): string | null {
+    const trust = predictionAnalysis()?.trust_score;
+    return typeof trust === 'number' ? `${Math.round(trust)} Trust` : null;
+}
+
+function modelSignalLabel(): string | null {
+    const signal = predictionAnalysis()?.model_signal_classification;
+    if (!signal) return null;
+
+    const labels: Record<string, string> = {
+        strong_model_side: 'Strong Model Side',
+        lean_model_side: 'Lean Model Side',
+        pass_model_side: 'Pass Model Side',
+    };
+
+    return labels[signal] ?? signal.replaceAll('_', ' ');
+}
+
+function betClassificationLabel(): string | null {
+    const classification = predictionAnalysis()?.bet_classification;
+    if (!classification) return null;
+
+    const labels: Record<string, string> = {
+        bet: 'Bet',
+        bettable_edge: 'Bettable Edge',
+        lean: 'Lean Edge',
+        lean_edge: 'Lean Edge',
+        model_rule_watchlist: 'Rule Watchlist',
+        validated_winner_watchlist: 'Winner Watchlist',
+        no_bet_no_edge: 'No Bet',
+        no_bet_risk: 'No Bet',
+        no_bet_rule_pass: 'No Bet',
+    };
+
+    return labels[classification] ?? classification.replaceAll('_', ' ');
+}
+
+function bestValidatedSignal() {
+    return predictionAnalysis()?.best_validated_signal ?? null;
+}
+
+function validatedSignalRateLabel(): string | null {
+    const signal = bestValidatedSignal();
+    const rate = signal?.winner_hit_rate;
+
+    return typeof rate === 'number' ? `${rate.toFixed(1)}% winner` : null;
+}
+
+function validatedSignalMetaLabel(): string | null {
+    const signal = bestValidatedSignal();
+    if (!signal) return null;
+
+    const parts = [];
+    if (typeof signal.sample_size === 'number' && signal.sample_size > 0) {
+        parts.push(`${signal.sample_size} games`);
+    }
+    if (typeof signal.spread_mae === 'number') {
+        parts.push(`${signal.spread_mae.toFixed(2)} spread MAE`);
+    }
+
+    return parts.length ? parts.join(' · ') : null;
+}
+
+function topReasonCodes(): string[] {
+    return (predictionAnalysis()?.reason_codes ?? []).slice(0, 4);
+}
+
+function topRiskFlags(): string[] {
+    return (predictionAnalysis()?.risk_flags ?? []).slice(0, 3);
+}
+
+function formatAnalysisToken(token: string): string {
+    return token
+        .split('_')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
 }
 
 function bettingValueDebug(): string | null {
@@ -731,6 +818,85 @@ function saveOptions(): SavePickOption[] {
                             />
                         </div>
                     </div>
+                </div>
+            </div>
+
+            <div
+                v-if="!isFinal() && hasPredictionAnalysis()"
+                class="mt-4 border-t border-sidebar-border/70 pt-4"
+            >
+                <div class="mb-2 flex items-center gap-2">
+                    <div
+                        class="inline-flex items-center gap-1.5 rounded-full bg-sidebar-accent/70 px-2.5 py-1 text-xs font-semibold tracking-wide uppercase"
+                    >
+                        <ShieldCheck class="h-3.5 w-3.5" />
+                        Model Analysis
+                    </div>
+                </div>
+                <div
+                    v-if="bestValidatedSignal()"
+                    class="mb-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100"
+                >
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span
+                            class="inline-flex items-center gap-1 font-semibold"
+                        >
+                            <Target class="h-3.5 w-3.5" />
+                            {{ bestValidatedSignal()?.label }}
+                        </span>
+                        <span
+                            v-if="validatedSignalRateLabel()"
+                            class="rounded-full bg-emerald-600 px-2 py-0.5 font-semibold text-white dark:bg-emerald-500 dark:text-emerald-950"
+                        >
+                            {{ validatedSignalRateLabel() }}
+                        </span>
+                        <span
+                            v-if="validatedSignalMetaLabel()"
+                            class="text-emerald-800 dark:text-emerald-200"
+                        >
+                            {{ validatedSignalMetaLabel() }}
+                        </span>
+                    </div>
+                    <p
+                        v-if="bestValidatedSignal()?.note"
+                        class="mt-1 text-emerald-800 dark:text-emerald-200"
+                    >
+                        {{ bestValidatedSignal()?.note }}
+                    </p>
+                </div>
+                <div class="flex flex-wrap gap-2 text-xs">
+                    <span
+                        v-if="trustScoreLabel()"
+                        class="rounded-full bg-emerald-100/80 px-2 py-1 font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                    >
+                        {{ trustScoreLabel() }}
+                    </span>
+                    <span
+                        v-if="modelSignalLabel()"
+                        class="rounded-full bg-sidebar-accent px-2 py-1 font-medium"
+                    >
+                        {{ modelSignalLabel() }}
+                    </span>
+                    <span
+                        v-if="betClassificationLabel()"
+                        class="rounded-full bg-sidebar-accent px-2 py-1 font-medium"
+                    >
+                        {{ betClassificationLabel() }}
+                    </span>
+                    <span
+                        v-for="code in topReasonCodes()"
+                        :key="`reason-${code}`"
+                        class="rounded-full border border-sidebar-border/80 px-2 py-1 text-muted-foreground"
+                    >
+                        {{ formatAnalysisToken(code) }}
+                    </span>
+                    <span
+                        v-for="flag in topRiskFlags()"
+                        :key="`risk-${flag}`"
+                        class="rounded-full bg-amber-100/80 px-2 py-1 font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                    >
+                        {{ formatAnalysisToken(flag) }}
+                    </span>
                 </div>
             </div>
 

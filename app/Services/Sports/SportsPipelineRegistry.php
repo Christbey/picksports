@@ -184,8 +184,15 @@ class SportsPipelineRegistry
             ],
             'nfl' => [
                 $this->step('Sync current week', 'espn:sync-nfl-current'),
+                $this->step('Sync depth charts', 'espn:sync-nfl-depth-charts', ['--season' => $season]),
                 $this->step('Sync game details', 'espn:sync-nfl-game-details'),
                 $this->step('Sync injuries', 'espn:sync-nfl-injuries'),
+                $this->step('Sync game weather', 'nfl:sync-game-weather', [
+                    '--season' => $season,
+                    '--days-back' => 0,
+                    '--days-forward' => 7,
+                    '--force' => true,
+                ]),
                 $this->step('Sync odds', 'nfl:sync-odds'),
                 $this->step('Sync player props', 'nfl:sync-player-props'),
                 $this->step('Sync futures odds', 'sports:sync-futures-odds', [

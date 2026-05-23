@@ -2,6 +2,8 @@
 
 namespace App\Console\Commands\NFL;
 
+use App\Models\GameOddsSnapshot;
+use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -42,6 +44,9 @@ class BacktestSpreadsCommand extends Command
                 ['Model bias vs actual', $this->signed($summary['avg_model_spread'] - $summary['avg_actual_margin'], 1)],
                 ['Market MAE', number_format($summary['market_mae'], 2)],
                 ['Model MAE', number_format($summary['model_mae'], 2)],
+                ['CLV sample', (string) $summary['clv_sample']],
+                ['Avg CLV', $summary['avg_clv'] !== null ? $this->signed($summary['avg_clv'], 2).' pts' : 'n/a'],
+                ['Positive CLV rate', $summary['positive_clv_rate'] !== null ? number_format($summary['positive_clv_rate'], 1).'%' : 'n/a'],
                 ['ATS record', "{$summary['wins']}-{$summary['losses']}-{$summary['pushes']}"],
                 ['ATS win rate', number_format($summary['win_rate'], 1).'%'],
                 ['Home-side bets', "{$summary['home_side_bets']} (".number_format($summary['home_side_rate'], 1).'%)'],
@@ -61,7 +66,7 @@ class BacktestSpreadsCommand extends Command
             $this->newLine();
             $this->info('Biggest Market Disagreements');
             $this->table(
-                ['Game', 'Model', 'Market', 'Actual', 'Pick', 'Result', 'Edge'],
+                ['Game', 'Model', 'Market', 'Actual', 'Pick', 'Result', 'Edge', 'CLV'],
                 $summary['biggest_disagreements']
             );
         }
@@ -77,8 +82,7 @@ class BacktestSpreadsCommand extends Command
             ->whereHas('game', function ($query): void {
                 $query->where('status', 'STATUS_FINAL')
                     ->whereNotNull('home_score')
-                    ->whereNotNull('away_score')
-                    ->whereNotNull('odds_data');
+                    ->whereNotNull('away_score');
 
                 if ($this->option('season')) {
                     $query->where('season', (int) $this->option('season'));
@@ -98,7 +102,8 @@ class BacktestSpreadsCommand extends Command
                     return null;
                 }
 
-                $homeMarketSpread = $this->homeMarketSpread($game->odds_data, (string) ($game->odds_data['home_team'] ?? ''));
+                $lineSet = $this->spreadLineSet($game);
+                $homeMarketSpread = $lineSet['entry_home_spread'];
                 if ($homeMarketSpread === null) {
                     return null;
                 }
@@ -116,6 +121,8 @@ class BacktestSpreadsCommand extends Command
                     : ($coverMargin > 0 ? 'win' : 'loss');
                 $winnerCorrect = ($actualMargin > 0 && $modelSpread > 0)
                     || ($actualMargin < 0 && $modelSpread < 0);
+                $closingMarketSpread = $lineSet['closing_home_spread'] !== null ? -$lineSet['closing_home_spread'] : null;
+                $clv = $this->spreadClv($pick, $marketSpread, $closingMarketSpread);
 
                 return [
                     'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
@@ -124,6 +131,11 @@ class BacktestSpreadsCommand extends Command
                     'model_spread' => $modelSpread,
                     'market_spread' => $marketSpread,
                     'market_home_line' => $homeMarketSpread,
+                    'closing_spread' => $closingMarketSpread,
+                    'closing_home_line' => $lineSet['closing_home_spread'],
+                    'clv' => $clv,
+                    'entry_source' => $lineSet['entry_source'],
+                    'closing_source' => $lineSet['closing_source'],
                     'actual_margin' => $actualMargin,
                     'pick' => $pick,
                     'result' => $result,
@@ -152,6 +164,7 @@ class BacktestSpreadsCommand extends Command
         $losses = $recommended->count() - $wins - $pushes;
         $homeSideBets = $recommended->where('pick', 'home')->count();
         $awaySideBets = $recommended->where('pick', 'away')->count();
+        $clvRows = $recommended->filter(fn (array $row): bool => $row['clv'] !== null)->values();
 
         return [
             'count' => $rows->count(),
@@ -168,6 +181,11 @@ class BacktestSpreadsCommand extends Command
             'avg_actual_margin' => (float) $rows->avg('actual_margin'),
             'model_mae' => (float) $rows->avg('model_error'),
             'market_mae' => (float) $rows->map(fn (array $row) => abs($row['actual_margin'] - $row['market_spread']))->avg(),
+            'clv_sample' => $clvRows->count(),
+            'avg_clv' => $clvRows->isNotEmpty() ? round((float) $clvRows->avg('clv'), 3) : null,
+            'positive_clv_rate' => $clvRows->isNotEmpty()
+                ? ($clvRows->filter(fn (array $row): bool => (float) $row['clv'] > 0)->count() / $clvRows->count()) * 100
+                : null,
             'edge_buckets' => $this->edgeBuckets($recommended),
             'confidence_buckets' => $this->confidenceBuckets($rows),
             'biggest_disagreements' => $recommended
@@ -181,6 +199,7 @@ class BacktestSpreadsCommand extends Command
                     $this->formatBetPick((string) $row['pick'], (float) $row['market_home_line'], (string) $row['home_team'], (string) $row['away_team']),
                     strtoupper((string) $row['result']),
                     number_format((float) $row['edge'], 1),
+                    $row['clv'] !== null ? $this->signed((float) $row['clv'], 2) : 'n/a',
                 ])
                 ->all(),
         ];
@@ -272,6 +291,59 @@ class BacktestSpreadsCommand extends Command
         }
 
         return null;
+    }
+
+    /**
+     * @return array{entry_home_spread:?float,closing_home_spread:?float,entry_source:string,closing_source:?string}
+     */
+    private function spreadLineSet(Game $game): array
+    {
+        $snapshots = GameOddsSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('game_table', $game->getTable())
+            ->where('game_id', (int) $game->getKey())
+            ->orderBy('captured_at')
+            ->get();
+
+        $entryOddsData = is_array($game->odds_data) ? $game->odds_data : null;
+        $entryHomeSpread = $this->homeMarketSpread($entryOddsData, (string) ($entryOddsData['home_team'] ?? ''));
+        $entrySource = 'game.odds_data';
+
+        if ($entryHomeSpread === null && $snapshots->isNotEmpty()) {
+            $entrySnapshot = $snapshots->first();
+            $entryOddsData = is_array($entrySnapshot?->odds_data) ? $entrySnapshot->odds_data : null;
+            $entryHomeSpread = $this->homeMarketSpread($entryOddsData, (string) ($entryOddsData['home_team'] ?? ''));
+            $entrySource = 'snapshot:'.$entrySnapshot?->captured_at?->toDateTimeString();
+        }
+
+        $closingHomeSpread = null;
+        $closingSource = null;
+        $closingSnapshot = $snapshots->last();
+        if ($closingSnapshot !== null) {
+            $closingOddsData = is_array($closingSnapshot->odds_data) ? $closingSnapshot->odds_data : null;
+            $closingHomeSpread = $this->homeMarketSpread($closingOddsData, (string) ($closingOddsData['home_team'] ?? ''));
+            $closingSource = 'snapshot:'.$closingSnapshot->captured_at?->toDateTimeString();
+        }
+
+        return [
+            'entry_home_spread' => $entryHomeSpread,
+            'closing_home_spread' => $closingHomeSpread,
+            'entry_source' => $entrySource,
+            'closing_source' => $closingSource,
+        ];
+    }
+
+    private function spreadClv(string $pick, float $entryMarketSpread, ?float $closingMarketSpread): ?float
+    {
+        if ($closingMarketSpread === null) {
+            return null;
+        }
+
+        return match ($pick) {
+            'home' => round($closingMarketSpread - $entryMarketSpread, 3),
+            'away' => round($entryMarketSpread - $closingMarketSpread, 3),
+            default => null,
+        };
     }
 
     private function teamName(mixed $team): string

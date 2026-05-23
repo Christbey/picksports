@@ -28,6 +28,7 @@ $wcbbInSeason = $inSeasonMonths([11, 12, 1, 2, 3, 4]); // Nov-Apr
 $mlbInSeason = $inSeasonMonths([3, 4, 5, 6, 7, 8, 9, 10, 11]); // Mar-Nov
 $wnbaInSeason = $inSeasonMonths([4, 5, 6, 7, 8, 9, 10]); // Apr-Oct
 $nflInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1, 2]); // Aug-Feb
+$nflDepthChartSeason = $inSeasonMonths([5, 6, 7, 8, 9, 10, 11, 12, 1, 2]); // May-Feb
 $cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
 
 // Season year helpers
@@ -676,6 +677,19 @@ $scheduleSportPipeline(
     10,
     15,
     'NFL: Sync Player Props'
+);
+$scheduleWeeklySeasonJob(
+    "espn:sync-nfl-depth-charts --season={$fallSeasonYear}",
+    1,
+    '07:45',
+    $nflDepthChartSeason,
+    'NFL: Sync Depth Charts'
+);
+$scheduleDailySeasonJob(
+    "nfl:sync-game-weather --season={$fallSeasonYear} --days-back=0 --days-forward=7 --force",
+    '09:45',
+    $nflInSeason,
+    'NFL: Sync Game Weather'
 );
 $scheduleHalfHourlyWindowJob(
     'espn:sync-nfl-injuries',

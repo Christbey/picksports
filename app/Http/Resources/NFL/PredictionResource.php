@@ -107,6 +107,10 @@ class PredictionResource extends AbstractPredictionResource
             'model_signal_classification' => $analysis['model_signal_classification'] ?? null,
             'risk_flags' => array_values((array) ($analysis['risk_flags'] ?? [])),
             'reason_codes' => array_values((array) ($analysis['reason_codes'] ?? [])),
+            'player_position_grades' => $metadata['player_position_grades'] ?? null,
+            'bet_rule_evaluation' => $analysis['bet_rule_evaluation'] ?? null,
+            'validated_signals' => $analysis['validated_signals'] ?? [],
+            'best_validated_signal' => $analysis['best_validated_signal'] ?? null,
             'calculated_edge' => $analysis['calculated_edge'] ?? null,
             'analysis_confidence' => $analysis['analysis_confidence'] ?? null,
         ];

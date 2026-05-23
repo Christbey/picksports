@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { BettingRecommendation, LivePredictionData } from '@/types';
+import type {
+    BettingRecommendation,
+    LivePredictionData,
+    PredictionAnalysisSummary,
+} from '@/types';
 
 const props = withDefaults(
     defineProps<{
         bettingValue?: BettingRecommendation[];
         livePrediction?: LivePredictionData;
+        predictionAnalysis?: PredictionAnalysisSummary | null;
         winnerCorrect?: boolean | null;
         actualTotal?: number | null;
         showDraftKingsLabel?: boolean;
@@ -131,6 +136,31 @@ function getBetTypeColor(type: string): string {
     };
     return colors[type] || 'bg-gray-100 text-gray-800';
 }
+
+const bestValidatedSignal = computed(
+    () => props.predictionAnalysis?.best_validated_signal ?? null,
+);
+
+const validatedSignalRateLabel = computed(() => {
+    const rate = bestValidatedSignal.value?.winner_hit_rate;
+
+    return typeof rate === 'number' ? `${rate.toFixed(1)}% winner` : null;
+});
+
+const validatedSignalMetaLabel = computed(() => {
+    const signal = bestValidatedSignal.value;
+    if (!signal) return null;
+
+    const parts = [];
+    if (typeof signal.sample_size === 'number' && signal.sample_size > 0) {
+        parts.push(`${signal.sample_size} games`);
+    }
+    if (typeof signal.spread_mae === 'number') {
+        parts.push(`${signal.spread_mae.toFixed(2)} spread MAE`);
+    }
+
+    return parts.length ? parts.join(' · ') : null;
+});
 
 function winnerResultLabel(): string {
     if (props.winnerCorrect === true) return 'Correct';
@@ -377,6 +407,35 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div
+            v-if="bestValidatedSignal"
+            class="ui-surface-subtle border-emerald-200/70 bg-emerald-50/70 p-3 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100"
+        >
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="font-semibold">
+                    {{ bestValidatedSignal.label }}
+                </span>
+                <span
+                    v-if="validatedSignalRateLabel"
+                    class="rounded-full bg-emerald-600 px-2 py-0.5 font-semibold text-white dark:bg-emerald-500 dark:text-emerald-950"
+                >
+                    {{ validatedSignalRateLabel }}
+                </span>
+                <span
+                    v-if="validatedSignalMetaLabel"
+                    class="text-emerald-800 dark:text-emerald-200"
+                >
+                    {{ validatedSignalMetaLabel }}
+                </span>
+            </div>
+            <p
+                v-if="bestValidatedSignal.note"
+                class="mt-1 text-emerald-800 dark:text-emerald-200"
+            >
+                {{ bestValidatedSignal.note }}
+            </p>
         </div>
 
         <!-- Betting Value Cards -->

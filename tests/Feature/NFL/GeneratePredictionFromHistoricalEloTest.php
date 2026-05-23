@@ -4,6 +4,7 @@ use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
+use App\Models\NFL\GameWeather;
 use App\Models\NFL\Player;
 use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerStat;
@@ -11,6 +12,8 @@ use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamStat;
+use App\Support\NflBetRuleEngine;
+use App\Support\NflValidatedSignalCombos;
 
 uses()->group('nfl', 'predictions');
 
@@ -98,6 +101,240 @@ it('falls back to legacy elo-only prediction when true epa metrics are unavailab
         ->and(data_get($blendedWithoutMetrics->model_metadata, 'true_epa.reason'))->toBe('missing_team_metrics');
 });
 
+it('uses stored nfl weather to adjust game totals', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => true,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+    ]);
+
+    $game = createNflPredictionTestGame();
+
+    GameWeather::query()->create([
+        'game_id' => $game->id,
+        'provider' => 'test',
+        'observed_at' => '2025-10-15 19:00:00',
+        'temperature_f' => 28,
+        'wind_speed_mph' => 22,
+        'wind_gust_mph' => 32,
+        'precipitation_inches' => 0.08,
+        'is_indoor' => false,
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'actual_weather.applied'))->toBeTrue()
+        ->and((float) data_get($prediction->model_metadata, 'actual_weather.total_adjustment'))->toBeLessThan(0)
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('wind_under_signal');
+});
+
+it('adds opponent-adjusted efficiency metadata to nfl predictions', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => true,
+        'nfl.predictions.opponent_adjusted_efficiency.min_games' => 1,
+        'nfl.predictions.opponent_adjusted_efficiency.blend_weight' => 1.0,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $opponent = Team::query()->create([
+        'espn_id' => 'OPP_ADJ_'.$game->id,
+        'abbreviation' => 'OA'.$game->id,
+        'location' => 'Opponent',
+        'name' => 'Adjusted',
+    ]);
+
+    $prior = Game::query()->create([
+        'espn_event_id' => 'opp-adj-prior-'.$game->id,
+        'espn_uid' => 'opp-adj-prior-uid-'.$game->id,
+        'season' => 2025,
+        'week' => 8,
+        'season_type' => 'regular',
+        'game_date' => '2025-10-01',
+        'game_time' => '12:00:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 35,
+        'away_score' => 14,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    EloRating::query()->create([
+        'team_id' => $opponent->id,
+        'season' => 2025,
+        'week' => 7,
+        'date' => '2025-09-30',
+        'elo_rating' => 1650,
+        'elo_change' => 0,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $game->home_team_id,
+        'game_id' => $prior->id,
+        'team_type' => 'home',
+        'total_yards' => 430,
+        'third_down_conversions' => 8,
+        'third_down_attempts' => 12,
+        'red_zone_scores' => 4,
+        'red_zone_attempts' => 4,
+    ]);
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $prior->id,
+        'team_type' => 'away',
+        'total_yards' => 260,
+        'third_down_conversions' => 3,
+        'third_down_attempts' => 12,
+        'red_zone_scores' => 1,
+        'red_zone_attempts' => 3,
+    ]);
+
+    $awayPrior = Game::query()->create([
+        'espn_event_id' => 'opp-adj-away-prior-'.$game->id,
+        'espn_uid' => 'opp-adj-away-prior-uid-'.$game->id,
+        'season' => 2025,
+        'week' => 8,
+        'season_type' => 'regular',
+        'game_date' => '2025-10-02',
+        'game_time' => '12:00:00',
+        'home_team_id' => $opponent->id,
+        'away_team_id' => $game->away_team_id,
+        'home_score' => 24,
+        'away_score' => 17,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $awayPrior->id,
+        'team_type' => 'home',
+        'total_yards' => 350,
+        'third_down_conversions' => 5,
+        'third_down_attempts' => 12,
+        'red_zone_scores' => 2,
+        'red_zone_attempts' => 4,
+    ]);
+    TeamStat::factory()->create([
+        'team_id' => $game->away_team_id,
+        'game_id' => $awayPrior->id,
+        'team_type' => 'away',
+        'total_yards' => 280,
+        'third_down_conversions' => 3,
+        'third_down_attempts' => 12,
+        'red_zone_scores' => 1,
+        'red_zone_attempts' => 3,
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'opponent_adjusted_efficiency.applied'))->toBeTrue()
+        ->and((float) data_get($prediction->model_metadata, 'opponent_adjusted_efficiency.signal_spread'))->toBeGreaterThan(0)
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('opponent_adjusted_efficiency_signal');
+});
+
+it('evaluates nfl bet rules from reason codes and trust', function () {
+    $result = app(NflBetRuleEngine::class)->evaluate(
+        ['strong_model_signal', 'qb_form_home_edge', 'trench_matchup_home_edge'],
+        [],
+        68,
+        2.5,
+        null
+    );
+
+    expect($result['action'])->toBe('play')
+        ->and($result['matched_rules'][0]['name'])->toBe('strong_qb_form_home_trench');
+});
+
+it('evaluates expanded nfl bet rule combinations', function () {
+    $engine = app(NflBetRuleEngine::class);
+
+    $eliteQb = $engine->evaluate(
+        ['strong_model_signal', 'elite_qb_vs_weak_secondary', 'ol_pass_protection_edge', 'explosive_pass_edge'],
+        [],
+        70,
+        2.5,
+        null
+    );
+
+    $weatherUnder = $engine->evaluate(
+        ['slow_pace_under_signal', 'total_weather_suppression', 'wind_under_signal', 'run_heavy_clock_control'],
+        [],
+        62,
+        null,
+        -4.0
+    );
+
+    $divisionKeyNumber = $engine->evaluate(
+        ['division_game_variance', 'key_number_edge_3'],
+        [],
+        58,
+        2.5,
+        null
+    );
+
+    $marketDisagreement = $engine->evaluate(
+        ['model_market_disagreement', 'multi_factor_confluence', 'market_overreaction', 'spread_market_edge'],
+        [],
+        68,
+        4.0,
+        null
+    );
+
+    $passOverride = $engine->evaluate(
+        ['strong_model_signal', 'qb_form_home_edge', 'trench_matchup_home_edge', 'conflicting_signals'],
+        [],
+        72,
+        3.0,
+        null
+    );
+
+    expect($eliteQb['action'])->toBe('play')
+        ->and(collect($eliteQb['matched_rules'])->pluck('name'))->toContain('elite_qb_clean_pocket_mismatch')
+        ->and($weatherUnder['action'])->toBe('play')
+        ->and(collect($weatherUnder['matched_rules'])->pluck('name'))->toContain('weather_pace_under_confluence')
+        ->and($divisionKeyNumber['action'])->toBe('lean')
+        ->and(collect($divisionKeyNumber['matched_rules'])->pluck('name'))->toContain('division_dog_key_number')
+        ->and($marketDisagreement['action'])->toBe('play')
+        ->and(collect($marketDisagreement['matched_rules'])->pluck('name'))->toContain('market_disagreement_with_model_quality')
+        ->and($passOverride['action'])->toBe('pass')
+        ->and($passOverride['pass_rules'])->toContain('pass_conflicting_or_low_quality');
+});
+
+it('matches validated nfl signal combos from reason codes', function () {
+    $matches = app(NflValidatedSignalCombos::class)->match([
+        'qb_form_signal',
+        'recent_matchup_record_context',
+        'weak_ol_vs_blitz_heavy_defense',
+        'rolling_efficiency_signal',
+    ]);
+
+    expect($matches)->not->toBeEmpty()
+        ->and($matches[0]['name'])->toBe('qb_form_matchup_pressure_mismatch')
+        ->and($matches[0]['winner_hit_rate'])->toBe(74.0)
+        ->and($matches[0]['sample_size'])->toBe(123);
+});
+
 it('blends nfl true epa into prediction outputs when rollout is enabled', function () {
     config([
         'nfl.predictions.true_epa.enabled' => true,
@@ -108,6 +345,11 @@ it('blends nfl true epa into prediction outputs when rollout is enabled', functi
         'nfl.predictions.true_epa.total_points_per_epa_component' => 20.0,
         'nfl.predictions.true_epa.min_predicted_total' => 28.0,
         'nfl.predictions.true_epa.max_predicted_total' => 66.0,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
     ]);
 
     $game = createNflPredictionTestGame();
@@ -452,6 +694,97 @@ it('uses game primary passer identity with only prior qb production for qb form'
         ->and((float) data_get($prediction->model_metadata, 'qb_form.signal_spread'))->toBeGreaterThan(0.0);
 });
 
+it('uses synced nfl depth chart starter as upcoming qb identity', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => true,
+        'nfl.predictions.qb_form.min_prior_attempts' => 1,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $game->update(['status' => 'STATUS_SCHEDULED']);
+
+    $homeQb = Player::factory()->create([
+        'team_id' => $game->home_team_id,
+        'position' => 'QB',
+        'full_name' => 'Depth Home QB',
+        'experience' => 5,
+    ]);
+    $awayQb = Player::factory()->create([
+        'team_id' => $game->away_team_id,
+        'position' => 'QB',
+        'full_name' => 'Depth Away QB',
+        'experience' => 1,
+    ]);
+
+    foreach ([[$game->home_team_id, $homeQb->id], [$game->away_team_id, $awayQb->id]] as [$teamId, $playerId]) {
+        DepthChartEntry::query()->create([
+            'team_id' => $teamId,
+            'player_id' => $playerId,
+            'season' => (int) $game->season,
+            'espn_depth_chart_id' => 'test-offense',
+            'depth_chart_name' => '3WR 1TE',
+            'position_slot_key' => 'qb',
+            'position_code' => 'QB',
+            'position_name' => 'Quarterback',
+            'position_display_name' => 'Quarterback',
+            'depth_rank' => 1,
+            'slot_order' => 1,
+            'is_starter' => true,
+            'source_updated_at' => now(),
+        ]);
+    }
+
+    $priorGame = Game::query()->create([
+        'espn_event_id' => 'depth-qb-prior-'.$game->id,
+        'espn_uid' => 'depth-qb-prior-uid-'.$game->id,
+        'season' => 2025,
+        'week' => 9,
+        'season_type' => 'regular',
+        'game_date' => '2025-10-01',
+        'game_time' => '12:00:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $game->away_team_id,
+        'home_score' => 24,
+        'away_score' => 21,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => false,
+    ]);
+
+    PlayerStat::factory()->create([
+        'game_id' => $priorGame->id,
+        'team_id' => $game->home_team_id,
+        'player_id' => $homeQb->id,
+        'passing_attempts' => 30,
+        'passing_yards' => 270,
+    ]);
+    PlayerStat::factory()->create([
+        'game_id' => $priorGame->id,
+        'team_id' => $game->away_team_id,
+        'player_id' => $awayQb->id,
+        'passing_attempts' => 30,
+        'passing_yards' => 180,
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'qb_form.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'qb_form.home.qb_id'))->toBe($homeQb->id)
+        ->and(data_get($prediction->model_metadata, 'qb_form.away.qb_id'))->toBe($awayQb->id)
+        ->and(data_get($prediction->model_metadata, 'qb_form.home.projected_from_depth_chart'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'qb_form.away.projected_from_depth_chart'))->toBeTrue();
+});
+
 it('blends ol versus dl matchup using only prior team line stats', function () {
     config([
         'nfl.predictions.true_epa.enabled' => false,
@@ -587,7 +920,11 @@ it('adaptively shrinks win probability when similar prior confidence has underpe
         'nfl.predictions.market_blend.enabled' => false,
         'nfl.predictions.depth_chart_injuries.enabled' => false,
         'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
         'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
         'nfl.predictions.adaptive_win_probability_calibration.enabled' => true,
         'nfl.predictions.adaptive_win_probability_calibration.min_bucket_sample' => 1,
         'nfl.predictions.adaptive_win_probability_calibration.blend_weight' => 1.0,
@@ -637,6 +974,79 @@ it('adaptively shrinks win probability when similar prior confidence has underpe
         ->and(data_get($prediction->model_metadata, 'adaptive_win_probability_calibration.source'))->toBe('confidence_bucket')
         ->and((float) data_get($prediction->model_metadata, 'adaptive_win_probability_calibration.baseline_win_probability'))->toBeGreaterThan((float) $prediction->win_probability)
         ->and((float) data_get($prediction->model_metadata, 'adaptive_win_probability_calibration.actual_favorite_win_rate'))->toBe(0.0);
+});
+
+it('adaptively corrects spread and total bias from prior actual results', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
+        'nfl.predictions.total_environment.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+        'nfl.predictions.adaptive_point_calibration.enabled' => true,
+        'nfl.predictions.adaptive_point_calibration.min_sample' => 3,
+        'nfl.predictions.adaptive_point_calibration.lookback_games' => 10,
+        'nfl.predictions.adaptive_point_calibration.trim_fraction' => 0.0,
+        'nfl.predictions.adaptive_point_calibration.spread_blend_weight' => 1.0,
+        'nfl.predictions.adaptive_point_calibration.total_blend_weight' => 1.0,
+        'nfl.predictions.adaptive_point_calibration.max_spread_adjustment' => 5.0,
+        'nfl.predictions.adaptive_point_calibration.max_total_adjustment' => 5.0,
+    ]);
+
+    $game = createNflPredictionTestGame();
+
+    foreach (range(1, 3) as $index) {
+        $priorGame = Game::query()->create([
+            'espn_event_id' => 'point-adaptive-prior-'.$game->id.'-'.$index,
+            'espn_uid' => 'point-adaptive-prior-uid-'.$game->id.'-'.$index,
+            'season' => 2025,
+            'week' => $index,
+            'season_type' => 'regular',
+            'game_date' => '2025-09-0'.$index,
+            'game_time' => '12:00:00',
+            'home_team_id' => $game->home_team_id,
+            'away_team_id' => $game->away_team_id,
+            'home_score' => 20,
+            'away_score' => 20,
+            'status' => 'STATUS_FINAL',
+            'neutral_site' => false,
+        ]);
+
+        Prediction::query()->create([
+            'game_id' => $priorGame->id,
+            'home_elo' => 1575,
+            'away_elo' => 1490,
+            'predicted_spread' => 7.0,
+            'predicted_total' => 50.0,
+            'win_probability' => 0.73,
+            'confidence_score' => 73.0,
+            'actual_spread' => 0,
+            'actual_total' => 40,
+            'spread_error' => 7.0,
+            'total_error' => 10.0,
+            'winner_correct' => false,
+            'graded_at' => now(),
+        ]);
+    }
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'adaptive_point_calibration.applied'))->toBeTrue()
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.spread_residual'))->toBe(7.0)
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.total_residual'))->toBe(10.0)
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.spread_adjustment'))->toBe(-5.0)
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.total_adjustment'))->toBe(-5.0)
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.calibrated_spread'))->toBeLessThan((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.baseline_spread'))
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.calibrated_total'))->toBeLessThan((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.baseline_total'));
 });
 
 it('adds contextual factors and analysis metadata to nfl predictions', function () {
@@ -713,11 +1123,17 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
     expect(data_get($prediction->model_metadata, 'contextual_factors.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.home_away_strength.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.division_rivalry.is_division_game'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.home.h2h.wins'))->toBe(2)
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.away.h2h.losses'))->toBe(2)
         ->and(data_get($prediction->model_metadata, 'contextual_factors.weather_total.reason'))->toBe('cold_outdoor_proxy')
         ->and(data_get($prediction->model_metadata, 'contextual_factors.schedule_spot.home.previous_game_date'))->toBe('2025-11-09')
         ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.trust_score'))->toBeNumeric()
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_h2h_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_division_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_conference_record_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.bet_classification'))->not->toBeNull()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.spread_points'))->not->toBeNull();
 });

@@ -1,4 +1,7 @@
-import type { BettingRecommendation } from './sports';
+import type {
+    BettingRecommendation,
+    PredictionAnalysisSummary,
+} from './sports';
 
 export interface DashboardPrediction {
     id: number;
@@ -18,6 +21,7 @@ export interface DashboardPrediction {
     away_logo: string;
     betting_value?: BettingRecommendation[];
     betting_value_debug?: string | null;
+    prediction_analysis?: PredictionAnalysisSummary | null;
     // Live game data
     is_live?: boolean;
     is_final?: boolean;

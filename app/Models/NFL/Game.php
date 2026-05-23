@@ -89,6 +89,11 @@ class Game extends Model
         return $this->hasOne(Prediction::class, 'game_id');
     }
 
+    public function weather(): HasOne
+    {
+        return $this->hasOne(GameWeather::class, 'game_id');
+    }
+
     public function playerProps(): HasMany
     {
         return $this->hasMany(PlayerProp::class, 'game_id');

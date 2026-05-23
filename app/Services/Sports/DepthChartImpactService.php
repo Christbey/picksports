@@ -95,16 +95,68 @@ class DepthChartImpactService
     protected function nflPositionWeight(Model $entry, float $baseWeight): float
     {
         $tokens = $this->entryTokens($entry);
+        $roleMultiplier = $this->nflRoleMultiplier($entry, $tokens);
 
         if ($this->tokensContain($tokens, ['QB'])) {
-            return max($baseWeight, $this->configFloat('nfl', 'qb_multiplier', 2.4));
+            return max($baseWeight, $roleMultiplier, $this->configFloat('nfl', 'qb_multiplier', 2.4));
         }
 
         if ($this->tokensContain($tokens, ['RB', 'WR', 'TE'])) {
-            return max($baseWeight, $this->configFloat('nfl', 'skill_multiplier', 1.45));
+            return max($baseWeight, $roleMultiplier, $this->configFloat('nfl', 'skill_multiplier', 1.45));
         }
 
-        return $baseWeight;
+        return max($baseWeight, $roleMultiplier);
+    }
+
+    /**
+     * @param  list<string>  $tokens
+     */
+    protected function nflRoleMultiplier(Model $entry, array $tokens): float
+    {
+        $roles = (array) config('nfl.predictions.depth_chart.role_multipliers', []);
+        $depthRank = (int) ($entry->depth_rank ?? 99);
+
+        $candidates = [];
+        if ($this->tokensContain($tokens, ['QB'])) {
+            $candidates[] = 'QB';
+        }
+        if ($this->tokensContain($tokens, ['LT', 'LEFT TACKLE'])) {
+            $candidates[] = 'LT';
+        }
+        if ($this->tokensContain($tokens, ['RT', 'RIGHT TACKLE'])) {
+            $candidates[] = 'RT';
+        }
+        if ($this->tokensContain($tokens, ['C', 'CENTER'])) {
+            $candidates[] = 'C';
+        }
+        if ($this->tokensContain($tokens, ['WR']) && $depthRank === 1) {
+            $candidates[] = 'WR1';
+        }
+        if ($this->tokensContain($tokens, ['WR'])) {
+            $candidates[] = 'WR';
+        }
+        if ($this->tokensContain($tokens, ['RB']) && $depthRank === 1) {
+            $candidates[] = 'RB1';
+        }
+        if ($this->tokensContain($tokens, ['TE']) && $depthRank === 1) {
+            $candidates[] = 'TE1';
+        }
+        if ($this->tokensContain($tokens, ['EDGE', 'DE', 'OLB']) && $depthRank === 1) {
+            $candidates[] = 'EDGE1';
+        }
+        if ($this->tokensContain($tokens, ['CB']) && $depthRank === 1) {
+            $candidates[] = 'CB1';
+        }
+        if ($this->tokensContain($tokens, ['S', 'FS', 'SS'])) {
+            $candidates[] = 'S';
+        }
+        if ($this->tokensContain($tokens, ['K', 'KICKER'])) {
+            $candidates[] = 'K';
+        }
+
+        return collect($candidates)
+            ->map(fn (string $role): float => is_numeric($roles[$role] ?? null) ? (float) $roles[$role] : 1.0)
+            ->max() ?: 1.0;
     }
 
     protected function mlbPositionWeight(Model $entry, float $baseWeight): float

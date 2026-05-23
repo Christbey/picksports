@@ -22,6 +22,66 @@ export interface BettingRecommendation {
     reasoning: string;
 }
 
+export interface BettingValueSummary {
+    has_playable_value: boolean;
+    play_count: number;
+    best_grade?: string | null;
+    best_recommendation?: string | null;
+    best_type?: string | null;
+    best_edge?: number | null;
+    best_units?: number | null;
+    risk_flags: string[];
+}
+
+export interface PredictionAnalysisSummary {
+    trust_score?: number | null;
+    bet_classification?: string | null;
+    model_signal_classification?: string | null;
+    risk_flags: string[];
+    reason_codes: string[];
+    validated_signals?: Array<{
+        name: string;
+        label: string;
+        market: string;
+        tier: string;
+        sample_size: number;
+        winner_hit_rate?: number | null;
+        spread_mae?: number | null;
+        codes: string[];
+        note?: string | null;
+    }>;
+    best_validated_signal?: {
+        name: string;
+        label: string;
+        market: string;
+        tier: string;
+        sample_size: number;
+        winner_hit_rate?: number | null;
+        spread_mae?: number | null;
+        codes: string[];
+        note?: string | null;
+    } | null;
+    bet_rule_evaluation?: {
+        enabled: boolean;
+        action: string;
+        matched_rules: Array<{
+            name: string;
+            action: string;
+            market?: string | null;
+        }>;
+        pass_rules: string[];
+    } | null;
+    calculated_edge?: {
+        spread_points?: number | null;
+        total_points?: number | null;
+        moneyline_probability?: number | null;
+    } | null;
+    analysis_confidence?: {
+        score?: number | null;
+        label?: string | null;
+    } | null;
+}
+
 export interface LivePredictionData {
     isLive: boolean;
     homeScore?: number | null;
@@ -96,6 +156,8 @@ export interface PredictionListItem {
     winner_correct?: boolean;
     graded_at?: string;
     betting_value?: BettingRecommendation[];
+    betting_value_summary?: BettingValueSummary;
+    prediction_analysis?: PredictionAnalysisSummary | null;
     home_elo?: number;
     away_elo?: number;
     home_off_eff?: number;
@@ -199,6 +261,7 @@ export interface PredictionSummary {
     actual_total?: number | null;
     winner_correct?: boolean | null;
     betting_value?: BettingRecommendation[];
+    prediction_analysis?: PredictionAnalysisSummary | null;
     narrative?: {
         summary: string;
         key_points: string[];

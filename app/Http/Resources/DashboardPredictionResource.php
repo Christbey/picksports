@@ -118,6 +118,36 @@ class DashboardPredictionResource extends JsonResource
             $data['betting_value_debug'] = $this->bettingValueDebug;
         }
 
+        if (strtolower($this->sport) === 'nfl') {
+            $data['prediction_analysis'] = $this->predictionAnalysisSummary();
+        }
+
         return $data;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function predictionAnalysisSummary(): ?array
+    {
+        $metadata = is_array($this->resource->model_metadata ?? null) ? $this->resource->model_metadata : [];
+        $analysis = $metadata['analysis_layer'] ?? null;
+
+        if (! is_array($analysis) || ($analysis['applied'] ?? false) !== true) {
+            return null;
+        }
+
+        return [
+            'trust_score' => isset($analysis['trust_score']) ? (float) $analysis['trust_score'] : null,
+            'bet_classification' => $analysis['bet_classification'] ?? null,
+            'model_signal_classification' => $analysis['model_signal_classification'] ?? null,
+            'risk_flags' => array_values((array) ($analysis['risk_flags'] ?? [])),
+            'reason_codes' => array_values((array) ($analysis['reason_codes'] ?? [])),
+            'bet_rule_evaluation' => $analysis['bet_rule_evaluation'] ?? null,
+            'validated_signals' => $analysis['validated_signals'] ?? [],
+            'best_validated_signal' => $analysis['best_validated_signal'] ?? null,
+            'calculated_edge' => $analysis['calculated_edge'] ?? null,
+            'analysis_confidence' => $analysis['analysis_confidence'] ?? null,
+        ];
     }
 }

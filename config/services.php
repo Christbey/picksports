@@ -72,6 +72,11 @@ return [
         'base_url' => env('COLLEGEFOOTBALLDATA_BASE_URL', 'https://api.collegefootballdata.com'),
     ],
 
+    'open_meteo' => [
+        'forecast_url' => env('OPEN_METEO_FORECAST_URL', 'https://api.open-meteo.com/v1/forecast'),
+        'geocoding_url' => env('OPEN_METEO_GEOCODING_URL', 'https://geocoding-api.open-meteo.com/v1/search'),
+    ],
+
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'base_url' => env('OPENAI_BASE_URL', 'https://api.openai.com/v1'),

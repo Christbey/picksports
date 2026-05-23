@@ -4,10 +4,28 @@ on:
   push:
     branches:
       - staging
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git branch to deploy to staging
+        required: true
+        default: main
 
 jobs:
   deploy:
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    environment: staging
     runs-on: self-hosted
     steps:
+      - name: Resolve target ref
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TARGET_REF=${{ github.event.inputs.ref }}" >> "$GITHUB_ENV"
+          else
+            echo "TARGET_REF=staging" >> "$GITHUB_ENV"
+          fi
+
       - name: Deploy
-        run: /home/lab/docker/picksports/deploy.sh
+        run: /home/lab/docker/picksports/deploy.sh "${TARGET_REF}"

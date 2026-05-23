@@ -103,6 +103,7 @@ const props = withDefaults(
             :has-live-prediction="hasLivePrediction"
             :betting-value="prediction?.betting_value"
             :live-prediction="livePredictionData"
+            :prediction-analysis="prediction?.prediction_analysis"
             :winner-correct="prediction?.winner_correct ?? null"
             :actual-total="
                 prediction?.actual_total != null

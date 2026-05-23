@@ -117,7 +117,7 @@ class BackfillHistoricalPredictionsCommand extends Command
         $rollingEfficiencyEnabled = in_array($profile, ['rolling-efficiency', 'full-historical'], true);
         $qbFormEnabled = in_array($profile, ['qb-form', 'full-historical'], true);
         $lineMatchupEnabled = in_array($profile, ['line-matchup', 'full-historical'], true);
-        $contextualFactorsEnabled = $profile === 'contextual';
+        $contextualFactorsEnabled = in_array($profile, ['contextual', 'full-historical'], true);
 
         config([
             'nfl.predictions.true_epa.enabled' => false,
@@ -125,6 +125,8 @@ class BackfillHistoricalPredictionsCommand extends Command
             'nfl.predictions.market_blend.enabled' => false,
             'nfl.predictions.depth_chart_injuries.enabled' => false,
             'nfl.predictions.rolling_efficiency.enabled' => $rollingEfficiencyEnabled,
+            'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
+            'nfl.predictions.adaptive_point_calibration.enabled' => $profile === 'full-historical',
             'nfl.predictions.qb_form.enabled' => $qbFormEnabled,
             'nfl.predictions.line_matchup.enabled' => $lineMatchupEnabled,
             'nfl.predictions.contextual_factors.enabled' => $contextualFactorsEnabled,

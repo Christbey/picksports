@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { BettingRecommendation, LivePredictionData } from '@/types';
+import type {
+    BettingRecommendation,
+    LivePredictionData,
+    PredictionAnalysisSummary,
+} from '@/types';
 
 defineProps<{
     hasLivePrediction: boolean;
     bettingValue?: BettingRecommendation[];
     livePrediction?: LivePredictionData;
+    predictionAnalysis?: PredictionAnalysisSummary | null;
     winnerCorrect?: boolean | null;
     actualTotal?: number | null;
     sportsbookLabel?: string;
@@ -14,7 +19,13 @@ defineProps<{
 </script>
 
 <template>
-    <Card v-if="hasLivePrediction || (bettingValue && bettingValue.length > 0)">
+    <Card
+        v-if="
+            hasLivePrediction ||
+            (bettingValue && bettingValue.length > 0) ||
+            predictionAnalysis?.best_validated_signal
+        "
+    >
         <CardHeader>
             <div class="ui-kicker">
                 {{ hasLivePrediction ? 'Live Trading' : 'Market Edge' }}
@@ -43,6 +54,7 @@ defineProps<{
             <BettingAnalysisCard
                 :betting-value="bettingValue"
                 :live-prediction="livePrediction"
+                :prediction-analysis="predictionAnalysis"
                 :winner-correct="winnerCorrect"
                 :actual-total="actualTotal"
             />

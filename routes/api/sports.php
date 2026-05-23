@@ -2,8 +2,9 @@
 
 use App\Http\Controllers\Api\CBB\TournamentForecastController;
 use App\Http\Controllers\Api\CFB\FpiRatingController;
+use App\Http\Controllers\Api\MLB\SignalController as MlbSignalController;
 use App\Http\Controllers\Api\NBA\PlayoffForecastController;
-use App\Http\Controllers\Api\NFL\SignalController;
+use App\Http\Controllers\Api\NFL\SignalController as NflSignalController;
 use App\Http\Controllers\Api\Sports\InjuryController;
 use App\Http\Controllers\Api\Sports\PlayerPropController;
 use App\Http\Controllers\Api\Sports\PredictionAccessDebugController;
@@ -140,12 +141,14 @@ return function (string $sport, string $namespace) {
 
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'MLB') {
             Route::get('playoff-forecasts', [App\Http\Controllers\Api\MLB\PlayoffForecastController::class, 'index']);
+            Route::get('signals', [MlbSignalController::class, 'index'])
+                ->middleware(["permission:view-{$sport}-predictions"]);
         }
 
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'NFL') {
             Route::get('playoff-forecasts', [App\Http\Controllers\Api\NFL\PlayoffForecastController::class, 'index'])
                 ->middleware(["permission:view-{$sport}-predictions"]);
-            Route::get('signals', [SignalController::class, 'index'])
+            Route::get('signals', [NflSignalController::class, 'index'])
                 ->middleware(["permission:view-{$sport}-predictions"]);
         }
 

@@ -968,6 +968,7 @@ return [
     'signals' => [
         'week_one_cover_min_edge' => env('NFL_SIGNALS_WEEK_ONE_COVER_MIN_EDGE', 1.5),
         'min_streak_length' => env('NFL_SIGNALS_MIN_STREAK_LENGTH', 3),
+        'odds_stale_hours' => env('NFL_SIGNALS_ODDS_STALE_HOURS', 24),
     ],
 
     /*

@@ -78,10 +78,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $homeCombinedElo = ($homeTeamElo * $teamWeight) + ($homePitcherElo * $pitcherWeight);
         $awayCombinedElo = ($awayTeamElo * $teamWeight) + ($awayPitcherElo * $pitcherWeight);
 
-        $adjustedHomeElo = $homeCombinedElo + (float) config(
-            'mlb.prediction.home_field_advantage',
-            config('mlb.elo.home_field_advantage')
-        );
+        $homeFieldAdvantage = config('mlb.prediction.home_field_advantage');
+        $homeFieldAdvantage ??= config('mlb.elo.home_field_advantage');
+
+        $adjustedHomeElo = $homeCombinedElo + (float) $homeFieldAdvantage;
 
         $eloDiff = $adjustedHomeElo - $awayCombinedElo;
         $predictedSpread = $this->calculateSpread($eloDiff);

@@ -594,6 +594,12 @@ $scheduleDailySeasonJob(
     $mlbInSeason,
     'MLB: Generate Playoff Forecast'
 );
+$scheduleDailySeasonJob(
+    "mlb:snapshot-bet-filter --season={$currentYear}",
+    '06:20',
+    $mlbInSeason,
+    'MLB: Snapshot Bet Filter'
+);
 $scheduleOddsSyncWindow(
     "sports:sync-futures-odds --sport=mlb --season={$currentYear}",
     $mlbInSeason,

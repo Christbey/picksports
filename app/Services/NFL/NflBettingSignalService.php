@@ -28,11 +28,244 @@ class NflBettingSignalService
         return [
             'season' => $season,
             'as_of_date' => $asOfDate->toDateString(),
+            'framework' => $this->frameworkSummary(),
+            'odds_health' => $this->oddsHealth($weekOneGames),
+            'bet_filter' => $this->betFilterSummary(),
+            'recommended_bets' => $this->recommendedBets($weekOneGames),
+            'pass_summary' => $this->passSummary($weekOneGames),
             'super_bowl' => $this->superBowlSignals($season, $asOfDate),
             'week_one_winners' => $this->weekOneWinnerSignals($weekOneGames),
             'week_one_covers' => $this->weekOneCoverSignals($weekOneGames),
             'streaks' => $this->streakSignals($season, $asOfDate),
         ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    protected function frameworkSummary(): array
+    {
+        return [
+            'version' => 'sport_signal_framework_v1',
+            'shared_with_mlb' => [
+                'model_signal_generation',
+                'market_edge_detection',
+                'bet_classification',
+                'trust_or_score',
+                'reason_codes',
+                'risk_flags',
+                'pass_classification',
+                'odds_health',
+                'result_feedback_loop',
+            ],
+            'nfl_specific_deviations' => [
+                'analysis_layer_is_persisted_on_prediction_metadata',
+                'spread_and_total_edges_are_primary_bet_markets',
+                'qb_weather_rest_travel_and_division_context_drive_risk_flags',
+                'validated_reason_code_combos_can_upgrade_watchlists',
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    protected function betFilterSummary(): array
+    {
+        return [
+            'model' => 'nfl_prediction_analysis_layer',
+            'philosophy' => 'use_prediction_analysis_layer_trust_edge_reason_codes_and_bet_rules',
+            'enabled_markets' => [
+                'moneyline' => true,
+                'spread' => true,
+                'total' => true,
+            ],
+            'risk_controls' => [
+                'downgrade_low_data_quality',
+                'pass_conflicting_signals',
+                'pass_stale_or_missing_line_edge',
+                'use_validated_reason_code_combos_as_watchlist_upgrades',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<int,Prediction>  $predictions
+     * @return array<string,mixed>
+     */
+    protected function oddsHealth(array $predictions): array
+    {
+        $total = count($predictions);
+        $moneyline = 0;
+        $spreads = 0;
+        $totals = 0;
+        $stale = 0;
+        $missing = [];
+
+        foreach ($predictions as $prediction) {
+            $game = $prediction->game;
+            $hasMoneyline = $this->extractMarket($game?->odds_data, 'h2h') !== null;
+            $hasSpread = is_numeric(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.market_spread'))
+                || $this->extractMarket($game?->odds_data, 'spreads') !== null;
+            $hasTotal = is_numeric(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.market_total'))
+                || $this->extractMarket($game?->odds_data, 'totals') !== null;
+
+            $moneyline += $hasMoneyline ? 1 : 0;
+            $spreads += $hasSpread ? 1 : 0;
+            $totals += $hasTotal ? 1 : 0;
+
+            $updatedAt = $game?->odds_updated_at ?? null;
+            if ($updatedAt && $updatedAt->lt(now()->subHours((int) config('nfl.signals.odds_stale_hours', 24)))) {
+                $stale++;
+            }
+
+            if (! $hasMoneyline || ! $hasSpread || ! $hasTotal) {
+                $missing[] = [
+                    'game_id' => (int) ($game?->id ?? 0),
+                    'matchup' => (string) ($game?->short_name ?: $game?->name ?: ''),
+                    'missing' => array_values(array_filter([
+                        ! $hasMoneyline ? 'moneyline' : null,
+                        ! $hasSpread ? 'spread' : null,
+                        ! $hasTotal ? 'total' : null,
+                    ])),
+                ];
+            }
+        }
+
+        $coverage = fn (int $count): float => $total > 0 ? round($count / $total * 100, 1) : 0.0;
+        $status = match (true) {
+            $total === 0 => 'no_slate',
+            $coverage($spreads) < 80.0 || $coverage($totals) < 80.0 => 'unhealthy',
+            $coverage($moneyline) < 80.0 || $stale > 0 => 'degraded',
+            default => 'healthy',
+        };
+
+        return [
+            'status' => $status,
+            'slate_games' => $total,
+            'moneyline_coverage' => $coverage($moneyline),
+            'spread_coverage' => $coverage($spreads),
+            'total_coverage' => $coverage($totals),
+            'stale_games' => $stale,
+            'missing_markets' => array_slice($missing, 0, 12),
+        ];
+    }
+
+    /**
+     * @param  array<int,Prediction>  $predictions
+     * @return array<int,array<string,mixed>>
+     */
+    protected function recommendedBets(array $predictions): array
+    {
+        $rows = [];
+
+        foreach ($predictions as $prediction) {
+            $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
+            $classification = (string) ($analysis['bet_classification'] ?? '');
+            if ($classification === '' || str_starts_with($classification, 'no_bet')) {
+                continue;
+            }
+
+            $game = $prediction->game;
+            if (! $game) {
+                continue;
+            }
+
+            $homeWinProbability = (float) $prediction->win_probability;
+            $pickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
+            $pickTeam = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
+            $spreadEdge = data_get($analysis, 'calculated_edge.spread_points');
+            $totalEdge = data_get($analysis, 'calculated_edge.total_points');
+            $market = is_numeric($spreadEdge) && abs((float) $spreadEdge) >= abs((float) $totalEdge) ? 'spread' : 'moneyline';
+
+            $rows[] = [
+                'type' => $market,
+                'game_id' => (int) $game->id,
+                'game_date' => $game->game_date?->toDateString(),
+                'matchup' => (string) ($game->short_name ?: $game->name),
+                'pick_side' => $pickSide,
+                'team_id' => (int) ($pickTeam?->id ?? 0),
+                'team_name' => $this->teamName($pickTeam),
+                'score' => data_get($analysis, 'trust_score') !== null ? (float) data_get($analysis, 'trust_score') : null,
+                'classification' => $classification,
+                'edge_points' => is_numeric($spreadEdge) ? round(abs((float) $spreadEdge), 2) : null,
+                'reason_codes' => array_slice((array) ($analysis['reason_codes'] ?? []), 0, 8),
+                'risk_flags' => array_slice((array) ($analysis['risk_flags'] ?? []), 0, 8),
+            ];
+        }
+
+        usort($rows, fn (array $left, array $right): int => (($right['score'] ?? 0) <=> ($left['score'] ?? 0))
+            ?: (($right['edge_points'] ?? 0) <=> ($left['edge_points'] ?? 0)));
+
+        return array_slice($rows, 0, 10);
+    }
+
+    /**
+     * @param  array<int,Prediction>  $predictions
+     * @return array<string,mixed>
+     */
+    protected function passSummary(array $predictions): array
+    {
+        $candidates = 0;
+        $passes = 0;
+        $reasonCounts = [];
+        $sample = [];
+
+        foreach ($predictions as $prediction) {
+            $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
+            if ($analysis === []) {
+                continue;
+            }
+
+            $candidates++;
+            $classification = (string) ($analysis['bet_classification'] ?? 'unknown');
+            if (! str_starts_with($classification, 'no_bet')) {
+                continue;
+            }
+
+            $passes++;
+            $reason = $this->nflNoBetReason($analysis);
+            $reasonCounts[$reason] = ($reasonCounts[$reason] ?? 0) + 1;
+            if (count($sample) < 8) {
+                $game = $prediction->game;
+                $sample[] = [
+                    'game_id' => (int) ($game?->id ?? 0),
+                    'matchup' => (string) ($game?->short_name ?: $game?->name ?: ''),
+                    'score' => data_get($analysis, 'trust_score'),
+                    'no_bet_reason' => $reason,
+                    'risk_flags' => array_slice((array) ($analysis['risk_flags'] ?? []), 0, 5),
+                ];
+            }
+        }
+
+        arsort($reasonCounts);
+
+        return [
+            'candidates' => $candidates,
+            'passes' => $passes,
+            'pass_rate' => $candidates > 0 ? round($passes / $candidates * 100, 1) : 0.0,
+            'top_reasons' => array_map(
+                fn (string $reason, int $count): array => ['reason' => $reason, 'count' => $count],
+                array_keys($reasonCounts),
+                array_values($reasonCounts)
+            ),
+            'sample' => $sample,
+        ];
+    }
+
+    /**
+     * @param  array<string,mixed>  $analysis
+     */
+    protected function nflNoBetReason(array $analysis): string
+    {
+        $riskFlags = (array) ($analysis['risk_flags'] ?? []);
+        foreach (['stale_line_edge', 'low_data_quality', 'conflicting_signals'] as $priority) {
+            if (in_array($priority, $riskFlags, true)) {
+                return $priority;
+            }
+        }
+
+        return (string) ($analysis['bet_classification'] ?? 'no_bet');
     }
 
     /**
@@ -371,6 +604,23 @@ class NflBettingSignalService
             $market === null ? 'straight_up_streak_context' : null,
             str_replace('-', '_', $streakKey).'_streak',
         ]));
+    }
+
+    /**
+     * @param  array<string,mixed>|null  $oddsData
+     * @return array<string,mixed>|null
+     */
+    protected function extractMarket(?array $oddsData, string $marketKey): ?array
+    {
+        foreach (($oddsData['bookmakers'] ?? []) as $bookmaker) {
+            foreach (($bookmaker['markets'] ?? []) as $market) {
+                if (is_array($market) && ($market['key'] ?? null) === $marketKey) {
+                    return $market;
+                }
+            }
+        }
+
+        return null;
     }
 
     protected function teamName(?Team $team): string

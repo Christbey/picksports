@@ -399,4 +399,34 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Betting Signal Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Thresholds for surfacing MLB futures, slate, totals, and streak signals.
+    |
+    */
+
+    'signals' => [
+        'run_line_min_edge' => env('MLB_SIGNALS_RUN_LINE_MIN_EDGE', 0.75),
+        'total_min_edge' => env('MLB_SIGNALS_TOTAL_MIN_EDGE', 0.75),
+        'min_streak_length' => env('MLB_SIGNALS_MIN_STREAK_LENGTH', 4),
+        'odds_stale_hours' => env('MLB_SIGNALS_ODDS_STALE_HOURS', 12),
+        'bet_filter' => [
+            'moneyline_enabled' => env('MLB_BET_FILTER_MONEYLINE_ENABLED', true),
+            'run_line_enabled' => env('MLB_BET_FILTER_RUN_LINE_ENABLED', false),
+            'total_enabled' => env('MLB_BET_FILTER_TOTAL_ENABLED', false),
+            'strong_min_score' => env('MLB_BET_FILTER_STRONG_MIN_SCORE', 70),
+            'lean_min_score' => env('MLB_BET_FILTER_LEAN_MIN_SCORE', 55),
+            'min_confidence' => env('MLB_BET_FILTER_MIN_CONFIDENCE', 55),
+            'strong_confidence' => env('MLB_BET_FILTER_STRONG_CONFIDENCE', 60),
+            'min_model_spread' => env('MLB_BET_FILTER_MIN_MODEL_SPREAD', 1.0),
+            'strong_model_spread' => env('MLB_BET_FILTER_STRONG_MODEL_SPREAD', 1.5),
+            'min_run_line_edge' => env('MLB_BET_FILTER_MIN_RUN_LINE_EDGE', 1.0),
+            'min_total_edge' => env('MLB_BET_FILTER_MIN_TOTAL_EDGE', 1.25),
+            'max_recommendations' => env('MLB_BET_FILTER_MAX_RECOMMENDATIONS', 8),
+        ],
+    ],
+
 ];

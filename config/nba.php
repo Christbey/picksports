@@ -329,4 +329,30 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Signal and Bet Filter Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Shared signal framework settings for the NBA betting dashboard.
+    |
+    */
+
+    'signals' => [
+        'odds_stale_hours' => env('NBA_SIGNALS_ODDS_STALE_HOURS', 12),
+        'bet_filter' => [
+            'spread_enabled' => env('NBA_BET_FILTER_SPREAD_ENABLED', true),
+            'moneyline_enabled' => env('NBA_BET_FILTER_MONEYLINE_ENABLED', true),
+            'total_enabled' => env('NBA_BET_FILTER_TOTAL_ENABLED', false),
+            'strong_min_score' => env('NBA_BET_FILTER_STRONG_MIN_SCORE', 72),
+            'lean_min_score' => env('NBA_BET_FILTER_LEAN_MIN_SCORE', 58),
+            'min_confidence' => env('NBA_BET_FILTER_MIN_CONFIDENCE', 58),
+            'strong_confidence' => env('NBA_BET_FILTER_STRONG_CONFIDENCE', 70),
+            'min_spread_edge' => env('NBA_BET_FILTER_MIN_SPREAD_EDGE', 2.0),
+            'strong_spread_edge' => env('NBA_BET_FILTER_STRONG_SPREAD_EDGE', 4.0),
+            'min_moneyline_edge' => env('NBA_BET_FILTER_MIN_MONEYLINE_EDGE', 0.04),
+            'min_total_edge' => env('NBA_BET_FILTER_MIN_TOTAL_EDGE', 6.0),
+        ],
+    ],
+
 ];

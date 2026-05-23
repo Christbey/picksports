@@ -146,6 +146,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'away_injuries_out' => $injuryContext['away_out'],
             'home_injuries_questionable' => $injuryContext['home_questionable'],
             'away_injuries_questionable' => $injuryContext['away_questionable'],
+            'home_injuries_out_weighted' => $injuryContext['home_out_weighted'],
+            'away_injuries_out_weighted' => $injuryContext['away_out_weighted'],
+            'home_injuries_questionable_weighted' => $injuryContext['home_questionable_weighted'],
+            'away_injuries_questionable_weighted' => $injuryContext['away_questionable_weighted'],
             'injury_spread_adj' => round($injurySpreadAdj, 2),
             'injury_total_adj' => round($injuryTotalAdj, 2),
             'injury_model_source' => $usePersistedSpreadInjuryContext === $usePersistedTotalInjuryContext
@@ -361,10 +365,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'depth_chart_injuries' => [
                         'applied' => ((float) ($this->metadata['injury_spread_adj'] ?? 0.0)) !== 0.0
                             || ((float) ($this->metadata['injury_total_adj'] ?? 0.0)) !== 0.0,
-                        'home_out_weighted' => $injuryContext['home_out_weighted'] ?? 0.0,
-                        'away_out_weighted' => $injuryContext['away_out_weighted'] ?? 0.0,
-                        'home_questionable_weighted' => $injuryContext['home_questionable_weighted'] ?? 0.0,
-                        'away_questionable_weighted' => $injuryContext['away_questionable_weighted'] ?? 0.0,
+                        'home_out_weighted' => $this->metadata['home_injuries_out_weighted'] ?? 0.0,
+                        'away_out_weighted' => $this->metadata['away_injuries_out_weighted'] ?? 0.0,
+                        'home_questionable_weighted' => $this->metadata['home_injuries_questionable_weighted'] ?? 0.0,
+                        'away_questionable_weighted' => $this->metadata['away_injuries_questionable_weighted'] ?? 0.0,
                         'spread_adjustment' => $this->metadata['injury_spread_adj'] ?? 0.0,
                         'total_adjustment' => $this->metadata['injury_total_adj'] ?? 0.0,
                     ],
@@ -410,10 +414,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'depth_chart_injuries' => [
                             'applied' => ((float) ($this->metadata['injury_spread_adj'] ?? 0.0)) !== 0.0
                                 || ((float) ($this->metadata['injury_total_adj'] ?? 0.0)) !== 0.0,
-                            'home_out_weighted' => $injuryContext['home_out_weighted'] ?? 0.0,
-                            'away_out_weighted' => $injuryContext['away_out_weighted'] ?? 0.0,
-                            'home_questionable_weighted' => $injuryContext['home_questionable_weighted'] ?? 0.0,
-                            'away_questionable_weighted' => $injuryContext['away_questionable_weighted'] ?? 0.0,
+                            'home_out_weighted' => $this->metadata['home_injuries_out_weighted'] ?? 0.0,
+                            'away_out_weighted' => $this->metadata['away_injuries_out_weighted'] ?? 0.0,
+                            'home_questionable_weighted' => $this->metadata['home_injuries_questionable_weighted'] ?? 0.0,
+                            'away_questionable_weighted' => $this->metadata['away_injuries_questionable_weighted'] ?? 0.0,
                             'spread_adjustment' => $this->metadata['injury_spread_adj'] ?? 0.0,
                             'total_adjustment' => $this->metadata['injury_total_adj'] ?? 0.0,
                         ],

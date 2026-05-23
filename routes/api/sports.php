@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\CBB\TournamentForecastController;
 use App\Http\Controllers\Api\CFB\FpiRatingController;
 use App\Http\Controllers\Api\MLB\SignalController as MlbSignalController;
 use App\Http\Controllers\Api\NBA\PlayoffForecastController;
+use App\Http\Controllers\Api\NBA\SignalController as NbaSignalController;
 use App\Http\Controllers\Api\NFL\SignalController as NflSignalController;
 use App\Http\Controllers\Api\Sports\InjuryController;
 use App\Http\Controllers\Api\Sports\PlayerPropController;
@@ -137,6 +138,8 @@ return function (string $sport, string $namespace) {
 
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'NBA') {
             Route::get('playoff-forecasts', [PlayoffForecastController::class, 'index']);
+            Route::get('signals', [NbaSignalController::class, 'index'])
+                ->middleware(["permission:view-{$sport}-predictions"]);
         }
 
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'MLB') {

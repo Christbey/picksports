@@ -5,6 +5,7 @@ namespace App\Actions\OddsApi;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 abstract class AbstractSyncPlayerPropsForGames
 {
@@ -144,12 +145,16 @@ abstract class AbstractSyncPlayerPropsForGames
 
     protected function matchEvent(array $event, string $oddsSportKey): ?Model
     {
-        $gameDate = date('Y-m-d', strtotime($event['commence_time']));
+        $gameDates = $this->candidateGameDates((string) $event['commence_time']);
         $gameModel = $this->gameModelClass();
 
         $query = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->whereDate('game_date', $gameDate);
+            ->where(function ($query) use ($gameDates): void {
+                foreach ($gameDates as $gameDate) {
+                    $query->orWhereDate('game_date', $gameDate);
+                }
+            });
 
         $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
         if ($seasonType !== null) {
@@ -172,6 +177,22 @@ abstract class AbstractSyncPlayerPropsForGames
         }
 
         return null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function candidateGameDates(string $commenceTime): array
+    {
+        $commenceAt = Carbon::parse($commenceTime);
+
+        return array_values(array_unique([
+            $commenceAt->copy()->utc()->toDateString(),
+            $commenceAt->copy()->setTimezone('America/New_York')->toDateString(),
+            $commenceAt->copy()->setTimezone('America/Chicago')->toDateString(),
+            $commenceAt->copy()->utc()->subDay()->toDateString(),
+            $commenceAt->copy()->utc()->addDay()->toDateString(),
+        ]));
     }
 
     protected function resolvePlayerId(string $playerName, Model $game, string $oddsSportKey): ?int

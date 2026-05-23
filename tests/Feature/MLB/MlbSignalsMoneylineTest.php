@@ -42,6 +42,7 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         'game_date' => '2026-05-24',
         'game_time' => '18:15:00',
         'status' => config('mlb.statuses.scheduled'),
+        'venue_name' => 'Coors Field',
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'short_name' => 'CHC @ STL',
@@ -109,6 +110,15 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
                 'home_confidence' => 1.0,
                 'away_confidence' => 1.0,
             ],
+            'park_context' => [
+                'venue_name' => 'Coors Field',
+                'total_adjustment' => 0.9,
+                'run_environment' => 'hitter_friendly',
+                'runs_signal' => 'park_runs_boost',
+                'home_run_signal' => 'park_home_run_boost',
+                'win_signal' => 'ballpark_can_amplify_matchup_variance',
+                'weather_signal' => 'weather_not_available',
+            ],
         ],
     ]);
 
@@ -154,7 +164,13 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         ->assertJsonPath('data.moneyline_readiness.priced_count', 1)
         ->assertJsonPath('data.moneyline_readiness.usable_count', 1)
         ->assertJsonPath('data.recommended_bets.0.type', 'moneyline')
-        ->assertJsonPath('data.recommended_bets.0.classification', 'bet');
+        ->assertJsonPath('data.recommended_bets.0.classification', 'bet')
+        ->assertJsonPath('data.ballpark.0.venue_name', 'Coors Field')
+        ->assertJsonPath('data.ballpark.0.run_environment', 'hitter_friendly')
+        ->assertJsonPath('data.ballpark.0.runs_signal', 'park_runs_boost')
+        ->assertJsonPath('data.ballpark.0.home_run_signal', 'park_home_run_boost')
+        ->assertJsonPath('data.ballpark.0.win_signal', 'ballpark_can_amplify_matchup_variance')
+        ->assertJsonPath('data.ballpark.0.weather_signal', 'weather_not_available');
 
     Carbon::setTestNow();
 });

@@ -452,8 +452,14 @@ it('applies a park factor to predicted_total when the venue is in mlb.prediction
     expect((float) $coorsPred->predicted_total - (float) $neutralPred->predicted_total)->toBe(1.5);
     expect((float) data_get($coorsPred->model_metadata, 'park_context.total_adjustment'))->toBe(1.5);
     expect(data_get($coorsPred->model_metadata, 'park_context.venue_name'))->toBe('Coors Field');
+    expect(data_get($coorsPred->model_metadata, 'park_context.run_environment'))->toBe('hitter_friendly');
+    expect(data_get($coorsPred->model_metadata, 'park_context.runs_signal'))->toBe('park_runs_boost');
+    expect(data_get($coorsPred->model_metadata, 'park_context.home_run_signal'))->toBe('park_home_run_boost');
+    expect(data_get($coorsPred->model_metadata, 'park_context.win_signal'))->toBe('ballpark_can_amplify_matchup_variance');
+    expect(data_get($coorsPred->model_metadata, 'park_context.weather_signal'))->toBe('weather_not_available');
     expect((float) data_get($neutralPred->model_metadata, 'park_context.total_adjustment'))->toBe(0.0);
     expect(data_get($neutralPred->model_metadata, 'park_context.venue_name'))->toBe('Unknown Park');
+    expect(data_get($neutralPred->model_metadata, 'park_context.run_environment'))->toBe('neutral');
 });
 
 it('prefers probable starter elo over team recent average pitcher elo', function () {

@@ -40,6 +40,7 @@ class MlbBettingSignalService
             'moneyline' => $this->moneylineSignals($slatePredictions),
             'run_line' => $this->runLineSignals($slatePredictions),
             'totals' => $this->totalSignals($slatePredictions),
+            'ballpark' => $this->ballparkSignals($slatePredictions),
             'bet_filter' => $this->betFilterSummary(),
             'moneyline_readiness' => $this->moneylineReadiness($slatePredictions),
             'recommended_bets' => $this->recommendedBets($slatePredictions),
@@ -63,7 +64,7 @@ class MlbBettingSignalService
                 'lineup_handedness_context',
                 'starter_form_context',
                 'historical_prior_context',
-                'park_factor_total_adjustment',
+                'ballpark_run_home_run_and_win_context',
                 'injury_and_probable_pitcher_availability_adjustments',
                 'market_spread_and_total_capture',
             ],
@@ -96,7 +97,7 @@ class MlbBettingSignalService
             'mlb_specific_deviations' => [
                 'probable_pitcher_and_depth_chart_starter_context',
                 'bullpen_fatigue_and_quality',
-                'park_factor_and_weather_sensitive_totals',
+                'ballpark_run_environment_for_homeruns_runs_and_win_context',
                 'moneyline_price_required_before_recommending_bets',
                 'run_line_and_total_promotion_disabled_until_backtest_validates_them',
             ],
@@ -391,6 +392,57 @@ class MlbBettingSignalService
         }
 
         usort($signals, fn (array $left, array $right): int => $right['edge_runs'] <=> $left['edge_runs']);
+
+        return array_slice($signals, 0, 10);
+    }
+
+    /**
+     * @param  array<int,Prediction>  $predictions
+     * @return array<int,array<string,mixed>>
+     */
+    protected function ballparkSignals(array $predictions): array
+    {
+        $signals = [];
+
+        foreach ($predictions as $prediction) {
+            $game = $prediction->game;
+            if (! $game) {
+                continue;
+            }
+
+            $parkContext = (array) data_get($prediction->model_metadata, 'park_context', []);
+            $venueName = (string) ($parkContext['venue_name'] ?? $game->venue_name ?? '');
+            if ($venueName === '') {
+                continue;
+            }
+
+            $totalAdjustment = (float) ($parkContext['total_adjustment'] ?? 0.0);
+            $pickSide = ((float) $prediction->win_probability) >= 0.5 ? 'home' : 'away';
+            $pickTeam = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
+            $weatherSignal = (string) ($parkContext['weather_signal'] ?? 'weather_not_available');
+
+            $signals[] = [
+                'type' => 'ballpark',
+                'game_id' => (int) $game->id,
+                'game_date' => $game->game_date?->toDateString(),
+                'matchup' => (string) ($game->short_name ?: $game->name),
+                'venue_name' => $venueName,
+                'pick_side' => $pickSide,
+                'team_id' => (int) ($pickTeam?->id ?? 0),
+                'team_name' => $this->teamName($pickTeam),
+                'run_environment' => (string) ($parkContext['run_environment'] ?? $this->ballparkRunEnvironment($totalAdjustment)),
+                'runs_signal' => (string) ($parkContext['runs_signal'] ?? $this->ballparkRunsSignal($totalAdjustment)),
+                'home_run_signal' => (string) ($parkContext['home_run_signal'] ?? $this->ballparkHomeRunSignal($totalAdjustment)),
+                'win_signal' => (string) ($parkContext['win_signal'] ?? $this->ballparkWinSignal($totalAdjustment)),
+                'weather_signal' => $weatherSignal,
+                'total_adjustment' => round($totalAdjustment, 2),
+                'predicted_total' => (float) $prediction->predicted_total,
+                'confidence_score' => (float) $prediction->confidence_score,
+                'reason_codes' => $this->ballparkReasonCodes($totalAdjustment, $weatherSignal),
+            ];
+        }
+
+        usort($signals, fn (array $left, array $right): int => abs((float) $right['total_adjustment']) <=> abs((float) $left['total_adjustment']));
 
         return array_slice($signals, 0, 10);
     }
@@ -988,6 +1040,16 @@ class MlbBettingSignalService
             $codes[] = 'park_factor_total_context';
         }
 
+        $parkHomeRunSignal = (string) data_get($metadata, 'park_context.home_run_signal', '');
+        if (in_array($parkHomeRunSignal, ['park_home_run_boost', 'park_home_run_suppression'], true)) {
+            $codes[] = $parkHomeRunSignal;
+        }
+
+        $parkRunsSignal = (string) data_get($metadata, 'park_context.runs_signal', '');
+        if (in_array($parkRunsSignal, ['park_runs_boost', 'park_runs_suppression'], true)) {
+            $codes[] = $parkRunsSignal;
+        }
+
         if ((bool) data_get($metadata, 'depth_chart_context.probable_pitcher_injury_applied', false)) {
             $codes[] = 'probable_pitcher_injury_context';
         }
@@ -997,6 +1059,67 @@ class MlbBettingSignalService
         }
 
         return array_values(array_unique($codes));
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function ballparkReasonCodes(float $totalAdjustment, string $weatherSignal): array
+    {
+        $codes = ['ballpark_context'];
+
+        if (abs($totalAdjustment) >= 0.25) {
+            $codes[] = 'park_factor_total_context';
+        }
+
+        $codes[] = $this->ballparkRunsSignal($totalAdjustment);
+        $codes[] = $this->ballparkHomeRunSignal($totalAdjustment);
+        $codes[] = $this->ballparkWinSignal($totalAdjustment);
+
+        if ($weatherSignal === 'weather_not_available') {
+            $codes[] = 'weather_feed_missing';
+        }
+
+        return array_values(array_unique($codes));
+    }
+
+    protected function ballparkRunEnvironment(float $totalAdjustment): string
+    {
+        return match (true) {
+            $totalAdjustment >= 0.75 => 'hitter_friendly',
+            $totalAdjustment >= 0.25 => 'slightly_hitter_friendly',
+            $totalAdjustment <= -0.75 => 'pitcher_friendly',
+            $totalAdjustment <= -0.25 => 'slightly_pitcher_friendly',
+            default => 'neutral',
+        };
+    }
+
+    protected function ballparkRunsSignal(float $totalAdjustment): string
+    {
+        return match (true) {
+            $totalAdjustment >= 0.25 => 'park_runs_boost',
+            $totalAdjustment <= -0.25 => 'park_runs_suppression',
+            default => 'park_runs_neutral',
+        };
+    }
+
+    protected function ballparkHomeRunSignal(float $totalAdjustment): string
+    {
+        return match (true) {
+            $totalAdjustment >= 0.75 => 'park_home_run_boost',
+            $totalAdjustment <= -0.75 => 'park_home_run_suppression',
+            abs($totalAdjustment) >= 0.25 => 'park_home_run_context',
+            default => 'park_home_run_neutral',
+        };
+    }
+
+    protected function ballparkWinSignal(float $totalAdjustment): string
+    {
+        return match (true) {
+            abs($totalAdjustment) >= 0.75 => 'ballpark_can_amplify_matchup_variance',
+            abs($totalAdjustment) >= 0.25 => 'ballpark_context_only',
+            default => 'ballpark_neutral_for_wins',
+        };
     }
 
     /**

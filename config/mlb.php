@@ -31,7 +31,7 @@ return [
     */
 
     'season' => [
-        'default' => env('MLB_DEFAULT_SEASON', 2025),
+        'default' => env('MLB_DEFAULT_SEASON', (int) date('Y')),
         'types' => [
             'spring_training' => 1,
             'regular' => 2,

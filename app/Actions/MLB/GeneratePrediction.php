@@ -634,7 +634,45 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'park_context' => [
                 'venue_name' => $this->metadata['park_venue_name'] ?? null,
                 'total_adjustment' => $this->metadata['park_total_adjustment'] ?? 0.0,
+                ...$this->ballparkSignalContext((float) ($this->metadata['park_total_adjustment'] ?? 0.0)),
             ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ballparkSignalContext(float $totalAdjustment): array
+    {
+        $absAdjustment = abs($totalAdjustment);
+        $runEnvironment = match (true) {
+            $totalAdjustment >= 0.75 => 'hitter_friendly',
+            $totalAdjustment >= 0.25 => 'slightly_hitter_friendly',
+            $totalAdjustment <= -0.75 => 'pitcher_friendly',
+            $totalAdjustment <= -0.25 => 'slightly_pitcher_friendly',
+            default => 'neutral',
+        };
+
+        return [
+            'run_environment' => $runEnvironment,
+            'runs_signal' => match (true) {
+                $totalAdjustment >= 0.25 => 'park_runs_boost',
+                $totalAdjustment <= -0.25 => 'park_runs_suppression',
+                default => 'park_runs_neutral',
+            },
+            'home_run_signal' => match (true) {
+                $totalAdjustment >= 0.75 => 'park_home_run_boost',
+                $totalAdjustment <= -0.75 => 'park_home_run_suppression',
+                $absAdjustment >= 0.25 => 'park_home_run_context',
+                default => 'park_home_run_neutral',
+            },
+            'win_signal' => match (true) {
+                $absAdjustment >= 0.75 => 'ballpark_can_amplify_matchup_variance',
+                $absAdjustment >= 0.25 => 'ballpark_context_only',
+                default => 'ballpark_neutral_for_wins',
+            },
+            'weather_signal' => 'weather_not_available',
+            'weather_adjustment' => 0.0,
         ];
     }
 

@@ -42,6 +42,13 @@ interface SignalRow {
     market_price?: number | null;
     market_implied_probability?: number | null;
     probability_edge?: number | null;
+    venue_name?: string;
+    run_environment?: string;
+    runs_signal?: string;
+    home_run_signal?: string;
+    win_signal?: string;
+    weather_signal?: string;
+    total_adjustment?: number;
     streak?: string;
     length?: number;
     label?: string;
@@ -120,6 +127,7 @@ interface SignalsPayload {
     moneyline: SignalRow[];
     run_line: SignalRow[];
     totals: SignalRow[];
+    ballpark: SignalRow[];
     streaks: SignalRow[];
 }
 
@@ -190,6 +198,15 @@ const signalGroups = computed(() => [
             `${sideLabel(row.pick_side)} | model ${formatNumber(row.predicted_total)} vs market ${formatNumber(row.market_total)}`,
     },
     {
+        key: 'ballpark',
+        title: 'Ballpark',
+        icon: Gauge,
+        rows: payload.value?.ballpark ?? [],
+        metric: (row: SignalRow) => formatSignedRuns(row.total_adjustment),
+        detail: (row: SignalRow) =>
+            `${row.venue_name ?? row.matchup ?? ''} | ${labelize(row.home_run_signal)} | ${labelize(row.runs_signal)}`,
+    },
+    {
         key: 'streaks',
         title: 'Streaks',
         icon: AlertTriangle,
@@ -208,6 +225,11 @@ function formatPercent(value?: number | null): string | null {
 function formatRuns(value?: number | null): string | null {
     if (value == null) return null;
     return `${value.toFixed(1)} runs`;
+}
+
+function formatSignedRuns(value?: number | null): string | null {
+    if (value == null) return null;
+    return `${value >= 0 ? '+' : ''}${value.toFixed(1)} runs`;
 }
 
 function formatNumber(value?: number | null): string {
@@ -299,8 +321,8 @@ onMounted(loadSignals);
             <div>
                 <h2 class="text-lg font-semibold">MLB Signals</h2>
                 <p class="text-sm text-muted-foreground">
-                    Moneyline-first slate edges, futures, and streak context
-                    from the live model.
+                    Moneyline-first slate edges, ballpark context, futures, and
+                    streak context from the live model.
                 </p>
             </div>
             <div class="text-sm text-muted-foreground">
@@ -313,8 +335,8 @@ onMounted(loadSignals);
             </div>
         </div>
 
-        <div v-if="loading" class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            <Card v-for="i in 5" :key="i">
+        <div v-if="loading" class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <Card v-for="i in 6" :key="i">
                 <CardHeader class="space-y-2">
                     <Skeleton class="h-4 w-28" />
                     <Skeleton class="h-3 w-20" />
@@ -526,7 +548,7 @@ onMounted(loadSignals);
                 </CardContent>
             </Card>
 
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <Card v-for="group in signalGroups" :key="group.key">
                     <CardHeader class="pb-3">
                         <CardTitle class="flex items-center gap-2 text-sm">

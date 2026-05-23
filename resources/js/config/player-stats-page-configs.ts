@@ -784,6 +784,7 @@ export const mlbPlayerStatsPageConfig = {
     bannerStorageKey: 'mlb-player-stats-banner-dismissed',
     leaderboardEndpoint: '/api/v1/mlb/player-stats/leaderboard',
     minGames: 10,
+    defaultSeasonType: '2',
     seasonTypeOptions: [
         { value: '1', label: 'Spring Training' },
         { value: '2', label: 'Regular Season' },

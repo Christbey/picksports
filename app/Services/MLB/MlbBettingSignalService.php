@@ -41,6 +41,7 @@ class MlbBettingSignalService
             'run_line' => $this->runLineSignals($slatePredictions),
             'totals' => $this->totalSignals($slatePredictions),
             'bet_filter' => $this->betFilterSummary(),
+            'moneyline_readiness' => $this->moneylineReadiness($slatePredictions),
             'recommended_bets' => $this->recommendedBets($slatePredictions),
             'pass_summary' => $this->passSummary($slatePredictions),
             'streaks' => $this->streakSignals($season, $asOfDate),
@@ -145,15 +146,22 @@ class MlbBettingSignalService
         }
 
         $coverage = fn (int $count): float => $total > 0 ? round($count / $total * 100, 1) : 0.0;
+        $moneylineOnlyMode = (bool) config('mlb.signals.bet_filter.moneyline_enabled', true)
+            && ! (bool) config('mlb.signals.bet_filter.run_line_enabled', false)
+            && ! (bool) config('mlb.signals.bet_filter.total_enabled', false);
+
         $status = match (true) {
             $total === 0 => 'no_slate',
             $coverage($h2h) < 80.0 => 'unhealthy',
+            $moneylineOnlyMode => $coverage($h2h) >= 95.0 ? 'moneyline_ready' : 'degraded',
             $coverage($h2h) < 100.0 || $coverage($spreads) < 80.0 || $coverage($totals) < 80.0 => 'degraded',
             default => 'healthy',
         };
 
         return [
             'status' => $status,
+            'primary_market' => $moneylineOnlyMode ? 'moneyline' : 'all_enabled_markets',
+            'moneyline_ready' => $total > 0 && $coverage($h2h) >= 80.0,
             'slate_games' => $total,
             'moneyline_coverage' => $coverage($h2h),
             'run_line_coverage' => $coverage($spreads),
@@ -168,7 +176,7 @@ class MlbBettingSignalService
         $today = Carbon::parse($asOfDate)->toDateString();
         $upcoming = Game::query()
             ->where('season', $season)
-            ->where('status', '!=', 'STATUS_FINAL')
+            ->where('status', config('mlb.statuses.scheduled'))
             ->whereDate('game_date', '>=', $today)
             ->orderBy('game_date')
             ->value('game_date');
@@ -186,7 +194,7 @@ class MlbBettingSignalService
             ->where('season', $season)
             ->whereHas('game', function ($query) use ($slateDate): void {
                 $query->whereDate('game_date', $slateDate->toDateString())
-                    ->where('status', '!=', 'STATUS_FINAL');
+                    ->where('status', config('mlb.statuses.scheduled'));
             })
             ->get()
             ->filter(fn (Prediction $prediction): bool => $prediction->game !== null)
@@ -397,9 +405,17 @@ class MlbBettingSignalService
      */
     protected function betFilterSummary(): array
     {
+        $moneylineOnlyMode = (bool) config('mlb.signals.bet_filter.moneyline_enabled', true)
+            && ! (bool) config('mlb.signals.bet_filter.run_line_enabled', false)
+            && ! (bool) config('mlb.signals.bet_filter.total_enabled', false);
+
         return [
             'model' => self::FILTER_VERSION,
-            'philosophy' => 'pass_most_games_until_model_strength_market_edge_and_pitcher_context_align',
+            'mode' => $moneylineOnlyMode ? 'moneyline_first' : 'multi_market',
+            'primary_market' => $moneylineOnlyMode ? 'moneyline' : 'enabled_markets',
+            'philosophy' => $moneylineOnlyMode
+                ? 'use_mlb_as_moneyline_first_until_run_line_and_total_backtests_are_trusted'
+                : 'pass_most_games_until_model_strength_market_edge_and_pitcher_context_align',
             'thresholds' => [
                 'strong_min_score' => (int) config('mlb.signals.bet_filter.strong_min_score', 70),
                 'lean_min_score' => (int) config('mlb.signals.bet_filter.lean_min_score', 55),
@@ -411,6 +427,7 @@ class MlbBettingSignalService
                 'min_total_edge' => (float) config('mlb.signals.bet_filter.min_total_edge', 1.25),
             ],
             'risk_controls' => [
+                'moneyline_can_stand_alone_when_h2h_prices_are_available',
                 'downgrade_away_moneyline_picks_until_away_split_improves',
                 'downgrade_pitcher_uncertainty',
                 'require_market_total_for_total_bets',
@@ -423,6 +440,69 @@ class MlbBettingSignalService
                 'run_line' => (bool) config('mlb.signals.bet_filter.run_line_enabled', false),
                 'total' => (bool) config('mlb.signals.bet_filter.total_enabled', false),
             ],
+        ];
+    }
+
+    /**
+     * @param  array<int,Prediction>  $predictions
+     * @return array<string,mixed>
+     */
+    protected function moneylineReadiness(array $predictions): array
+    {
+        $candidates = [];
+
+        foreach ($predictions as $prediction) {
+            $candidate = $this->moneylineBetCandidate($prediction);
+            if ($candidate !== null) {
+                $candidates[] = $candidate;
+            }
+        }
+
+        $counts = [
+            'bet' => 0,
+            'lean' => 0,
+            'pass' => 0,
+        ];
+        $priced = 0;
+        $positiveMarketEdges = 0;
+        $topPassReasons = [];
+
+        foreach ($candidates as $candidate) {
+            $classification = (string) ($candidate['classification'] ?? 'pass');
+            $counts[$classification] = ($counts[$classification] ?? 0) + 1;
+
+            if (($candidate['market_price'] ?? null) !== null) {
+                $priced++;
+            }
+
+            if ((float) ($candidate['probability_edge'] ?? 0.0) > 0.0) {
+                $positiveMarketEdges++;
+            }
+
+            if ($classification === 'pass') {
+                $reason = (string) ($candidate['no_bet_reason'] ?? 'score_below_threshold');
+                $topPassReasons[$reason] = ($topPassReasons[$reason] ?? 0) + 1;
+            }
+        }
+
+        arsort($topPassReasons);
+
+        return [
+            'mode' => 'moneyline_first',
+            'slate_games' => count($predictions),
+            'candidate_count' => count($candidates),
+            'priced_count' => $priced,
+            'priced_rate' => count($candidates) > 0 ? round($priced / count($candidates) * 100, 1) : 0.0,
+            'bet_count' => $counts['bet'] ?? 0,
+            'lean_count' => $counts['lean'] ?? 0,
+            'pass_count' => $counts['pass'] ?? 0,
+            'positive_market_edge_count' => $positiveMarketEdges,
+            'usable_count' => ($counts['bet'] ?? 0) + ($counts['lean'] ?? 0),
+            'top_pass_reasons' => array_map(
+                fn (string $reason, int $count): array => ['reason' => $reason, 'count' => $count],
+                array_keys($topPassReasons),
+                array_values($topPassReasons)
+            ),
         ];
     }
 

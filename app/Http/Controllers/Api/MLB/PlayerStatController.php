@@ -13,6 +13,8 @@ use Illuminate\Support\Facades\DB;
 
 class PlayerStatController extends AbstractPlayerStatController
 {
+    protected const MAX_PER_PAGE = 250;
+
     protected const PLAYER_STAT_MODEL = PlayerStat::class;
 
     protected const PLAYER_MODEL = Player::class;
@@ -26,9 +28,37 @@ class PlayerStatController extends AbstractPlayerStatController
         return ['player', 'team'];
     }
 
+    protected function getByPlayerRelations(): array
+    {
+        return ['game.homeTeam', 'game.awayTeam'];
+    }
+
     protected function supportsLeaderboard(): bool
     {
         return true;
+    }
+
+    protected function applySeasonFiltersToStatsQuery($query, Request $request)
+    {
+        $query = parent::applySeasonFiltersToStatsQuery($query, $request);
+
+        if ($request->filled('stat_type')) {
+            $query->where('mlb_player_stats.stat_type', (string) $request->input('stat_type'));
+        }
+
+        return $query;
+    }
+
+    protected function applyByPlayerOrdering($query, Request $request)
+    {
+        if ($request->filled('season') || $request->filled('season_type')) {
+            return $query
+                ->orderByDesc('mlb_games.game_date')
+                ->orderByDesc('mlb_games.game_time')
+                ->orderByDesc('mlb_player_stats.id');
+        }
+
+        return parent::applyByPlayerOrdering($query, $request);
     }
 
     protected function getLeaderboardData(Request $request): Collection
@@ -36,6 +66,7 @@ class PlayerStatController extends AbstractPlayerStatController
         $minGames = (int) ($request->integer('min_games') ?: 10);
         $season = $request->filled('season') ? (int) $request->integer('season') : null;
         $seasonTypeCandidates = $this->requestedSeasonTypeCandidates($request);
+        $statType = $request->filled('stat_type') ? (string) $request->input('stat_type') : null;
 
         $query = PlayerStat::query()
             ->join('mlb_players', 'mlb_players.id', '=', 'mlb_player_stats.player_id')
@@ -95,6 +126,10 @@ class PlayerStatController extends AbstractPlayerStatController
 
         if ($seasonTypeCandidates !== []) {
             $query->whereIn('mlb_games.season_type', $seasonTypeCandidates);
+        }
+
+        if ($statType !== null) {
+            $query->where('mlb_player_stats.stat_type', $statType);
         }
 
         return $query

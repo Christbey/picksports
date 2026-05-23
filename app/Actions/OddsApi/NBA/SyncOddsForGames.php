@@ -23,10 +23,6 @@ class SyncOddsForGames extends AbstractSyncOddsForGames
             return (int) config('nba.season.types.preseason', 1);
         }
 
-        if ($oddsSportKey === self::SPORT_KEY) {
-            return (int) config('nba.season.types.regular', 2);
-        }
-
         return null;
     }
 }

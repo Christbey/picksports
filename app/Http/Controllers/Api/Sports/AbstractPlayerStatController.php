@@ -77,6 +77,14 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
         return ['game'];
     }
 
+    protected function applyByPlayerOrdering($query, Request $request)
+    {
+        $playerStatModel = $this->getPlayerStatModel();
+        $playerStatInstance = new $playerStatModel;
+
+        return $query->orderByDesc($playerStatInstance->getTable().'.id');
+    }
+
     protected function applySeasonFiltersToStatsQuery($query, Request $request)
     {
         if (! $request->filled('season') && ! $request->filled('season_type')) {
@@ -280,7 +288,7 @@ abstract class AbstractPlayerStatController extends AbstractSportsApiController
             ->with($this->getByPlayerRelations())
             ->where('player_id', $playerId)
             ->tap(fn ($query) => $this->applySeasonFiltersToStatsQuery($query, $request))
-            ->orderByDesc('id')
+            ->tap(fn ($query) => $this->applyByPlayerOrdering($query, $request))
             ->paginate($this->getByPlayerPerPage($request));
 
         return $resource::collection($stats);

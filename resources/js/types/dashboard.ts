@@ -22,6 +22,7 @@ export interface DashboardPrediction {
     betting_value?: BettingRecommendation[];
     betting_value_debug?: string | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    updated_at?: string | null;
     // Live game data
     is_live?: boolean;
     is_final?: boolean;

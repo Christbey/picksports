@@ -198,6 +198,51 @@ function weekLabel(): string | null {
     return `Postseason Week ${week}`;
 }
 
+function gameDateTimeLabel(): string | null {
+    if (dashboardType?.game_time) {
+        return dashboardType.game_time;
+    }
+
+    const game = predictionType?.game;
+    if (!game?.game_date) {
+        return null;
+    }
+
+    const rawDateTime = game.game_time
+        ? `${game.game_date}T${game.game_time}`
+        : `${game.game_date}T00:00:00`;
+    const date = new Date(rawDateTime);
+    if (Number.isNaN(date.getTime())) {
+        return game.game_time || game.game_date;
+    }
+
+    return date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: game.game_time ? 'numeric' : undefined,
+        minute: game.game_time ? '2-digit' : undefined,
+    });
+}
+
+function predictionFreshnessLabel(): string | null {
+    const updatedAt = props.prediction.updated_at;
+    if (!updatedAt) {
+        return null;
+    }
+
+    const date = new Date(updatedAt);
+    if (Number.isNaN(date.getTime())) {
+        return null;
+    }
+
+    return `Updated ${date.toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    })}`;
+}
+
 function preGameWinProbability(): number {
     return props.prediction.win_probability ?? 0;
 }
@@ -763,6 +808,18 @@ function saveOptions(): SavePickOption[] {
                             class="ui-chip text-sidebar-foreground"
                         >
                             {{ weekLabel() }}
+                        </span>
+                        <span
+                            v-if="gameDateTimeLabel()"
+                            class="ui-chip text-muted-foreground"
+                        >
+                            {{ gameDateTimeLabel() }}
+                        </span>
+                        <span
+                            v-if="predictionFreshnessLabel()"
+                            class="ui-chip text-muted-foreground"
+                        >
+                            {{ predictionFreshnessLabel() }}
                         </span>
                         <span
                             v-if="isFinal() && winnerCorrect() !== null"

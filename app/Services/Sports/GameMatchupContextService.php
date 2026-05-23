@@ -2,9 +2,12 @@
 
 namespace App\Services\Sports;
 
+use App\Models\MLB\Game;
+use App\Models\MLB\Player;
+use App\Models\MLB\PlayerStat;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 
 class GameMatchupContextService
@@ -30,14 +33,14 @@ class GameMatchupContextService
             $this->makeRow(
                 key: 'head_to_head',
                 label: 'Head-to-head',
-                subtitle: 'Prior same-type matchups',
+                subtitle: $this->seasonScopeSubtitle($game, headToHead: true),
                 awayRecord: $this->recordForHeadToHead($headToHeadGames, (int) $awayTeam->getKey()),
                 homeRecord: $this->recordForHeadToHead($headToHeadGames, (int) $homeTeam->getKey()),
             ),
             $this->makeRow(
                 key: 'overall',
                 label: 'Record entering game',
-                subtitle: 'Season to date',
+                subtitle: $this->seasonScopeSubtitle($game),
                 awayRecord: $this->recordFromGames($awayGames, (int) $awayTeam->getKey()),
                 homeRecord: $this->recordFromGames($homeGames, (int) $homeTeam->getKey()),
             ),
@@ -59,7 +62,7 @@ class GameMatchupContextService
         $conferenceRow = $this->buildAlignmentRow(
             key: 'conference_record',
             label: 'Conference record',
-            subtitle: 'Season to date',
+            subtitle: $this->seasonScopeSubtitle($game),
             gamesBySide: ['away' => $awayGames, 'home' => $homeGames],
             teamsBySide: ['away' => $awayTeam, 'home' => $homeTeam],
             axis: 'conference',
@@ -72,7 +75,7 @@ class GameMatchupContextService
         $divisionRow = $this->buildAlignmentRow(
             key: 'division_record',
             label: 'Division record',
-            subtitle: 'Season to date',
+            subtitle: $this->seasonScopeSubtitle($game),
             gamesBySide: ['away' => $awayGames, 'home' => $homeGames],
             teamsBySide: ['away' => $awayTeam, 'home' => $homeTeam],
             axis: 'division',
@@ -87,7 +90,7 @@ class GameMatchupContextService
             $rows[] = $this->makeRow(
                 key: 'time_bucket_record',
                 label: sprintf('%s record', $timeBucket['label']),
-                subtitle: 'Season to date',
+                subtitle: $this->seasonScopeSubtitle($game),
                 awayRecord: $this->recordFromGames(
                     $awayGames->filter(fn (Model $item): bool => $this->matchesTimeBucket($item, $timeBucket['bucket'])),
                     (int) $awayTeam->getKey(),
@@ -113,10 +116,10 @@ class GameMatchupContextService
     protected function configForGame(Model $game): array
     {
         return match ($game::class) {
-            \App\Models\MLB\Game::class => [
-                'game_model' => \App\Models\MLB\Game::class,
-                'player_stat_model' => \App\Models\MLB\PlayerStat::class,
-                'player_model' => \App\Models\MLB\Player::class,
+            Game::class => [
+                'game_model' => Game::class,
+                'player_stat_model' => PlayerStat::class,
+                'player_model' => Player::class,
                 'starter_type' => 'pitcher',
             ],
             \App\Models\NFL\Game::class => [
@@ -175,7 +178,7 @@ class GameMatchupContextService
             ->with(['homeTeam', 'awayTeam'])
             ->where('status', 'STATUS_FINAL');
 
-        $this->applySeasonTypeFilter($query, $game);
+        $this->applyMatchupContextSeasonTypeFilter($query, $game);
 
         return $this->applyBeforeGameFilter($query, $game);
     }
@@ -371,6 +374,62 @@ class GameMatchupContextService
         $query->whereIn($column, $seasonTypes);
     }
 
+    protected function applyMatchupContextSeasonTypeFilter(Builder $query, Model $game, string $column = 'season_type'): void
+    {
+        $seasonTypes = $this->matchupContextSeasonTypeVariants($game);
+
+        if ($seasonTypes === []) {
+            return;
+        }
+
+        $query->whereIn($column, $seasonTypes);
+    }
+
+    /**
+     * Matchup-context records are meant to describe what each team has shown
+     * entering this game. For postseason games, regular-season meetings and
+     * records are still meaningful context, while preseason should stay out.
+     *
+     * @return array<int, string>
+     */
+    protected function matchupContextSeasonTypeVariants(Model $game): array
+    {
+        $seasonType = $game->getAttribute('season_type');
+
+        if ($this->isPostseasonSeasonType($seasonType)) {
+            return array_values(array_unique([
+                ...$this->seasonTypeVariants('2'),
+                ...$this->seasonTypeVariants('3'),
+            ]));
+        }
+
+        return $this->seasonTypeVariants($seasonType);
+    }
+
+    protected function isPostseasonSeasonType(mixed $seasonType): bool
+    {
+        if ($seasonType === null) {
+            return false;
+        }
+
+        $value = strtolower(trim((string) $seasonType));
+
+        return in_array($value, ['3', 'postseason', 'post season', 'playoffs'], true);
+    }
+
+    protected function seasonScopeSubtitle(Model $game, bool $headToHead = false): string
+    {
+        if ($this->isPostseasonSeasonType($game->getAttribute('season_type'))) {
+            return $headToHead
+                ? 'Current season series before game'
+                : 'Regular + postseason before game';
+        }
+
+        return $headToHead
+            ? 'Prior same-type matchups'
+            : 'Season to date';
+    }
+
     /**
      * @return array<int, string>
      */
@@ -442,10 +501,10 @@ class GameMatchupContextService
         }
 
         $homePitcher = $homePitcherId !== ''
-            ? \App\Models\MLB\Player::query()->where('espn_id', $homePitcherId)->first()
+            ? Player::query()->where('espn_id', $homePitcherId)->first()
             : null;
         $awayPitcher = $awayPitcherId !== ''
-            ? \App\Models\MLB\Player::query()->where('espn_id', $awayPitcherId)->first()
+            ? Player::query()->where('espn_id', $awayPitcherId)->first()
             : null;
 
         return $this->makeRow(
@@ -600,7 +659,7 @@ class GameMatchupContextService
                 });
             });
 
-        $this->applySeasonTypeFilter($games, $game, "{$gameTable}.season_type");
+        $this->applyMatchupContextSeasonTypeFilter($games, $game, "{$gameTable}.season_type");
 
         $games = $this->applyBeforeGameFilter($games, $game)
             ->distinct()

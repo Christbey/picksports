@@ -39,9 +39,9 @@ class TotalsTrendCollector extends TrendCollector
 
             if ($ouTotal >= 5) {
                 if ($overs > $unders && $this->percentage($overs, $ouTotal) >= 60) {
-                    $messages[] = "The {$this->teamAbbr} have gone OVER in {$overs} of their last {$ouTotal} games with totals";
+                    $messages[] = "The {$this->teamAbbr} have finished OVER the model total in {$overs} of their last {$ouTotal} games";
                 } elseif ($unders > $overs && $this->percentage($unders, $ouTotal) >= 60) {
-                    $messages[] = "The {$this->teamAbbr} have gone UNDER in {$unders} of their last {$ouTotal} games with totals";
+                    $messages[] = "The {$this->teamAbbr} have finished UNDER the model total in {$unders} of their last {$ouTotal} games";
                 }
             }
         }

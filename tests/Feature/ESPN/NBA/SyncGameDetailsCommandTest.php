@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ESPN\NBA\FetchGameDetails;
 use App\Models\NBA\Game;
 use App\Models\NBA\Play;
 use App\Models\NBA\Player;
@@ -7,6 +8,7 @@ use App\Models\NBA\PlayerStat;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamStat;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 
 use function Pest\Laravel\artisan;
 
@@ -233,6 +235,51 @@ it('handles empty plays response', function () {
     expect(Play::count())->toBe(0);
     expect(PlayerStat::count())->toBe(0);
     expect(TeamStat::count())->toBe(0);
+});
+
+it('does not dispatch existing player stat games by default', function () {
+    Queue::fake();
+
+    PlayerStat::factory()->create([
+        'player_id' => $this->homePlayer->id,
+        'game_id' => $this->game->id,
+        'team_id' => $this->homeTeam->id,
+    ]);
+
+    $missingStatsGame = Game::factory()->create([
+        'espn_event_id' => '401585602',
+        'game_date' => now()->addDay(),
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+    ]);
+
+    artisan('espn:sync-nba-game-details')
+        ->assertSuccessful();
+
+    Queue::assertPushed(FetchGameDetails::class, 1);
+    Queue::assertPushed(
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $missingStatsGame->espn_event_id
+    );
+});
+
+it('can refresh games that already have player stats', function () {
+    Queue::fake();
+
+    PlayerStat::factory()->create([
+        'player_id' => $this->homePlayer->id,
+        'game_id' => $this->game->id,
+        'team_id' => $this->homeTeam->id,
+    ]);
+
+    artisan('espn:sync-nba-game-details', ['--refresh-existing' => true])
+        ->assertSuccessful();
+
+    Queue::assertPushed(FetchGameDetails::class, 1);
+    Queue::assertPushed(
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $this->game->espn_event_id
+    );
 });
 
 it('updates existing plays instead of creating duplicates', function () {

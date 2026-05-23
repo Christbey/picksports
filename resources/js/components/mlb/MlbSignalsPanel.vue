@@ -57,12 +57,16 @@ interface BackendReview {
 
 interface BetFilter {
     model: string;
+    mode?: string;
+    primary_market?: string;
     philosophy: string;
     risk_controls: string[];
 }
 
 interface OddsHealth {
     status: string;
+    primary_market?: string;
+    moneyline_ready?: boolean;
     slate_games: number;
     moneyline_coverage: number;
     run_line_coverage: number;
@@ -85,6 +89,23 @@ interface PassSummary {
     }>;
 }
 
+interface MoneylineReadiness {
+    mode: string;
+    slate_games: number;
+    candidate_count: number;
+    priced_count: number;
+    priced_rate: number;
+    bet_count: number;
+    lean_count: number;
+    pass_count: number;
+    positive_market_edge_count: number;
+    usable_count: number;
+    top_pass_reasons: Array<{
+        reason: string;
+        count: number;
+    }>;
+}
+
 interface SignalsPayload {
     season: number;
     as_of_date: string;
@@ -92,6 +113,7 @@ interface SignalsPayload {
     backend_review: BackendReview;
     odds_health?: OddsHealth;
     bet_filter?: BetFilter;
+    moneyline_readiness?: MoneylineReadiness;
     pass_summary?: PassSummary;
     recommended_bets: SignalRow[];
     world_series: SignalRow[];
@@ -110,6 +132,20 @@ const error = ref<string | null>(null);
 const payload = ref<SignalsPayload | null>(null);
 
 const bestBets = computed(() => payload.value?.recommended_bets ?? []);
+const moneylineReadiness = computed(
+    () => payload.value?.moneyline_readiness ?? null,
+);
+
+const marketModeLabel = computed(() => {
+    const mode = payload.value?.bet_filter?.mode;
+    if (mode === 'moneyline_first') return 'Moneyline-first';
+    return 'Multi-market';
+});
+
+const moneylineReadyLabel = computed(() => {
+    if (!payload.value?.odds_health) return 'No slate';
+    return payload.value.odds_health.moneyline_ready ? 'Ready' : 'Needs prices';
+});
 
 const signalGroups = computed(() => [
     {
@@ -120,7 +156,8 @@ const signalGroups = computed(() => [
         metric: (row: SignalRow) => formatPercent(row.champion_probability),
         detail: (row: SignalRow) => {
             const edge = row.market_edge?.edge_percent_points;
-            const edgeText = edge != null ? ` | ${edge.toFixed(1)} market edge` : '';
+            const edgeText =
+                edge != null ? ` | ${edge.toFixed(1)} market edge` : '';
 
             return `${formatPercent(row.playoff_make_probability)} playoff${edgeText}`;
         },
@@ -131,7 +168,8 @@ const signalGroups = computed(() => [
         icon: BadgeCheck,
         rows: payload.value?.moneyline ?? [],
         metric: (row: SignalRow) => formatPercent(row.win_probability),
-        detail: (row: SignalRow) => `${sideLabel(row.pick_side)} | ${row.matchup ?? ''}`,
+        detail: (row: SignalRow) =>
+            `${sideLabel(row.pick_side)} | ${row.matchup ?? ''}`,
     },
     {
         key: 'run_line',
@@ -139,7 +177,8 @@ const signalGroups = computed(() => [
         icon: TrendingUp,
         rows: payload.value?.run_line ?? [],
         metric: (row: SignalRow) => formatRuns(row.edge_runs),
-        detail: (row: SignalRow) => `${sideLabel(row.pick_side)} | ${row.matchup ?? ''}`,
+        detail: (row: SignalRow) =>
+            `${sideLabel(row.pick_side)} | ${row.matchup ?? ''}`,
     },
     {
         key: 'totals',
@@ -155,7 +194,8 @@ const signalGroups = computed(() => [
         title: 'Streaks',
         icon: AlertTriangle,
         rows: payload.value?.streaks ?? [],
-        metric: (row: SignalRow) => (row.length != null ? `${row.length}x` : null),
+        metric: (row: SignalRow) =>
+            row.length != null ? `${row.length}x` : null,
         detail: (row: SignalRow) => row.label ?? labelize(row.streak),
     },
 ]);
@@ -204,7 +244,9 @@ function pickLabel(row: SignalRow): string {
 function valueDetail(row: SignalRow): string {
     const parts = [];
     if (row.market_price != null) {
-        parts.push(`odds ${row.market_price > 0 ? '+' : ''}${row.market_price}`);
+        parts.push(
+            `odds ${row.market_price > 0 ? '+' : ''}${row.market_price}`,
+        );
     }
     if (row.probability_edge != null) {
         parts.push(`${(row.probability_edge * 100).toFixed(1)}% edge`);
@@ -251,15 +293,23 @@ onMounted(loadSignals);
 
 <template>
     <section class="space-y-3">
-        <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div
+            class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"
+        >
             <div>
                 <h2 class="text-lg font-semibold">MLB Signals</h2>
                 <p class="text-sm text-muted-foreground">
-                    Futures, slate edges, totals, and streak context from the live model.
+                    Moneyline-first slate edges, futures, and streak context
+                    from the live model.
                 </p>
             </div>
-            <div v-if="payload?.slate_date" class="text-sm text-muted-foreground">
-                Slate {{ payload.slate_date }}
+            <div class="text-sm text-muted-foreground">
+                <span v-if="payload?.slate_date"
+                    >Slate {{ payload.slate_date }}</span
+                >
+                <span v-if="payload" class="ml-2 rounded-md border px-2 py-1">
+                    {{ marketModeLabel }}: {{ moneylineReadyLabel }}
+                </span>
             </div>
         </div>
 
@@ -288,10 +338,58 @@ onMounted(loadSignals);
                 <CardHeader class="pb-3">
                     <CardTitle class="flex items-center gap-2 text-sm">
                         <ShieldCheck class="h-4 w-4" />
-                        Best Bets Filter
+                        Moneyline-First Bet Filter
                     </CardTitle>
                 </CardHeader>
                 <CardContent class="space-y-4">
+                    <div
+                        v-if="moneylineReadiness"
+                        class="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground sm:grid-cols-5"
+                    >
+                        <div>
+                            <div class="font-medium text-foreground">
+                                Moneyline Mode
+                            </div>
+                            <div>{{ labelize(moneylineReadiness.mode) }}</div>
+                        </div>
+                        <div>
+                            <div class="font-medium text-foreground">
+                                Priced
+                            </div>
+                            <div>
+                                {{ moneylineReadiness.priced_count }} /
+                                {{ moneylineReadiness.candidate_count }}
+                                ({{
+                                    moneylineReadiness.priced_rate.toFixed(1)
+                                }}%)
+                            </div>
+                        </div>
+                        <div>
+                            <div class="font-medium text-foreground">
+                                Usable ML
+                            </div>
+                            <div>
+                                {{ moneylineReadiness.usable_count }} bets/leans
+                            </div>
+                        </div>
+                        <div>
+                            <div class="font-medium text-foreground">
+                                Market Edge
+                            </div>
+                            <div>
+                                {{
+                                    moneylineReadiness.positive_market_edge_count
+                                }}
+                                positive
+                            </div>
+                        </div>
+                        <div>
+                            <div class="font-medium text-foreground">
+                                Passes
+                            </div>
+                            <div>{{ moneylineReadiness.pass_count }}</div>
+                        </div>
+                    </div>
                     <div
                         v-if="bestBets.length > 0"
                         class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
@@ -301,12 +399,16 @@ onMounted(loadSignals);
                             :key="`best-bet-${row.type}-${row.game_id}-${row.pick_side}`"
                             class="min-h-28 rounded-md border p-3"
                         >
-                            <div class="mb-2 flex items-start justify-between gap-3">
+                            <div
+                                class="mb-2 flex items-start justify-between gap-3"
+                            >
                                 <div class="min-w-0">
                                     <div class="truncate text-sm font-semibold">
                                         {{ row.team_name || row.matchup }}
                                     </div>
-                                    <div class="truncate text-xs text-muted-foreground">
+                                    <div
+                                        class="truncate text-xs text-muted-foreground"
+                                    >
                                         {{ pickLabel(row) }} | {{ row.matchup }}
                                     </div>
                                 </div>
@@ -314,7 +416,9 @@ onMounted(loadSignals);
                                     <div class="text-sm font-semibold">
                                         {{ row.score ?? 0 }}
                                     </div>
-                                    <div class="text-xs uppercase text-muted-foreground">
+                                    <div
+                                        class="text-xs text-muted-foreground uppercase"
+                                    >
                                         {{ row.classification }}
                                     </div>
                                 </div>
@@ -341,20 +445,48 @@ onMounted(loadSignals);
                         class="grid gap-2 rounded-md border p-3 text-xs text-muted-foreground sm:grid-cols-4"
                     >
                         <div>
-                            <div class="font-medium text-foreground">Odds Health</div>
-                            <div>{{ labelize(payload.odds_health.status) }}</div>
+                            <div class="font-medium text-foreground">
+                                Odds Health
+                            </div>
+                            <div>
+                                {{ labelize(payload.odds_health.status) }}
+                            </div>
                         </div>
                         <div>
-                            <div class="font-medium text-foreground">Moneyline</div>
-                            <div>{{ coverageLabel(payload.odds_health.moneyline_coverage) }}</div>
+                            <div class="font-medium text-foreground">
+                                Moneyline
+                            </div>
+                            <div>
+                                {{
+                                    coverageLabel(
+                                        payload.odds_health.moneyline_coverage,
+                                    )
+                                }}
+                            </div>
                         </div>
                         <div>
-                            <div class="font-medium text-foreground">Run Line</div>
-                            <div>{{ coverageLabel(payload.odds_health.run_line_coverage) }}</div>
+                            <div class="font-medium text-foreground">
+                                Run Line
+                            </div>
+                            <div>
+                                {{
+                                    coverageLabel(
+                                        payload.odds_health.run_line_coverage,
+                                    )
+                                }}
+                            </div>
                         </div>
                         <div>
-                            <div class="font-medium text-foreground">Totals</div>
-                            <div>{{ coverageLabel(payload.odds_health.total_coverage) }}</div>
+                            <div class="font-medium text-foreground">
+                                Totals
+                            </div>
+                            <div>
+                                {{
+                                    coverageLabel(
+                                        payload.odds_health.total_coverage,
+                                    )
+                                }}
+                            </div>
                         </div>
                     </div>
                     <div
@@ -362,10 +494,14 @@ onMounted(loadSignals);
                         class="flex flex-wrap gap-2 text-xs text-muted-foreground"
                     >
                         <span class="rounded-md border px-2 py-1">
-                            Pass rate {{ payload.pass_summary.pass_rate.toFixed(1) }}%
+                            Pass rate
+                            {{ payload.pass_summary.pass_rate.toFixed(1) }}%
                         </span>
                         <span
-                            v-for="reason in payload.pass_summary.top_reasons.slice(0, 4)"
+                            v-for="reason in payload.pass_summary.top_reasons.slice(
+                                0,
+                                4,
+                            )"
                             :key="reason.reason"
                             class="rounded-md border px-2 py-1"
                         >
@@ -377,7 +513,10 @@ onMounted(loadSignals);
                         class="flex flex-wrap gap-2 text-xs text-muted-foreground"
                     >
                         <span
-                            v-for="item in payload.bet_filter.risk_controls.slice(0, 5)"
+                            v-for="item in payload.bet_filter.risk_controls.slice(
+                                0,
+                                5,
+                            )"
                             :key="item"
                             class="rounded-md border px-2 py-1"
                         >
@@ -405,7 +544,9 @@ onMounted(loadSignals);
                                 <div class="truncate text-sm font-medium">
                                     {{ row.team_name || row.matchup }}
                                 </div>
-                                <div class="truncate text-xs text-muted-foreground">
+                                <div
+                                    class="truncate text-xs text-muted-foreground"
+                                >
                                     {{ group.detail(row) }}
                                 </div>
                                 <div
@@ -441,7 +582,10 @@ onMounted(loadSignals);
                         <div class="mb-2 font-medium">Model Inputs</div>
                         <div class="flex flex-wrap gap-2">
                             <span
-                                v-for="item in payload.backend_review.strengths.slice(0, 8)"
+                                v-for="item in payload.backend_review.strengths.slice(
+                                    0,
+                                    8,
+                                )"
                                 :key="item"
                                 class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
                             >
@@ -453,7 +597,8 @@ onMounted(loadSignals);
                         <div class="mb-2 font-medium">Watch Items</div>
                         <div class="flex flex-wrap gap-2">
                             <span
-                                v-for="item in payload.backend_review.watch_items"
+                                v-for="item in payload.backend_review
+                                    .watch_items"
                                 :key="item"
                                 class="rounded-md border border-amber-300/60 px-2 py-1 text-xs text-muted-foreground"
                             >

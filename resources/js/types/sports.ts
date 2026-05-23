@@ -158,6 +158,8 @@ export interface PredictionListItem {
     betting_value?: BettingRecommendation[];
     betting_value_summary?: BettingValueSummary;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    created_at?: string | null;
+    updated_at?: string | null;
     home_elo?: number;
     away_elo?: number;
     home_off_eff?: number;

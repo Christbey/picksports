@@ -2,8 +2,8 @@
 
 namespace App\Actions\OddsApi;
 
-use App\Services\OddsApi\OddsApiService;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -79,6 +79,7 @@ abstract class AbstractSyncOddsForGames
         if ($updated > 0) {
             $this->sportsViewCache->bustSegments([
                 SportsViewCache::SEGMENT_DASHBOARD,
+                SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
                 SportsViewCache::SEGMENT_TEAM_GAMES_BY_TEAM,
             ]);
         }

@@ -208,6 +208,18 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
 
                 $predictions = $query->latest()->get();
 
+                if (request()->filled('from_date') || request()->filled('to_date')) {
+                    $predictions = $predictions
+                        ->sortBy(fn ($prediction): string => sprintf(
+                            '%s %s %010d',
+                            $prediction->game?->{$this->getGameDateColumn()}?->toDateString()
+                                ?? (string) ($prediction->game?->{$this->getGameDateColumn()} ?? ''),
+                            (string) ($prediction->game?->game_time ?? '00:00:00'),
+                            (int) ($prediction->game_id ?? 0),
+                        ))
+                        ->values();
+                }
+
                 // Allow sport-specific processing
                 $predictions = $this->processPredictions($predictions);
 

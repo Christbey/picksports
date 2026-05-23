@@ -66,7 +66,7 @@ test('uses template narrative when provider is template', function () {
     $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
 
     expect($data['narrative'])->toBeArray()
-        ->and($data['narrative']['generated_by'])->toBe('template-v5')
+        ->and($data['narrative']['generated_by'])->toBe('template-v6')
         ->and($data['narrative']['summary'])->toContain("Tonight's lean")
         ->and($data['narrative']['betting_plan'])->toBeArray()
         ->and($data['narrative']['betting_plan'])->toHaveKeys(['bet_pick', 'reasoning']);
@@ -136,7 +136,7 @@ test('falls back to template when stored narrative hash is stale', function () {
     $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
 
     expect($data['narrative'])->toBeArray()
-        ->and($data['narrative']['generated_by'])->toBe('template-v5')
+        ->and($data['narrative']['generated_by'])->toBe('template-v6')
         ->and($data['narrative']['betting_plan'])->toBeArray();
 });
 
@@ -149,8 +149,35 @@ test('prediction narrative remains available without granular prediction field p
     $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
 
     expect($data['narrative'])->toBeArray()
-        ->and($data['narrative']['generated_by'])->toBe('template-v5')
+        ->and($data['narrative']['generated_by'])->toBe('template-v6')
         ->and($data['narrative']['betting_plan'])->toHaveKeys(['bet_pick', 'reasoning'])
         ->and($data)->not->toHaveKey('confidence_score')
         ->and($data)->not->toHaveKey('win_probability');
+});
+
+test('template betting plan does not recommend a spread bet without a market line', function () {
+    config()->set('nba.prediction.narrative.provider', 'template');
+
+    $user = User::factory()->create();
+    $user->givePermissionTo([
+        'view-prediction-spread',
+        'view-prediction-win-probability',
+        'view-prediction-confidence-score',
+    ]);
+
+    $prediction = makeNbaPredictionFixture();
+    $prediction->forceFill([
+        'vegas_spread' => null,
+        'rest_days_home' => 6,
+        'rest_days_away' => 13,
+    ])->save();
+
+    $data = PredictionResource::make($prediction->refresh()->load('game.homeTeam', 'game.awayTeam'))
+        ->toArray(makeAuthorizedRequest($user));
+
+    expect($data['narrative']['betting_plan']['bet_pick'])
+        ->toBe('No spread bet until a current market line is available.')
+        ->and($data['narrative']['betting_plan']['reasoning'])->toContain('model lean, not a bet recommendation')
+        ->and($data['narrative']['betting_plan']['reasoning'])->toContain('rhythm risk')
+        ->and($data['narrative']['betting_plan']['reasoning'])->not->toContain('Bet Los Angeles to cover');
 });

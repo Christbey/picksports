@@ -134,6 +134,9 @@ export function useTeamTrends<T extends TeamTrendData>(
             Object.keys(data.trends ?? {}).forEach((key) =>
                 categories.add(key),
             );
+            Object.keys(data.locked_trends ?? {}).forEach((key) =>
+                categories.add(key),
+            );
         };
 
         append(homeTrends.value);
@@ -142,12 +145,19 @@ export function useTeamTrends<T extends TeamTrendData>(
         return Array.from(categories).sort();
     });
 
-    const isLockedCategory = (): boolean => {
-        return false;
+    const isLockedCategory = (category: string): boolean => {
+        return Boolean(
+            homeTrends.value?.locked_trends?.[category] ||
+            awayTrends?.value?.locked_trends?.[category],
+        );
     };
 
-    const getRequiredTier = (): string => {
-        return 'free';
+    const getRequiredTier = (category: string): string => {
+        return (
+            homeTrends.value?.locked_trends?.[category] ||
+            awayTrends?.value?.locked_trends?.[category] ||
+            'free'
+        );
     };
 
     return {

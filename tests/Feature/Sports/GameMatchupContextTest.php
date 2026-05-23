@@ -303,3 +303,89 @@ it('treats equivalent nba season type values as the same matchup bucket', functi
         ->and($timeBucket['away']['display'])->toBe('2-1')
         ->and($timeBucket['home']['display'])->toBe('2-0');
 });
+
+it('includes regular season matchup records when the nba game is postseason', function () {
+    $homeTeam = NbaTeam::factory()->create([
+        'abbreviation' => 'CLE',
+        'conference' => 'Eastern',
+        'division' => 'Central',
+    ]);
+    $awayTeam = NbaTeam::factory()->create([
+        'abbreviation' => 'NY',
+        'conference' => 'Eastern',
+        'division' => 'Atlantic',
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => 'Preseason',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2025-10-10',
+        'game_time' => '18:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 118,
+        'away_score' => 101,
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => 'Regular Season',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2025-10-22',
+        'game_time' => '18:00:00',
+        'home_team_id' => $awayTeam->id,
+        'away_team_id' => $homeTeam->id,
+        'home_score' => 119,
+        'away_score' => 111,
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-02-24',
+        'game_time' => '18:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 109,
+        'away_score' => 94,
+    ]);
+
+    NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-05-20',
+        'game_time' => '19:00:00',
+        'home_team_id' => $awayTeam->id,
+        'away_team_id' => $homeTeam->id,
+        'home_score' => 104,
+        'away_score' => 97,
+    ]);
+
+    $currentGame = NbaGame::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-05-23',
+        'game_time' => '19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $response = $this->getJson("/api/v1/nba/games/{$currentGame->id}");
+
+    $response->assertOk();
+    $rows = collect($response->json('data.matchup_context.rows'));
+
+    $headToHead = $rows->firstWhere('key', 'head_to_head');
+    expect($headToHead['subtitle'])->toBe('Current season series before game')
+        ->and($headToHead['away']['display'])->toBe('2-1')
+        ->and($headToHead['home']['display'])->toBe('1-2');
+
+    $overall = $rows->firstWhere('key', 'overall');
+    expect($overall['subtitle'])->toBe('Regular + postseason before game')
+        ->and($overall['away']['display'])->toBe('2-1')
+        ->and($overall['home']['display'])->toBe('1-2');
+});

@@ -177,7 +177,62 @@ it('parses batting stats correctly when h-ab is present and labels are incomplet
         ->home_runs->toBe(1)
         ->walks->toBe(0)
         ->strikeouts->toBe(1)
+        ->stolen_bases->toBeNull()
         ->batting_average->toBeNull()
         ->on_base_percentage->toBe(0.28)
         ->slugging_percentage->toBe(0.6);
+});
+
+it('does not treat pitch count as stolen bases when batting labels omit sb', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '13']);
+    $awayTeam = Team::factory()->create(['espn_id' => '23']);
+
+    $batter = Player::factory()->create([
+        'espn_id' => '9004',
+        'team_id' => $homeTeam->id,
+    ]);
+
+    $game = Game::factory()->create([
+        'espn_event_id' => '401833113',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $gameData = [
+        'boxscore' => [
+            'players' => [
+                [
+                    'team' => ['id' => '13'],
+                    'statistics' => [
+                        [
+                            'type' => 'batting',
+                            'labels' => ['H-AB', 'R', 'H', 'RBI', 'HR', 'BB', 'K', '#P', 'AVG', 'OBP', 'SLG'],
+                            'athletes' => [
+                                [
+                                    'athlete' => ['id' => '9004'],
+                                    'stats' => ['1-5', '1', '1', '3', '1', '0', '1', '18', '.293', '.362', '.569'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ],
+    ];
+
+    app(SyncPlayerStats::class)->execute($gameData, $game);
+
+    $stat = PlayerStat::query()
+        ->where('game_id', $game->id)
+        ->where('player_id', $batter->id)
+        ->first();
+
+    expect($stat)->not->toBeNull()
+        ->hits->toBe(1)
+        ->home_runs->toBe(1)
+        ->rbis->toBe(3)
+        ->stolen_bases->toBeNull()
+        ->batting_average->toBe(0.293)
+        ->on_base_percentage->toBe(0.362)
+        ->slugging_percentage->toBe(0.569);
 });

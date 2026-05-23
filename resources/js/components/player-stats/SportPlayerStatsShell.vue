@@ -103,6 +103,7 @@ interface SportPlayerStatsShellConfig {
     statCategoryOptions?: StatCategoryOption[];
     minGames?: number;
     seasonTypeOptions?: Array<{ value: string; label: string }>;
+    defaultSeasonType?: string;
     playerLink?: (id: number) => HrefLike;
     teamLink?: (id: number) => HrefLike;
 }
@@ -115,7 +116,7 @@ const players = ref<PlayerLeaderboardEntry[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const searchQuery = ref('');
-const selectedSeasonType = ref('');
+const selectedSeasonType = ref(props.config.defaultSeasonType ?? '');
 const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
 const selectedCategory = ref<string>('all');

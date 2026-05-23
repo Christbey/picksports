@@ -37,8 +37,7 @@ abstract class AbstractCalculateTeamTrends
         ?string $seasonType = null,
         ?string $beforeDate = null,
         string $userTier = 'free'
-    ): array
-    {
+    ): array {
         if ($gameCount <= 0) {
             $gameCount = $this->defaultGameCount();
         }
@@ -50,6 +49,7 @@ abstract class AbstractCalculateTeamTrends
         }
 
         $trends = [];
+        $locked = [];
         $enabledCollectors = config('trends.collectors', []);
 
         foreach ($this->collectors() as $collectorClass) {
@@ -57,6 +57,13 @@ abstract class AbstractCalculateTeamTrends
             $key = $collector->key();
 
             if (! ($enabledCollectors[$key] ?? true)) {
+                continue;
+            }
+
+            $requiredTier = $this->requiredTier($key);
+            if (! $this->tierAllows($userTier, $requiredTier)) {
+                $locked[$key] = $requiredTier;
+
                 continue;
             }
 
@@ -70,7 +77,7 @@ abstract class AbstractCalculateTeamTrends
 
         $trends = $this->normalizeTrendOutput($trends);
 
-        return ['trends' => $trends, 'locked' => []];
+        return ['trends' => $trends, 'locked' => $locked];
     }
 
     /**
@@ -103,8 +110,7 @@ abstract class AbstractCalculateTeamTrends
         ?int $season = null,
         ?string $seasonType = null,
         ?string $beforeDate = null
-    ): Collection
-    {
+    ): Collection {
         $query = $this->baseGamesQuery($team, $season, $seasonType, $beforeDate)
             ->with($this->gameRelations())
             ->orderByDesc('game_date')
@@ -123,8 +129,7 @@ abstract class AbstractCalculateTeamTrends
         ?int $season = null,
         ?string $seasonType = null,
         ?string $beforeDate = null
-    ): Builder
-    {
+    ): Builder {
         $model = $this->gameModel();
         $query = $model::query()
             ->where('status', 'STATUS_FINAL')
@@ -199,6 +204,20 @@ abstract class AbstractCalculateTeamTrends
     protected function defaultGameCount(): int
     {
         return static::DEFAULT_GAME_COUNT;
+    }
+
+    protected function requiredTier(string $category): string
+    {
+        return (string) config("trends.tier_requirements.{$category}", 'free');
+    }
+
+    protected function tierAllows(string $userTier, string $requiredTier): bool
+    {
+        $levels = config('trends.tier_levels', []);
+        $userLevel = (int) ($levels[$userTier] ?? $levels['free'] ?? 0);
+        $requiredLevel = (int) ($levels[$requiredTier] ?? $levels['free'] ?? 0);
+
+        return $userLevel >= $requiredLevel;
     }
 
     /**

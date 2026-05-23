@@ -23,7 +23,7 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
         return $gameModel::query()
             ->when($this->requiresFinalStatus(), fn ($query) => $query->where('status', 'STATUS_FINAL'))
             ->whereNotNull('espn_event_id')
-            ->whereDoesntHave('playerStats')
+            ->when(! $this->option('refresh-existing'), fn ($query) => $query->whereDoesntHave('playerStats'))
             ->orderBy('game_date', 'asc')
             ->get();
     }

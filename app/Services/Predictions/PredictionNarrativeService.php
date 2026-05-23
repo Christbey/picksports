@@ -14,7 +14,7 @@ use Throwable;
 
 class PredictionNarrativeService
 {
-    private const TEMPLATE_VERSION = 'template-v5';
+    private const TEMPLATE_VERSION = 'template-v6';
 
     /**
      * Generate deterministic narrative text from NBA prediction data.
@@ -933,10 +933,22 @@ class PredictionNarrativeService
 
         if ($bestBet) {
             $betText = $this->betPickLabel($bestBet, $pickedTeam, $homeTeam, $awayTeam);
+            $bestBetReasoning = $this->ensureSentenceEnding((string) ($bestBet['reasoning'] ?? ''));
 
             return [
                 'bet_pick' => $betText.'.',
-                'reasoning' => trim($bestBet['reasoning'].' '.$whyContext),
+                'reasoning' => trim($bestBetReasoning.' '.$whyContext),
+            ];
+        }
+
+        if ($vegasSpread === null) {
+            return [
+                'bet_pick' => 'No spread bet until a current market line is available.',
+                'reasoning' => sprintf(
+                    '%s Treat %s as a model lean, not a bet recommendation, because there is no Vegas spread to compare against.',
+                    $whyContext,
+                    $pickedTeam
+                ),
             ];
         }
 
@@ -991,6 +1003,17 @@ class PredictionNarrativeService
         $parts[] = rtrim($restContext, '.');
 
         return ucfirst(implode('; ', $parts)).'.';
+    }
+
+    private function ensureSentenceEnding(string $value): string
+    {
+        $value = trim($value);
+
+        if ($value === '' || preg_match('/[.!?]$/', $value) === 1) {
+            return $value;
+        }
+
+        return $value.'.';
     }
 
     private function buildSocialCaption(
@@ -1089,6 +1112,19 @@ class PredictionNarrativeService
     {
         if ($homeRest === $awayRest) {
             return "Rest is even ({$homeRest} days each).";
+        }
+
+        if (max($homeRest, $awayRest) >= 8) {
+            $leader = $homeRest > $awayRest ? $homeTeam : $awayTeam;
+            $longRest = max($homeRest, $awayRest);
+            $shortRest = min($homeRest, $awayRest);
+
+            return sprintf(
+                'Schedule note: %s carry the longer layoff (%d vs %d days), which is useful rest but also a rhythm risk.',
+                $leader,
+                $longRest,
+                $shortRest
+            );
         }
 
         if ($homeRest > $awayRest) {

@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\NBA\Game;
+use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\SubscriptionTier;
 use App\Models\User;
@@ -37,6 +39,30 @@ function seedTrendTiers(): void
         'is_active' => true,
         'sort_order' => 1,
     ]);
+
+    SubscriptionTier::query()->create([
+        'name' => 'Pro',
+        'slug' => 'pro',
+        'description' => 'Pro tier',
+        'features' => ['predictions_per_day' => 100],
+        'permissions' => [],
+        'data_permissions' => ['spread', 'win_probability', 'trends'],
+        'is_default' => false,
+        'is_active' => true,
+        'sort_order' => 2,
+    ]);
+
+    SubscriptionTier::query()->create([
+        'name' => 'Premium',
+        'slug' => 'premium',
+        'description' => 'Premium tier',
+        'features' => ['predictions_per_day' => 250],
+        'permissions' => [],
+        'data_permissions' => ['spread', 'win_probability', 'trends'],
+        'is_default' => false,
+        'is_active' => true,
+        'sort_order' => 3,
+    ]);
 }
 
 it('uses default tier slug for trends when authenticated user has no tier role', function () {
@@ -67,4 +93,98 @@ it('uses synced tier role as effective trends tier for authenticated users', fun
     $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
         ->assertOk()
         ->assertJsonPath('user_tier', 'basic');
+});
+
+it('locks trend categories above the authenticated user tier', function () {
+    seedTrendTiers();
+    Permission::findOrCreate('view-nba-predictions', 'web');
+
+    $team = Team::factory()->create(['abbreviation' => 'CLE']);
+    $opponent = Team::factory()->create(['abbreviation' => 'NY']);
+    $user = User::factory()->create();
+    $user->givePermissionTo('view-nba-predictions');
+    Sanctum::actingAs($user);
+
+    for ($i = 1; $i <= 6; $i++) {
+        Game::factory()->create([
+            'home_team_id' => $team->id,
+            'away_team_id' => $opponent->id,
+            'season' => 2026,
+            'season_type' => '3',
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i),
+            'home_score' => 112,
+            'away_score' => 101,
+            'home_linescores' => [
+                ['period' => 1, 'value' => 28],
+                ['period' => 2, 'value' => 27],
+                ['period' => 3, 'value' => 30],
+                ['period' => 4, 'value' => 27],
+            ],
+            'away_linescores' => [
+                ['period' => 1, 'value' => 25],
+                ['period' => 2, 'value' => 24],
+                ['period' => 3, 'value' => 26],
+                ['period' => 4, 'value' => 26],
+            ],
+        ]);
+    }
+
+    $response = $this->getJson(
+        "/api/v1/nba/teams/{$team->id}/trends?games=season&season=2026&season_type=3"
+    );
+
+    $response->assertOk()
+        ->assertJsonPath('user_tier', 'free')
+        ->assertJsonMissingPath('trends.quarters')
+        ->assertJsonMissingPath('trends.advanced')
+        ->assertJsonPath('locked_trends.quarters', 'basic')
+        ->assertJsonPath('locked_trends.advanced', 'pro')
+        ->assertJsonPath('locked_trends.momentum', 'premium');
+});
+
+it('labels spread and totals trends as model-based', function () {
+    seedTrendTiers();
+    Role::findOrCreate('premium', 'web');
+    Permission::findOrCreate('view-nba-predictions', 'web');
+
+    $team = Team::factory()->create(['abbreviation' => 'CLE']);
+    $opponent = Team::factory()->create(['abbreviation' => 'NY']);
+    $user = User::factory()->create();
+    $user->assignRole('premium');
+    $user->givePermissionTo('view-nba-predictions');
+    Sanctum::actingAs($user);
+
+    for ($i = 1; $i <= 6; $i++) {
+        $game = Game::factory()->create([
+            'home_team_id' => $team->id,
+            'away_team_id' => $opponent->id,
+            'season' => 2026,
+            'season_type' => '3',
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i),
+            'home_score' => 112,
+            'away_score' => 101,
+        ]);
+
+        Prediction::factory()->create([
+            'game_id' => $game->id,
+            'predicted_spread' => -5.0,
+            'predicted_total' => 205.0,
+        ]);
+    }
+
+    $response = $this->getJson(
+        "/api/v1/nba/teams/{$team->id}/trends?games=season&season=2026&season_type=3"
+    );
+
+    $response->assertOk();
+
+    $advanced = implode(' ', $response->json('trends.advanced') ?? []);
+    $totals = implode(' ', $response->json('trends.totals') ?? []);
+
+    expect($advanced)->toContain('against the model spread')
+        ->and($advanced)->not->toContain('against the spread')
+        ->and($totals)->toContain('OVER the model total')
+        ->and($totals)->not->toContain('with totals');
 });

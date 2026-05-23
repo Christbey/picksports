@@ -5,6 +5,8 @@ import NBATeamController from '@/actions/App/Http/Controllers/NBA/TeamController
 import NFLGameController from '@/actions/App/Http/Controllers/NFL/GameController';
 import NFLTeamController from '@/actions/App/Http/Controllers/NFL/TeamController';
 
+const currentMlbSeason = new Date().getFullYear();
+
 export const nbaPlayerPageConfig = {
     sportLabel: 'NBA',
     predictionsHref: '/nba/predictions',
@@ -156,8 +158,8 @@ export const mlbPlayerPageConfig = {
     gameLink: (id: number) => MLBGameController.url(id),
     playerEndpoint: (playerId: number) => `/api/v1/mlb/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
-        `/api/v1/mlb/players/${playerId}/stats`,
-    leaderboardEndpoint: '/api/v1/mlb/player-stats/leaderboard',
+        `/api/v1/mlb/players/${playerId}/stats?season=${currentMlbSeason}&season_type=2&stat_type=batting&per_page=200`,
+    leaderboardEndpoint: `/api/v1/mlb/player-stats/leaderboard?season=${currentMlbSeason}&season_type=2&stat_type=batting`,
     summaryCards: [
         {
             label: 'H/G',

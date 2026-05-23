@@ -116,7 +116,7 @@ class SyncPlayerStats
             'rbis' => $this->toInt($this->mappedStat($mapped, ['rbi', 'rbis'])) ?? $this->intAt($stats, 3 + $fallbackOffset),
             'walks' => $this->toInt($this->mappedStat($mapped, ['bb', 'walks'])) ?? $this->intAt($stats, 5 + $fallbackOffset),
             'strikeouts' => $this->toInt($this->mappedStat($mapped, ['k', 'so', 'strikeouts'])) ?? $this->intAt($stats, 6 + $fallbackOffset),
-            'stolen_bases' => $this->toInt($this->mappedStat($mapped, ['sb', 'stolenbases'])) ?? $this->intAt($stats, 7 + $fallbackOffset),
+            'stolen_bases' => $this->toInt($this->mappedStat($mapped, ['sb', 'stolenbases'])),
             'caught_stealing' => $this->toInt($this->mappedStat($mapped, ['cs', 'caughtstealing'])),
             'batting_average' => $this->sanitizeRate($battingAverage),
             'on_base_percentage' => $this->sanitizeRate($onBasePercentage),

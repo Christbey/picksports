@@ -82,6 +82,38 @@ export interface PredictionAnalysisSummary {
     } | null;
 }
 
+export interface AiPredictionAnalysisSummary {
+    id: number;
+    as_of_date?: string | null;
+    market: string;
+    recommendation: string;
+    bet_classification: string;
+    ai_confidence: number;
+    analysis_confidence: number;
+    summary: string;
+    key_factors: string[];
+    risk_flags: string[];
+    reason_codes: string[];
+    market_notes?: {
+        moneyline?: string | null;
+        spread?: string | null;
+        total?: string | null;
+        props?: string | null;
+    };
+    calculated_edge?: {
+        predicted_spread?: number | null;
+        predicted_total?: number | null;
+        home_win_probability?: number | null;
+        pick_win_probability?: number | null;
+        confidence_score?: number | null;
+        vegas_spread?: number | null;
+        spread_edge?: number | null;
+    };
+    provider?: string | null;
+    model?: string | null;
+    created_at?: string | null;
+}
+
 export interface LivePredictionData {
     isLive: boolean;
     homeScore?: number | null;
@@ -158,6 +190,7 @@ export interface PredictionListItem {
     betting_value?: BettingRecommendation[];
     betting_value_summary?: BettingValueSummary;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    ai_analysis?: AiPredictionAnalysisSummary | null;
     created_at?: string | null;
     updated_at?: string | null;
     home_elo?: number;

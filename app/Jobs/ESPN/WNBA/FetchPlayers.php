@@ -15,6 +15,8 @@ class FetchPlayers implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $timeout = 300;
+
     public function __construct(
         public ?string $teamEspnId = null
     ) {}

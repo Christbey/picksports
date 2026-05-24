@@ -17,32 +17,36 @@ class TeamStat extends Model
     protected $fillable = [
         'team_id',
         'game_id',
-        'points',
+        'team_type',
         'field_goals_made',
         'field_goals_attempted',
-        'field_goal_percentage',
-        'three_pointers_made',
-        'three_pointers_attempted',
-        'three_point_percentage',
+        'three_point_made',
+        'three_point_attempted',
         'free_throws_made',
         'free_throws_attempted',
-        'free_throw_percentage',
         'rebounds',
         'offensive_rebounds',
         'defensive_rebounds',
         'assists',
+        'turnovers',
         'steals',
         'blocks',
-        'turnovers',
         'fouls',
+        'points',
+        'possessions',
+        'fast_break_points',
+        'points_in_paint',
+        'second_chance_points',
+        'bench_points',
+        'biggest_lead',
+        'times_tied',
+        'lead_changes',
     ];
 
     protected function casts(): array
     {
         return [
-            'field_goal_percentage' => 'decimal:1',
-            'three_point_percentage' => 'decimal:1',
-            'free_throw_percentage' => 'decimal:1',
+            'possessions' => 'decimal:1',
         ];
     }
 

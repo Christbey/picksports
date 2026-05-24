@@ -32,6 +32,12 @@ $config['features'] = [
         'model' => env('AI_DAILY_DIGEST_SUMMARY_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
         'timeout_seconds' => env('AI_DAILY_DIGEST_SUMMARY_TIMEOUT_SECONDS', 8),
     ],
+    'daily_prediction_analysis' => [
+        'enabled' => (bool) env('AI_DAILY_PREDICTION_ANALYSIS_ENABLED', true),
+        'provider' => env('AI_DAILY_PREDICTION_ANALYSIS_PROVIDER', 'openai'),
+        'model' => env('AI_DAILY_PREDICTION_ANALYSIS_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+        'timeout_seconds' => env('AI_DAILY_PREDICTION_ANALYSIS_TIMEOUT_SECONDS', 12),
+    ],
 ];
 
 return $config;

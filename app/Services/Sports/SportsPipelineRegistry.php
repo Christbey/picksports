@@ -14,7 +14,7 @@ class SportsPipelineRegistry
     /**
      * @var array<int, string>
      */
-    private const SUPPORTED_MODES = ['sync', 'predict', 'full', 'live'];
+    private const SUPPORTED_MODES = ['sync', 'predict', 'full', 'live', 'ai'];
 
     /**
      * @return array<int, string>
@@ -82,11 +82,13 @@ class SportsPipelineRegistry
         $syncSteps = $this->syncSteps($sport, $context);
         $predictSteps = $this->predictSteps($sport, $context);
         $liveSteps = $this->liveSteps($sport, $context);
+        $aiSteps = $this->aiSteps($sport, $context);
 
         return match ($mode) {
             'sync' => $syncSteps,
             'predict' => $predictSteps,
             'live' => $liveSteps,
+            'ai' => $aiSteps,
             'full' => array_values(array_merge($syncSteps, $predictSteps)),
             default => [],
         };
@@ -235,9 +237,14 @@ class SportsPipelineRegistry
                 ]),
             ],
             'wnba' => [
-                $this->step('Sync current week', 'espn:sync-wnba-current'),
+                $this->step('Sync scoreboard window', 'espn:sync-wnba-games-scoreboard', [
+                    '--from-date' => $referenceDate->format('Y-m-d'),
+                    '--to-date' => $rangeEnd,
+                ]),
+                $this->step('Sync game details', 'espn:sync-wnba-game-details'),
                 $this->step('Sync injuries', 'espn:sync-wnba-injuries'),
                 $this->step('Sync odds', 'wnba:sync-odds'),
+                $this->step('Sync player props', 'wnba:sync-player-props'),
             ],
             'cfb' => [
                 $this->step('Sync current week', 'espn:sync-cfb-current'),
@@ -354,6 +361,7 @@ class SportsPipelineRegistry
             ],
             'wnba' => [
                 $this->step('Live scoreboard sync', 'espn:sync-wnba-games-scoreboard', $scoreboardArguments),
+                $this->step('Sync game details', 'espn:sync-wnba-game-details'),
                 $this->step('Sync injuries', 'espn:sync-wnba-injuries'),
             ],
             'cfb' => [
@@ -363,6 +371,21 @@ class SportsPipelineRegistry
             ],
             default => [],
         };
+    }
+
+    /**
+     * @param  array{reference_date: Carbon, season: int, week: int, current_year: int, fall_season_year: int}  $context
+     * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
+     */
+    private function aiSteps(string $sport, array $context): array
+    {
+        return [
+            $this->step('Analyze daily predictions with AI', 'sports:ai-daily-predictions', [
+                '--sport' => [$sport],
+                '--date' => $context['reference_date']->format('Y-m-d'),
+                '--season' => $this->seasonForSport($sport, $context),
+            ]),
+        ];
     }
 
     /**

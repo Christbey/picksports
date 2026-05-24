@@ -4,6 +4,7 @@ namespace App\Services\AI;
 
 use App\AI\Agents\DailyDigestSummaryAgent;
 use App\AI\Agents\PlayerPropNarrativeAgent;
+use App\AI\Agents\SportsDailyPredictionAnalysisAgent;
 use App\AI\Agents\SportsPredictionNarrativeAgent;
 use App\AI\Agents\ValidationReviewSummaryAgent;
 use App\Models\ValidationFinding;
@@ -14,6 +15,80 @@ use Throwable;
 
 class SportsAiContentService
 {
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{
+     *   recommendation:string,
+     *   bet_classification:string,
+     *   ai_confidence:int,
+     *   analysis_confidence:int,
+     *   summary:string,
+     *   key_factors:array<int,string>,
+     *   risk_flags:array<int,string>,
+     *   reason_codes:array<int,string>,
+     *   market_notes:array{moneyline:string|null,spread:string|null,total:string|null,props:string|null},
+     *   generated_by:string
+     * }|null
+     */
+    public function generateDailyPredictionAnalysis(
+        array $payload,
+        ?string $provider = null,
+        ?string $model = null,
+    ): ?array {
+        if (! config('ai.features.daily_prediction_analysis.enabled', true)) {
+            return null;
+        }
+
+        $provider ??= (string) config('ai.features.daily_prediction_analysis.provider', 'openai');
+        $model ??= (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
+
+        if (! $this->providerIsConfigured($provider)) {
+            return null;
+        }
+
+        try {
+            $response = app(SportsDailyPredictionAnalysisAgent::class)->prompt(
+                $this->buildDailyPredictionAnalysisPrompt($payload),
+                provider: $provider,
+                model: $model,
+            );
+
+            if (! $response instanceof StructuredAgentResponse) {
+                logger()->warning('Daily prediction analysis agent returned an unexpected response type.', [
+                    'provider' => $provider,
+                    'response_class' => $response::class,
+                ]);
+
+                return null;
+            }
+
+            $analysis = $this->normalizeDailyPredictionAnalysisPayload($response->toArray());
+
+            if (! $analysis) {
+                logger()->warning('Daily prediction analysis response failed normalization.', [
+                    'provider' => $provider,
+                    'model' => $response->meta->model ?? $model,
+                ]);
+
+                return null;
+            }
+
+            $analysis['generated_by'] = (string) ($response->meta->provider ?? $provider)
+                .':'
+                .(string) ($response->meta->model ?? $model);
+
+            return $analysis;
+        } catch (Throwable $exception) {
+            logger()->warning('Daily prediction analysis request threw exception.', [
+                'provider' => $provider,
+                'model' => $model,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
     /**
      * @return array{
      *   summary:string,
@@ -331,6 +406,53 @@ class SportsAiContentService
 
     /**
      * @param  array<string, mixed>  $decoded
+     * @return array{
+     *   recommendation:string,
+     *   bet_classification:string,
+     *   ai_confidence:int,
+     *   analysis_confidence:int,
+     *   summary:string,
+     *   key_factors:array<int,string>,
+     *   risk_flags:array<int,string>,
+     *   reason_codes:array<int,string>,
+     *   market_notes:array{moneyline:string|null,spread:string|null,total:string|null,props:string|null}
+     * }|null
+     */
+    private function normalizeDailyPredictionAnalysisPayload(array $decoded): ?array
+    {
+        $recommendation = trim((string) ($decoded['recommendation'] ?? ''));
+        $classification = trim((string) ($decoded['bet_classification'] ?? ''));
+        $summary = trim((string) ($decoded['summary'] ?? ''));
+        $keyFactors = $this->stringList($decoded['key_factors'] ?? []);
+        $riskFlags = $this->stringList($decoded['risk_flags'] ?? []);
+        $reasonCodes = $this->stringList($decoded['reason_codes'] ?? []);
+
+        if ($recommendation === '' || $classification === '' || $summary === '' || $keyFactors === [] || $reasonCodes === []) {
+            return null;
+        }
+
+        $marketNotes = is_array($decoded['market_notes'] ?? null) ? $decoded['market_notes'] : [];
+
+        return [
+            'recommendation' => Str::of($recommendation)->lower()->replace(' ', '_')->toString(),
+            'bet_classification' => Str::of($classification)->lower()->replace(' ', '_')->toString(),
+            'ai_confidence' => $this->score($decoded['ai_confidence'] ?? 0),
+            'analysis_confidence' => $this->score($decoded['analysis_confidence'] ?? 0),
+            'summary' => $summary,
+            'key_factors' => array_slice($keyFactors, 0, 8),
+            'risk_flags' => array_slice($riskFlags, 0, 8),
+            'reason_codes' => array_slice($reasonCodes, 0, 12),
+            'market_notes' => [
+                'moneyline' => $this->nullableString($marketNotes['moneyline'] ?? null),
+                'spread' => $this->nullableString($marketNotes['spread'] ?? null),
+                'total' => $this->nullableString($marketNotes['total'] ?? null),
+                'props' => $this->nullableString($marketNotes['props'] ?? null),
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $decoded
      * @return array{headline:string,intro:string,highlights:array<int,string>}|null
      */
     private function normalizeDailyDigestPayload(array $decoded): ?array
@@ -448,6 +570,32 @@ class SportsAiContentService
     }
 
     /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function buildDailyPredictionAnalysisPrompt(array $payload): string
+    {
+        $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+
+        return <<<PROMPT
+Analyze this daily sports prediction packet.
+
+Rules:
+- Use only the supplied JSON.
+- Treat calculated_model as the deterministic model output.
+- Your job is to audit, explain, and classify the bet quality, not to invent a new projection.
+- If price/odds are missing, classify conservatively.
+- Separate calculated edge from analysis confidence.
+- Recommendation must be one of: moneyline, spread, total, prop, parlay_piece, pass.
+- Bet classification must be one of: bet, lean, watch, pass.
+- Include risk flags whenever data is stale, missing, contradictory, or fragile.
+- Keep the summary concise and actionable for a daily betting workflow.
+
+Prediction packet:
+{$json}
+PROMPT;
+    }
+
+    /**
      * @param  iterable<ValidationFinding>  $findings
      */
     private function buildValidationReviewPrompt(iterable $findings): string
@@ -488,5 +636,32 @@ Use only the supplied findings. Do not invent new incidents.
 Findings:
 {$lines}
 PROMPT;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function stringList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(fn ($item) => trim((string) $item), $value),
+            fn (string $item): bool => $item !== ''
+        ));
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+
+        return $value !== '' ? $value : null;
+    }
+
+    private function score(mixed $value): int
+    {
+        return max(0, min(100, (int) round((float) $value)));
     }
 }

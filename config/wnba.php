@@ -30,7 +30,7 @@ return [
     */
 
     'season' => [
-        'default' => env('WNBA_DEFAULT_SEASON', 2025),
+        'default' => env('WNBA_DEFAULT_SEASON', (int) date('Y')),
         'types' => [
             'preseason' => 1,
             'regular' => 2,
@@ -167,6 +167,7 @@ return [
         // WNBA typically has lower scoring than NBA
         'default_efficiency' => 98.0,
         'total_tempo_regression_weight' => 0.35,
+        'use_previous_season_metrics_fallback' => env('WNBA_USE_PREVIOUS_SEASON_METRICS_FALLBACK', true),
 
         // Logistic function coefficient for win probability
         'spread_to_probability_coefficient' => 4,
@@ -192,6 +193,25 @@ return [
         'injury_epa_min_multiplier' => 0.50,
         'injury_epa_max_multiplier' => 2.00,
         'injury_epa_fallback_multiplier' => 1.00,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Betting Value Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Thresholds for surfacing WNBA betting recommendations from the shared
+    | market-value calculator. WNBA markets can be thinner than NBA markets, so
+    | these stay conservative enough to avoid tiny stale-line edges.
+    |
+    */
+
+    'betting' => [
+        'edge_thresholds' => [
+            'spread' => env('WNBA_BETTING_SPREAD_EDGE_THRESHOLD', 2.0),
+            'total' => env('WNBA_BETTING_TOTAL_EDGE_THRESHOLD', 3.5),
+            'moneyline' => env('WNBA_BETTING_MONEYLINE_EDGE_THRESHOLD', 0.05),
+        ],
     ],
 
 ];

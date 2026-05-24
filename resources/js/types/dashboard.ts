@@ -1,4 +1,5 @@
 import type {
+    AiPredictionAnalysisSummary,
     BettingRecommendation,
     PredictionAnalysisSummary,
 } from './sports';
@@ -22,6 +23,7 @@ export interface DashboardPrediction {
     betting_value?: BettingRecommendation[];
     betting_value_debug?: string | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    ai_analysis?: AiPredictionAnalysisSummary | null;
     updated_at?: string | null;
     // Live game data
     is_live?: boolean;

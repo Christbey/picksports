@@ -126,10 +126,12 @@ return [
         ],
         'wnba' => [
             'namespace' => 'WNBA',
-            'capabilities' => [],
+            'capabilities' => [
+                'player_stats_leaderboard' => true,
+            ],
             'web' => [
                 'predictions_page' => 'WNBA/Predictions',
-                'player_props' => false,
+                'player_props' => true,
                 'pages' => [
                     'team-metrics' => 'WNBA/TeamMetrics',
                     'injuries' => 'WNBA/Injuries',

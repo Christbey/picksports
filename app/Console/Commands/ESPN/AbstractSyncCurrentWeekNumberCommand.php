@@ -62,7 +62,7 @@ abstract class AbstractSyncCurrentWeekNumberCommand extends Command
             return 1;
         }
 
-        $weekNumber = $now->diffInWeeks($seasonStart) + 1;
+        $weekNumber = $seasonStart->diffInWeeks($now) + 1;
 
         return min($weekNumber, $this->maxRegularSeasonWeeks());
     }

@@ -1263,6 +1263,17 @@ class PlayerPropAnalyzer
                 'odds_sport_key' => 'basketball_ncaab',
                 'league_pace_baseline' => 69.0,
             ],
+            'WNBA' => [
+                'game_model' => 'App\\Models\\WNBA\\Game',
+                'player_model' => 'App\\Models\\WNBA\\Player',
+                'player_stat_model' => 'App\\Models\\WNBA\\PlayerStat',
+                'team_model' => 'App\\Models\\WNBA\\Team',
+                'team_metric_model' => 'App\\Models\\WNBA\\TeamMetric',
+                'team_stat_model' => 'App\\Models\\WNBA\\TeamStat',
+                'player_prop_model' => 'App\\Models\\WNBA\\PlayerProp',
+                'odds_sport_key' => 'basketball_wnba',
+                'league_pace_baseline' => 80.0,
+            ],
             default => throw new \InvalidArgumentException("Unsupported sport: {$sport}"),
         };
     }

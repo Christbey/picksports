@@ -55,6 +55,7 @@ class PredictionResource extends AbstractPredictionResource
 
         $data = $this->appendDepthChartContext($data);
         $data = $this->appendNarrativeFields($data, $request, 'nfl');
+        $data = $this->appendAiAnalysisFields($data, $request, 'nfl');
 
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }

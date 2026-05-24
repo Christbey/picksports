@@ -47,6 +47,7 @@ class PredictionResource extends AbstractPredictionResource
         }
 
         $data = $this->appendNarrativeFields($data, $request, 'cfb');
+        $data = $this->appendAiAnalysisFields($data, $request, 'cfb');
 
         return $this->appendStandardTimestamps($data);
     }

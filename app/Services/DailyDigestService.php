@@ -30,7 +30,7 @@ class DailyDigestService
         'wcbb' => ['prediction_model' => \App\Models\WCBB\Prediction::class, 'player_props' => false],
         'mlb' => ['prediction_model' => \App\Models\MLB\Prediction::class, 'player_props' => true],
         'cfb' => ['prediction_model' => \App\Models\CFB\Prediction::class, 'player_props' => false],
-        'wnba' => ['prediction_model' => \App\Models\WNBA\Prediction::class, 'player_props' => false],
+        'wnba' => ['prediction_model' => \App\Models\WNBA\Prediction::class, 'player_props' => true],
     ];
 
     private const DIGEST_CONFIDENCE_FLOOR = 50.0;

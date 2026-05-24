@@ -10,7 +10,7 @@ class RunPipelineCommand extends Command
 {
     protected $signature = 'sports:run-pipeline
         {sport : Sport domain (nba, nfl, mlb, cbb, wcbb, wnba, cfb)}
-        {--mode=full : Pipeline mode (sync, predict, full, live)}
+        {--mode=full : Pipeline mode (sync, predict, full, live, ai)}
         {--season= : Override season/year used for season-aware commands}
         {--week= : Override week used for sport-specific pipeline steps}
         {--date= : Reference date for date-aware pipeline steps (YYYY-MM-DD)}

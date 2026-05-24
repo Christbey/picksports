@@ -28,6 +28,11 @@ class BettingRecommendationsController extends Controller
         return $this->renderPlayerProps('CBB', $request, 'CBB/PlayerProps');
     }
 
+    public function wnba(Request $request): Response
+    {
+        return $this->renderPlayerProps('WNBA', $request, 'WNBA/PlayerProps');
+    }
+
     protected function renderPlayerProps(string $sport, Request $request, string $component): Response
     {
         $validated = $request->validate([

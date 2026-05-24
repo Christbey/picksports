@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 class ReportPlayerPropsCalibrationCommand extends Command
 {
     protected $signature = 'sports:report-player-props-calibration
-        {sport? : One of nba,cbb,nfl,mlb (omit for all)}
+        {sport? : One of nba,cbb,wnba,nfl,mlb (omit for all)}
         {--season= : Filter by season}
         {--min-sample=30 : Minimum sample per market to include in market table}';
 
@@ -21,6 +21,7 @@ class ReportPlayerPropsCalibrationCommand extends Command
     private const TABLES = [
         'nba' => ['prop_table' => 'nba_player_props', 'game_table' => 'nba_games'],
         'cbb' => ['prop_table' => 'cbb_player_props', 'game_table' => 'cbb_games'],
+        'wnba' => ['prop_table' => 'wnba_player_props', 'game_table' => 'wnba_games'],
         'nfl' => ['prop_table' => 'nfl_player_props', 'game_table' => 'nfl_games'],
         'mlb' => ['prop_table' => 'mlb_player_props', 'game_table' => 'mlb_games'],
     ];

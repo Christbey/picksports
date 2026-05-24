@@ -15,5 +15,5 @@ class SyncPlayers extends AbstractSyncPlayers
 
     protected const PLAYER_DTO_CLASS = PlayerData::class;
 
-    protected const ATHLETES_NESTED_UNDER_GROUP_ITEMS = true;
+    protected const ATHLETES_NESTED_UNDER_GROUP_ITEMS = false;
 }

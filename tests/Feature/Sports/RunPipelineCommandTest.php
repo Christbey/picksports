@@ -28,6 +28,22 @@ it('runs the cfb predict pipeline in the expected order', function () {
         ->assertSuccessful();
 });
 
+it('prints a dry run plan for explicit ai analysis mode', function () {
+    artisan('sports:run-pipeline mlb --mode=ai --season=2026 --date=2026-05-23 --dry-run')
+        ->expectsOutput('Pipeline: MLB [ai]')
+        ->expectsOutput('Dry run only. No commands will be executed.')
+        ->expectsOutputToContain('sports:ai-daily-predictions --sport=mlb --date=2026-05-23 --season=2026')
+        ->assertSuccessful();
+});
+
+it('prints a dry run ai analysis plan for wnba', function () {
+    artisan('sports:run-pipeline wnba --mode=ai --season=2026 --date=2026-06-10 --dry-run')
+        ->expectsOutput('Pipeline: WNBA [ai]')
+        ->expectsOutput('Dry run only. No commands will be executed.')
+        ->expectsOutputToContain('sports:ai-daily-predictions --sport=wnba --date=2026-06-10 --season=2026')
+        ->assertSuccessful();
+});
+
 it('fails for an unsupported sport', function () {
     artisan('sports:run-pipeline soccer --mode=full')
         ->expectsOutput('Unsupported sport [soccer]. Supported sports: nba, nfl, mlb, cbb, wcbb, wnba, cfb.')

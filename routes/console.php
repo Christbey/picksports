@@ -600,6 +600,12 @@ $scheduleDailySeasonJob(
     $mlbInSeason,
     'MLB: Snapshot Bet Filter'
 );
+$scheduleDailySeasonJob(
+    "sports:ai-daily-predictions --sport=mlb --season={$currentYear}",
+    '06:30',
+    $mlbInSeason,
+    'MLB: AI Daily Prediction Analysis'
+);
 $scheduleOddsSyncWindow(
     "sports:sync-futures-odds --sport=mlb --season={$currentYear}",
     $mlbInSeason,
@@ -622,17 +628,17 @@ $scheduleHalfHourlyWindowJob(
 
 // WNBA
 $scheduleSportPipeline(
-    'espn:sync-wnba-current',
+    'espn:sync-wnba-games-scoreboard --from-date='.date('Y-m-d').' --to-date='.date('Y-m-d', strtotime('+7 days')),
     '01:00',
-    'WNBA: Sync Current Week',
+    'WNBA: Sync Scoreboard (Today + 7 Days)',
     'espn:sync-wnba-games-scoreboard',
     '19:00',
     '23:00',
     'WNBA: Live Scoreboard Sync',
-    null,
-    null,
-    null,
-    null,
+    'espn:sync-wnba-game-details',
+    '19:00',
+    '23:00',
+    'WNBA: Sync Game Details',
     'wnba',
     'WNBA',
     $currentYear,
@@ -644,7 +650,17 @@ $scheduleSportPipeline(
         'generate-predictions' => '02:00',
     ],
     'wnba:sync-odds',
-    'WNBA: Sync Odds'
+    'WNBA: Sync Odds',
+    'wnba:sync-player-props',
+    10,
+    15,
+    'WNBA: Sync Player Props'
+);
+$scheduleDailySeasonJob(
+    "sports:ai-daily-predictions --sport=wnba --season={$currentYear}",
+    '02:15',
+    $wnbaInSeason,
+    'WNBA: AI Daily Prediction Analysis'
 );
 $scheduleHalfHourlyWindowJob(
     'espn:sync-wnba-injuries',

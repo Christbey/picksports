@@ -17,6 +17,12 @@ const configs: Record<string, PlayerPropsPageConfig> = {
             'Data-driven player prop bets based on statistical analysis and recent form',
         sportSlug: 'cbb',
     },
+    WNBA: {
+        sportLabel: 'WNBA',
+        description:
+            'Data-driven player prop bets based on statistical analysis and recent form',
+        sportSlug: 'wnba',
+    },
     NFL: {
         sportLabel: 'NFL',
         description:

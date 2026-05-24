@@ -2,10 +2,12 @@
 
 namespace App\Http\Resources\Sports;
 
+use App\Models\SportsAiPredictionAnalysis;
 use App\Services\Predictions\PredictionNarrativeService;
 use App\Support\PredictionFieldAccess;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractPredictionResource extends JsonResource
 {
@@ -138,6 +140,54 @@ abstract class AbstractPredictionResource extends JsonResource
         $data['narrative'] = $storedNarrative && $storedHash !== '' && hash_equals($storedHash, $currentHash)
             ? $storedNarrative
             : $narrativeService->forSport($this->resource, $game, $sport, false);
+
+        return $data;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
+    protected function appendAiAnalysisFields(array $data, Request $request, string $sport): array
+    {
+        if (! $this->hasTierPermission($request, 'betting_value') || ! Schema::hasTable('sports_ai_prediction_analyses')) {
+            $data['ai_analysis'] = null;
+
+            return $data;
+        }
+
+        $analysis = SportsAiPredictionAnalysis::query()
+            ->where('sport', strtolower($sport))
+            ->where('prediction_id', (int) $this->id)
+            ->where('market', 'game')
+            ->latest('as_of_date')
+            ->latest('created_at')
+            ->first();
+
+        if (! $analysis) {
+            $data['ai_analysis'] = null;
+
+            return $data;
+        }
+
+        $data['ai_analysis'] = [
+            'id' => (int) $analysis->id,
+            'as_of_date' => $analysis->as_of_date?->toDateString(),
+            'market' => $analysis->market,
+            'recommendation' => $analysis->recommendation,
+            'bet_classification' => $analysis->bet_classification,
+            'ai_confidence' => (int) $analysis->ai_confidence,
+            'analysis_confidence' => (int) $analysis->analysis_confidence,
+            'summary' => $analysis->summary,
+            'key_factors' => array_values((array) ($analysis->key_factors ?? [])),
+            'risk_flags' => array_values((array) ($analysis->risk_flags ?? [])),
+            'reason_codes' => array_values((array) ($analysis->reason_codes ?? [])),
+            'market_notes' => $analysis->market_notes ?? [],
+            'calculated_edge' => $analysis->calculated_edge ?? [],
+            'provider' => $analysis->provider,
+            'model' => $analysis->model,
+            'created_at' => $analysis->created_at?->toIso8601String(),
+        ];
 
         return $data;
     }

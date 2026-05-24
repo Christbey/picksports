@@ -19,5 +19,5 @@ class GeneratePredictionsCommand extends AbstractGeneratePredictionsCommand
 
     protected const PREDICTION_MODEL_CLASS = Prediction::class;
 
-    protected const TEAM_NAME_FIELDS = ['city', 'name'];
+    protected const TEAM_NAME_FIELDS = ['location', 'name'];
 }

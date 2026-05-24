@@ -109,6 +109,7 @@ class PlayerPropController extends AbstractSportsApiController
             'cbb' => 'CBB',
             'nfl' => 'NFL',
             'mlb' => 'MLB',
+            'wnba' => 'WNBA',
             default => throw new \InvalidArgumentException("Unsupported player props sport: {$sportSlug}"),
         };
     }

@@ -4,6 +4,7 @@ use App\Http\Resources\MLB\PredictionResource;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
+use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Permission;
@@ -16,6 +17,7 @@ beforeEach(function () {
     Permission::findOrCreate('view-prediction-confidence-score', 'web');
     Permission::findOrCreate('view-prediction-home-elo', 'web');
     Permission::findOrCreate('view-prediction-away-elo', 'web');
+    Permission::findOrCreate('view-prediction-betting-value', 'web');
 });
 
 test('mlb prediction resource exposes depth chart starter fallback context', function () {
@@ -70,5 +72,68 @@ test('mlb prediction resource exposes depth chart starter fallback context', fun
         ->and($data['depth_chart_context']['home_depth_chart_fallback_used'])->toBeTrue()
         ->and($data['depth_chart_context']['away_pitcher_source'])->toBe('probable_starter')
         ->and(collect($data['narrative']['key_points'])->contains(fn ($point) => str_contains($point, 'Depth-chart starter context')))
-            ->toBeTrue();
+        ->toBeTrue();
+});
+
+test('mlb prediction resource exposes stored daily ai analysis with betting value permission', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo('view-prediction-betting-value');
+
+    $home = Team::factory()->create(['location' => 'San Diego', 'name' => 'Padres']);
+    $away = Team::factory()->create(['location' => 'Athletics', 'name' => 'Athletics']);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-05-23',
+    ]);
+
+    $prediction = Prediction::query()->create([
+        'game_id' => $game->id,
+        'home_team_elo' => 1510,
+        'away_team_elo' => 1490,
+        'home_pitcher_elo' => 1520,
+        'away_pitcher_elo' => 1480,
+        'home_combined_elo' => 1515,
+        'away_combined_elo' => 1485,
+        'predicted_spread' => 1.2,
+        'predicted_total' => 7.9,
+        'win_probability' => 0.56,
+        'confidence_score' => 56,
+    ])->load('game.homeTeam', 'game.awayTeam');
+
+    SportsAiPredictionAnalysis::query()->create([
+        'sport' => 'mlb',
+        'game_id' => $game->id,
+        'prediction_id' => $prediction->id,
+        'game_date' => '2026-05-23',
+        'as_of_date' => '2026-05-23',
+        'market' => 'game',
+        'provider' => 'openai',
+        'model' => 'gpt-4o-mini',
+        'input_hash' => str_repeat('a', 64),
+        'raw_payload' => ['game' => ['matchup' => 'ATH @ SD']],
+        'recommendation' => 'moneyline',
+        'ai_confidence' => 61,
+        'analysis_confidence' => 58,
+        'bet_classification' => 'lean',
+        'summary' => 'Lean Padres moneyline, but keep it price sensitive.',
+        'key_factors' => ['Model leans San Diego', 'Moneyline is the primary MLB market', 'Pitcher context is available'],
+        'risk_flags' => ['thin_edge'],
+        'reason_codes' => ['model_home_edge', 'moneyline_context'],
+        'market_notes' => ['moneyline' => 'Playable at fair price'],
+        'calculated_edge' => ['spread_edge' => 1.2],
+    ]);
+
+    $request = Request::create('/');
+    $request->setUserResolver(fn () => $user);
+
+    $data = PredictionResource::make($prediction)->toArray($request);
+
+    expect($data['ai_analysis'])->toBeArray()
+        ->and($data['ai_analysis']['recommendation'])->toBe('moneyline')
+        ->and($data['ai_analysis']['bet_classification'])->toBe('lean')
+        ->and($data['ai_analysis']['summary'])->toContain('Padres')
+        ->and($data['ai_analysis']['reason_codes'])->toContain('model_home_edge');
 });

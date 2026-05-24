@@ -19,16 +19,17 @@ class Player extends Model
     protected $fillable = [
         'team_id',
         'espn_id',
-        'name',
-        'display_name',
-        'short_name',
-        'jersey',
+        'first_name',
+        'last_name',
+        'full_name',
+        'jersey_number',
         'position',
         'height',
         'weight',
+        'age',
         'experience',
         'college',
-        'headshot',
+        'status',
         'headshot_url',
     ];
 

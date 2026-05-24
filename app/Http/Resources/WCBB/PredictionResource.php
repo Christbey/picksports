@@ -56,6 +56,7 @@ class PredictionResource extends AbstractPredictionResource
         }
 
         $data = $this->appendNarrativeFields($data, $request, 'wcbb');
+        $data = $this->appendAiAnalysisFields($data, $request, 'wcbb');
 
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }

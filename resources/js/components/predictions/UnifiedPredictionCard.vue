@@ -294,6 +294,48 @@ function hasPredictionAnalysis(): boolean {
     return predictionAnalysis() !== null;
 }
 
+function aiAnalysis() {
+    return props.prediction.ai_analysis ?? null;
+}
+
+function hasAiAnalysis(): boolean {
+    return aiAnalysis() !== null;
+}
+
+function aiBetClassificationLabel(): string | null {
+    const classification = aiAnalysis()?.bet_classification;
+    if (!classification) return null;
+
+    const labels: Record<string, string> = {
+        bet: 'Bet',
+        lean: 'Lean',
+        watch: 'Watch',
+        pass: 'Pass',
+    };
+
+    return labels[classification] ?? formatAnalysisToken(classification);
+}
+
+function aiRecommendationLabel(): string | null {
+    const recommendation = aiAnalysis()?.recommendation;
+    return recommendation ? formatAnalysisToken(recommendation) : null;
+}
+
+function aiConfidenceLabel(): string | null {
+    const analysis = aiAnalysis();
+    if (!analysis) return null;
+
+    return `${analysis.analysis_confidence}% Confidence`;
+}
+
+function topAiKeyFactors(): string[] {
+    return (aiAnalysis()?.key_factors ?? []).slice(0, 3);
+}
+
+function topAiRiskFlags(): string[] {
+    return (aiAnalysis()?.risk_flags ?? []).slice(0, 3);
+}
+
 function trustScoreLabel(): string | null {
     const trust = predictionAnalysis()?.trust_score;
     return typeof trust === 'number' ? `${Math.round(trust)} Trust` : null;
@@ -874,6 +916,66 @@ function saveOptions(): SavePickOption[] {
                                 :style="{ width: `${edgeBarWidth()}%` }"
                             />
                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div
+                v-if="!isFinal() && hasAiAnalysis()"
+                class="mt-4 border-t border-sidebar-border/70 pt-4"
+            >
+                <div class="mb-2 flex items-center gap-2">
+                    <div
+                        class="inline-flex items-center gap-1.5 rounded-full bg-sidebar-accent/70 px-2.5 py-1 text-xs font-semibold tracking-wide uppercase"
+                    >
+                        <Sparkles class="h-3.5 w-3.5" />
+                        AI Analysis
+                    </div>
+                    <div class="text-xs text-muted-foreground">
+                        {{ aiAnalysis()?.as_of_date }}
+                    </div>
+                </div>
+                <div
+                    class="rounded-md border border-sky-200/70 bg-sky-50/70 px-3 py-2 text-xs text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-sky-100"
+                >
+                    <div class="mb-2 flex flex-wrap items-center gap-2">
+                        <span
+                            v-if="aiBetClassificationLabel()"
+                            class="rounded-full bg-sky-600 px-2 py-0.5 font-semibold text-white dark:bg-sky-500 dark:text-sky-950"
+                        >
+                            {{ aiBetClassificationLabel() }}
+                        </span>
+                        <span
+                            v-if="aiRecommendationLabel()"
+                            class="rounded-full bg-white/70 px-2 py-0.5 font-semibold text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
+                        >
+                            {{ aiRecommendationLabel() }}
+                        </span>
+                        <span
+                            v-if="aiConfidenceLabel()"
+                            class="text-sky-800 dark:text-sky-200"
+                        >
+                            {{ aiConfidenceLabel() }}
+                        </span>
+                    </div>
+                    <p class="text-sky-900 dark:text-sky-100">
+                        {{ aiAnalysis()?.summary }}
+                    </p>
+                    <div class="mt-2 flex flex-wrap gap-1.5">
+                        <span
+                            v-for="factor in topAiKeyFactors()"
+                            :key="`ai-factor-${factor}`"
+                            class="rounded-full bg-white/70 px-2 py-0.5 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
+                        >
+                            {{ factor }}
+                        </span>
+                        <span
+                            v-for="flag in topAiRiskFlags()"
+                            :key="`ai-risk-${flag}`"
+                            class="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-100"
+                        >
+                            {{ formatAnalysisToken(flag) }}
+                        </span>
                     </div>
                 </div>
             </div>

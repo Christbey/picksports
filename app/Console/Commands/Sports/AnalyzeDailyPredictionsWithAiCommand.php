@@ -1,0 +1,215 @@
+<?php
+
+namespace App\Console\Commands\Sports;
+
+use App\Models\NBA\Prediction;
+use App\Models\SportsAiPredictionAnalysis;
+use App\Services\AI\SportsAiContentService;
+use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
+use App\Services\Sports\SportsPipelineRegistry;
+use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
+
+class AnalyzeDailyPredictionsWithAiCommand extends Command
+{
+    protected $signature = 'sports:ai-daily-predictions
+        {--sport=* : Sport(s) to analyze; supports nba, nfl, mlb, cbb, wcbb, wnba, cfb}
+        {--all : Analyze every supported sport}
+        {--date= : Slate date, defaults to today}
+        {--days-forward=0 : Include games through N days after the slate date}
+        {--season= : Optional season filter}
+        {--limit=25 : Max predictions per sport}
+        {--force : Regenerate even when the input hash has not changed}
+        {--dry-run : Show which predictions would be analyzed without calling AI}
+        {--provider= : Override AI provider}
+        {--model= : Override AI model}';
+
+    protected $description = 'Send daily prediction payloads through the structured AI analysis layer for one or more sports';
+
+    /**
+     * @var array<string, class-string<Model>>
+     */
+    private array $predictionModels = [
+        'nba' => Prediction::class,
+        'nfl' => \App\Models\NFL\Prediction::class,
+        'mlb' => \App\Models\MLB\Prediction::class,
+        'cbb' => \App\Models\CBB\Prediction::class,
+        'wcbb' => \App\Models\WCBB\Prediction::class,
+        'wnba' => \App\Models\WNBA\Prediction::class,
+        'cfb' => \App\Models\CFB\Prediction::class,
+    ];
+
+    public function handle(
+        SportsPipelineRegistry $registry,
+        SportsAiPredictionPayloadBuilder $payloadBuilder,
+        SportsAiContentService $aiContentService
+    ): int {
+        $sports = $this->sportsToAnalyze($registry);
+        if ($sports === []) {
+            $this->error('No supported sports selected.');
+
+            return self::FAILURE;
+        }
+
+        $date = $this->option('date') ? Carbon::parse((string) $this->option('date')) : now();
+        $endDate = $date->copy()->addDays(max(0, (int) $this->option('days-forward')));
+        $limit = max(1, (int) $this->option('limit'));
+        $asOfDate = now()->toDateString();
+        $processed = 0;
+        $skipped = 0;
+
+        if (! $this->option('dry-run') && ! Schema::hasTable('sports_ai_prediction_analyses')) {
+            $this->error('Missing sports_ai_prediction_analyses table. Run php artisan migrate before saving AI analyses.');
+
+            return self::FAILURE;
+        }
+
+        foreach ($sports as $sport) {
+            $predictions = $this->predictionsForSport($sport, $date, $endDate, $limit);
+
+            $this->line(strtoupper($sport).': '.$predictions->count().' prediction(s) for '.$date->toDateString().($endDate->isSameDay($date) ? '' : ' through '.$endDate->toDateString()));
+
+            foreach ($predictions as $prediction) {
+                $payload = $payloadBuilder->build($sport, $prediction);
+                $inputHash = $payloadBuilder->hash($payload);
+                $gameId = (int) ($prediction->game?->id ?? $prediction->game_id ?? 0);
+                $gameDate = $prediction->game?->game_date?->toDateString();
+
+                if ($this->option('dry-run')) {
+                    $this->line('  - '.$this->matchup($prediction).' ['.$inputHash.']');
+                    $processed++;
+
+                    continue;
+                }
+
+                $existing = SportsAiPredictionAnalysis::query()
+                    ->where('sport', $sport)
+                    ->where('prediction_id', (int) $prediction->id)
+                    ->where('market', 'game')
+                    ->whereDate('as_of_date', $asOfDate)
+                    ->first();
+
+                if (! $this->option('force') && $existing && $existing->input_hash === $inputHash) {
+                    $skipped++;
+
+                    continue;
+                }
+
+                $startedAt = microtime(true);
+                $analysis = $aiContentService->generateDailyPredictionAnalysis(
+                    $payload,
+                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
+                    model: $this->option('model') ? (string) $this->option('model') : null,
+                );
+                $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
+
+                if (! $analysis) {
+                    $this->warn('  - skipped '.$this->matchup($prediction).' (AI analysis unavailable)');
+                    $skipped++;
+
+                    continue;
+                }
+
+                [$provider, $model] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
+
+                SportsAiPredictionAnalysis::query()->updateOrCreate(
+                    [
+                        'sport' => $sport,
+                        'prediction_id' => (int) $prediction->id,
+                        'market' => 'game',
+                        'as_of_date' => $asOfDate,
+                    ],
+                    [
+                        'game_id' => $gameId,
+                        'game_date' => $gameDate,
+                        'provider' => $provider,
+                        'model' => $model,
+                        'input_hash' => $inputHash,
+                        'raw_payload' => $payload,
+                        'recommendation' => (string) $analysis['recommendation'],
+                        'ai_confidence' => (int) $analysis['ai_confidence'],
+                        'analysis_confidence' => (int) $analysis['analysis_confidence'],
+                        'bet_classification' => (string) $analysis['bet_classification'],
+                        'summary' => (string) $analysis['summary'],
+                        'key_factors' => $analysis['key_factors'],
+                        'risk_flags' => $analysis['risk_flags'],
+                        'reason_codes' => $analysis['reason_codes'],
+                        'market_notes' => $analysis['market_notes'],
+                        'calculated_edge' => $payloadBuilder->calculatedEdge($prediction),
+                        'metadata' => [
+                            'command' => 'sports:ai-daily-predictions',
+                            'schema_version' => $payload['schema_version'] ?? null,
+                        ],
+                        'latency_ms' => $latencyMs,
+                    ]
+                );
+
+                $processed++;
+                $this->line('  - saved '.$this->matchup($prediction).' -> '.$analysis['bet_classification'].' / '.$analysis['recommendation']);
+            }
+        }
+
+        $this->info("AI daily prediction analysis complete. Processed {$processed}; skipped {$skipped}.");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function sportsToAnalyze(SportsPipelineRegistry $registry): array
+    {
+        if ($this->option('all')) {
+            return $registry->supportedSports();
+        }
+
+        $sports = array_map('strtolower', (array) $this->option('sport'));
+
+        return array_values(array_filter(
+            array_unique($sports),
+            fn (string $sport): bool => $registry->supportsSport($sport) && isset($this->predictionModels[$sport])
+        ));
+    }
+
+    private function predictionsForSport(string $sport, Carbon $date, Carbon $endDate, int $limit)
+    {
+        /** @var class-string<Model> $modelClass */
+        $modelClass = $this->predictionModels[$sport];
+        $season = $this->option('season') ?: config("{$sport}.season.default");
+        $scheduledStatus = (string) config("{$sport}.statuses.scheduled", 'STATUS_SCHEDULED');
+
+        return $modelClass::query()
+            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->when($season, fn ($query) => $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', (int) $season)))
+            ->whereHas('game', function ($query) use ($date, $endDate, $scheduledStatus): void {
+                $query->whereDate('game_date', '>=', $date->toDateString())
+                    ->whereDate('game_date', '<=', $endDate->toDateString())
+                    ->where('status', $scheduledStatus);
+            })
+            ->limit($limit)
+            ->get();
+    }
+
+    private function matchup(Model $prediction): string
+    {
+        $game = $prediction->game;
+
+        return (string) ($game?->short_name ?: $game?->name ?: 'prediction '.$prediction->id);
+    }
+
+    /**
+     * @return array{0:string|null,1:string|null}
+     */
+    private function providerModel(string $generatedBy): array
+    {
+        if ($generatedBy === '') {
+            return [null, null];
+        }
+
+        $parts = explode(':', $generatedBy, 2);
+
+        return [$parts[0] ?? null, $parts[1] ?? null];
+    }
+}

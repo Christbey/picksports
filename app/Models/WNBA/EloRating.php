@@ -16,7 +16,9 @@ class EloRating extends Model
 
     protected $fillable = [
         'team_id',
+        'game_id',
         'season',
+        'week',
         'date',
         'elo_rating',
         'elo_change',
@@ -34,5 +36,10 @@ class EloRating extends Model
     public function team(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'team_id');
+    }
+
+    public function game(): BelongsTo
+    {
+        return $this->belongsTo(Game::class, 'game_id');
     }
 }

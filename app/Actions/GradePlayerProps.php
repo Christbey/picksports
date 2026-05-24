@@ -26,6 +26,11 @@ class GradePlayerProps
             'player_stat_model' => \App\Models\CBB\PlayerStat::class,
             'player_prop_model' => \App\Models\CBB\PlayerProp::class,
         ],
+        'basketball_wnba' => [
+            'game_model' => \App\Models\WNBA\Game::class,
+            'player_stat_model' => \App\Models\WNBA\PlayerStat::class,
+            'player_prop_model' => \App\Models\WNBA\PlayerProp::class,
+        ],
         'americanfootball_nfl' => [
             'game_model' => \App\Models\NFL\Game::class,
             'player_stat_model' => \App\Models\NFL\PlayerStat::class,
@@ -386,6 +391,7 @@ class GradePlayerProps
         return match ($prop::class) {
             PlayerProp::class => 'basketball_nba',
             \App\Models\CBB\PlayerProp::class => 'basketball_ncaab',
+            \App\Models\WNBA\PlayerProp::class => 'basketball_wnba',
             \App\Models\NFL\PlayerProp::class => 'americanfootball_nfl',
             \App\Models\MLB\PlayerProp::class => 'baseball_mlb',
             default => '',

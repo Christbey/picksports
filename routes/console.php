@@ -389,6 +389,24 @@ $scheduleDailySeasonJob(
     $nbaInSeason,
     'NBA: Generate Playoff Forecast'
 );
+$scheduleDailySeasonJob(
+    'espn:sync-nba-players',
+    '00:45',
+    $nbaInSeason,
+    'NBA: Sync Players'
+);
+$scheduleDailySeasonJob(
+    'espn:sync-nba-game-details --refresh-existing --lookback-days=3',
+    '03:15',
+    $nbaInSeason,
+    'NBA: Refresh Recent Game Details'
+);
+$scheduleDailySeasonJob(
+    'healthcheck:validate-data --sport=nba',
+    '07:00',
+    $nbaInSeason,
+    'NBA: Validate Data Completeness'
+);
 $scheduleOddsSyncWindow(
     "sports:sync-futures-odds --sport=nba --season={$fallSeasonYear}",
     $nbaInSeason,

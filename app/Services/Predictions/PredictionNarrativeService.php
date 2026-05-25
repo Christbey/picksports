@@ -7,6 +7,7 @@ use App\Actions\NBA\CalculateTeamTrends;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Services\AI\SportsAiContentService;
+use App\Services\NBA\NbaGameContextLayerService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use JsonException;
@@ -14,7 +15,7 @@ use Throwable;
 
 class PredictionNarrativeService
 {
-    private const TEMPLATE_VERSION = 'template-v6';
+    private const TEMPLATE_VERSION = 'template-v7';
 
     /**
      * Generate deterministic narrative text from NBA prediction data.
@@ -130,6 +131,9 @@ class PredictionNarrativeService
             'efficiency_spread_component' => (float) ($prediction->efficiency_spread_component ?? 0),
             'form_spread_component' => (float) ($prediction->form_spread_component ?? 0),
             'vegas_spread' => $prediction->vegas_spread !== null ? (float) $prediction->vegas_spread : null,
+            'context_layer' => $game instanceof Game
+                ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game))
+                : null,
         ];
 
         try {
@@ -268,6 +272,9 @@ class PredictionNarrativeService
             ? (($marketEdge >= 0) ? $homeName : $awayName)
             : null;
         $bestBet = $this->resolveBestBet($game);
+        $contextLayer = $game instanceof Game
+            ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $bestBet)
+            : [];
         $situationalAdj = $turnoverAdj + $reboundAdj + $homeAwayAdj;
         $trendSnapshot = $trendSnapshot ?? [];
         $pickedTrendData = $pickHome
@@ -342,12 +349,21 @@ class PredictionNarrativeService
             awayNet: $awayNet
         );
 
-        $summary = $bestBet
+        $contextClassification = (string) data_get($contextLayer, 'betting_context.classification', '');
+        $contextPass = in_array($contextClassification, ['pass_or_wait', 'clear_pass'], true);
+
+        $summary = $bestBet && ! $contextPass
             ? sprintf(
                 'Best bet: %s%s. Why: %s.',
                 $bestBet['recommendation'],
                 $bestBet['odds_text'] !== '' ? " ({$bestBet['odds_text']})" : '',
                 $bestBet['reasoning']
+            )
+            : ($bestBet && $contextPass
+            ? sprintf(
+                'Pregame pass: %s has model value, but context flags conflict. %s',
+                $bestBet['recommendation'],
+                $this->contextConflictSummary($contextLayer)
             )
             : sprintf(
                 "Tonight's lean is %s (%s win probability), with %s and total of %s. Biggest edge: %s. %s %s%s",
@@ -359,22 +375,24 @@ class PredictionNarrativeService
                 $profileSentence,
                 $restSentence,
                 $injurySentence.($hasTrendSignals ? ' '.$trendSentence : '')
-            );
+            ));
 
         $keyPoints = [
-            $bestBet
+            $bestBet && ! $contextPass
                 ? sprintf(
                     'Recommended wager at Vegas: %s%s.',
                     $bestBet['recommendation'],
                     $bestBet['odds_text'] !== '' ? " ({$bestBet['odds_text']})" : ''
                 )
+                : ($bestBet && $contextPass
+                    ? sprintf('Pregame pass: %s is downgraded by context conflict.', $bestBet['recommendation'])
                 : sprintf(
                     'Win odds snapshot: %s %s vs %s %s.',
                     $homeName,
                     $this->percent($homeWinProb),
                     $awayName,
                     $this->percent($awayWinProb)
-                ),
+                )),
             sprintf(
                 'Model win view: %s %s vs %s %s.',
                 $homeName,
@@ -421,6 +439,10 @@ class PredictionNarrativeService
 
         if ($depthChartNote !== null) {
             $keyPoints[] = $depthChartNote;
+        }
+
+        foreach ($this->contextLayerKeyPoints($contextLayer) as $contextPoint) {
+            $keyPoints[] = $contextPoint;
         }
 
         if ($hasTrendSignals) {
@@ -498,8 +520,10 @@ class PredictionNarrativeService
                 trendLeader: $trendLeader,
                 trendGap: $trendGap,
                 efficiencyLeader: $efficiencyLeader,
-                efficiencyGap: $efficiencyGap
+                efficiencyGap: $efficiencyGap,
+                contextLayer: $contextLayer
             ),
+            'context_layer' => $contextLayer,
             'social_caption' => $this->buildSocialCaption(
                 bestBet: $bestBet,
                 pickedTeam: $pickedTeam,
@@ -547,7 +571,13 @@ class PredictionNarrativeService
 
         try {
             $decoded = app(SportsAiContentService::class)->generatePredictionNarrative(
-                $this->buildNbaPrompt($prediction, $homeName, $awayName, $trendSnapshot),
+                $this->buildNbaPrompt(
+                    $prediction,
+                    $homeName,
+                    $awayName,
+                    $trendSnapshot,
+                    $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game)) : []
+                ),
                 provider: 'openai',
                 model: $model,
             );
@@ -581,8 +611,10 @@ class PredictionNarrativeService
                     efficiencyGap: abs(
                         ((float) ($prediction->home_off_eff ?? 0) - (float) ($prediction->home_def_eff ?? 0))
                         - ((float) ($prediction->away_off_eff ?? 0) - (float) ($prediction->away_def_eff ?? 0))
-                    )
+                    ),
+                    contextLayer: $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game)) : []
                 ),
+                'context_layer' => $game instanceof Game ? app(NbaGameContextLayerService::class)->analyze($game, $prediction, $this->resolveBestBet($game)) : [],
                 'social_caption' => $decoded['social_caption'] ?? null,
             ];
         } catch (Throwable $exception) {
@@ -833,7 +865,8 @@ class PredictionNarrativeService
         Prediction $prediction,
         string $homeName,
         string $awayName,
-        ?array $trendSnapshot = null
+        ?array $trendSnapshot = null,
+        array $contextLayer = []
     ): string {
         $homeWinProb = (float) $prediction->win_probability;
         $awayWinProb = 1 - $homeWinProb;
@@ -870,6 +903,8 @@ class PredictionNarrativeService
             }
         }
 
+        $contextLines = $this->contextLayerPromptLines($contextLayer);
+
         return implode("\n", [
             'Create a concise NBA prediction narrative from this model data.',
             'Return data that matches this exact structure: summary, key_points, risk_note, betting_plan, social_caption.',
@@ -894,8 +929,138 @@ class PredictionNarrativeService
             'Confidence score: '.$this->number((float) $prediction->confidence_score),
             $this->depthChartPromptLine($prediction),
             ...$trendLines,
+            ...$contextLines,
             'Tone: analytical, cautious, no guarantees.',
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $contextLayer
+     * @return array<int, string>
+     */
+    private function contextLayerKeyPoints(array $contextLayer): array
+    {
+        if ($contextLayer === []) {
+            return [];
+        }
+
+        $points = [];
+        $series = is_array($contextLayer['series_total_trend'] ?? null) ? $contextLayer['series_total_trend'] : [];
+        $otAdjusted = is_array($contextLayer['overtime_adjusted_total'] ?? null) ? $contextLayer['overtime_adjusted_total'] : [];
+        $nonOt = is_array($contextLayer['non_ot_series_average'] ?? null) ? $contextLayer['non_ot_series_average'] : [];
+        $spikes = is_array($contextLayer['quarter_scoring_spikes'] ?? null) ? $contextLayer['quarter_scoring_spikes'] : [];
+        $fouls = is_array($contextLayer['playoff_foul_late_game_risk'] ?? null) ? $contextLayer['playoff_foul_late_game_risk'] : [];
+        $injuries = is_array($contextLayer['injury_impact'] ?? null) ? $contextLayer['injury_impact'] : [];
+        $market = is_array($contextLayer['market_movement'] ?? null) ? $contextLayer['market_movement'] : [];
+        $conflict = is_array($contextLayer['model_vs_series_conflict'] ?? null) ? $contextLayer['model_vs_series_conflict'] : [];
+        $historical = is_array($contextLayer['historical_spot_reference'] ?? null) ? $contextLayer['historical_spot_reference'] : [];
+
+        if (($series['average_total'] ?? null) !== null) {
+            $points[] = sprintf(
+                'Series total context: last %d matchup totals average %.1f vs market %s, direction %s.',
+                (int) ($series['sample_size'] ?? 0),
+                (float) $series['average_total'],
+                $series['market_total'] !== null ? $this->number((float) $series['market_total']) : 'N/A',
+                (string) ($series['direction'] ?? 'unknown')
+            );
+        }
+
+        if (($otAdjusted['average'] ?? null) !== null || ($nonOt['average'] ?? null) !== null) {
+            $points[] = sprintf(
+                'Total cleanup: overtime-adjusted average %s; non-OT series average %s.',
+                $otAdjusted['average'] !== null ? $this->number((float) $otAdjusted['average']) : 'N/A',
+                $nonOt['average'] !== null ? $this->number((float) $nonOt['average']) : 'N/A'
+            );
+        }
+
+        if ((int) ($spikes['count'] ?? 0) > 0) {
+            $points[] = sprintf(
+                'Quarter scoring spikes: %d quarters cleared %d combined points; max quarter total %s.',
+                (int) $spikes['count'],
+                (int) ($spikes['threshold'] ?? 65),
+                $spikes['max_quarter_total'] !== null ? $this->number((float) $spikes['max_quarter_total']) : 'N/A'
+            );
+        }
+
+        if (($fouls['risk'] ?? 'low') !== 'low') {
+            $points[] = sprintf(
+                'Playoff late-game risk: %s from %d close games, %d OT games, and %d fourth-quarter-plus fouls.',
+                (string) $fouls['risk'],
+                (int) ($fouls['close_games'] ?? 0),
+                (int) ($fouls['overtime_games'] ?? 0),
+                (int) ($fouls['fourth_quarter_plus_fouls'] ?? 0)
+            );
+        }
+
+        if (($injuries['level'] ?? 'none') !== 'none') {
+            $points[] = sprintf(
+                'Injury importance layer: %s impact, weighted absences home %.2f / away %.2f.',
+                (string) $injuries['level'],
+                (float) ($injuries['home_weighted_absences'] ?? 0.0),
+                (float) ($injuries['away_weighted_absences'] ?? 0.0)
+            );
+        }
+
+        if (($market['snapshot_count'] ?? 0) > 0) {
+            $points[] = sprintf(
+                'Market movement: total move %s, home spread move %s across %d snapshots.',
+                $market['total_move'] !== null ? $this->signedNumber((float) $market['total_move']) : 'N/A',
+                $market['home_spread_move'] !== null ? $this->signedNumber((float) $market['home_spread_move']) : 'N/A',
+                (int) $market['snapshot_count']
+            );
+        }
+
+        if (($conflict['has_conflict'] ?? false) === true) {
+            $points[] = sprintf(
+                'Model-vs-series conflict: model total direction %s, series context %s, bet direction %s.',
+                (string) ($conflict['model_total_direction'] ?? 'unknown'),
+                (string) ($conflict['series_direction'] ?? 'unknown'),
+                (string) ($conflict['bet_direction'] ?? 'unknown')
+            );
+        }
+
+        if (($historical['available'] ?? false) === true) {
+            $points[] = sprintf(
+                'Historical spot reference: %d similar spots, bet hit rate %s, winner accuracy %s, avg total error %s.',
+                (int) ($historical['sample_size'] ?? 0),
+                $historical['hit_rate'] !== null ? $this->number((float) $historical['hit_rate']).'%' : 'N/A',
+                $historical['winner_accuracy'] !== null ? $this->number((float) $historical['winner_accuracy']).'%' : 'N/A',
+                $historical['avg_total_error'] !== null ? $this->number((float) $historical['avg_total_error']) : 'N/A'
+            );
+        }
+
+        return $points;
+    }
+
+    /**
+     * @param  array<string, mixed>  $contextLayer
+     * @return array<int, string>
+     */
+    private function contextLayerPromptLines(array $contextLayer): array
+    {
+        return array_map(
+            fn (string $point): string => 'Context layer: '.$point,
+            $this->contextLayerKeyPoints($contextLayer)
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $contextLayer
+     */
+    private function contextConflictSummary(array $contextLayer): string
+    {
+        $series = data_get($contextLayer, 'series_total_trend.average_total');
+        $otAdjusted = data_get($contextLayer, 'overtime_adjusted_total.average');
+        $nonOt = data_get($contextLayer, 'non_ot_series_average.average');
+        $spikes = (int) data_get($contextLayer, 'quarter_scoring_spikes.count', 0);
+
+        return sprintf(
+            'Series avg %s, OT-adjusted %s, non-OT avg %s, quarter spikes %d.',
+            is_numeric($series) ? $this->number((float) $series) : 'N/A',
+            is_numeric($otAdjusted) ? $this->number((float) $otAdjusted) : 'N/A',
+            is_numeric($nonOt) ? $this->number((float) $nonOt) : 'N/A',
+            $spikes
+        );
     }
 
     /**
@@ -915,7 +1080,8 @@ class PredictionNarrativeService
         ?string $trendLeader = null,
         ?float $trendGap = null,
         ?string $efficiencyLeader = null,
-        ?float $efficiencyGap = null
+        ?float $efficiencyGap = null,
+        array $contextLayer = []
     ): array {
         $restContext = $this->restContextSentence($homeTeam, $homeRest, $awayTeam, $awayRest);
         $whyContext = $this->buildWhyContext(
@@ -930,14 +1096,44 @@ class PredictionNarrativeService
             efficiencyGap: $efficiencyGap,
             restContext: $restContext
         );
+        $bettingContext = is_array($contextLayer['betting_context'] ?? null) ? $contextLayer['betting_context'] : [];
+        $classification = (string) ($bettingContext['classification'] ?? '');
+        $againstBet = array_values(array_filter(array_map('strval', (array) ($bettingContext['against_bet'] ?? []))));
+        $forBet = array_values(array_filter(array_map('strval', (array) ($bettingContext['for_bet'] ?? []))));
+        $passReasons = array_values(array_filter(array_map('strval', (array) ($bettingContext['pass_reasons'] ?? []))));
+
+        if ($bestBet && in_array($classification, ['pass_or_wait', 'clear_pass'], true)) {
+            $forText = $forBet !== [] ? 'For the bet: '.implode(' ', $forBet) : 'For the bet: the model has a qualified edge.';
+            $againstText = $againstBet !== [] ? 'Against the bet: '.implode(' ', $againstBet) : 'Against the bet: context does not confirm the edge.';
+
+            return [
+                'bet_pick' => $classification === 'clear_pass'
+                    ? 'Clear pass.'
+                    : 'Pass pregame / wait for a live entry.',
+                'reasoning' => trim($whyContext.' '.$forText.' '.$againstText),
+                'classification' => $classification,
+                'for_bet' => $forBet,
+                'against_bet' => $againstBet,
+                'pass_reasons' => $passReasons,
+                'reason_codes' => array_values(array_filter(array_map('strval', (array) ($contextLayer['reason_codes'] ?? [])))),
+            ];
+        }
 
         if ($bestBet) {
             $betText = $this->betPickLabel($bestBet, $pickedTeam, $homeTeam, $awayTeam);
             $bestBetReasoning = $this->ensureSentenceEnding((string) ($bestBet['reasoning'] ?? ''));
+            $contextRiskText = $againstBet !== []
+                ? 'Context risk: '.implode(' ', $againstBet)
+                : '';
 
             return [
                 'bet_pick' => $betText.'.',
-                'reasoning' => trim($bestBetReasoning.' '.$whyContext),
+                'reasoning' => trim($bestBetReasoning.' '.$whyContext.' '.$contextRiskText),
+                'classification' => $classification !== '' ? $classification : 'playable',
+                'for_bet' => $forBet,
+                'against_bet' => $againstBet,
+                'pass_reasons' => $passReasons,
+                'reason_codes' => array_values(array_filter(array_map('strval', (array) ($contextLayer['reason_codes'] ?? [])))),
             ];
         }
 
@@ -1208,6 +1404,7 @@ class PredictionNarrativeService
             'recommendation' => $recommendation,
             'reasoning' => $reasoning !== '' ? $reasoning : 'Model edge vs market price is positive.',
             'odds_text' => $this->formatOddsText($odds),
+            'edge' => is_numeric($best['edge'] ?? null) ? (float) $best['edge'] : null,
         ];
     }
 

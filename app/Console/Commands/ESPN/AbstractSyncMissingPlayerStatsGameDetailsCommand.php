@@ -23,9 +23,21 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
         return $gameModel::query()
             ->when($this->requiresFinalStatus(), fn ($query) => $query->where('status', 'STATUS_FINAL'))
             ->whereNotNull('espn_event_id')
+            ->when($this->lookbackDays() !== null, fn ($query) => $query->whereDate('game_date', '>=', now()->copy()->subDays($this->lookbackDays())->toDateString()))
             ->when(! $this->option('refresh-existing'), fn ($query) => $query->whereDoesntHave('playerStats'))
             ->orderBy('game_date', 'asc')
             ->get();
+    }
+
+    protected function lookbackDays(): ?int
+    {
+        $value = $this->option('lookback-days');
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return max(1, (int) $value);
     }
 
     /**

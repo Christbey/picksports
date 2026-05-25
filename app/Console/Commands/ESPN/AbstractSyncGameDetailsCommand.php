@@ -87,7 +87,8 @@ abstract class AbstractSyncGameDetailsCommand extends Command
     {
         return sprintf(
             "%s\n {eventId? : The ESPN event ID (optional - syncs all completed games without stats if not provided)}
-            {--refresh-existing : Include games that already have player stats so stale box scores can be refreshed}",
+            {--refresh-existing : Include games that already have player stats so stale box scores can be refreshed}
+            {--lookback-days= : Limit sweep mode to games on or after this many days ago}",
             $this->commandName()
         );
     }

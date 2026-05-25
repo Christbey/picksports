@@ -60,8 +60,7 @@ const normalizeDepthChartContext = (
 
     const source = rawContext as Record<string, unknown>;
     const type =
-        source.type === 'injury_weighting' ||
-        source.type === 'starter_fallback'
+        source.type === 'injury_weighting' || source.type === 'starter_fallback'
             ? source.type
             : null;
 
@@ -214,6 +213,54 @@ const normalizePrediction = (
                           return {
                               bet_pick: betPick,
                               reasoning,
+                              classification:
+                                  typeof (plan as Record<string, unknown>)
+                                      .classification === 'string'
+                                      ? ((plan as Record<string, unknown>)
+                                            .classification as string)
+                                      : null,
+                              for_bet: Array.isArray(
+                                  (plan as Record<string, unknown>).for_bet,
+                              )
+                                  ? (
+                                        (plan as Record<string, unknown>)
+                                            .for_bet as unknown[]
+                                    )
+                                        .map((item) => String(item))
+                                        .filter((item) => item.length > 0)
+                                  : [],
+                              against_bet: Array.isArray(
+                                  (plan as Record<string, unknown>).against_bet,
+                              )
+                                  ? (
+                                        (plan as Record<string, unknown>)
+                                            .against_bet as unknown[]
+                                    )
+                                        .map((item) => String(item))
+                                        .filter((item) => item.length > 0)
+                                  : [],
+                              pass_reasons: Array.isArray(
+                                  (plan as Record<string, unknown>)
+                                      .pass_reasons,
+                              )
+                                  ? (
+                                        (plan as Record<string, unknown>)
+                                            .pass_reasons as unknown[]
+                                    )
+                                        .map((item) => String(item))
+                                        .filter((item) => item.length > 0)
+                                  : [],
+                              reason_codes: Array.isArray(
+                                  (plan as Record<string, unknown>)
+                                      .reason_codes,
+                              )
+                                  ? (
+                                        (plan as Record<string, unknown>)
+                                            .reason_codes as unknown[]
+                                    )
+                                        .map((item) => String(item))
+                                        .filter((item) => item.length > 0)
+                                  : [],
                           };
                       }
 
@@ -242,6 +289,13 @@ const normalizePrediction = (
                           reasoning: legacyMoneylineHedge,
                       };
                   })(),
+                  context_layer:
+                      (rawNarrative as Record<string, unknown>).context_layer &&
+                      typeof (rawNarrative as Record<string, unknown>)
+                          .context_layer === 'object'
+                          ? ((rawNarrative as Record<string, unknown>)
+                                .context_layer as Record<string, unknown>)
+                          : null,
               }
             : null;
 

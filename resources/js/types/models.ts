@@ -186,7 +186,13 @@ export interface Prediction {
         betting_plan?: {
             bet_pick: string;
             reasoning: string;
+            classification?: string | null;
+            for_bet?: string[];
+            against_bet?: string[];
+            pass_reasons?: string[];
+            reason_codes?: string[];
         } | null;
+        context_layer?: Record<string, unknown> | null;
     } | null;
     depth_chart_context?: {
         type: 'injury_weighting' | 'starter_fallback';

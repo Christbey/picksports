@@ -32,6 +32,8 @@ beforeEach(function () {
         'espn_event_id' => '401585601',
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'game_date' => now(),
     ]);
 });
 
@@ -251,6 +253,7 @@ it('does not dispatch existing player stat games by default', function () {
         'game_date' => now()->addDay(),
         'home_team_id' => $this->homeTeam->id,
         'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
     ]);
 
     artisan('espn:sync-nba-game-details')
@@ -260,6 +263,62 @@ it('does not dispatch existing player stat games by default', function () {
     Queue::assertPushed(
         FetchGameDetails::class,
         fn (FetchGameDetails $job) => $job->eventId === $missingStatsGame->espn_event_id
+    );
+});
+
+it('does not dispatch scheduled games when sweeping missing player stats', function () {
+    Queue::fake();
+
+    Game::factory()->create([
+        'espn_event_id' => '401585602',
+        'game_date' => now()->addDay(),
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    artisan('espn:sync-nba-game-details')
+        ->assertSuccessful();
+
+    Queue::assertPushed(FetchGameDetails::class, 1);
+    Queue::assertPushed(
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $this->game->espn_event_id
+    );
+});
+
+it('can limit refresh existing sweep to a recent lookback window', function () {
+    Queue::fake();
+
+    PlayerStat::factory()->create([
+        'player_id' => $this->homePlayer->id,
+        'game_id' => $this->game->id,
+        'team_id' => $this->homeTeam->id,
+    ]);
+
+    $oldGame = Game::factory()->create([
+        'espn_event_id' => '401585602',
+        'game_date' => now()->subDays(10),
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    PlayerStat::factory()->create([
+        'player_id' => $this->awayPlayer->id,
+        'game_id' => $oldGame->id,
+        'team_id' => $this->awayTeam->id,
+    ]);
+
+    artisan('espn:sync-nba-game-details', [
+        '--refresh-existing' => true,
+        '--lookback-days' => 3,
+    ])->assertSuccessful();
+
+    Queue::assertPushed(FetchGameDetails::class, 1);
+    Queue::assertPushed(
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $this->game->espn_event_id
     );
 });
 

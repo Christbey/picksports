@@ -8,6 +8,8 @@ use App\Models\NBA\Game;
 
 class SyncGameDetailsCommand extends AbstractSyncMissingPlayerStatsGameDetailsCommand
 {
+    protected const REQUIRES_FINAL_STATUS = true;
+
     protected const COMMAND_NAME = 'espn:sync-nba-game-details';
 
     protected const SPORT_CODE = 'NBA';

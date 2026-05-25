@@ -5,9 +5,9 @@ namespace App\Actions\Sports;
 use App\Jobs\NBA\GeneratePredictionNarrative as GenerateNbaPredictionNarrativeJob;
 use App\Jobs\Predictions\GeneratePredictionNarrative as GenerateGenericPredictionNarrativeJob;
 use App\Services\OddsApi\OddsApiService;
-use App\Services\Sports\DepthChartImpactService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
+use App\Services\Sports\DepthChartImpactService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -369,7 +369,15 @@ abstract class AbstractPredictionGenerator
 
     protected function shouldGeneratePredictionForGame(Model $game, Model $homeTeam, Model $awayTeam): bool
     {
-        return true;
+        return in_array((string) ($game->status ?? ''), $this->pregamePredictionStatuses(), true);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function pregamePredictionStatuses(): array
+    {
+        return ['STATUS_SCHEDULED', 'STATUS_DELAYED'];
     }
 
     protected function regressTotalPace(float $rawPace, float $baselinePace, float $weight): float
@@ -636,8 +644,7 @@ abstract class AbstractPredictionGenerator
         ?string $sport = null,
         ?int $season = null,
         ?string $asOfDate = null
-    ): array
-    {
+    ): array {
         $counts = ['out' => 0, 'questionable' => 0];
         if ($teamId <= 0) {
             return $counts;

@@ -75,7 +75,7 @@ abstract class AbstractGeneratePredictionsCommand extends Command
         }
 
         $query = $gameModel::query()
-            ->where('status', '!=', 'STATUS_FINAL')
+            ->whereIn('status', $this->predictionEligibleStatuses())
             ->with(['homeTeam', 'awayTeam'])
             ->orderBy('game_date')
             ->orderBy('id');
@@ -150,6 +150,14 @@ abstract class AbstractGeneratePredictionsCommand extends Command
         if ($this->supportsDateOption() && ($date = $this->option('date'))) {
             $this->applyDateFilter($query, $date);
         }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function predictionEligibleStatuses(): array
+    {
+        return ['STATUS_SCHEDULED', 'STATUS_DELAYED'];
     }
 
     protected function applyDateFilter(Builder $query, string $date): void

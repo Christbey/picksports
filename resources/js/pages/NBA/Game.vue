@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import BasketballGameInsights from '@/components/game-page/BasketballGameInsights.vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
+import ContextLayerCard from '@/components/game-page/ContextLayerCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import DepthChartImpactCard from '@/components/game-page/DepthChartImpactCard.vue';
 import GamePlayerPropsCard from '@/components/game-page/GamePlayerPropsCard.vue';
@@ -76,6 +77,11 @@ const isPregame = computed(() =>
                     <BettingPlanCard
                         :betting-plan="
                             pageProps.prediction?.narrative?.betting_plan
+                        "
+                    />
+                    <ContextLayerCard
+                        :context-layer="
+                            pageProps.prediction?.narrative?.context_layer
                         "
                     />
                 </div>

@@ -122,7 +122,11 @@ function formatStarterLine(
     rating: number | null | undefined,
 ): string | null {
     if (!name) return null;
-    if (rating === null || rating === undefined || Number.isNaN(Number(rating))) {
+    if (
+        rating === null ||
+        rating === undefined ||
+        Number.isNaN(Number(rating))
+    ) {
         return `SP: ${name}`;
     }
 
@@ -131,36 +135,34 @@ function formatStarterLine(
 </script>
 
 <template>
-    <div
-        class="ui-surface overflow-hidden text-white"
-        :class="props.gradientClass"
-    >
-        <div class="px-5 py-7 md:px-6 md:py-8">
+    <div class="ui-surface overflow-hidden">
+        <div class="h-1 w-full" :class="props.gradientClass" />
+        <div class="px-4 py-4 md:px-5">
             <div
-                class="flex flex-col items-center justify-between gap-6 md:flex-row"
+                class="grid items-center gap-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
             >
                 <component
                     :is="props.linkTeams ? Link : 'div'"
                     v-if="awayTeam"
                     :href="props.linkTeams ? teamLink(awayTeam.id) : undefined"
-                    class="flex flex-1 flex-col items-center gap-2 transition-opacity hover:opacity-85 md:items-end"
+                    class="flex min-w-0 items-center gap-3 transition-opacity hover:opacity-85 md:justify-end"
                 >
-                    <div class="relative">
+                    <div class="relative shrink-0">
                         <div
                             v-if="props.useTeamColorGlow && awayTeam.color"
-                            class="absolute inset-0 rounded-full opacity-20 blur-xl"
+                            class="absolute inset-0 rounded-full opacity-15 blur-lg"
                             :style="{ backgroundColor: `#${awayTeam.color}` }"
                         />
                         <img
                             v-if="awayTeam.logo"
                             :src="awayTeam.logo"
                             :alt="awayTeam.name || 'Away Team'"
-                            class="relative z-10 h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
+                            class="relative z-10 h-14 w-14 object-contain md:h-16 md:w-16"
                         />
                     </div>
-                    <div class="text-center md:text-right">
+                    <div class="min-w-0 text-left md:text-right">
                         <div
-                            class="text-xl font-semibold tracking-tight md:text-2xl"
+                            class="truncate text-lg font-semibold tracking-tight md:text-xl"
                         >
                             {{
                                 awayTeam.display_name ||
@@ -171,13 +173,13 @@ function formatStarterLine(
                             }}
                         </div>
                         <div
-                            class="text-xs tracking-wide text-white/70 uppercase"
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
                         >
                             Away
                         </div>
                         <div
                             v-if="awayRecentForm"
-                            class="mt-1 text-xs text-white/60"
+                            class="mt-1 text-xs text-muted-foreground"
                         >
                             {{ awayRecentForm }}
                         </div>
@@ -188,7 +190,7 @@ function formatStarterLine(
                                     awayStarterRating,
                                 )
                             "
-                            class="mt-1 text-xs text-white/75"
+                            class="mt-1 truncate text-xs text-muted-foreground"
                         >
                             {{
                                 formatStarterLine(
@@ -200,26 +202,30 @@ function formatStarterLine(
                     </div>
                 </component>
 
-                <div class="min-w-[120px] text-center">
+                <div
+                    class="rounded-xl border border-border/70 bg-muted/35 px-4 py-3 text-center"
+                >
                     <div
                         v-if="
                             props.showScoreStatuses.includes(game.status) &&
                             game.away_score !== undefined &&
                             game.home_score !== undefined
                         "
-                        class="text-4xl font-semibold tracking-tight md:text-5xl"
+                        class="text-3xl font-semibold tracking-tight md:text-4xl"
                     >
                         {{ game.away_score }} - {{ game.home_score }}
                     </div>
                     <div
                         v-else
-                        class="text-2xl font-semibold text-white/70 md:text-3xl"
+                        class="text-2xl font-semibold text-muted-foreground md:text-3xl"
                     >
                         vs
                     </div>
-                    <div class="mt-2 flex items-center justify-center gap-2">
+                    <div
+                        class="mt-2 flex flex-wrap items-center justify-center gap-1.5"
+                    >
                         <Badge
-                            class="border-white/30 bg-white/20 text-white hover:bg-white/30"
+                            variant="secondary"
                             :class="{
                                 'animate-pulse !border-red-500 !bg-red-600':
                                     props.badgePulseStatuses.includes(
@@ -228,22 +234,19 @@ function formatStarterLine(
                             }"
                             >{{ gameStatus }}</Badge
                         >
-                        <Badge
-                            v-if="props.contextBadgeLabel"
-                            class="border-white/35 bg-white/20 text-white hover:bg-white/30"
-                        >
+                        <Badge v-if="props.contextBadgeLabel" variant="outline">
                             {{ props.contextBadgeLabel }}
                         </Badge>
                         <Badge
                             v-if="winnerLabel()"
-                            class="border-white/35 bg-white/20 text-white hover:bg-white/30"
+                            variant="outline"
                             :class="winnerClass()"
                         >
                             {{ winnerLabel() }}
                         </Badge>
                         <Badge
                             v-if="totalLabel()"
-                            class="border-white/35 bg-white/20 text-white hover:bg-white/30"
+                            variant="outline"
                             :class="totalClass()"
                         >
                             {{ totalLabel() }}
@@ -255,24 +258,24 @@ function formatStarterLine(
                     :is="props.linkTeams ? Link : 'div'"
                     v-if="homeTeam"
                     :href="props.linkTeams ? teamLink(homeTeam.id) : undefined"
-                    class="flex flex-1 flex-col items-center gap-2 transition-opacity hover:opacity-85 md:items-start"
+                    class="flex min-w-0 items-center gap-3 transition-opacity hover:opacity-85"
                 >
-                    <div class="relative">
+                    <div class="relative shrink-0 md:order-2">
                         <div
                             v-if="props.useTeamColorGlow && homeTeam.color"
-                            class="absolute inset-0 rounded-full opacity-20 blur-xl"
+                            class="absolute inset-0 rounded-full opacity-15 blur-lg"
                             :style="{ backgroundColor: `#${homeTeam.color}` }"
                         />
                         <img
                             v-if="homeTeam.logo"
                             :src="homeTeam.logo"
                             :alt="homeTeam.name || 'Home Team'"
-                            class="relative z-10 h-20 w-20 object-contain drop-shadow-lg md:h-24 md:w-24"
+                            class="relative z-10 h-14 w-14 object-contain md:h-16 md:w-16"
                         />
                     </div>
-                    <div class="text-center md:text-left">
+                    <div class="min-w-0 text-left">
                         <div
-                            class="text-xl font-semibold tracking-tight md:text-2xl"
+                            class="truncate text-lg font-semibold tracking-tight md:text-xl"
                         >
                             {{
                                 homeTeam.display_name ||
@@ -283,13 +286,13 @@ function formatStarterLine(
                             }}
                         </div>
                         <div
-                            class="text-xs tracking-wide text-white/70 uppercase"
+                            class="text-xs tracking-wide text-muted-foreground uppercase"
                         >
                             Home
                         </div>
                         <div
                             v-if="homeRecentForm"
-                            class="mt-1 text-xs text-white/60"
+                            class="mt-1 text-xs text-muted-foreground"
                         >
                             {{ homeRecentForm }}
                         </div>
@@ -300,7 +303,7 @@ function formatStarterLine(
                                     homeStarterRating,
                                 )
                             "
-                            class="mt-1 text-xs text-white/75"
+                            class="mt-1 truncate text-xs text-muted-foreground"
                         >
                             {{
                                 formatStarterLine(
@@ -315,10 +318,10 @@ function formatStarterLine(
         </div>
 
         <div
-            class="border-t border-white/15 bg-black/20 px-5 py-3 text-sm text-white/80 md:px-6"
+            class="border-t border-border/70 bg-muted/25 px-4 py-2.5 text-sm text-muted-foreground md:px-5"
         >
             <div
-                class="flex flex-wrap items-center justify-center gap-x-6 gap-y-1"
+                class="flex flex-wrap items-center justify-center gap-x-5 gap-y-1"
             >
                 <span>{{ formatDate(game.game_date) }}</span>
                 <span v-for="(item, idx) in props.extraInfoItems" :key="idx">{{

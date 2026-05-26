@@ -68,6 +68,7 @@ class NbaGameContextLayerService
 
         if ($includeHistoricalReference) {
             $baseContext['historical_spot_reference'] = $this->historicalSpotReference($game, $prediction, $bestBet, $baseContext);
+            $baseContext = $this->applyUniversalContextRules($baseContext, $prediction, $bestBet);
         }
 
         return $baseContext;
@@ -356,6 +357,73 @@ class NbaGameContextLayerService
             'reason_codes' => $hasConflict ? ['model_vs_series_conflict'] : [],
             'risk_flags' => $hasConflict ? ['model_series_total_conflict'] : [],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function applyUniversalContextRules(array $context, ?Prediction $prediction, ?array $bestBet): array
+    {
+        $bettingContext = is_array($context['betting_context'] ?? null) ? $context['betting_context'] : [];
+        $historical = is_array($context['historical_spot_reference'] ?? null) ? $context['historical_spot_reference'] : [];
+        $marketMovement = is_array($context['market_movement'] ?? null) ? $context['market_movement'] : [];
+        $forBet = array_values(array_filter(array_map('strval', (array) ($bettingContext['for_bet'] ?? []))));
+        $againstBet = array_values(array_filter(array_map('strval', (array) ($bettingContext['against_bet'] ?? []))));
+        $passReasons = array_values(array_filter(array_map('strval', (array) ($bettingContext['pass_reasons'] ?? []))));
+        $riskFlags = array_values(array_filter(array_map('strval', (array) ($context['risk_flags'] ?? []))));
+        $reasonCodes = array_values(array_filter(array_map('strval', (array) ($context['reason_codes'] ?? []))));
+        $classification = (string) ($bettingContext['classification'] ?? 'playable');
+        $bestBetType = strtolower((string) ($bestBet['type'] ?? ''));
+        $confidence = (float) ($prediction?->confidence_score ?? 0.0);
+        $sampleSize = (int) ($historical['sample_size'] ?? 0);
+        $hitRate = $this->numeric($historical['hit_rate'] ?? null);
+        $avgTotalError = $this->numeric($historical['avg_total_error'] ?? null);
+        $snapshotCount = (int) ($marketMovement['snapshot_count'] ?? 0);
+
+        if (
+            ($historical['available'] ?? false) === true
+            && $bestBetType === 'total'
+            && $sampleSize >= 12
+            && $hitRate !== null
+            && $hitRate < 48.0
+            && $avgTotalError !== null
+            && $avgTotalError >= 15.0
+        ) {
+            $againstBet[] = sprintf(
+                'Historical similar total spots are weak (%s hit rate, %s avg total error).',
+                $this->percentLabel($hitRate),
+                number_format($avgTotalError, 1)
+            );
+            $riskFlags[] = 'historical_spot_low_hit_rate';
+            $reasonCodes[] = 'historical_spot_downgrade';
+            $classification = $classification === 'playable'
+                ? 'small_play_context_risk'
+                : $classification;
+        }
+
+        if ($snapshotCount <= 1) {
+            $againstBet[] = 'Market movement has limited snapshot coverage.';
+            $riskFlags[] = 'thin_market_movement_sample';
+            $reasonCodes[] = 'market_snapshot_sample_thin';
+        }
+
+        if ($confidence > 0 && $confidence < 55.0 && $classification === 'playable') {
+            $againstBet[] = 'Model confidence is low, so reduce stake sizing.';
+            $riskFlags[] = 'low_model_confidence';
+            $classification = 'small_play_context_risk';
+        }
+
+        $bettingContext['classification'] = $classification;
+        $bettingContext['for_bet'] = array_values(array_unique($forBet));
+        $bettingContext['against_bet'] = array_values(array_unique($againstBet));
+        $bettingContext['pass_reasons'] = array_values(array_unique($passReasons));
+
+        $context['betting_context'] = $bettingContext;
+        $context['risk_flags'] = array_values(array_unique($riskFlags));
+        $context['reason_codes'] = array_values(array_unique($reasonCodes));
+
+        return $context;
     }
 
     /**
@@ -873,5 +941,10 @@ class NbaGameContextLayerService
     private function numeric(mixed $value): ?float
     {
         return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function percentLabel(float $value): string
+    {
+        return number_format($value, 1).'%';
     }
 }

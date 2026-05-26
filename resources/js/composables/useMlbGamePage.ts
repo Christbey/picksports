@@ -50,6 +50,11 @@ const toOptionalNumber = (value: unknown): number | null => {
     return Number.isFinite(parsed) ? parsed : null;
 };
 
+const stringList = (value: unknown): string[] =>
+    Array.isArray(value)
+        ? value.map((item) => String(item)).filter((item) => item.length > 0)
+        : [];
+
 const normalizeDepthChartContext = (
     rawContext: unknown,
 ): MlbPagePrediction['depth_chart_context'] => {
@@ -57,8 +62,7 @@ const normalizeDepthChartContext = (
 
     const source = rawContext as Record<string, unknown>;
     const type =
-        source.type === 'injury_weighting' ||
-        source.type === 'starter_fallback'
+        source.type === 'injury_weighting' || source.type === 'starter_fallback'
             ? source.type
             : null;
 
@@ -195,6 +199,27 @@ const normalizeMlbPrediction = (
                           ? {
                                 bet_pick: betPick,
                                 reasoning,
+                                classification:
+                                    typeof (plan as Record<string, unknown>)
+                                        .classification === 'string'
+                                        ? ((plan as Record<string, unknown>)
+                                              .classification as string)
+                                        : null,
+                                for_bet: stringList(
+                                    (plan as Record<string, unknown>).for_bet,
+                                ),
+                                against_bet: stringList(
+                                    (plan as Record<string, unknown>)
+                                        .against_bet,
+                                ),
+                                pass_reasons: stringList(
+                                    (plan as Record<string, unknown>)
+                                        .pass_reasons,
+                                ),
+                                reason_codes: stringList(
+                                    (plan as Record<string, unknown>)
+                                        .reason_codes,
+                                ),
                             }
                           : null;
                   })(),
@@ -279,6 +304,7 @@ export function useMlbGamePage(gameId: number) {
     );
 
     const {
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,
@@ -439,6 +465,7 @@ export function useMlbGamePage(gameId: number) {
         trendsSubtitle,
         homeMatchupTeam,
         awayMatchupTeam,
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,

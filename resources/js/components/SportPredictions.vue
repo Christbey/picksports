@@ -29,6 +29,7 @@ const today = ref('');
 const seasonType = ref('');
 const week = ref('');
 const searchQuery = ref('');
+const betViewMode = ref<'recommended' | 'all'>('all');
 const isBootstrapping = ref(true);
 const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
     useSeasonFilter(
@@ -196,6 +197,7 @@ const applyFilters = () => {
 
 const clearFilters = () => {
     searchQuery.value = '';
+    betViewMode.value = 'all';
 
     if (filterMode.value === 'date') {
         if (availableDates.value.includes(today.value)) {
@@ -225,12 +227,62 @@ const normalizedSearchQuery = computed(() =>
     searchQuery.value.trim().toLowerCase(),
 );
 
-const filteredPredictions = computed(() => {
-    if (!normalizedSearchQuery.value) {
-        return predictions.value;
+const shouldShowAsRecommendedBet = (
+    prediction: PredictionListItem,
+): boolean => {
+    if (prediction.betting_value_summary?.has_playable_value === true) {
+        return true;
     }
 
-    return predictions.value.filter((prediction) => {
+    if (
+        prediction.betting_value?.some(
+            (recommendation) => Number(recommendation.edge) > 0,
+        )
+    ) {
+        return true;
+    }
+
+    const analysisClassification =
+        prediction.prediction_analysis?.bet_classification
+            ?.toLowerCase()
+            .trim() ?? '';
+    if (
+        [
+            'bet',
+            'bettable_edge',
+            'playable',
+            'strong_play',
+            'recommended',
+        ].includes(analysisClassification)
+    ) {
+        return true;
+    }
+
+    const aiClassification = prediction.ai_analysis?.bet_classification
+        ?.toLowerCase()
+        .trim();
+
+    return aiClassification === 'bet';
+};
+
+const recommendedBetCount = computed(
+    () => predictions.value.filter(shouldShowAsRecommendedBet).length,
+);
+
+const filteredPredictions = computed(() => {
+    let visiblePredictions = predictions.value;
+
+    if (betViewMode.value === 'recommended') {
+        visiblePredictions = visiblePredictions.filter(
+            shouldShowAsRecommendedBet,
+        );
+    }
+
+    if (!normalizedSearchQuery.value) {
+        return visiblePredictions;
+    }
+
+    return visiblePredictions.filter((prediction) => {
         const game = prediction.game;
         const haystack = [
             game?.home_team?.abbreviation,
@@ -271,6 +323,10 @@ const showSpringTrainingBadge = computed(() => {
 });
 
 const emptyStateTitle = computed(() => {
+    if (betViewMode.value === 'recommended') {
+        return 'No recommended bets match these filters';
+    }
+
     if (normalizedSearchQuery.value) {
         return 'No predictions match this search';
     }
@@ -290,6 +346,10 @@ const emptyStateTitle = computed(() => {
 });
 
 const emptyStateDescription = computed(() => {
+    if (betViewMode.value === 'recommended') {
+        return 'The model does not currently have a playable edge on this slate. Switch to All games to review every prediction.';
+    }
+
     if (normalizedSearchQuery.value) {
         return `No games matched "${searchQuery.value}". Try team abbreviations, school names, or mascots.`;
     }
@@ -313,6 +373,7 @@ const emptyStateDescription = computed(() => {
 });
 
 const showEmptyClearAction = computed(() => {
+    if (betViewMode.value === 'recommended') return true;
     if (normalizedSearchQuery.value) return true;
     if (filterMode.value === 'seasonWeek')
         return hasAppliedSeasonWeekFilters.value;
@@ -455,6 +516,43 @@ onMounted(async () => {
                             placeholder="Team, school, or mascot..."
                             class="mt-1"
                         />
+                    </div>
+                    <div class="min-w-[220px]">
+                        <Label>Bet View</Label>
+                        <div
+                            class="mt-1 grid h-10 grid-cols-2 rounded-md border border-input bg-background p-1"
+                        >
+                            <button
+                                type="button"
+                                :class="[
+                                    'rounded px-3 text-sm font-medium transition',
+                                    betViewMode === 'recommended'
+                                        ? 'bg-primary text-primary-foreground shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground',
+                                ]"
+                                @click="betViewMode = 'recommended'"
+                            >
+                                Bets
+                                <span class="ml-1 text-xs opacity-80">
+                                    {{ recommendedBetCount }}
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                :class="[
+                                    'rounded px-3 text-sm font-medium transition',
+                                    betViewMode === 'all'
+                                        ? 'bg-primary text-primary-foreground shadow-sm'
+                                        : 'text-muted-foreground hover:text-foreground',
+                                ]"
+                                @click="betViewMode = 'all'"
+                            >
+                                All
+                                <span class="ml-1 text-xs opacity-80">
+                                    {{ predictions.length }}
+                                </span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </CardContent>

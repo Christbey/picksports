@@ -467,6 +467,32 @@ it('applies rest day advantage when home team is rested', function () {
     expect((float) $prediction->predicted_spread)->toBeGreaterThanOrEqual((float) $evenPrediction->predicted_spread);
 });
 
+it('uses prior scheduled playoff series games when calculating future rest days', function () {
+    $seriesGame = Game::factory()->create([
+        'home_team_id' => $this->awayTeam->id,
+        'away_team_id' => $this->homeTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'season_type' => 3,
+        'game_date' => now()->addDays(2),
+    ]);
+
+    $nextSeriesGame = Game::factory()->create([
+        'home_team_id' => $this->awayTeam->id,
+        'away_team_id' => $this->homeTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'season' => 2026,
+        'season_type' => 3,
+        'game_date' => now()->addDays(4),
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($nextSeriesGame);
+
+    expect($prediction)->not->toBeNull()
+        ->and($prediction->rest_days_home)->toBe(2)
+        ->and($prediction->rest_days_away)->toBe(2);
+});
+
 it('blends vegas spread when odds data available', function () {
     $game = Game::factory()->create([
         'home_team_id' => $this->homeTeam->id,

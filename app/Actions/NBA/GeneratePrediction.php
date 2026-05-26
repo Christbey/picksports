@@ -483,7 +483,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $defaultPace = $config['average_pace'];
 
         $recentGames = Game::query()
-            ->where('status', 'STATUS_FINAL')
+            ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
             ->where('season', $season)
             ->where(function ($q) use ($team) {
                 $q->where('home_team_id', $team->id)
@@ -553,7 +553,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
     private function getRestDays(Team $team, Model $game): ?int
     {
         $lastGame = Game::query()
-            ->where('status', 'STATUS_FINAL')
+            ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
             ->where(function ($q) use ($team) {
                 $q->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);

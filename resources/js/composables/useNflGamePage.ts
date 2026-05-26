@@ -265,6 +265,7 @@ export function useNflGamePage(gameId: number) {
     );
 
     const {
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,
@@ -413,6 +414,7 @@ export function useNflGamePage(gameId: number) {
         hasLivePrediction,
         livePredictionData,
         trendsSubtitle,
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,

@@ -4,6 +4,7 @@ use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\User;
+use App\Services\MLB\MlbBettingSignalService;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
@@ -173,4 +174,81 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         ->assertJsonPath('data.ballpark.0.weather_signal', 'weather_not_available');
 
     Carbon::setTestNow();
+});
+
+it('does not promote moneyline candidates when the market price has no value', function () {
+    config([
+        'mlb.signals.bet_filter.moneyline_enabled' => true,
+        'mlb.signals.bet_filter.run_line_enabled' => false,
+        'mlb.signals.bet_filter.total_enabled' => false,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'location' => 'Los Angeles',
+        'name' => 'Dodgers',
+        'abbreviation' => 'LAD',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'Colorado',
+        'name' => 'Rockies',
+        'abbreviation' => 'COL',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'game_date' => '2026-05-25',
+        'game_time' => '20:10:00',
+        'status' => config('mlb.statuses.scheduled'),
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'short_name' => 'COL @ LAD',
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'draftkings',
+                'markets' => [[
+                    'key' => 'h2h',
+                    'outcomes' => [
+                        ['name' => 'Los Angeles Dodgers', 'price' => -338],
+                        ['name' => 'Colorado Rockies', 'price' => 265],
+                    ],
+                ]],
+            ]],
+        ],
+        'odds_updated_at' => now(),
+    ]);
+
+    $prediction = Prediction::query()->create([
+        'game_id' => $game->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular'),
+        'home_team_elo' => 1580,
+        'away_team_elo' => 1430,
+        'home_pitcher_elo' => 1575,
+        'away_pitcher_elo' => 1420,
+        'home_combined_elo' => 1578,
+        'away_combined_elo' => 1425,
+        'predicted_spread' => 5.4,
+        'predicted_total' => 8.1,
+        'win_probability' => 0.63,
+        'confidence_score' => 63.2,
+        'model_version' => 'test',
+        'feature_version' => 'test',
+        'blend_version' => 'test',
+        'model_metadata' => [
+            'pitcher_inputs' => [
+                'home_source' => 'probable_starter',
+                'away_source' => 'probable_starter',
+                'home_confidence' => 1.0,
+                'away_confidence' => 1.0,
+            ],
+        ],
+    ]);
+
+    $candidate = app(MlbBettingSignalService::class)->betCandidatesForPrediction($prediction)[0];
+
+    expect($candidate['classification'])->toBe('pass')
+        ->and($candidate['score'])->toBeGreaterThanOrEqual(70)
+        ->and($candidate['no_bet_reason'])->toBe('no_moneyline_market_value')
+        ->and($candidate['risk_flags'])->toContain('no_moneyline_market_value');
 });

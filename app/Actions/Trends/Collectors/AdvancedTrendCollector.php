@@ -31,7 +31,7 @@ class AdvancedTrendCollector extends TrendCollector
 
         if ($bigFavoriteGames->count() >= 2) {
             $bigFavoriteWins = $bigFavoriteGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($bigFavoriteWins, $bigFavoriteGames->count())} when the model made them big favorites (7+ point projected spread)";
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($bigFavoriteWins, $bigFavoriteGames->count())} when the model made them big favorites (7+ {$this->scoringUnit()} projected spread)";
         }
 
         $bigUnderdogGames = $gamesWithPrediction->filter(function ($game) {
@@ -44,7 +44,7 @@ class AdvancedTrendCollector extends TrendCollector
 
         if ($bigUnderdogGames->count() >= 2) {
             $bigUnderdogWins = $bigUnderdogGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($bigUnderdogWins, $bigUnderdogGames->count())} when the model made them big underdogs (7+ point projected spread)";
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($bigUnderdogWins, $bigUnderdogGames->count())} when the model made them big underdogs (7+ {$this->scoringUnit()} projected spread)";
         }
 
         $covers = $gamesWithPrediction->filter(function ($game) {

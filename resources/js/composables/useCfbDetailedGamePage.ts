@@ -102,6 +102,7 @@ export function useCfbDetailedGamePage(gameId: number) {
     );
 
     const {
+        topMatchupEdges,
         allTrendCategories,
         isLockedCategory,
         getRequiredTier,
@@ -345,6 +346,7 @@ export function useCfbDetailedGamePage(gameId: number) {
             ),
             trendsSubtitle,
             trendsLoading: false,
+            topMatchupEdges,
             allTrendCategories,
             formatCategoryName,
             isLockedCategory,

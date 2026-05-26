@@ -20,32 +20,36 @@ class ScoringPatternTrendCollector extends TrendCollector
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            $teamFirstHalf = $this->firstHalfTotal($team);
-            $oppFirstHalf = $this->firstHalfTotal($opp);
+            $teamFirstSegment = $this->firstSegmentTotal($team);
+            $oppFirstSegment = $this->firstSegmentTotal($opp);
 
-            return $teamFirstHalf < $oppFirstHalf && $this->won($game);
+            return $teamFirstSegment < $oppFirstSegment && $this->won($game);
         });
 
         if ($comebacks >= 3) {
-            $messages[] = "The {$this->teamAbbr} have come back from halftime deficits to win {$comebacks} times in their last {$count} games";
+            $messages[] = "The {$this->teamAbbr} have come back from {$this->segmentLabel()} deficits to win {$comebacks} times in their last {$count} games";
         }
 
         $blownLeads = $this->countWhere(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            $teamFirstHalf = $this->firstHalfTotal($team);
-            $oppFirstHalf = $this->firstHalfTotal($opp);
+            $teamFirstSegment = $this->firstSegmentTotal($team);
+            $oppFirstSegment = $this->firstSegmentTotal($opp);
 
-            return $teamFirstHalf > $oppFirstHalf && ! $this->won($game);
+            return $teamFirstSegment > $oppFirstSegment && ! $this->won($game);
         });
 
         if ($blownLeads >= 3) {
-            $messages[] = "The {$this->teamAbbr} have blown halftime leads {$blownLeads} times in their last {$count} games";
+            $messages[] = "The {$this->teamAbbr} have blown {$this->segmentLabel()} leads {$blownLeads} times in their last {$count} games";
         }
 
         $scoredEveryQuarter = $this->countWhere(function ($game) {
             $team = $this->teamLinescores($game);
+
+            if ($this->isBaseball()) {
+                return collect($team)->filter(fn ($score) => (int) $score > 0)->count() >= 5;
+            }
 
             if ($this->isCollegeBasketball()) {
                 return count($team) >= 2
@@ -61,19 +65,28 @@ class ScoringPatternTrendCollector extends TrendCollector
         });
 
         if ($this->isSignificant($scoredEveryQuarter)) {
-            $periodTerm = $this->isCollegeBasketball() ? 'half' : 'quarter';
-            $messages[] = "The {$this->teamAbbr} have scored in every {$periodTerm} in {$scoredEveryQuarter} of their last {$count} games";
+            $periodTerm = match (true) {
+                $this->isBaseball() => '5+ innings',
+                $this->isCollegeBasketball() => 'every half',
+                default => 'every quarter',
+            };
+            $messages[] = "The {$this->teamAbbr} have scored in {$periodTerm} in {$scoredEveryQuarter} of their last {$count} games";
         }
 
         $fastStarts = $this->countWhere(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            return ($team[0] ?? 0) > ($opp[0] ?? 0) * 1.5 && ($team[0] ?? 0) >= 7;
+            return ($team[0] ?? 0) > ($opp[0] ?? 0) * 1.5
+                && ($team[0] ?? 0) >= $this->fastStartMinimum();
         });
 
         if ($fastStarts >= 3) {
-            $periodLabel = $this->isCollegeBasketball() ? '1H' : 'Q1';
+            $periodLabel = match (true) {
+                $this->isBaseball() => 'the 1st inning',
+                $this->isCollegeBasketball() => '1H',
+                default => 'Q1',
+            };
             $messages[] = "The {$this->teamAbbr} have started fast (dominating {$periodLabel}) in {$fastStarts} of their last {$count} games";
         }
 
@@ -83,12 +96,26 @@ class ScoringPatternTrendCollector extends TrendCollector
     /**
      * @param  array<int, int>  $lines
      */
-    private function firstHalfTotal(array $lines): int
+    private function firstSegmentTotal(array $lines): int
     {
+        if ($this->isBaseball()) {
+            return collect($lines)->take(5)->sum();
+        }
+
         if ($this->isCollegeBasketball()) {
             return (int) ($lines[0] ?? 0);
         }
 
         return (int) (($lines[0] ?? 0) + ($lines[1] ?? 0));
+    }
+
+    private function segmentLabel(): string
+    {
+        return $this->isBaseball() ? 'first-five-innings' : 'halftime';
+    }
+
+    private function fastStartMinimum(): int
+    {
+        return $this->isBaseball() ? 2 : 7;
     }
 }

@@ -883,9 +883,12 @@ class MlbBettingSignalService
         $score = max(0, min(100, $score));
         $strong = (int) config('mlb.signals.bet_filter.strong_min_score', 70);
         $lean = (int) config('mlb.signals.bet_filter.lean_min_score', 55);
+        $riskFlags = (array) ($candidate['risk_flags'] ?? []);
+        $forcePass = $this->hasDisqualifyingRisk($riskFlags);
 
         $candidate['score'] = $score;
         $candidate['classification'] = match (true) {
+            $forcePass => 'pass',
             $score >= $strong => 'bet',
             $score >= $lean => 'lean',
             default => 'pass',
@@ -900,9 +903,23 @@ class MlbBettingSignalService
     /**
      * @param  list<string>  $riskFlags
      */
+    protected function hasDisqualifyingRisk(array $riskFlags): bool
+    {
+        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'run_line_edge_below_threshold', 'total_edge_below_threshold'] as $riskFlag) {
+            if (in_array($riskFlag, $riskFlags, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $riskFlags
+     */
     protected function noBetReason(array $riskFlags): string
     {
-        foreach (['moneyline_price_missing', 'run_line_edge_below_threshold', 'total_edge_below_threshold'] as $priority) {
+        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'run_line_edge_below_threshold', 'total_edge_below_threshold'] as $priority) {
             if (in_array($priority, $riskFlags, true)) {
                 return $priority;
             }
@@ -1040,6 +1057,18 @@ class MlbBettingSignalService
             $codes[] = 'park_factor_total_context';
         }
 
+        $weatherAdjustment = (float) data_get($metadata, 'actual_weather.total_adjustment', 0.0);
+        if (abs($weatherAdjustment) >= 0.15) {
+            $codes[] = 'actual_weather_total_adjustment';
+            $codes[] = $weatherAdjustment > 0 ? 'weather_over_context' : 'weather_under_context';
+        }
+
+        foreach ((array) data_get($metadata, 'actual_weather.signals', []) as $weatherSignal) {
+            if (is_string($weatherSignal) && $weatherSignal !== '') {
+                $codes[] = $weatherSignal;
+            }
+        }
+
         $parkHomeRunSignal = (string) data_get($metadata, 'park_context.home_run_signal', '');
         if (in_array($parkHomeRunSignal, ['park_home_run_boost', 'park_home_run_suppression'], true)) {
             $codes[] = $parkHomeRunSignal;
@@ -1078,6 +1107,13 @@ class MlbBettingSignalService
 
         if ($weatherSignal === 'weather_not_available') {
             $codes[] = 'weather_feed_missing';
+        } elseif ($weatherSignal === 'roof_status_unknown') {
+            $codes[] = 'roof_status_unknown';
+        } elseif ($weatherSignal === 'roof_closed_neutralizes_weather') {
+            $codes[] = 'roof_closed_neutralizes_weather';
+        } elseif ($weatherSignal !== '' && $weatherSignal !== 'weather_neutral') {
+            $codes[] = 'actual_weather_context';
+            $codes[] = $weatherSignal;
         }
 
         return array_values(array_unique($codes));

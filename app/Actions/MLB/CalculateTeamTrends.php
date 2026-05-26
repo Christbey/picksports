@@ -27,7 +27,7 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
 
     protected const GAME_MODEL = Game::class;
 
-    protected const GAME_RELATIONS = ['homeTeam', 'awayTeam', 'teamStats'];
+    protected const GAME_RELATIONS = ['homeTeam', 'awayTeam', 'teamStats', 'prediction'];
 
     protected const USES_ANALYTICS_SEASON_TYPES = false;
 

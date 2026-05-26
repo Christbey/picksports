@@ -269,6 +269,7 @@ export interface GamePageTeam {
         impact_spread?: number | null;
         impact_total?: number | null;
         impact_multiplier?: number | null;
+        injury_date?: string | null;
         return_date?: string | null;
         source_updated_at?: string | null;
         is_active?: boolean;
@@ -379,7 +380,27 @@ export interface TeamTrendData {
     sample_size?: number;
     user_tier?: string;
     trends: Record<string, string[]>;
+    scored_signals?: TeamTrendSignal[];
+    trend_signal_summary?: {
+        counts?: Record<string, number>;
+        top_signals?: TeamTrendSignal[];
+        primary_signal?: TeamTrendSignal | null;
+    };
     locked_trends: Record<string, string>;
+}
+
+export interface TeamTrendSignal {
+    id: string;
+    category: string;
+    message: string;
+    quality: 'actionable' | 'contextual' | 'volatile' | string;
+    direction: string;
+    tone: 'team' | 'total' | 'risk' | string;
+    score: number;
+    confidence: 'strong' | 'medium' | 'low' | 'thin_sample' | string;
+    sample_size?: number | null;
+    percentage?: number | null;
+    reason_codes?: string[];
 }
 
 export interface SportGamePageConfig {
@@ -486,6 +507,7 @@ export interface MlbPageTeam {
         impact_spread?: number | null;
         impact_total?: number | null;
         impact_multiplier?: number | null;
+        injury_date?: string | null;
         return_date?: string | null;
         source_updated_at?: string | null;
         is_active?: boolean;

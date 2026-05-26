@@ -155,6 +155,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $parkTotalAdjustment = $this->parkFactorAdjustment($game);
         $predictedTotal = round($predictedTotal + $parkTotalAdjustment, 1);
 
+        $actualWeather = $this->actualWeatherContext($game);
+        $weatherTotalAdjustment = round((float) ($actualWeather['total_adjustment'] ?? 0.0), 2);
+        $predictedTotal = round($predictedTotal + $weatherTotalAdjustment, 1);
+
         // Convert the final model spread, not raw Elo points, into win probability.
         $winProbability = $this->calculateWinProbability($predictedSpread);
         $confidenceScore = $this->calculateConfidence($winProbability);
@@ -193,6 +197,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
             ...$probablePitcherInjuryMetadata,
             'park_total_adjustment' => round($parkTotalAdjustment, 2),
             'park_venue_name' => $game->venue_name,
+            'actual_weather' => $actualWeather,
+            'weather_total_adjustment' => $weatherTotalAdjustment,
             'baseline_model_spread' => round($predictedSpread, 2),
             'baseline_model_total' => round($predictedTotal, 2),
             'vegas_spread' => $vegasSpread !== null ? round($vegasSpread, 2) : null,
@@ -634,7 +640,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'park_context' => [
                 'venue_name' => $this->metadata['park_venue_name'] ?? null,
                 'total_adjustment' => $this->metadata['park_total_adjustment'] ?? 0.0,
+                'weather_adjustment' => $this->metadata['weather_total_adjustment'] ?? 0.0,
                 ...$this->ballparkSignalContext((float) ($this->metadata['park_total_adjustment'] ?? 0.0)),
+            ],
+            'actual_weather' => $this->metadata['actual_weather'] ?? [
+                'enabled' => (bool) config('mlb.prediction.actual_weather.enabled', true),
+                'applied' => false,
+                'reason' => 'not_evaluated',
             ],
         ];
     }
@@ -671,9 +683,178 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 $absAdjustment >= 0.25 => 'ballpark_context_only',
                 default => 'ballpark_neutral_for_wins',
             },
-            'weather_signal' => 'weather_not_available',
-            'weather_adjustment' => 0.0,
+            'weather_signal' => $this->metadata['actual_weather']['signal'] ?? 'weather_not_available',
         ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function actualWeatherContext(Game $game): array
+    {
+        $context = [
+            'enabled' => (bool) config('mlb.prediction.actual_weather.enabled', true),
+            'applied' => false,
+            'reason' => 'neutral_weather',
+            'signal' => 'weather_neutral',
+            'total_adjustment' => 0.0,
+        ];
+
+        if (! config('mlb.prediction.actual_weather.enabled', true)) {
+            return [
+                ...$context,
+                'reason' => 'feature_disabled',
+                'signal' => 'weather_feature_disabled',
+            ];
+        }
+
+        $weather = $game->relationLoaded('weather') ? $game->weather : $game->weather()->first();
+        if (! $weather) {
+            return [
+                ...$context,
+                'reason' => 'missing_weather_row',
+                'signal' => 'weather_not_available',
+            ];
+        }
+
+        if ((bool) $weather->is_indoor) {
+            return [
+                ...$context,
+                'reason' => 'indoor_venue',
+                'signal' => 'roof_closed_neutralizes_weather',
+                'is_indoor' => true,
+                'roof_status' => $weather->roof_status,
+            ];
+        }
+
+        if ($weather->roof_status === 'unknown_retractable') {
+            return [
+                ...$context,
+                'reason' => 'unknown_retractable_roof_status',
+                'signal' => 'roof_status_unknown',
+                'is_indoor' => false,
+                'roof_status' => $weather->roof_status,
+            ];
+        }
+
+        $temperature = (float) ($weather->temperature_f ?? 0.0);
+        $wind = (float) ($weather->wind_speed_mph ?? 0.0);
+        $gust = (float) ($weather->wind_gust_mph ?? 0.0);
+        $windDirection = $weather->wind_direction_degrees !== null ? (int) $weather->wind_direction_degrees : null;
+        $precip = (float) ($weather->precipitation_inches ?? 0.0);
+        $humidity = (float) ($weather->humidity_percent ?? 0.0);
+        $adjustment = 0.0;
+        $signals = [];
+        $windSignal = $this->windDirectionSignal($game, $windDirection);
+
+        if ($wind >= (float) config('mlb.prediction.actual_weather.wind_under_threshold_mph', 10)) {
+            if ($windSignal === 'wind_out_to_center') {
+                $adjustment += $wind * (float) config('mlb.prediction.actual_weather.wind_out_total_weight', 0.055);
+                $signals[] = 'wind_out_over_signal';
+            } elseif ($windSignal === 'wind_in_from_center') {
+                $adjustment += $wind * (float) config('mlb.prediction.actual_weather.wind_in_total_weight', -0.065);
+                $signals[] = 'wind_in_under_signal';
+            } else {
+                $signals[] = 'wind_direction_unknown';
+            }
+        }
+
+        if ($gust >= (float) config('mlb.prediction.actual_weather.gust_under_threshold_mph', 18)) {
+            if ($windSignal === 'wind_out_to_center') {
+                $adjustment += $gust * (float) config('mlb.prediction.actual_weather.gust_out_total_weight', 0.02);
+                $signals[] = 'gusts_out_over_signal';
+            } elseif ($windSignal === 'wind_in_from_center') {
+                $adjustment += $gust * (float) config('mlb.prediction.actual_weather.gust_in_total_weight', -0.025);
+                $signals[] = 'gusts_in_under_signal';
+            }
+        }
+
+        if ($precip >= (float) config('mlb.prediction.actual_weather.precip_under_threshold_inches', 0.02)) {
+            $adjustment += (float) config('mlb.prediction.actual_weather.precip_total_adjustment', -0.35);
+            $signals[] = 'precip_under_signal';
+        }
+
+        if ($temperature > 0 && $temperature <= (float) config('mlb.prediction.actual_weather.cold_under_threshold_f', 50)) {
+            $adjustment += (float) config('mlb.prediction.actual_weather.cold_total_adjustment', -0.30);
+            $signals[] = 'cold_weather_under_signal';
+        }
+
+        if ($temperature >= (float) config('mlb.prediction.actual_weather.warm_over_threshold_f', 82)) {
+            $adjustment += (float) config('mlb.prediction.actual_weather.warm_total_adjustment', 0.20);
+            $signals[] = 'warm_weather_over_signal';
+        }
+
+        if ($humidity >= (float) config('mlb.prediction.actual_weather.humidity_over_threshold', 70)) {
+            $adjustment += (float) config('mlb.prediction.actual_weather.humidity_total_adjustment', 0.10);
+            $signals[] = 'humid_air_over_signal';
+        }
+
+        $maxAdjustment = (float) config('mlb.prediction.actual_weather.max_total_adjustment', 1.6);
+        $adjustment = $this->clamp($adjustment, -$maxAdjustment, $maxAdjustment);
+        $signal = $signals[0] ?? 'weather_neutral';
+
+        return [
+            'enabled' => true,
+            'applied' => round($adjustment, 3) !== 0.0,
+            'reason' => round($adjustment, 3) === 0.0 ? 'neutral_weather' : 'actual_weather_total_adjustment',
+            'signal' => $signal,
+            'signals' => array_values(array_unique($signals)),
+            'is_indoor' => false,
+            'roof_status' => $weather->roof_status,
+            'temperature_f' => round($temperature, 2),
+            'wind_speed_mph' => round($wind, 2),
+            'wind_gust_mph' => round($gust, 2),
+            'wind_direction_degrees' => $windDirection,
+            'wind_direction_signal' => $windSignal,
+            'precipitation_inches' => round($precip, 3),
+            'humidity_percent' => round($humidity, 2),
+            'total_adjustment' => round($adjustment, 3),
+        ];
+    }
+
+    private function windDirectionSignal(Game $game, ?int $windDirection): string
+    {
+        if ($windDirection === null) {
+            return 'wind_direction_unknown';
+        }
+
+        $orientations = (array) config('mlb.prediction.actual_weather.wind_out_to_center_degrees', []);
+        $outToCenter = $orientations[(string) $game->venue_name] ?? null;
+        if (! is_numeric($outToCenter)) {
+            return 'wind_direction_unknown';
+        }
+
+        $tolerance = (float) config('mlb.prediction.actual_weather.wind_direction_tolerance_degrees', 45);
+        $windFromForOut = $this->normalizeDegrees((float) $outToCenter + 180.0);
+
+        if ($this->angleDifference($windDirection, $windFromForOut) <= $tolerance) {
+            return 'wind_out_to_center';
+        }
+
+        if ($this->angleDifference($windDirection, (float) $outToCenter) <= $tolerance) {
+            return 'wind_in_from_center';
+        }
+
+        return 'crosswind_or_neutral';
+    }
+
+    private function angleDifference(float $left, float $right): float
+    {
+        $diff = abs($this->normalizeDegrees($left) - $this->normalizeDegrees($right));
+
+        return min($diff, 360.0 - $diff);
+    }
+
+    private function normalizeDegrees(float $degrees): float
+    {
+        $normalized = fmod($degrees, 360.0);
+
+        return $normalized < 0 ? $normalized + 360.0 : $normalized;
+    }
+
+    private function clamp(float $value, float $min, float $max): float
+    {
+        return max($min, min($max, $value));
     }
 
     /**

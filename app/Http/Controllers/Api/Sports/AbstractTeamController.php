@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Services\Trends\TrendSignalScorer;
 use App\Support\SportsViewCache;
 use App\Support\UserTierResolver;
 use Illuminate\Database\Eloquent\Model;
@@ -150,6 +151,8 @@ abstract class AbstractTeamController extends AbstractSportsApiController
                 }
 
                 $result = $calculator->execute($team, $gameCount, $season, $seasonType, $beforeDate, $userTier);
+                $scorer = app(TrendSignalScorer::class);
+                $scoredSignals = $scorer->score($this->trendSportKey(), $result['trends'], $gameCount);
 
                 return [
                     'team_id' => $team->id,
@@ -158,11 +161,25 @@ abstract class AbstractTeamController extends AbstractSportsApiController
                     'sample_size' => $gameCount,
                     'user_tier' => $userTier,
                     'trends' => $result['trends'],
+                    'scored_signals' => $scoredSignals,
+                    'trend_signal_summary' => $scorer->summarize($scoredSignals),
                     'locked_trends' => $result['locked'],
                 ];
             },
         );
 
         return response()->json($payload);
+    }
+
+    protected function trendSportKey(): string
+    {
+        $parts = explode('\\', static::class);
+        $apiIndex = array_search('Api', $parts, true);
+
+        if ($apiIndex !== false && isset($parts[$apiIndex + 1])) {
+            return strtolower($parts[$apiIndex + 1]);
+        }
+
+        return strtolower(class_basename(static::class));
     }
 }

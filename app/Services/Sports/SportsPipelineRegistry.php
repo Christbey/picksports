@@ -208,6 +208,12 @@ class SportsPipelineRegistry
                 ]),
                 $this->step('Sync game details', 'espn:sync-mlb-game-details'),
                 $this->step('Sync injuries', 'espn:sync-mlb-injuries'),
+                $this->step('Sync game weather', 'mlb:sync-game-weather', [
+                    '--season' => $season,
+                    '--days-back' => 0,
+                    '--days-forward' => 7,
+                    '--force' => true,
+                ]),
                 $this->step('Sync odds', 'mlb:sync-odds'),
                 $this->step('Sync player props', 'mlb:sync-player-props'),
                 $this->step('Sync futures odds', 'sports:sync-futures-odds', [

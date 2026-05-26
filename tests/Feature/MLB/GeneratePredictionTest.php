@@ -5,6 +5,7 @@ use App\Models\MLB\BullpenRating;
 use App\Models\MLB\DepthChartEntry;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
+use App\Models\MLB\GameWeather;
 use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerInjury;
@@ -460,6 +461,95 @@ it('applies a park factor to predicted_total when the venue is in mlb.prediction
     expect((float) data_get($neutralPred->model_metadata, 'park_context.total_adjustment'))->toBe(0.0);
     expect(data_get($neutralPred->model_metadata, 'park_context.venue_name'))->toBe('Unknown Park');
     expect(data_get($neutralPred->model_metadata, 'park_context.run_environment'))->toBe('neutral');
+});
+
+it('applies stored mlb weather to predicted totals and reason metadata', function () {
+    Config::set('mlb.prediction.home_field_advantage', 0);
+    Config::set('mlb.elo.home_field_advantage', 0);
+    Config::set('mlb.prediction.early_season.context_scale_min', 0.0);
+    Config::set('mlb.prediction.situational.advanced_ratings.enabled', false);
+    Config::set('mlb.prediction.situational.starter_form.enabled', false);
+    Config::set('mlb.prediction.park_factors', ['Coors Field' => 0.0]);
+    Config::set('mlb.prediction.actual_weather.enabled', true);
+    Config::set('mlb.prediction.actual_weather.wind_out_to_center_degrees', ['Coors Field' => 20]);
+
+    $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
+
+    $baselineGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'venue_name' => 'Coors Field',
+        'game_date' => '2026-05-25',
+        'game_time' => '20:10:00',
+    ]);
+
+    $weatherGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'venue_name' => 'Coors Field',
+        'game_date' => '2026-05-25',
+        'game_time' => '20:10:00',
+    ]);
+
+    GameWeather::query()->create([
+        'game_id' => $weatherGame->id,
+        'provider' => 'test',
+        'observed_at' => '2026-05-25 20:00:00',
+        'temperature_f' => 85,
+        'wind_speed_mph' => 14,
+        'wind_gust_mph' => 22,
+        'wind_direction_degrees' => 200,
+        'precipitation_inches' => 0,
+        'humidity_percent' => 75,
+        'is_indoor' => false,
+        'roof_status' => 'open_air',
+    ]);
+
+    $baseline = app(GeneratePrediction::class)->execute($baselineGame->fresh(['homeTeam', 'awayTeam']));
+    $weather = app(GeneratePrediction::class)->execute($weatherGame->fresh(['homeTeam', 'awayTeam', 'weather']));
+
+    expect((float) $weather->predicted_total)->toBeGreaterThan((float) $baseline->predicted_total)
+        ->and((float) data_get($weather->model_metadata, 'actual_weather.total_adjustment'))->toBeGreaterThan(1.4)
+        ->and(data_get($weather->model_metadata, 'actual_weather.applied'))->toBeTrue()
+        ->and(data_get($weather->model_metadata, 'actual_weather.signal'))->toBe('wind_out_over_signal')
+        ->and(data_get($weather->model_metadata, 'actual_weather.signals'))->toContain('warm_weather_over_signal')
+        ->and(data_get($weather->model_metadata, 'park_context.weather_signal'))->toBe('wind_out_over_signal');
+});
+
+it('does not apply weather when retractable roof status is unknown', function () {
+    Config::set('mlb.prediction.actual_weather.enabled', true);
+
+    $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'venue_name' => 'Rogers Centre',
+    ]);
+
+    GameWeather::query()->create([
+        'game_id' => $game->id,
+        'provider' => 'test',
+        'roof_status' => 'unknown_retractable',
+        'is_indoor' => false,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam', 'weather']));
+
+    expect(data_get($prediction->model_metadata, 'actual_weather.applied'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'actual_weather.signal'))->toBe('roof_status_unknown')
+        ->and((float) data_get($prediction->model_metadata, 'actual_weather.total_adjustment'))->toBe(0.0);
 });
 
 it('prefers probable starter elo over team recent average pitcher elo', function () {

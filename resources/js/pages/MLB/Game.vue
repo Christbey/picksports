@@ -13,7 +13,9 @@ const props = defineProps<{
     gameId: number;
 }>();
 
-const { pageProps, recentSectionProps, depthCharts } = useMlbDetailedGamePage(props.gameId);
+const { pageProps, recentSectionProps, depthCharts } = useMlbDetailedGamePage(
+    props.gameId,
+);
 const awayInjuries = computed(
     () => pageProps.value.awayTeam?.active_injuries ?? [],
 );
@@ -23,8 +25,8 @@ const homeInjuries = computed(
 const hasDepthChartEntries = computed(() =>
     Boolean(
         depthCharts.value &&
-            ((depthCharts.value.away_team?.entries.length ?? 0) > 0 ||
-                (depthCharts.value.home_team?.entries.length ?? 0) > 0),
+        ((depthCharts.value.away_team?.entries.length ?? 0) > 0 ||
+            (depthCharts.value.home_team?.entries.length ?? 0) > 0),
     ),
 );
 </script>
@@ -32,34 +34,44 @@ const hasDepthChartEntries = computed(() =>
 <template>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
-            <BettingPlanCard
-                :betting-plan="pageProps.prediction?.narrative?.betting_plan"
-            />
-            <DepthChartImpactCard
-                :context="pageProps.prediction?.depth_chart_context"
-            />
+            <div
+                class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]"
+            >
+                <BettingPlanCard
+                    :betting-plan="
+                        pageProps.prediction?.narrative?.betting_plan
+                    "
+                />
+                <DepthChartImpactCard
+                    :context="pageProps.prediction?.depth_chart_context"
+                />
+            </div>
         </template>
         <template #afterHero>
-            <DepthChartCard
-                v-if="hasDepthChartEntries && depthCharts"
-                :away-team="depthCharts.away_team"
-                :home-team="depthCharts.home_team"
-            />
-            <ProbableStartersCard
-                v-else
-                :away-team="pageProps.awayTeam"
-                :home-team="pageProps.homeTeam"
-                :away-starter-name="pageProps.awayStarterName"
-                :home-starter-name="pageProps.homeStarterName"
-                :away-starter-rating="pageProps.awayStarterRating"
-                :home-starter-rating="pageProps.homeStarterRating"
-            />
-            <InjuryReportCard
-                :away-team-abbr="pageProps.awayTeam?.abbreviation"
-                :home-team-abbr="pageProps.homeTeam?.abbreviation"
-                :away-injuries="awayInjuries"
-                :home-injuries="homeInjuries"
-            />
+            <div
+                class="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]"
+            >
+                <DepthChartCard
+                    v-if="hasDepthChartEntries && depthCharts"
+                    :away-team="depthCharts.away_team"
+                    :home-team="depthCharts.home_team"
+                />
+                <ProbableStartersCard
+                    v-else
+                    :away-team="pageProps.awayTeam"
+                    :home-team="pageProps.homeTeam"
+                    :away-starter-name="pageProps.awayStarterName"
+                    :home-starter-name="pageProps.homeStarterName"
+                    :away-starter-rating="pageProps.awayStarterRating"
+                    :home-starter-rating="pageProps.homeStarterRating"
+                />
+                <InjuryReportCard
+                    :away-team-abbr="pageProps.awayTeam?.abbreviation"
+                    :home-team-abbr="pageProps.homeTeam?.abbreviation"
+                    :away-injuries="awayInjuries"
+                    :home-injuries="homeInjuries"
+                />
+            </div>
         </template>
         <template #afterTrends>
             <MlbGameInsights v-bind="recentSectionProps" />

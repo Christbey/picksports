@@ -4,9 +4,11 @@ namespace App\Services\Predictions;
 
 use App\Actions\NBA\CalculateBettingValue;
 use App\Actions\NBA\CalculateTeamTrends;
+use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Services\AI\SportsAiContentService;
+use App\Services\MLB\MlbBettingSignalService;
 use App\Services\NBA\NbaGameContextLayerService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
@@ -730,14 +732,7 @@ class PredictionNarrativeService
                 (float) $context['confidence_score']
             ),
             'generated_by' => 'template-generic-v1',
-            'betting_plan' => [
-                'bet_pick' => 'Bet '.$pickLabel.'.',
-                'reasoning' => sprintf(
-                    'The model gives %s the higher win probability at %s.',
-                    $context['picked_team'],
-                    $this->percent((float) $context['picked_probability'])
-                ),
-            ],
+            'betting_plan' => $this->genericBettingPlan($prediction, $sport, $context, $pickLabel),
             'social_caption' => sprintf(
                 '%s lean: %s at %s win probability.',
                 strtoupper($sport),
@@ -805,7 +800,129 @@ class PredictionNarrativeService
             'away_metric' => $this->firstMetricValue($prediction, ['away_elo', 'away_team_elo', 'away_combined_elo', 'away_fpi', 'away_off_eff']),
             'depth_chart_note' => $this->depthChartNarrativeNote($prediction),
             'depth_chart_prompt_line' => $this->depthChartPromptLine($prediction),
+            'betting_plan_context' => $this->genericBettingPlanContext($prediction, $sport),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array<string, mixed>
+     */
+    private function genericBettingPlan(Model $prediction, string $sport, array $context, string $pickLabel): array
+    {
+        $betFilter = is_array($context['betting_plan_context'] ?? null)
+            ? $context['betting_plan_context']
+            : $this->genericBettingPlanContext($prediction, $sport);
+
+        if ($sport === 'mlb' && $betFilter !== []) {
+            $classification = (string) ($betFilter['classification'] ?? 'pass');
+            $type = str_replace('_', ' ', (string) ($betFilter['type'] ?? 'moneyline'));
+            $team = (string) ($betFilter['team_name'] ?? $context['picked_team']);
+            $marketPrice = $betFilter['market_price'] ?? null;
+            $marketImplied = $betFilter['market_implied_probability'] ?? null;
+            $modelProbability = $betFilter['model_probability'] ?? $context['picked_probability'];
+            $noBetReason = (string) ($betFilter['no_bet_reason'] ?? '');
+            $riskFlags = array_values(array_filter(array_map('strval', (array) ($betFilter['risk_flags'] ?? []))));
+            $reasonCodes = array_values(array_filter(array_map('strval', (array) ($betFilter['reason_codes'] ?? []))));
+
+            if ($classification === 'pass') {
+                return [
+                    'bet_pick' => 'No bet / pass '.$type.'.',
+                    'reasoning' => $this->mlbPassReasoning($team, $modelProbability, $marketPrice, $marketImplied, $noBetReason),
+                    'classification' => 'pass',
+                    'against_bet' => $this->mlbAgainstBetReasons($riskFlags, $noBetReason),
+                    'pass_reasons' => array_values(array_filter([$noBetReason])),
+                    'reason_codes' => $reasonCodes,
+                ];
+            }
+
+            return [
+                'bet_pick' => 'Bet '.$team.' '.$type.'.',
+                'reasoning' => $this->mlbPlayableReasoning($team, $modelProbability, $marketPrice, $marketImplied),
+                'classification' => $classification,
+                'for_bet' => array_slice($reasonCodes, 0, 5),
+                'against_bet' => $riskFlags,
+                'reason_codes' => $reasonCodes,
+            ];
+        }
+
+        return [
+            'bet_pick' => 'Bet '.$pickLabel.'.',
+            'reasoning' => sprintf(
+                'The model gives %s the higher win probability at %s.',
+                $context['picked_team'],
+                $this->percent((float) $context['picked_probability'])
+            ),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function genericBettingPlanContext(Model $prediction, string $sport): array
+    {
+        if ($sport !== 'mlb' || ! $prediction instanceof MlbPrediction) {
+            return [];
+        }
+
+        $prediction->loadMissing(['game.homeTeam', 'game.awayTeam']);
+        $candidates = app(MlbBettingSignalService::class)->betCandidatesForPrediction($prediction, true, true);
+
+        if ($candidates === []) {
+            return [];
+        }
+
+        usort($candidates, fn (array $left, array $right): int => ((int) ($right['score'] ?? 0)) <=> ((int) ($left['score'] ?? 0)));
+
+        return $candidates[0];
+    }
+
+    private function mlbPassReasoning(string $team, mixed $modelProbability, mixed $marketPrice, mixed $marketImplied, string $noBetReason): string
+    {
+        $parts = [
+            sprintf('The model leans %s at %s.', $team, $this->percent((float) $modelProbability)),
+        ];
+
+        if (is_numeric($marketPrice) && is_numeric($marketImplied)) {
+            $parts[] = sprintf(
+                'The current moneyline %s implies %s, so the price is ahead of the model.',
+                $this->formatOddsText($marketPrice),
+                $this->percent((float) $marketImplied)
+            );
+        }
+
+        if ($noBetReason !== '') {
+            $parts[] = 'Pass reason: '.str_replace('_', ' ', $noBetReason).'.';
+        }
+
+        return implode(' ', $parts);
+    }
+
+    /**
+     * @param  array<int, string>  $riskFlags
+     * @return array<int, string>
+     */
+    private function mlbAgainstBetReasons(array $riskFlags, string $noBetReason): array
+    {
+        return array_values(array_unique(array_filter([
+            $noBetReason !== '' ? str_replace('_', ' ', $noBetReason) : null,
+            ...array_map(fn (string $flag): string => str_replace('_', ' ', $flag), $riskFlags),
+        ])));
+    }
+
+    private function mlbPlayableReasoning(string $team, mixed $modelProbability, mixed $marketPrice, mixed $marketImplied): string
+    {
+        $reasoning = sprintf('The MLB bet filter keeps %s playable at %s model probability.', $team, $this->percent((float) $modelProbability));
+
+        if (is_numeric($marketPrice) && is_numeric($marketImplied)) {
+            $reasoning .= sprintf(
+                ' Market price %s implies %s.',
+                $this->formatOddsText($marketPrice),
+                $this->percent((float) $marketImplied)
+            );
+        }
+
+        return $reasoning;
     }
 
     private function depthChartNarrativeNote(Model $prediction): ?string

@@ -350,6 +350,89 @@ test('template narrative keeps a strong total edge playable when series context 
         ->and($narrative['betting_plan']['reasoning'])->toContain('Series total context');
 });
 
+test('universal nba context rules downgrade weak historical total spots', function () {
+    config()->set('nba.prediction.narrative.provider', 'template');
+
+    $user = User::factory()->create();
+    $user->givePermissionTo([
+        'view-prediction-spread',
+        'view-prediction-win-probability',
+        'view-prediction-confidence-score',
+    ]);
+
+    $home = Team::factory()->create(['location' => 'Cleveland', 'name' => 'Cavaliers']);
+    $away = Team::factory()->create(['location' => 'New York', 'name' => 'Knicks']);
+    $currentGame = Game::factory()->create([
+        'season' => 2026,
+        'game_date' => '2026-05-25',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'odds_data' => makeNbaNarrativeOddsPayload(217.5),
+    ]);
+
+    foreach ([231, 235, 216] as $index => $total) {
+        Game::factory()->create([
+            'season' => 2026,
+            'game_date' => now()->subDays($index + 1),
+            'status' => 'STATUS_FINAL',
+            'home_team_id' => $index % 2 === 0 ? $home->id : $away->id,
+            'away_team_id' => $index % 2 === 0 ? $away->id : $home->id,
+            'home_score' => 110,
+            'away_score' => $total - 110,
+            'period' => 4,
+        ]);
+    }
+
+    for ($i = 0; $i < 12; $i++) {
+        $historicalHome = Team::factory()->create();
+        $historicalAway = Team::factory()->create();
+        $historicalGame = Game::factory()->create([
+            'season' => 2026,
+            'game_date' => now()->subDays($i + 20),
+            'status' => 'STATUS_FINAL',
+            'espn_event_id' => 'hist-'.$i,
+            'home_team_id' => $historicalHome->id,
+            'away_team_id' => $historicalAway->id,
+            'home_score' => 100,
+            'away_score' => $i < 4 ? 125 : 95,
+            'period' => 4,
+            'odds_data' => makeNbaNarrativeOddsPayload(217.5),
+        ]);
+
+        Prediction::query()->create([
+            'game_id' => $historicalGame->id,
+            'predicted_spread' => 1.0,
+            'predicted_total' => 223.5,
+            'win_probability' => 0.52,
+            'confidence_score' => 52.0,
+            'actual_total' => $i < 4 ? 225.0 : 195.0,
+            'total_error' => 24.0,
+            'winner_correct' => true,
+            'graded_at' => now(),
+        ]);
+    }
+
+    $prediction = Prediction::query()->create([
+        'game_id' => $currentGame->id,
+        'predicted_spread' => -0.3,
+        'predicted_total' => 223.6,
+        'win_probability' => 0.48,
+        'confidence_score' => 52.1,
+        'rest_days_home' => 2,
+        'rest_days_away' => 2,
+    ])->load('game.homeTeam', 'game.awayTeam');
+
+    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $narrative = $data['narrative'];
+
+    expect($narrative['context_layer']['historical_spot_reference']['sample_size'])->toBeGreaterThanOrEqual(12)
+        ->and($narrative['context_layer']['risk_flags'])->toContain('historical_spot_low_hit_rate')
+        ->and($narrative['context_layer']['reason_codes'])->toContain('historical_spot_downgrade')
+        ->and($narrative['betting_plan']['classification'])->toBe('small_play_context_risk')
+        ->and($narrative['betting_plan']['against_bet'])->toContain('Market movement has limited snapshot coverage.');
+});
+
 test('template betting plan does not recommend a spread bet without a market line', function () {
     config()->set('nba.prediction.narrative.provider', 'template');
 

@@ -95,7 +95,7 @@ it('uses synced tier role as effective trends tier for authenticated users', fun
         ->assertJsonPath('user_tier', 'basic');
 });
 
-it('locks trend categories above the authenticated user tier', function () {
+it('returns all trend categories without pro or premium locks', function () {
     seedTrendTiers();
     Permission::findOrCreate('view-nba-predictions', 'web');
 
@@ -136,11 +136,13 @@ it('locks trend categories above the authenticated user tier', function () {
 
     $response->assertOk()
         ->assertJsonPath('user_tier', 'free')
-        ->assertJsonMissingPath('trends.quarters')
-        ->assertJsonMissingPath('trends.advanced')
-        ->assertJsonPath('locked_trends.quarters', 'basic')
-        ->assertJsonPath('locked_trends.advanced', 'pro')
-        ->assertJsonPath('locked_trends.momentum', 'premium');
+        ->assertJsonPath('locked_trends', []);
+
+    expect($response->json('trends.quarters'))->not->toBeEmpty()
+        ->and($response->json('scored_signals'))->not->toBeEmpty()
+        ->and($response->json('trend_signal_summary.counts.contextual'))->toBeGreaterThan(0)
+        ->and($response->json('locked_trends.advanced'))->toBeNull()
+        ->and($response->json('locked_trends.momentum'))->toBeNull();
 });
 
 it('labels spread and totals trends as model-based', function () {

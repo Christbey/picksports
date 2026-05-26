@@ -604,6 +604,11 @@ $scheduleSportPipeline(
             'time' => '05:45',
             'name' => 'MLB: Calculate Bullpen Ratings',
         ],
+        [
+            'command' => 'mlb:sync-game-weather --season='.$currentYear.' --days-back=0 --days-forward=7 --force',
+            'time' => '05:50',
+            'name' => 'MLB: Sync Game Weather',
+        ],
     ]
 );
 $scheduleDailySeasonJob(

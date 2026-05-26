@@ -135,18 +135,20 @@ const sportsEventSchema = computed(() =>
             :is="'script'"
             head-key="schema-webpage-game"
             type="application/ld+json"
-            v-text="webPageSchema"
-        />
+        >
+            {{ webPageSchema }}
+        </component>
         <component
             :is="'script'"
             head-key="schema-sportsevent-game"
             type="application/ld+json"
-            v-text="sportsEventSchema"
-        />
+        >
+            {{ sportsEventSchema }}
+        </component>
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-5 p-3 md:p-4">
+        <div class="flex h-full flex-1 flex-col p-3 md:p-4">
             <Alert v-if="error" variant="destructive">
                 <AlertDescription>{{ error }}</AlertDescription>
             </Alert>
@@ -161,7 +163,9 @@ const sportsEventSchema = computed(() =>
                 </slot>
             </template>
 
-            <slot v-else />
+            <div v-else class="mx-auto flex w-full max-w-7xl flex-col gap-4">
+                <slot />
+            </div>
         </div>
     </AppLayout>
 </template>

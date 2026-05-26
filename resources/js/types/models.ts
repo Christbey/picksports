@@ -80,6 +80,7 @@ export interface PlayerInjury {
     impact_spread?: number | null;
     impact_total?: number | null;
     impact_multiplier?: number | null;
+    injury_date: string | null;
     return_date: string | null;
     source_updated_at: string | null;
     is_active: boolean;

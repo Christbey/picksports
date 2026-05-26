@@ -49,7 +49,6 @@ abstract class AbstractCalculateTeamTrends
         }
 
         $trends = [];
-        $locked = [];
         $enabledCollectors = config('trends.collectors', []);
 
         foreach ($this->collectors() as $collectorClass) {
@@ -57,13 +56,6 @@ abstract class AbstractCalculateTeamTrends
             $key = $collector->key();
 
             if (! ($enabledCollectors[$key] ?? true)) {
-                continue;
-            }
-
-            $requiredTier = $this->requiredTier($key);
-            if (! $this->tierAllows($userTier, $requiredTier)) {
-                $locked[$key] = $requiredTier;
-
                 continue;
             }
 
@@ -77,7 +69,7 @@ abstract class AbstractCalculateTeamTrends
 
         $trends = $this->normalizeTrendOutput($trends);
 
-        return ['trends' => $trends, 'locked' => $locked];
+        return ['trends' => $trends, 'locked' => []];
     }
 
     /**

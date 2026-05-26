@@ -24,7 +24,7 @@ class ClutchPerformanceTrendCollector extends TrendCollector
 
         if ($closeGames->count() >= 3) {
             $closeWins = $closeGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($closeWins, $closeGames->count())} in close games (decided by {$closeMargin} points or less)";
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($closeWins, $closeGames->count())} in close games (decided by {$closeMargin} {$this->scoringUnit()} or less)";
 
             $clutchPct = $this->percentage($closeWins, $closeGames->count());
             if ($clutchPct >= 70) {

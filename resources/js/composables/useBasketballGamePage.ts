@@ -83,6 +83,18 @@ const normalizeDepthChartContext = (
         win_probability_adjustment: toOptionalNumber(
             source.win_probability_adjustment,
         ),
+        injury_model_source:
+            typeof source.injury_model_source === 'string'
+                ? source.injury_model_source
+                : null,
+        injury_spread_model_source:
+            typeof source.injury_spread_model_source === 'string'
+                ? source.injury_spread_model_source
+                : null,
+        injury_total_model_source:
+            typeof source.injury_total_model_source === 'string'
+                ? source.injury_total_model_source
+                : null,
         home_pitcher_source:
             typeof source.home_pitcher_source === 'string'
                 ? source.home_pitcher_source

@@ -78,6 +78,19 @@ it('allows team metrics pages with sport permission', function () {
         ->assertOk();
 });
 
+it('allows WNBA prediction pages without the sport permission', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->get('/wnba/predictions')
+        ->assertOk();
+});
+
+it('still requires auth for WNBA prediction pages', function () {
+    $this->get('/wnba/predictions')
+        ->assertRedirect(route('login'));
+});
+
 it('requires auth for player props routes', function () {
     $this->get('/nfl/player-props')
         ->assertRedirect(route('login'));

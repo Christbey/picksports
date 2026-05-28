@@ -19,4 +19,14 @@ class PredictionController extends AbstractPredictionController
     {
         return true;
     }
+
+    protected function applyPredictionVisibilityFilters($query): void
+    {
+        $query->whereHas('game', fn ($gameQuery) => $gameQuery->withoutCompletedPlayoffSeriesPlaceholders());
+    }
+
+    protected function applyAvailableDatesVisibilityFilters($query, string $gameTable): void
+    {
+        (new Game)->scopeWithoutCompletedPlayoffSeriesPlaceholders($query, $gameTable);
+    }
 }

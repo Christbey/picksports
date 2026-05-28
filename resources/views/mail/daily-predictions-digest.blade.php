@@ -1,9 +1,22 @@
+@php
+    $officialBets = collect($predictions)->filter(fn ($prediction) => ($prediction['pick_type'] ?? null) !== 'model_lean')->count();
+    $modelLeans = max(0, count($predictions) - $officialBets);
+    $waitingOnOdds = collect($predictions)->filter(fn ($prediction) => ($prediction['pick_type'] ?? null) === 'model_lean')->count();
+@endphp
+
 <x-mail::message>
-# {{ $summary['headline'] ?? 'Daily Picks Digest' }}
+# {{ $summary['headline'] ?? 'Today\'s Picks Watchlist' }}
 
 Hi {{ $user->name }},
 
-{{ $summary['intro'] ?? 'Here are a few picks for today from the boards you can access.' }}
+{{ $summary['intro'] ?? 'Here is the board worth checking today.' }}
+
+<x-mail::panel>
+**Action Board**  
+Official bets: **{{ $officialBets }}**  
+Model leans: **{{ $modelLeans }}**  
+Waiting on odds: **{{ $waitingOnOdds }}**
+</x-mail::panel>
 
 @if (!empty($summary['highlights']))
 @foreach ($summary['highlights'] as $highlight)
@@ -13,17 +26,20 @@ Hi {{ $user->name }},
 @endif
 
 @if (count($predictions) > 0)
-## Predictions
+## Today’s Watchlist
 
 @foreach ($predictions as $prediction)
 <x-mail::panel>
-**{{ $prediction['sport'] }}**  
-**{{ $prediction['matchup'] }}**
+**{{ $prediction['sport'] }} | {{ $prediction['matchup'] }}**  
+{{ $prediction['classification'] ?? 'Watchlist' }}
 
-Pick: **{{ $prediction['pick'] }}**  
+Lean: **{{ $prediction['bet_label'] ?? $prediction['pick'] }}**  
 Confidence: **{{ number_format((float) $prediction['confidence'], 1) }}%**
+@if(($prediction['edge'] ?? 0) > 0)
+Edge: **{{ number_format((float) $prediction['edge'], 1) }}%**
+@endif
 @if($prediction['predicted_spread'] !== null)
-Projected spread: **{{ $prediction['predicted_spread'] > 0 ? '+' : '' }}{{ number_format((float) $prediction['predicted_spread'], 1) }}**
+Model margin: **{{ $prediction['predicted_spread'] > 0 ? '+' : '' }}{{ number_format((float) $prediction['predicted_spread'], 1) }}**
 @endif
 @if($prediction['predicted_total'] !== null)
 Projected total: **{{ number_format((float) $prediction['predicted_total'], 1) }}**
@@ -32,8 +48,10 @@ Projected total: **{{ number_format((float) $prediction['predicted_total'], 1) }
 Game time: {{ $prediction['game_time'] }}
 @endif
 
+{{ $prediction['market_note'] ?? 'Review the matchup before betting.' }}
+
 <x-mail::button :url="$prediction['url']">
-View Matchup
+Review Matchup
 </x-mail::button>
 </x-mail::panel>
 @endforeach
@@ -44,9 +62,8 @@ View Matchup
 
 @foreach ($playerProps as $prop)
 <x-mail::panel>
-**{{ $prop['sport'] }}**  
-**{{ $prop['player_name'] }}**  
-{{ $prop['matchup'] }}
+**{{ $prop['sport'] }} | {{ $prop['matchup'] }}**  
+**{{ $prop['player_name'] }}**
 
 Recommendation: **{{ $prop['recommendation'] }}**
 @if($prop['odds'])

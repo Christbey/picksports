@@ -3,7 +3,12 @@ import { computed } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import type { TeamTrendData, TeamTrendSignal } from '@/types';
+import type {
+    MatchupContextData,
+    MatchupContextRow,
+    TeamTrendData,
+    TeamTrendSignal,
+} from '@/types';
 
 type TrendTone = 'team' | 'total' | 'risk';
 
@@ -35,6 +40,7 @@ const props = defineProps<{
     homeLabel?: string | null;
     awayTrends?: TeamTrendData | null;
     homeTrends?: TeamTrendData | null;
+    matchupContext?: MatchupContextData | null;
     emptyText: string;
 }>();
 
@@ -295,6 +301,47 @@ const totalForCategory = (
 ): number =>
     signalsForCategory(awayTrends, category) +
     signalsForCategory(homeTrends, category);
+
+const matchupWinRate = (record: MatchupContextRow['away']): number | null => {
+    if (!record.games) return null;
+
+    return (record.wins + record.ties * 0.5) / record.games;
+};
+
+const formatMatchupWinRate = (record: MatchupContextRow['away']): string => {
+    const rate = matchupWinRate(record);
+
+    return rate === null ? 'No sample' : `${Math.round(rate * 100)}%`;
+};
+
+const matchupSampleLabel = (row: MatchupContextRow): string => {
+    const games = Math.max(row.away.games || 0, row.home.games || 0);
+
+    if (games === 0) return 'No sample';
+
+    return `${games} ${games === 1 ? 'game' : 'games'}`;
+};
+
+const matchupEdgeLabel = (row: MatchupContextRow): string => {
+    const awayRate = matchupWinRate(row.away);
+    const homeRate = matchupWinRate(row.home);
+
+    if (awayRate === null && homeRate === null) return 'No sample';
+    if (awayRate === homeRate) return 'Even';
+    if ((awayRate ?? 0) > (homeRate ?? 0)) {
+        return `${props.awayLabel || 'Away'} edge`;
+    }
+
+    return `${props.homeLabel || 'Home'} edge`;
+};
+
+const matchupRows = computed(() => props.matchupContext?.rows ?? []);
+
+const displayTitle = computed(() =>
+    matchupRows.value.length > 0
+        ? 'Trends & Matchup History'
+        : props.title,
+);
 </script>
 
 <template>
@@ -304,7 +351,7 @@ const totalForCategory = (
                 <div>
                     <div class="ui-kicker">Pattern Signals</div>
                     <CardTitle class="mt-1 text-lg tracking-tight">
-                        {{ title }}
+                        {{ displayTitle }}
                     </CardTitle>
                 </div>
                 <div
@@ -334,7 +381,10 @@ const totalForCategory = (
                 <Skeleton class="h-16 w-full" />
             </div>
 
-            <div v-else-if="allTrendCategories.length > 0" class="space-y-4">
+            <div
+                v-else-if="allTrendCategories.length > 0 || matchupRows.length > 0"
+                class="space-y-4"
+            >
                 <div class="grid gap-2 sm:grid-cols-3">
                     <div
                         class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
@@ -371,6 +421,76 @@ const totalForCategory = (
                         <p class="mt-1 text-xl font-semibold">
                             {{ signalCountForSide(homeTrends) }}
                         </p>
+                    </div>
+                </div>
+
+                <div
+                    v-if="matchupRows.length > 0"
+                    class="rounded-lg border border-border/70 bg-muted/25 p-3"
+                >
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-2"
+                    >
+                        <h4 class="text-sm font-semibold">
+                            Matchup History
+                        </h4>
+                        <Badge variant="outline" class="text-[11px]">
+                            {{ matchupRows.length }}
+                            {{ matchupRows.length === 1 ? 'split' : 'splits' }}
+                        </Badge>
+                    </div>
+                    <div class="mt-3 grid gap-2 lg:grid-cols-2">
+                        <article
+                            v-for="row in matchupRows"
+                            :key="row.key"
+                            class="rounded-lg border border-border/60 bg-background/55 p-3"
+                        >
+                            <div
+                                class="flex flex-wrap items-start justify-between gap-2"
+                            >
+                                <div>
+                                    <p class="text-sm font-semibold">
+                                        {{ row.label }}
+                                    </p>
+                                    <p
+                                        v-if="row.subtitle"
+                                        class="mt-0.5 text-xs text-muted-foreground"
+                                    >
+                                        {{ row.subtitle }}
+                                    </p>
+                                </div>
+                                <Badge variant="secondary" class="text-[11px]">
+                                    {{ matchupEdgeLabel(row) }}
+                                </Badge>
+                            </div>
+                            <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
+                                <div class="rounded-md bg-card/70 px-3 py-2">
+                                    <p
+                                        class="text-[11px] text-muted-foreground"
+                                    >
+                                        {{ awayLabel || 'Away' }}
+                                        {{ formatMatchupWinRate(row.away) }}
+                                    </p>
+                                    <p class="mt-1 font-semibold">
+                                        {{ row.away.display }}
+                                    </p>
+                                </div>
+                                <div class="rounded-md bg-card/70 px-3 py-2">
+                                    <p
+                                        class="text-[11px] text-muted-foreground"
+                                    >
+                                        {{ homeLabel || 'Home' }}
+                                        {{ formatMatchupWinRate(row.home) }}
+                                    </p>
+                                    <p class="mt-1 font-semibold">
+                                        {{ row.home.display }}
+                                    </p>
+                                </div>
+                            </div>
+                            <p class="mt-2 text-xs text-muted-foreground">
+                                {{ matchupSampleLabel(row) }}
+                            </p>
+                        </article>
                     </div>
                 </div>
 

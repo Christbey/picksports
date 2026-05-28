@@ -3,7 +3,6 @@ import GamePageErrorBoundary from '@/components/game-page/GamePageErrorBoundary.
 import GamePageShell from '@/components/game-page/GamePageShell.vue';
 import LinescoreCard from '@/components/game-page/LinescoreCard.vue';
 import MatchupHero from '@/components/game-page/MatchupHero.vue';
-import MatchupContextCard from '@/components/game-page/MatchupContextCard.vue';
 import PredictionSummaryCard from '@/components/game-page/PredictionSummaryCard.vue';
 import TrendsComparisonCard from '@/components/game-page/TrendsComparisonCard.vue';
 import type {
@@ -180,14 +179,6 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
 
             <slot name="afterHero" />
 
-            <MatchupContextCard
-                v-if="showMatchupContext && matchupContext"
-                :title="matchupContextTitle"
-                :away-label="awayLabel"
-                :home-label="homeLabel"
-                :matchup-context="matchupContext"
-            />
-
             <LinescoreCard
                 v-if="showLinescore"
                 :title="linescoreTitle"
@@ -239,6 +230,9 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :home-label="homeLabel"
                 :away-trends="awayTrends"
                 :home-trends="homeTrends"
+                :matchup-context="
+                    showMatchupContext ? matchupContext : null
+                "
                 :empty-text="trendsEmptyText"
             />
 

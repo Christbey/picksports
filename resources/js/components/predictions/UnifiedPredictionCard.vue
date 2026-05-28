@@ -434,6 +434,19 @@ function bettingValueDebugLabel(): string | null {
     return reason;
 }
 
+function hasValueSignals(): boolean {
+    return Boolean(
+        (props.prediction.betting_value &&
+            props.prediction.betting_value.length > 0) ||
+            hasLiveData() ||
+            bettingValueDebug(),
+    );
+}
+
+function hasDecisionSummary(): boolean {
+    return !isFinal() && (hasAiAnalysis() || hasPredictionAnalysis() || hasValueSignals());
+}
+
 function livePredictionData() {
     return buildPredictionLiveData(props.prediction);
 }
@@ -921,196 +934,190 @@ function saveOptions(): SavePickOption[] {
             </div>
 
             <div
-                v-if="!isFinal() && hasAiAnalysis()"
+                v-if="hasDecisionSummary()"
                 class="mt-4 border-t border-sidebar-border/70 pt-4"
             >
-                <div class="mb-2 flex items-center gap-2">
-                    <div
-                        class="inline-flex items-center gap-1.5 rounded-full bg-sidebar-accent/70 px-2.5 py-1 text-xs font-semibold tracking-wide uppercase"
-                    >
-                        <Sparkles class="h-3.5 w-3.5" />
-                        AI Analysis
-                    </div>
-                    <div class="text-xs text-muted-foreground">
-                        {{ aiAnalysis()?.as_of_date }}
-                    </div>
-                </div>
-                <div
-                    class="rounded-md border border-sky-200/70 bg-sky-50/70 px-3 py-2 text-xs text-sky-950 dark:border-sky-900/50 dark:bg-sky-950/20 dark:text-sky-100"
-                >
-                    <div class="mb-2 flex flex-wrap items-center gap-2">
-                        <span
-                            v-if="aiBetClassificationLabel()"
-                            class="rounded-full bg-sky-600 px-2 py-0.5 font-semibold text-white dark:bg-sky-500 dark:text-sky-950"
-                        >
-                            {{ aiBetClassificationLabel() }}
-                        </span>
-                        <span
-                            v-if="aiRecommendationLabel()"
-                            class="rounded-full bg-white/70 px-2 py-0.5 font-semibold text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
-                        >
-                            {{ aiRecommendationLabel() }}
-                        </span>
-                        <span
-                            v-if="aiConfidenceLabel()"
-                            class="text-sky-800 dark:text-sky-200"
-                        >
-                            {{ aiConfidenceLabel() }}
-                        </span>
-                    </div>
-                    <p class="text-sky-900 dark:text-sky-100">
-                        {{ aiAnalysis()?.summary }}
-                    </p>
-                    <div class="mt-2 flex flex-wrap gap-1.5">
-                        <span
-                            v-for="factor in topAiKeyFactors()"
-                            :key="`ai-factor-${factor}`"
-                            class="rounded-full bg-white/70 px-2 py-0.5 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
-                        >
-                            {{ factor }}
-                        </span>
-                        <span
-                            v-for="flag in topAiRiskFlags()"
-                            :key="`ai-risk-${flag}`"
-                            class="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-100"
-                        >
-                            {{ formatAnalysisToken(flag) }}
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            <div
-                v-if="!isFinal() && hasPredictionAnalysis()"
-                class="mt-4 border-t border-sidebar-border/70 pt-4"
-            >
-                <div class="mb-2 flex items-center gap-2">
+                <div class="mb-3 flex flex-wrap items-center gap-2">
                     <div
                         class="inline-flex items-center gap-1.5 rounded-full bg-sidebar-accent/70 px-2.5 py-1 text-xs font-semibold tracking-wide uppercase"
                     >
                         <ShieldCheck class="h-3.5 w-3.5" />
-                        Model Analysis
+                        Decision Summary
                     </div>
-                </div>
-                <div
-                    v-if="bestValidatedSignal()"
-                    class="mb-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100"
-                >
-                    <div class="flex flex-wrap items-center gap-2">
-                        <span
-                            class="inline-flex items-center gap-1 font-semibold"
-                        >
-                            <Target class="h-3.5 w-3.5" />
-                            {{ bestValidatedSignal()?.label }}
-                        </span>
-                        <span
-                            v-if="validatedSignalRateLabel()"
-                            class="rounded-full bg-emerald-600 px-2 py-0.5 font-semibold text-white dark:bg-emerald-500 dark:text-emerald-950"
-                        >
-                            {{ validatedSignalRateLabel() }}
-                        </span>
-                        <span
-                            v-if="validatedSignalMetaLabel()"
-                            class="text-emerald-800 dark:text-emerald-200"
-                        >
-                            {{ validatedSignalMetaLabel() }}
-                        </span>
-                    </div>
-                    <p
-                        v-if="bestValidatedSignal()?.note"
-                        class="mt-1 text-emerald-800 dark:text-emerald-200"
+                    <span
+                        v-if="aiBetClassificationLabel()"
+                        class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
                     >
-                        {{ bestValidatedSignal()?.note }}
-                    </p>
-                </div>
-                <div class="flex flex-wrap gap-2 text-xs">
+                        AI {{ aiBetClassificationLabel() }}
+                    </span>
+                    <span
+                        v-if="betClassificationLabel()"
+                        class="rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium"
+                    >
+                        Model {{ betClassificationLabel() }}
+                    </span>
                     <span
                         v-if="trustScoreLabel()"
-                        class="rounded-full bg-emerald-100/80 px-2 py-1 font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                        class="rounded-full bg-emerald-100/80 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
                     >
                         {{ trustScoreLabel() }}
                     </span>
                     <span
-                        v-if="modelSignalLabel()"
-                        class="rounded-full bg-sidebar-accent px-2 py-1 font-medium"
-                    >
-                        {{ modelSignalLabel() }}
-                    </span>
-                    <span
-                        v-if="betClassificationLabel()"
-                        class="rounded-full bg-sidebar-accent px-2 py-1 font-medium"
-                    >
-                        {{ betClassificationLabel() }}
-                    </span>
-                    <span
-                        v-for="code in topReasonCodes()"
-                        :key="`reason-${code}`"
-                        class="rounded-full border border-sidebar-border/80 px-2 py-1 text-muted-foreground"
-                    >
-                        {{ formatAnalysisToken(code) }}
-                    </span>
-                    <span
-                        v-for="flag in topRiskFlags()"
-                        :key="`risk-${flag}`"
-                        class="rounded-full bg-amber-100/80 px-2 py-1 font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                    >
-                        {{ formatAnalysisToken(flag) }}
-                    </span>
-                </div>
-            </div>
-
-            <div
-                v-if="
-                    !isFinal() &&
-                    ((prediction.betting_value &&
-                        prediction.betting_value.length > 0) ||
-                        hasLiveData() ||
-                        bettingValueDebug())
-                "
-                class="mt-4 border-t border-sidebar-border/70 pt-4"
-            >
-                <div class="mb-2 flex items-center gap-2">
-                    <div
-                        class="inline-flex items-center gap-1.5 rounded-full bg-sidebar-accent/70 px-2.5 py-1 text-xs font-semibold tracking-wide uppercase"
-                    >
-                        <Sparkles class="h-3.5 w-3.5" />
-                        {{ hasLiveData() ? 'Live Signals' : 'Value Signals' }}
-                    </div>
-                    <div
-                        v-if="
-                            !hasLiveData() && prediction.betting_value?.length
-                        "
+                        v-if="aiConfidenceLabel()"
                         class="text-xs text-muted-foreground"
                     >
-                        Vegas
-                    </div>
-                </div>
-                <div
-                    v-if="
-                        !hasLiveData() &&
-                        (!prediction.betting_value ||
-                            prediction.betting_value.length === 0)
-                    "
-                    class="rounded-md border border-dashed border-sidebar-border/80 bg-sidebar/30 p-3 text-sm text-muted-foreground"
-                >
-                    No qualifying value signal
-                    <span
-                        v-if="bettingValueDebug()"
-                        class="ml-2 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium text-foreground/80"
-                    >
-                        {{ bettingValueDebugLabel() }}
+                        {{ aiConfidenceLabel() }}
                     </span>
                 </div>
-                <BettingAnalysisCard
-                    v-else
-                    :betting-value="prediction.betting_value"
-                    :live-prediction="livePredictionData()"
-                    :winner-correct="isFinal() ? winnerCorrect() : null"
-                    :actual-total="
-                        isFinal() ? (prediction.actual_total ?? null) : null
-                    "
-                    :compact="true"
-                />
+
+                <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div
+                        v-if="hasAiAnalysis() || hasPredictionAnalysis()"
+                        class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"
+                    >
+                        <div
+                            v-if="hasAiAnalysis()"
+                            class="text-sm text-foreground"
+                        >
+                            <div
+                                class="mb-1 flex flex-wrap items-center gap-2 text-xs"
+                            >
+                                <Sparkles class="h-3.5 w-3.5" />
+                                <span class="font-semibold">AI context</span>
+                                <span
+                                    v-if="aiRecommendationLabel()"
+                                    class="rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
+                                >
+                                    {{ aiRecommendationLabel() }}
+                                </span>
+                                <span class="text-muted-foreground">
+                                    {{ aiAnalysis()?.as_of_date }}
+                                </span>
+                            </div>
+                            <p class="text-sm text-muted-foreground">
+                                {{ aiAnalysis()?.summary }}
+                            </p>
+                        </div>
+
+                        <div
+                            v-if="bestValidatedSignal()"
+                            class="mt-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100"
+                        >
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span
+                                    class="inline-flex items-center gap-1 font-semibold"
+                                >
+                                    <Target class="h-3.5 w-3.5" />
+                                    {{ bestValidatedSignal()?.label }}
+                                </span>
+                                <span
+                                    v-if="validatedSignalRateLabel()"
+                                    class="rounded-full bg-emerald-600 px-2 py-0.5 font-semibold text-white dark:bg-emerald-500 dark:text-emerald-950"
+                                >
+                                    {{ validatedSignalRateLabel() }}
+                                </span>
+                                <span
+                                    v-if="validatedSignalMetaLabel()"
+                                    class="text-emerald-800 dark:text-emerald-200"
+                                >
+                                    {{ validatedSignalMetaLabel() }}
+                                </span>
+                            </div>
+                            <p
+                                v-if="bestValidatedSignal()?.note"
+                                class="mt-1 text-emerald-800 dark:text-emerald-200"
+                            >
+                                {{ bestValidatedSignal()?.note }}
+                            </p>
+                        </div>
+
+                        <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
+                            <span
+                                v-if="modelSignalLabel()"
+                                class="rounded-full bg-sidebar-accent px-2 py-1 font-medium"
+                            >
+                                {{ modelSignalLabel() }}
+                            </span>
+                            <span
+                                v-for="code in topReasonCodes()"
+                                :key="`reason-${code}`"
+                                class="rounded-full border border-sidebar-border/80 px-2 py-1 text-muted-foreground"
+                            >
+                                {{ formatAnalysisToken(code) }}
+                            </span>
+                            <span
+                                v-for="factor in topAiKeyFactors()"
+                                :key="`ai-factor-${factor}`"
+                                class="rounded-full border border-sky-200/70 px-2 py-1 text-sky-800 dark:border-sky-900/50 dark:text-sky-100"
+                            >
+                                {{ factor }}
+                            </span>
+                            <span
+                                v-for="(flag, index) in [
+                                    ...topRiskFlags(),
+                                    ...topAiRiskFlags(),
+                                ]"
+                                :key="`risk-${index}-${flag}`"
+                                class="rounded-full bg-amber-100/80 px-2 py-1 font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
+                            >
+                                {{ formatAnalysisToken(flag) }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="hasValueSignals()"
+                        class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"
+                    >
+                        <div class="mb-2 flex items-center gap-2">
+                            <div
+                                class="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase"
+                            >
+                                <Sparkles class="h-3.5 w-3.5" />
+                                {{
+                                    hasLiveData()
+                                        ? 'Live Signals'
+                                        : 'Market Value'
+                                }}
+                            </div>
+                            <div
+                                v-if="
+                                    !hasLiveData() &&
+                                    prediction.betting_value?.length
+                                "
+                                class="text-xs text-muted-foreground"
+                            >
+                                Vegas
+                            </div>
+                        </div>
+                        <div
+                            v-if="
+                                !hasLiveData() &&
+                                (!prediction.betting_value ||
+                                    prediction.betting_value.length === 0)
+                            "
+                            class="rounded-md border border-dashed border-sidebar-border/80 bg-sidebar/30 p-3 text-sm text-muted-foreground"
+                        >
+                            No qualifying value signal
+                            <span
+                                v-if="bettingValueDebug()"
+                                class="ml-2 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium text-foreground/80"
+                            >
+                                {{ bettingValueDebugLabel() }}
+                            </span>
+                        </div>
+                        <BettingAnalysisCard
+                            v-else
+                            :betting-value="prediction.betting_value"
+                            :live-prediction="livePredictionData()"
+                            :winner-correct="isFinal() ? winnerCorrect() : null"
+                            :actual-total="
+                                isFinal() ? (prediction.actual_total ?? null) : null
+                            "
+                            :compact="true"
+                        />
+                    </div>
+                </div>
             </div>
         </Link>
 

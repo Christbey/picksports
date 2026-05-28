@@ -205,6 +205,7 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
                     ->with(['game.homeTeam', 'game.awayTeam']);
 
                 $this->applyIndexFilters($query);
+                $this->applyPredictionVisibilityFilters($query);
 
                 $predictions = $query->latest()->get();
 
@@ -271,6 +272,8 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
                 if ($request->query('season') && $this->hasGameSeasonColumn()) {
                     $query->where("{$gameInstance->getTable()}.{$this->getGameSeasonColumn()}", $request->query('season'));
                 }
+
+                $this->applyAvailableDatesVisibilityFilters($query, $gameInstance->getTable());
 
                 $dates = $query
                     ->orderBy('game_date')
@@ -401,5 +404,15 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
                 $field => $fieldAccess->canViewField($user, $field),
             ])
             ->all();
+    }
+
+    protected function applyPredictionVisibilityFilters($query): void
+    {
+        //
+    }
+
+    protected function applyAvailableDatesVisibilityFilters($query, string $gameTable): void
+    {
+        //
     }
 }

@@ -413,7 +413,7 @@ onMounted(async () => {
 
 <template>
     <div class="space-y-4">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
                 <div class="flex items-center gap-2">
                     <h2 class="text-2xl font-bold">{{ config.title }}</h2>
@@ -428,10 +428,38 @@ onMounted(async () => {
                     {{ config.subtitle }}
                 </p>
             </div>
+            <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <span class="rounded-full border px-2.5 py-1">
+                    {{ filteredPredictions.length }} shown
+                </span>
+                <span class="rounded-full border px-2.5 py-1">
+                    {{ recommendedBetCount }} bets
+                </span>
+            </div>
         </div>
 
         <Card>
-            <CardContent class="pt-6">
+            <CardContent class="p-4">
+                <div
+                    class="mb-3 flex flex-wrap items-center justify-between gap-2"
+                >
+                    <div>
+                        <h3 class="text-sm font-semibold">Slate Controls</h3>
+                        <p class="text-xs text-muted-foreground">
+                            Filter the board, then open a game for full matchup
+                            context.
+                        </p>
+                    </div>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        class="h-8"
+                        :disabled="loading"
+                        @click="clearFilters"
+                    >
+                        Reset
+                    </Button>
+                </div>
                 <div class="flex flex-wrap items-end gap-4">
                     <SeasonSelect
                         id="predictions-season"

@@ -131,6 +131,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'WNBA/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => true,
                 'pages' => [
                     'team-metrics' => 'WNBA/TeamMetrics',

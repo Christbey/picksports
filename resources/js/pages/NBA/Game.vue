@@ -4,7 +4,6 @@ import BasketballGameInsights from '@/components/game-page/BasketballGameInsight
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import ContextLayerCard from '@/components/game-page/ContextLayerCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
-import DepthChartImpactCard from '@/components/game-page/DepthChartImpactCard.vue';
 import GamePlayerPropsCard from '@/components/game-page/GamePlayerPropsCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
@@ -101,14 +100,12 @@ const isPregame = computed(() =>
                 box-score-layout="grid"
                 :show-recap="isFinal"
             />
-            <DepthChartImpactCard
-                :context="pageProps.prediction?.depth_chart_context"
-            />
             <InjuryReportCard
                 :away-team-abbr="pageProps.awayTeam?.abbreviation"
                 :home-team-abbr="pageProps.homeTeam?.abbreviation"
                 :away-injuries="awayInjuries"
                 :home-injuries="homeInjuries"
+                :depth-chart-context="pageProps.prediction?.depth_chart_context"
             />
             <DepthChartCard
                 v-if="depthCharts"

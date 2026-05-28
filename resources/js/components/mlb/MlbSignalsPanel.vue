@@ -9,7 +9,7 @@ import {
     TrendingUp,
 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { fetchJson } from '@/composables/useApiClient';
 
@@ -217,6 +217,14 @@ const signalGroups = computed(() => [
     },
 ]);
 
+const totalSignalCount = computed(() =>
+    signalGroups.value.reduce((total, group) => total + group.rows.length, 0),
+);
+
+const visibleSignalGroups = computed(() =>
+    signalGroups.value.filter((group) => group.rows.length > 0),
+);
+
 function formatPercent(value?: number | null): string | null {
     if (value == null) return null;
     return `${Math.round(value * 100)}%`;
@@ -315,38 +323,17 @@ onMounted(loadSignals);
 
 <template>
     <section class="space-y-3">
-        <div
-            class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"
-        >
-            <div>
-                <h2 class="text-lg font-semibold">MLB Signals</h2>
-                <p class="text-sm text-muted-foreground">
-                    Moneyline-first slate edges, ballpark context, futures, and
-                    streak context from the live model.
-                </p>
+        <div v-if="loading" class="rounded-lg border bg-card p-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="space-y-2">
+                    <Skeleton class="h-5 w-36" />
+                    <Skeleton class="h-3 w-72 max-w-full" />
+                </div>
+                <Skeleton class="h-8 w-32" />
             </div>
-            <div class="text-sm text-muted-foreground">
-                <span v-if="payload?.slate_date"
-                    >Slate {{ payload.slate_date }}</span
-                >
-                <span v-if="payload" class="ml-2 rounded-md border px-2 py-1">
-                    {{ marketModeLabel }}: {{ moneylineReadyLabel }}
-                </span>
+            <div class="mt-4 grid gap-3 md:grid-cols-3">
+                <Skeleton v-for="i in 3" :key="i" class="h-24 w-full" />
             </div>
-        </div>
-
-        <div v-if="loading" class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-            <Card v-for="i in 6" :key="i">
-                <CardHeader class="space-y-2">
-                    <Skeleton class="h-4 w-28" />
-                    <Skeleton class="h-3 w-20" />
-                </CardHeader>
-                <CardContent class="space-y-3">
-                    <Skeleton class="h-8 w-full" />
-                    <Skeleton class="h-8 w-full" />
-                    <Skeleton class="h-8 w-full" />
-                </CardContent>
-            </Card>
         </div>
 
         <Card v-else-if="error" class="border-destructive/40">
@@ -356,21 +343,52 @@ onMounted(loadSignals);
         </Card>
 
         <template v-else>
-            <Card>
-                <CardHeader class="pb-3">
-                    <CardTitle class="flex items-center gap-2 text-sm">
-                        <ShieldCheck class="h-4 w-4" />
-                        Moneyline-First Bet Filter
-                    </CardTitle>
-                </CardHeader>
-                <CardContent class="space-y-4">
+            <Card class="overflow-hidden">
+                <CardContent class="space-y-4 p-4 md:p-5">
+                    <div
+                        class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
+                    >
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <CardTitle class="flex items-center gap-2 text-base">
+                                    <ShieldCheck class="h-4 w-4" />
+                                    MLB Slate Decision Board
+                                </CardTitle>
+                                <span
+                                    v-if="payload?.slate_date"
+                                    class="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
+                                >
+                                    {{ payload.slate_date }}
+                                </span>
+                            </div>
+                            <p class="mt-1 text-sm text-muted-foreground">
+                                Best bets first. Secondary market, ballpark,
+                                futures, and backend checks are expandable.
+                            </p>
+                        </div>
+                        <div class="flex flex-wrap gap-2 text-xs">
+                            <span class="rounded-full border px-2.5 py-1">
+                                {{ marketModeLabel }}
+                            </span>
+                            <span class="rounded-full border px-2.5 py-1">
+                                ML {{ moneylineReadyLabel }}
+                            </span>
+                            <span class="rounded-full border px-2.5 py-1">
+                                {{ bestBets.length }} bets
+                            </span>
+                            <span class="rounded-full border px-2.5 py-1">
+                                {{ totalSignalCount }} signals
+                            </span>
+                        </div>
+                    </div>
+
                     <div
                         v-if="moneylineReadiness"
                         class="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground sm:grid-cols-5"
                     >
                         <div>
                             <div class="font-medium text-foreground">
-                                Moneyline Mode
+                                Mode
                             </div>
                             <div>{{ labelize(moneylineReadiness.mode) }}</div>
                         </div>
@@ -412,6 +430,46 @@ onMounted(loadSignals);
                             <div>{{ moneylineReadiness.pass_count }}</div>
                         </div>
                     </div>
+
+                    <div
+                        v-if="payload?.odds_health || payload?.pass_summary"
+                        class="flex flex-wrap gap-2 text-xs text-muted-foreground"
+                    >
+                        <span
+                            v-if="payload?.odds_health"
+                            class="rounded-md border px-2 py-1"
+                        >
+                            Odds {{ labelize(payload.odds_health.status) }}
+                        </span>
+                        <span
+                            v-if="payload?.odds_health"
+                            class="rounded-md border px-2 py-1"
+                        >
+                            ML
+                            {{
+                                coverageLabel(
+                                    payload.odds_health.moneyline_coverage,
+                                )
+                            }}
+                        </span>
+                        <span
+                            v-if="payload?.odds_health"
+                            class="rounded-md border px-2 py-1"
+                        >
+                            Totals
+                            {{
+                                coverageLabel(payload.odds_health.total_coverage)
+                            }}
+                        </span>
+                        <span
+                            v-if="payload?.pass_summary"
+                            class="rounded-md border px-2 py-1"
+                        >
+                            Pass rate
+                            {{ payload.pass_summary.pass_rate.toFixed(1) }}%
+                        </span>
+                    </div>
+
                     <div
                         v-if="bestBets.length > 0"
                         class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
@@ -462,172 +520,158 @@ onMounted(loadSignals);
                     <div v-else class="text-sm text-muted-foreground">
                         No games passed the selective bet filter for this slate.
                     </div>
-                    <div
-                        v-if="payload?.odds_health"
-                        class="grid gap-2 rounded-md border p-3 text-xs text-muted-foreground sm:grid-cols-4"
-                    >
-                        <div>
-                            <div class="font-medium text-foreground">
-                                Odds Health
-                            </div>
-                            <div>
-                                {{ labelize(payload.odds_health.status) }}
-                            </div>
-                        </div>
-                        <div>
-                            <div class="font-medium text-foreground">
-                                Moneyline
-                            </div>
-                            <div>
-                                {{
-                                    coverageLabel(
-                                        payload.odds_health.moneyline_coverage,
-                                    )
-                                }}
-                            </div>
-                        </div>
-                        <div>
-                            <div class="font-medium text-foreground">
-                                Run Line
-                            </div>
-                            <div>
-                                {{
-                                    coverageLabel(
-                                        payload.odds_health.run_line_coverage,
-                                    )
-                                }}
-                            </div>
-                        </div>
-                        <div>
-                            <div class="font-medium text-foreground">
-                                Totals
-                            </div>
-                            <div>
-                                {{
-                                    coverageLabel(
-                                        payload.odds_health.total_coverage,
-                                    )
-                                }}
-                            </div>
-                        </div>
-                    </div>
-                    <div
-                        v-if="payload?.pass_summary"
-                        class="flex flex-wrap gap-2 text-xs text-muted-foreground"
-                    >
-                        <span class="rounded-md border px-2 py-1">
-                            Pass rate
-                            {{ payload.pass_summary.pass_rate.toFixed(1) }}%
-                        </span>
-                        <span
-                            v-for="reason in payload.pass_summary.top_reasons.slice(
-                                0,
-                                4,
-                            )"
-                            :key="reason.reason"
-                            class="rounded-md border px-2 py-1"
-                        >
-                            {{ labelize(reason.reason) }}: {{ reason.count }}
-                        </span>
-                    </div>
-                    <div
-                        v-if="payload?.bet_filter"
-                        class="flex flex-wrap gap-2 text-xs text-muted-foreground"
-                    >
-                        <span
-                            v-for="item in payload.bet_filter.risk_controls.slice(
-                                0,
-                                5,
-                            )"
-                            :key="item"
-                            class="rounded-md border px-2 py-1"
-                        >
-                            {{ labelize(item) }}
-                        </span>
-                    </div>
-                </CardContent>
-            </Card>
 
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
-                <Card v-for="group in signalGroups" :key="group.key">
-                    <CardHeader class="pb-3">
-                        <CardTitle class="flex items-center gap-2 text-sm">
-                            <component :is="group.icon" class="h-4 w-4" />
-                            {{ group.title }}
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent class="space-y-3">
+                    <details
+                        v-if="visibleSignalGroups.length > 0"
+                        class="group rounded-lg border border-border/70 bg-muted/20"
+                    >
+                        <summary
+                            class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold [&::-webkit-details-marker]:hidden"
+                        >
+                            <span>Secondary signal detail</span>
+                            <span
+                                class="text-xs font-medium text-muted-foreground transition-transform group-open:rotate-180"
+                            >
+                                v
+                            </span>
+                        </summary>
                         <div
-                            v-for="row in group.rows.slice(0, 4)"
-                            :key="`${group.key}-${row.team_id}-${row.game_id}-${row.label}`"
-                            class="flex min-h-14 items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
+                            class="grid gap-3 border-t border-border/70 p-3 md:grid-cols-2 xl:grid-cols-3"
                         >
-                            <div class="min-w-0">
-                                <div class="truncate text-sm font-medium">
-                                    {{ row.team_name || row.matchup }}
-                                </div>
+                            <section
+                                v-for="group in visibleSignalGroups"
+                                :key="group.key"
+                                class="rounded-lg border border-border/70 bg-card p-3"
+                            >
                                 <div
-                                    class="truncate text-xs text-muted-foreground"
+                                    class="mb-3 flex items-center justify-between gap-2"
                                 >
-                                    {{ group.detail(row) }}
+                                    <h3
+                                        class="flex items-center gap-2 text-sm font-semibold"
+                                    >
+                                        <component
+                                            :is="group.icon"
+                                            class="h-4 w-4"
+                                        />
+                                        {{ group.title }}
+                                    </h3>
+                                    <span class="text-xs text-muted-foreground">
+                                        {{ group.rows.length }}
+                                    </span>
                                 </div>
-                                <div
-                                    v-if="primaryReason(row)"
-                                    class="truncate text-xs text-muted-foreground"
-                                >
-                                    {{ primaryReason(row) }}
+                                <div class="space-y-2">
+                                    <div
+                                        v-for="row in group.rows.slice(0, 3)"
+                                        :key="`${group.key}-${row.team_id}-${row.game_id}-${row.label}`"
+                                        class="flex min-h-12 items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
+                                    >
+                                        <div class="min-w-0">
+                                            <div
+                                                class="truncate text-sm font-medium"
+                                            >
+                                                {{
+                                                    row.team_name || row.matchup
+                                                }}
+                                            </div>
+                                            <div
+                                                class="truncate text-xs text-muted-foreground"
+                                            >
+                                                {{ group.detail(row) }}
+                                            </div>
+                                        </div>
+                                        <div
+                                            class="shrink-0 text-sm font-semibold"
+                                        >
+                                            {{ group.metric(row) ?? '-' }}
+                                        </div>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="shrink-0 text-sm font-semibold">
-                                {{ group.metric(row) ?? '-' }}
-                            </div>
+                            </section>
                         </div>
-                        <p
-                            v-if="group.rows.length === 0"
-                            class="text-sm text-muted-foreground"
-                        >
-                            No current signals.
-                        </p>
-                    </CardContent>
-                </Card>
-            </div>
+                    </details>
 
-            <Card v-if="payload?.backend_review">
-                <CardHeader class="pb-3">
-                    <CardTitle class="flex items-center gap-2 text-sm">
-                        <Gauge class="h-4 w-4" />
-                        Backend Logic Review
-                    </CardTitle>
-                </CardHeader>
-                <CardContent class="grid gap-4 text-sm md:grid-cols-2">
-                    <div>
-                        <div class="mb-2 font-medium">Model Inputs</div>
-                        <div class="flex flex-wrap gap-2">
+                    <details
+                        v-if="
+                            payload?.backend_review ||
+                            payload?.bet_filter ||
+                            payload?.pass_summary
+                        "
+                        class="group rounded-lg border border-border/70 bg-muted/20"
+                    >
+                        <summary
+                            class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm font-semibold [&::-webkit-details-marker]:hidden"
+                        >
+                            <span>Model controls and diagnostics</span>
                             <span
-                                v-for="item in payload.backend_review.strengths.slice(
-                                    0,
-                                    8,
-                                )"
-                                :key="item"
-                                class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
+                                class="text-xs font-medium text-muted-foreground transition-transform group-open:rotate-180"
                             >
-                                {{ labelize(item) }}
+                                v
                             </span>
+                        </summary>
+                        <div
+                            class="grid gap-4 border-t border-border/70 p-3 text-sm md:grid-cols-2"
+                        >
+                            <div v-if="payload?.backend_review">
+                                <div class="mb-2 font-medium">Model Inputs</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span
+                                        v-for="item in payload.backend_review.strengths.slice(
+                                            0,
+                                            8,
+                                        )"
+                                        :key="item"
+                                        class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
+                                    >
+                                        {{ labelize(item) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="payload?.backend_review">
+                                <div class="mb-2 font-medium">Watch Items</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span
+                                        v-for="item in payload.backend_review
+                                            .watch_items"
+                                        :key="item"
+                                        class="rounded-md border border-amber-300/60 px-2 py-1 text-xs text-muted-foreground"
+                                    >
+                                        {{ labelize(item) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="payload?.pass_summary">
+                                <div class="mb-2 font-medium">Pass Reasons</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span
+                                        v-for="reason in payload.pass_summary.top_reasons.slice(
+                                            0,
+                                            6,
+                                        )"
+                                        :key="reason.reason"
+                                        class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
+                                    >
+                                        {{ labelize(reason.reason) }}:
+                                        {{ reason.count }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-if="payload?.bet_filter">
+                                <div class="mb-2 font-medium">Risk Controls</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <span
+                                        v-for="item in payload.bet_filter.risk_controls.slice(
+                                            0,
+                                            8,
+                                        )"
+                                        :key="item"
+                                        class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
+                                    >
+                                        {{ labelize(item) }}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                    <div>
-                        <div class="mb-2 font-medium">Watch Items</div>
-                        <div class="flex flex-wrap gap-2">
-                            <span
-                                v-for="item in payload.backend_review
-                                    .watch_items"
-                                :key="item"
-                                class="rounded-md border border-amber-300/60 px-2 py-1 text-xs text-muted-foreground"
-                            >
-                                {{ labelize(item) }}
-                            </span>
-                        </div>
-                    </div>
+                    </details>
                 </CardContent>
             </Card>
         </template>

@@ -75,6 +75,65 @@ test('mlb prediction resource exposes depth chart starter fallback context', fun
         ->toBeTrue();
 });
 
+test('mlb prediction resource exposes injury model sources for availability adjustments', function () {
+    $user = User::factory()->create();
+    $user->givePermissionTo([
+        'view-prediction-spread',
+        'view-prediction-win-probability',
+        'view-prediction-confidence-score',
+    ]);
+
+    $home = Team::factory()->create(['location' => 'Kansas City', 'name' => 'Royals']);
+    $away = Team::factory()->create(['location' => 'New York', 'name' => 'Yankees']);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $prediction = Prediction::query()->create([
+        'game_id' => $game->id,
+        'home_team_elo' => 1490,
+        'away_team_elo' => 1510,
+        'home_pitcher_elo' => 1500,
+        'away_pitcher_elo' => 1515,
+        'home_combined_elo' => 1495,
+        'away_combined_elo' => 1512,
+        'predicted_spread' => -0.3,
+        'predicted_total' => 8.1,
+        'win_probability' => 0.48,
+        'confidence_score' => 52.0,
+        'model_metadata' => [
+            'injury_model_source' => 'mixed',
+            'injury_spread_model_source' => 'persisted_team_rating',
+            'injury_total_model_source' => 'raw_player_status',
+            'depth_chart_injuries' => [
+                'applied' => true,
+                'home_out_weighted' => 0.0,
+                'away_out_weighted' => 0.0,
+                'home_questionable_weighted' => 0.0,
+                'away_questionable_weighted' => 0.0,
+                'spread_adjustment' => 0.0,
+                'total_adjustment' => -0.2,
+            ],
+        ],
+    ])->load('game.homeTeam', 'game.awayTeam');
+
+    $request = Request::create('/');
+    $request->setUserResolver(fn () => $user);
+
+    $data = PredictionResource::make($prediction)->toArray($request);
+
+    expect($data['depth_chart_context'])->toBeArray()
+        ->and($data['depth_chart_context']['type'])->toBe('injury_weighting')
+        ->and($data['depth_chart_context']['applied'])->toBeTrue()
+        ->and($data['depth_chart_context']['injury_model_source'])->toBe('mixed')
+        ->and($data['depth_chart_context']['injury_spread_model_source'])->toBe('persisted_team_rating')
+        ->and($data['depth_chart_context']['injury_total_model_source'])->toBe('raw_player_status')
+        ->and($data['depth_chart_context']['total_adjustment'])->toBe(-0.2);
+});
+
 test('mlb prediction resource exposes stored daily ai analysis with betting value permission', function () {
     $user = User::factory()->create();
     $user->givePermissionTo('view-prediction-betting-value');

@@ -159,8 +159,8 @@ test('build digest for user falls back to deterministic summary when ai digest s
     $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
 
     expect($payload)->not->toBeNull()
-        ->and($payload['summary']['headline'])->toBe('NBA, NFL, CBB, WCBB, MLB, CFB, WNBA Daily Digest')
-        ->and($payload['summary']['intro'])->toContain('model-driven spots across NBA, NFL, CBB, WCBB, MLB, CFB, WNBA')
+        ->and($payload['summary']['headline'])->toBe('Today\'s NBA Watchlist')
+        ->and($payload['summary']['intro'])->toContain('Official bets: 0. Model leans: 1.')
         ->and($payload['summary']['highlights'])->not->toBeEmpty();
 });
 
@@ -185,12 +185,21 @@ test('daily digest mail renders summary headline and highlights', function () {
     expect($rendered)->toContain('NBA board at a glance')
         ->and($rendered)->toContain('The model sees one clear lean tonight.')
         ->and($rendered)->toContain('BOS @ LAL leans BOS moneyline at 63.0% confidence.');
+    expect($rendered)->toContain('Action Board');
 });
 
 test('daily digest is due for users without alert preferences by default', function () {
     $user = User::factory()->create();
 
     expect(app(DailyDigestService::class)->isDueForDigest($user, now()))->toBeTrue();
+});
+
+test('daily digest remains due after the target time until it has been sent', function () {
+    $user = User::factory()->create();
+
+    expect(app(DailyDigestService::class)->isDueForDigest($user, now()->copy()->setTime(9, 59)))->toBeFalse();
+    expect(app(DailyDigestService::class)->isDueForDigest($user, now()->copy()->setTime(10, 0)))->toBeTrue();
+    expect(app(DailyDigestService::class)->isDueForDigest($user, now()->copy()->setTime(12, 30)))->toBeTrue();
 });
 
 test('daily digest is not due when user has unsubscribed', function () {
@@ -325,11 +334,11 @@ test('daily digest uses recommendation confidence instead of raw lock-level prob
 
     expect($payload)->not->toBeNull();
     expect($payload['predictions'])->toHaveCount(1);
-    expect($payload['predictions'][0]['confidence'])->toBe(59.5);
+    expect($payload['predictions'][0]['confidence'])->toBe(85.0);
     expect($payload['predictions'][0]['confidence'])->toBeLessThan(95.0);
 });
 
-test('daily digest excludes predictions without a qualifying recommendation', function () {
+test('daily digest falls back to model leans without a qualifying recommendation', function () {
     $user = makeDailyDigestUser();
 
     $home = Team::factory()->create([
@@ -361,7 +370,15 @@ test('daily digest excludes predictions without a qualifying recommendation', fu
 
     $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
 
-    expect($payload)->toBeNull();
+    expect($payload)->not->toBeNull();
+    expect($payload['predictions'])->toHaveCount(1);
+    expect($payload['predictions'][0]['matchup'])->toBe('DEN @ PHX');
+    expect($payload['predictions'][0]['pick'])->toBe('Model lean: PHX moneyline');
+    expect($payload['predictions'][0]['bet_label'])->toBe('PHX ML');
+    expect($payload['predictions'][0]['classification'])->toBe('Watchlist');
+    expect($payload['predictions'][0]['market_note'])->toBe('Waiting on market odds before bet classification.');
+    expect($payload['predictions'][0]['pick_type'])->toBe('model_lean');
+    expect($payload['predictions'][0]['edge'])->toBe(0.0);
 });
 
 test('daily digest ranks predictions by strongest recommendation edge', function () {

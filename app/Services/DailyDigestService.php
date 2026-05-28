@@ -37,6 +37,8 @@ class DailyDigestService
 
     private const DIGEST_CONFIDENCE_CAP = 95.0;
 
+    private const DIGEST_MODEL_LEAN_CONFIDENCE_CAP = 85.0;
+
     /**
      * @var array<string, array<int, array<string, mixed>>>
      */
@@ -122,8 +124,9 @@ class DailyDigestService
         }
 
         $targetTime = $preference?->digest_time?->format('H:i') ?? '10:00';
+        $targetAt = $now->copy()->setTimeFromTimeString($targetTime);
 
-        if ($targetTime !== $now->format('H:i')) {
+        if ($now->lessThan($targetAt)) {
             return false;
         }
 
@@ -152,6 +155,13 @@ class DailyDigestService
         $predictions = $sports
             ->flatMap(fn (string $sport) => $this->predictionPoolForSport($sport, $now))
             ->sort(function (array $a, array $b): int {
+                $sportCompare = $this->digestSportRank((string) ($a['sport'] ?? ''))
+                    <=> $this->digestSportRank((string) ($b['sport'] ?? ''));
+
+                if ($sportCompare !== 0) {
+                    return $sportCompare;
+                }
+
                 $edgeCompare = ((float) ($b['edge'] ?? 0)) <=> ((float) ($a['edge'] ?? 0));
 
                 if ($edgeCompare !== 0) {
@@ -199,8 +209,24 @@ class DailyDigestService
      */
     private function eligibleSports(): Collection
     {
-        return collect(array_keys(self::SPORT_MAP))
+        $configuredSports = config('alerts.daily_digest.sports', array_keys(self::SPORT_MAP));
+
+        return collect(is_array($configuredSports) ? $configuredSports : [])
+            ->map(fn (mixed $sport) => strtolower((string) $sport))
+            ->filter(fn (string $sport) => array_key_exists($sport, self::SPORT_MAP))
+            ->unique()
             ->values();
+    }
+
+    private function digestSportRank(string $sport): int
+    {
+        $configuredPriority = config('alerts.daily_digest.sport_priority', []);
+        $priority = collect(is_array($configuredPriority) ? $configuredPriority : [])
+            ->map(fn (mixed $value) => strtoupper((string) $value))
+            ->values()
+            ->flip();
+
+        return (int) ($priority[strtoupper($sport)] ?? 999);
     }
 
     private function canReceiveDigestEmails(User $user): bool
@@ -317,26 +343,29 @@ class DailyDigestService
 
         $awayTeam = (string) ($game->awayTeam->abbreviation ?? $game->awayTeam->school ?? $game->awayTeam->name ?? 'Away');
         $homeTeam = (string) ($game->homeTeam->abbreviation ?? $game->homeTeam->school ?? $game->homeTeam->name ?? 'Home');
-        $winProbability = (float) ($prediction->win_probability ?? 0);
-        $awayWinProbability = $winProbability;
-        $homeWinProbability = max(0, min(1, 1 - $awayWinProbability));
-        $topRecommendation = $this->topRecommendation($sport, $game);
-
-        if ($topRecommendation === null) {
-            return null;
-        }
+        $homeWinProbability = max(0, min(1, (float) ($prediction->win_probability ?? 0)));
+        $awayWinProbability = max(0, min(1, 1 - $homeWinProbability));
+        $topRecommendation = $this->topRecommendation($sport, $game)
+            ?? $this->modelLeanRecommendation($awayTeam, $homeTeam, $awayWinProbability, $homeWinProbability);
 
         $pickConfidence = $this->displayConfidence($prediction, $topRecommendation, $awayWinProbability, $homeWinProbability);
         $spread = $prediction->predicted_spread !== null ? (float) $prediction->predicted_spread : null;
         $scheduledAt = $this->scheduledAt($game);
+        $pickType = (string) ($topRecommendation['type'] ?? 'pick');
+        $betLabel = (string) ($topRecommendation['bet_label'] ?? $this->cleanPickLabel((string) ($topRecommendation['recommendation'] ?? 'Model lean')));
 
         return [
             'sport' => strtoupper($sport),
             'matchup' => "{$awayTeam} @ {$homeTeam}",
             'pick' => (string) ($topRecommendation['recommendation'] ?? 'No recommendation available'),
+            'bet_label' => $betLabel,
+            'classification' => $pickType === 'model_lean' ? 'Watchlist' : 'Bettable edge',
+            'market_note' => $pickType === 'model_lean'
+                ? 'Waiting on market odds before bet classification.'
+                : 'Market edge detected by the betting-value layer.',
             'confidence' => $pickConfidence,
             'edge' => round((float) ($topRecommendation['edge'] ?? 0), 1),
-            'pick_type' => (string) ($topRecommendation['type'] ?? 'pick'),
+            'pick_type' => $pickType,
             'predicted_spread' => $spread,
             'predicted_total' => $prediction->predicted_total !== null ? (float) $prediction->predicted_total : null,
             'game_time' => $scheduledAt?->format('M j, g:i A'),
@@ -363,6 +392,33 @@ class DailyDigestService
                 return ((float) ($b['confidence'] ?? 0)) <=> ((float) ($a['confidence'] ?? 0));
             })
             ->first();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function modelLeanRecommendation(
+        string $awayTeam,
+        string $homeTeam,
+        float $awayWinProbability,
+        float $homeWinProbability,
+    ): array {
+        $leanTeam = $awayWinProbability >= $homeWinProbability ? $awayTeam : $homeTeam;
+        $leanProbability = max($awayWinProbability, $homeWinProbability);
+        $confidence = min(self::DIGEST_MODEL_LEAN_CONFIDENCE_CAP, $leanProbability * 100);
+
+        return [
+            'type' => 'model_lean',
+            'recommendation' => "Model lean: {$leanTeam} moneyline",
+            'bet_label' => "{$leanTeam} ML",
+            'confidence' => round($confidence, 1),
+            'edge' => 0.0,
+        ];
+    }
+
+    private function cleanPickLabel(string $pick): string
+    {
+        return trim(str_replace(['Model lean:', 'Bet '], '', $pick));
     }
 
     /**
@@ -417,14 +473,17 @@ class DailyDigestService
             ->implode(', ');
 
         $highlights = [];
+        $officialBets = collect($predictions)
+            ->filter(fn (array $prediction) => ($prediction['pick_type'] ?? null) !== 'model_lean')
+            ->count();
+        $modelLeans = max(0, count($predictions) - $officialBets);
 
         if ($predictions !== []) {
             $topPrediction = $predictions[0];
             $highlights[] = sprintf(
-                '%s %s leans %s at %s confidence.',
+                'Top watch: %s %s, %s confidence.',
                 $topPrediction['sport'],
-                $topPrediction['matchup'],
-                $topPrediction['pick'],
+                $topPrediction['bet_label'] ?? $topPrediction['pick'],
                 number_format((float) $topPrediction['confidence'], 1).'%'
             );
         }
@@ -443,7 +502,7 @@ class DailyDigestService
         if (count($predictions) > 1) {
             $secondPrediction = $predictions[1];
             $highlights[] = sprintf(
-                'Another board to watch: %s %s with projected total %s.',
+                'Next up: %s %s with projected total %s.',
                 $secondPrediction['sport'],
                 $secondPrediction['matchup'],
                 $secondPrediction['predicted_total'] !== null
@@ -453,10 +512,16 @@ class DailyDigestService
         }
 
         return [
-            'headline' => $sportsLabel !== '' ? "{$sportsLabel} Daily Digest" : 'Daily Picks Digest',
+            'headline' => $predictions !== []
+                ? sprintf('Today\'s %s Watchlist', $predictions[0]['sport'])
+                : ($sportsLabel !== '' ? "{$sportsLabel} Daily Digest" : 'Daily Picks Digest'),
             'intro' => sprintf(
-                'Here is a quick scan of today\'s strongest model-driven spots%s, with a mix of game picks and player props where available.',
-                $sportsLabel !== '' ? " across {$sportsLabel}" : ''
+                'Official bets: %d. Model leans: %d. %s',
+                $officialBets,
+                $modelLeans,
+                $modelLeans > 0
+                    ? 'Model leans are watchlist plays until fresh odds confirm a real edge.'
+                    : 'These are the strongest market-backed spots on today\'s board.'
             ),
             'highlights' => array_values(array_slice($highlights, 0, 3)),
         ];

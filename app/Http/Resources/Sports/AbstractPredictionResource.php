@@ -215,6 +215,9 @@ abstract class AbstractPredictionResource extends JsonResource
                 'win_probability_adjustment' => isset($injuries['win_probability_adjustment'])
                     ? (float) $injuries['win_probability_adjustment']
                     : null,
+                'injury_model_source' => $metadata['injury_model_source'] ?? null,
+                'injury_spread_model_source' => $metadata['injury_spread_model_source'] ?? null,
+                'injury_total_model_source' => $metadata['injury_total_model_source'] ?? null,
             ];
         } elseif (is_array($metadata['depth_chart_context'] ?? null)) {
             $source = $metadata['depth_chart_context'];

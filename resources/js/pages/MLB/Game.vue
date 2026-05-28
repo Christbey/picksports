@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
-import DepthChartImpactCard from '@/components/game-page/DepthChartImpactCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import MlbGameInsights from '@/components/game-page/MlbGameInsights.vue';
 import ProbableStartersCard from '@/components/game-page/ProbableStartersCard.vue';
@@ -34,18 +33,9 @@ const hasDepthChartEntries = computed(() =>
 <template>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
-            <div
-                class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]"
-            >
-                <BettingPlanCard
-                    :betting-plan="
-                        pageProps.prediction?.narrative?.betting_plan
-                    "
-                />
-                <DepthChartImpactCard
-                    :context="pageProps.prediction?.depth_chart_context"
-                />
-            </div>
+            <BettingPlanCard
+                :betting-plan="pageProps.prediction?.narrative?.betting_plan"
+            />
         </template>
         <template #afterHero>
             <div
@@ -70,6 +60,7 @@ const hasDepthChartEntries = computed(() =>
                     :home-team-abbr="pageProps.homeTeam?.abbreviation"
                     :away-injuries="awayInjuries"
                     :home-injuries="homeInjuries"
+                    :depth-chart-context="pageProps.prediction?.depth_chart_context"
                 />
             </div>
         </template>

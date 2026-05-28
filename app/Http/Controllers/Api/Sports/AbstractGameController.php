@@ -88,7 +88,11 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $games = $gameModel::query()
             ->with($this->gameRelations(true))
             ->when($request->status, fn ($q, $status) => $q->where('status', $status))
-            ->when($request->season, fn ($q, $season) => $q->where('season', $season))
+            ->when($request->season, fn ($q, $season) => $q->where('season', $season));
+
+        $this->applyIndexQueryFilters($games, $request);
+
+        $games = $games
             ->orderByDesc('game_date')
             ->paginate($this->getPerPage($request));
 
@@ -104,7 +108,11 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $resourceClass = $this->getGameResource();
         $gameId = $this->requireNumericId($game);
 
-        $game = $gameModel::query()->with($this->gameRelations(true))->findOrFail($gameId);
+        $query = $gameModel::query()->with($this->gameRelations(true));
+
+        $this->applyShowQueryFilters($query);
+
+        $game = $query->findOrFail($gameId);
         $game->setAttribute('matchup_context', app(GameMatchupContextService::class)->forGame($game));
 
         return new $resourceClass($game);
@@ -144,7 +152,11 @@ abstract class AbstractGameController extends AbstractSportsApiController
                     ->where(function ($query) use ($teamId) {
                         $query->where('home_team_id', $teamId)
                             ->orWhere('away_team_id', $teamId);
-                    })
+                    });
+
+                $this->applyIndexQueryFilters($games, request());
+
+                $games = $games
                     ->orderByDesc('game_date')
                     ->paginate($perPage);
 
@@ -166,7 +178,11 @@ abstract class AbstractGameController extends AbstractSportsApiController
 
         $games = $gameModel::query()
             ->with($this->gameRelations(false))
-            ->where('season', $seasonValue)
+            ->where('season', $seasonValue);
+
+        $this->applyIndexQueryFilters($games, $request);
+
+        $games = $games
             ->orderByDesc('game_date')
             ->paginate($this->getPerPage($request, 50));
 
@@ -187,10 +203,24 @@ abstract class AbstractGameController extends AbstractSportsApiController
         $games = $gameModel::query()
             ->with($this->gameRelations(true))
             ->where('season', $seasonValue)
-            ->where('week', $weekValue)
+            ->where('week', $weekValue);
+
+        $this->applyIndexQueryFilters($games, $request);
+
+        $games = $games
             ->oldest('game_date')
             ->paginate($perPage);
 
         return $resourceClass::collection($games);
+    }
+
+    protected function applyIndexQueryFilters($query, Request $request): void
+    {
+        //
+    }
+
+    protected function applyShowQueryFilters($query): void
+    {
+        //
     }
 }

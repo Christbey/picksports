@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Sports\AbstractGameController;
 use App\Http\Resources\NBA\GameResource;
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
+use Illuminate\Http\Request;
 
 class GameController extends AbstractGameController
 {
@@ -21,5 +22,15 @@ class GameController extends AbstractGameController
             'homeTeam.activePlayerInjuries.player',
             'awayTeam.activePlayerInjuries.player',
         ];
+    }
+
+    protected function applyIndexQueryFilters($query, Request $request): void
+    {
+        $query->withoutCompletedPlayoffSeriesPlaceholders();
+    }
+
+    protected function applyShowQueryFilters($query): void
+    {
+        $query->withoutCompletedPlayoffSeriesPlaceholders();
     }
 }

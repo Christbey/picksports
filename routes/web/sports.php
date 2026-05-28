@@ -9,6 +9,16 @@ use Inertia\Inertia;
 
 $sportDomains = (array) config('sports.domains', []);
 
+$sportWebMiddleware = static function (string $sport, array $web): array {
+    $middleware = ['auth', 'onboarded', 'verified'];
+
+    if (($web['requires_prediction_permission'] ?? true) !== false) {
+        $middleware[] = "permission:view-{$sport}-predictions";
+    }
+
+    return $middleware;
+};
+
 foreach ($sportDomains as $sport => $definition) {
     $web = (array) ($definition['web'] ?? []);
     if (($web['player_props'] ?? false) !== true) {
@@ -16,7 +26,7 @@ foreach ($sportDomains as $sport => $definition) {
     }
 
     Route::get("/{$sport}/player-props", [BettingRecommendationsController::class, $sport])
-        ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+        ->middleware($sportWebMiddleware($sport, $web))
         ->name("{$sport}.player-props");
 }
 
@@ -36,32 +46,34 @@ Route::get('debug/prediction-access', DebugPredictionAccessController::class)
     ->name('debug.prediction-access');
 
 foreach ($sportDomains as $sport => $definition) {
+    $web = (array) ($definition['web'] ?? []);
     $page = (string) (($definition['web']['predictions_page'] ?? null) ?: '');
     if ($page === '') {
         continue;
     }
 
     Route::get("/{$sport}/predictions", fn () => Inertia::render($page))
-        ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+        ->middleware($sportWebMiddleware($sport, $web))
         ->name("{$sport}-predictions");
 
     // Legacy dashed URL support.
     Route::get("/{$sport}-predictions", fn () => redirect("/{$sport}/predictions", 301))
-        ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+        ->middleware($sportWebMiddleware($sport, $web))
         ->name("{$sport}.legacy.predictions");
 }
 
 foreach ($sportDomains as $sport => $definition) {
+    $web = (array) ($definition['web'] ?? []);
     $pages = (array) ($definition['web']['pages'] ?? []);
     foreach ($pages as $suffix => $page) {
         $path = "/{$sport}/{$suffix}";
         Route::get($path, fn () => Inertia::render($page))
-            ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+            ->middleware($sportWebMiddleware($sport, $web))
             ->name("{$sport}-{$suffix}");
 
         // Legacy dashed URL support.
         Route::get("/{$sport}-{$suffix}", fn () => redirect($path, 301))
-            ->middleware(['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"])
+            ->middleware($sportWebMiddleware($sport, $web))
             ->name("{$sport}.legacy.{$suffix}");
     }
 }
@@ -73,7 +85,7 @@ foreach ($sportDomains as $sport => $definition) {
     }
 
     $details = (array) ($definition['web']['details'] ?? []);
-    $sportDetailMiddleware = ['auth', 'onboarded', 'verified', "permission:view-{$sport}-predictions"];
+    $sportDetailMiddleware = $sportWebMiddleware($sport, (array) ($definition['web'] ?? []));
     $teamController = "App\\Http\\Controllers\\{$namespace}\\TeamController";
     $gameController = "App\\Http\\Controllers\\{$namespace}\\GameController";
     $playerController = "App\\Http\\Controllers\\{$namespace}\\PlayerController";

@@ -44,7 +44,7 @@ class PlayerPropNarrativeAgent implements Agent, HasStructuredOutput
             'betting_plan' => $schema->object([
                 'bet_pick' => $schema->string()->required(),
                 'reasoning' => $schema->string()->required(),
-            ])->required(),
+            ])->withoutAdditionalProperties()->required(),
             'social_caption' => $schema->string()->nullable()->required(),
         ];
     }

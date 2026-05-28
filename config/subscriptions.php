@@ -55,7 +55,7 @@ return [
             'features' => [
                 'predictions_per_day' => 5,
                 'historical_data_days' => 7,
-                'sports_access' => ['NBA', 'NFL'],
+                'sports_access' => ['NBA', 'NFL', 'WNBA'],
                 'export_predictions' => false,
                 'api_access' => false,
                 'advanced_analytics' => false,
@@ -84,7 +84,7 @@ return [
             'features' => [
                 'predictions_per_day' => 25,
                 'historical_data_days' => 30,
-                'sports_access' => ['NBA', 'NFL', 'CBB', 'WCBB', 'MLB', 'CFB'],
+                'sports_access' => ['NBA', 'NFL', 'CBB', 'WCBB', 'MLB', 'CFB', 'WNBA'],
                 'export_predictions' => true,
                 'api_access' => false,
                 'advanced_analytics' => false,

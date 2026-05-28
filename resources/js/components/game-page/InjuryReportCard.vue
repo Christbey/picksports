@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
+import type { PredictionSummary } from '@/types';
 
 interface InjuryItem {
     id: number;
@@ -24,6 +25,7 @@ const props = defineProps<{
     homeTeamAbbr?: string | null;
     awayInjuries: InjuryItem[];
     homeInjuries: InjuryItem[];
+    depthChartContext?: PredictionSummary['depth_chart_context'] | null;
 }>();
 
 const teams = computed(() => [
@@ -183,13 +185,80 @@ const compactDate = (value: string | null | undefined): string | null => {
         day: 'numeric',
     });
 };
+
+const formatSource = (value: string | null | undefined): string =>
+    String(value || 'availability model').replaceAll('_', ' ');
+
+const signed = (value: number): string =>
+    value > 0 ? `+${value.toFixed(1)}` : value.toFixed(1);
+
+const modelImpactLines = computed(() => {
+    const context = props.depthChartContext;
+    if (!context) return [];
+
+    if (context.type === 'injury_weighting') {
+        const items: string[] = [];
+        const homeOut = context.home_out_weighted ?? 0;
+        const homeQuestionable = context.home_questionable_weighted ?? 0;
+        const awayOut = context.away_out_weighted ?? 0;
+        const awayQuestionable = context.away_questionable_weighted ?? 0;
+        const weightedTotal =
+            homeOut + homeQuestionable + awayOut + awayQuestionable;
+        const spreadAdjustment = context.spread_adjustment ?? 0;
+        const totalAdjustment = context.total_adjustment ?? 0;
+        const hasSpreadAdjustment = Math.abs(spreadAdjustment) >= 0.05;
+        const hasTotalAdjustment = Math.abs(totalAdjustment) >= 0.05;
+
+        if (weightedTotal > 0) {
+            items.push(
+                `Weighted availability: ${props.homeTeamAbbr || 'Home'} ${homeOut.toFixed(2)} out / ${homeQuestionable.toFixed(2)} questionable, ${props.awayTeamAbbr || 'Away'} ${awayOut.toFixed(2)} out / ${awayQuestionable.toFixed(2)} questionable.`,
+            );
+        } else if (context.applied || hasSpreadAdjustment || hasTotalAdjustment) {
+            items.push(
+                `Availability model used ${formatSource(context.injury_total_model_source || context.injury_model_source)}; no weighted depth-chart injuries were detected.`,
+            );
+        }
+
+        if (hasSpreadAdjustment) {
+            items.push(`Spread impact ${signed(spreadAdjustment)}.`);
+        }
+
+        if (hasTotalAdjustment) {
+            items.push(`Total impact ${signed(totalAdjustment)}.`);
+        }
+
+        return items;
+    }
+
+    const items: string[] = [];
+    if (context.home_pitcher_source || context.away_pitcher_source) {
+        items.push(
+            `Pitcher source: home ${formatSource(context.home_pitcher_source)}, away ${formatSource(context.away_pitcher_source)}.`,
+        );
+    }
+
+    if (
+        context.home_depth_chart_fallback_used ||
+        context.away_depth_chart_fallback_used
+    ) {
+        items.push(
+            `Depth-chart starter fallback was used${context.home_depth_chart_fallback_used && context.away_depth_chart_fallback_used ? ' on both sides' : context.home_depth_chart_fallback_used ? ' for the home side' : ' for the away side'}.`,
+        );
+    }
+
+    if (context.probable_pitcher_injury_applied) {
+        items.push('Probable pitcher availability adjustments were applied.');
+    }
+
+    return items;
+});
 </script>
 
 <template>
     <div class="ui-surface p-4 md:p-5">
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
-                <h3 class="ui-kicker">Injury Report</h3>
+                <h3 class="ui-kicker">Injuries & Availability</h3>
                 <p class="mt-1 text-xs text-muted-foreground">
                     {{ totalInjuries }} active
                     {{ totalInjuries === 1 ? 'listing' : 'listings' }}
@@ -202,6 +271,28 @@ const compactDate = (value: string | null | undefined): string | null => {
                 <span class="rounded-full bg-muted px-2 py-1 text-foreground/80">
                     {{ homeTeamAbbr || 'Home' }} {{ homeInjuries.length }}
                 </span>
+            </div>
+        </div>
+
+        <div
+            v-if="modelImpactLines.length > 0"
+            class="mt-4 rounded-lg border border-border/60 bg-background/55 p-3"
+        >
+            <div
+                class="flex flex-wrap items-center justify-between gap-2 text-xs"
+            >
+                <span class="font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Model availability impact
+                </span>
+                <span class="rounded-full bg-muted px-2 py-1 font-medium text-foreground/80">
+                    {{ modelImpactLines.length }}
+                    {{ modelImpactLines.length === 1 ? 'note' : 'notes' }}
+                </span>
+            </div>
+            <div class="mt-2 space-y-1.5 text-sm text-foreground/90">
+                <p v-for="line in modelImpactLines" :key="line">
+                    {{ line }}
+                </p>
             </div>
         </div>
 

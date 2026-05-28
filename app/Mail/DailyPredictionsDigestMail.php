@@ -27,8 +27,17 @@ class DailyPredictionsDigestMail extends Mailable
 
     public function envelope(): Envelope
     {
+        $topPrediction = $this->predictions[0] ?? null;
+        $subject = $topPrediction
+            ? sprintf(
+                '%s Watchlist: %s',
+                (string) ($topPrediction['sport'] ?? 'Today'),
+                (string) ($topPrediction['bet_label'] ?? $topPrediction['pick'] ?? 'Daily Picks')
+            )
+            : 'Today\'s Picks Watchlist';
+
         return new Envelope(
-            subject: 'Your Daily Picks Digest',
+            subject: $subject,
         );
     }
 

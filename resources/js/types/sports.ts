@@ -325,6 +325,9 @@ export interface PredictionSummary {
         spread_adjustment?: number | null;
         total_adjustment?: number | null;
         win_probability_adjustment?: number | null;
+        injury_model_source?: string | null;
+        injury_spread_model_source?: string | null;
+        injury_total_model_source?: string | null;
         home_pitcher_source?: string | null;
         away_pitcher_source?: string | null;
         home_depth_chart_fallback_used?: boolean;

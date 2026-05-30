@@ -3,7 +3,6 @@ import {
     AlertTriangle,
     BadgeCheck,
     CircleDollarSign,
-    Gauge,
     Medal,
     ShieldCheck,
     TrendingUp,
@@ -109,12 +108,6 @@ const signalGroups = computed(() => [
         icon: Medal,
         rows: payload.value?.finals ?? [],
         metric: (row: SignalRow) => formatPercent(row.champion_probability),
-        detail: (row: SignalRow) => {
-            const edge = row.market_edge?.edge_percent_points;
-            const edgeText = edge != null ? ` | ${edge.toFixed(1)} market edge` : '';
-
-            return `${formatPercent(row.finals_probability)} finals${edgeText}`;
-        },
     },
     {
         key: 'spread',
@@ -122,7 +115,6 @@ const signalGroups = computed(() => [
         icon: TrendingUp,
         rows: payload.value?.spread ?? [],
         metric: (row: SignalRow) => formatPoints(row.edge_points),
-        detail: (row: SignalRow) => `${sideLabel(row.pick_side)} | ${row.matchup ?? ''}`,
     },
     {
         key: 'moneyline',
@@ -130,7 +122,6 @@ const signalGroups = computed(() => [
         icon: BadgeCheck,
         rows: payload.value?.moneyline ?? [],
         metric: (row: SignalRow) => formatPercent(row.win_probability),
-        detail: (row: SignalRow) => `${sideLabel(row.pick_side)} | ${row.matchup ?? ''}`,
     },
     {
         key: 'totals',
@@ -138,16 +129,14 @@ const signalGroups = computed(() => [
         icon: CircleDollarSign,
         rows: payload.value?.totals ?? [],
         metric: (row: SignalRow) => formatPoints(row.edge_points),
-        detail: (row: SignalRow) =>
-            `${sideLabel(row.pick_side)} | model ${formatNumber(row.predicted_total)} vs market ${formatNumber(row.market_total)}`,
     },
     {
         key: 'streaks',
         title: 'Streaks',
         icon: AlertTriangle,
         rows: payload.value?.streaks ?? [],
-        metric: (row: SignalRow) => (row.length != null ? `${row.length}x` : null),
-        detail: (row: SignalRow) => row.label ?? labelize(row.streak),
+        metric: (row: SignalRow) =>
+            row.length != null ? `${row.length}x` : null,
     },
 ]);
 
@@ -161,11 +150,6 @@ function formatPoints(value?: number | null): string | null {
     return `${Math.abs(value).toFixed(1)} pts`;
 }
 
-function formatNumber(value?: number | null): string {
-    if (value == null) return '-';
-    return value.toFixed(1);
-}
-
 function labelize(value?: string | null): string {
     if (!value) return '';
     return value.replaceAll('_', ' ');
@@ -174,15 +158,6 @@ function labelize(value?: string | null): string {
 function sideLabel(value?: string | null): string {
     if (!value) return '';
     return labelize(value);
-}
-
-function primaryReason(row: SignalRow): string {
-    return labelize(row.reason_codes?.[0]);
-}
-
-function riskSummary(row: SignalRow): string {
-    if (!row.risk_flags?.length) return 'no major risk flags';
-    return row.risk_flags.slice(0, 2).map(labelize).join(' | ');
 }
 
 function pickLabel(row: SignalRow): string {
@@ -195,7 +170,9 @@ function pickLabel(row: SignalRow): string {
 function valueDetail(row: SignalRow): string {
     const parts = [];
     if (row.market_price != null) {
-        parts.push(`odds ${row.market_price > 0 ? '+' : ''}${row.market_price}`);
+        parts.push(
+            `odds ${row.market_price > 0 ? '+' : ''}${row.market_price}`,
+        );
     }
     if (row.probability_edge != null) {
         parts.push(`${(row.probability_edge * 100).toFixed(1)}% edge`);
@@ -209,6 +186,18 @@ function valueDetail(row: SignalRow): string {
 
 function coverageLabel(value?: number): string {
     return value == null ? '0%' : `${value.toFixed(1)}%`;
+}
+
+function compactGroupDetail(row: SignalRow, groupKey: string): string {
+    if (groupKey === 'finals') {
+        return formatPercent(row.finals_probability) ?? 'finals';
+    }
+
+    if (groupKey === 'totals') {
+        return sideLabel(row.pick_side);
+    }
+
+    return row.matchup ?? sideLabel(row.pick_side);
 }
 
 async function loadSignals(): Promise<void> {
@@ -242,14 +231,19 @@ onMounted(loadSignals);
 
 <template>
     <section class="space-y-3">
-        <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div
+            class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between"
+        >
             <div>
                 <h2 class="text-lg font-semibold">NBA Signals</h2>
                 <p class="text-sm text-muted-foreground">
-                    Finals, spread edges, market health, and pass rules from the live model.
+                    Best bets, live edges, and market checks.
                 </p>
             </div>
-            <div v-if="payload?.slate_date" class="text-sm text-muted-foreground">
+            <div
+                v-if="payload?.slate_date"
+                class="text-sm text-muted-foreground"
+            >
                 Slate {{ payload.slate_date }}
             </div>
         </div>
@@ -276,28 +270,43 @@ onMounted(loadSignals);
 
         <template v-else>
             <Card>
-                <CardHeader class="pb-3">
-                    <CardTitle class="flex items-center gap-2 text-sm">
-                        <ShieldCheck class="h-4 w-4" />
-                        Best Bets Filter
+                <CardHeader class="pb-2">
+                    <CardTitle
+                        class="flex items-center justify-between gap-3 text-sm"
+                    >
+                        <span class="flex items-center gap-2">
+                            <ShieldCheck class="h-4 w-4" />
+                            Best Bets
+                        </span>
+                        <span
+                            v-if="payload?.pass_summary"
+                            class="text-xs font-medium text-muted-foreground"
+                        >
+                            {{ payload.pass_summary.passes }}/{{
+                                payload.pass_summary.candidates
+                            }}
+                            passed
+                        </span>
                     </CardTitle>
                 </CardHeader>
-                <CardContent class="space-y-4">
+                <CardContent class="space-y-3">
                     <div
                         v-if="bestBets.length > 0"
-                        class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+                        class="grid gap-2 md:grid-cols-2 xl:grid-cols-4"
                     >
                         <div
-                            v-for="row in bestBets.slice(0, 8)"
+                            v-for="row in bestBets.slice(0, 4)"
                             :key="`best-bet-${row.type}-${row.game_id}-${row.pick_side}`"
-                            class="min-h-28 rounded-md border p-3"
+                            class="rounded-md border p-3"
                         >
-                            <div class="mb-2 flex items-start justify-between gap-3">
+                            <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
                                     <div class="truncate text-sm font-semibold">
                                         {{ row.team_name || row.matchup }}
                                     </div>
-                                    <div class="truncate text-xs text-muted-foreground">
+                                    <div
+                                        class="truncate text-xs text-muted-foreground"
+                                    >
                                         {{ pickLabel(row) }} | {{ row.matchup }}
                                     </div>
                                 </div>
@@ -305,105 +314,49 @@ onMounted(loadSignals);
                                     <div class="text-sm font-semibold">
                                         {{ row.score ?? 0 }}
                                     </div>
-                                    <div class="text-xs uppercase text-muted-foreground">
+                                    <div
+                                        class="text-xs text-muted-foreground uppercase"
+                                    >
                                         {{ row.classification }}
                                     </div>
                                 </div>
                             </div>
-                            <div class="text-xs text-muted-foreground">
-                                {{ primaryReason(row) }}
-                            </div>
                             <div
                                 v-if="valueDetail(row)"
-                                class="mt-1 text-xs text-muted-foreground"
+                                class="mt-2 text-xs text-muted-foreground"
                             >
                                 {{ valueDetail(row) }}
-                            </div>
-                            <div class="mt-1 text-xs text-muted-foreground">
-                                Risk: {{ riskSummary(row) }}
                             </div>
                         </div>
                     </div>
                     <div v-else class="text-sm text-muted-foreground">
                         No games passed the selective bet filter for this slate.
                     </div>
-                    <div
-                        v-if="payload?.odds_health"
-                        class="grid gap-2 rounded-md border p-3 text-xs text-muted-foreground sm:grid-cols-4"
-                    >
-                        <div>
-                            <div class="font-medium text-foreground">Odds Health</div>
-                            <div>{{ labelize(payload.odds_health.status) }}</div>
-                        </div>
-                        <div>
-                            <div class="font-medium text-foreground">Moneyline</div>
-                            <div>{{ coverageLabel(payload.odds_health.moneyline_coverage) }}</div>
-                        </div>
-                        <div>
-                            <div class="font-medium text-foreground">Spread</div>
-                            <div>{{ coverageLabel(payload.odds_health.spread_coverage) }}</div>
-                        </div>
-                        <div>
-                            <div class="font-medium text-foreground">Totals</div>
-                            <div>{{ coverageLabel(payload.odds_health.total_coverage) }}</div>
-                        </div>
-                    </div>
-                    <div
-                        v-if="payload?.pass_summary"
-                        class="flex flex-wrap gap-2 text-xs text-muted-foreground"
-                    >
-                        <span class="rounded-md border px-2 py-1">
-                            Pass rate {{ payload.pass_summary.pass_rate.toFixed(1) }}%
-                        </span>
-                        <span
-                            v-for="reason in payload.pass_summary.top_reasons.slice(0, 4)"
-                            :key="reason.reason"
-                            class="rounded-md border px-2 py-1"
-                        >
-                            {{ labelize(reason.reason) }}: {{ reason.count }}
-                        </span>
-                    </div>
-                    <div
-                        v-if="payload?.bet_filter"
-                        class="flex flex-wrap gap-2 text-xs text-muted-foreground"
-                    >
-                        <span
-                            v-for="item in payload.bet_filter.risk_controls.slice(0, 5)"
-                            :key="item"
-                            class="rounded-md border px-2 py-1"
-                        >
-                            {{ labelize(item) }}
-                        </span>
-                    </div>
                 </CardContent>
             </Card>
 
-            <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
                 <Card v-for="group in signalGroups" :key="group.key">
-                    <CardHeader class="pb-3">
+                    <CardHeader class="pb-2">
                         <CardTitle class="flex items-center gap-2 text-sm">
                             <component :is="group.icon" class="h-4 w-4" />
                             {{ group.title }}
                         </CardTitle>
                     </CardHeader>
-                    <CardContent class="space-y-3">
+                    <CardContent class="space-y-2">
                         <div
-                            v-for="row in group.rows.slice(0, 4)"
+                            v-for="row in group.rows.slice(0, 2)"
                             :key="`${group.key}-${row.team_id}-${row.game_id}-${row.label}`"
-                            class="flex min-h-14 items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
+                            class="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0"
                         >
                             <div class="min-w-0">
                                 <div class="truncate text-sm font-medium">
                                     {{ row.team_name || row.matchup }}
                                 </div>
-                                <div class="truncate text-xs text-muted-foreground">
-                                    {{ group.detail(row) }}
-                                </div>
                                 <div
-                                    v-if="primaryReason(row)"
                                     class="truncate text-xs text-muted-foreground"
                                 >
-                                    {{ primaryReason(row) }}
+                                    {{ compactGroupDetail(row, group.key) }}
                                 </div>
                             </div>
                             <div class="shrink-0 text-sm font-semibold">
@@ -420,19 +373,80 @@ onMounted(loadSignals);
                 </Card>
             </div>
 
-            <Card v-if="payload?.backend_review">
-                <CardHeader class="pb-3">
-                    <CardTitle class="flex items-center gap-2 text-sm">
-                        <Gauge class="h-4 w-4" />
-                        Backend Logic Review
-                    </CardTitle>
-                </CardHeader>
-                <CardContent class="grid gap-4 text-sm md:grid-cols-2">
-                    <div>
-                        <div class="mb-2 font-medium">Model Inputs</div>
+            <details class="rounded-md border bg-card text-sm">
+                <summary
+                    class="cursor-pointer list-none px-4 py-3 font-medium [&::-webkit-details-marker]:hidden"
+                >
+                    Model Details
+                </summary>
+                <div class="grid gap-4 border-t px-4 py-4 md:grid-cols-2">
+                    <div v-if="payload?.odds_health" class="space-y-2">
+                        <div class="font-medium">Odds Health</div>
+                        <div
+                            class="grid grid-cols-2 gap-2 text-xs text-muted-foreground"
+                        >
+                            <span
+                                >Status:
+                                {{ labelize(payload.odds_health.status) }}</span
+                            >
+                            <span
+                                >ML:
+                                {{
+                                    coverageLabel(
+                                        payload.odds_health.moneyline_coverage,
+                                    )
+                                }}</span
+                            >
+                            <span
+                                >Spread:
+                                {{
+                                    coverageLabel(
+                                        payload.odds_health.spread_coverage,
+                                    )
+                                }}</span
+                            >
+                            <span
+                                >Totals:
+                                {{
+                                    coverageLabel(
+                                        payload.odds_health.total_coverage,
+                                    )
+                                }}</span
+                            >
+                        </div>
+                    </div>
+
+                    <div v-if="payload?.pass_summary" class="space-y-2">
+                        <div class="font-medium">Pass Rules</div>
                         <div class="flex flex-wrap gap-2">
                             <span
-                                v-for="item in payload.backend_review.strengths.slice(0, 8)"
+                                class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
+                            >
+                                Pass rate
+                                {{ payload.pass_summary.pass_rate.toFixed(1) }}%
+                            </span>
+                            <span
+                                v-for="reason in payload.pass_summary.top_reasons.slice(
+                                    0,
+                                    4,
+                                )"
+                                :key="reason.reason"
+                                class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
+                            >
+                                {{ labelize(reason.reason) }}:
+                                {{ reason.count }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div v-if="payload?.bet_filter" class="space-y-2">
+                        <div class="font-medium">Risk Controls</div>
+                        <div class="flex flex-wrap gap-2">
+                            <span
+                                v-for="item in payload.bet_filter.risk_controls.slice(
+                                    0,
+                                    5,
+                                )"
                                 :key="item"
                                 class="rounded-md border px-2 py-1 text-xs text-muted-foreground"
                             >
@@ -440,11 +454,15 @@ onMounted(loadSignals);
                             </span>
                         </div>
                     </div>
-                    <div>
-                        <div class="mb-2 font-medium">Watch Items</div>
+
+                    <div v-if="payload?.backend_review" class="space-y-2">
+                        <div class="font-medium">Watch Items</div>
                         <div class="flex flex-wrap gap-2">
                             <span
-                                v-for="item in payload.backend_review.watch_items"
+                                v-for="item in payload.backend_review.watch_items.slice(
+                                    0,
+                                    6,
+                                )"
                                 :key="item"
                                 class="rounded-md border border-amber-300/60 px-2 py-1 text-xs text-muted-foreground"
                             >
@@ -452,8 +470,8 @@ onMounted(loadSignals);
                             </span>
                         </div>
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </details>
         </template>
     </section>
 </template>

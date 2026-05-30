@@ -30,11 +30,11 @@ class DailyPredictionsDigestMail extends Mailable
         $topPrediction = $this->predictions[0] ?? null;
         $subject = $topPrediction
             ? sprintf(
-                '%s Watchlist: %s',
+                '%s Picks: %s',
                 (string) ($topPrediction['sport'] ?? 'Today'),
                 (string) ($topPrediction['bet_label'] ?? $topPrediction['pick'] ?? 'Daily Picks')
             )
-            : 'Today\'s Picks Watchlist';
+            : 'Today\'s Picks';
 
         return new Envelope(
             subject: $subject,

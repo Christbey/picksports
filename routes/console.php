@@ -812,3 +812,11 @@ $scheduleEveryMinuteJob(
     'alerts:send-daily-digests',
     'Alerts: Send Daily Digests'
 );
+
+$adminEmailReportEvent = Schedule::command('alerts:send-admin-email-report')
+    ->dailyAt((string) config('alerts.admin_report.daily_time', '07:30'))
+    ->when(fn () => (bool) config('alerts.admin_report.enabled', true))
+    ->name('Alerts: Send Admin Email Report')
+    ->withoutOverlapping()
+    ->runInBackground();
+$attachCommandHeartbeat($adminEmailReportEvent, 'alerts:send-admin-email-report', 'Alerts: Send Admin Email Report');

@@ -159,8 +159,8 @@ test('build digest for user falls back to deterministic summary when ai digest s
     $payload = app(DailyDigestService::class)->buildDigestForUser($user, now());
 
     expect($payload)->not->toBeNull()
-        ->and($payload['summary']['headline'])->toBe('Today\'s NBA Watchlist')
-        ->and($payload['summary']['intro'])->toContain('Official bets: 0. Model leans: 1.')
+        ->and($payload['summary']['headline'])->toBe('Today\'s NBA Picks')
+        ->and($payload['summary']['intro'])->toContain('0 official bets and 1 watchlist lean today.')
         ->and($payload['summary']['highlights'])->not->toBeEmpty();
 });
 
@@ -183,9 +183,8 @@ test('daily digest mail renders summary headline and highlights', function () {
     $rendered = $mail->render();
 
     expect($rendered)->toContain('NBA board at a glance')
-        ->and($rendered)->toContain('The model sees one clear lean tonight.')
-        ->and($rendered)->toContain('BOS @ LAL leans BOS moneyline at 63.0% confidence.');
-    expect($rendered)->toContain('Action Board');
+        ->and($rendered)->toContain('The model sees one clear lean tonight.');
+    expect($rendered)->toContain('Today’s board');
 });
 
 test('daily digest is due for users without alert preferences by default', function () {

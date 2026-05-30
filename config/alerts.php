@@ -19,4 +19,10 @@ return [
         'sports' => ['mlb', 'nba', 'nfl', 'cbb', 'cfb', 'wcbb', 'wnba'],
         'sport_priority' => ['mlb', 'nfl', 'nba', 'cbb', 'cfb', 'wcbb', 'wnba'],
     ],
+
+    'admin_report' => [
+        'enabled' => env('ADMIN_EMAIL_REPORT_ENABLED', true),
+        'recipients' => env('ADMIN_EMAIL_REPORT_RECIPIENTS', ''),
+        'daily_time' => env('ADMIN_EMAIL_REPORT_DAILY_TIME', '07:30'),
+    ],
 ];

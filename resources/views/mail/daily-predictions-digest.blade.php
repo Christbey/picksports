@@ -1,51 +1,61 @@
 @php
-    $officialBets = collect($predictions)->filter(fn ($prediction) => ($prediction['pick_type'] ?? null) !== 'model_lean')->count();
-    $modelLeans = max(0, count($predictions) - $officialBets);
-    $waitingOnOdds = collect($predictions)->filter(fn ($prediction) => ($prediction['pick_type'] ?? null) === 'model_lean')->count();
+    $officialPredictions = collect($predictions)
+        ->filter(fn ($prediction) => ($prediction['pick_type'] ?? null) !== 'model_lean')
+        ->values();
+    $watchlistPredictions = collect($predictions)
+        ->filter(fn ($prediction) => ($prediction['pick_type'] ?? null) === 'model_lean')
+        ->values();
+    $officialPredictionsBySport = $officialPredictions->groupBy(fn ($prediction) => (string) ($prediction['sport'] ?? 'Other'));
+    $watchlistPredictionsBySport = $watchlistPredictions->groupBy(fn ($prediction) => (string) ($prediction['sport'] ?? 'Other'));
+    $playerPropsBySport = collect($playerProps)->groupBy(fn ($prop) => (string) ($prop['sport'] ?? 'Other'));
+    $sportColor = fn (?string $sport): string => match (strtolower((string) $sport)) {
+        'mlb' => '#1d9a6c',
+        'nba' => '#d94f2b',
+        'wnba' => '#7c4dff',
+        'nfl' => '#246bfe',
+        'cbb', 'wcbb' => '#8f5f00',
+        'cfb' => '#5b6c2f',
+        default => '#6b7280',
+    };
+    $officialBets = $officialPredictions->count();
+    $modelLeans = $watchlistPredictions->count();
 @endphp
 
 <x-mail::message>
-# {{ $summary['headline'] ?? 'Today\'s Picks Watchlist' }}
+# {{ $summary['headline'] ?? 'Today\'s Picks' }}
 
 Hi {{ $user->name }},
 
 {{ $summary['intro'] ?? 'Here is the board worth checking today.' }}
 
 <x-mail::panel>
-**Action Board**  
+**Today’s board**  
 Official bets: **{{ $officialBets }}**  
-Model leans: **{{ $modelLeans }}**  
-Waiting on odds: **{{ $waitingOnOdds }}**
+Watchlist leans: **{{ $modelLeans }}**
 </x-mail::panel>
 
-@if (!empty($summary['highlights']))
-@foreach ($summary['highlights'] as $highlight)
-- {{ $highlight }}
-@endforeach
+@if ($officialPredictions->isNotEmpty())
+## Official Bets
 
-@endif
+@foreach ($officialPredictionsBySport as $sport => $sportPredictions)
+### {{ $sport }}
 
-@if (count($predictions) > 0)
-## Today’s Watchlist
-
-@foreach ($predictions as $prediction)
+@foreach ($sportPredictions as $prediction)
 <x-mail::panel>
-**{{ $prediction['sport'] }} | {{ $prediction['matchup'] }}**  
-{{ $prediction['classification'] ?? 'Watchlist' }}
+<div style="border-left: 6px solid {{ $sportColor($prediction['sport'] ?? null) }}; padding-left: 14px;">
 
-Lean: **{{ $prediction['bet_label'] ?? $prediction['pick'] }}**  
-Confidence: **{{ number_format((float) $prediction['confidence'], 1) }}%**
+**{{ $prediction['sport'] }} | {{ $prediction['matchup'] }}**  
+**{{ $prediction['bet_label'] ?? $prediction['pick'] }}**
+
+Confidence: **{{ number_format((float) ($prediction['confidence'] ?? 0), 1) }}%**
 @if(($prediction['edge'] ?? 0) > 0)
 Edge: **{{ number_format((float) $prediction['edge'], 1) }}%**
 @endif
-@if($prediction['predicted_spread'] !== null)
+@if(($prediction['predicted_spread'] ?? null) !== null)
 Model margin: **{{ $prediction['predicted_spread'] > 0 ? '+' : '' }}{{ number_format((float) $prediction['predicted_spread'], 1) }}**
 @endif
-@if($prediction['predicted_total'] !== null)
-Projected total: **{{ number_format((float) $prediction['predicted_total'], 1) }}**
-@endif
-@if($prediction['game_time'])
-Game time: {{ $prediction['game_time'] }}
+@if($prediction['game_time'] ?? null)
+Game: {{ $prediction['game_time'] }}
 @endif
 
 {{ $prediction['market_note'] ?? 'Review the matchup before betting.' }}
@@ -53,19 +63,58 @@ Game time: {{ $prediction['game_time'] }}
 <x-mail::button :url="$prediction['url']">
 Review Matchup
 </x-mail::button>
+
+</div>
 </x-mail::panel>
+@endforeach
+@endforeach
+@endif
+
+@if ($watchlistPredictions->isNotEmpty())
+## Watchlist Leans
+
+@foreach ($watchlistPredictionsBySport as $sport => $sportPredictions)
+### {{ $sport }}
+
+@foreach ($sportPredictions as $prediction)
+<x-mail::panel>
+<div style="border-left: 6px solid {{ $sportColor($prediction['sport'] ?? null) }}; padding-left: 14px;">
+
+**{{ $prediction['sport'] }} | {{ $prediction['matchup'] }}**  
+**{{ $prediction['bet_label'] ?? $prediction['pick'] }}**
+
+Confidence: **{{ number_format((float) ($prediction['confidence'] ?? 0), 1) }}%**
+@if(($prediction['predicted_total'] ?? null) !== null)
+Projected total: **{{ number_format((float) $prediction['predicted_total'], 1) }}**
+@endif
+@if($prediction['game_time'] ?? null)
+Game: {{ $prediction['game_time'] }}
+@endif
+
+Waiting on fresh market odds before this becomes an official bet.
+
+<x-mail::button :url="$prediction['url']">
+Review Matchup
+</x-mail::button>
+
+</div>
+</x-mail::panel>
+@endforeach
 @endforeach
 @endif
 
 @if (count($playerProps) > 0)
 ## Player Props
 
-@foreach ($playerProps as $prop)
-<x-mail::panel>
-**{{ $prop['sport'] }} | {{ $prop['matchup'] }}**  
-**{{ $prop['player_name'] }}**
+@foreach ($playerPropsBySport as $sport => $sportProps)
+### {{ $sport }}
 
-Recommendation: **{{ $prop['recommendation'] }}**
+@foreach ($sportProps as $prop)
+<x-mail::panel>
+<div style="border-left: 6px solid {{ $sportColor($prop['sport'] ?? null) }}; padding-left: 14px;">
+
+**{{ $prop['sport'] }} | {{ $prop['matchup'] }}**  
+**{{ $prop['player_name'] }} {{ $prop['recommendation'] }}**
 @if($prop['odds'])
 Odds: **{{ $prop['odds'] }}**
 @endif
@@ -76,13 +125,16 @@ Confidence: **{{ number_format((float) $prop['confidence'], 0) }}%**
 Edge: **{{ number_format((float) $prop['edge'], 1) }}%**
 @endif
 @if($prop['game_time'])
-Game time: {{ $prop['game_time'] }}
+Game: {{ $prop['game_time'] }}
 @endif
 
 <x-mail::button :url="$prop['url']">
 View Player Props
 </x-mail::button>
+
+</div>
 </x-mail::panel>
+@endforeach
 @endforeach
 @endif
 
@@ -90,5 +142,5 @@ View Player Props
 Open Dashboard
 </x-mail::button>
 
-You’re receiving this because your alert preferences are set to **Daily Summary** with email enabled.
+You’re receiving this because Daily Summary emails are enabled.
 </x-mail::message>

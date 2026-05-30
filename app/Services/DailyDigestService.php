@@ -513,15 +513,14 @@ class DailyDigestService
 
         return [
             'headline' => $predictions !== []
-                ? sprintf('Today\'s %s Watchlist', $predictions[0]['sport'])
+                ? sprintf('Today\'s %s Picks', $predictions[0]['sport'])
                 : ($sportsLabel !== '' ? "{$sportsLabel} Daily Digest" : 'Daily Picks Digest'),
             'intro' => sprintf(
-                'Official bets: %d. Model leans: %d. %s',
+                '%s official %s and %s watchlist %s today.',
                 $officialBets,
+                $officialBets === 1 ? 'bet' : 'bets',
                 $modelLeans,
-                $modelLeans > 0
-                    ? 'Model leans are watchlist plays until fresh odds confirm a real edge.'
-                    : 'These are the strongest market-backed spots on today\'s board.'
+                $modelLeans === 1 ? 'lean' : 'leans'
             ),
             'highlights' => array_values(array_slice($highlights, 0, 3)),
         ];

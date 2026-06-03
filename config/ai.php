@@ -38,6 +38,31 @@ $config['features'] = [
         'model' => env('AI_DAILY_PREDICTION_ANALYSIS_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
         'timeout_seconds' => env('AI_DAILY_PREDICTION_ANALYSIS_TIMEOUT_SECONDS', 12),
     ],
+    'data_freshness_review' => [
+        'enabled' => (bool) env('AI_DATA_FRESHNESS_REVIEW_ENABLED', true),
+        'provider' => env('AI_DATA_FRESHNESS_REVIEW_PROVIDER', 'openai'),
+        'model' => env('AI_DATA_FRESHNESS_REVIEW_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+        'timeout_seconds' => env('AI_DATA_FRESHNESS_REVIEW_TIMEOUT_SECONDS', 8),
+    ],
+    'market_readiness_review' => [
+        'enabled' => (bool) env('AI_MARKET_READINESS_REVIEW_ENABLED', true),
+        'provider' => env('AI_MARKET_READINESS_REVIEW_PROVIDER', 'openai'),
+        'model' => env('AI_MARKET_READINESS_REVIEW_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+        'timeout_seconds' => env('AI_MARKET_READINESS_REVIEW_TIMEOUT_SECONDS', 8),
+    ],
+    'model_audit_review' => [
+        'enabled' => (bool) env('AI_MODEL_AUDIT_REVIEW_ENABLED', true),
+        'provider' => env('AI_MODEL_AUDIT_REVIEW_PROVIDER', 'openai'),
+        'model' => env('AI_MODEL_AUDIT_REVIEW_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+        'timeout_seconds' => env('AI_MODEL_AUDIT_REVIEW_TIMEOUT_SECONDS', 8),
+    ],
+    'publishing_guardrail_review' => [
+        'enabled' => (bool) env('AI_PUBLISHING_GUARDRAIL_REVIEW_ENABLED', true),
+        'enforced' => (bool) env('AI_PUBLISHING_GUARDRAILS_ENFORCED', false),
+        'provider' => env('AI_PUBLISHING_GUARDRAIL_REVIEW_PROVIDER', 'openai'),
+        'model' => env('AI_PUBLISHING_GUARDRAIL_REVIEW_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
+        'timeout_seconds' => env('AI_PUBLISHING_GUARDRAIL_REVIEW_TIMEOUT_SECONDS', 8),
+    ],
 ];
 
 return $config;

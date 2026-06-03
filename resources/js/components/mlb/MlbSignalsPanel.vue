@@ -2,10 +2,12 @@
 import {
     AlertTriangle,
     BadgeCheck,
+    BarChart3,
     CircleDollarSign,
     Gauge,
     Medal,
     ShieldCheck,
+    Target,
     TrendingUp,
 } from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
@@ -28,11 +30,13 @@ interface SignalRow {
     signal?: string;
     pick_side?: string;
     win_probability?: number;
+    model_probability?: number;
     confidence_score?: number;
     predicted_spread?: number;
     vegas_spread?: number;
     predicted_total?: number;
     market_total?: number;
+    market_line?: number;
     edge_runs?: number;
     champion_probability?: number;
     playoff_make_probability?: number;
@@ -225,6 +229,47 @@ const visibleSignalGroups = computed(() =>
     signalGroups.value.filter((group) => group.rows.length > 0),
 );
 
+const bettingSignalMix = computed(() => [
+    {
+        key: 'recommended',
+        label: 'Best Bets',
+        count: bestBets.value.length,
+        detail: 'passed filter',
+    },
+    {
+        key: 'moneyline',
+        label: 'Moneyline',
+        count: payload.value?.moneyline?.length ?? 0,
+        detail: 'win edge',
+    },
+    {
+        key: 'run_line',
+        label: 'Run Line',
+        count: payload.value?.run_line?.length ?? 0,
+        detail: 'spread edge',
+    },
+    {
+        key: 'totals',
+        label: 'Totals',
+        count: payload.value?.totals?.length ?? 0,
+        detail: 'run total',
+    },
+    {
+        key: 'context',
+        label: 'Park/Streak',
+        count:
+            (payload.value?.ballpark?.length ?? 0) +
+            (payload.value?.streaks?.length ?? 0),
+        detail: 'context',
+    },
+]);
+
+const maxSignalMixCount = computed(() =>
+    Math.max(...bettingSignalMix.value.map((item) => item.count), 1),
+);
+
+const topBet = computed(() => bestBets.value[0] ?? null);
+
 function formatPercent(value?: number | null): string | null {
     if (value == null) return null;
     return `${Math.round(value * 100)}%`;
@@ -243,6 +288,16 @@ function formatSignedRuns(value?: number | null): string | null {
 function formatNumber(value?: number | null): string {
     if (value == null) return '-';
     return value.toFixed(1);
+}
+
+function formatAmericanOdds(value?: number | null): string {
+    if (value == null) return '-';
+    return value > 0 ? `+${value}` : `${value}`;
+}
+
+function formatProbabilityEdge(value?: number | null): string | null {
+    if (value == null) return null;
+    return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(1)}%`;
 }
 
 function labelize(value?: string | null): string {
@@ -271,25 +326,31 @@ function pickLabel(row: SignalRow): string {
     return `${market}: ${side}`;
 }
 
-function valueDetail(row: SignalRow): string {
-    const parts = [];
-    if (row.market_price != null) {
-        parts.push(
-            `odds ${row.market_price > 0 ? '+' : ''}${row.market_price}`,
-        );
-    }
-    if (row.probability_edge != null) {
-        parts.push(`${(row.probability_edge * 100).toFixed(1)}% edge`);
-    }
-    if (row.edge_runs != null) {
-        parts.push(`${row.edge_runs.toFixed(1)} runs`);
-    }
-
-    return parts.join(' | ');
-}
-
 function coverageLabel(value?: number): string {
     return value == null ? '0%' : `${value.toFixed(1)}%`;
+}
+
+function widthFromCount(count: number): string {
+    if (count <= 0) return '0%';
+    return `${Math.max(4, Math.round((count / maxSignalMixCount.value) * 100))}%`;
+}
+
+function classificationClass(value?: string | null): string {
+    if (value === 'bet') {
+        return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    }
+
+    if (value === 'lean') {
+        return 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+    }
+
+    return 'border-muted-foreground/30 bg-muted text-muted-foreground';
+}
+
+function scoreBarClass(score?: number | null): string {
+    if ((score ?? 0) >= 70) return 'bg-emerald-500';
+    if ((score ?? 0) >= 55) return 'bg-sky-500';
+    return 'bg-amber-500';
 }
 
 async function loadSignals(): Promise<void> {
@@ -350,7 +411,9 @@ onMounted(loadSignals);
                     >
                         <div>
                             <div class="flex flex-wrap items-center gap-2">
-                                <CardTitle class="flex items-center gap-2 text-base">
+                                <CardTitle
+                                    class="flex items-center gap-2 text-base"
+                                >
                                     <ShieldCheck class="h-4 w-4" />
                                     MLB Slate Decision Board
                                 </CardTitle>
@@ -362,8 +425,8 @@ onMounted(loadSignals);
                                 </span>
                             </div>
                             <p class="mt-1 text-sm text-muted-foreground">
-                                Best bets first. Secondary market, ballpark,
-                                futures, and backend checks are expandable.
+                                Betting signals for moneyline value, market
+                                coverage, run environment, and model risk.
                             </p>
                         </div>
                         <div class="flex flex-wrap gap-2 text-xs">
@@ -382,14 +445,185 @@ onMounted(loadSignals);
                         </div>
                     </div>
 
+                    <div class="grid gap-3 lg:grid-cols-[1.1fr_1fr]">
+                        <div
+                            class="rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3"
+                        >
+                            <div
+                                class="mb-2 flex items-center justify-between gap-3"
+                            >
+                                <div class="flex items-center gap-2">
+                                    <Target class="h-4 w-4 text-emerald-600" />
+                                    <div class="text-sm font-semibold">
+                                        Top Betting Signal
+                                    </div>
+                                </div>
+                                <span
+                                    v-if="topBet"
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold uppercase"
+                                    :class="
+                                        classificationClass(
+                                            topBet.classification,
+                                        )
+                                    "
+                                >
+                                    {{ topBet.classification }}
+                                </span>
+                            </div>
+                            <div v-if="topBet" class="space-y-2">
+                                <div
+                                    class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between"
+                                >
+                                    <div class="min-w-0">
+                                        <div class="text-base font-semibold">
+                                            {{
+                                                topBet.team_name ||
+                                                topBet.matchup
+                                            }}
+                                        </div>
+                                        <div
+                                            class="text-sm text-muted-foreground"
+                                        >
+                                            {{ pickLabel(topBet) }} |
+                                            {{ topBet.matchup }}
+                                        </div>
+                                    </div>
+                                    <div
+                                        class="shrink-0 text-left sm:text-right"
+                                    >
+                                        <div class="text-xl font-bold">
+                                            {{ topBet.score ?? 0 }}
+                                        </div>
+                                        <div
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            signal score
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="h-2 overflow-hidden rounded-full bg-background/80"
+                                >
+                                    <div
+                                        class="h-full rounded-full"
+                                        :class="scoreBarClass(topBet.score)"
+                                        :style="{
+                                            width: `${topBet.score ?? 0}%`,
+                                        }"
+                                    />
+                                </div>
+                                <div
+                                    class="grid gap-2 text-xs text-muted-foreground sm:grid-cols-3"
+                                >
+                                    <div>
+                                        <span
+                                            class="font-medium text-foreground"
+                                        >
+                                            Model
+                                        </span>
+                                        {{
+                                            formatPercent(
+                                                topBet.model_probability ??
+                                                    topBet.win_probability,
+                                            ) ?? '-'
+                                        }}
+                                    </div>
+                                    <div>
+                                        <span
+                                            class="font-medium text-foreground"
+                                        >
+                                            Odds
+                                        </span>
+                                        {{
+                                            formatAmericanOdds(
+                                                topBet.market_price,
+                                            )
+                                        }}
+                                    </div>
+                                    <div>
+                                        <span
+                                            class="font-medium text-foreground"
+                                        >
+                                            Edge
+                                        </span>
+                                        {{
+                                            formatProbabilityEdge(
+                                                topBet.probability_edge,
+                                            ) ??
+                                            formatRuns(topBet.edge_runs) ??
+                                            '-'
+                                        }}
+                                    </div>
+                                </div>
+                                <div
+                                    class="flex flex-wrap gap-2 text-xs text-muted-foreground"
+                                >
+                                    <span
+                                        v-for="reason in topBet.reason_codes?.slice(
+                                            0,
+                                            4,
+                                        ) ?? []"
+                                        :key="`top-reason-${reason}`"
+                                        class="rounded-md border bg-background px-2 py-1"
+                                    >
+                                        {{ labelize(reason) }}
+                                    </span>
+                                </div>
+                            </div>
+                            <div v-else class="text-sm text-muted-foreground">
+                                No MLB bets passed the selective filter for the
+                                current slate.
+                            </div>
+                        </div>
+
+                        <div
+                            class="rounded-lg border border-border/70 bg-muted/20 p-3"
+                        >
+                            <div class="mb-3 flex items-center gap-2">
+                                <BarChart3 class="h-4 w-4" />
+                                <div class="text-sm font-semibold">
+                                    Signal Mix
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <div
+                                    v-for="item in bettingSignalMix"
+                                    :key="item.key"
+                                >
+                                    <div
+                                        class="mb-1 flex items-center justify-between gap-3 text-xs"
+                                    >
+                                        <span class="font-medium">
+                                            {{ item.label }}
+                                        </span>
+                                        <span class="text-muted-foreground">
+                                            {{ item.count }}
+                                            {{ item.detail }}
+                                        </span>
+                                    </div>
+                                    <div
+                                        class="h-2 overflow-hidden rounded-full bg-background"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-primary"
+                                            :style="{
+                                                width: widthFromCount(
+                                                    item.count,
+                                                ),
+                                            }"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div
                         v-if="moneylineReadiness"
                         class="grid gap-2 rounded-md border border-primary/30 bg-primary/5 p-3 text-xs text-muted-foreground sm:grid-cols-5"
                     >
                         <div>
-                            <div class="font-medium text-foreground">
-                                Mode
-                            </div>
+                            <div class="font-medium text-foreground">Mode</div>
                             <div>{{ labelize(moneylineReadiness.mode) }}</div>
                         </div>
                         <div>
@@ -458,7 +692,9 @@ onMounted(loadSignals);
                         >
                             Totals
                             {{
-                                coverageLabel(payload.odds_health.total_coverage)
+                                coverageLabel(
+                                    payload.odds_health.total_coverage,
+                                )
                             }}
                         </span>
                         <span
@@ -472,12 +708,12 @@ onMounted(loadSignals);
 
                     <div
                         v-if="bestBets.length > 0"
-                        class="grid gap-3 md:grid-cols-2 xl:grid-cols-4"
+                        class="grid gap-3 md:grid-cols-2 xl:grid-cols-3"
                     >
                         <div
                             v-for="row in bestBets.slice(0, 8)"
                             :key="`best-bet-${row.type}-${row.game_id}-${row.pick_side}`"
-                            class="min-h-28 rounded-md border p-3"
+                            class="rounded-lg border border-border/80 p-3"
                         >
                             <div
                                 class="mb-2 flex items-start justify-between gap-3"
@@ -493,26 +729,92 @@ onMounted(loadSignals);
                                     </div>
                                 </div>
                                 <div class="shrink-0 text-right">
-                                    <div class="text-sm font-semibold">
-                                        {{ row.score ?? 0 }}
-                                    </div>
                                     <div
-                                        class="text-xs text-muted-foreground uppercase"
+                                        class="rounded-full border px-2 py-1 text-xs font-semibold uppercase"
+                                        :class="
+                                            classificationClass(
+                                                row.classification,
+                                            )
+                                        "
                                     >
                                         {{ row.classification }}
                                     </div>
+                                    <div
+                                        class="mt-1 text-xs text-muted-foreground"
+                                    >
+                                        {{ row.score ?? 0 }} score
+                                    </div>
                                 </div>
                             </div>
-                            <div class="text-xs text-muted-foreground">
-                                {{ primaryReason(row) }}
+                            <div
+                                class="mb-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                            >
+                                <div
+                                    class="h-full rounded-full"
+                                    :class="scoreBarClass(row.score)"
+                                    :style="{ width: `${row.score ?? 0}%` }"
+                                />
+                            </div>
+                            <div class="grid gap-2 text-xs sm:grid-cols-3">
+                                <div class="rounded-md bg-muted/40 px-2 py-1">
+                                    <div class="text-muted-foreground">
+                                        Model
+                                    </div>
+                                    <div class="font-medium">
+                                        {{
+                                            formatPercent(
+                                                row.model_probability ??
+                                                    row.win_probability,
+                                            ) ??
+                                            formatRuns(row.edge_runs) ??
+                                            '-'
+                                        }}
+                                    </div>
+                                </div>
+                                <div class="rounded-md bg-muted/40 px-2 py-1">
+                                    <div class="text-muted-foreground">
+                                        Market
+                                    </div>
+                                    <div class="font-medium">
+                                        {{
+                                            row.market_price != null
+                                                ? formatAmericanOdds(
+                                                      row.market_price,
+                                                  )
+                                                : formatNumber(row.market_line)
+                                        }}
+                                    </div>
+                                </div>
+                                <div class="rounded-md bg-muted/40 px-2 py-1">
+                                    <div class="text-muted-foreground">
+                                        Edge
+                                    </div>
+                                    <div class="font-medium">
+                                        {{
+                                            formatProbabilityEdge(
+                                                row.probability_edge,
+                                            ) ??
+                                            formatRuns(row.edge_runs) ??
+                                            '-'
+                                        }}
+                                    </div>
+                                </div>
                             </div>
                             <div
-                                v-if="valueDetail(row)"
-                                class="mt-1 text-xs text-muted-foreground"
+                                class="mt-2 flex flex-wrap gap-1.5 text-xs text-muted-foreground"
                             >
-                                {{ valueDetail(row) }}
+                                <span
+                                    v-for="reason in row.reason_codes?.slice(
+                                        0,
+                                        3,
+                                    ) ?? [primaryReason(row)]"
+                                    :key="`${row.game_id}-${row.type}-${reason}`"
+                                    class="rounded-md border px-2 py-1"
+                                >
+                                    {{ labelize(reason) }}
+                                </span>
                             </div>
-                            <div class="mt-1 text-xs text-muted-foreground">
+                            <div class="mt-2 text-xs text-muted-foreground">
                                 Risk: {{ riskSummary(row) }}
                             </div>
                         </div>
@@ -656,7 +958,9 @@ onMounted(loadSignals);
                                 </div>
                             </div>
                             <div v-if="payload?.bet_filter">
-                                <div class="mb-2 font-medium">Risk Controls</div>
+                                <div class="mb-2 font-medium">
+                                    Risk Controls
+                                </div>
                                 <div class="flex flex-wrap gap-2">
                                     <span
                                         v-for="item in payload.bet_filter.risk_controls.slice(

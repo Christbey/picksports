@@ -1,0 +1,84 @@
+<?php
+
+namespace App\Actions\Validation\Checks;
+
+use App\Actions\Validation\Contracts\ValidationCheck;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+class PlayerPropFreshnessCheck implements ValidationCheck
+{
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>|null
+     */
+    public function run(string $sport, array $profile): ?array
+    {
+        $tables = $profile['tables'] ?? [];
+        $gamesTable = $tables['games'] ?? null;
+        $propsTable = $tables['player_props'] ?? null;
+
+        if (! is_string($gamesTable) || ! is_string($propsTable) || ! Schema::hasTable($gamesTable) || ! Schema::hasTable($propsTable)) {
+            return null;
+        }
+
+        $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
+        $staleHours = (int) config('validation.thresholds.player_prop_freshness.stale_after_hours', 12);
+        $warnPct = (float) config('validation.thresholds.player_prop_freshness.problem_warn_pct', 0.05);
+        $failPct = (float) config('validation.thresholds.player_prop_freshness.problem_fail_pct', 0.20);
+        $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'scheduled', 'in_progress'];
+
+        $games = DB::table($gamesTable)
+            ->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
+            ->whereDate('game_date', '<=', now()->copy()->addDays($windowDays)->toDateString())
+            ->whereIn('status', $activeStatuses)
+            ->get(['id']);
+
+        $activeGames = $games->count();
+        $missingProps = 0;
+        $staleProps = 0;
+        $flaggedGameIds = [];
+
+        foreach ($games as $game) {
+            $latestFetchedAt = DB::table($propsTable)->where('game_id', $game->id)->max('fetched_at');
+
+            if (! $latestFetchedAt) {
+                $missingProps++;
+                $flaggedGameIds[] = (int) $game->id;
+
+                continue;
+            }
+
+            if (now()->parse($latestFetchedAt)->lt(now()->subHours($staleHours))) {
+                $staleProps++;
+                $flaggedGameIds[] = (int) $game->id;
+            }
+        }
+
+        $problemGames = count(array_unique($flaggedGameIds));
+        $problemPct = $activeGames > 0 ? $problemGames / $activeGames : 0.0;
+        $status = 'passing';
+        $message = "Player props look fresh for {$activeGames} active games.";
+
+        if ($problemGames > 0) {
+            $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
+            $message = "{$problemGames}/{$activeGames} active games have missing or stale player props.";
+        }
+
+        return [
+            'check_type' => 'validation_player_prop_freshness',
+            'status' => $status,
+            'severity' => $status,
+            'message' => $message,
+            'recommended_action' => "{$sport}:sync-player-props",
+            'metadata' => [
+                'window_days' => $windowDays,
+                'active_games' => $activeGames,
+                'games_missing_player_props' => $missingProps,
+                'games_with_stale_player_props' => $staleProps,
+                'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
+                'stale_after_hours' => $staleHours,
+            ],
+        ];
+    }
+}

@@ -1,11 +1,18 @@
 <?php
 
 use App\Actions\ESPN\MLB\SyncGames;
+use App\Actions\ESPN\MLB\SyncGamesFromScoreboard;
+use App\Actions\MLB\UpdateLivePrediction;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
 use App\Services\ESPN\BaseEspnService;
+use Mockery as m;
 
 uses()->group('espn', 'mlb');
+
+afterEach(function () {
+    m::close();
+});
 
 it('stores probable pitcher ids from mlb schedule sync', function () {
     $homeTeam = Team::factory()->create(['espn_id' => '10']);
@@ -117,6 +124,82 @@ it('stores mlb west coast night games on the local venue date', function () {
     expect($game)->not->toBeNull()
         ->and($game->game_date?->format('Y-m-d'))->toBe('2026-03-25')
         ->and($game->game_time)->toBe('17:05:00');
+});
+
+it('updates orphaned scheduled mlb games from summary using local venue date', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $game = Game::factory()->create([
+        'espn_event_id' => '401814799',
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular'),
+        'game_date' => '2026-06-01',
+        'game_time' => '02:10:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'mlb';
+
+        public function getScoreboard(?string $date = null): ?array
+        {
+            return ['events' => []];
+        }
+
+        public function getGame(string $eventId): ?array
+        {
+            return [
+                'header' => [
+                    'date' => '2026-06-01T02:10:00Z',
+                    'competitions' => [[
+                        'date' => '2026-06-01T02:10:00Z',
+                        'venue' => [
+                            'address' => [
+                                'city' => 'San Francisco',
+                                'state' => 'CA',
+                            ],
+                        ],
+                        'status' => [
+                            'type' => ['name' => 'STATUS_FINAL'],
+                            'period' => 9,
+                            'displayClock' => 'Final',
+                        ],
+                        'competitors' => [
+                            [
+                                'homeAway' => 'home',
+                                'score' => '4',
+                                'team' => ['id' => '10'],
+                            ],
+                            [
+                                'homeAway' => 'away',
+                                'score' => '2',
+                                'team' => ['id' => '20'],
+                            ],
+                        ],
+                    ]],
+                ],
+            ];
+        }
+    };
+
+    $predictionAction = m::mock(UpdateLivePrediction::class);
+    $predictionAction->shouldReceive('execute')->never();
+
+    $synced = (new SyncGamesFromScoreboard($service, $predictionAction))->execute('20260601');
+
+    expect($synced)->toBe(1);
+
+    $game->refresh();
+
+    expect($game->status)->toBe('STATUS_FINAL')
+        ->and($game->home_score)->toBe(4)
+        ->and($game->away_score)->toBe(2)
+        ->and($game->game_date?->toDateString())->toBe('2026-05-31')
+        ->and($game->game_time)->toBe('19:10:00');
 });
 
 it('normalizes mislabeled pre-opener mlb games to spring training during sync', function () {

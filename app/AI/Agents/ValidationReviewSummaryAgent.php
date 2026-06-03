@@ -44,6 +44,29 @@ class ValidationReviewSummaryAgent implements Agent, HasStructuredOutput
                 ->items($schema->string())
                 ->max(4)
                 ->required(),
+            'latest_data_fresh_at' => $schema->string()->required(),
+            'data_schedule_today' => $schema->array()
+                ->items($schema->string())
+                ->max(6)
+                ->required(),
+            'tweak_recommendations' => $schema->array()
+                ->items($schema->string())
+                ->max(4)
+                ->required(),
+            'operational_status' => $schema->string()->required(),
+            'trust_score' => $schema->integer()->required(),
+            'blocked_outputs' => $schema->array()
+                ->items($schema->string())
+                ->max(6)
+                ->required(),
+            'safe_adjustments' => $schema->array()
+                ->items($schema->string())
+                ->max(6)
+                ->required(),
+            'data_quality_notes' => $schema->array()
+                ->items($schema->string())
+                ->max(6)
+                ->required(),
         ];
     }
 }

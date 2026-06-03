@@ -204,12 +204,8 @@ $scheduleEveryMinuteJob = function (
     $attachCommandHeartbeat($event, $command, $name);
 };
 
-$schedulePredictionPipeline = function (
-    string $sportCommandPrefix,
-    string $sportLabel,
-    int $season,
+$schedulePreModelJobs = function (
     callable $inSeason,
-    array $times,
     array $preMetricJobs = []
 ) use ($scheduleDailySeasonJob) {
     foreach ($preMetricJobs as $job) {
@@ -218,22 +214,6 @@ $schedulePredictionPipeline = function (
             $job['time'],
             $inSeason,
             $job['name']
-        );
-    }
-
-    $definitions = [
-        'grade-predictions' => 'Grade Predictions',
-        'calculate-elo' => 'Calculate Elo Ratings',
-        'calculate-team-metrics' => 'Calculate Team Metrics',
-        'generate-predictions' => 'Generate Predictions',
-    ];
-
-    foreach ($definitions as $commandSuffix => $jobLabel) {
-        $scheduleDailySeasonJob(
-            "{$sportCommandPrefix}:{$commandSuffix} --season={$season}",
-            $times[$commandSuffix],
-            $inSeason,
-            "{$sportLabel}: {$jobLabel}"
         );
     }
 };
@@ -308,7 +288,7 @@ $scheduleSportPipeline = function (
     $scheduleDailySeasonJob,
     $scheduleLiveScoreboardSync,
     $scheduleHalfHourlyWindowJob,
-    $schedulePredictionPipeline,
+    $schedulePreModelJobs,
     $scheduleOddsSyncWindow,
     $schedulePlayerPropsWindow
 ) {
@@ -325,14 +305,7 @@ $scheduleSportPipeline = function (
         );
     }
 
-    $schedulePredictionPipeline(
-        $sportCommandPrefix,
-        $sportLabel,
-        $season,
-        $inSeason,
-        $predictionTimes,
-        $preMetricJobs
-    );
+    $schedulePreModelJobs($inSeason, $preMetricJobs);
 
     $scheduleOddsSyncWindow($oddsCommand, $inSeason, $oddsName);
 
@@ -385,7 +358,7 @@ $scheduleSportPipeline(
 );
 $scheduleDailySeasonJob(
     "nba:generate-playoff-forecast --season={$fallSeasonYear}",
-    '05:15',
+    '07:35',
     $nbaInSeason,
     'NBA: Generate Playoff Forecast'
 );
@@ -400,12 +373,6 @@ $scheduleDailySeasonJob(
     '03:15',
     $nbaInSeason,
     'NBA: Refresh Recent Game Details'
-);
-$scheduleDailySeasonJob(
-    'healthcheck:validate-data --sport=nba',
-    '07:00',
-    $nbaInSeason,
-    'NBA: Validate Data Completeness'
 );
 $scheduleOddsSyncWindow(
     "sports:sync-futures-odds --sport=nba --season={$fallSeasonYear}",
@@ -488,13 +455,13 @@ $scheduleSportPipeline(
 );
 $scheduleDailySeasonJob(
     "cbb:generate-tournament-forecast --season={$fallSeasonYear}",
-    '07:00',
+    '10:15',
     $cbbInSeason,
     'CBB: Generate Tournament Forecast'
 );
 $scheduleDailySeasonJob(
     "cbb:recalculate-tournament-outlook {$fallSeasonYear} --source=scheduled",
-    '07:15',
+    '10:25',
     $cbbInSeason,
     'CBB: Recalculate Tournament Outlook'
 );
@@ -551,7 +518,7 @@ $scheduleSportPipeline(
 );
 $scheduleDailySeasonJob(
     "wcbb:generate-tournament-forecast --season={$fallSeasonYear}",
-    '05:15',
+    '06:35',
     $wcbbInSeason,
     'WCBB: Generate Tournament Forecast'
 );
@@ -613,19 +580,37 @@ $scheduleSportPipeline(
 );
 $scheduleDailySeasonJob(
     "mlb:generate-playoff-forecast --season={$currentYear}",
-    '06:15',
+    '08:35',
     $mlbInSeason,
     'MLB: Generate Playoff Forecast'
 );
 $scheduleDailySeasonJob(
     "mlb:snapshot-bet-filter --season={$currentYear}",
-    '06:20',
+    '08:40',
     $mlbInSeason,
     'MLB: Snapshot Bet Filter'
 );
+$operationsSentinelSchedules = [
+    ['sport' => 'wnba', 'label' => 'WNBA', 'season' => $currentYear, 'time' => '02:25', 'in_season' => $wnbaInSeason],
+    ['sport' => 'cfb', 'label' => 'CFB', 'season' => $fallSeasonYear, 'time' => '04:50', 'in_season' => $cfbInSeason],
+    ['sport' => 'wcbb', 'label' => 'WCBB', 'season' => $fallSeasonYear, 'time' => '05:45', 'in_season' => $wcbbInSeason],
+    ['sport' => 'nba', 'label' => 'NBA', 'season' => $currentYear, 'time' => '06:45', 'in_season' => $nbaInSeason],
+    ['sport' => 'mlb', 'label' => 'MLB', 'season' => $currentYear, 'time' => '07:45', 'in_season' => $mlbInSeason],
+    ['sport' => 'cbb', 'label' => 'CBB', 'season' => $fallSeasonYear, 'time' => '09:15', 'in_season' => $cbbInSeason],
+    ['sport' => 'nfl', 'label' => 'NFL', 'season' => $fallSeasonYear, 'time' => '10:25', 'in_season' => $nflInSeason],
+];
+
+foreach ($operationsSentinelSchedules as $sentinelSchedule) {
+    $scheduleDailySeasonJob(
+        "sports:operations-sentinel --sport={$sentinelSchedule['sport']} --season={$sentinelSchedule['season']}",
+        $sentinelSchedule['time'],
+        $sentinelSchedule['in_season'],
+        "{$sentinelSchedule['label']}: Operations Sentinel"
+    );
+}
 $scheduleDailySeasonJob(
     "sports:ai-daily-predictions --sport=mlb --season={$currentYear}",
-    '06:30',
+    '09:05',
     $mlbInSeason,
     'MLB: AI Daily Prediction Analysis'
 );
@@ -681,7 +666,7 @@ $scheduleSportPipeline(
 );
 $scheduleDailySeasonJob(
     "sports:ai-daily-predictions --sport=wnba --season={$currentYear}",
-    '02:15',
+    '03:25',
     $wnbaInSeason,
     'WNBA: AI Daily Prediction Analysis'
 );
@@ -753,7 +738,7 @@ $scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
 // CFB
 $scheduleSportPipeline(
     'espn:sync-cfb-current',
-    '07:00',
+    '03:25',
     'CFB: Sync Current Week',
     'espn:sync-cfb-games-scoreboard',
     '12:00',

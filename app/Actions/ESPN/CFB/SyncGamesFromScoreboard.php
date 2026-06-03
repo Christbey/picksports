@@ -36,7 +36,7 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
      * @param  array<string, mixed>  $eventData
      * @return array<string, mixed>
      */
-    protected function buildGameAttributes(object $dto, array $eventData, Model $homeTeam, Model $awayTeam): array
+    protected function buildGameAttributes(object $dto, array $eventData, ?Model $homeTeam, ?Model $awayTeam): array
     {
         return array_merge(
             parent::buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam),

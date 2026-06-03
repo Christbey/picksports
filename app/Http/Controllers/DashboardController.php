@@ -18,11 +18,14 @@ use App\Models\NBA\Game as NBAGame;
 use App\Models\NBA\Prediction as NBAPrediction;
 use App\Models\NFL\Game as NFLGame;
 use App\Models\NFL\Prediction as NFLPrediction;
+use App\Models\User;
 use App\Models\WCBB\Game as WCBBGame;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
+use App\Support\TierAccessBypass;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -41,23 +44,25 @@ class DashboardController extends Controller
     public function __invoke(): Response
     {
         $user = auth()->user();
-        $predictionsPerDay = $user->subscriptionTier()?->features['predictions_per_day'] ?? null;
+        $predictionsPerDay = app(TierAccessBypass::class)->shouldBypassTierChecks($user)
+            ? null
+            : ($user->subscriptionTier()?->features['predictions_per_day'] ?? null);
+        $sportConfigs = $this->viewableSportConfigs($user);
         $cacheKey = $this->sportsViewCache->contextHash([
             'date' => now()->toDateString(),
             'predictions_per_day' => $predictionsPerDay,
+            'viewable_sports' => array_keys($sportConfigs),
         ]);
 
         $payload = $this->sportsViewCache->remember(
             segment: 'dashboard',
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.dashboard_seconds', 20),
-            resolver: function () use ($predictionsPerDay): array {
+            resolver: function () use ($predictionsPerDay, $sportConfigs): array {
                 $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
                 $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
 
                 $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
-
-                $sportConfigs = $this->sportConfigs();
 
                 $todaysPredictions = collect($sportConfigs)
                     ->flatMap(fn (array $config, string $sport) => $this->getPredictionsForSport($sport, $config, $todayGameScope));
@@ -164,6 +169,18 @@ class DashboardController extends Controller
                 bettingCalculator: GenericCalculateBettingValue::class
             ),
         ];
+    }
+
+    private function viewableSportConfigs(?User $user): array
+    {
+        return collect($this->sportConfigs())
+            ->filter(fn (array $config, string $sport): bool => $this->canViewSportPredictions($user, $sport))
+            ->all();
+    }
+
+    private function canViewSportPredictions(?User $user, string $sport): bool
+    {
+        return app(SportPredictionAccess::class)->canView($user, $sport);
     }
 
     /**

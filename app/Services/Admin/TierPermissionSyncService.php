@@ -4,6 +4,7 @@ namespace App\Services\Admin;
 
 use App\Models\SubscriptionTier;
 use App\Support\PredictionDataPermissions;
+use App\Support\SportPredictionAccess;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -40,11 +41,18 @@ class TierPermissionSyncService
 
         $sourcePermissions = $storedPermissions->intersect($availablePermissions)->values();
 
+        $mappedSportPermissions = collect(app(SportPredictionAccess::class)->permissionNamesForSports(
+            (array) data_get($tier->features ?? [], 'sports_access', [])
+        ))
+            ->intersect($availablePermissions)
+            ->values();
+
         $mappedDataPermissions = collect(PredictionDataPermissions::permissionsForFields($tier->data_permissions ?? []))
             ->intersect($availablePermissions)
             ->values();
 
         return $sourcePermissions
+            ->concat($mappedSportPermissions)
             ->concat($mappedDataPermissions)
             ->unique()
             ->values()

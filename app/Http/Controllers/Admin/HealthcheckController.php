@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Admin\HealthcheckSummaryResource;
 use App\Models\Healthcheck;
+use App\Models\SportsAiPredictionAnalysis;
 use App\Models\ValidationRun;
 use App\Services\CommandHeartbeatService;
 use App\Services\Sports\SportsPipelineRegistry;
@@ -110,6 +111,8 @@ class HealthcheckController extends Controller
                     ]),
             ] : null,
             'validation_trend' => $validationTrend,
+            'ai_publishing' => $this->aiPublishingReview($sport),
+            'ai_publishing_trend' => $this->aiPublishingTrend($sport),
             'filters' => [
                 'sport' => $sport,
                 'view' => $view,
@@ -347,6 +350,129 @@ class HealthcheckController extends Controller
                     'passing' => (int) (($run->summary ?? [])['passing'] ?? 0),
                     'completed_at' => $run->completed_at?->toDateTimeString(),
                 ]),
+        ];
+    }
+
+    /**
+     * @return array{total:int,decisions:array<string, int>,classifications:array<string, int>,enforcement:array{enabled:bool,mode:string},needs_attention:array<int, array<string, mixed>>}
+     */
+    protected function aiPublishingReview(?string $sport): array
+    {
+        $enforcement = $this->aiPublishingEnforcement();
+        $analyses = SportsAiPredictionAnalysis::query()
+            ->when($sport, fn ($query) => $query->where('sport', $sport))
+            ->whereDate('as_of_date', now()->toDateString())
+            ->latest('id')
+            ->limit(100)
+            ->get();
+
+        $decisions = [];
+        $classifications = [];
+        $needsAttention = [];
+
+        foreach ($analyses as $analysis) {
+            $guardrail = data_get($analysis->metadata, 'shadow_agents.publishing_guardrail', []);
+            $decision = (string) data_get($guardrail, 'decision', 'unknown');
+            $classification = (string) data_get($guardrail, 'publishable_classification', 'unknown');
+
+            $decisions[$decision] = ($decisions[$decision] ?? 0) + 1;
+            $classifications[$classification] = ($classifications[$classification] ?? 0) + 1;
+
+            if (! in_array($decision, ['downgrade', 'hold', 'block'], true)) {
+                continue;
+            }
+
+            $needsAttention[] = [
+                'sport' => strtoupper((string) $analysis->sport),
+                'matchup' => (string) data_get($analysis->raw_payload, 'game.matchup', 'Game '.$analysis->game_id),
+                'decision' => $decision,
+                'publishable_classification' => $classification,
+                'freshness_status' => (string) data_get($analysis->metadata, 'shadow_agents.data_freshness.freshness_status', 'unknown'),
+                'market_status' => (string) data_get($analysis->metadata, 'shadow_agents.market_readiness.market_status', 'unknown'),
+                'model_status' => (string) data_get($analysis->metadata, 'shadow_agents.model_audit.model_status', 'unknown'),
+                'summary' => (string) data_get($guardrail, 'summary', ''),
+                'required_actions' => array_values(array_filter(array_map(
+                    'strval',
+                    (array) data_get($guardrail, 'required_actions', [])
+                ))),
+            ];
+        }
+
+        return [
+            'total' => $analyses->count(),
+            'decisions' => $decisions,
+            'classifications' => $classifications,
+            'enforcement' => $enforcement,
+            'needs_attention' => array_slice($needsAttention, 0, 8),
+        ];
+    }
+
+    /**
+     * @return array{enabled:bool,mode:string}
+     */
+    protected function aiPublishingEnforcement(): array
+    {
+        $enabled = (bool) config('ai.features.publishing_guardrail_review.enforced', false);
+
+        return [
+            'enabled' => $enabled,
+            'mode' => $enabled ? 'enforced' : 'shadow',
+        ];
+    }
+
+    /**
+     * @return array{days:int,total:int,changed_count:int,changed_rate:float,decisions:array<string, int>,changed_rows:array<int, array<string, mixed>>}
+     */
+    protected function aiPublishingTrend(?string $sport): array
+    {
+        $days = 7;
+        $from = now()->subDays($days - 1)->toDateString();
+        $to = now()->toDateString();
+
+        $analyses = SportsAiPredictionAnalysis::query()
+            ->when($sport, fn ($query) => $query->where('sport', $sport))
+            ->whereDate('as_of_date', '>=', $from)
+            ->whereDate('as_of_date', '<=', $to)
+            ->latest('as_of_date')
+            ->latest('id')
+            ->limit(300)
+            ->get();
+
+        $decisions = [];
+        $changedRows = [];
+
+        foreach ($analyses as $analysis) {
+            $guardrail = data_get($analysis->metadata, 'shadow_agents.publishing_guardrail', []);
+            $decision = (string) data_get($guardrail, 'decision', 'missing');
+            $guardrailClassification = (string) data_get($guardrail, 'publishable_classification', 'missing');
+            $savedClassification = (string) $analysis->bet_classification;
+
+            $decisions[$decision] = ($decisions[$decision] ?? 0) + 1;
+
+            if ($guardrailClassification === 'missing' || $guardrailClassification === $savedClassification) {
+                continue;
+            }
+
+            $changedRows[] = [
+                'date' => $analysis->as_of_date?->toDateString(),
+                'sport' => strtoupper((string) $analysis->sport),
+                'matchup' => (string) data_get($analysis->raw_payload, 'game.matchup', 'Game '.$analysis->game_id),
+                'decision' => $decision,
+                'saved_classification' => $savedClassification,
+                'guardrail_classification' => $guardrailClassification,
+                'recommendation' => (string) $analysis->recommendation,
+            ];
+        }
+
+        $changedCount = count($changedRows);
+
+        return [
+            'days' => $days,
+            'total' => $analyses->count(),
+            'changed_count' => $changedCount,
+            'changed_rate' => $analyses->isEmpty() ? 0.0 : round($changedCount / $analyses->count(), 4),
+            'decisions' => $decisions,
+            'changed_rows' => array_slice($changedRows, 0, 8),
         ];
     }
 }

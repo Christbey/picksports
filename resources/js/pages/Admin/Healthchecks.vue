@@ -38,6 +38,14 @@ interface Props {
             intro: string;
             highlights: string[];
             recommended_actions?: string[];
+            latest_data_fresh_at?: string;
+            data_schedule_today?: string[];
+            tweak_recommendations?: string[];
+            operational_status?: string;
+            trust_score?: number;
+            blocked_outputs?: string[];
+            safe_adjustments?: string[];
+            data_quality_notes?: string[];
             generated_by?: string;
         } | null;
         ai_generated_at: string | null;
@@ -60,6 +68,14 @@ interface Props {
             intro: string;
             highlights: string[];
             recommended_actions?: string[];
+            latest_data_fresh_at?: string;
+            data_schedule_today?: string[];
+            tweak_recommendations?: string[];
+            operational_status?: string;
+            trust_score?: number;
+            blocked_outputs?: string[];
+            safe_adjustments?: string[];
+            data_quality_notes?: string[];
             generated_by?: string;
         } | null;
         ai_generated_at: string | null;
@@ -103,6 +119,42 @@ interface Props {
             completed_at: string | null;
         }>;
     } | null;
+    ai_publishing: {
+        total: number;
+        decisions: Record<string, number>;
+        classifications: Record<string, number>;
+        enforcement: {
+            enabled: boolean;
+            mode: string;
+        };
+        needs_attention: Array<{
+            sport: string;
+            matchup: string;
+            decision: string;
+            publishable_classification: string;
+            freshness_status: string;
+            market_status: string;
+            model_status: string;
+            summary: string;
+            required_actions: string[];
+        }>;
+    };
+    ai_publishing_trend: {
+        days: number;
+        total: number;
+        changed_count: number;
+        changed_rate: number;
+        decisions: Record<string, number>;
+        changed_rows: Array<{
+            date: string | null;
+            sport: string;
+            matchup: string;
+            decision: string;
+            saved_classification: string;
+            guardrail_classification: string;
+            recommendation: string;
+        }>;
+    };
     filters: {
         sport: string | null;
         view: string | null;
@@ -329,6 +381,25 @@ function formatAbsoluteDate(dateString: string): string {
 function formatDelta(value: number): string {
     if (value > 0) return `+${value}`;
     return `${value}`;
+}
+
+function labelize(value: string): string {
+    return value
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function percent(value: number): string {
+    return `${(value * 100).toFixed(1)}%`;
+}
+
+function widthPercent(value: number): string {
+    return `${Math.max(0, Math.min(100, value * 100))}%`;
+}
+
+function countWidth(count: number, total: number): string {
+    if (total <= 0) return '0%';
+    return widthPercent(count / total);
 }
 
 const overallStatus = computed(() => {
@@ -668,6 +739,44 @@ function metadataEntries(
                                 <p class="mt-2 text-sm text-muted-foreground">
                                     {{ latest_validation_run.ai_summary.intro }}
                                 </p>
+                                <p
+                                    v-if="
+                                        latest_validation_run.ai_summary
+                                            .latest_data_fresh_at
+                                    "
+                                    class="mt-3 text-sm font-medium"
+                                >
+                                    {{
+                                        latest_validation_run.ai_summary
+                                            .latest_data_fresh_at
+                                    }}
+                                </p>
+                                <p
+                                    v-if="
+                                        latest_validation_run.ai_summary
+                                            .operational_status
+                                    "
+                                    class="mt-1 text-sm text-muted-foreground"
+                                >
+                                    {{
+                                        labelize(
+                                            latest_validation_run.ai_summary
+                                                .operational_status,
+                                        )
+                                    }}
+                                    <span
+                                        v-if="
+                                            latest_validation_run.ai_summary
+                                                .trust_score !== undefined
+                                        "
+                                    >
+                                        ·
+                                        {{
+                                            latest_validation_run.ai_summary
+                                                .trust_score
+                                        }}/100 trust
+                                    </span>
+                                </p>
                             </div>
                             <div
                                 class="text-sm text-muted-foreground"
@@ -686,6 +795,16 @@ function metadataEntries(
                             v-if="
                                 latest_validation_run.ai_summary.highlights
                                     .length > 0 ||
+                                (latest_validation_run.ai_summary
+                                    .data_schedule_today?.length ?? 0) > 0 ||
+                                (latest_validation_run.ai_summary
+                                    .tweak_recommendations?.length ?? 0) > 0 ||
+                                (latest_validation_run.ai_summary
+                                    .blocked_outputs?.length ?? 0) > 0 ||
+                                (latest_validation_run.ai_summary
+                                    .safe_adjustments?.length ?? 0) > 0 ||
+                                (latest_validation_run.ai_summary
+                                    .data_quality_notes?.length ?? 0) > 0 ||
                                 (latest_validation_run.ai_summary
                                     .recommended_actions?.length ?? 0) > 0
                             "
@@ -734,7 +853,432 @@ function metadataEntries(
                                     </li>
                                 </ul>
                             </div>
+
+                            <div
+                                v-if="
+                                    (latest_validation_run.ai_summary
+                                        .blocked_outputs?.length ?? 0) > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Blocked Outputs
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="output in latest_validation_run
+                                            .ai_summary.blocked_outputs ?? []"
+                                        :key="output"
+                                        class="rounded-lg border border-sidebar-border bg-white px-3 py-2 dark:bg-sidebar"
+                                    >
+                                        {{ output }}
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
+                                v-if="
+                                    (latest_validation_run.ai_summary
+                                        .safe_adjustments?.length ?? 0) > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Safe Adjustments
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="adjustment in latest_validation_run
+                                            .ai_summary.safe_adjustments ?? []"
+                                        :key="adjustment"
+                                        class="rounded-lg border border-sidebar-border bg-white px-3 py-2 font-mono dark:bg-sidebar"
+                                    >
+                                        {{ adjustment }}
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
+                                v-if="
+                                    (latest_validation_run.ai_summary
+                                        .data_schedule_today?.length ?? 0) > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Today's Data Schedule
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="scheduleItem in latest_validation_run
+                                            .ai_summary.data_schedule_today ??
+                                        []"
+                                        :key="scheduleItem"
+                                        class="rounded-lg bg-sidebar-accent px-3 py-2"
+                                    >
+                                        {{ scheduleItem }}
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
+                                v-if="
+                                    (latest_validation_run.ai_summary
+                                        .tweak_recommendations?.length ?? 0) > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Tweak Recommendations
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="recommendation in latest_validation_run
+                                            .ai_summary.tweak_recommendations ??
+                                        []"
+                                        :key="recommendation"
+                                        class="rounded-lg border border-sidebar-border bg-white px-3 py-2 dark:bg-sidebar"
+                                    >
+                                        {{ recommendation }}
+                                    </li>
+                                </ul>
+                            </div>
+
+                            <div
+                                v-if="
+                                    (latest_validation_run.ai_summary
+                                        .data_quality_notes?.length ?? 0) > 0
+                                "
+                            >
+                                <p class="text-sm font-medium">
+                                    Data Quality Notes
+                                </p>
+                                <ul
+                                    class="mt-2 space-y-2 text-sm text-muted-foreground"
+                                >
+                                    <li
+                                        v-for="note in latest_validation_run
+                                            .ai_summary.data_quality_notes ??
+                                        []"
+                                        :key="note"
+                                        class="rounded-lg bg-sidebar-accent px-3 py-2"
+                                    >
+                                        {{ note }}
+                                    </li>
+                                </ul>
+                            </div>
                         </div>
+                    </div>
+
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                    >
+                        <div
+                            class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+                        >
+                            <div>
+                                <p
+                                    class="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase"
+                                >
+                                    AI Publishing Review
+                                </p>
+                                <h2 class="mt-2 text-xl font-semibold">
+                                    {{ ai_publishing.total }} analyzed pick<span
+                                        v-if="ai_publishing.total !== 1"
+                                        >s</span
+                                    >
+                                </h2>
+                                <p class="mt-2 text-sm text-muted-foreground">
+                                    Guardrail mode:
+                                    <span class="font-medium">
+                                        {{
+                                            labelize(
+                                                ai_publishing.enforcement
+                                                    .mode ?? 'shadow',
+                                            )
+                                        }}
+                                    </span>
+                                </p>
+                            </div>
+                            <div
+                                v-if="
+                                    Object.keys(ai_publishing.decisions)
+                                        .length > 0
+                                "
+                                class="flex flex-wrap gap-2"
+                            >
+                                <span
+                                    v-for="(count, decision) in ai_publishing.decisions"
+                                    :key="decision"
+                                    class="rounded-full border border-sidebar-border px-3 py-1 text-xs font-medium"
+                                >
+                                    {{ labelize(String(decision)) }}:
+                                    {{ count }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <p
+                            v-if="ai_publishing.total === 0"
+                            class="mt-4 rounded-lg border border-sidebar-border bg-sidebar-accent px-4 py-3 text-sm text-muted-foreground"
+                        >
+                            No AI publishing reviews found for this sport
+                            today. Run the daily AI prediction command for the
+                            selected sport to populate guardrail data.
+                        </p>
+                        <div
+                            v-else-if="
+                                ai_publishing.needs_attention.length > 0
+                            "
+                            class="mt-4 space-y-3"
+                        >
+                            <div
+                                v-for="item in ai_publishing.needs_attention"
+                                :key="`${item.sport}-${item.matchup}-${item.decision}`"
+                                class="rounded-lg border border-sidebar-border bg-sidebar-accent px-4 py-3"
+                            >
+                                <div
+                                    class="flex flex-col gap-2 md:flex-row md:items-start md:justify-between"
+                                >
+                                    <div>
+                                        <p class="text-sm font-semibold">
+                                            {{ item.sport }}
+                                            {{ item.matchup }}
+                                        </p>
+                                        <p
+                                            class="mt-1 text-sm text-muted-foreground"
+                                        >
+                                            {{ item.summary }}
+                                        </p>
+                                    </div>
+                                    <div
+                                        class="flex flex-wrap gap-2 text-xs font-medium"
+                                    >
+                                        <span
+                                            class="rounded-full bg-yellow-100 px-2 py-1 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+                                        >
+                                            {{
+                                                labelize(item.decision)
+                                            }}
+                                            to
+                                            {{
+                                                labelize(
+                                                    item.publishable_classification,
+                                                )
+                                            }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div
+                                    class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground"
+                                >
+                                    <span
+                                        class="rounded-full bg-white px-2 py-1 dark:bg-sidebar"
+                                    >
+                                        Freshness:
+                                        {{ labelize(item.freshness_status) }}
+                                    </span>
+                                    <span
+                                        class="rounded-full bg-white px-2 py-1 dark:bg-sidebar"
+                                    >
+                                        Market:
+                                        {{ labelize(item.market_status) }}
+                                    </span>
+                                    <span
+                                        class="rounded-full bg-white px-2 py-1 dark:bg-sidebar"
+                                    >
+                                        Model:
+                                        {{ labelize(item.model_status) }}
+                                    </span>
+                                </div>
+                                <div
+                                    v-if="item.required_actions.length > 0"
+                                    class="mt-3 flex flex-wrap gap-2"
+                                >
+                                    <span
+                                        v-for="action in item.required_actions"
+                                        :key="action"
+                                        class="rounded-lg border border-sidebar-border bg-white px-3 py-1 font-mono text-xs dark:bg-sidebar"
+                                    >
+                                        {{ action }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <p
+                            v-else
+                            class="mt-4 rounded-lg bg-sidebar-accent px-4 py-3 text-sm text-muted-foreground"
+                        >
+                            Reviews are present, and no downgraded, held, or
+                            blocked picks need attention for this filter today.
+                        </p>
+                    </div>
+
+                    <div
+                        class="rounded-xl border border-sidebar-border bg-white p-6 dark:bg-sidebar"
+                    >
+                        <div
+                            class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between"
+                        >
+                            <div>
+                                <p
+                                    class="text-xs font-semibold tracking-[0.18em] text-muted-foreground uppercase"
+                                >
+                                    Guardrail Trend
+                                </p>
+                                <h2 class="mt-2 text-xl font-semibold">
+                                    {{ percent(ai_publishing_trend.changed_rate) }}
+                                    would change over
+                                    {{ ai_publishing_trend.days }} days
+                                </h2>
+                                <p class="mt-2 text-sm text-muted-foreground">
+                                    {{ ai_publishing_trend.changed_count }} of
+                                    {{ ai_publishing_trend.total }} reviewed
+                                    picks differed from saved classification.
+                                </p>
+                            </div>
+                            <div
+                                v-if="
+                                    Object.keys(ai_publishing_trend.decisions)
+                                        .length > 0
+                                "
+                                class="flex flex-wrap gap-2"
+                            >
+                                <span
+                                    v-for="(count, decision) in ai_publishing_trend.decisions"
+                                    :key="decision"
+                                    class="rounded-full border border-sidebar-border px-3 py-1 text-xs font-medium"
+                                >
+                                    {{ labelize(String(decision)) }}:
+                                    {{ count }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <p
+                            v-if="ai_publishing_trend.total === 0"
+                            class="mt-4 rounded-lg border border-sidebar-border bg-sidebar-accent px-4 py-3 text-sm text-muted-foreground"
+                        >
+                            No guardrail trend data found for this sport in the
+                            last {{ ai_publishing_trend.days }} days.
+                        </p>
+                        <div
+                            v-else
+                            class="mt-5 grid gap-4 md:grid-cols-2"
+                        >
+                            <div>
+                                <div
+                                    class="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground"
+                                >
+                                    <span>Classification Change Rate</span>
+                                    <span>
+                                        {{
+                                            percent(
+                                                ai_publishing_trend.changed_rate,
+                                            )
+                                        }}
+                                    </span>
+                                </div>
+                                <div
+                                    class="h-3 overflow-hidden rounded-full bg-sidebar-accent"
+                                >
+                                    <div
+                                        class="h-full rounded-full bg-yellow-500"
+                                        :style="{
+                                            width: widthPercent(
+                                                ai_publishing_trend.changed_rate,
+                                            ),
+                                        }"
+                                    />
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="
+                                    Object.keys(ai_publishing_trend.decisions)
+                                        .length > 0
+                                "
+                                class="space-y-2"
+                            >
+                                <div
+                                    v-for="(count, decision) in ai_publishing_trend.decisions"
+                                    :key="`bar-${decision}`"
+                                >
+                                    <div
+                                        class="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground"
+                                    >
+                                        <span>{{ labelize(String(decision)) }}</span>
+                                        <span>{{ count }}</span>
+                                    </div>
+                                    <div
+                                        class="h-2 overflow-hidden rounded-full bg-sidebar-accent"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-primary"
+                                            :style="{
+                                                width: countWidth(
+                                                    Number(count),
+                                                    ai_publishing_trend.total,
+                                                ),
+                                            }"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="
+                                ai_publishing_trend.total > 0 &&
+                                ai_publishing_trend.changed_rows.length > 0
+                            "
+                            class="mt-4 overflow-hidden rounded-lg border border-sidebar-border"
+                        >
+                            <div
+                                class="grid grid-cols-6 gap-3 bg-sidebar-accent px-4 py-2 text-xs font-semibold text-muted-foreground"
+                            >
+                                <span>Date</span>
+                                <span>Sport</span>
+                                <span class="col-span-2">Matchup</span>
+                                <span>Saved</span>
+                                <span>Guardrail</span>
+                            </div>
+                            <div
+                                v-for="row in ai_publishing_trend.changed_rows"
+                                :key="`${row.date}-${row.sport}-${row.matchup}-${row.decision}`"
+                                class="grid grid-cols-6 gap-3 border-t border-sidebar-border px-4 py-3 text-sm"
+                            >
+                                <span class="text-muted-foreground">
+                                    {{ row.date }}
+                                </span>
+                                <span>{{ row.sport }}</span>
+                                <span class="col-span-2">
+                                    {{ row.matchup }}
+                                </span>
+                                <span>
+                                    {{ labelize(row.saved_classification) }}
+                                </span>
+                                <span>
+                                    {{
+                                        labelize(
+                                            row.guardrail_classification,
+                                        )
+                                    }}
+                                </span>
+                            </div>
+                        </div>
+                        <p
+                            v-else-if="ai_publishing_trend.total > 0"
+                            class="mt-4 rounded-lg bg-sidebar-accent px-4 py-3 text-sm text-muted-foreground"
+                        >
+                            No guardrail classification changes found for this
+                            filter in the last
+                            {{ ai_publishing_trend.days }} days.
+                        </p>
                     </div>
 
                     <div

@@ -13,7 +13,7 @@ class SportsDailyPredictionAnalysisAgent implements Agent, HasStructuredOutput
 
     public function instructions(): string
     {
-        return 'You are a disciplined sports betting analyst. Use only the supplied JSON. Separate calculated model edge from analysis confidence. Do not invent injuries, odds, weather, players, or trends.';
+        return 'You are a disciplined sports betting analyst. Use only the supplied JSON. Treat operational_context as authoritative for data freshness, validation findings, pipeline order, and publishing guardrails. If publication_guardrails.status is blocked, do not classify the play as an official bet. Separate calculated model edge from analysis confidence. Do not invent injuries, odds, weather, players, or trends.';
     }
 
     public function provider(): string

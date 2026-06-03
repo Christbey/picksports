@@ -8,6 +8,7 @@ use App\Http\Resources\Admin\RolePermissionSummaryResource;
 use App\Models\SubscriptionTier;
 use App\Services\Admin\TierPermissionSyncService;
 use App\Support\PredictionDataPermissions;
+use App\Support\SportPredictionAccess;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -17,11 +18,6 @@ use Spatie\Permission\Models\Role;
 
 class PermissionController extends Controller
 {
-    /**
-     * @var array<int, string>
-     */
-    private const SPORT_SLUGS = ['nba', 'nfl', 'cbb', 'wcbb', 'mlb', 'cfb', 'wnba'];
-
     public function __construct(private readonly TierPermissionSyncService $tierPermissionSyncService) {}
 
     public function index(Request $request): Response
@@ -102,11 +98,7 @@ class PermissionController extends Controller
      */
     private function corePermissionNames(): array
     {
-        $sportPermissions = collect(self::SPORT_SLUGS)
-            ->map(fn (string $sport) => "view-{$sport}-predictions")
-            ->all();
-
-        return array_merge($sportPermissions, [
+        return array_merge(app(SportPredictionAccess::class)->allPermissionNames(), [
             'export-predictions',
             'access-api',
             'access-advanced-analytics',

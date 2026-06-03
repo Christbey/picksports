@@ -33,6 +33,8 @@ return function (string $sport, string $namespace) {
         'depth_chart' => "{$controllerNamespace}\\DepthChartController",
     ];
     $capabilities = (array) data_get(config('sports.domains'), "{$sport}.capabilities", []);
+    $requiresPredictionPermission = (bool) data_get(config('sports.domains'), "{$sport}.web.requires_prediction_permission", true);
+    $sportAccessMiddleware = $requiresPredictionPermission ? ["permission:view-{$sport}-predictions"] : [];
 
     $registerIndexShowResource = function (string $resource, string $controller): void {
         Route::apiResource($resource, $controller)->only(['index', 'show']);
@@ -46,7 +48,7 @@ return function (string $sport, string $namespace) {
 
     // Teams
     $registerIndexShowResource('teams', $controllers['team']);
-    Route::middleware(['auth:sanctum', "permission:view-{$sport}-predictions"])
+    Route::middleware(['auth:sanctum', ...$sportAccessMiddleware])
         ->get('teams/{team}/trends', [$controllers['team'], 'trends']);
     if (($capabilities['depth_charts'] ?? false) === true) {
         Route::get('teams/{team}/depth-charts', [$controllers['depth_chart'], 'byTeam']);
@@ -109,10 +111,10 @@ return function (string $sport, string $namespace) {
     ]);
 
     // Protected endpoints (requires authentication for tier limits)
-    Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport, $capabilities, $namespace, $controllerNamespace) {
+    Route::middleware(['auth:sanctum'])->group(function () use ($controllers, $sport, $capabilities, $namespace, $controllerNamespace, $sportAccessMiddleware) {
         Route::get('injuries', [InjuryController::class, 'index'])
             ->defaults('sport', $sport)
-            ->middleware(["permission:view-{$sport}-predictions"]);
+            ->middleware($sportAccessMiddleware);
 
         Route::get('debug/prediction-access', [PredictionAccessDebugController::class, 'show'])
             ->defaults('sport', $sport);
@@ -123,10 +125,12 @@ return function (string $sport, string $namespace) {
         Route::get('teams/{team}/metrics', [$controllers['team_metric'], 'byTeam']);
 
         // Predictions
-        Route::get('predictions/available-dates', [$controllers['prediction'], 'availableDates']);
-        Route::get('predictions/available-seasons', [$controllers['prediction'], 'availableSeasons']);
-        Route::apiResource('predictions', $controllers['prediction'])->only(['index', 'show']);
-        Route::get('games/{game}/prediction', [$controllers['prediction'], 'byGame']);
+        Route::middleware($sportAccessMiddleware)->group(function () use ($controllers): void {
+            Route::get('predictions/available-dates', [$controllers['prediction'], 'availableDates']);
+            Route::get('predictions/available-seasons', [$controllers['prediction'], 'availableSeasons']);
+            Route::apiResource('predictions', $controllers['prediction'])->only(['index', 'show']);
+            Route::get('games/{game}/prediction', [$controllers['prediction'], 'byGame']);
+        });
 
         if (($capabilities['tournament_forecasts'] ?? false) === true && $namespace === 'CBB') {
             Route::get('tournament-forecasts', [TournamentForecastController::class, 'index']);
@@ -139,41 +143,41 @@ return function (string $sport, string $namespace) {
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'NBA') {
             Route::get('playoff-forecasts', [PlayoffForecastController::class, 'index']);
             Route::get('signals', [NbaSignalController::class, 'index'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
         }
 
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'MLB') {
             Route::get('playoff-forecasts', [App\Http\Controllers\Api\MLB\PlayoffForecastController::class, 'index']);
             Route::get('signals', [MlbSignalController::class, 'index'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
         }
 
         if (($capabilities['playoff_forecasts'] ?? false) === true && $namespace === 'NFL') {
             Route::get('playoff-forecasts', [App\Http\Controllers\Api\NFL\PlayoffForecastController::class, 'index'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
             Route::get('signals', [NflSignalController::class, 'index'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
         }
 
         if ($namespace === 'MLB') {
             Route::get('bullpen-ratings', ["{$controllerNamespace}\\BullpenRatingController", 'index'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
             Route::get('teams/{team}/bullpen-ratings', ["{$controllerNamespace}\\BullpenRatingController", 'byTeam'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
         }
 
         if ((bool) data_get(config('sports.domains'), "{$sport}.web.player_props", false) === true) {
             Route::get('player-props', [PlayerPropController::class, 'index'])
                 ->defaults('sport', $sport)
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
             Route::get('players/{player}/player-props', [PlayerPropController::class, 'byPlayer'])
                 ->defaults('sport', $sport)
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
         }
 
         if (($capabilities['player_futures'] ?? false) === true) {
             Route::get('player-futures', ["{$controllerNamespace}\\PlayerFutureController", 'index'])
-                ->middleware(["permission:view-{$sport}-predictions"]);
+                ->middleware($sportAccessMiddleware);
         }
 
         if ($namespace === 'CFB') {

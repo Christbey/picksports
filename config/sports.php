@@ -21,6 +21,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'NFL/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => true,
                 'pages' => [
                     'team-metrics' => 'NFL/TeamMetrics',
@@ -42,6 +43,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'CFB/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => false,
                 'pages' => [
                     'player-stats' => 'CFB/PlayerStats',
@@ -63,6 +65,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'CBB/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => true,
                 'pages' => [
                     'team-metrics' => 'CBB/TeamMetrics',
@@ -86,6 +89,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'WCBB/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => false,
                 'pages' => [
                     'team-metrics' => 'WCBB/TeamMetrics',
@@ -110,6 +114,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'NBA/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => true,
                 'pages' => [
                     'team-metrics' => 'NBA/TeamMetrics',
@@ -154,6 +159,7 @@ return [
             ],
             'web' => [
                 'predictions_page' => 'MLB/Predictions',
+                'requires_prediction_permission' => false,
                 'player_props' => true,
                 'pages' => [
                     'team-metrics' => 'MLB/TeamMetrics',

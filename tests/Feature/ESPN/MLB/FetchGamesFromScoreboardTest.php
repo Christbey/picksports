@@ -107,3 +107,38 @@ it('persists live inning and inning state from the mlb scoreboard job', function
         ->and($game->inning_half)->toBe('Top 5th')
         ->and($game->inning_state)->toBe('Top 5th');
 });
+
+it('stores west coast night scoreboard games on the local venue date', function () {
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard*dates=20260601*' => Http::response([
+            'events' => [[
+                'id' => '401814797',
+                'uid' => 's:1~l:10~e:401814797',
+                'date' => '2026-06-01T02:10:00Z',
+                'name' => 'New York Mets at San Francisco Giants',
+                'shortName' => 'NYM @ SF',
+                'season' => ['year' => 2026, 'type' => 2],
+                'competitions' => [[
+                    'id' => '401814797',
+                    'status' => ['type' => ['name' => 'STATUS_SCHEDULED']],
+                    'venue' => [
+                        'fullName' => 'Oracle Park',
+                        'address' => ['city' => 'San Francisco', 'state' => 'CA'],
+                    ],
+                    'competitors' => [
+                        ['homeAway' => 'home', 'team' => ['id' => '26']],
+                        ['homeAway' => 'away', 'team' => ['id' => '21']],
+                    ],
+                ]],
+            ]],
+        ]),
+    ]);
+
+    (new FetchGamesFromScoreboard('20260601'))->handle();
+
+    $game = Game::query()->where('espn_event_id', '401814797')->first();
+
+    expect($game)->not->toBeNull()
+        ->and($game->game_date?->toDateString())->toBe('2026-05-31')
+        ->and($game->game_time)->toBe('19:10:00');
+});

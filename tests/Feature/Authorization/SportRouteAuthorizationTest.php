@@ -30,7 +30,7 @@ it('requires auth for sport detailed web game routes', function () {
         ->assertRedirect(route('login'));
 });
 
-it('denies sport detailed web game routes without permission', function () {
+it('allows sport detailed web game routes without permission while sports are free', function () {
     $user = User::factory()->create();
 
     $homeTeam = CbbTeam::factory()->create();
@@ -42,7 +42,7 @@ it('denies sport detailed web game routes without permission', function () {
 
     $this->actingAs($user)
         ->get("/cbb/games/{$game->id}")
-        ->assertRedirect(route('subscription.plans'));
+        ->assertOk();
 });
 
 it('allows sport detailed web game routes with permission', function () {
@@ -61,12 +61,12 @@ it('allows sport detailed web game routes with permission', function () {
         ->assertOk();
 });
 
-it('denies team metrics pages without sport permission', function () {
+it('allows team metrics pages without sport permission while sports are free', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
         ->get('/nfl/team-metrics')
-        ->assertRedirect(route('subscription.plans'));
+        ->assertOk();
 });
 
 it('allows team metrics pages with sport permission', function () {
@@ -96,12 +96,12 @@ it('requires auth for player props routes', function () {
         ->assertRedirect(route('login'));
 });
 
-it('denies player props routes without sport permission', function () {
+it('allows player props routes without sport permission while sports are free', function () {
     $user = User::factory()->create();
 
     $this->actingAs($user)
         ->get('/nfl/player-props')
-        ->assertRedirect(route('subscription.plans'));
+        ->assertOk();
 });
 
 it('allows player props routes with sport permission', function () {

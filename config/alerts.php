@@ -23,6 +23,6 @@ return [
     'admin_report' => [
         'enabled' => env('ADMIN_EMAIL_REPORT_ENABLED', true),
         'recipients' => env('ADMIN_EMAIL_REPORT_RECIPIENTS', ''),
-        'daily_time' => env('ADMIN_EMAIL_REPORT_DAILY_TIME', '07:30'),
+        'daily_time' => env('ADMIN_EMAIL_REPORT_DAILY_TIME', '11:30'),
     ],
 ];

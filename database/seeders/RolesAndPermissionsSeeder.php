@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\SubscriptionTier;
 use App\Services\Admin\TierPermissionSyncService;
 use App\Support\PredictionDataPermissions;
+use App\Support\SportPredictionAccess;
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -24,14 +25,7 @@ class RolesAndPermissionsSeeder extends Seeder
 
     protected function createPermissions(): void
     {
-        $permissions = array_merge([
-            'view-nba-predictions',
-            'view-nfl-predictions',
-            'view-cbb-predictions',
-            'view-wcbb-predictions',
-            'view-mlb-predictions',
-            'view-cfb-predictions',
-            'view-wnba-predictions',
+        $permissions = array_merge(app(SportPredictionAccess::class)->allPermissionNames(), [
             'export-predictions',
             'access-api',
             'access-advanced-analytics',

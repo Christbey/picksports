@@ -1,7 +1,10 @@
 <?php
 
 use App\AI\Agents\ValidationReviewSummaryAgent;
+use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
+use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -9,6 +12,7 @@ use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
 use App\Notifications\ValidationRegressionAlert;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
 test('healthcheck validate data persists validation run and completeness findings', function () {
@@ -70,6 +74,10 @@ test('healthcheck validate data persists validation run and completeness finding
     expect($findingTypes)->toContain(
         'validation_prediction_completeness',
         'validation_odds_completeness',
+        'validation_injury_freshness',
+        'validation_player_prop_freshness',
+        'validation_futures_odds_freshness',
+        'validation_pipeline_order',
         'validation_finalized_data_completeness'
     );
 
@@ -100,6 +108,220 @@ test('healthcheck validate data persists validation run and completeness finding
         ->and(data_get($healthcheck->metadata, 'validation_run_id'))->toBe($run->id);
 });
 
+test('healthcheck validate data flags current day final games missing stats', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_FINAL',
+        'game_date' => now()->copy()->subHours(3),
+        'home_score' => 118,
+        'away_score' => 110,
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_current_day_game_data_freshness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toBe('espn:sync-nba-game-details')
+        ->and(data_get($finding->facts, 'games_today'))->toBe(1)
+        ->and(data_get($finding->facts, 'final_games_missing_team_stats'))->toBe(1)
+        ->and(data_get($finding->facts, 'final_games_missing_both_team_stats'))->toBe(1)
+        ->and(data_get($finding->facts, 'final_games_missing_player_stats'))->toBe(1)
+        ->and(data_get($finding->facts, 'final_games_missing_plays'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+});
+
+test('healthcheck validate data flags missing weather for outdoor sports', function () {
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay(),
+        'venue_name' => 'Kauffman Stadium',
+        'venue_city' => 'Kansas City',
+        'venue_state' => 'MO',
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'mlb'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_weather_completeness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toBe('mlb:sync-game-weather --days-back=0 --days-forward=7 --force')
+        ->and(data_get($finding->facts, 'upcoming_games'))->toBe(1)
+        ->and(data_get($finding->facts, 'games_missing_weather'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+});
+
+test('healthcheck validate data flags past mlb games stuck as scheduled', function () {
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->subDay()->toDateString(),
+        'game_time' => '19:10:00',
+        'short_name' => 'NYM @ SF',
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'mlb'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_past_scheduled_game_status')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toContain('espn:sync-mlb-games-scoreboard --from-date=')
+        ->and(data_get($finding->facts, 'stale_games'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.matchup'))->toBe('NYM @ SF');
+});
+
+test('healthcheck validate data flags ungraded final mlb predictions', function () {
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_FINAL',
+        'game_date' => now()->copy()->subDay()->toDateString(),
+        'home_score' => 4,
+        'away_score' => 2,
+    ]);
+
+    App\Models\MLB\Prediction::query()->create([
+        'game_id' => $game->id,
+        'season' => (int) now()->year,
+        'season_type' => (string) config('mlb.season.types.regular'),
+        'home_team_elo' => 1510,
+        'away_team_elo' => 1490,
+        'home_pitcher_elo' => 1520,
+        'away_pitcher_elo' => 1480,
+        'home_combined_elo' => 1515,
+        'away_combined_elo' => 1485,
+        'predicted_spread' => 1.5,
+        'predicted_total' => 8.5,
+        'win_probability' => 0.61,
+        'confidence_score' => 64,
+        'model_version' => 'test',
+        'feature_version' => 'test',
+        'blend_version' => 'test',
+        'graded_at' => null,
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'mlb'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_finalized_data_completeness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and(data_get($finding->facts, 'games_missing_grading'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+});
+
+test('healthcheck validate data flags stale futures odds', function () {
+    DB::table('sports_futures_odds')->insert([
+        'row_key' => 'nba-title-lakers',
+        'sport' => 'nba',
+        'season' => (int) now()->year,
+        'odds_api_sport_key' => 'basketball_nba_championship_winner',
+        'bookmaker' => 'draftkings',
+        'market_key' => 'championship_winner',
+        'outcome_name' => 'Los Angeles Lakers',
+        'price' => 1200,
+        'fetched_at' => now()->subHours(24),
+        'created_at' => now()->subHours(24),
+        'updated_at' => now()->subHours(24),
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_futures_odds_freshness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toBe('sports:sync-futures-odds --sport=nba --season='.(int) now()->year)
+        ->and(data_get($finding->facts, 'stale'))->toBeTrue();
+});
+
+test('healthcheck validate data flags pipeline order violations', function () {
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'espn:sync-nba-game-details',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now(),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'nba:generate-predictions',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subHour(),
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_pipeline_order')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toBe('nba:generate-predictions')
+        ->and(data_get($finding->facts, 'violations.0.label'))->toBe('details before predictions');
+});
+
 test('healthcheck validate data persists ai validation summary when enabled', function () {
     config()->set('ai.features.validation_review_summary.enabled', true);
     config()->set('ai.features.validation_review_summary.provider', 'openai');
@@ -118,6 +340,26 @@ test('healthcheck validate data persists ai validation summary when enabled', fu
             'recommended_actions' => [
                 'nba:generate-predictions',
                 'nba:sync-odds',
+            ],
+            'latest_data_fresh_at' => 'Not fully fresh in the latest run completed May 30, 2026 8:00 AM',
+            'data_schedule_today' => [
+                'Scoreboards refresh every 5 minutes.',
+                'Validation runs before the admin report.',
+            ],
+            'tweak_recommendations' => [
+                'Run odds sync closer to digest generation.',
+            ],
+            'operational_status' => 'degraded',
+            'trust_score' => 72,
+            'blocked_outputs' => [
+                'Official bet classifications that require fresh odds.',
+            ],
+            'safe_adjustments' => [
+                'nba:generate-predictions',
+                'nba:sync-odds',
+            ],
+            'data_quality_notes' => [
+                'NBA odds coverage is incomplete.',
             ],
         ],
     ])->preventStrayPrompts();
@@ -144,6 +386,13 @@ test('healthcheck validate data persists ai validation summary when enabled', fu
         ->and($run->ai_summary)->toBeArray()
         ->and($run->ai_summary['headline'])->toBe('NBA validation needs attention')
         ->and($run->ai_summary['recommended_actions'])->toContain('nba:generate-predictions', 'nba:sync-odds')
+        ->and($run->ai_summary['latest_data_fresh_at'])->toContain('Not fully fresh')
+        ->and($run->ai_summary['data_schedule_today'])->toContain('Validation runs before the admin report.')
+        ->and($run->ai_summary['tweak_recommendations'])->toContain('Run odds sync closer to digest generation.')
+        ->and($run->ai_summary['operational_status'])->toBe('degraded')
+        ->and($run->ai_summary['trust_score'])->toBe(72)
+        ->and($run->ai_summary['blocked_outputs'])->toContain('Official bet classifications that require fresh odds.')
+        ->and($run->ai_summary['safe_adjustments'])->toContain('nba:sync-odds')
         ->and($run->ai_provider)->toBe('openai')
         ->and($run->ai_model)->toBe('gpt-4o-mini')
         ->and($run->ai_generated_at)->not->toBeNull();

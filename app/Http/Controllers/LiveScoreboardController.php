@@ -8,8 +8,10 @@ use App\Models\CFB\Prediction as CFBPrediction;
 use App\Models\MLB\Prediction as MLBPrediction;
 use App\Models\NBA\Prediction as NBAPrediction;
 use App\Models\NFL\Prediction as NFLPrediction;
+use App\Models\User;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -27,21 +29,24 @@ class LiveScoreboardController extends Controller
 
     public function __invoke(): JsonResponse
     {
+        $user = auth()->user();
+        $sportConfigs = $this->viewableSportConfigs($user);
         $cacheKey = $this->sportsViewCache->contextHash([
             'date' => now()->toDateString(),
+            'viewable_sports' => array_keys($sportConfigs),
         ]);
 
         $payload = $this->sportsViewCache->remember(
             segment: 'live_scoreboard',
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.live_scoreboard_seconds', 10),
-            resolver: function (): array {
+            resolver: function () use ($sportConfigs): array {
                 $todayStartUtc = now()->startOfDay()->utc()->format('Y-m-d H:i:s');
                 $todayEndUtc = now()->endOfDay()->utc()->format('Y-m-d H:i:s');
 
                 $todayGameScope = fn (Builder $q) => $this->applyTodayGameWindow($q, $todayStartUtc, $todayEndUtc);
 
-                $games = collect($this->sportConfigs())
+                $games = collect($sportConfigs)
                     ->flatMap(fn (array $config, string $sport) => $this->getScoreboardGamesForSport($sport, $config, $todayGameScope))
                     ->sortBy([
                         fn (array $game) => $game['is_live'] ? 0 : 1,
@@ -76,6 +81,18 @@ class LiveScoreboardController extends Controller
             'CFB' => $this->sportConfig(predictionModel: CFBPrediction::class),
             'WNBA' => $this->sportConfig(predictionModel: WNBAPrediction::class),
         ];
+    }
+
+    private function viewableSportConfigs(?User $user): array
+    {
+        return collect($this->sportConfigs())
+            ->filter(fn (array $config, string $sport): bool => $this->canViewSportPredictions($user, $sport))
+            ->all();
+    }
+
+    private function canViewSportPredictions(?User $user, string $sport): bool
+    {
+        return app(SportPredictionAccess::class)->canView($user, $sport);
     }
 
     /**

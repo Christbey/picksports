@@ -8,6 +8,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
 
     if (! Route::has('tests.permission.web.missing')) {
         Route::middleware(['web', 'auth', 'permission:tests-missing-permission'])
@@ -32,6 +33,17 @@ beforeEach(function () {
             ->get('/__tests__/permission/api/wrong-guard', fn () => response()->json(['ok' => true]))
             ->name('tests.permission.api.wrong-guard');
     }
+});
+
+it('allows permission middleware routes when tier enforcement is disabled', function () {
+    config()->set('subscriptions.enforce_tiers', false);
+
+    $user = User::factory()->create();
+
+    $this->actingAs($user)
+        ->getJson('/__tests__/permission/web/missing')
+        ->assertOk()
+        ->assertJson(['ok' => true]);
 });
 
 it('denies web requests with missing permission without throwing server errors', function () {

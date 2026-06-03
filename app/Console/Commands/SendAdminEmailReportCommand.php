@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Mail\AdminDailyEmailReportMail;
 use App\Models\DailyDigestSend;
+use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
 use App\Models\UserAlertSent;
 use App\Models\ValidationRun;
@@ -80,6 +81,7 @@ class SendAdminEmailReportCommand extends Command
             'alerts' => $alerts,
             'queue' => $this->queueStats($start, $end),
             'validation' => $this->latestValidationRun(),
+            'ai_publishing' => $this->aiPublishingReview($date),
         ];
     }
 
@@ -171,7 +173,7 @@ class SendAdminEmailReportCommand extends Command
     }
 
     /**
-     * @return array{scope:string,status:string,completed_at:string,summary:array<string, mixed>}|null
+     * @return array{scope:string,status:string,completed_at:string,summary:array<string, mixed>,ai_summary:array<string, mixed>|null}|null
      */
     protected function latestValidationRun(): ?array
     {
@@ -188,6 +190,84 @@ class SendAdminEmailReportCommand extends Command
             'status' => (string) $run->status,
             'completed_at' => $run->completed_at?->toDayDateTimeString() ?? 'N/A',
             'summary' => is_array($run->summary) ? $run->summary : [],
+            'ai_summary' => is_array($run->ai_summary) ? $run->ai_summary : null,
+        ];
+    }
+
+    /**
+     * @return array{total:int,decisions:array<string, int>,classifications:array<string, int>,enforcement:array{enabled:bool,mode:string},needs_attention:array<int, array<string, mixed>>}
+     */
+    protected function aiPublishingReview(CarbonImmutable $date): array
+    {
+        $enforcement = $this->aiPublishingEnforcement();
+
+        if (! Schema::hasTable('sports_ai_prediction_analyses')) {
+            return [
+                'total' => 0,
+                'decisions' => [],
+                'classifications' => [],
+                'enforcement' => $enforcement,
+                'needs_attention' => [],
+            ];
+        }
+
+        $analyses = SportsAiPredictionAnalysis::query()
+            ->whereDate('as_of_date', $date->toDateString())
+            ->latest('id')
+            ->limit(100)
+            ->get();
+
+        $decisions = [];
+        $classifications = [];
+        $needsAttention = [];
+
+        foreach ($analyses as $analysis) {
+            $guardrail = data_get($analysis->metadata, 'shadow_agents.publishing_guardrail', []);
+            $decision = (string) data_get($guardrail, 'decision', 'unknown');
+            $classification = (string) data_get($guardrail, 'publishable_classification', 'unknown');
+
+            $decisions[$decision] = ($decisions[$decision] ?? 0) + 1;
+            $classifications[$classification] = ($classifications[$classification] ?? 0) + 1;
+
+            if (! in_array($decision, ['downgrade', 'hold', 'block'], true)) {
+                continue;
+            }
+
+            $needsAttention[] = [
+                'sport' => strtoupper((string) $analysis->sport),
+                'matchup' => (string) data_get($analysis->raw_payload, 'game.matchup', 'Game '.$analysis->game_id),
+                'decision' => $decision,
+                'publishable_classification' => $classification,
+                'freshness_status' => (string) data_get($analysis->metadata, 'shadow_agents.data_freshness.freshness_status', 'unknown'),
+                'market_status' => (string) data_get($analysis->metadata, 'shadow_agents.market_readiness.market_status', 'unknown'),
+                'model_status' => (string) data_get($analysis->metadata, 'shadow_agents.model_audit.model_status', 'unknown'),
+                'summary' => (string) data_get($guardrail, 'summary', ''),
+                'required_actions' => array_values(array_filter(array_map(
+                    'strval',
+                    (array) data_get($guardrail, 'required_actions', [])
+                ))),
+            ];
+        }
+
+        return [
+            'total' => $analyses->count(),
+            'decisions' => $decisions,
+            'classifications' => $classifications,
+            'enforcement' => $enforcement,
+            'needs_attention' => array_slice($needsAttention, 0, 8),
+        ];
+    }
+
+    /**
+     * @return array{enabled:bool,mode:string}
+     */
+    protected function aiPublishingEnforcement(): array
+    {
+        $enabled = (bool) config('ai.features.publishing_guardrail_review.enforced', false);
+
+        return [
+            'enabled' => $enabled,
+            'mode' => $enabled ? 'enforced' : 'shadow',
         ];
     }
 

@@ -7,6 +7,10 @@ use JsonException;
 
 class SportsAiPredictionPayloadBuilder
 {
+    public function __construct(
+        private readonly SportsOperationalContextBuilder $operationalContextBuilder,
+    ) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -61,6 +65,7 @@ class SportsAiPredictionPayloadBuilder
                 'odds_markets' => $this->summarizeOdds($this->arrayAttribute($game, 'odds_data')),
                 'market_context' => $this->arrayDataGet($prediction, 'model_metadata.market_context'),
             ],
+            'operational_context' => $this->operationalContextBuilder->build($sport, $game),
             'model_metadata' => $this->arrayAttribute($prediction, 'model_metadata'),
             'existing_narrative' => $this->arrayAttribute($prediction, 'narrative_json'),
             'raw_prediction_snapshot' => $this->predictionSnapshot($prediction),

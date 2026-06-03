@@ -18,13 +18,13 @@ it('requires sanctum auth for team trends endpoint', function () {
         ->assertUnauthorized();
 });
 
-it('denies authenticated users without sport permission on team trends endpoint', function () {
+it('allows authenticated users without sport permission on team trends endpoint while sports are free', function () {
     $team = Team::factory()->create();
     $user = User::factory()->create();
     Sanctum::actingAs($user);
 
     $this->getJson("/api/v1/nba/teams/{$team->id}/trends")
-        ->assertForbidden();
+        ->assertOk();
 });
 
 it('allows authenticated users with sport permission on team trends endpoint', function () {

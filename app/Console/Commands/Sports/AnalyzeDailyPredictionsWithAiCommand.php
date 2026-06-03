@@ -7,6 +7,7 @@ use App\Models\SportsAiPredictionAnalysis;
 use App\Services\AI\SportsAiContentService;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use App\Services\Sports\SportsPipelineRegistry;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -76,6 +77,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 $inputHash = $payloadBuilder->hash($payload);
                 $gameId = (int) ($prediction->game?->id ?? $prediction->game_id ?? 0);
                 $gameDate = $prediction->game?->game_date?->toDateString();
+                $operationalContext = $payload['operational_context'] ?? [];
 
                 if ($this->option('dry-run')) {
                     $this->line('  - '.$this->matchup($prediction).' ['.$inputHash.']');
@@ -112,6 +114,40 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     continue;
                 }
 
+                $dataFreshness = $aiContentService->generateDataFreshnessAssessment(
+                    $payload,
+                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
+                    model: $this->option('model') ? (string) $this->option('model') : null,
+                );
+                $marketReadiness = $aiContentService->generateMarketReadinessAssessment(
+                    $payload,
+                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
+                    model: $this->option('model') ? (string) $this->option('model') : null,
+                );
+                $modelAudit = $aiContentService->generateModelAuditAssessment(
+                    $payload,
+                    $analysis,
+                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
+                    model: $this->option('model') ? (string) $this->option('model') : null,
+                );
+                $publishingGuardrail = $aiContentService->generatePublishingGuardrailAssessment(
+                    $payload,
+                    $analysis,
+                    $dataFreshness,
+                    $marketReadiness,
+                    $modelAudit,
+                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
+                    model: $this->option('model') ? (string) $this->option('model') : null,
+                );
+
+                $shadowAgents = [
+                    'data_freshness' => $dataFreshness,
+                    'market_readiness' => $marketReadiness,
+                    'model_audit' => $modelAudit,
+                    'publishing_guardrail' => $publishingGuardrail,
+                ];
+                $publishingDecision = $this->effectivePublishingDecision($analysis, $publishingGuardrail);
+
                 [$provider, $model] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
 
                 SportsAiPredictionAnalysis::query()->updateOrCreate(
@@ -128,10 +164,10 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                         'model' => $model,
                         'input_hash' => $inputHash,
                         'raw_payload' => $payload,
-                        'recommendation' => (string) $analysis['recommendation'],
+                        'recommendation' => $publishingDecision['recommendation'],
                         'ai_confidence' => (int) $analysis['ai_confidence'],
                         'analysis_confidence' => (int) $analysis['analysis_confidence'],
-                        'bet_classification' => (string) $analysis['bet_classification'],
+                        'bet_classification' => $publishingDecision['bet_classification'],
                         'summary' => (string) $analysis['summary'],
                         'key_factors' => $analysis['key_factors'],
                         'risk_flags' => $analysis['risk_flags'],
@@ -141,13 +177,18 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                         'metadata' => [
                             'command' => 'sports:ai-daily-predictions',
                             'schema_version' => $payload['schema_version'] ?? null,
+                            'operational_context_schema_version' => $operationalContext['schema_version'] ?? null,
+                            'publication_guardrail_status' => data_get($operationalContext, 'publication_guardrails.status'),
+                            'required_actions' => $operationalContext['required_actions'] ?? [],
+                            'shadow_agents' => $shadowAgents,
+                            'publishing_enforcement' => $publishingDecision['enforcement'],
                         ],
                         'latency_ms' => $latencyMs,
                     ]
                 );
 
                 $processed++;
-                $this->line('  - saved '.$this->matchup($prediction).' -> '.$analysis['bet_classification'].' / '.$analysis['recommendation']);
+                $this->line('  - saved '.$this->matchup($prediction).' -> '.$publishingDecision['bet_classification'].' / '.$publishingDecision['recommendation']);
             }
         }
 
@@ -173,7 +214,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         ));
     }
 
-    private function predictionsForSport(string $sport, Carbon $date, Carbon $endDate, int $limit)
+    private function predictionsForSport(string $sport, CarbonInterface $date, CarbonInterface $endDate, int $limit)
     {
         /** @var class-string<Model> $modelClass */
         $modelClass = $this->predictionModels[$sport];
@@ -197,6 +238,49 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $game = $prediction->game;
 
         return (string) ($game?->short_name ?: $game?->name ?: 'prediction '.$prediction->id);
+    }
+
+    /**
+     * @param  array<string, mixed>  $analysis
+     * @param  array<string, mixed>|null  $publishingGuardrail
+     * @return array{recommendation:string,bet_classification:string,enforcement:array<string, mixed>}
+     */
+    private function effectivePublishingDecision(array $analysis, ?array $publishingGuardrail): array
+    {
+        $originalRecommendation = (string) $analysis['recommendation'];
+        $originalClassification = (string) $analysis['bet_classification'];
+        $enforced = (bool) config('ai.features.publishing_guardrail_review.enforced', false);
+        $decision = (string) data_get($publishingGuardrail, 'decision', 'shadow');
+        $guardrailClassification = (string) data_get($publishingGuardrail, 'publishable_classification', '');
+
+        $recommendation = $originalRecommendation;
+        $classification = $originalClassification;
+
+        if ($enforced && $publishingGuardrail) {
+            if (in_array($decision, ['downgrade', 'hold', 'block'], true) && $guardrailClassification !== '') {
+                $classification = $guardrailClassification;
+            }
+
+            if (in_array($decision, ['hold', 'block'], true)) {
+                $recommendation = 'pass';
+            }
+        }
+
+        return [
+            'recommendation' => $recommendation,
+            'bet_classification' => $classification,
+            'enforcement' => [
+                'enabled' => $enforced,
+                'applied' => $enforced && $publishingGuardrail !== null && (
+                    $recommendation !== $originalRecommendation || $classification !== $originalClassification
+                ),
+                'decision' => $decision,
+                'original_recommendation' => $originalRecommendation,
+                'original_bet_classification' => $originalClassification,
+                'effective_recommendation' => $recommendation,
+                'effective_bet_classification' => $classification,
+            ],
+        ];
     }
 
     /**

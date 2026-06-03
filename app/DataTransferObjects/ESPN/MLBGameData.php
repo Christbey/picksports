@@ -35,7 +35,8 @@ class MLBGameData
         $competition = self::competitionFromGame($game);
         $homeTeam = self::homeCompetitor($competition);
         $awayTeam = self::awayCompetitor($competition);
-        $statusType = $game['status']['type']['name'] ?? 'scheduled';
+        $status = is_array($game['status'] ?? null) ? $game['status'] : ($competition['status'] ?? []);
+        $statusType = $status['type']['name'] ?? 'scheduled';
 
         return new self(
             espnEventId: (string) $game['id'],
@@ -51,8 +52,8 @@ class MLBGameData
             homeLinescores: $homeTeam['linescores'] ?? null,
             awayLinescores: $awayTeam['linescores'] ?? null,
             status: self::normalizeStatus($statusType),
-            inning: self::intOrNull($game['status']['period'] ?? null),
-            inningState: $game['status']['displayClock'] ?? ($game['status']['type']['shortDetail'] ?? null),
+            inning: self::intOrNull($status['period'] ?? null),
+            inningState: $status['displayClock'] ?? ($status['type']['shortDetail'] ?? null),
             venueName: self::venueName($competition),
             venueCity: self::venueCity($competition),
             venueState: self::venueState($competition),

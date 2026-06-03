@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Healthcheck;
+use App\Models\SportsAiPredictionAnalysis;
 use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
@@ -42,6 +43,81 @@ test('admin healthchecks page includes latest validation summary in validation v
         'completed_at' => now(),
     ]);
 
+    SportsAiPredictionAnalysis::query()->create([
+        'sport' => 'nba',
+        'game_id' => 1001,
+        'prediction_id' => 2001,
+        'game_date' => now()->toDateString(),
+        'as_of_date' => now()->toDateString(),
+        'market' => 'game',
+        'provider' => 'openai',
+        'model' => 'gpt-4o-mini',
+        'input_hash' => 'healthcheck-shadow-hash',
+        'raw_payload' => [
+            'game' => ['matchup' => 'BOS @ LAL'],
+        ],
+        'recommendation' => 'moneyline',
+        'ai_confidence' => 63,
+        'analysis_confidence' => 59,
+        'bet_classification' => 'lean',
+        'summary' => 'Lean Lakers moneyline.',
+        'key_factors' => ['Model edge is positive.'],
+        'risk_flags' => ['moderate_confidence'],
+        'reason_codes' => ['model_home_edge'],
+        'market_notes' => ['moneyline' => 'Playable only at a fair number.'],
+        'calculated_edge' => ['spread_edge' => 0.9],
+        'metadata' => [
+            'shadow_agents' => [
+                'data_freshness' => ['freshness_status' => 'watch'],
+                'market_readiness' => ['market_status' => 'watch'],
+                'model_audit' => ['model_status' => 'usable'],
+                'publishing_guardrail' => [
+                    'decision' => 'downgrade',
+                    'publishable_classification' => 'watch',
+                    'summary' => 'Props need refresh before official labeling.',
+                    'required_actions' => ['nba:sync-player-props'],
+                ],
+            ],
+        ],
+        'latency_ms' => 1500,
+    ]);
+
+    SportsAiPredictionAnalysis::query()->create([
+        'sport' => 'nba',
+        'game_id' => 1002,
+        'prediction_id' => 2002,
+        'game_date' => now()->toDateString(),
+        'as_of_date' => now()->toDateString(),
+        'market' => 'game',
+        'provider' => 'openai',
+        'model' => 'gpt-4o-mini',
+        'input_hash' => 'healthcheck-shadow-keep-hash',
+        'raw_payload' => [
+            'game' => ['matchup' => 'NYK @ MIA'],
+        ],
+        'recommendation' => 'spread',
+        'ai_confidence' => 65,
+        'analysis_confidence' => 63,
+        'bet_classification' => 'lean',
+        'summary' => 'Lean Heat spread.',
+        'key_factors' => ['Model edge is modest.'],
+        'risk_flags' => ['moderate_confidence'],
+        'reason_codes' => ['model_spread_edge'],
+        'market_notes' => ['spread' => 'Lean only.'],
+        'calculated_edge' => ['spread_edge' => 0.5],
+        'metadata' => [
+            'shadow_agents' => [
+                'publishing_guardrail' => [
+                    'decision' => 'keep',
+                    'publishable_classification' => 'lean',
+                    'summary' => 'Lean label is aligned.',
+                    'required_actions' => [],
+                ],
+            ],
+        ],
+        'latency_ms' => 1200,
+    ]);
+
     $this->actingAs($admin)
         ->get(route('admin.healthchecks', ['view' => 'validation', 'sport' => 'nba']))
         ->assertOk()
@@ -52,6 +128,16 @@ test('admin healthchecks page includes latest validation summary in validation v
             ->where('latest_validation_run.scope', 'sport:nba')
             ->where('latest_validation_run.ai_summary.headline', 'NBA validation needs attention')
             ->where('latest_validation_run.ai_summary.recommended_actions.0', 'nba:generate-predictions')
+            ->where('ai_publishing.total', 2)
+            ->where('ai_publishing.enforcement.mode', 'shadow')
+            ->where('ai_publishing.enforcement.enabled', false)
+            ->where('ai_publishing.decisions.downgrade', 1)
+            ->where('ai_publishing.needs_attention.0.matchup', 'BOS @ LAL')
+            ->where('ai_publishing.needs_attention.0.required_actions.0', 'nba:sync-player-props')
+            ->where('ai_publishing_trend.total', 2)
+            ->where('ai_publishing_trend.changed_count', 1)
+            ->where('ai_publishing_trend.changed_rate', 0.5)
+            ->where('ai_publishing_trend.changed_rows.0.matchup', 'BOS @ LAL')
         );
 });
 

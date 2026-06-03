@@ -151,10 +151,6 @@ abstract class AbstractSyncGamesFromScoreboard
         }
 
         $events = $this->getResponseEvents($response);
-        if ($events === []) {
-            return 0;
-        }
-
         $gameModel = $this->gameModelClass();
         $uniqueKey = $this->getUniqueGameKey();
         $synced = 0;
@@ -363,7 +359,7 @@ abstract class AbstractSyncGamesFromScoreboard
 
         $summaryDate = $this->extractSummaryDate($header, $competition);
         if ($summaryDate !== null) {
-            $dateParts = GameData::extractDateParts($summaryDate);
+            $dateParts = $this->summaryDateParts($summaryDate, $header, $competition);
             if ($dateParts['game_date'] !== null) {
                 $updates['game_date'] = $dateParts['game_date'];
             }
@@ -375,6 +371,16 @@ abstract class AbstractSyncGamesFromScoreboard
         $game->update($updates);
 
         app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
+    }
+
+    /**
+     * @param  array<string, mixed>  $header
+     * @param  array<string, mixed>  $competition
+     * @return array{game_date:?string,game_time:?string}
+     */
+    protected function summaryDateParts(string $summaryDate, array $header, array $competition): array
+    {
+        return GameData::extractDateParts($summaryDate);
     }
 
     /**

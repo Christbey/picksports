@@ -4,6 +4,8 @@ This document explains when to use the repo-specific AI skills that support spor
 
 These workflows complement the existing Laravel Boost skills in `boost.json`.
 
+For runtime AI agents, publishing guardrails, operations sentinels, and paid-product data quality policy, see `docs/agents-and-operations.md`.
+
 ## Purpose
 
 Use these skills when a change is risky because it crosses:

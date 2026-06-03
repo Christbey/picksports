@@ -7,6 +7,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
 });
 
 it('requires authentication for prediction access debug page', function () {

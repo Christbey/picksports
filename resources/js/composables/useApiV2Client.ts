@@ -226,9 +226,53 @@ export function useApiV2Client() {
                     ),
                     options,
                 ),
+            playerAvailableSeasons: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<number[]>>(
+                    v2.sports.stats.player.availableSeasons.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            playerAvailableDates: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<string[]>>(
+                    v2.sports.stats.player.availableDates.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
             teams: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Stat>(
                     v2.sports.stats.team.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            teamAvailableSeasons: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<number[]>>(
+                    v2.sports.stats.team.availableSeasons.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            teamAvailableDates: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<string[]>>(
+                    v2.sports.stats.team.availableDates.url(
                         sport,
                         routeOptions(options.query),
                     ),

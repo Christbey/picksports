@@ -148,6 +148,54 @@ it('lists v2 player stats with stable metadata, filters, and raw stats bag', fun
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2StatsContractSports');
 
+it('lists v2 player stat available seasons and dates with stable metadata', function (
+    string $slug,
+    string $teamModel,
+    string $gameModel,
+    string $playerModel,
+    string $playerStatModel,
+    string $teamStatModel,
+    string $playerStatKey,
+    int $playerStatValue,
+) {
+    actAsV2StatsContractUser();
+
+    $team = $teamModel::factory()->create();
+    $opponent = $teamModel::factory()->create();
+    $game = $gameModel::factory()->create([
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'season' => 2026,
+        'status' => 'STATUS_FINAL',
+    ]);
+    $player = createV2StatsContractPlayer($playerModel, $team->id);
+    createV2StatsContractStat($playerStatModel, [
+        'player_id' => $player->id,
+        'team_id' => $team->id,
+        'game_id' => $game->id,
+        $playerStatKey => $playerStatValue,
+    ]);
+
+    $expectedDate = substr((string) $game->getAttribute('game_date'), 0, 10);
+
+    $this->getJson("/api/v2/sports/{$slug}/stats/player/available-seasons")
+        ->assertOk()
+        ->assertJsonPath('data.0', 2026)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.stat_type', 'player')
+        ->assertJsonPath('meta.contract', 'sports.stats.player.available-seasons');
+
+    $this->getJson("/api/v2/sports/{$slug}/stats/player/available-dates?season=2026")
+        ->assertOk()
+        ->assertJsonPath('data.0', $expectedDate)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.stat_type', 'player')
+        ->assertJsonPath('meta.contract', 'sports.stats.player.available-dates')
+        ->assertJsonPath('meta.filters.season', 2026);
+})->with('v2StatsContractSports');
+
 it('lists v2 team stats with stable metadata, filters, and raw stats bag', function (
     string $slug,
     string $teamModel,
@@ -224,6 +272,55 @@ it('lists v2 team stats with stable metadata, filters, and raw stats bag', funct
         ->and($response->json('meta.pagination'))->toBeArray()
         ->and($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
+})->with('v2StatsContractSports');
+
+it('lists v2 team stat available seasons and dates with stable metadata', function (
+    string $slug,
+    string $teamModel,
+    string $gameModel,
+    string $playerModel,
+    string $playerStatModel,
+    string $teamStatModel,
+    string $playerStatKey,
+    int $playerStatValue,
+    string $teamStatKey,
+    int $teamStatValue,
+) {
+    actAsV2StatsContractUser();
+
+    $team = $teamModel::factory()->create();
+    $opponent = $teamModel::factory()->create();
+    $game = $gameModel::factory()->create([
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'season' => 2026,
+        'status' => 'STATUS_FINAL',
+    ]);
+    createV2StatsContractStat($teamStatModel, [
+        'team_id' => $team->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        $teamStatKey => $teamStatValue,
+    ]);
+
+    $expectedDate = substr((string) $game->getAttribute('game_date'), 0, 10);
+
+    $this->getJson("/api/v2/sports/{$slug}/stats/team/available-seasons")
+        ->assertOk()
+        ->assertJsonPath('data.0', 2026)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.stat_type', 'team')
+        ->assertJsonPath('meta.contract', 'sports.stats.team.available-seasons');
+
+    $this->getJson("/api/v2/sports/{$slug}/stats/team/available-dates?season=2026")
+        ->assertOk()
+        ->assertJsonPath('data.0', $expectedDate)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.stat_type', 'team')
+        ->assertJsonPath('meta.contract', 'sports.stats.team.available-dates')
+        ->assertJsonPath('meta.filters.season', 2026);
 })->with('v2StatsContractSports');
 
 function actAsV2StatsContractUser(): User

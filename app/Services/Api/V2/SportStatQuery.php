@@ -6,6 +6,8 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class SportStatQuery
@@ -56,6 +58,66 @@ class SportStatQuery
     }
 
     /**
+     * @return Collection<int, int>
+     */
+    public function availableSeasons(
+        SportContext $context,
+        string $type,
+        ?Authenticatable $user = null,
+    ): Collection {
+        $statModel = $this->statModel($context, $type);
+        $gameModel = $this->gameModel($context);
+        $statTable = (new $statModel)->getTable();
+        $gameTable = (new $gameModel)->getTable();
+
+        if (! $this->hasColumn($statTable, 'game_id') || ! $this->hasColumn($gameTable, 'season')) {
+            return collect();
+        }
+
+        return $statModel::query()
+            ->join($gameTable, "{$gameTable}.id", '=', "{$statTable}.game_id")
+            ->whereNotNull("{$gameTable}.season")
+            ->select("{$gameTable}.season")
+            ->distinct()
+            ->orderByDesc("{$gameTable}.season")
+            ->pluck('season')
+            ->map(fn (mixed $season): int => (int) $season)
+            ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, string>
+     */
+    public function availableDates(
+        SportContext $context,
+        string $type,
+        array $filters = [],
+        ?Authenticatable $user = null,
+    ): Collection {
+        $statModel = $this->statModel($context, $type);
+        $gameModel = $this->gameModel($context);
+        $statTable = (new $statModel)->getTable();
+        $gameTable = (new $gameModel)->getTable();
+
+        if (! $this->hasColumn($statTable, 'game_id') || ! $this->hasColumn($gameTable, 'game_date')) {
+            return collect();
+        }
+
+        return $statModel::query()
+            ->join($gameTable, "{$gameTable}.id", '=', "{$statTable}.game_id")
+            ->when(($filters['season'] ?? null) && $this->hasColumn($gameTable, 'season'), fn (Builder $query): Builder => $query->where("{$gameTable}.season", $filters['season']))
+            ->when(($filters['season_type'] ?? null) && $this->hasColumn($gameTable, 'season_type'), fn (Builder $query): Builder => $query->where("{$gameTable}.season_type", $filters['season_type']))
+            ->whereNotNull("{$gameTable}.game_date")
+            ->selectRaw('DATE('.DB::getQueryGrammar()->wrap("{$gameTable}.game_date").') as game_date')
+            ->distinct()
+            ->orderBy('game_date')
+            ->pluck('game_date')
+            ->map(fn (mixed $date): string => (string) $date)
+            ->values();
+    }
+
+    /**
      * @return class-string<Model>
      */
     private function statModel(SportContext $context, string $type): string
@@ -69,6 +131,20 @@ class SportStatQuery
         }
 
         return $statModel;
+    }
+
+    /**
+     * @return class-string<Model>
+     */
+    private function gameModel(SportContext $context): string
+    {
+        $gameModel = $context->models['game'] ?? null;
+
+        if (! is_string($gameModel) || ! is_subclass_of($gameModel, Model::class)) {
+            abort(404, "Games are not available for {$context->slug}.");
+        }
+
+        return $gameModel;
     }
 
     /**

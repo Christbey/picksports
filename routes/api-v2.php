@@ -50,7 +50,11 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/markets/futures', [SportFuturesOddController::class, 'index'])->name('markets.futures.index');
             Route::get('/markets/player-props', [SportPlayerPropController::class, 'index'])->name('markets.player-props.index');
 
+            Route::get('/stats/player/available-seasons', [SportStatController::class, 'playerAvailableSeasons'])->name('stats.player.available-seasons');
+            Route::get('/stats/player/available-dates', [SportStatController::class, 'playerAvailableDates'])->name('stats.player.available-dates');
             Route::get('/stats/player', [SportStatController::class, 'playerIndex'])->name('stats.player.index');
+            Route::get('/stats/team/available-seasons', [SportStatController::class, 'teamAvailableSeasons'])->name('stats.team.available-seasons');
+            Route::get('/stats/team/available-dates', [SportStatController::class, 'teamAvailableDates'])->name('stats.team.available-dates');
             Route::get('/stats/team', [SportStatController::class, 'teamIndex'])->name('stats.team.index');
         });
 });

@@ -6,6 +6,7 @@ export * from './subscription';
 export * from './sports';
 export * from './sport-team';
 export * from './dashboard';
+export * from './api-v2';
 
 import type { Auth } from './auth';
 import type { SubscriptionInfo } from './subscription';

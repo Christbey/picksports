@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\SportController;
+use App\Http\Controllers\Api\V2\SportFuturesOddController;
 use App\Http\Controllers\Api\V2\SportGameController;
 use App\Http\Controllers\Api\V2\SportPlayerController;
 use App\Http\Controllers\Api\V2\SportPlayerPropController;
@@ -32,6 +33,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
 
             Route::get('/teams', [SportTeamController::class, 'index'])->name('teams.index');
             Route::get('/teams/{team}', [SportTeamController::class, 'show'])->name('teams.show');
+            Route::get('/teams/{team}/futures', [SportFuturesOddController::class, 'teamIndex'])->name('teams.futures.index');
             Route::get('/teams/{team}/players', [SportPlayerController::class, 'teamIndex'])->name('teams.players.index');
 
             Route::get('/players', [SportPlayerController::class, 'index'])->name('players.index');
@@ -43,6 +45,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/predictions', [SportPredictionController::class, 'index'])->name('predictions.index');
             Route::get('/predictions/{prediction}', [SportPredictionController::class, 'show'])->name('predictions.show');
 
+            Route::get('/markets/futures', [SportFuturesOddController::class, 'index'])->name('markets.futures.index');
             Route::get('/markets/player-props', [SportPlayerPropController::class, 'index'])->name('markets.player-props.index');
 
             Route::get('/stats/player', [SportStatController::class, 'playerIndex'])->name('stats.player.index');

@@ -9,14 +9,20 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import { usePredictionList } from '@/composables/usePredictionList';
-import { useSeasonFilter } from '@/composables/useSeasonFilter';
 import {
     isMlbRegularSeasonType,
     isMlbSpringTrainingType,
 } from '@/lib/mlbSeasonType';
-import type { PredictionListItem, SportPredictionsConfig } from '@/types';
+import type {
+    ApiV2Prediction,
+    ApiV2Query,
+    ApiV2TeamSummary,
+    PredictionListGameTeam,
+    PredictionListItem,
+    SportPredictionsConfig,
+} from '@/types';
 
 const props = defineProps<{
     config: SportPredictionsConfig;
@@ -31,10 +37,9 @@ const week = ref('');
 const searchQuery = ref('');
 const betViewMode = ref<'recommended' | 'all'>('all');
 const isBootstrapping = ref(true);
-const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
-    useSeasonFilter(
-        () => `/api/v1/${props.config.sport}/predictions/available-seasons`,
-    );
+const api = useApiV2Client();
+const availableSeasons = ref<number[]>([]);
+const selectedSeason = ref('');
 
 const weekOptions = computed(() => {
     if (!props.config.seasonWeekConfig || !seasonType.value) return [];
@@ -61,26 +66,28 @@ const setDefaultSeasonWeekFilters = () => {
     week.value = '1';
 };
 
-const buildParams = (page: number): URLSearchParams => {
-    const params = new URLSearchParams({ page: String(page) });
+const buildQuery = (page: number): ApiV2Query => {
+    const params: ApiV2Query = {
+        page,
+    };
 
     if (filterMode.value === 'date' && selectedDate.value) {
-        params.append('from_date', selectedDate.value);
-        params.append('to_date', selectedDate.value);
+        params.from_date = selectedDate.value;
+        params.to_date = selectedDate.value;
     }
 
     if (selectedSeason.value) {
-        params.append('season', selectedSeason.value);
+        params.season = selectedSeason.value;
     }
 
     if (filterMode.value === 'seasonWeek') {
         if (seasonType.value) {
             const mappedSeasonType = mapSeasonTypeParam(seasonType.value);
             if (mappedSeasonType) {
-                params.append('season_type', mappedSeasonType);
+                params.season_type = mappedSeasonType;
             }
         }
-        if (week.value) params.append('week', week.value);
+        if (week.value) params.week = week.value;
     }
 
     return params;
@@ -109,11 +116,16 @@ const {
         return { data: [], meta: null };
     }
 
-    const payload = await fetchJson<{ data: PredictionListItem[]; meta: any }>(
-        `/api/v1/${props.config.sport}/predictions?${buildParams(page)}`,
-    );
+    const payload = await api.predictions.index(props.config.sport, {
+        query: buildQuery(page),
+    });
+
     if (!payload) throw new Error('Failed to fetch predictions');
-    return payload;
+
+    return {
+        data: payload.data.map(mapV2Prediction),
+        meta: payload.meta.pagination ?? null,
+    };
 });
 
 const formatDateLabel = (dateStr: string) => {
@@ -127,13 +139,34 @@ const formatDateLabel = (dateStr: string) => {
     return dateStr === today.value ? `${label} (Today)` : label;
 };
 
+const fetchAvailableSeasons = async () => {
+    const payload = await api.predictions.availableSeasons(props.config.sport);
+
+    if (!payload) {
+        throw new Error('Failed to fetch available seasons');
+    }
+
+    availableSeasons.value = Array.isArray(payload.data)
+        ? payload.data
+              .map((season) => Number(season))
+              .filter((season) => Number.isFinite(season))
+        : [];
+
+    if (!selectedSeason.value && availableSeasons.value.length > 0) {
+        const currentYear = new Date().getFullYear();
+        const preferredSeason = availableSeasons.value.includes(currentYear)
+            ? currentYear
+            : Math.max(...availableSeasons.value);
+
+        selectedSeason.value = String(preferredSeason);
+    }
+};
+
 const fetchAvailableDates = async () => {
-    const seasonQuery = selectedSeason.value
-        ? `?season=${encodeURIComponent(selectedSeason.value)}`
-        : '';
-    const data = await fetchJson<{ data?: string[] }>(
-        `/api/v1/${props.config.sport}/predictions/available-dates${seasonQuery}`,
-    );
+    const data = await api.predictions.availableDates(props.config.sport, {
+        query: selectedSeason.value ? { season: selectedSeason.value } : {},
+    });
+
     if (!data) throw new Error('Failed to fetch available dates');
     availableDates.value = Array.isArray(data.data) ? data.data : [];
 
@@ -157,6 +190,59 @@ const fetchAvailableDates = async () => {
                 ? futureDates[0]
                 : pastDates[pastDates.length - 1];
     }
+};
+
+const numberValue = (value: unknown): number | undefined => {
+    if (value === null || value === undefined || value === '') {
+        return undefined;
+    }
+
+    const numeric = Number(value);
+
+    return Number.isFinite(numeric) ? numeric : undefined;
+};
+
+const teamPayload = (
+    team: ApiV2TeamSummary | null | undefined,
+): PredictionListGameTeam => ({
+    abbreviation: team?.abbreviation ?? team?.short_display_name ?? '',
+    school: team?.location ?? undefined,
+    mascot: team?.name ?? undefined,
+    location: team?.location ?? undefined,
+    name: team?.display_name ?? team?.name ?? undefined,
+    logo: team?.logo_url ?? undefined,
+});
+
+const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
+    const projection = prediction.projection ?? {};
+    const game = prediction.game;
+    const homeWinProbability = numberValue(projection.home_win_probability);
+
+    return {
+        id: Number(prediction.id),
+        game_id: numberValue(prediction.game_id),
+        predicted_spread: numberValue(projection.predicted_spread),
+        predicted_total: numberValue(projection.predicted_total),
+        win_probability: homeWinProbability,
+        home_win_probability: homeWinProbability,
+        away_win_probability: numberValue(projection.away_win_probability),
+        confidence_score: numberValue(projection.confidence_score),
+        created_at: prediction.created_at,
+        updated_at: prediction.updated_at,
+        game: {
+            id: Number(game?.id ?? prediction.game_id ?? 0),
+            game_date: game?.game_date ?? '',
+            game_time: game?.game_time ?? undefined,
+            status: prediction.status ?? game?.status ?? '',
+            week: numberValue(game?.week),
+            season_type:
+                game?.season_type === null || game?.season_type === undefined
+                    ? undefined
+                    : String(game.season_type),
+            home_team: teamPayload(game?.home_team),
+            away_team: teamPayload(game?.away_team),
+        },
+    };
 };
 
 watch(selectedDate, () => {

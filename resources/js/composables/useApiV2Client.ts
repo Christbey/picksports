@@ -169,6 +169,28 @@ export function useApiV2Client() {
                     ),
                     options,
                 ),
+            availableSeasons: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<number[]>>(
+                    v2.sports.predictions.availableSeasons.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            availableDates: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<string[]>>(
+                    v2.sports.predictions.availableDates.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
             show: (
                 sport: ApiV2SportSlug,
                 prediction: ApiV2Id,

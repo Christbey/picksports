@@ -196,6 +196,19 @@ export type ApiV2Stat = {
     [key: string]: unknown;
 };
 
+export type ApiV2TeamMetric = {
+    id: ApiV2Id;
+    sport: ApiV2SportSlug;
+    team_id?: ApiV2Id | null;
+    season?: number | string | null;
+    season_type?: number | string | null;
+    team?: ApiV2TeamSummary | null;
+    calculation_date?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    [key: string]: unknown;
+};
+
 export type ApiV2PlayerProp = {
     id: ApiV2Id;
     sport: ApiV2SportSlug;

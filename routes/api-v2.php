@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\V2\SportPlayerPropController;
 use App\Http\Controllers\Api\V2\SportPredictionController;
 use App\Http\Controllers\Api\V2\SportStatController;
 use App\Http\Controllers\Api\V2\SportTeamController;
+use App\Http\Controllers\Api\V2\SportTeamMetricController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v2')->name('v2.')->group(function (): void {
@@ -34,6 +35,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/teams', [SportTeamController::class, 'index'])->name('teams.index');
             Route::get('/teams/{team}', [SportTeamController::class, 'show'])->name('teams.show');
             Route::get('/teams/{team}/futures', [SportFuturesOddController::class, 'teamIndex'])->name('teams.futures.index');
+            Route::get('/teams/{team}/metrics', [SportTeamMetricController::class, 'teamShow'])->name('teams.metrics.show');
             Route::get('/teams/{team}/players', [SportPlayerController::class, 'teamIndex'])->name('teams.players.index');
 
             Route::get('/players', [SportPlayerController::class, 'index'])->name('players.index');
@@ -49,6 +51,9 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
 
             Route::get('/markets/futures', [SportFuturesOddController::class, 'index'])->name('markets.futures.index');
             Route::get('/markets/player-props', [SportPlayerPropController::class, 'index'])->name('markets.player-props.index');
+
+            Route::get('/metrics/teams/available-seasons', [SportTeamMetricController::class, 'availableSeasons'])->name('metrics.teams.available-seasons');
+            Route::get('/metrics/teams', [SportTeamMetricController::class, 'index'])->name('metrics.teams.index');
 
             Route::get('/stats/player/available-seasons', [SportStatController::class, 'playerAvailableSeasons'])->name('stats.player.available-seasons');
             Route::get('/stats/player/available-dates', [SportStatController::class, 'playerAvailableDates'])->name('stats.player.available-dates');

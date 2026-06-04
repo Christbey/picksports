@@ -16,6 +16,7 @@ import type {
     ApiV2SportSlug,
     ApiV2Stat,
     ApiV2Team,
+    ApiV2TeamMetric,
 } from '@/types';
 
 type RequestOptions = {
@@ -118,6 +119,18 @@ export function useApiV2Client() {
             ) =>
                 collection<ApiV2FuturesOdd>(
                     v2.sports.teams.futures.index.url(
+                        { sport, team },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            metrics: (
+                sport: ApiV2SportSlug,
+                team: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<ApiV2TeamMetric>(
+                    v2.sports.teams.metrics.show.url(
                         { sport, team },
                         routeOptions(options.query),
                     ),
@@ -273,6 +286,28 @@ export function useApiV2Client() {
             ) =>
                 get<ApiV2ItemResponse<string[]>>(
                     v2.sports.stats.team.availableDates.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+        },
+
+        metrics: {
+            teams: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
+                collection<ApiV2TeamMetric>(
+                    v2.sports.metrics.teams.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            teamAvailableSeasons: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<number[]>>(
+                    v2.sports.metrics.teams.availableSeasons.url(
                         sport,
                         routeOptions(options.query),
                     ),

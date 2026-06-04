@@ -53,7 +53,9 @@ export const nbaPlayerStatsPageConfig = {
     description: 'Season averages leaderboard for NBA players',
     breadcrumb: { title: 'NBA Player Stats', href: '/nba/player-stats' },
     bannerStorageKey: 'nba-player-stats-banner-dismissed',
-    leaderboardEndpoint: '/api/v1/nba/player-stats/leaderboard',
+    leaderboardEndpoint: '/api/v2/sports/nba/leaderboards/players',
+    availableSeasonsEndpoint:
+        '/api/v2/sports/nba/leaderboards/players/available-seasons',
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
         { value: '2', label: 'Regular Season' },
@@ -70,7 +72,9 @@ export const cbbPlayerStatsPageConfig = {
     description: 'Season averages leaderboard for college basketball players',
     breadcrumb: { title: 'CBB Player Stats', href: '/cbb/player-stats' },
     bannerStorageKey: 'cbb-player-stats-banner-dismissed',
-    leaderboardEndpoint: '/api/v1/cbb/player-stats/leaderboard',
+    leaderboardEndpoint: '/api/v2/sports/cbb/leaderboards/players',
+    availableSeasonsEndpoint:
+        '/api/v2/sports/cbb/leaderboards/players/available-seasons',
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
         { value: '2', label: 'Regular Season' },
@@ -87,7 +91,9 @@ export const nflPlayerStatsPageConfig = {
     description: 'Season leaderboard for NFL player production',
     breadcrumb: { title: 'NFL Player Stats', href: '/nfl/player-stats' },
     bannerStorageKey: 'nfl-player-stats-banner-dismissed',
-    leaderboardEndpoint: '/api/v1/nfl/player-stats/leaderboard',
+    leaderboardEndpoint: '/api/v2/sports/nfl/leaderboards/players',
+    availableSeasonsEndpoint:
+        '/api/v2/sports/nfl/leaderboards/players/available-seasons',
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
         { value: '2', label: 'Regular Season' },
@@ -782,7 +788,9 @@ export const mlbPlayerStatsPageConfig = {
     description: 'Season leaderboard for MLB hitters',
     breadcrumb: { title: 'MLB Player Stats', href: '/mlb/player-stats' },
     bannerStorageKey: 'mlb-player-stats-banner-dismissed',
-    leaderboardEndpoint: '/api/v1/mlb/player-stats/leaderboard',
+    leaderboardEndpoint: '/api/v2/sports/mlb/leaderboards/players',
+    availableSeasonsEndpoint:
+        '/api/v2/sports/mlb/leaderboards/players/available-seasons',
     minGames: 10,
     defaultSeasonType: '2',
     seasonTypeOptions: [
@@ -1016,7 +1024,9 @@ export const cfbPlayerStatsPageConfig = {
     description: 'Season leaderboard for college football player production',
     breadcrumb: { title: 'CFB Player Stats', href: '/cfb/player-stats' },
     bannerStorageKey: 'cfb-player-stats-banner-dismissed',
-    leaderboardEndpoint: '/api/v1/cfb/player-stats/leaderboard',
+    leaderboardEndpoint: '/api/v2/sports/cfb/leaderboards/players',
+    availableSeasonsEndpoint:
+        '/api/v2/sports/cfb/leaderboards/players/available-seasons',
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
         { value: '2', label: 'Regular Season' },

@@ -1,0 +1,119 @@
+<?php
+
+namespace App\Services\Api\V2;
+
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
+
+class SportStatQuery
+{
+    private const DEFAULT_PER_PAGE = 25;
+
+    private const MAX_PER_PAGE = 100;
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginate(
+        SportContext $context,
+        string $type,
+        array $filters = [],
+        ?Authenticatable $user = null,
+    ): LengthAwarePaginator {
+        return $this->query($context, $type, $filters, $user)
+            ->paginate($this->perPage($filters));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Builder<Model>
+     */
+    public function query(
+        SportContext $context,
+        string $type,
+        array $filters = [],
+        ?Authenticatable $user = null,
+    ): Builder {
+        $statModel = $this->statModel($context, $type);
+        $table = (new $statModel)->getTable();
+
+        return $statModel::query()
+            ->with($this->relationsFor($statModel))
+            ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
+            ->when(($filters['team_id'] ?? null) && $this->hasColumn($table, 'team_id'), fn (Builder $query): Builder => $query->where('team_id', $filters['team_id']))
+            ->when(($filters['player_id'] ?? null) && $type === 'player' && $this->hasColumn($table, 'player_id'), fn (Builder $query): Builder => $query->where('player_id', $filters['player_id']))
+            ->when($filters['stat_type'] ?? null, fn (Builder $query, string $statType): Builder => $this->whereStatType($query, $table, $statType))
+            ->when(($filters['team_type'] ?? null) && $this->hasColumn($table, 'team_type'), fn (Builder $query): Builder => $query->where('team_type', $filters['team_type']))
+            ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $this->whereGameColumn($query, 'season', $season))
+            ->when($filters['season_type'] ?? null, fn (Builder $query, string $seasonType): Builder => $this->whereGameColumn($query, 'season_type', $seasonType))
+            ->when($filters['week'] ?? null, fn (Builder $query, int $week): Builder => $this->whereGameColumn($query, 'week', $week))
+            ->when($filters['from_date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '>=', $date))
+            ->when($filters['to_date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '<=', $date))
+            ->orderByDesc($this->hasColumn($table, 'updated_at') ? "{$table}.updated_at" : "{$table}.id");
+    }
+
+    /**
+     * @return class-string<Model>
+     */
+    private function statModel(SportContext $context, string $type): string
+    {
+        $key = $type === 'team' ? 'team_stat' : 'player_stat';
+        $message = $type === 'team' ? 'Team stats' : 'Player stats';
+        $statModel = $context->models[$key] ?? null;
+
+        if (! is_string($statModel) || ! is_subclass_of($statModel, Model::class)) {
+            abort(404, "{$message} are not available for {$context->slug}.");
+        }
+
+        return $statModel;
+    }
+
+    /**
+     * @param  class-string<Model>  $statModel
+     * @return array<int, string>
+     */
+    private function relationsFor(string $statModel): array
+    {
+        return array_values(array_filter(
+            ['game', 'team', 'player'],
+            fn (string $relation): bool => method_exists($statModel, $relation),
+        ));
+    }
+
+    private function whereStatType(Builder $query, string $table, string $statType): Builder
+    {
+        foreach (['stat_type', 'team_type'] as $column) {
+            if ($this->hasColumn($table, $column)) {
+                return $query->where($column, $statType);
+            }
+        }
+
+        return $query;
+    }
+
+    private function whereGameColumn(Builder $query, string $column, mixed $value): Builder
+    {
+        return $query->whereHas('game', fn (Builder $query): Builder => $query->where($column, $value));
+    }
+
+    private function whereGameDate(Builder $query, string $operator, string $date): Builder
+    {
+        return $query->whereHas('game', fn (Builder $query): Builder => $query->whereDate('game_date', $operator, $date));
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        return Schema::hasColumn($table, $column);
+    }
+
+    /**
+     * @param  array{per_page?: int}  $filters
+     */
+    private function perPage(array $filters): int
+    {
+        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
+    }
+}

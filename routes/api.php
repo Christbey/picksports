@@ -60,3 +60,5 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
     }
 
 });
+
+require base_path('routes/api-v2.php');

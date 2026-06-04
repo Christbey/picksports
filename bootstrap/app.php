@@ -5,6 +5,7 @@ use App\Http\Middleware\EnsureUserCompletedOnboarding;
 use App\Http\Middleware\EnsureUserHasPermission;
 use App\Http\Middleware\EnsureUserIsAdmin;
 use App\Http\Middleware\EnsureUserIsSubscribed;
+use App\Http\Middleware\EnsureV2SportApiAccess;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\UpdateUserLastActive;
@@ -46,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'onboarded' => EnsureUserCompletedOnboarding::class,
             'subscribed' => EnsureUserIsSubscribed::class,
             'permission' => EnsureUserHasPermission::class,
+            'v2.sport-api-access' => EnsureV2SportApiAccess::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

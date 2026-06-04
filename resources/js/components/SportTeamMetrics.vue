@@ -120,6 +120,7 @@ const fetchMetrics = async () => {
             ? `?season=${encodeURIComponent(selectedSeason.value)}`
             : '';
         const params = new URLSearchParams(seasonQuery.replace(/^\?/, ''));
+        params.set('per_page', '100');
         if (selectedSeasonType.value) {
             params.set('season_type', selectedSeasonType.value);
         }
@@ -130,8 +131,8 @@ const fetchMetrics = async () => {
 
         const data = await response.json();
         metrics.value = data.data;
-        tierLimit.value = data.tier_limit;
-        tierName.value = data.tier_name;
+        tierLimit.value = data.meta?.tier?.limit ?? data.tier_limit ?? null;
+        tierName.value = data.meta?.tier?.name ?? data.tier_name ?? null;
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {

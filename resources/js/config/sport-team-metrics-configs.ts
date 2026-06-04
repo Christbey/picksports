@@ -1,7 +1,6 @@
 import {
     formatBattingAverage,
     formatNumber,
-    formatPercent,
     ratingClass,
 } from '@/components/sport-team-metrics-helpers';
 import type { MetricsConfig } from '@/components/SportTeamMetrics.vue';
@@ -45,7 +44,9 @@ export function createSportTeamMetricsConfig(
         title: params.title,
         subtitle: params.subtitle,
         apiEndpoint:
-            params.apiEndpoint ?? `/api/v1/${params.sport}/team-metrics`,
+            params.apiEndpoint ??
+            `/api/v2/sports/${params.sport}/metrics/teams`,
+        availableSeasonsEndpoint: `/api/v2/sports/${params.sport}/metrics/teams/available-seasons`,
         breadcrumbHref:
             params.breadcrumbHref ?? `/${params.sport}/team-metrics`,
         teamLink: params.teamLink,

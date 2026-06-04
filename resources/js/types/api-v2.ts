@@ -209,6 +209,13 @@ export type ApiV2TeamMetric = {
     [key: string]: unknown;
 };
 
+export type ApiV2PlayerLeaderboardRow = {
+    player_id?: ApiV2Id | null;
+    player?: ApiV2Record | null;
+    games_played?: number | string | null;
+    [key: string]: unknown;
+};
+
 export type ApiV2PlayerProp = {
     id: ApiV2Id;
     sport: ApiV2SportSlug;

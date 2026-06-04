@@ -9,6 +9,7 @@ import type {
     ApiV2ItemResponse,
     ApiV2PayloadInspector,
     ApiV2Player,
+    ApiV2PlayerLeaderboardRow,
     ApiV2PlayerProp,
     ApiV2Prediction,
     ApiV2Query,
@@ -308,6 +309,28 @@ export function useApiV2Client() {
             ) =>
                 get<ApiV2ItemResponse<number[]>>(
                     v2.sports.metrics.teams.availableSeasons.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+        },
+
+        leaderboards: {
+            players: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
+                collection<ApiV2PlayerLeaderboardRow>(
+                    v2.sports.leaderboards.players.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            playerAvailableSeasons: (
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<ApiV2ItemResponse<number[]>>(
+                    v2.sports.leaderboards.players.availableSeasons.url(
                         sport,
                         routeOptions(options.query),
                     ),

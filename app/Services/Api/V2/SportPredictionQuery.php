@@ -6,6 +6,8 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class SportPredictionQuery
@@ -40,6 +42,71 @@ class SportPredictionQuery
         ?Authenticatable $user = null,
     ): Model {
         return $this->query($context, ['game_id' => (int) $game], $user)->firstOrFail();
+    }
+
+    /**
+     * @return Collection<int, int>
+     */
+    public function availableSeasons(SportContext $context, ?Authenticatable $user = null): Collection
+    {
+        $predictionModel = $this->predictionModel($context);
+        $gameModel = $this->gameModel($context);
+        $predictionTable = (new $predictionModel)->getTable();
+        $gameTable = (new $gameModel)->getTable();
+
+        if ($this->hasColumn($predictionTable, 'season')) {
+            return $this->query($context, [], $user)
+                ->toBase()
+                ->select("{$predictionTable}.season")
+                ->whereNotNull("{$predictionTable}.season")
+                ->distinct()
+                ->orderByDesc("{$predictionTable}.season")
+                ->pluck('season')
+                ->map(fn (mixed $season): int => (int) $season)
+                ->values();
+        }
+
+        if (! $this->hasColumn($predictionTable, 'game_id') || ! $this->hasColumn($gameTable, 'season')) {
+            return collect();
+        }
+
+        return $predictionModel::query()
+            ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
+            ->whereNotNull("{$gameTable}.season")
+            ->select("{$gameTable}.season")
+            ->distinct()
+            ->orderByDesc("{$gameTable}.season")
+            ->pluck('season')
+            ->map(fn (mixed $season): int => (int) $season)
+            ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, string>
+     */
+    public function availableDates(SportContext $context, array $filters = [], ?Authenticatable $user = null): Collection
+    {
+        $predictionModel = $this->predictionModel($context);
+        $gameModel = $this->gameModel($context);
+        $predictionTable = (new $predictionModel)->getTable();
+        $gameTable = (new $gameModel)->getTable();
+
+        if (! $this->hasColumn($predictionTable, 'game_id') || ! $this->hasColumn($gameTable, 'game_date')) {
+            return collect();
+        }
+
+        $query = $predictionModel::query()
+            ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
+            ->when(($filters['season'] ?? null) && $this->hasColumn($predictionTable, 'season'), fn (Builder $query): Builder => $query->where("{$predictionTable}.season", $filters['season']))
+            ->whereNotNull("{$gameTable}.game_date")
+            ->selectRaw('DATE('.DB::getQueryGrammar()->wrap("{$gameTable}.game_date").') as game_date')
+            ->distinct()
+            ->orderBy('game_date');
+
+        return $query->pluck('game_date')
+            ->map(fn (mixed $date): string => (string) $date)
+            ->values();
     }
 
     /**
@@ -80,6 +147,20 @@ class SportPredictionQuery
         }
 
         return $predictionModel;
+    }
+
+    /**
+     * @return class-string<Model>
+     */
+    private function gameModel(SportContext $context): string
+    {
+        $gameModel = $context->models['game'] ?? null;
+
+        if (! is_string($gameModel) || ! is_subclass_of($gameModel, Model::class)) {
+            abort(404, "Games are not available for {$context->slug}.");
+        }
+
+        return $gameModel;
     }
 
     /**

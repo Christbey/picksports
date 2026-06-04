@@ -115,6 +115,66 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2PredictionContractSports');
 
+it('lists v2 prediction available seasons with stable metadata', function (
+    string $slug,
+    string $teamModel,
+    string $gameModel,
+    string $predictionModel,
+) {
+    v2PredictionContractActingAsBypassUser();
+
+    v2PredictionContractCreateGamePrediction($teamModel, $gameModel, $predictionModel);
+
+    $this->getJson("/api/v2/sports/{$slug}/predictions/available-seasons")
+        ->assertOk()
+        ->assertJsonStructure([
+            'data',
+            'meta' => [
+                'version',
+                'sport',
+                'contract',
+                'freshness',
+                'warnings',
+            ],
+        ])
+        ->assertJsonPath('data.0', 2026)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.contract', 'sports.predictions.available-seasons');
+})->with('v2PredictionContractSports');
+
+it('lists v2 prediction available dates with optional season filtering', function (
+    string $slug,
+    string $teamModel,
+    string $gameModel,
+    string $predictionModel,
+) {
+    v2PredictionContractActingAsBypassUser();
+
+    [$game] = v2PredictionContractCreateGamePrediction($teamModel, $gameModel, $predictionModel);
+
+    $expectedDate = substr((string) $game->getAttribute('game_date'), 0, 10);
+
+    $this->getJson("/api/v2/sports/{$slug}/predictions/available-dates?season=2026")
+        ->assertOk()
+        ->assertJsonStructure([
+            'data',
+            'meta' => [
+                'version',
+                'sport',
+                'contract',
+                'filters',
+                'freshness',
+                'warnings',
+            ],
+        ])
+        ->assertJsonPath('data.0', $expectedDate)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.contract', 'sports.predictions.available-dates')
+        ->assertJsonPath('meta.filters.season', 2026);
+})->with('v2PredictionContractSports');
+
 it('shows a v2 prediction with sport, freshness, and warning metadata', function (
     string $slug,
     string $teamModel,

@@ -53,6 +53,35 @@ class SportPredictionController extends Controller
         ]);
     }
 
+    public function availableSeasons(
+        string $sport,
+        Request $request,
+        SportContextResolver $sports,
+        SportPredictionQuery $predictions,
+    ): JsonResponse {
+        $context = $sports->resolve($sport);
+
+        return response()->json([
+            'data' => $predictions->availableSeasons($context, $request->user()),
+            'meta' => $this->filterMeta($context->slug, 'sports.predictions.available-seasons'),
+        ]);
+    }
+
+    public function availableDates(
+        string $sport,
+        SportPredictionIndexRequest $request,
+        SportContextResolver $sports,
+        SportPredictionQuery $predictions,
+    ): JsonResponse {
+        $context = $sports->resolve($sport);
+        $filters = $request->validatedFilters();
+
+        return response()->json([
+            'data' => $predictions->availableDates($context, $filters, $request->user()),
+            'meta' => $this->filterMeta($context->slug, 'sports.predictions.available-dates', $filters),
+        ]);
+    }
+
     public function gamePrediction(
         string $sport,
         string $game,
@@ -97,6 +126,23 @@ class SportPredictionController extends Controller
             'version' => 'v2',
             'sport' => $sport,
             'contract' => 'sports.predictions.show',
+            'tier' => $this->tierMeta(),
+            'freshness' => [],
+            'warnings' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    private function filterMeta(string $sport, string $contract, array $filters = []): array
+    {
+        return [
+            'version' => 'v2',
+            'sport' => $sport,
+            'contract' => $contract,
+            'filters' => $filters,
             'tier' => $this->tierMeta(),
             'freshness' => [],
             'warnings' => [],

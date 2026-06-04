@@ -43,6 +43,8 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/player-props', [SportPlayerPropController::class, 'index'])->name('player-props.index');
 
             Route::get('/predictions', [SportPredictionController::class, 'index'])->name('predictions.index');
+            Route::get('/predictions/available-seasons', [SportPredictionController::class, 'availableSeasons'])->name('predictions.available-seasons');
+            Route::get('/predictions/available-dates', [SportPredictionController::class, 'availableDates'])->name('predictions.available-dates');
             Route::get('/predictions/{prediction}', [SportPredictionController::class, 'show'])->name('predictions.show');
 
             Route::get('/markets/futures', [SportFuturesOddController::class, 'index'])->name('markets.futures.index');

@@ -48,9 +48,10 @@ export type ApiV2FreshnessMeta = {
 export type ApiV2Meta = {
     version?: 'v2' | string;
     sport?: ApiV2SportSlug;
+    contract?: string;
     filters?: ApiV2Record;
     pagination?: ApiV2PaginationMeta;
-    tier?: ApiV2AccessTier;
+    tier?: ApiV2AccessTier | ApiV2Record;
     freshness?: ApiV2FreshnessMeta;
     warnings?: string[];
     generated_at?: string;
@@ -67,81 +68,142 @@ export type ApiV2ItemResponse<T, TMeta extends ApiV2Meta = ApiV2Meta> = {
     meta?: TMeta;
 };
 
-export type ApiV2Entity<TAttributes extends ApiV2Record = ApiV2Record> = {
+export type ApiV2TeamSummary = {
     id: ApiV2Id;
-    type?: string;
-    attributes: TAttributes;
-    relationships?: ApiV2Record;
-    links?: ApiV2Record;
+    espn_id?: string | number | null;
+    abbreviation?: string | null;
+    location?: string | null;
+    name?: string | null;
+    display_name?: string | null;
+    short_display_name?: string | null;
+    logo_url?: string | null;
+    team_id?: ApiV2Id | null;
+    position?: string | null;
+    [key: string]: unknown;
 };
 
-export type ApiV2Sport = ApiV2Entity<{
+export type ApiV2PlayerSummary = {
+    id: ApiV2Id;
+    team_id?: ApiV2Id | null;
+    display_name?: string | null;
+    full_name?: string | null;
+    position?: string | null;
+    [key: string]: unknown;
+};
+
+export type ApiV2GameSummary = {
+    id: ApiV2Id;
+    espn_id?: string | number | null;
+    season?: number | string | null;
+    season_type?: number | string | null;
+    week?: number | string | null;
+    name?: string | null;
+    short_name?: string | null;
+    game_date?: string | null;
+    game_time?: string | null;
+    status?: string | null;
+    home_team_id?: ApiV2Id | null;
+    away_team_id?: ApiV2Id | null;
+    home_team?: ApiV2TeamSummary | null;
+    away_team?: ApiV2TeamSummary | null;
+    [key: string]: unknown;
+};
+
+export type ApiV2Sport = {
     slug: ApiV2SportSlug;
     name: string;
+    label?: string;
     active?: boolean;
     free_access?: boolean;
     supports?: string[];
     [key: string]: unknown;
-}>;
+};
 
-export type ApiV2Game = ApiV2Entity<{
-    sport?: ApiV2SportSlug;
-    game_date?: string | null;
-    game_time?: string | null;
-    starts_at?: string | null;
-    status?: string | null;
-    season?: number | string | null;
-    season_type?: number | string | null;
-    home_team?: string | null;
-    away_team?: string | null;
+export type ApiV2Game = ApiV2GameSummary & {
+    sport: ApiV2SportSlug;
     home_score?: number | null;
     away_score?: number | null;
-    [key: string]: unknown;
-}>;
+    has_prediction?: boolean;
+    updated_at?: string | null;
+};
 
-export type ApiV2Team = ApiV2Entity<{
-    name?: string | null;
-    abbreviation?: string | null;
-    market?: string | null;
+export type ApiV2Team = ApiV2TeamSummary & {
+    sport: ApiV2SportSlug;
+    nickname?: string | null;
     conference?: string | null;
+    league?: string | null;
     division?: string | null;
-    [key: string]: unknown;
-}>;
+    color?: string | null;
+    alternate_color?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+};
 
-export type ApiV2Player = ApiV2Entity<{
-    name?: string | null;
-    display_name?: string | null;
-    position?: string | null;
-    team?: string | null;
+export type ApiV2Player = ApiV2PlayerSummary & {
+    sport: ApiV2SportSlug;
+    espn_id?: string | number | null;
+    first_name?: string | null;
+    last_name?: string | null;
+    jersey_number?: string | number | null;
+    height?: string | number | null;
+    weight?: string | number | null;
+    age?: number | null;
+    experience?: string | number | null;
+    year?: string | number | null;
+    college?: string | null;
+    hometown?: string | null;
     status?: string | null;
-    [key: string]: unknown;
-}>;
+    batting_hand?: string | null;
+    throwing_hand?: string | null;
+    headshot_url?: string | null;
+    team?: ApiV2TeamSummary | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+};
 
-export type ApiV2Prediction = ApiV2Entity<{
-    game_id?: ApiV2Id;
-    predicted_winner?: string | null;
-    confidence?: number | null;
-    edge?: number | null;
-    recommendation?: string | null;
-    graded_at?: string | null;
-    result?: string | null;
-    [key: string]: unknown;
-}>;
-
-export type ApiV2Stat = ApiV2Entity<{
-    subject_type?: 'team' | 'player' | string;
-    subject_id?: ApiV2Id;
-    season?: number | string | null;
+export type ApiV2Prediction = {
+    id: ApiV2Id;
+    sport: ApiV2SportSlug;
     game_id?: ApiV2Id | null;
-    stats?: ApiV2Record;
+    game?: ApiV2GameSummary | null;
+    status?: string | null;
+    pick?: ApiV2Record;
+    projection?: ApiV2Record;
+    market_summary?: ApiV2Record;
+    created_at?: string | null;
+    updated_at?: string | null;
     [key: string]: unknown;
-}>;
+};
 
-export type ApiV2PlayerProp = ApiV2Entity<{
+export type ApiV2Stat = {
+    id: ApiV2Id;
+    sport: ApiV2SportSlug;
+    type?: 'team' | 'player' | string;
+    game_id?: ApiV2Id | null;
+    team_id?: ApiV2Id | null;
+    player_id?: ApiV2Id | null;
+    stat_type?: string | null;
+    team_type?: string | null;
+    season?: number | string | null;
+    season_type?: number | string | null;
+    game_date?: string | null;
+    game?: ApiV2GameSummary | null;
+    team?: ApiV2TeamSummary | null;
+    player?: ApiV2PlayerSummary | null;
+    stats?: ApiV2Record;
+    created_at?: string | null;
+    updated_at?: string | null;
+    [key: string]: unknown;
+};
+
+export type ApiV2PlayerProp = {
+    id: ApiV2Id;
+    sport: ApiV2SportSlug;
     game_id?: ApiV2Id | null;
     player_id?: ApiV2Id | null;
     player_name?: string | null;
     market?: string | null;
+    bookmaker?: string | null;
     line?: number | null;
     over_price?: number | null;
     under_price?: number | null;
@@ -150,26 +212,57 @@ export type ApiV2PlayerProp = ApiV2Entity<{
         under?: number | null;
         [key: string]: unknown;
     };
-    starts_at?: string | null;
-    [key: string]: unknown;
-}>;
-
-export type ApiV2FuturesOdd = ApiV2Entity<{
-    market?: string | null;
-    outcome?: string | null;
-    entity?: {
-        id?: ApiV2Id | null;
-        type?: string | null;
-        name?: string | null;
+    recommendation?: {
+        side?: 'Over' | 'Under' | 'over' | 'under' | string | null;
+        confidence_score?: number | null;
+        predicted_over_probability?: number | null;
+        market_over_probability?: number | null;
+        edge_probability?: number | null;
+        data_quality_score?: number | null;
+        match_quality_score?: number | null;
+        context_adjustment_factor?: number | null;
         [key: string]: unknown;
     };
-    price?: number | null;
-    decimal_price?: number | null;
-    implied_probability?: number | null;
-    sportsbook?: string | null;
-    last_seen_at?: string | null;
+    grading?: {
+        actual_value?: number | null;
+        hit_over?: boolean | null;
+        error?: number | null;
+        graded_at?: string | null;
+        [key: string]: unknown;
+    };
+    player?: ApiV2PlayerSummary | null;
+    game?: ApiV2GameSummary | null;
+    fetched_at?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
     [key: string]: unknown;
-}>;
+};
+
+export type ApiV2FuturesOdd = {
+    id: ApiV2Id;
+    sport: ApiV2SportSlug;
+    season?: number | string | null;
+    odds_api_sport_key?: string | null;
+    event_id?: string | number | null;
+    event_name?: string | null;
+    commence_time?: string | null;
+    bookmaker?: string | null;
+    market_key?: string | null;
+    market_last_update?: string | null;
+    outcome?: {
+        name?: string | null;
+        description?: string | null;
+        point?: number | null;
+        price?: number | null;
+        implied_probability?: number | null;
+        [key: string]: unknown;
+    };
+    entity?: ApiV2TeamSummary | ApiV2PlayerSummary | null;
+    fetched_at?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    [key: string]: unknown;
+};
 
 export type ApiV2PayloadInspector = {
     endpoint: string;

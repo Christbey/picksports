@@ -10,7 +10,9 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import { useApiV2Resource } from '@/composables/useApiV2Resource';
+import type { ApiV2PlayerProp } from '@/types';
 
 type PlayerPropRecommendation = {
     id: number;
@@ -48,11 +50,6 @@ type MarketOption = {
     label: string;
 };
 
-type PlayerPropsResponse = {
-    data: PlayerPropRecommendation[];
-    markets: MarketOption[];
-};
-
 const props = withDefaults(
     defineProps<{
         sportSlug: string;
@@ -69,8 +66,18 @@ const props = withDefaults(
 const recommendations = ref<PlayerPropRecommendation[]>([]);
 const markets = ref<MarketOption[]>([]);
 const selectedMarket = ref('');
-const loading = ref(true);
-const error = ref<string | null>(null);
+const responseError = ref<string | null>(null);
+const api = useApiV2Client();
+const propsResource = useApiV2Resource<ApiV2PlayerProp>(() =>
+    api.playerProps.forGame(props.sportSlug, props.gameId, {
+        query: {
+            per_page: Math.max(props.limit, 25),
+        },
+    }),
+);
+
+const loading = computed(() => propsResource.isLoading.value);
+const error = computed(() => responseError.value ?? propsResource.error.value);
 
 const marketOptions = computed(() => [
     { value: '', label: 'All' },
@@ -91,32 +98,118 @@ const strongestRecommendation = computed(
     () => recommendations.value[0] ?? null,
 );
 
+const normalizeSide = (
+    side: ApiV2PlayerProp['recommendation'] extends infer T
+        ? T extends { side?: infer S }
+            ? S
+            : unknown
+        : unknown,
+): 'Over' | 'Under' =>
+    String(side ?? 'Over').toLowerCase() === 'under' ? 'Under' : 'Over';
+
+const idsMatch = (
+    left: string | number | null | undefined,
+    right: string | number | null | undefined,
+) =>
+    left !== null &&
+    left !== undefined &&
+    right !== null &&
+    right !== undefined &&
+    String(left) === String(right);
+
+const teamLabel = (prop: ApiV2PlayerProp) => {
+    const playerTeamId = prop.player?.team_id;
+
+    if (idsMatch(prop.game?.home_team?.id, playerTeamId)) {
+        return prop.game.home_team.abbreviation ?? prop.game.home_team.name;
+    }
+
+    if (idsMatch(prop.game?.away_team?.id, playerTeamId)) {
+        return prop.game.away_team.abbreviation ?? prop.game.away_team.name;
+    }
+
+    return prop.player?.position ?? null;
+};
+
+const oddsForSide = (prop: ApiV2PlayerProp, side: 'Over' | 'Under') =>
+    Number(side === 'Over' ? prop.over_price : prop.under_price) || 0;
+
+const confidenceScore = (prop: ApiV2PlayerProp) =>
+    Math.round(Number(prop.recommendation?.confidence_score ?? 0));
+
+const edgeScore = (prop: ApiV2PlayerProp) => {
+    const edge = prop.recommendation?.edge_probability;
+
+    if (edge === null || edge === undefined) {
+        return 0;
+    }
+
+    return Math.abs(Number(edge)) <= 1 ? Number(edge) * 100 : Number(edge);
+};
+
+const mapPlayerProp = (prop: ApiV2PlayerProp): PlayerPropRecommendation => {
+    const side = normalizeSide(prop.recommendation?.side);
+
+    return {
+        id: Number(prop.id),
+        player: {
+            id: Number(prop.player_id ?? prop.player?.id ?? 0),
+            name:
+                prop.player?.display_name ??
+                prop.player?.full_name ??
+                prop.player_name ??
+                'Unknown player',
+            position: prop.player?.position ?? null,
+            team: teamLabel(prop),
+        },
+        market: prop.market ?? 'Player prop',
+        line: Number(prop.line ?? 0),
+        recommendation: side,
+        odds: oddsForSide(prop, side),
+        confidence: confidenceScore(prop),
+        stats: {
+            season_avg: null,
+            recent_avg: null,
+            last5_avg: null,
+        },
+        edge: edgeScore(prop),
+        model_over_probability:
+            prop.recommendation?.predicted_over_probability ?? null,
+        market_over_probability:
+            prop.recommendation?.market_over_probability ?? null,
+        edge_probability: prop.recommendation?.edge_probability ?? null,
+        data_quality_score: prop.recommendation?.data_quality_score ?? null,
+        reasoning: [],
+    };
+};
+
+const marketOptionsFor = (rows: PlayerPropRecommendation[]): MarketOption[] => {
+    return [...new Set(rows.map((row) => row.market).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b))
+        .map((market) => ({ value: market, label: market }));
+};
+
 const loadProps = async () => {
-    loading.value = true;
-    error.value = null;
+    responseError.value = null;
 
-    try {
-        const payload = await fetchJson<PlayerPropsResponse>(
-            `/api/v1/${props.sportSlug}/player-props?game=${props.gameId}`,
-        );
+    const payload = await propsResource.execute();
 
-        recommendations.value = payload?.data ?? [];
-        markets.value = payload?.markets ?? [];
-
-        if (
-            selectedMarket.value &&
-            !markets.value.some(
-                (market) => market.value === selectedMarket.value,
-            )
-        ) {
-            selectedMarket.value = '';
-        }
-    } catch (err) {
-        error.value =
-            err instanceof Error ? err.message : 'Unable to load player props.';
+    if (!payload) {
+        responseError.value = 'Unable to load player props.';
         recommendations.value = [];
-    } finally {
-        loading.value = false;
+        markets.value = [];
+
+        return;
+    }
+
+    recommendations.value = payload.data.map(mapPlayerProp);
+    markets.value = marketOptionsFor(recommendations.value);
+
+    if (
+        selectedMarket.value &&
+        !markets.value.some((market) => market.value === selectedMarket.value)
+    ) {
+        selectedMarket.value = '';
     }
 };
 
@@ -148,6 +241,16 @@ const confidenceLabel = (confidence: number) => {
     return 'Watch';
 };
 
+const formatPercent = (value: number | null | undefined) => {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) {
+        return '-';
+    }
+
+    const numeric = Number(value);
+
+    return `${(Math.abs(numeric) <= 1 ? numeric * 100 : numeric).toFixed(1)}%`;
+};
+
 onMounted(loadProps);
 
 watch(
@@ -168,8 +271,8 @@ watch(
                     <div class="ui-kicker">Pregame Props</div>
                     <CardTitle class="tracking-tight">{{ title }}</CardTitle>
                     <CardDescription>
-                        Model projection, recent form, market edge, and risk in
-                        one place.
+                        Model probability, market price, edge, and data quality
+                        in one place.
                     </CardDescription>
                 </div>
 
@@ -283,21 +386,21 @@ watch(
 
                     <div class="grid grid-cols-3 gap-2 text-sm">
                         <div>
-                            <p class="text-xs text-muted-foreground">Season</p>
+                            <p class="text-xs text-muted-foreground">Model</p>
                             <p class="font-medium">
-                                {{ rec.stats?.season_avg ?? '—' }}
+                                {{ formatPercent(rec.model_over_probability) }}
                             </p>
                         </div>
                         <div>
-                            <p class="text-xs text-muted-foreground">Recent</p>
+                            <p class="text-xs text-muted-foreground">Market</p>
                             <p class="font-medium">
-                                {{ rec.stats?.recent_avg ?? '—' }}
+                                {{ formatPercent(rec.market_over_probability) }}
                             </p>
                         </div>
                         <div>
-                            <p class="text-xs text-muted-foreground">Last 5</p>
+                            <p class="text-xs text-muted-foreground">Quality</p>
                             <p class="font-medium">
-                                {{ rec.stats?.last5_avg ?? '—' }}
+                                {{ formatPercent(rec.data_quality_score) }}
                             </p>
                         </div>
                     </div>

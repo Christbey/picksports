@@ -1,5 +1,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
 import {
     calculatePercentage,
@@ -50,8 +52,7 @@ const normalizeDepthChartContext = (
 
     const source = rawContext as Record<string, unknown>;
     const type =
-        source.type === 'injury_weighting' ||
-        source.type === 'starter_fallback'
+        source.type === 'injury_weighting' || source.type === 'starter_fallback'
             ? source.type
             : null;
 
@@ -151,7 +152,9 @@ const normalizeNarrative = (
     };
 };
 
-const normalizePrediction = (rawPrediction: unknown): NflPagePrediction | null => {
+const normalizePrediction = (
+    rawPrediction: unknown,
+): NflPagePrediction | null => {
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
 
     const source = rawPrediction as Record<string, unknown>;
@@ -189,6 +192,7 @@ const normalizePrediction = (rawPrediction: unknown): NflPagePrediction | null =
 };
 
 export function useNflGamePage(gameId: number) {
+    const api = useApiV2Client();
     const currentGame = ref<NflPageGame>(fallbackGame(gameId));
     const homeTeam = ref<NflPageTeam | null>(null);
     const awayTeam = ref<NflPageTeam | null>(null);
@@ -312,9 +316,9 @@ export function useNflGamePage(gameId: number) {
                     fetchJson<{
                         data: NflPagePrediction | NflPagePrediction[];
                     }>(`/api/v1/nfl/games/${gameId}/prediction`),
-                    fetchJson<{ data: NflTeamStats[] }>(
-                        `/api/v1/nfl/games/${gameId}/team-stats`,
-                    ),
+                    api.stats.teams('nfl', {
+                        query: { game_id: gameId, per_page: 100 },
+                    }),
                 ],
             );
 
@@ -389,7 +393,9 @@ export function useNflGamePage(gameId: number) {
             }
 
             if (teamStatsData?.data) {
-                const stats = teamStatsData.data || [];
+                const stats = flattenApiV2Stats(
+                    teamStatsData.data,
+                ) as NflTeamStats[];
                 homeTeamStats.value =
                     stats.find((s) => s.team_type === 'home') || null;
                 awayTeamStats.value =

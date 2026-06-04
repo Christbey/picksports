@@ -1,5 +1,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import {
     formatNumber,
     getBetterValue,
@@ -67,6 +69,7 @@ const seasonTypeLabel = (seasonType: string): string => {
 };
 
 export function useCfbDetailedGamePage(gameId: number) {
+    const api = useApiV2Client();
     const currentGame = ref<NflPageGame>(fallbackGame(gameId));
     const homeTeam = ref<any | null>(null);
     const awayTeam = ref<any | null>(null);
@@ -137,9 +140,9 @@ export function useCfbDetailedGamePage(gameId: number) {
                     fetchJson<{
                         data: NflPagePrediction | NflPagePrediction[];
                     }>(`/api/v1/cfb/games/${gameId}/prediction`),
-                    fetchJson<{ data: NflTeamStats[] }>(
-                        `/api/v1/cfb/games/${gameId}/team-stats`,
-                    ),
+                    api.stats.teams('cfb', {
+                        query: { game_id: gameId, per_page: 100 },
+                    }),
                 ],
             );
 
@@ -217,7 +220,9 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
 
             if (teamStatsData?.data) {
-                const stats = teamStatsData.data || [];
+                const stats = flattenApiV2Stats(
+                    teamStatsData.data,
+                ) as NflTeamStats[];
                 homeTeamStats.value =
                     stats.find((s) => s.team_type === 'home') || null;
                 awayTeamStats.value =

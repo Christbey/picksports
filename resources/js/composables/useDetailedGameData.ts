@@ -1,5 +1,7 @@
 import { onMounted, ref } from 'vue';
 import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import type {
     ApiEnvelope,
     Game,
@@ -28,6 +30,7 @@ const defaultMetricFromResponse = (
 };
 
 export function useDetailedGameData(options: UseDetailedGameDataOptions) {
+    const api = useApiV2Client();
     const game = ref<Game | null>(null);
     const homeTeam = ref<Team | null>(null);
     const awayTeam = ref<Team | null>(null);
@@ -63,12 +66,12 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                     >(
                         `/api/v1/${options.sport}/games/${options.gameId}/prediction`,
                     ),
-                    fetchJson<ApiEnvelope<TeamStatsEntry[]>>(
-                        `/api/v1/${options.sport}/games/${options.gameId}/team-stats`,
-                    ),
-                    fetchJson<ApiEnvelope<TopPerformer[]>>(
-                        `/api/v1/${options.sport}/games/${options.gameId}/player-stats`,
-                    ),
+                    api.stats.teams(options.sport, {
+                        query: { game_id: options.gameId, per_page: 100 },
+                    }),
+                    api.stats.players(options.sport, {
+                        query: { game_id: options.gameId, per_page: 100 },
+                    }),
                 ]);
 
             const fullGame = gameData?.data;
@@ -83,7 +86,9 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             }
 
             if (teamStatsData) {
-                const stats = teamStatsData?.data || [];
+                const stats = flattenApiV2Stats(
+                    teamStatsData?.data,
+                ) as TeamStatsEntry[];
                 homeTeamStats.value =
                     stats.find((s) => s.team_type === 'home') || null;
                 awayTeamStats.value =
@@ -91,7 +96,9 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             }
 
             if (playerStatsData) {
-                const players = playerStatsData?.data || [];
+                const players = flattenApiV2Stats(
+                    playerStatsData?.data,
+                ) as TopPerformer[];
                 topPerformers.value = options.sortTopPerformers
                     ? options.sortTopPerformers(players)
                     : players.slice(0, 10);

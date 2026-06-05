@@ -184,7 +184,8 @@ rg -n "api/v1|axios\\.|fetch\\(" resources/js --glob '!routes/**' --glob '!actio
 ```
 
 4. Keep v1 auth routes until token/passkey API clients have a separate v2 auth
-   migration plan.
+   migration plan. See
+   `docs/api-v2-auth-migration-plan.md`.
 5. Remove only v1 product routes with zero observed usage.
 6. Re-run:
 

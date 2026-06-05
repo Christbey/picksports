@@ -41,6 +41,7 @@ Only reshape auth payloads after mobile/API consumers are updated together.
    - `tests/Feature/Api/Auth/PasskeyTokenAuthTest.php`
    Done in `tests/Feature/Api/V2/AuthEndpointAliasTest.php`.
 3. Add `X-API-Replacement` headers for v1 auth routes after v2 auth tests pass.
+   Done via `v1.api-deprecation` middleware.
 4. Add opt-in v1 auth usage logging separately from product API logging.
 5. Update external/mobile clients to call `/api/v2/auth`.
 6. Retire `/api/v1/auth` only after production usage logs show zero v1 auth

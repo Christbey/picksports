@@ -11,6 +11,8 @@ it('maps legacy app api paths to their v2 aliases', function (string $legacyPath
     ['api/v1/cbb-brackets/current', '/api/v2/cbb-brackets/current'],
     ['api/v1/groups/abc123', '/api/v2/groups/abc123'],
     ['api/v1/alert-preferences', '/api/v2/alert-preferences'],
+    ['api/v1/auth/login', '/api/v2/auth/login'],
+    ['api/v1/auth/passkeys/options', '/api/v2/auth/passkeys/options'],
 ]);
 
 it('maps legacy sport api paths to their v2 equivalents', function (string $legacyPath, string $replacementPath) {

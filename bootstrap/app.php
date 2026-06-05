@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AddSecurityHeaders;
+use App\Http\Middleware\AddV1ApiDeprecationHeaders;
 use App\Http\Middleware\EnsureUserCompletedOnboarding;
 use App\Http\Middleware\EnsureUserHasPermission;
 use App\Http\Middleware\EnsureUserIsAdmin;
@@ -49,6 +50,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'subscribed' => EnsureUserIsSubscribed::class,
             'permission' => EnsureUserHasPermission::class,
             'v2.sport-api-access' => EnsureV2SportApiAccess::class,
+            'v1.api-deprecation' => AddV1ApiDeprecationHeaders::class,
             'v1.api-usage' => LogV1ApiUsage::class,
         ]);
     })

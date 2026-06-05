@@ -40,9 +40,19 @@ test('legacy product v1 api usage logging is opt in', function () {
         ));
 });
 
-test('v1 auth routes are not marked as product api deprecations', function () {
-    $this->getJson('/api/v1/auth/me')
-        ->assertUnauthorized()
-        ->assertHeaderMissing('X-API-Deprecated')
-        ->assertHeaderMissing('X-API-Replacement');
+test('v1 auth routes include replacement headers without product usage logging', function () {
+    Config::set('api.v1_usage_logging.enabled', true);
+    Log::spy();
+
+    $user = User::factory()->create();
+    $token = $user->createToken('ios-client');
+
+    $this
+        ->withHeader('Authorization', 'Bearer '.$token->plainTextToken)
+        ->getJson('/api/v1/auth/me')
+        ->assertOk()
+        ->assertHeader('X-API-Deprecated', 'true')
+        ->assertHeader('X-API-Replacement', '/api/v2/auth/me');
+
+    Log::shouldNotHaveReceived('info');
 });

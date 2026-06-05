@@ -9,6 +9,7 @@ class V1ReplacementPathResolver
      */
     private const APP_ROUTE_REPLACEMENTS = [
         'alert-preferences' => '/api/v2/alert-preferences',
+        'auth' => '/api/v2/auth',
         'cbb-brackets' => '/api/v2/cbb-brackets',
         'groups' => '/api/v2/groups',
         'user-bets' => '/api/v2/user-bets',

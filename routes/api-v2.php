@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\V2\SportTeamController;
 use App\Http\Controllers\Api\V2\SportTeamMetricController;
 use App\Http\Controllers\Api\V2\SportTeamStatAverageController;
 use App\Http\Controllers\Api\V2\SportTeamTrendController;
+use App\Http\Controllers\BetTrackerController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v2')->name('v2.')->group(function (): void {
@@ -27,6 +28,17 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
     Route::middleware(['auth:sanctum'])
         ->get('/live-scoreboard', LiveScoreboardController::class)
         ->name('live-scoreboard.show');
+
+    Route::middleware(['auth:sanctum'])
+        ->prefix('/user-bets')
+        ->name('user-bets.')
+        ->group(function (): void {
+            Route::get('/', [BetTrackerController::class, 'index'])->name('index');
+            Route::post('/', [BetTrackerController::class, 'store'])->name('store');
+            Route::put('/{bet}', [BetTrackerController::class, 'update'])->name('update');
+            Route::delete('/{bet}', [BetTrackerController::class, 'destroy'])->name('destroy');
+            Route::get('/export', [BetTrackerController::class, 'export'])->name('export');
+        });
 
     Route::middleware(['auth:sanctum', 'admin'])
         ->prefix('/admin')

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import axios from 'axios';
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -12,6 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 
 interface SavePickOption {
     betType: 'spread' | 'moneyline' | 'total_over' | 'total_under';
@@ -37,6 +37,12 @@ interface PublicConsensus {
     detail: string;
 }
 
+type ApiV2MutationError = {
+    data?: {
+        message?: unknown;
+    } | null;
+};
+
 const props = defineProps<{
     open: boolean;
     predictionId: number;
@@ -59,6 +65,7 @@ const form = ref({
 });
 const saving = ref(false);
 const errorMessage = ref<string | null>(null);
+const api = useApiV2Client();
 
 const wagerAmount = computed(() => {
     const amount = Number(form.value.bet_amount);
@@ -170,6 +177,16 @@ function syncForm(): void {
     errorMessage.value = null;
 }
 
+function validationMessage(error: unknown): string | null {
+    if (typeof error !== 'object' || error === null || !('data' in error)) {
+        return null;
+    }
+
+    const data = (error as ApiV2MutationError).data;
+
+    return typeof data?.message === 'string' ? data.message : null;
+}
+
 watch(
     () => [props.open, props.option, props.existingBet],
     () => {
@@ -203,12 +220,9 @@ async function submit(): Promise<void> {
 
     try {
         if (props.existingBet) {
-            await axios.put(
-                `/api/v1/user-bets/${props.existingBet.id}`,
-                payload,
-            );
+            await api.userBets.update(props.existingBet.id, payload);
         } else {
-            await axios.post('/api/v1/user-bets', payload);
+            await api.userBets.store(payload);
         }
 
         emit('saved');
@@ -216,8 +230,9 @@ async function submit(): Promise<void> {
     } catch (error: unknown) {
         errorMessage.value = 'Unable to save this pick right now.';
 
-        if (axios.isAxiosError(error) && error.response?.data?.message) {
-            errorMessage.value = error.response.data.message as string;
+        const message = validationMessage(error);
+        if (message) {
+            errorMessage.value = message;
         }
     } finally {
         saving.value = false;

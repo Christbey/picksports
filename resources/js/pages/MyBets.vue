@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import axios from 'axios';
 import { Download, Plus, Trash2, Check, X } from 'lucide-vue-next';
 import { ref, onMounted, watch } from 'vue';
 import { Button } from '@/components/ui/button';
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 
@@ -51,6 +51,11 @@ interface BetsData {
     last_page: number;
 }
 
+interface UserBetsResponse {
+    bets: BetsData;
+    statistics: Statistics;
+}
+
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'My Bets',
@@ -74,6 +79,7 @@ const statistics = ref<Statistics>({
     total_profit: 0,
     roi: 0,
 });
+const api = useApiV2Client();
 const loading = ref(true);
 const showAddBetForm = ref(false);
 const form = ref({
@@ -91,9 +97,14 @@ const form = ref({
 async function fetchBets() {
     loading.value = true;
     try {
-        const response = await axios.get('/api/v1/user-bets');
-        bets.value = response.data.bets;
-        statistics.value = response.data.statistics;
+        const response = await api.userBets.index<UserBetsResponse>();
+
+        if (!response) {
+            return;
+        }
+
+        bets.value = response.bets;
+        statistics.value = response.statistics;
     } catch (error) {
         console.error('Failed to fetch bets:', error);
     } finally {
@@ -103,7 +114,7 @@ async function fetchBets() {
 
 async function submitBet() {
     try {
-        await axios.post('/api/v1/user-bets', form.value);
+        await api.userBets.store(form.value);
         showAddBetForm.value = false;
         form.value = {
             prediction_id: '',
@@ -124,7 +135,7 @@ async function submitBet() {
 
 async function updateBetResult(betId: number, result: 'won' | 'lost' | 'push') {
     try {
-        await axios.put(`/api/v1/user-bets/${betId}`, { result });
+        await api.userBets.update(betId, { result });
         await fetchBets();
     } catch (error) {
         console.error('Failed to update bet:', error);
@@ -134,7 +145,7 @@ async function updateBetResult(betId: number, result: 'won' | 'lost' | 'push') {
 async function deleteBet(betId: number) {
     if (confirm('Are you sure you want to delete this bet?')) {
         try {
-            await axios.delete(`/api/v1/user-bets/${betId}`);
+            await api.userBets.destroy(betId);
             await fetchBets();
         } catch (error) {
             console.error('Failed to delete bet:', error);
@@ -143,7 +154,7 @@ async function deleteBet(betId: number) {
 }
 
 function exportBets() {
-    window.location.href = '/api/v1/user-bets/export';
+    window.location.href = api.userBets.exportUrl();
 }
 
 function formatCurrency(amount: number) {

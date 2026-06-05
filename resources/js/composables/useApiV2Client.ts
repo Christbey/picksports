@@ -29,9 +29,16 @@ type ApiV2LiveScoreboardPayload = {
     updated_at: string;
 };
 
+type ApiV2UserBetPayload = Record<string, unknown>;
+
 type RequestOptions = {
     init?: RequestInit;
     query?: ApiV2Query;
+};
+
+type ApiV2MutationError = Error & {
+    data?: unknown;
+    status: number;
 };
 
 const routeOptions = (query?: ApiV2Query): RouteQueryOptions | undefined =>
@@ -50,6 +57,48 @@ export function useApiV2Client() {
     const item = <T>(url: string, options: RequestOptions = {}) =>
         get<ApiV2ItemResponse<T>>(url, options);
 
+    const mutate = async <T>(
+        url: string,
+        method: 'POST' | 'PUT' | 'DELETE',
+        payload?: ApiV2UserBetPayload,
+        options: RequestOptions = {},
+    ): Promise<T | null> => {
+        const headers = new Headers(options.init?.headers ?? {});
+        headers.set('Content-Type', 'application/json');
+
+        const response = await fetch(url, {
+            credentials: 'same-origin',
+            ...options.init,
+            method,
+            headers,
+            body: payload === undefined ? undefined : JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const error = new Error('API v2 request failed') as ApiV2MutationError;
+            error.status = response.status;
+
+            try {
+                error.data = await response.json();
+            } catch {
+                error.data = null;
+            }
+
+            throw error;
+        }
+
+        if (response.status === 204) {
+            return null;
+        }
+
+        const contentType = response.headers.get('content-type') ?? '';
+        if (!contentType.includes('application/json')) {
+            return null;
+        }
+
+        return (await response.json()) as T;
+    };
+
     return {
         get,
 
@@ -59,6 +108,53 @@ export function useApiV2Client() {
                     v2.liveScoreboard.show.url(routeOptions(options.query)),
                     options,
                 ),
+        },
+
+        userBets: {
+            index: <T = unknown>(options: RequestOptions = {}) =>
+                get<T>(
+                    v2.userBets.index.url(routeOptions(options.query)),
+                    options,
+                ),
+            store: <T = unknown>(
+                payload: ApiV2UserBetPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.userBets.store.url(routeOptions(options.query)),
+                    'POST',
+                    payload,
+                    options,
+                ),
+            update: <T = unknown>(
+                bet: ApiV2Id,
+                payload: ApiV2UserBetPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.userBets.update.url(
+                        bet,
+                        routeOptions(options.query),
+                    ),
+                    'PUT',
+                    payload,
+                    options,
+                ),
+            destroy: <T = unknown>(
+                bet: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.userBets.destroy.url(
+                        bet,
+                        routeOptions(options.query),
+                    ),
+                    'DELETE',
+                    undefined,
+                    options,
+                ),
+            exportUrl: (query?: ApiV2Query) =>
+                v2.userBets.export.url(routeOptions(query)),
         },
 
         sports: {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import axios from 'axios';
 import { ChevronDown, ShieldCheck, Sparkles, Target } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
@@ -20,6 +19,7 @@ import {
     isPredictionListItem,
     normalizePredictionLiveState,
 } from '@/composables/usePredictionLiveData';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import type { DashboardPrediction, PredictionListItem } from '@/types';
 
@@ -65,12 +65,17 @@ interface TrackingSummary {
     user_bets: TrackedBet[];
 }
 
+interface UserBetsTrackingResponse {
+    tracking: TrackingSummary | null;
+}
+
 interface PublicConsensus {
     summary: string;
     detail: string;
 }
 
 const trackingCache = new Map<string, TrackingSummary>();
+const api = useApiV2Client();
 
 const props = defineProps<{
     prediction: DashboardPrediction | PredictionListItem;
@@ -639,15 +644,17 @@ async function loadTrackingSummary(force = false): Promise<void> {
     isLoadingTracking.value = true;
 
     try {
-        const response = await axios.get('/api/v1/user-bets', {
-            params: {
+        const response = await api.userBets.index<UserBetsTrackingResponse>({
+            query: {
                 prediction_id: predictionId(),
                 prediction_type: predictionModelClass(),
             },
         });
 
-        trackingSummary.value = response.data.tracking;
-        trackingCache.set(key, response.data.tracking);
+        trackingSummary.value = response?.tracking ?? null;
+        if (trackingSummary.value) {
+            trackingCache.set(key, trackingSummary.value);
+        }
     } catch (error) {
         console.error('Failed to load tracked picks:', error);
         trackingSummary.value = null;

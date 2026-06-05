@@ -55,16 +55,21 @@ The shared API abstractions matter a lot:
 
 ## Internal API
 
-The primary internal API is the Laravel JSON API mounted under `/api/v1`.
+The primary Vue-facing internal API is the Laravel JSON API mounted under
+`/api/v2`. Legacy product routes remain mounted under `/api/v1` for external
+or not-yet-retired clients, with usage logging documented in
+[api-v2-contracts-and-retirement.md](/Users/bey/Herd/github/picksports/docs/api-v2-contracts-and-retirement.md).
 
 Route bootstrap:
 - [routes/api.php](/Users/bey/Herd/github/picksports/routes/api.php)
+- [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php)
 - [routes/api/sports.php](/Users/bey/Herd/github/picksports/routes/api/sports.php)
 
 Important pattern:
-- `routes/api.php` loads `config('sports.domains')`
-- for each sport, it mounts a namespace-specific API group under `/api/v1/{sport}`
-- almost all sports routes are generated from the shared route definer in `routes/api/sports.php`
+- `routes/api-v2.php` defines the current sport contract under `/api/v2/sports/{sport}`
+- sport capability and model resolution should happen through the v2 context layer
+- `routes/api.php` still loads `config('sports.domains')` for legacy `/api/v1/{sport}` route groups
+- most legacy v1 sport routes are generated from the shared route definer in `routes/api/sports.php`
 
 ### Auth and Access Model
 
@@ -87,45 +92,45 @@ That means:
 
 ### Generic Sport Route Contract
 
-For each sport namespace, the generated API includes these categories:
+For each supported sport, the v2 API includes these categories:
 
 Teams:
-- `GET /api/v1/{sport}/teams`
-- `GET /api/v1/{sport}/teams/{team}`
-- `GET /api/v1/{sport}/teams/{team}/trends`
+- `GET /api/v2/sports/{sport}/teams`
+- `GET /api/v2/sports/{sport}/teams/{team}`
+- `GET /api/v2/sports/{sport}/teams/{team}/trends`
+- `GET /api/v2/sports/{sport}/teams/{team}/metrics`
+- `GET /api/v2/sports/{sport}/teams/{team}/games`
 
 Players:
-- `GET /api/v1/{sport}/players`
-- `GET /api/v1/{sport}/players/{player}`
-- `GET /api/v1/{sport}/teams/{team}/players`
+- `GET /api/v2/sports/{sport}/players`
+- `GET /api/v2/sports/{sport}/players/{player}`
+- `GET /api/v2/sports/{sport}/teams/{team}/players`
 
 Games:
-- `GET /api/v1/{sport}/games`
-- `GET /api/v1/{sport}/games/{game}`
-- `GET /api/v1/{sport}/teams/{team}/games`
-- `GET /api/v1/{sport}/games/season/{season}`
-- `GET /api/v1/{sport}/games/season/{season}/week/{week}`
-- `GET /api/v1/{sport}/games/{game}/plays`
-- `GET /api/v1/{sport}/games/{game}/team-stats`
-- `GET /api/v1/{sport}/games/{game}/player-stats`
-- `GET /api/v1/{sport}/games/{game}/prediction`
+- `GET /api/v2/sports/{sport}/games`
+- `GET /api/v2/sports/{sport}/games/{game}`
+- `GET /api/v2/sports/{sport}/games/{game}/prediction`
+- `GET /api/v2/sports/{sport}/games/{game}/depth-charts`
+- `GET /api/v2/sports/{sport}/games/{game}/player-props`
 
 Predictions:
-- `GET /api/v1/{sport}/predictions`
-- `GET /api/v1/{sport}/predictions/{prediction}`
-- `GET /api/v1/{sport}/predictions/available-dates`
-- `GET /api/v1/{sport}/predictions/available-seasons`
+- `GET /api/v2/sports/{sport}/predictions`
+- `GET /api/v2/sports/{sport}/predictions/{prediction}`
+- `GET /api/v2/sports/{sport}/predictions/available-dates`
+- `GET /api/v2/sports/{sport}/predictions/available-seasons`
 
 Team metrics:
-- `GET /api/v1/{sport}/team-metrics`
-- `GET /api/v1/{sport}/team-metrics/{metric}`
-- `GET /api/v1/{sport}/team-metrics/available-seasons`
-- `GET /api/v1/{sport}/teams/{team}/metrics`
+- `GET /api/v2/sports/{sport}/metrics/teams`
+- `GET /api/v2/sports/{sport}/metrics/teams/available-seasons`
 
-Stats and ratings:
-- `GET /api/v1/{sport}/team-stats`
-- `GET /api/v1/{sport}/player-stats`
-- `GET /api/v1/{sport}/elo-ratings`
+Stats, injuries, and markets:
+- `GET /api/v2/sports/{sport}/stats/team`
+- `GET /api/v2/sports/{sport}/stats/player`
+- `GET /api/v2/sports/{sport}/stats/team/season-averages`
+- `GET /api/v2/sports/{sport}/leaderboards/players`
+- `GET /api/v2/sports/{sport}/injuries`
+- `GET /api/v2/sports/{sport}/markets/player-props`
+- `GET /api/v2/sports/{sport}/markets/futures`
 
 Capability-specific additions:
 - CFB `fpi-ratings`
@@ -205,48 +210,41 @@ Before changing any game-page prediction fetch path, confirm whether the endpoin
 
 ### Frontend Consumers of the Internal API
 
-The frontend talks to the internal API with `fetchJson` from [useApiClient.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiClient.ts).
+The frontend talks to product data through
+[useApiV2Client.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiV2Client.ts),
+which wraps `fetchJson` from
+[useApiClient.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiClient.ts).
 
 Main game-page consumers:
 - [useDetailedGameData.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useDetailedGameData.ts)
   Uses:
-  - `/api/v1/{sport}/games/{game}`
-  - `/api/v1/{sport}/games/{game}/prediction`
-  - `/api/v1/{sport}/games/{game}/team-stats`
-  - `/api/v1/{sport}/games/{game}/player-stats`
-  - `/api/v1/{sport}/teams/{team}/metrics`
-  - `/api/v1/{sport}/teams/{team}/games`
-  - `/api/v1/{sport}/teams/{team}/trends?...`
+  - `api.games.show()`
+  - `api.predictions.forGame()`
+  - `api.stats.teams()`
+  - `api.stats.players()`
+  - `api.teams.metrics()`
+  - `api.teams.games()`
+  - `api.teams.trends()`
 
 - [useMlbGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useMlbGamePage.ts)
-  Does a more bespoke MLB flow:
-  - `/api/v1/mlb/games/{game}`
-  - `/api/v1/mlb/games/{game}/prediction`
-  - `/api/v1/mlb/teams/{id}`
-  - `/api/v1/mlb/teams/{id}/games`
-  - `/api/v1/mlb/teams/{id}/trends?...`
+  Does a more bespoke MLB flow on top of `useApiV2Client()`.
 
 - [useNflGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useNflGamePage.ts)
-  Uses:
-  - `/api/v1/nfl/games/{game}`
-  - `/api/v1/nfl/games/{game}/prediction`
-  - `/api/v1/nfl/games/{game}/team-stats`
-  - `/api/v1/nfl/teams/{id}/games`
-  - `/api/v1/nfl/teams/{id}/trends?...`
+  Does a bespoke NFL flow on top of `useApiV2Client()`.
 
 - [useCfbDetailedGamePage.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useCfbDetailedGamePage.ts)
-  Uses a bespoke CFB flow similar to NFL.
+  Does a bespoke CFB flow similar to NFL on top of `useApiV2Client()`.
 
 Predictions list pages:
 - [SportPredictions.vue](/Users/bey/Herd/github/picksports/resources/js/components/SportPredictions.vue)
   Uses:
-  - `/api/v1/{sport}/predictions?...`
-  - `/api/v1/{sport}/predictions/available-dates`
-  - `/api/v1/{sport}/predictions/available-seasons`
+  - `api.predictions.index()`
+  - `api.predictions.availableDates()`
+  - `api.predictions.availableSeasons()`
 
 Team metrics pages:
 - built from config in [sport-team-metrics-configs.ts](/Users/bey/Herd/github/picksports/resources/js/config/sport-team-metrics-configs.ts)
-  and call `/api/v1/{sport}/team-metrics`
+  and call `api.metrics.teams()`
 
 ### Internal API Data Flow
 
@@ -305,8 +303,8 @@ When something looks wrong on a page:
 
 1. Check the raw game row in the DB.
 2. Check the raw prediction / metric row in the DB.
-3. Check the API resource response at `/api/v1/{sport}/games/{id}`.
-4. Check `/api/v1/{sport}/games/{id}/prediction`.
+3. Check the API resource response at `/api/v2/sports/{sport}/games/{id}`.
+4. Check `/api/v2/sports/{sport}/games/{id}/prediction`.
 5. Check whether the frontend uses the shared loader or a sport-specific loader.
 6. Check cache segments if the DB and API are correct but the page is stale.
 
@@ -434,7 +432,7 @@ Sport actions:
 - `app/Console/Commands/{Sport}/GeneratePredictionsCommand.php`
 
 Game page prediction endpoint:
-- `/api/v1/{sport}/games/{game}/prediction`
+- `/api/v2/sports/{sport}/games/{game}/prediction`
 
 Important note:
 - the frontend usually expects a single prediction object for a game page
@@ -743,7 +741,9 @@ The new matchup-context work should be treated with these rules:
 ## Files To Re-Read First For Sports-Domain Changes
 
 Shared:
+- [routes/api-v2.php](/Users/bey/Herd/github/picksports/routes/api-v2.php)
 - [routes/api/sports.php](/Users/bey/Herd/github/picksports/routes/api/sports.php)
+- [useApiV2Client.ts](/Users/bey/Herd/github/picksports/resources/js/composables/useApiV2Client.ts)
 - [AbstractGameController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractGameController.php)
 - [AbstractPredictionController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractPredictionController.php)
 - [AbstractTeamController.php](/Users/bey/Herd/github/picksports/app/Http/Controllers/Api/Sports/AbstractTeamController.php)

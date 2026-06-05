@@ -53,6 +53,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/players/{player}/player-props', [SportPlayerPropController::class, 'playerIndex'])->name('players.player-props.index');
 
             Route::get('/player-props', [SportPlayerPropController::class, 'index'])->name('player-props.index');
+            Route::get('/player-props/board', [SportPlayerPropController::class, 'board'])->name('player-props.board');
             Route::get('/forecasts', [SportForecastController::class, 'index'])->name('forecasts.index');
             Route::get('/injuries', [SportInjuryController::class, 'index'])->name('injuries.index');
             Route::get('/signals', [SportSignalController::class, 'index'])->name('signals.index');

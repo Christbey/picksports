@@ -419,6 +419,17 @@ export function useApiV2Client() {
                     ),
                     options,
                 ),
+            board: <T = unknown>(
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                get<T>(
+                    v2.sports.playerProps.board.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
             forGame: (
                 sport: ApiV2SportSlug,
                 game: ApiV2Id,

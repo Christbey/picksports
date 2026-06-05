@@ -21,6 +21,7 @@ use App\Models\WNBA\Game as WnbaGame;
 use App\Models\WNBA\Player as WnbaPlayer;
 use App\Models\WNBA\PlayerProp as WnbaPlayerProp;
 use App\Models\WNBA\Team as WnbaTeam;
+use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
@@ -37,6 +38,9 @@ it('requires authenticated access for v2 player prop endpoints', function (strin
     $this->getJson("/api/v2/sports/{$slug}/markets/player-props")
         ->assertUnauthorized();
 
+    $this->getJson("/api/v2/sports/{$slug}/player-props/board")
+        ->assertUnauthorized();
+
     $this->getJson("/api/v2/sports/{$slug}/players/1/player-props")
         ->assertUnauthorized();
 })->with('v2PlayerPropContractSports');
@@ -51,6 +55,54 @@ it('returns a clean json 404 for unsupported v2 sport player prop endpoints', fu
     $this->getJson('/api/v2/sports/nhl/players/1/player-props')
         ->assertNotFound()
         ->assertJsonPath('message', 'Unsupported sport: nhl');
+});
+
+it('returns the v2 player prop recommendation board envelope from the analyzer', function () {
+    actAsV2PlayerPropContractUser();
+
+    $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
+    $analyzer
+        ->shouldReceive('analyzeProps')
+        ->once()
+        ->with('NBA', 3, '2026-06-10', 99, 'player_points')
+        ->andReturn(collect());
+    $analyzer
+        ->shouldReceive('getAvailableDatesForSport')
+        ->once()
+        ->with('NBA')
+        ->andReturn(collect([
+            ['value' => '2026-06-10', 'label' => 'Jun 10'],
+        ]));
+    $analyzer
+        ->shouldReceive('getAvailableGamesForSport')
+        ->once()
+        ->with('NBA', '2026-06-10')
+        ->andReturn(collect([
+            ['id' => 99, 'label' => 'BOS @ NYK', 'date' => '2026-06-10', 'time' => '7:00 PM'],
+        ]));
+    $analyzer
+        ->shouldReceive('getAvailableMarketsForSport')
+        ->once()
+        ->with('NBA', '2026-06-10', 99)
+        ->andReturn(collect([
+            ['value' => 'player_points', 'label' => 'Points'],
+        ]));
+
+    app()->instance(PlayerPropAnalyzer::class, $analyzer);
+
+    $this->getJson('/api/v2/sports/nba/player-props/board?date=2026-06-10&game=99&market=player_points')
+        ->assertOk()
+        ->assertJsonPath('sport', 'NBA')
+        ->assertJsonPath('data', [])
+        ->assertJsonPath('dates.0.value', '2026-06-10')
+        ->assertJsonPath('games.0.id', 99)
+        ->assertJsonPath('markets.0.value', 'player_points')
+        ->assertJsonPath('filters.date', '2026-06-10')
+        ->assertJsonPath('filters.game', 99)
+        ->assertJsonPath('filters.market', 'player_points')
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', 'nba')
+        ->assertJsonPath('meta.contract', 'sports.player-props.board');
 });
 
 it('lists v2 market player props with stable shape, filters, pagination, freshness, and warnings', function (

@@ -13,7 +13,7 @@ import {
     CardTitle,
 } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
 
 type Recommendation = {
@@ -129,6 +129,7 @@ const games = ref<GameOption[]>([]);
 const markets = ref<MarketOption[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const api = useApiV2Client();
 
 const filteredGames = computed(() => {
     if (!selectedDate.value) {
@@ -194,11 +195,13 @@ const loadBoard = async () => {
     loading.value = true;
     error.value = null;
 
-    const query = new URLSearchParams(buildQueryParams()).toString();
-    const endpoint = `/api/v1/${props.sportSlug}/player-props${query ? `?${query}` : ''}`;
-
     try {
-        const payload = await fetchJson<PlayerPropsResponse>(endpoint);
+        const payload = await api.playerProps.board<PlayerPropsResponse>(
+            props.sportSlug,
+            {
+                query: buildQueryParams(),
+            },
+        );
         if (!payload) {
             error.value = 'Unable to load player props.';
             recommendations.value = [];

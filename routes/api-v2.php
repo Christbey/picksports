@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
+use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\SportController;
@@ -38,6 +40,29 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::put('/{bet}', [BetTrackerController::class, 'update'])->name('update');
             Route::delete('/{bet}', [BetTrackerController::class, 'destroy'])->name('destroy');
             Route::get('/export', [BetTrackerController::class, 'export'])->name('export');
+        });
+
+    Route::middleware(['auth:sanctum'])
+        ->prefix('/cbb-brackets')
+        ->name('cbb-brackets.')
+        ->group(function (): void {
+            Route::get('/leaderboard', [CbbBracketController::class, 'leaderboard'])->name('leaderboard');
+            Route::get('/', [CbbBracketController::class, 'index'])->name('index');
+            Route::post('/', [CbbBracketController::class, 'store'])->name('store');
+            Route::get('/current', [CbbBracketController::class, 'showCurrent'])->name('current.show');
+            Route::put('/current', [CbbBracketController::class, 'upsertCurrent'])->name('current.upsert');
+            Route::get('/{publicId}', [CbbBracketController::class, 'show'])->name('show');
+            Route::patch('/{publicId}', [CbbBracketController::class, 'update'])->name('update');
+            Route::delete('/{publicId}', [CbbBracketController::class, 'destroy'])->name('destroy');
+        });
+
+    Route::middleware(['auth:sanctum'])
+        ->prefix('/groups')
+        ->name('groups.')
+        ->group(function (): void {
+            Route::get('/', [GroupController::class, 'index'])->name('index');
+            Route::post('/', [GroupController::class, 'store'])->name('store');
+            Route::patch('/{publicId}', [GroupController::class, 'update'])->name('update');
         });
 
     Route::middleware(['auth:sanctum', 'admin'])

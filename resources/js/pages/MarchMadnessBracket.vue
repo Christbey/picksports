@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { Head, Link, usePage } from '@inertiajs/vue3';
-import axios from 'axios';
 import { computed, onMounted, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { useAppearance } from '@/composables/useAppearance';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 
 type Team = {
     id: number | null;
@@ -149,6 +149,18 @@ type LeaderboardEntry = {
     updated_at: string | null;
 };
 
+type ApiResource<T> = {
+    data: T;
+};
+
+type ApiMutationError = {
+    data?: {
+        lock_at?: unknown;
+        message?: unknown;
+    } | null;
+    status?: number;
+};
+
 const storageKey = 'march-madness-bracket-builder-v3';
 const bracketLockAtIso = '2026-03-19T11:00:00-05:00';
 const regionNames = ['East', 'West', 'South', 'Midwest'];
@@ -252,6 +264,7 @@ const props = defineProps<{
 }>();
 
 const { resolvedAppearance, updateAppearance } = useAppearance();
+const api = useApiV2Client();
 const page = usePage();
 const picks = ref<Record<string, string>>({});
 const currentBracket = ref<SavedBracket | null>(null);
@@ -360,6 +373,21 @@ const allTournamentGames = computed(() =>
         region.rounds.flatMap((round) => round.games),
     ),
 );
+
+const apiStatus = (error: unknown): number | null =>
+    typeof error === 'object' && error !== null && 'status' in error
+        ? Number((error as ApiMutationError).status)
+        : null;
+
+const apiLockAt = (error: unknown): string | null => {
+    if (typeof error !== 'object' || error === null || !('data' in error)) {
+        return null;
+    }
+
+    const lockAt = (error as ApiMutationError).data?.lock_at;
+
+    return typeof lockAt === 'string' ? lockAt : null;
+};
 const firstFourMatchups = computed<BracketMatchup[]>(() =>
     sortedGames(
         allTournamentGames.value.filter(
@@ -1409,14 +1437,18 @@ const createBracket = async (
           ? availableGroups.value[0].id
           : null;
 
-    const response = await axios.post('/api/v1/cbb-brackets', {
+    const response = await api.cbbBrackets.store<ApiResource<SavedBracket>>({
         season: currentSeason.value,
         name: bracketNameDraft.value.trim() || nextBracketName.value,
         group_id: resolvedGroupId,
         picks: initialPicks,
     });
 
-    const bracket = response.data?.data as SavedBracket;
+    const bracket = response?.data;
+    if (!bracket) {
+        return null;
+    }
+
     upsertBracketInList(bracket);
     activateBracket(bracket, syncPicks);
 
@@ -1428,15 +1460,15 @@ const loadGroups = async () => {
         return;
     }
 
-    const response = await axios.get('/api/v1/groups', {
-        params: {
+    const response = await api.groups.index<ApiResource<Group[]>>({
+        query: {
             type: 'bracket_pool',
             sport: 'cbb',
             season: currentSeason.value,
         },
     });
 
-    const groups = response.data?.data ?? [];
+    const groups = response?.data ?? [];
     availableGroups.value = groups;
 
     if (
@@ -1466,15 +1498,22 @@ const saveBracketMeta = async () => {
               ? availableGroups.value[0].id
               : null;
 
-        const response = await axios.patch(
-            `/api/v1/cbb-brackets/${currentBracket.value.public_id}`,
+        const response = await api.cbbBrackets.update<
+            ApiResource<SavedBracket>
+        >(
+            currentBracket.value.public_id,
             {
                 name: bracketNameDraft.value.trim() || null,
                 group_id: resolvedGroupId,
             },
         );
 
-        const savedBracket = response.data?.data as SavedBracket;
+        const savedBracket = response?.data;
+        if (!savedBracket) {
+            metaSaveState.value = 'error';
+            return;
+        }
+
         upsertBracketInList(savedBracket);
         activateBracket(savedBracket, false);
         metaSaveState.value = 'saved';
@@ -1502,11 +1541,13 @@ const loadServerBrackets = async () => {
     }
 
     try {
-        const response = await axios.get('/api/v1/cbb-brackets', {
-            params: { season: currentSeason.value },
+        const response = await api.cbbBrackets.index<
+            ApiResource<SavedBracket[]>
+        >({
+            query: { season: currentSeason.value },
         });
 
-        const serverBrackets = (response.data?.data ?? []) as SavedBracket[];
+        const serverBrackets = response?.data ?? [];
         brackets.value = serverBrackets;
 
         if (serverBrackets.length > 0) {
@@ -1533,15 +1574,17 @@ const loadLeaderboard = async () => {
         return;
     }
 
-    const response = await axios.get('/api/v1/cbb-brackets/leaderboard', {
-        params: {
+    const response = await api.cbbBrackets.leaderboard<
+        ApiResource<LeaderboardEntry[]>
+    >({
+        query: {
             season: currentSeason.value,
             limit: 10,
             group_id: currentBracket.value?.group_id ?? undefined,
         },
     });
 
-    leaderboard.value = response.data?.data ?? [];
+    leaderboard.value = response?.data ?? [];
 };
 
 onMounted(() => {
@@ -1586,14 +1629,21 @@ watch(
                 let savedBracket: SavedBracket;
 
                 if (activeBracketPublicId.value) {
-                    const response = await axios.patch(
-                        `/api/v1/cbb-brackets/${activeBracketPublicId.value}`,
+                    const response = await api.cbbBrackets.update<
+                        ApiResource<SavedBracket>
+                    >(
+                        activeBracketPublicId.value,
                         {
                             picks: value,
                         },
                     );
 
-                    savedBracket = response.data?.data as SavedBracket;
+                    if (!response?.data) {
+                        saveState.value = 'error';
+                        return;
+                    }
+
+                    savedBracket = response.data;
                 } else {
                     const createdBracket = await createBracket(value, false);
 
@@ -1607,8 +1657,8 @@ watch(
                 saveState.value = 'saved';
                 upsertBracketInList(savedBracket);
                 activateBracket(savedBracket, false);
-            } catch (error: any) {
-                if (error?.response?.status === 423) {
+            } catch (error: unknown) {
+                if (apiStatus(error) === 423) {
                     saveState.value = 'idle';
                     currentBracket.value = currentBracket.value
                         ? {
@@ -1616,7 +1666,7 @@ watch(
                               is_locked: true,
                               can_edit: false,
                               lock_at:
-                                  error?.response?.data?.lock_at ??
+                                  apiLockAt(error) ??
                                   currentBracket.value.lock_at ??
                                   bracketLockAtIso,
                           }

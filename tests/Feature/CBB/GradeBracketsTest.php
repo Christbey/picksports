@@ -104,6 +104,39 @@ test('bracket leaderboard returns ranked bracket rows', function () {
         ->assertJsonPath('data.1.rank', 2);
 });
 
+test('bracket leaderboard returns ranked bracket rows via API v2', function () {
+    $first = User::factory()->create(['name' => 'Alpha']);
+    $second = User::factory()->create(['name' => 'Beta']);
+
+    CbbBracket::query()->create([
+        'user_id' => $first->id,
+        'season' => 2026,
+        'name' => 'Alpha Entry',
+        'picks' => [],
+        'points_earned' => 12,
+        'correct_picks' => 5,
+    ]);
+
+    CbbBracket::query()->create([
+        'user_id' => $second->id,
+        'season' => 2026,
+        'name' => 'Beta Entry',
+        'picks' => [],
+        'points_earned' => 8,
+        'correct_picks' => 4,
+    ]);
+
+    $this->actingAs($first)
+        ->getJson('/api/v2/cbb-brackets/leaderboard?season=2026')
+        ->assertOk()
+        ->assertJsonPath('data.0.bracket_name', 'Alpha Entry')
+        ->assertJsonPath('data.0.rank', 1)
+        ->assertJsonPath('data.0.user_name', 'Alpha')
+        ->assertJsonPath('data.1.bracket_name', 'Beta Entry')
+        ->assertJsonPath('data.1.user_name', 'Beta')
+        ->assertJsonPath('data.1.rank', 2);
+});
+
 test('bracket leaderboard can be filtered by group', function () {
     $owner = User::factory()->create(['name' => 'Owner']);
     $member = User::factory()->create(['name' => 'Member']);

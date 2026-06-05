@@ -29,7 +29,7 @@ type ApiV2LiveScoreboardPayload = {
     updated_at: string;
 };
 
-type ApiV2UserBetPayload = Record<string, unknown>;
+type ApiV2JsonPayload = Record<string, unknown>;
 
 type RequestOptions = {
     init?: RequestInit;
@@ -59,8 +59,8 @@ export function useApiV2Client() {
 
     const mutate = async <T>(
         url: string,
-        method: 'POST' | 'PUT' | 'DELETE',
-        payload?: ApiV2UserBetPayload,
+        method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+        payload?: ApiV2JsonPayload,
         options: RequestOptions = {},
     ): Promise<T | null> => {
         const headers = new Headers(options.init?.headers ?? {});
@@ -117,7 +117,7 @@ export function useApiV2Client() {
                     options,
                 ),
             store: <T = unknown>(
-                payload: ApiV2UserBetPayload,
+                payload: ApiV2JsonPayload,
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
@@ -128,7 +128,7 @@ export function useApiV2Client() {
                 ),
             update: <T = unknown>(
                 bet: ApiV2Id,
-                payload: ApiV2UserBetPayload,
+                payload: ApiV2JsonPayload,
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
@@ -155,6 +155,114 @@ export function useApiV2Client() {
                 ),
             exportUrl: (query?: ApiV2Query) =>
                 v2.userBets.export.url(routeOptions(query)),
+        },
+
+        cbbBrackets: {
+            index: <T = unknown>(options: RequestOptions = {}) =>
+                get<T>(
+                    v2.cbbBrackets.index.url(routeOptions(options.query)),
+                    options,
+                ),
+            leaderboard: <T = unknown>(options: RequestOptions = {}) =>
+                get<T>(
+                    v2.cbbBrackets.leaderboard.url(
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            show: <T = unknown>(
+                publicId: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                get<T>(
+                    v2.cbbBrackets.show.url(
+                        publicId,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            current: <T = unknown>(options: RequestOptions = {}) =>
+                get<T>(
+                    v2.cbbBrackets.current.show.url(
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            store: <T = unknown>(
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.cbbBrackets.store.url(routeOptions(options.query)),
+                    'POST',
+                    payload,
+                    options,
+                ),
+            update: <T = unknown>(
+                publicId: ApiV2Id,
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.cbbBrackets.update.url(
+                        publicId,
+                        routeOptions(options.query),
+                    ),
+                    'PATCH',
+                    payload,
+                    options,
+                ),
+            upsertCurrent: <T = unknown>(
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.cbbBrackets.current.upsert.url(
+                        routeOptions(options.query),
+                    ),
+                    'PUT',
+                    payload,
+                    options,
+                ),
+            destroy: <T = unknown>(
+                publicId: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.cbbBrackets.destroy.url(
+                        publicId,
+                        routeOptions(options.query),
+                    ),
+                    'DELETE',
+                    undefined,
+                    options,
+                ),
+        },
+
+        groups: {
+            index: <T = unknown>(options: RequestOptions = {}) =>
+                get<T>(v2.groups.index.url(routeOptions(options.query)), options),
+            store: <T = unknown>(
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.groups.store.url(routeOptions(options.query)),
+                    'POST',
+                    payload,
+                    options,
+                ),
+            update: <T = unknown>(
+                publicId: ApiV2Id,
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.groups.update.url(publicId, routeOptions(options.query)),
+                    'PATCH',
+                    payload,
+                    options,
+                ),
         },
 
         sports: {

@@ -5,7 +5,7 @@ import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 
 type ForecastTeam = {
     id: number;
@@ -58,6 +58,7 @@ const selectedSeason = ref<number | null>(null);
 const sortMode = ref<'model' | 'edge'>('model');
 const onlyPlusEv = ref(false);
 const availableSeasons = ref<number[]>([]);
+const api = useApiV2Client();
 
 const availableSeasonOptions = computed(() =>
     availableSeasons.value.length > 0
@@ -215,10 +216,9 @@ const fetchForecasts = async () => {
     error.value = null;
 
     try {
-        const payload = await fetchJson<{
-            data?: PlayoffForecast[];
-            meta?: { available_seasons?: number[] };
-        }>(`/api/v2/sports/mlb/forecasts?season=${selectedSeason.value}`);
+        const payload = await api.forecasts.index<PlayoffForecast>('mlb', {
+            query: { season: selectedSeason.value },
+        });
         if (!payload) {
             throw new Error('Failed to load MLB futures data');
         }

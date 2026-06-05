@@ -294,6 +294,48 @@ export function useApiV2Client() {
                 ),
         },
 
+        forecasts: {
+            index: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                collection<T>(
+                    v2.sports.forecasts.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+        },
+
+        injuries: {
+            index: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                collection<T>(
+                    v2.sports.injuries.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+        },
+
+        signals: {
+            index: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    v2.sports.signals.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+        },
+
         stats: {
             players: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Stat>(

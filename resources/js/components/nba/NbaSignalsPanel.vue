@@ -10,7 +10,7 @@ import {
 import { computed, onMounted, ref } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 
 interface SignalRow {
     type: string;
@@ -98,6 +98,7 @@ const props = defineProps<{
 const loading = ref(true);
 const error = ref<string | null>(null);
 const payload = ref<SignalsPayload | null>(null);
+const api = useApiV2Client();
 
 const bestBets = computed(() => payload.value?.recommended_bets ?? []);
 
@@ -205,14 +206,9 @@ async function loadSignals(): Promise<void> {
     error.value = null;
 
     try {
-        const params = new URLSearchParams();
-        if (props.season) {
-            params.set('season', String(props.season));
-        }
-
-        const response = await fetchJson<{ data: SignalsPayload }>(
-            `/api/v2/sports/nba/signals${params.toString() ? `?${params}` : ''}`,
-        );
+        const response = await api.signals.index<SignalsPayload>('nba', {
+            query: props.season ? { season: props.season } : undefined,
+        });
         if (!response?.data) {
             throw new Error('Failed to load NBA signals');
         }

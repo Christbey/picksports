@@ -7,10 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { SportInjuriesConfig } from '@/config/sport-injuries-configs';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { BreadcrumbItem } from '@/types';
+import type { ApiV2SportSlug, BreadcrumbItem } from '@/types';
 
 interface InjuryRow {
     id: number;
@@ -44,6 +44,7 @@ const error = ref<string | null>(null);
 const rows = ref<InjuryRow[]>([]);
 const search = ref('');
 const severityFilter = ref<'all' | 'out' | 'questionable' | 'other'>('all');
+const api = useApiV2Client();
 
 const filtered = computed(() => {
     const query = search.value.trim().toLowerCase();
@@ -160,8 +161,9 @@ async function fetchInjuries() {
     error.value = null;
 
     try {
-        const payload = await fetchJson<{ data?: InjuryRow[] }>(
-            `/api/v2/sports/${props.config.sport}/injuries?active=1`,
+        const payload = await api.injuries.index<InjuryRow>(
+            props.config.sport as ApiV2SportSlug,
+            { query: { active: 1 } },
         );
         if (!payload) {
             throw new Error('Failed to load injuries');

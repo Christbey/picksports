@@ -5,7 +5,7 @@ import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 
 type ForecastTeam = {
     id: number;
@@ -55,17 +55,6 @@ type TournamentForecast = {
     is_eliminated?: boolean;
 };
 
-type ForecastPayload = {
-    data?: TournamentForecast[];
-    meta?: {
-        available_seasons?: number[];
-        actual_field_size?: number;
-        mode?: string;
-        snapshot_id?: number | null;
-        snapshot_as_of?: string | null;
-    };
-};
-
 const forecasts = ref<TournamentForecast[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -74,6 +63,7 @@ const availableSeasons = ref<number[]>([]);
 const actualFieldSize = ref(0);
 const forecastMode = ref<string>('baseline');
 const snapshotAsOf = ref<string | null>(null);
+const api = useApiV2Client();
 
 const regionOrder = ['East', 'West', 'South', 'Midwest'];
 
@@ -169,9 +159,9 @@ const fetchForecasts = async () => {
     error.value = null;
 
     try {
-        const payload = await fetchJson<ForecastPayload>(
-            `/api/v2/sports/cbb/forecasts?season=${selectedSeason.value}`,
-        );
+        const payload = await api.forecasts.index<TournamentForecast>('cbb', {
+            query: { season: selectedSeason.value },
+        });
         if (!payload) {
             throw new Error('Failed to load tournament forecast data');
         }

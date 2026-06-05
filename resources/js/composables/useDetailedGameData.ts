@@ -198,20 +198,20 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 }
 
                 const [homeTrendsData, awayTrendsData] = await Promise.all([
-                    fetchJson<TeamTrendData>(
-                        `/api/v1/${options.sport}/teams/${homeTeamId}/trends?${trendQuery.toString()}`,
-                    ),
-                    fetchJson<TeamTrendData>(
-                        `/api/v1/${options.sport}/teams/${awayTeamId}/trends?${trendQuery.toString()}`,
-                    ),
+                    api.teams.trends(options.sport, homeTeamId, {
+                        query: Object.fromEntries(trendQuery.entries()),
+                    }),
+                    api.teams.trends(options.sport, awayTeamId, {
+                        query: Object.fromEntries(trendQuery.entries()),
+                    }),
                 ]);
 
-                if (homeTrendsData) {
-                    homeTrends.value = homeTrendsData;
+                if (homeTrendsData?.data) {
+                    homeTrends.value = homeTrendsData.data as TeamTrendData;
                 }
 
-                if (awayTrendsData) {
-                    awayTrends.value = awayTrendsData;
+                if (awayTrendsData?.data) {
+                    awayTrends.value = awayTrendsData.data as TeamTrendData;
                 }
 
                 trendsLoading.value = false;

@@ -149,6 +149,18 @@ export function useApiV2Client() {
                     ),
                     options,
                 ),
+            trends: (
+                sport: ApiV2SportSlug,
+                team: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<ApiV2Record>(
+                    v2.sports.teams.trends.show.url(
+                        { sport, team },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
         },
 
         players: {

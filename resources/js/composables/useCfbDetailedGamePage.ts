@@ -162,12 +162,14 @@ export function useCfbDetailedGamePage(gameId: number) {
                     const homeTeamId =
                         fullGame.home_team?.id || fallback.homeTeam?.id;
                     const [homeGamesData, homeTrendsData] = await Promise.all([
-                        fetchJson<{ data: RecentGameListItem[] }>(
-                            `/api/v1/cfb/teams/${homeTeamId}/games`,
-                        ),
-                        fetchJson<TeamTrendData>(
-                            `/api/v1/cfb/teams/${homeTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`,
-                        ),
+                        api.teams.games('cfb', homeTeamId),
+                        api.teams.trends('cfb', homeTeamId, {
+                            query: {
+                                games: 'season',
+                                season: currentGame.value.season,
+                                before_date: currentGame.value.game_date,
+                            },
+                        }),
                     ]);
 
                     if (homeGamesData?.data) {
@@ -180,8 +182,8 @@ export function useCfbDetailedGamePage(gameId: number) {
                             .slice(0, 5);
                     }
 
-                    if (homeTrendsData) {
-                        homeTrends.value = homeTrendsData;
+                    if (homeTrendsData?.data) {
+                        homeTrends.value = homeTrendsData.data as TeamTrendData;
                     }
                 }
 
@@ -189,12 +191,14 @@ export function useCfbDetailedGamePage(gameId: number) {
                     const awayTeamId =
                         fullGame.away_team?.id || fallback.awayTeam?.id;
                     const [awayGamesData, awayTrendsData] = await Promise.all([
-                        fetchJson<{ data: RecentGameListItem[] }>(
-                            `/api/v1/cfb/teams/${awayTeamId}/games`,
-                        ),
-                        fetchJson<TeamTrendData>(
-                            `/api/v1/cfb/teams/${awayTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`,
-                        ),
+                        api.teams.games('cfb', awayTeamId),
+                        api.teams.trends('cfb', awayTeamId, {
+                            query: {
+                                games: 'season',
+                                season: currentGame.value.season,
+                                before_date: currentGame.value.game_date,
+                            },
+                        }),
                     ]);
 
                     if (awayGamesData?.data) {
@@ -207,8 +211,8 @@ export function useCfbDetailedGamePage(gameId: number) {
                             .slice(0, 5);
                     }
 
-                    if (awayTrendsData) {
-                        awayTrends.value = awayTrendsData;
+                    if (awayTrendsData?.data) {
+                        awayTrends.value = awayTrendsData.data as TeamTrendData;
                     }
                 }
             }

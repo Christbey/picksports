@@ -338,12 +338,14 @@ export function useNflGamePage(gameId: number) {
                     const homeTeamId =
                         fullGame.home_team?.id || fallbackGame.homeTeam?.id;
                     const [homeGamesData, homeTrendsData] = await Promise.all([
-                        fetchJson<{ data: RecentGameListItem[] }>(
-                            `/api/v1/nfl/teams/${homeTeamId}/games`,
-                        ),
-                        fetchJson<TeamTrendData>(
-                            `/api/v1/nfl/teams/${homeTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`,
-                        ),
+                        api.teams.games('nfl', homeTeamId),
+                        api.teams.trends('nfl', homeTeamId, {
+                            query: {
+                                games: 'season',
+                                season: currentGame.value.season,
+                                before_date: currentGame.value.game_date,
+                            },
+                        }),
                     ]);
                     if (homeGamesData?.data) {
                         homeRecentGames.value = (homeGamesData.data || [])
@@ -354,8 +356,8 @@ export function useNflGamePage(gameId: number) {
                             )
                             .slice(0, 5);
                     }
-                    if (homeTrendsData) {
-                        homeTrends.value = homeTrendsData;
+                    if (homeTrendsData?.data) {
+                        homeTrends.value = homeTrendsData.data as TeamTrendData;
                     }
                 }
 
@@ -363,12 +365,14 @@ export function useNflGamePage(gameId: number) {
                     const awayTeamId =
                         fullGame.away_team?.id || fallbackGame.awayTeam?.id;
                     const [awayGamesData, awayTrendsData] = await Promise.all([
-                        fetchJson<{ data: RecentGameListItem[] }>(
-                            `/api/v1/nfl/teams/${awayTeamId}/games`,
-                        ),
-                        fetchJson<TeamTrendData>(
-                            `/api/v1/nfl/teams/${awayTeamId}/trends?games=season&season=${currentGame.value.season}&before_date=${currentGame.value.game_date}`,
-                        ),
+                        api.teams.games('nfl', awayTeamId),
+                        api.teams.trends('nfl', awayTeamId, {
+                            query: {
+                                games: 'season',
+                                season: currentGame.value.season,
+                                before_date: currentGame.value.game_date,
+                            },
+                        }),
                     ]);
                     if (awayGamesData?.data) {
                         awayRecentGames.value = (awayGamesData.data || [])
@@ -379,8 +383,8 @@ export function useNflGamePage(gameId: number) {
                             )
                             .slice(0, 5);
                     }
-                    if (awayTrendsData) {
-                        awayTrends.value = awayTrendsData;
+                    if (awayTrendsData?.data) {
+                        awayTrends.value = awayTrendsData.data as TeamTrendData;
                     }
                 }
             }

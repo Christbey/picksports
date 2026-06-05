@@ -14,6 +14,7 @@ use App\Http\Controllers\Api\V2\SportSignalController;
 use App\Http\Controllers\Api\V2\SportStatController;
 use App\Http\Controllers\Api\V2\SportTeamController;
 use App\Http\Controllers\Api\V2\SportTeamMetricController;
+use App\Http\Controllers\Api\V2\SportTeamTrendController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v2')->name('v2.')->group(function (): void {
@@ -42,6 +43,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/teams/{team}/games', [SportGameController::class, 'teamIndex'])->name('teams.games.index');
             Route::get('/teams/{team}/metrics', [SportTeamMetricController::class, 'teamShow'])->name('teams.metrics.show');
             Route::get('/teams/{team}/players', [SportPlayerController::class, 'teamIndex'])->name('teams.players.index');
+            Route::get('/teams/{team}/trends', [SportTeamTrendController::class, 'show'])->name('teams.trends.show');
 
             Route::get('/players', [SportPlayerController::class, 'index'])->name('players.index');
             Route::get('/players/{player}', [SportPlayerController::class, 'show'])->name('players.show');

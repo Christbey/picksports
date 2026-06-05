@@ -265,6 +265,40 @@ export function useApiV2Client() {
                 ),
         },
 
+        alertPreferences: {
+            show: <T = unknown>(options: RequestOptions = {}) =>
+                get<T>(
+                    v2.alertPreferences.show.url(
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            store: <T = unknown>(
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.alertPreferences.store.url(
+                        routeOptions(options.query),
+                    ),
+                    'POST',
+                    payload,
+                    options,
+                ),
+            update: <T = unknown>(
+                payload: ApiV2JsonPayload,
+                options: RequestOptions = {},
+            ) =>
+                mutate<T>(
+                    v2.alertPreferences.update.url(
+                        routeOptions(options.query),
+                    ),
+                    'PUT',
+                    payload,
+                    options,
+                ),
+        },
+
         sports: {
             index: (options: RequestOptions = {}) =>
                 collection<ApiV2Sport>(

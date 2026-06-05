@@ -13,6 +13,7 @@ class LogV1ApiUsage
      * @var array<string, string>
      */
     private const APP_ROUTE_REPLACEMENTS = [
+        'alert-preferences' => '/api/v2/alert-preferences',
         'cbb-brackets' => '/api/v2/cbb-brackets',
         'groups' => '/api/v2/groups',
         'user-bets' => '/api/v2/user-bets',

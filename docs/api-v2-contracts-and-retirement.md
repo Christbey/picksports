@@ -15,6 +15,7 @@ them, and how to validate the remaining `/api/v1` usage before retirement.
 | Saved/tracked picks | `GET/POST/PUT/DELETE /api/v2/user-bets` | `resources/js/pages/MyBets.vue`, `resources/js/components/predictions/*` | `app/Http/Controllers/BetTrackerController.php` | `tests/Feature/BetTrackerTest.php` |
 | March Madness brackets | `GET/POST/PATCH /api/v2/cbb-brackets` | `resources/js/pages/MarchMadnessBracket.vue` | `app/Http/Controllers/Api/CBB/BracketController.php` | `tests/Feature/CbbBracketApiTest.php` |
 | Bracket groups | `GET/POST/PATCH /api/v2/groups` | `resources/js/pages/MarchMadnessBracket.vue` | `app/Http/Controllers/Api/GroupController.php` | `tests/Feature/GroupApiTest.php` |
+| Alert preferences | `GET/POST/PUT /api/v2/alert-preferences` | `resources/js/composables/useApiV2Client.ts` | `app/Http/Controllers/AlertPreferenceController.php` | `tests/Feature/Api/V2/AlertPreferenceApiTest.php` |
 | Payload inspector | `GET /api/v2/admin/payload-inspector` | `resources/js/composables/usePayloadInspector.ts`, `resources/js/pages/settings/Admin.vue` | `app/Http/Controllers/Api/V2/Admin/PayloadInspectorController.php` | `tests/Feature/Api/V2/Admin/PayloadInspectorTest.php` |
 
 ## Contract Shapes
@@ -55,8 +56,9 @@ them, and how to validate the remaining `/api/v1` usage before retirement.
 
 ### App-Level Compatibility Resources
 
-`/api/v2/user-bets`, `/api/v2/cbb-brackets`, and `/api/v2/groups` currently
-preserve their legacy resource wrappers while Vue is migrated:
+`/api/v2/user-bets`, `/api/v2/cbb-brackets`, `/api/v2/groups`, and
+`/api/v2/alert-preferences` currently preserve their legacy resource wrappers
+while Vue is migrated:
 
 ```json
 {

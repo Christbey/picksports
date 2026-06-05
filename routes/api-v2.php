@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AlertPreferenceController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
@@ -63,6 +64,15 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/', [GroupController::class, 'index'])->name('index');
             Route::post('/', [GroupController::class, 'store'])->name('store');
             Route::patch('/{publicId}', [GroupController::class, 'update'])->name('update');
+        });
+
+    Route::middleware(['auth:sanctum'])
+        ->prefix('/alert-preferences')
+        ->name('alert-preferences.')
+        ->group(function (): void {
+            Route::get('/', [AlertPreferenceController::class, 'show'])->name('show');
+            Route::post('/', [AlertPreferenceController::class, 'store'])->name('store');
+            Route::put('/', [AlertPreferenceController::class, 'update'])->name('update');
         });
 
     Route::middleware(['auth:sanctum', 'admin'])

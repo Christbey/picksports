@@ -116,6 +116,10 @@ const isSearchingGroupUsers = ref<Record<number, boolean>>({});
 let groupUserSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let groupUserSearchAbortController: AbortController | null = null;
 const payloadInspector = usePayloadInspector();
+const payloadInspectorLinks = payloadInspector.profileLinks({
+    includePayload: true,
+    includeWarnings: true,
+});
 
 async function fetchUserSuggestions(
     url: string,
@@ -454,6 +458,7 @@ const adminAreas = [
             includePayload: true,
         }),
         external: true,
+        links: payloadInspectorLinks,
     },
     {
         title: 'Prediction Access Debug',
@@ -1313,6 +1318,21 @@ const adminAreas = [
                         <p class="mt-2 text-sm text-muted-foreground">
                             {{ area.description }}
                         </p>
+                        <div
+                            v-if="'links' in area"
+                            class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2"
+                        >
+                            <a
+                                v-for="link in area.links"
+                                :key="link.profile"
+                                :href="link.href"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                class="rounded-md border border-sidebar-border px-3 py-2 text-xs font-medium text-foreground transition hover:border-primary hover:text-primary"
+                            >
+                                {{ link.title }}
+                            </a>
+                        </div>
                         <Button as-child variant="outline" class="mt-4">
                             <a
                                 v-if="area.external"

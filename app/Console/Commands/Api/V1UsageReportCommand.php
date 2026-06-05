@@ -17,6 +17,10 @@ class V1UsageReportCommand extends Command
 
     protected $description = 'Summarize logged legacy product API v1 usage before route retirement.';
 
+    protected string $eventName = 'api.v1.usage';
+
+    protected string $emptyMessage = 'No api.v1.usage entries found.';
+
     public function handle(): int
     {
         $entries = $this->entries();
@@ -32,7 +36,7 @@ class V1UsageReportCommand extends Command
         }
 
         if ($summary->isEmpty()) {
-            $this->info('No api.v1.usage entries found.');
+            $this->info($this->emptyMessage);
 
             return self::SUCCESS;
         }
@@ -56,7 +60,7 @@ class V1UsageReportCommand extends Command
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function entries()
+    protected function entries()
     {
         return collect($this->logPaths())
             ->flatMap(fn (string $path) => $this->parseFile($path))
@@ -66,7 +70,7 @@ class V1UsageReportCommand extends Command
     /**
      * @return array<int, string>
      */
-    private function logPaths(): array
+    protected function logPaths(): array
     {
         $paths = (array) $this->option('path');
 
@@ -93,7 +97,7 @@ class V1UsageReportCommand extends Command
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function parseFile(string $path): array
+    protected function parseFile(string $path): array
     {
         $handle = fopen($path, 'rb');
         if ($handle === false) {
@@ -117,13 +121,15 @@ class V1UsageReportCommand extends Command
     /**
      * @return array<string, mixed>|null
      */
-    private function parseLine(string $line): ?array
+    protected function parseLine(string $line): ?array
     {
-        if (! str_contains($line, 'api.v1.usage')) {
+        if (! str_contains($line, $this->eventName)) {
             return null;
         }
 
-        if (! preg_match('/^\[(?<logged_at>[^\]]+)\].*api\.v1\.usage (?<context>\{.*\})\s*$/', trim($line), $matches)) {
+        $eventPattern = preg_quote($this->eventName, '/');
+
+        if (! preg_match('/^\[(?<logged_at>[^\]]+)\].*'.$eventPattern.' (?<context>\{.*\})\s*$/', trim($line), $matches)) {
             return null;
         }
 
@@ -145,7 +151,7 @@ class V1UsageReportCommand extends Command
      * @param  Collection<int, array<string, mixed>>  $entries
      * @return Collection<int, array<string, mixed>>
      */
-    private function summarize($entries)
+    protected function summarize($entries)
     {
         $replacementResolver = app(V1ReplacementPathResolver::class);
 

@@ -68,3 +68,8 @@ npm run build
 
 In production, confirm no `/api/v1/auth/*` traffic remains after v2 auth
 aliases are deployed and client updates are complete.
+
+```bash
+php artisan api:v1-auth-usage-report
+php artisan api:v1-auth-usage-report --json
+```

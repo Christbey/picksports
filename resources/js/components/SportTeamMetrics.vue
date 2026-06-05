@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSeasonFilter } from '@/composables/useSeasonFilter';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { type BreadcrumbItem } from '@/types';
+import { type ApiV2SportSlug, type BreadcrumbItem } from '@/types';
 
 export interface SortOption {
     key: string;
@@ -30,14 +30,12 @@ export interface MetricsConfig {
     sport: string;
     title: string;
     subtitle: string;
-    apiEndpoint: string;
     breadcrumbHref: string;
     teamLink: (teamId: number) => string;
     sortOptions: SortOption[];
     defaultSort: string;
     columns: Column[];
     hasMeetsMinimum?: boolean;
-    availableSeasonsEndpoint?: string;
     seasonTypeOptions?: Array<{ value: string; label: string }>;
 }
 
@@ -61,13 +59,32 @@ const sortBy = ref(props.config.defaultSort);
 const sortDesc = ref(true);
 const tierLimit = ref<number | null>(null);
 const tierName = ref<string | null>(null);
-const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
-    useSeasonFilter(() => {
-        return (
-            props.config.availableSeasonsEndpoint ??
-            `${props.config.apiEndpoint}/available-seasons`
-        );
-    });
+const availableSeasons = ref<number[]>([]);
+const selectedSeason = ref('');
+const api = useApiV2Client();
+const sport = computed(() => props.config.sport as ApiV2SportSlug);
+
+const fetchAvailableSeasons = async () => {
+    const payload = await api.metrics.teamAvailableSeasons(sport.value);
+    if (!payload) {
+        throw new Error('Failed to fetch available seasons');
+    }
+
+    availableSeasons.value = Array.isArray(payload.data)
+        ? payload.data
+              .map((season) => Number(season))
+              .filter((season) => Number.isFinite(season))
+        : [];
+
+    if (!selectedSeason.value && availableSeasons.value.length > 0) {
+        const currentYear = new Date().getFullYear();
+        const preferredSeason = availableSeasons.value.includes(currentYear)
+            ? currentYear
+            : Math.max(...availableSeasons.value);
+
+        selectedSeason.value = String(preferredSeason);
+    }
+};
 
 const currentSortOption = computed(() => {
     return props.config.sortOptions.find((o) => o.key === sortBy.value);
@@ -116,23 +133,22 @@ const fetchMetrics = async () => {
         loading.value = true;
         error.value = null;
 
-        const seasonQuery = selectedSeason.value
-            ? `?season=${encodeURIComponent(selectedSeason.value)}`
-            : '';
-        const params = new URLSearchParams(seasonQuery.replace(/^\?/, ''));
-        params.set('per_page', '100');
-        if (selectedSeasonType.value) {
-            params.set('season_type', selectedSeasonType.value);
+        const query: Record<string, string | number> = { per_page: 500 };
+        if (selectedSeason.value) {
+            query.season = selectedSeason.value;
         }
-        const response = await fetch(
-            `${props.config.apiEndpoint}?${params.toString()}`,
-        );
-        if (!response.ok) throw new Error('Failed to fetch team metrics');
+        if (selectedSeasonType.value) {
+            query.season_type = selectedSeasonType.value;
+        }
 
-        const data = await response.json();
-        metrics.value = data.data;
-        tierLimit.value = data.meta?.tier?.limit ?? data.tier_limit ?? null;
-        tierName.value = data.meta?.tier?.name ?? data.tier_name ?? null;
+        const response = await api.metrics.teams(sport.value, { query });
+        if (!response) throw new Error('Failed to fetch team metrics');
+
+        metrics.value = response.data ?? [];
+        tierLimit.value =
+            response.meta?.tier?.limit ?? (response as any).tier_limit ?? null;
+        tierName.value =
+            response.meta?.tier?.name ?? (response as any).tier_name ?? null;
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {

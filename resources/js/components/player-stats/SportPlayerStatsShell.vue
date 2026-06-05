@@ -9,9 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSeasonFilter } from '@/composables/useSeasonFilter';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { BreadcrumbItem } from '@/types';
+import type { ApiV2SportSlug, BreadcrumbItem } from '@/types';
 
 type HrefLike = string | UrlMethodPair;
 
@@ -90,13 +90,12 @@ interface StatCategoryOption {
 }
 
 interface SportPlayerStatsShellConfig {
+    sport: ApiV2SportSlug;
     pageTitle: string;
     heading: string;
     description: string;
     breadcrumb: BreadcrumbItem;
     bannerStorageKey: string;
-    leaderboardEndpoint: string;
-    availableSeasonsEndpoint?: string;
     showEpaColumns?: boolean;
     sortOptions?: SortOption[];
     statColumns?: StatColumn[];
@@ -121,16 +120,33 @@ const sortBy = ref('points_per_game');
 const sortDesc = ref(true);
 const selectedCategory = ref<string>('all');
 const seasonReady = ref(false);
-const { availableSeasons, selectedSeason, fetchAvailableSeasons } =
-    useSeasonFilter(() => {
-        return (
-            props.config.availableSeasonsEndpoint ??
-            props.config.leaderboardEndpoint.replace(
-                /\/leaderboard$/,
-                '/available-seasons',
-            )
-        );
-    });
+const availableSeasons = ref<number[]>([]);
+const selectedSeason = ref('');
+const api = useApiV2Client();
+
+const fetchAvailableSeasons = async () => {
+    const payload = await api.leaderboards.playerAvailableSeasons(
+        props.config.sport,
+    );
+    if (!payload) {
+        throw new Error('Failed to fetch available seasons');
+    }
+
+    availableSeasons.value = Array.isArray(payload.data)
+        ? payload.data
+              .map((season) => Number(season))
+              .filter((season) => Number.isFinite(season))
+        : [];
+
+    if (!selectedSeason.value && availableSeasons.value.length > 0) {
+        const currentYear = new Date().getFullYear();
+        const preferredSeason = availableSeasons.value.includes(currentYear)
+            ? currentYear
+            : Math.max(...availableSeasons.value);
+
+        selectedSeason.value = String(preferredSeason);
+    }
+};
 
 const categoryOptions = computed(() => props.config.statCategoryOptions ?? []);
 
@@ -198,27 +214,25 @@ const fetchPlayers = async () => {
         loading.value = true;
         error.value = null;
 
-        const seasonQuery = selectedSeason.value
-            ? `?season=${encodeURIComponent(selectedSeason.value)}`
-            : '';
-        const params = new URLSearchParams(seasonQuery.replace(/^\?/, ''));
+        const query: Record<string, string | number> = {};
+        if (selectedSeason.value) {
+            query.season = selectedSeason.value;
+        }
         const minGames =
             activeCategory.value?.minGames ?? props.config.minGames;
         if (typeof minGames === 'number' && Number.isFinite(minGames)) {
-            params.set('min_games', String(Math.max(0, Math.trunc(minGames))));
+            query.min_games = Math.max(0, Math.trunc(minGames));
         }
         if (selectedSeasonType.value) {
-            params.set('season_type', selectedSeasonType.value);
-        }
-        const response = await fetch(
-            `${props.config.leaderboardEndpoint}?${params.toString()}`,
-        );
-        if (!response.ok) {
-            throw new Error('Failed to fetch player stats');
+            query.season_type = selectedSeasonType.value;
         }
 
-        const data = await response.json();
-        players.value = data.data;
+        const response = await api.leaderboards.players(props.config.sport, {
+            query,
+        });
+        if (!response) throw new Error('Failed to fetch player stats');
+
+        players.value = response.data ?? [];
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {

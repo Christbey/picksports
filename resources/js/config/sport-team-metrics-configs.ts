@@ -22,7 +22,6 @@ interface CreateSportTeamMetricsConfigParams {
     defaultSort: string;
     columns: MetricsConfig['columns'];
     hasMeetsMinimum?: boolean;
-    apiEndpoint?: string;
     breadcrumbHref?: string;
     seasonTypeOptions?: MetricsConfig['seasonTypeOptions'];
 }
@@ -43,10 +42,6 @@ export function createSportTeamMetricsConfig(
         sport: params.sport,
         title: params.title,
         subtitle: params.subtitle,
-        apiEndpoint:
-            params.apiEndpoint ??
-            `/api/v2/sports/${params.sport}/metrics/teams`,
-        availableSeasonsEndpoint: `/api/v2/sports/${params.sport}/metrics/teams/available-seasons`,
         breadcrumbHref:
             params.breadcrumbHref ?? `/${params.sport}/team-metrics`,
         teamLink: params.teamLink,

@@ -5,6 +5,7 @@ use App\Models\CBB\Team as CbbTeam;
 use App\Models\CFB\Game as CfbGame;
 use App\Models\CFB\Team as CfbTeam;
 use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NBA\Team as NbaTeam;
@@ -34,6 +35,86 @@ it('requires authenticated access for v2 game endpoints', function (string $slug
     $this->getJson("/api/v2/sports/{$slug}/games/1")
         ->assertUnauthorized();
 })->with('v2GameContractSports');
+
+it('shows v2 mlb games with page-ready matchup context and probable pitcher fields', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $homeTeam = MlbTeam::factory()->create([
+        'abbreviation' => 'SF',
+        'name' => 'Giants',
+        'division' => 'West',
+    ]);
+    $awayTeam = MlbTeam::factory()->create([
+        'abbreviation' => 'NYY',
+        'name' => 'Yankees',
+        'division' => 'East',
+    ]);
+    $homePitcher = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => '5001',
+        'full_name' => 'Logan Webb',
+    ]);
+    $awayPitcher = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $awayTeam->id,
+        'espn_id' => '5002',
+        'full_name' => 'Gerrit Cole',
+    ]);
+
+    MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-20',
+        'game_time' => '18:05:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 2,
+        'away_score' => 4,
+    ]);
+
+    $game = MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-03-25',
+        'game_time' => '19:05:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'probable_home_pitcher_espn_id' => $homePitcher->espn_id,
+        'probable_away_pitcher_espn_id' => $awayPitcher->espn_id,
+        'venue_name' => 'Oracle Park',
+        'venue_city' => 'San Francisco',
+        'venue_state' => 'CA',
+        'home_linescores' => [['period' => 1, 'value' => 0]],
+        'away_linescores' => [['period' => 1, 'value' => 0]],
+        'broadcast_networks' => ['ESPN'],
+    ]);
+
+    $response = $this->getJson("/api/v2/sports/mlb/games/{$game->id}")
+        ->assertOk()
+        ->assertJsonPath('meta.sport', 'mlb')
+        ->assertJsonPath('data.venue_name', 'Oracle Park')
+        ->assertJsonPath('data.venue_city', 'San Francisco')
+        ->assertJsonPath('data.probable_home_pitcher_espn_id', '5001')
+        ->assertJsonPath('data.probable_away_pitcher_espn_id', '5002')
+        ->assertJsonPath('data.home_starting_pitcher.full_name', 'Logan Webb')
+        ->assertJsonPath('data.away_starting_pitcher.full_name', 'Gerrit Cole')
+        ->assertJsonPath('data.home_team.abbreviation', 'SF')
+        ->assertJsonPath('data.away_team.abbreviation', 'NYY')
+        ->assertJsonStructure([
+            'data' => [
+                'home_linescores',
+                'away_linescores',
+                'broadcast_networks',
+                'matchup_context' => [
+                    'rows',
+                ],
+            ],
+        ]);
+
+    expect(collect($response->json('data.matchup_context.rows'))->pluck('key')->all())
+        ->toContain('head_to_head');
+});
 
 it('returns a clean json 404 for unsupported v2 sport game endpoints', function () {
     Sanctum::actingAs(User::factory()->create());

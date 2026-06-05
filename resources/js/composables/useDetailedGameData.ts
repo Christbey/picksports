@@ -58,9 +58,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
 
             const [gameData, predictionData, teamStatsData, playerStatsData] =
                 await Promise.all([
-                    fetchJson<ApiEnvelope<Game>>(
-                        `/api/v1/${options.sport}/games/${options.gameId}`,
-                    ),
+                    api.games.show(options.sport, options.gameId),
                     fetchJson<
                         ApiEnvelope<Prediction | Record<string, unknown> | null>
                     >(
@@ -76,7 +74,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
 
             const fullGame = gameData?.data;
             if (fullGame) {
-                game.value = fullGame;
+                game.value = fullGame as Game;
                 homeTeam.value = fullGame.home_team ?? homeTeam.value;
                 awayTeam.value = fullGame.away_team ?? awayTeam.value;
             }

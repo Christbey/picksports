@@ -7,6 +7,7 @@ use App\Http\Requests\Api\V2\SportGameIndexRequest;
 use App\Http\Resources\Api\V2\SportGameResource;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportGameQuery;
+use App\Services\Sports\GameMatchupContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -50,9 +51,11 @@ class SportGameController extends Controller
         Request $request,
         SportContextResolver $sports,
         SportGameQuery $games,
+        GameMatchupContextService $matchupContext,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $resolvedGame = $games->find($context, $game, $request->user());
+        $resolvedGame->setAttribute('matchup_context', $matchupContext->forGame($resolvedGame));
 
         return response()->json([
             'data' => new SportGameResource($resolvedGame, $context),

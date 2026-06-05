@@ -343,14 +343,14 @@ export function useMlbGamePage(gameId: number) {
             error.value = null;
 
             const [gameData, predictionData] = await Promise.all([
-                fetchJson<{ data: MlbPageGame }>(`/api/v1/mlb/games/${gameId}`),
+                api.games.show('mlb', gameId),
                 fetchJson<{ data: MlbPagePrediction }>(
                     `/api/v1/mlb/games/${gameId}/prediction`,
                 ),
             ]);
 
             if (gameData?.data) {
-                currentGame.value = gameData.data;
+                currentGame.value = gameData.data as MlbPageGame;
             }
 
             const [homeTeamData, awayTeamData] = await Promise.all([

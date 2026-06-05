@@ -134,9 +134,7 @@ export function useCfbDetailedGamePage(gameId: number) {
 
             const [gameData, predictionData, teamStatsData] = await Promise.all(
                 [
-                    fetchJson<{ data: NflPageGame }>(
-                        `/api/v1/cfb/games/${gameId}`,
-                    ),
+                    api.games.show('cfb', gameId),
                     fetchJson<{
                         data: NflPagePrediction | NflPagePrediction[];
                     }>(`/api/v1/cfb/games/${gameId}/prediction`),
@@ -147,7 +145,7 @@ export function useCfbDetailedGamePage(gameId: number) {
             );
 
             if (gameData?.data) {
-                const fullGame = gameData.data;
+                const fullGame = gameData.data as NflPageGame;
                 currentGame.value = fullGame;
                 const fallback = fullGame as NflPageGame & {
                     homeTeam?: NflPageGame['home_team'];

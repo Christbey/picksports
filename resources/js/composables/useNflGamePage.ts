@@ -310,9 +310,7 @@ export function useNflGamePage(gameId: number) {
 
             const [gameData, predictionData, teamStatsData] = await Promise.all(
                 [
-                    fetchJson<{ data: NflPageGame }>(
-                        `/api/v1/nfl/games/${gameId}`,
-                    ),
+                    api.games.show('nfl', gameId),
                     fetchJson<{
                         data: NflPagePrediction | NflPagePrediction[];
                     }>(`/api/v1/nfl/games/${gameId}/prediction`),
@@ -323,7 +321,7 @@ export function useNflGamePage(gameId: number) {
             );
 
             if (gameData?.data) {
-                const fullGame = gameData.data;
+                const fullGame = gameData.data as NflPageGame;
                 currentGame.value = fullGame;
                 const fallbackGame = fullGame as NflPageGame & {
                     homeTeam?: NflPageGame['home_team'];

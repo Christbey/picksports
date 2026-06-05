@@ -84,7 +84,7 @@ class SportGameQuery
     private function relationsFor(string $gameModel): array
     {
         return array_values(array_filter(
-            ['homeTeam', 'awayTeam', 'prediction'],
+            ['homeTeam', 'awayTeam', 'prediction', 'probableHomePitcher', 'probableAwayPitcher'],
             fn (string $relation): bool => method_exists($gameModel, $relation),
         ));
     }

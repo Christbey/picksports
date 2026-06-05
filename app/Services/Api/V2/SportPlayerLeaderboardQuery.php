@@ -4,6 +4,7 @@ namespace App\Services\Api\V2;
 
 use App\Services\PlayerStats\BasketballLeaderboardService;
 use App\Services\PlayerStats\CfbPlayerLeaderboardService;
+use App\Services\PlayerStats\MlbPlayerLeaderboardService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
@@ -17,6 +18,7 @@ class SportPlayerLeaderboardQuery
         private readonly BasketballLeaderboardService $basketballLeaderboards,
         private readonly NbaPlayerEpaCalculator $basketballEpa,
         private readonly CfbPlayerLeaderboardService $cfbLeaderboards,
+        private readonly MlbPlayerLeaderboardService $mlbLeaderboards,
     ) {}
 
     /**
@@ -36,6 +38,10 @@ class SportPlayerLeaderboardQuery
             return $this->cfbLeaderboard($context, $filters);
         }
 
+        if ($context->slug === 'mlb') {
+            return $this->mlbLeaderboard($context, $filters);
+        }
+
         $controllerClass = $this->controllerClass($context);
         $request = $this->requestWithFilters($filters, $user);
         $response = app($controllerClass)->leaderboard($request);
@@ -51,6 +57,24 @@ class SportPlayerLeaderboardQuery
         return collect($response->response($request)->getData(true)['data'] ?? [])
             ->map(fn (mixed $row): array => (array) $row)
             ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function mlbLeaderboard(SportContext $context, array $filters): Collection
+    {
+        if (! $context->supports('player_stats_leaderboard')) {
+            abort(404, "Player leaderboard is not available for {$context->slug}.");
+        }
+
+        return $this->mlbLeaderboards->execute(
+            minGames: (int) ($filters['min_games'] ?? 10),
+            season: array_key_exists('season', $filters) ? (int) $filters['season'] : null,
+            seasonTypeCandidates: $this->seasonTypeCandidates($context, (string) ($filters['season_type'] ?? '')),
+            statType: array_key_exists('stat_type', $filters) ? (string) $filters['stat_type'] : null,
+        );
     }
 
     /**

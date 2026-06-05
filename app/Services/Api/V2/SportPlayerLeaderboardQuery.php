@@ -3,6 +3,7 @@
 namespace App\Services\Api\V2;
 
 use App\Services\PlayerStats\BasketballLeaderboardService;
+use App\Services\PlayerStats\CfbPlayerLeaderboardService;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\JsonResponse;
@@ -15,6 +16,7 @@ class SportPlayerLeaderboardQuery
     public function __construct(
         private readonly BasketballLeaderboardService $basketballLeaderboards,
         private readonly NbaPlayerEpaCalculator $basketballEpa,
+        private readonly CfbPlayerLeaderboardService $cfbLeaderboards,
     ) {}
 
     /**
@@ -28,6 +30,10 @@ class SportPlayerLeaderboardQuery
     ): Collection {
         if ($this->isBasketballLeaderboard($context)) {
             return $this->basketballLeaderboard($context, $filters);
+        }
+
+        if ($context->slug === 'cfb') {
+            return $this->cfbLeaderboard($context, $filters);
         }
 
         $controllerClass = $this->controllerClass($context);
@@ -45,6 +51,23 @@ class SportPlayerLeaderboardQuery
         return collect($response->response($request)->getData(true)['data'] ?? [])
             ->map(fn (mixed $row): array => (array) $row)
             ->values();
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function cfbLeaderboard(SportContext $context, array $filters): Collection
+    {
+        if (! $context->supports('player_stats_leaderboard')) {
+            abort(404, "Player leaderboard is not available for {$context->slug}.");
+        }
+
+        return $this->cfbLeaderboards->execute(
+            minGames: (int) ($filters['min_games'] ?? 4),
+            season: array_key_exists('season', $filters) ? (int) $filters['season'] : null,
+            seasonTypeCandidates: $this->seasonTypeCandidates($context, (string) ($filters['season_type'] ?? '')),
+        );
     }
 
     /**

@@ -125,6 +125,18 @@ export function useApiV2Client() {
                     ),
                     options,
                 ),
+            games: (
+                sport: ApiV2SportSlug,
+                team: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                collection<ApiV2Game>(
+                    v2.sports.teams.games.index.url(
+                        { sport, team },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
             metrics: (
                 sport: ApiV2SportSlug,
                 team: ApiV2Id,

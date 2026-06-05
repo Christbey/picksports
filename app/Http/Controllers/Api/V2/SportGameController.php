@@ -63,4 +63,40 @@ class SportGameController extends Controller
             ],
         ]);
     }
+
+    public function teamIndex(
+        string $sport,
+        string $team,
+        SportGameIndexRequest $request,
+        SportContextResolver $sports,
+        SportGameQuery $games,
+    ): JsonResponse {
+        $context = $sports->resolve($sport);
+        $filters = array_merge($request->validatedFilters(), [
+            'team_id' => (int) $team,
+        ]);
+        $paginator = $games->paginate($context, $filters, $request->user());
+
+        $paginator->setCollection(
+            $paginator->getCollection()->map(fn ($game) => new SportGameResource($game, $context))
+        );
+
+        return response()->json([
+            'data' => $paginator->getCollection()->values(),
+            'meta' => [
+                'sport' => $context->slug,
+                'team_id' => (int) $team,
+                'filters' => $filters,
+                'pagination' => [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ],
+                'tier' => [],
+                'freshness' => [],
+                'warnings' => [],
+            ],
+        ]);
+    }
 }

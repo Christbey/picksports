@@ -120,9 +120,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                     },
                     {
                         key: 'homeGames',
-                        promise: fetchJson<ApiEnvelope<Game[]>>(
-                            `/api/v1/${options.sport}/teams/${homeTeamId}/games`,
-                        ),
+                        promise: api.teams.games(options.sport, homeTeamId),
                     },
                 );
             }
@@ -135,9 +133,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                     },
                     {
                         key: 'awayGames',
-                        promise: fetchJson<ApiEnvelope<Game[]>>(
-                            `/api/v1/${options.sport}/teams/${awayTeamId}/games`,
-                        ),
+                        promise: api.teams.games(options.sport, awayTeamId),
                     },
                 );
             }

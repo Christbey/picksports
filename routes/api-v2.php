@@ -39,6 +39,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/teams', [SportTeamController::class, 'index'])->name('teams.index');
             Route::get('/teams/{team}', [SportTeamController::class, 'show'])->name('teams.show');
             Route::get('/teams/{team}/futures', [SportFuturesOddController::class, 'teamIndex'])->name('teams.futures.index');
+            Route::get('/teams/{team}/games', [SportGameController::class, 'teamIndex'])->name('teams.games.index');
             Route::get('/teams/{team}/metrics', [SportTeamMetricController::class, 'teamShow'])->name('teams.metrics.show');
             Route::get('/teams/{team}/players', [SportPlayerController::class, 'teamIndex'])->name('teams.players.index');
 

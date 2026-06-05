@@ -146,3 +146,66 @@ it('shows a v2 game with sport, freshness, and warning metadata', function (
     expect($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2GameContractSports');
+
+it('lists v2 games for a team with sport, team, filters, pagination, freshness, and warning metadata', function (
+    string $slug,
+    string $teamModel,
+    string $gameModel,
+) {
+    Sanctum::actingAs(User::factory()->create());
+
+    $targetTeam = $teamModel::factory()->create();
+    $opponent = $teamModel::factory()->create();
+    $otherHomeTeam = $teamModel::factory()->create();
+    $otherAwayTeam = $teamModel::factory()->create();
+
+    $targetGame = $gameModel::factory()->create([
+        'home_team_id' => $targetTeam->id,
+        'away_team_id' => $opponent->id,
+        'season' => 2026,
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-02-01 18:00:00',
+    ]);
+    $gameModel::factory()->create([
+        'home_team_id' => $otherHomeTeam->id,
+        'away_team_id' => $otherAwayTeam->id,
+        'season' => 2026,
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-02-02 18:00:00',
+    ]);
+
+    $response = $this->getJson("/api/v2/sports/{$slug}/teams/{$targetTeam->id}/games?season=2026&status=STATUS_FINAL&per_page=5")
+        ->assertOk()
+        ->assertJsonStructure([
+            'data' => [
+                '*' => [
+                    'id',
+                    'home_team_id',
+                    'away_team_id',
+                    'season',
+                    'status',
+                    'home_team',
+                    'away_team',
+                ],
+            ],
+            'meta' => [
+                'sport',
+                'team_id',
+                'filters',
+                'pagination',
+                'freshness',
+                'warnings',
+            ],
+        ])
+        ->assertJsonPath('meta.sport', $slug)
+        ->assertJsonPath('meta.team_id', $targetTeam->id)
+        ->assertJsonPath('meta.filters.team_id', $targetTeam->id)
+        ->assertJsonPath('meta.filters.season', 2026)
+        ->assertJsonPath('data.0.id', $targetGame->id)
+        ->assertJsonPath('data.0.home_team_id', $targetTeam->id);
+
+    expect($response->json('data'))->toHaveCount(1)
+        ->and($response->json('meta.pagination'))->toBeArray()
+        ->and($response->json('meta.freshness'))->toBeArray()
+        ->and($response->json('meta.warnings'))->toBeArray();
+})->with('v2GameContractSports');

@@ -14,7 +14,7 @@ class SportGameQuery
     private const MAX_PER_PAGE = 100;
 
     /**
-     * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int}  $filters
+     * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int, team_id?: int}  $filters
      */
     public function paginate(
         SportContext $context,
@@ -34,7 +34,7 @@ class SportGameQuery
     }
 
     /**
-     * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int}  $filters
+     * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int, team_id?: int}  $filters
      * @return Builder<Model>
      */
     public function query(
@@ -50,7 +50,17 @@ class SportGameQuery
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
             ->when($filters['from_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('game_date', '>=', $date))
             ->when($filters['to_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('game_date', '<=', $date))
-            ->orderBy('game_date');
+            ->when($filters['team_id'] ?? null, function (Builder $query, int $teamId): Builder {
+                return $query->where(function (Builder $teamQuery) use ($teamId): void {
+                    $teamQuery->where('home_team_id', $teamId)
+                        ->orWhere('away_team_id', $teamId);
+                });
+            })
+            ->when(
+                $filters['team_id'] ?? null,
+                fn (Builder $query): Builder => $query->orderByDesc('game_date'),
+                fn (Builder $query): Builder => $query->orderBy('game_date'),
+            );
     }
 
     /**

@@ -218,7 +218,7 @@ const fetchForecasts = async () => {
         const payload = await fetchJson<{
             data?: PlayoffForecast[];
             meta?: { available_seasons?: number[] };
-        }>(`/api/v1/mlb/playoff-forecasts?season=${selectedSeason.value}`);
+        }>(`/api/v2/sports/mlb/forecasts?season=${selectedSeason.value}`);
         if (!payload) {
             throw new Error('Failed to load MLB futures data');
         }

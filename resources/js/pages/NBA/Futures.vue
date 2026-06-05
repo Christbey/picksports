@@ -283,7 +283,7 @@ const fetchForecasts = async () => {
 
     try {
         const response = await fetch(
-            `/api/v1/nba/playoff-forecasts?season=${encodeURIComponent(String(selectedSeason.value))}`,
+            `/api/v2/sports/nba/forecasts?season=${encodeURIComponent(String(selectedSeason.value))}`,
             {
                 signal: activeAbortController.signal,
                 credentials: 'same-origin',

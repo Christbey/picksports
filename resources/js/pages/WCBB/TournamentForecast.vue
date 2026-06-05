@@ -251,7 +251,7 @@ const fetchForecasts = async () => {
         const payload = await fetchJson<{
             data?: TournamentForecast[];
             meta?: { available_seasons?: number[] };
-        }>(`/api/v1/wcbb/tournament-forecasts?season=${selectedSeason.value}`);
+        }>(`/api/v2/sports/wcbb/forecasts?season=${selectedSeason.value}`);
         if (!payload) {
             throw new Error('Failed to load tournament forecast data');
         }

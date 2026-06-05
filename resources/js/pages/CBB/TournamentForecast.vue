@@ -170,7 +170,7 @@ const fetchForecasts = async () => {
 
     try {
         const payload = await fetchJson<ForecastPayload>(
-            `/api/v1/cbb/tournament-forecasts?season=${selectedSeason.value}`,
+            `/api/v2/sports/cbb/forecasts?season=${selectedSeason.value}`,
         );
         if (!payload) {
             throw new Error('Failed to load tournament forecast data');

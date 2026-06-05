@@ -9,13 +9,22 @@ use Symfony\Component\HttpFoundation\Response;
 
 class LogV1ApiUsage
 {
+    /**
+     * @var array<string, string>
+     */
+    private const APP_ROUTE_REPLACEMENTS = [
+        'cbb-brackets' => '/api/v2/cbb-brackets',
+        'groups' => '/api/v2/groups',
+        'user-bets' => '/api/v2/user-bets',
+    ];
+
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
 
         if ((bool) config('api.v1_usage_logging.deprecation_headers', true)) {
             $response->headers->set('X-API-Deprecated', 'true');
-            $response->headers->set('X-API-Replacement', '/api/v2');
+            $response->headers->set('X-API-Replacement', $this->replacementPath($request));
         }
 
         if ((bool) config('api.v1_usage_logging.enabled', false)) {
@@ -30,5 +39,27 @@ class LogV1ApiUsage
         }
 
         return $response;
+    }
+
+    private function replacementPath(Request $request): string
+    {
+        $segments = explode('/', trim($request->path(), '/'));
+        $prefix = $segments[2] ?? null;
+
+        if ($prefix === null) {
+            return '/api/v2';
+        }
+
+        $remainder = implode('/', array_slice($segments, 3));
+
+        if (isset(self::APP_ROUTE_REPLACEMENTS[$prefix])) {
+            return self::APP_ROUTE_REPLACEMENTS[$prefix].($remainder !== '' ? "/{$remainder}" : '');
+        }
+
+        if (array_key_exists($prefix, (array) config('sports.domains', []))) {
+            return "/api/v2/sports/{$prefix}".($remainder !== '' ? "/{$remainder}" : '');
+        }
+
+        return '/api/v2';
     }
 }

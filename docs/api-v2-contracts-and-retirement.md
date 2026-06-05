@@ -136,6 +136,11 @@ Deprecation headers are enabled by default:
 API_V1_DEPRECATION_HEADERS_ENABLED=true
 ```
 
+Legacy product responses include `X-API-Deprecated: true` and an
+`X-API-Replacement` header. App-level migrated routes point at their exact v2
+prefix, such as `/api/v2/user-bets`; sport routes point at
+`/api/v2/sports/{sport}/...`.
+
 When logging is enabled, the app writes `api.v1.usage` records containing:
 
 - method

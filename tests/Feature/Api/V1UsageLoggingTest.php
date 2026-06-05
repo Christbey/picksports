@@ -11,7 +11,14 @@ test('legacy product v1 api responses include deprecation headers', function () 
         ->getJson('/api/v1/cbb-brackets?season=2026')
         ->assertOk()
         ->assertHeader('X-API-Deprecated', 'true')
-        ->assertHeader('X-API-Replacement', '/api/v2');
+        ->assertHeader('X-API-Replacement', '/api/v2/cbb-brackets');
+});
+
+test('legacy sport v1 api responses include sport scoped replacement headers', function () {
+    $this->getJson('/api/v1/mlb/teams')
+        ->assertOk()
+        ->assertHeader('X-API-Deprecated', 'true')
+        ->assertHeader('X-API-Replacement', '/api/v2/sports/mlb/teams');
 });
 
 test('legacy product v1 api usage logging is opt in', function () {

@@ -12,6 +12,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { update } from '@/routes/alert-preferences';
+import webPush from '@/routes/web-push';
 
 interface Preference {
     enabled: boolean;
@@ -208,7 +209,7 @@ async function enableWebPush() {
             });
         }
 
-        const response = await fetch('/settings/web-push/subscriptions', {
+        const response = await fetch(webPush.subscriptions.store.url(), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -252,7 +253,7 @@ async function disableWebPush() {
 
             if (subscription) {
                 await subscription.unsubscribe();
-                await fetch('/settings/web-push/subscriptions', {
+                await fetch(webPush.subscriptions.destroy.url(), {
                     method: 'DELETE',
                     headers: {
                         'Content-Type': 'application/json',
@@ -283,7 +284,7 @@ async function sendTestPush() {
     webPushMessage.value = null;
 
     try {
-        const response = await fetch('/settings/web-push/test', {
+        const response = await fetch(webPush.test.url(), {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': getCsrfToken(),

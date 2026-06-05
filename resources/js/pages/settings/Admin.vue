@@ -5,6 +5,8 @@ import { onBeforeUnmount, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import AppLayout from '@/layouts/AppLayout.vue';
+import foundingUsers from '@/routes/admin/settings/founding-users';
+import groups from '@/routes/admin/settings/groups';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
@@ -113,6 +115,29 @@ const isSearchingGroupUsers = ref<Record<number, boolean>>({});
 let groupUserSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let groupUserSearchAbortController: AbortController | null = null;
 
+async function fetchUserSuggestions(
+    url: string,
+    signal: AbortSignal,
+): Promise<UserLookupResult[]> {
+    const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+            Accept: 'application/json',
+        },
+        signal,
+    });
+
+    if (!response.ok) {
+        throw new Error('Failed user lookup.');
+    }
+
+    const payload = (await response.json()) as {
+        users?: UserLookupResult[];
+    };
+
+    return Array.isArray(payload.users) ? payload.users : [];
+}
+
 watch(userSearch, (value) => {
     const query = value.trim();
 
@@ -135,27 +160,12 @@ watch(userSearch, (value) => {
         isSearchingUsers.value = true;
 
         try {
-            const response = await fetch(
-                `/settings/admin/founding-users/search?query=${encodeURIComponent(query)}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        Accept: 'application/json',
-                    },
-                    signal: searchAbortController.signal,
-                },
+            userSuggestions.value = await fetchUserSuggestions(
+                foundingUsers.search.url({
+                    query: { query },
+                }),
+                searchAbortController.signal,
             );
-
-            if (!response.ok) {
-                throw new Error('Failed user lookup.');
-            }
-
-            const payload = (await response.json()) as {
-                users?: UserLookupResult[];
-            };
-            userSuggestions.value = Array.isArray(payload.users)
-                ? payload.users
-                : [];
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
                 return;
@@ -193,7 +203,7 @@ function selectUserSuggestion(user: UserLookupResult): void {
 }
 
 function grantFoundingAccess(): void {
-    grantForm.post('/settings/admin/founding-users/grant', {
+    grantForm.post(foundingUsers.grant.url(), {
         preserveScroll: true,
         onSuccess: () => {
             grantForm.reset();
@@ -204,7 +214,7 @@ function grantFoundingAccess(): void {
 }
 
 function updateFoundingLimit(): void {
-    limitForm.post('/settings/admin/founding-users/limit', {
+    limitForm.post(foundingUsers.limit.url(), {
         preserveScroll: true,
     });
 }
@@ -215,7 +225,7 @@ function revokeFoundingAccess(userId: number): void {
     }
 
     router.post(
-        '/settings/admin/founding-users/revoke',
+        foundingUsers.revoke.url(),
         { user_id: userId },
         {
             preserveScroll: true,
@@ -224,14 +234,14 @@ function revokeFoundingAccess(userId: number): void {
 }
 
 function createGroup(): void {
-    groupForm.post('/settings/admin/groups', {
+    groupForm.post(groups.store.url(), {
         preserveScroll: true,
         onSuccess: () => groupForm.reset('name'),
     });
 }
 
 function inviteToGroup(): void {
-    inviteForm.post('/settings/admin/groups/invite', {
+    inviteForm.post(groups.invite.url(), {
         preserveScroll: true,
         onSuccess: () => inviteForm.reset('email'),
     });
@@ -268,27 +278,18 @@ function searchAssignableUsers(groupId: number): void {
         };
 
         try {
-            const response = await fetch(
-                `/settings/admin/groups/users/search?group_id=${groupId}&query=${encodeURIComponent(query)}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        Accept: 'application/json',
+            const suggestions = await fetchUserSuggestions(
+                groups.users.search.url({
+                    query: {
+                        group_id: groupId,
+                        query,
                     },
-                    signal: groupUserSearchAbortController.signal,
-                },
+                }),
+                groupUserSearchAbortController.signal,
             );
-
-            if (!response.ok) {
-                throw new Error('Failed group user lookup.');
-            }
-
-            const payload = (await response.json()) as {
-                users?: UserLookupResult[];
-            };
             groupUserSuggestions.value = {
                 ...groupUserSuggestions.value,
-                [groupId]: Array.isArray(payload.users) ? payload.users : [],
+                [groupId]: suggestions,
             };
         } catch (error) {
             if (error instanceof DOMException && error.name === 'AbortError') {
@@ -339,7 +340,7 @@ function addUserToGroup(groupId: number): void {
         return;
     }
 
-    assignMemberForm.post('/settings/admin/groups/users', {
+    assignMemberForm.post(groups.users.store.url(), {
         preserveScroll: true,
         onSuccess: () => {
             assignMemberForm.reset();
@@ -364,7 +365,7 @@ function removeUserFromGroup(
         return;
     }
 
-    router.delete('/settings/admin/groups/users', {
+    router.delete(groups.users.destroy.url(), {
         data: {
             group_id: groupId,
             user_id: userId,
@@ -375,7 +376,7 @@ function removeUserFromGroup(
 
 function rotateJoinLink(groupId: number): void {
     router.post(
-        '/settings/admin/groups/join-link',
+        groups.joinLink.url(),
         { group_id: groupId },
         {
             preserveScroll: true,

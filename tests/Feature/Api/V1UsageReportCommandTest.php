@@ -1,0 +1,46 @@
+<?php
+
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
+
+test('api v1 usage report summarizes legacy product route hits', function () {
+    $path = storage_path('logs/api-v1-usage-report-test.log');
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, implode(PHP_EOL, [
+        '[2026-06-05 12:00:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/cbb-brackets","route_name":"cbb-brackets.index","user_id":1}',
+        '[2026-06-05 12:05:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/cbb-brackets","route_name":"cbb-brackets.index","user_id":2}',
+        '[2026-06-05 12:10:00] production.INFO: api.v1.usage {"method":"POST","path":"api/v1/user-bets","route_name":"user-bets.store","user_id":1}',
+    ]));
+
+    $exitCode = Artisan::call('api:v1-usage-report', ['--path' => [$path]]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('api/v1/cbb-brackets')
+        ->and($output)->toContain('cbb-brackets.index')
+        ->and($output)->toContain('api/v1/user-bets')
+        ->and($output)->toContain('user-bets.store');
+});
+
+test('api v1 usage report can output json', function () {
+    $path = storage_path('logs/api-v1-usage-report-json-test.log');
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, '[2026-06-05 12:00:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/groups","route_name":"groups.index","user_id":null}');
+
+    $exitCode = Artisan::call('api:v1-usage-report', ['--path' => [$path], '--json' => true]);
+    $output = Artisan::output();
+
+    expect($exitCode)->toBe(0)
+        ->and($output)->toContain('"path": "api/v1/groups"')
+        ->and($output)->toContain('"unique_users"');
+});
+
+test('api v1 usage report handles empty logs', function () {
+    $path = storage_path('logs/api-v1-usage-report-empty-test.log');
+    File::ensureDirectoryExists(dirname($path));
+    File::put($path, '[2026-06-05 12:00:00] production.INFO: something else []');
+
+    $this->artisan('api:v1-usage-report', ['--path' => [$path]])
+        ->expectsOutput('No api.v1.usage entries found.')
+        ->assertExitCode(0);
+});

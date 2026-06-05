@@ -144,10 +144,25 @@ When logging is enabled, the app writes `api.v1.usage` records containing:
 Use this to prove no external or internal clients still depend on legacy
 product routes before removal.
 
+Summarize logged usage with:
+
+```bash
+php artisan api:v1-usage-report
+```
+
+Useful variants:
+
+```bash
+php artisan api:v1-usage-report --limit=50
+php artisan api:v1-usage-report --path=storage/logs/laravel.log
+php artisan api:v1-usage-report --json
+```
+
 ## Retirement Checklist
 
 1. Run production with `API_V1_USAGE_LOGGING_ENABLED=true`.
-2. Review logs for `api.v1.usage` grouped by `path` and `route_name`.
+2. Run `php artisan api:v1-usage-report` and review usage grouped by `path`
+   and `route_name`.
 3. Confirm Vue scans have no product-data `/api/v1` calls:
 
 ```bash
@@ -163,4 +178,3 @@ rg -n "api/v1|axios\\.|fetch\\(" resources/js --glob '!routes/**' --glob '!actio
 php artisan test tests/Feature/Api/V2
 npm run build
 ```
-

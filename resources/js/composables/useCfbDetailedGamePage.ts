@@ -1,5 +1,4 @@
 import { computed, onMounted, ref, watch } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import {
@@ -135,9 +134,7 @@ export function useCfbDetailedGamePage(gameId: number) {
             const [gameData, predictionData, teamStatsData] = await Promise.all(
                 [
                     api.games.show('cfb', gameId),
-                    fetchJson<{
-                        data: NflPagePrediction | NflPagePrediction[];
-                    }>(`/api/v1/cfb/games/${gameId}/prediction`),
+                    api.predictions.forGame('cfb', gameId),
                     api.stats.teams('cfb', {
                         query: { game_id: gameId, per_page: 100 },
                     }),
@@ -216,9 +213,7 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
-                prediction.value = Array.isArray(predictionData.data)
-                    ? (predictionData.data[0] ?? null)
-                    : predictionData.data;
+                prediction.value = predictionData.data as unknown as NflPagePrediction;
             }
 
             if (teamStatsData?.data) {

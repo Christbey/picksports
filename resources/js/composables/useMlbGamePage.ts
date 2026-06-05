@@ -1,5 +1,4 @@
 import { computed, onMounted, ref } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
 import {
@@ -344,9 +343,7 @@ export function useMlbGamePage(gameId: number) {
 
             const [gameData, predictionData] = await Promise.all([
                 api.games.show('mlb', gameId),
-                fetchJson<{ data: MlbPagePrediction }>(
-                    `/api/v1/mlb/games/${gameId}/prediction`,
-                ),
+                api.predictions.forGame('mlb', gameId),
             ]);
 
             if (gameData?.data) {

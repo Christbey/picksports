@@ -1,5 +1,4 @@
 import { onMounted, ref } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import type {
@@ -59,11 +58,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             const [gameData, predictionData, teamStatsData, playerStatsData] =
                 await Promise.all([
                     api.games.show(options.sport, options.gameId),
-                    fetchJson<
-                        ApiEnvelope<Prediction | Record<string, unknown> | null>
-                    >(
-                        `/api/v1/${options.sport}/games/${options.gameId}/prediction`,
-                    ),
+                    api.predictions.forGame(options.sport, options.gameId),
                     api.stats.teams(options.sport, {
                         query: { game_id: options.gameId, per_page: 100 },
                     }),

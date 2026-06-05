@@ -192,6 +192,8 @@ it('shows a v2 prediction with sport, freshness, and warning metadata', function
                 'id',
                 'sport',
                 'game_id',
+                'home_team_id',
+                'away_team_id',
                 'game',
                 'status',
                 'pick',
@@ -202,6 +204,17 @@ it('shows a v2 prediction with sport, freshness, and warning metadata', function
                     'predicted_total',
                     'confidence_score',
                 ],
+                'home_win_probability',
+                'away_win_probability',
+                'win_probability',
+                'predicted_spread',
+                'predicted_total',
+                'confidence_score',
+                'confidence_level',
+                'actual_spread',
+                'actual_total',
+                'winner_correct',
+                'depth_chart_context',
                 'market_summary',
                 'created_at',
                 'updated_at',
@@ -215,7 +228,16 @@ it('shows a v2 prediction with sport, freshness, and warning metadata', function
         ->assertJsonPath('meta.sport', $slug)
         ->assertJsonPath('data.id', $prediction->id)
         ->assertJsonPath('data.sport', $slug)
-        ->assertJsonPath('data.game_id', $game->id);
+        ->assertJsonPath('data.game_id', $game->id)
+        ->assertJsonPath('data.home_team_id', $game->getAttribute('home_team_id'))
+        ->assertJsonPath('data.away_team_id', $game->getAttribute('away_team_id'))
+        ->assertJsonPath('data.home_win_probability', 0.642)
+        ->assertJsonPath('data.away_win_probability', 0.358)
+        ->assertJsonPath('data.win_probability', 0.642)
+        ->assertJsonPath('data.predicted_spread', -3.5)
+        ->assertJsonPath('data.predicted_total', 217.5)
+        ->assertJsonPath('data.confidence_score', 71.25)
+        ->assertJsonPath('data.confidence_level', 'medium');
 
     expect($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
@@ -238,6 +260,8 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
                 'id',
                 'sport',
                 'game_id',
+                'home_team_id',
+                'away_team_id',
                 'game',
                 'status',
                 'pick',
@@ -248,6 +272,17 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
                     'predicted_total',
                     'confidence_score',
                 ],
+                'home_win_probability',
+                'away_win_probability',
+                'win_probability',
+                'predicted_spread',
+                'predicted_total',
+                'confidence_score',
+                'confidence_level',
+                'actual_spread',
+                'actual_total',
+                'winner_correct',
+                'depth_chart_context',
                 'market_summary',
                 'created_at',
                 'updated_at',
@@ -261,7 +296,16 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
         ->assertJsonPath('meta.sport', $slug)
         ->assertJsonPath('data.id', $prediction->id)
         ->assertJsonPath('data.sport', $slug)
-        ->assertJsonPath('data.game_id', $game->id);
+        ->assertJsonPath('data.game_id', $game->id)
+        ->assertJsonPath('data.home_team_id', $game->getAttribute('home_team_id'))
+        ->assertJsonPath('data.away_team_id', $game->getAttribute('away_team_id'))
+        ->assertJsonPath('data.home_win_probability', 0.642)
+        ->assertJsonPath('data.away_win_probability', 0.358)
+        ->assertJsonPath('data.win_probability', 0.642)
+        ->assertJsonPath('data.predicted_spread', -3.5)
+        ->assertJsonPath('data.predicted_total', 217.5)
+        ->assertJsonPath('data.confidence_score', 71.25)
+        ->assertJsonPath('data.confidence_level', 'medium');
 
     expect($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();

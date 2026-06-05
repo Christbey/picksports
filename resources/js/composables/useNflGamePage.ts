@@ -1,5 +1,4 @@
 import { computed, onMounted, ref } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
@@ -311,9 +310,7 @@ export function useNflGamePage(gameId: number) {
             const [gameData, predictionData, teamStatsData] = await Promise.all(
                 [
                     api.games.show('nfl', gameId),
-                    fetchJson<{
-                        data: NflPagePrediction | NflPagePrediction[];
-                    }>(`/api/v1/nfl/games/${gameId}/prediction`),
+                    api.predictions.forGame('nfl', gameId),
                     api.stats.teams('nfl', {
                         query: { game_id: gameId, per_page: 100 },
                     }),

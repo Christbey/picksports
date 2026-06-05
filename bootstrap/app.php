@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureUserIsSubscribed;
 use App\Http\Middleware\EnsureV2SportApiAccess;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\LogV1ApiUsage;
 use App\Http\Middleware\UpdateUserLastActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -48,6 +49,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'subscribed' => EnsureUserIsSubscribed::class,
             'permission' => EnsureUserHasPermission::class,
             'v2.sport-api-access' => EnsureV2SportApiAccess::class,
+            'v1.api-usage' => LogV1ApiUsage::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

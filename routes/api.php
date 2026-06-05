@@ -36,28 +36,30 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
         });
     });
 
-    // Sport Routes (using generic route definer)
-    $sports = (array) config('sports.domains', []);
-    foreach ($sports as $sport => $definition) {
-        $namespace = (string) ($definition['namespace'] ?? '');
-        if ($namespace === '') {
-            continue;
+    Route::middleware('v1.api-usage')->group(function () use ($registerSportRoutes): void {
+        // Sport Routes (using generic route definer)
+        $sports = (array) config('sports.domains', []);
+        foreach ($sports as $sport => $definition) {
+            $namespace = (string) ($definition['namespace'] ?? '');
+            if ($namespace === '') {
+                continue;
+            }
+
+            Route::prefix($sport)->name("{$sport}.")->group(fn () => $registerSportRoutes($sport, $namespace));
         }
 
-        Route::prefix($sport)->name("{$sport}.")->group(fn () => $registerSportRoutes($sport, $namespace));
-    }
-
-    foreach ([
-        'user-bets' => 'routes/api/user-bets.php',
-        'alert-preferences' => 'routes/api/alert-preferences.php',
-        'cbb-brackets' => 'routes/api/cbb-brackets.php',
-        'groups' => 'routes/api/groups.php',
-    ] as $prefix => $file) {
-        Route::middleware('auth:sanctum')
-            ->prefix($prefix)
-            ->name("{$prefix}.")
-            ->group(base_path($file));
-    }
+        foreach ([
+            'user-bets' => 'routes/api/user-bets.php',
+            'alert-preferences' => 'routes/api/alert-preferences.php',
+            'cbb-brackets' => 'routes/api/cbb-brackets.php',
+            'groups' => 'routes/api/groups.php',
+        ] as $prefix => $file) {
+            Route::middleware('auth:sanctum')
+                ->prefix($prefix)
+                ->name("{$prefix}.")
+                ->group(base_path($file));
+        }
+    });
 
 });
 

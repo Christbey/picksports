@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\AlertPreferenceController;
+use App\Http\Controllers\Api\Auth\PasskeyTokenAuthController;
+use App\Http\Controllers\Api\Auth\TokenAuthController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
@@ -27,6 +29,26 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v2')->name('v2.')->group(function (): void {
     Route::get('/sports', [SportController::class, 'index'])->name('sports.index');
     Route::get('/sports/{sport}', [SportController::class, 'show'])->name('sports.show');
+
+    Route::prefix('/auth')
+        ->name('auth.')
+        ->group(function (): void {
+            Route::post('/login', [TokenAuthController::class, 'login'])
+                ->middleware('throttle:10,1')
+                ->name('login');
+            Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'options'])
+                ->middleware('throttle:20,1')
+                ->name('passkeys.options');
+            Route::post('/passkeys/verify', [PasskeyTokenAuthController::class, 'verify'])
+                ->middleware('throttle:10,1')
+                ->name('passkeys.verify');
+
+            Route::middleware('auth:sanctum')->group(function (): void {
+                Route::get('/me', [TokenAuthController::class, 'me'])->name('me');
+                Route::post('/logout', [TokenAuthController::class, 'logout'])->name('logout');
+                Route::post('/logout-all', [TokenAuthController::class, 'logoutAll'])->name('logout-all');
+            });
+        });
 
     Route::middleware(['auth:sanctum'])
         ->get('/live-scoreboard', LiveScoreboardController::class)

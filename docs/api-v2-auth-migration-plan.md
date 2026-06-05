@@ -34,10 +34,12 @@ Only reshape auth payloads after mobile/API consumers are updated together.
 
 ## Implementation Order
 
-1. Add `/api/v2/auth` aliases in `routes/api-v2.php`.
+1. Add `/api/v2/auth` aliases in `routes/api-v2.php`. Done in
+   `routes/api-v2.php`.
 2. Add v2 auth contract tests that mirror:
    - `tests/Feature/Api/Auth/TokenAuthTest.php`
    - `tests/Feature/Api/Auth/PasskeyTokenAuthTest.php`
+   Done in `tests/Feature/Api/V2/AuthEndpointAliasTest.php`.
 3. Add `X-API-Replacement` headers for v1 auth routes after v2 auth tests pass.
 4. Add opt-in v1 auth usage logging separately from product API logging.
 5. Update external/mobile clients to call `/api/v2/auth`.

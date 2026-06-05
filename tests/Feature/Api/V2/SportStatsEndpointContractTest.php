@@ -56,6 +56,12 @@ it('requires authenticated access for v2 stats endpoints', function (string $slu
 
     $this->getJson("/api/v2/sports/{$slug}/stats/team")
         ->assertUnauthorized();
+
+    $this->getJson("/api/v2/sports/{$slug}/stats/team/season-averages")
+        ->assertUnauthorized();
+
+    $this->getJson("/api/v2/sports/{$slug}/teams/1/stats/season-averages")
+        ->assertUnauthorized();
 })->with('v2StatsContractSports');
 
 it('returns a clean json 404 for unsupported v2 sport stats endpoints', function () {
@@ -322,6 +328,62 @@ it('lists v2 team stat available seasons and dates with stable metadata', functi
         ->assertJsonPath('meta.contract', 'sports.stats.team.available-dates')
         ->assertJsonPath('meta.filters.season', 2026);
 })->with('v2StatsContractSports');
+
+it('returns v2 team stat season averages for team pages', function () {
+    actAsV2StatsContractUser();
+
+    $team = NbaTeam::factory()->create();
+    $opponent = NbaTeam::factory()->create();
+    $game = NbaGame::factory()->create([
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'season' => 2026,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    NbaTeamStat::factory()->create([
+        'team_id' => $team->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'points' => 112,
+        'rebounds' => 44,
+        'assists' => 27,
+        'field_goals_made' => 42,
+        'field_goals_attempted' => 84,
+        'three_point_made' => 12,
+        'three_point_attempted' => 30,
+        'free_throws_made' => 16,
+        'free_throws_attempted' => 20,
+        'offensive_rebounds' => 10,
+        'defensive_rebounds' => 34,
+        'fast_break_points' => 18,
+        'points_in_paint' => 46,
+        'second_chance_points' => 14,
+        'bench_points' => 33,
+    ]);
+
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/stats/season-averages")
+        ->assertOk()
+        ->assertJsonPath('data.team_id', $team->id)
+        ->assertJsonPath('data.points_per_game', 112)
+        ->assertJsonPath('data.rebounds_per_game', 44)
+        ->assertJsonPath('data.assists_per_game', 27)
+        ->assertJsonPath('data.field_goal_percentage', 50)
+        ->assertJsonPath('data.three_point_percentage', 40)
+        ->assertJsonPath('data.free_throw_percentage', 80)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', 'nba')
+        ->assertJsonPath('meta.contract', 'sports.teams.stats.season-averages.show')
+        ->assertJsonPath('meta.team_id', $team->id);
+
+    $this->getJson('/api/v2/sports/nba/stats/team/season-averages')
+        ->assertOk()
+        ->assertJsonPath('data.0.team_id', $team->id)
+        ->assertJsonPath('data.0.points_per_game', 112)
+        ->assertJsonPath('meta.version', 'v2')
+        ->assertJsonPath('meta.sport', 'nba')
+        ->assertJsonPath('meta.contract', 'sports.stats.team.season-averages.index');
+});
 
 function actAsV2StatsContractUser(): User
 {

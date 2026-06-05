@@ -11,7 +11,7 @@ class SportGameQuery
 {
     private const DEFAULT_PER_PAGE = 25;
 
-    private const MAX_PER_PAGE = 100;
+    private const MAX_PER_PAGE = 500;
 
     /**
      * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int, team_id?: int}  $filters

@@ -5,6 +5,9 @@ import {
 } from '@/components/sport-team-metrics-helpers';
 import type { TeamPageConfig } from '@/types';
 
+const teamLogoUrl = (team: any): string | null =>
+    team.logo_url ?? team.logo ?? null;
+
 const basketballMetricTiles = [
     {
         label: 'ORtg',
@@ -108,12 +111,11 @@ export const createNbaTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     metricsHref: '/nba/team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
-    teamLogo: (t) => t.logo,
+    teamLogo: teamLogoUrl,
     teamSubtitle: (t) =>
         `${t.conference}${t.division ? ` • ${t.division}` : ''}`,
     teamHref: (id) => `/nba/teams/${id}`,
     gameLink,
-    apiBase: '/api/v1/nba',
     useTabs: true,
     showPowerRanking: true,
     showRecentForm: true,
@@ -139,12 +141,11 @@ export const createCbbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     metricsHref: '/cbb/team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
-    teamLogo: (t) => t.logo,
+    teamLogo: teamLogoUrl,
     teamSubtitle: (t) =>
         `${t.conference}${t.division ? ` • ${t.division}` : ''}`,
     teamHref: (id) => `/cbb/teams/${id}`,
     gameLink,
-    apiBase: '/api/v1/cbb',
     useTabs: true,
     showPowerRanking: true,
     showRecentForm: true,
@@ -173,12 +174,11 @@ const createSimpleBasketballConfig = (
     metricsHref,
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
-    teamLogo: (t) => t.logo,
+    teamLogo: teamLogoUrl,
     teamSubtitle: (t) =>
         `${t.conference}${t.division ? ` • ${t.division}` : ''}`,
     teamHref: (id) => `${teamHrefPrefix}/${id}`,
     gameLink,
-    apiBase: `/api/v1/${sport}`,
     useTabs: true,
     showPowerRanking: true,
     showRecentForm: true,
@@ -217,12 +217,11 @@ export const createNflTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     metricsHref: '/nfl/team-metrics',
     headTitle: (t) => t.name,
     teamDisplayName: (t) => t.display_name || t.name,
-    teamLogo: (t) => t.logo,
+    teamLogo: teamLogoUrl,
     teamSubtitle: (t) =>
         `${t.conference}${t.division ? ` • ${t.division}` : ''}`,
     teamHref: (id) => `/nfl/teams/${id}`,
     gameLink,
-    apiBase: '/api/v1/nfl',
     useTabs: true,
     showPowerRanking: true,
     showRecentForm: true,
@@ -337,11 +336,10 @@ export const createMlbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
     metricsHref: '/mlb/team-metrics',
     headTitle: (t) => `${t.location} ${t.name}`,
     teamDisplayName: (t) => `${t.location} ${t.name}`,
-    teamLogo: (t) => t.logo_url,
+    teamLogo: teamLogoUrl,
     teamSubtitle: (t) => `${t.league}${t.division ? ` • ${t.division}` : ''}`,
     teamHref: (id) => `/mlb/teams/${id}`,
     gameLink,
-    apiBase: '/api/v1/mlb',
     useTabs: true,
     showPowerRanking: true,
     showRecentForm: true,

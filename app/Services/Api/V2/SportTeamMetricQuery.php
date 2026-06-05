@@ -13,7 +13,7 @@ class SportTeamMetricQuery
 {
     private const DEFAULT_PER_PAGE = 25;
 
-    private const MAX_PER_PAGE = 100;
+    private const MAX_PER_PAGE = 500;
 
     /**
      * @param  array<string, mixed>  $filters

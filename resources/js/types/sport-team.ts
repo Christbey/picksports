@@ -27,7 +27,6 @@ export interface TeamPageConfig {
     teamSubtitle: (team: any) => string;
     teamHref: (teamId: number) => HrefLike;
     gameLink: (gameId: number) => HrefLike;
-    apiBase: string;
 
     metricTiles: MetricTile[];
     metricsGridCols?: string;

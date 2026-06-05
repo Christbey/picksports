@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V2\SportSignalController;
 use App\Http\Controllers\Api\V2\SportStatController;
 use App\Http\Controllers\Api\V2\SportTeamController;
 use App\Http\Controllers\Api\V2\SportTeamMetricController;
+use App\Http\Controllers\Api\V2\SportTeamStatAverageController;
 use App\Http\Controllers\Api\V2\SportTeamTrendController;
 use Illuminate\Support\Facades\Route;
 
@@ -46,6 +47,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/teams/{team}/depth-charts', [SportDepthChartController::class, 'teamShow'])->name('teams.depth-charts.show');
             Route::get('/teams/{team}/metrics', [SportTeamMetricController::class, 'teamShow'])->name('teams.metrics.show');
             Route::get('/teams/{team}/players', [SportPlayerController::class, 'teamIndex'])->name('teams.players.index');
+            Route::get('/teams/{team}/stats/season-averages', [SportTeamStatAverageController::class, 'teamShow'])->name('teams.stats.season-averages.show');
             Route::get('/teams/{team}/trends', [SportTeamTrendController::class, 'show'])->name('teams.trends.show');
 
             Route::get('/players', [SportPlayerController::class, 'index'])->name('players.index');
@@ -77,6 +79,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/stats/player', [SportStatController::class, 'playerIndex'])->name('stats.player.index');
             Route::get('/stats/team/available-seasons', [SportStatController::class, 'teamAvailableSeasons'])->name('stats.team.available-seasons');
             Route::get('/stats/team/available-dates', [SportStatController::class, 'teamAvailableDates'])->name('stats.team.available-dates');
+            Route::get('/stats/team/season-averages', [SportTeamStatAverageController::class, 'index'])->name('stats.team.season-averages.index');
             Route::get('/stats/team', [SportStatController::class, 'teamIndex'])->name('stats.team.index');
         });
 });

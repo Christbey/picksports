@@ -6,7 +6,7 @@ use Illuminate\Foundation\Http\FormRequest;
 
 class SportTeamMetricIndexRequest extends FormRequest
 {
-    private const MAX_PER_PAGE = 100;
+    private const MAX_PER_PAGE = 500;
 
     public function authorize(): bool
     {

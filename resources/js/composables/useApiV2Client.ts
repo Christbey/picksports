@@ -13,6 +13,7 @@ import type {
     ApiV2PlayerProp,
     ApiV2Prediction,
     ApiV2Query,
+    ApiV2Record,
     ApiV2Sport,
     ApiV2SportSlug,
     ApiV2Stat,
@@ -175,6 +176,18 @@ export function useApiV2Client() {
                     ),
                     options,
                 ),
+            statSeasonAverages: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                team: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    v2.sports.teams.stats.seasonAverages.show.url(
+                        { sport, team },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
             depthCharts: (
                 sport: ApiV2SportSlug,
                 team: ApiV2Id,
@@ -315,6 +328,17 @@ export function useApiV2Client() {
             teams: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Stat>(
                     v2.sports.stats.team.index.url(
+                        sport,
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            teamSeasonAverages: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) =>
+                collection<T>(
+                    v2.sports.stats.team.seasonAverages.index.url(
                         sport,
                         routeOptions(options.query),
                     ),

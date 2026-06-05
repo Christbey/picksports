@@ -1,5 +1,4 @@
 import { computed, onMounted, ref } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { BreadcrumbItem, Game } from '@/types';
 import type { ApiV2SportSlug, GameDepthChartTeam } from '@/types';
@@ -201,57 +200,48 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             const fetchId = props.teamId;
             if (!fetchId) return;
 
+            const sport = props.config.sport as ApiV2SportSlug;
             const fetches: Promise<unknown>[] = [];
             const fetchKeys: string[] = [];
 
-            fetches.push(
-                fetchJson(`${props.config.apiBase}/teams/${fetchId}/metrics`),
-            );
+            fetches.push(api.teams.metrics(sport, fetchId));
             fetchKeys.push('metrics');
 
             if (props.config.seasonStatTiles) {
-                fetches.push(
-                    fetchJson(
-                        `${props.config.apiBase}/teams/${fetchId}/stats/season-averages`,
-                    ),
-                );
+                fetches.push(api.teams.statSeasonAverages(sport, fetchId));
                 fetchKeys.push('seasonStats');
             }
 
             // Pull enough rows to cover the full team schedule/game log for the season.
             fetches.push(
-                fetchJson(
-                    `${props.config.apiBase}/teams/${fetchId}/games?per_page=500`,
-                ),
+                api.teams.games(sport, fetchId, {
+                    query: { per_page: 500 },
+                }),
             );
             fetchKeys.push('games');
 
-            fetches.push(fetchJson(`${props.config.apiBase}/teams/${fetchId}`));
+            fetches.push(api.teams.show(sport, fetchId));
             fetchKeys.push('team');
 
             if (
                 props.config.showPowerRanking ||
                 props.config.metricRankingKeys
             ) {
-                fetches.push(fetchJson(`${props.config.apiBase}/team-metrics`));
+                fetches.push(
+                    api.metrics.teams(sport, { query: { per_page: 500 } }),
+                );
                 fetchKeys.push('allMetrics');
             }
 
             if (props.config.statRankingKeys) {
-                fetches.push(
-                    fetchJson(
-                        `${props.config.apiBase}/team-stats/season-averages`,
-                    ),
-                );
+                fetches.push(api.stats.teamSeasonAverages(sport));
                 fetchKeys.push('allStats');
             }
 
             if (props.config.showTrends) {
                 const games = props.config.trendsGames ?? 20;
                 fetches.push(
-                    fetchJson(
-                        `${props.config.apiBase}/teams/${fetchId}/trends?games=${games}`,
-                    ),
+                    api.teams.trends(sport, fetchId, { query: { games } }),
                 );
                 fetchKeys.push('trends');
             }
@@ -259,9 +249,9 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             if (props.config.showRoster) {
                 rosterLoading.value = true;
                 fetches.push(
-                    fetchJson(
-                        `${props.config.apiBase}/teams/${fetchId}/players`,
-                    ),
+                    api.teams.players(sport, fetchId, {
+                        query: { per_page: 100 },
+                    }),
                 );
                 fetchKeys.push('roster');
             }
@@ -436,8 +426,9 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
 
                 if (key === 'trends' && res) {
                     const data = res;
-                    trendsData.value = data.trends || null;
-                    lockedTrends.value = data.locked_trends || null;
+                    const payload = data.data ?? data;
+                    trendsData.value = payload.trends || null;
+                    lockedTrends.value = payload.locked_trends || null;
                 }
 
                 if (key === 'roster' && res) {
@@ -454,7 +445,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             if (props.config.showDepthCharts && sportSupportsDepthCharts) {
                 const season = toNumber(teamMetrics.value?.season);
                 const depthChartResponse = await api.teams.depthCharts(
-                    props.config.sport as ApiV2SportSlug,
+                    sport,
                     fetchId,
                     {
                         query: season !== null ? { season } : undefined,

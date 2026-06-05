@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\SportController;
 use App\Http\Controllers\Api\V2\SportFuturesOddController;
 use App\Http\Controllers\Api\V2\SportGameController;
+use App\Http\Controllers\Api\V2\SportInjuryController;
 use App\Http\Controllers\Api\V2\SportPlayerController;
 use App\Http\Controllers\Api\V2\SportPlayerLeaderboardController;
 use App\Http\Controllers\Api\V2\SportPlayerPropController;
@@ -45,6 +46,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/players/{player}/player-props', [SportPlayerPropController::class, 'playerIndex'])->name('players.player-props.index');
 
             Route::get('/player-props', [SportPlayerPropController::class, 'index'])->name('player-props.index');
+            Route::get('/injuries', [SportInjuryController::class, 'index'])->name('injuries.index');
             Route::get('/signals', [SportSignalController::class, 'index'])->name('signals.index');
 
             Route::get('/predictions', [SportPredictionController::class, 'index'])->name('predictions.index');

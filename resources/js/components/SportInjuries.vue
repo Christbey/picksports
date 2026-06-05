@@ -161,7 +161,7 @@ async function fetchInjuries() {
 
     try {
         const payload = await fetchJson<{ data?: InjuryRow[] }>(
-            `/api/v1/${props.config.sport}/injuries?active=1`,
+            `/api/v2/sports/${props.config.sport}/injuries?active=1`,
         );
         if (!payload) {
             throw new Error('Failed to load injuries');

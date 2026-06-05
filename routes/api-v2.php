@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\SportController;
+use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
 use App\Http\Controllers\Api\V2\SportFuturesOddController;
 use App\Http\Controllers\Api\V2\SportGameController;
@@ -34,6 +35,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->group(function (): void {
             Route::get('/games', [SportGameController::class, 'index'])->name('games.index');
             Route::get('/games/{game}', [SportGameController::class, 'show'])->name('games.show');
+            Route::get('/games/{game}/depth-charts', [SportDepthChartController::class, 'gameShow'])->name('games.depth-charts.show');
             Route::get('/games/{game}/prediction', [SportPredictionController::class, 'gamePrediction'])->name('games.prediction.show');
             Route::get('/games/{game}/player-props', [SportPlayerPropController::class, 'gameIndex'])->name('games.player-props.index');
 
@@ -41,6 +43,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/teams/{team}', [SportTeamController::class, 'show'])->name('teams.show');
             Route::get('/teams/{team}/futures', [SportFuturesOddController::class, 'teamIndex'])->name('teams.futures.index');
             Route::get('/teams/{team}/games', [SportGameController::class, 'teamIndex'])->name('teams.games.index');
+            Route::get('/teams/{team}/depth-charts', [SportDepthChartController::class, 'teamShow'])->name('teams.depth-charts.show');
             Route::get('/teams/{team}/metrics', [SportTeamMetricController::class, 'teamShow'])->name('teams.metrics.show');
             Route::get('/teams/{team}/players', [SportPlayerController::class, 'teamIndex'])->name('teams.players.index');
             Route::get('/teams/{team}/trends', [SportTeamTrendController::class, 'show'])->name('teams.trends.show');

@@ -18,6 +18,8 @@ import type {
     ApiV2Stat,
     ApiV2Team,
     ApiV2TeamMetric,
+    GameDepthChartTeam,
+    GameDepthChartsData,
 } from '@/types';
 
 type RequestOptions = {
@@ -73,6 +75,18 @@ export function useApiV2Client() {
             ) =>
                 item<ApiV2Game>(
                     v2.sports.games.show.url(
+                        { sport, game },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            depthCharts: (
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<GameDepthChartsData>(
+                    v2.sports.games.depthCharts.show.url(
                         { sport, game },
                         routeOptions(options.query),
                     ),
@@ -156,6 +170,18 @@ export function useApiV2Client() {
             ) =>
                 item<ApiV2Record>(
                     v2.sports.teams.trends.show.url(
+                        { sport, team },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            depthCharts: (
+                sport: ApiV2SportSlug,
+                team: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<GameDepthChartTeam>(
+                    v2.sports.teams.depthCharts.show.url(
                         { sport, team },
                         routeOptions(options.query),
                     ),

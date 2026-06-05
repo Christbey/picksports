@@ -1,20 +1,19 @@
 import { onMounted, ref } from 'vue';
-import { fetchJson } from '@/composables/useApiClient';
-import type { ApiEnvelope, GameDepthChartsData } from '@/types';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import type { ApiV2SportSlug, GameDepthChartsData } from '@/types';
 
-export function useGameDepthCharts(sport: 'nfl' | 'nba' | 'mlb', gameId: number) {
+export function useGameDepthCharts(sport: ApiV2SportSlug, gameId: number) {
     const depthCharts = ref<GameDepthChartsData | null>(null);
     const loading = ref(false);
     const error = ref<string | null>(null);
+    const api = useApiV2Client();
 
     const load = async () => {
         try {
             loading.value = true;
             error.value = null;
 
-            const payload = await fetchJson<ApiEnvelope<GameDepthChartsData>>(
-                `/api/v1/${sport}/games/${gameId}/depth-charts`,
-            );
+            const payload = await api.games.depthCharts(sport, gameId);
 
             depthCharts.value = payload?.data ?? null;
         } catch (e) {

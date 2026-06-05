@@ -1,7 +1,8 @@
 import { computed, onMounted, ref } from 'vue';
 import { fetchJson } from '@/composables/useApiClient';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { BreadcrumbItem, Game } from '@/types';
-import type { GameDepthChartTeam } from '@/types';
+import type { ApiV2SportSlug, GameDepthChartTeam } from '@/types';
 import type { TeamPageConfig } from '@/types/sport-team';
 
 export interface UseSportTeamDataProps {
@@ -36,6 +37,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     const lockedTrends = ref<Record<string, string> | null>(null);
     const loading = ref(true);
     const error = ref<string | null>(null);
+    const api = useApiV2Client();
 
     const teamId = computed(() => teamData.value?.id || props.teamId);
 
@@ -445,17 +447,18 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
                 }
             }
 
-            if (props.config.showDepthCharts) {
-                const season = toNumber(teamMetrics.value?.season);
-                const query = new URLSearchParams();
-                if (season !== null) {
-                    query.set('season', String(season));
-                }
+            const sportSupportsDepthCharts = ['nfl', 'nba', 'mlb'].includes(
+                props.config.sport,
+            );
 
-                const depthChartResponse = await fetchJson<{
-                    data: GameDepthChartTeam;
-                }>(
-                    `${props.config.apiBase}/teams/${fetchId}/depth-charts${query.toString() ? `?${query.toString()}` : ''}`,
+            if (props.config.showDepthCharts && sportSupportsDepthCharts) {
+                const season = toNumber(teamMetrics.value?.season);
+                const depthChartResponse = await api.teams.depthCharts(
+                    props.config.sport as ApiV2SportSlug,
+                    fetchId,
+                    {
+                        query: season !== null ? { season } : undefined,
+                    },
                 );
 
                 depthChart.value = depthChartResponse?.data ?? null;

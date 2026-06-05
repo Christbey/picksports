@@ -61,6 +61,7 @@ class SportContextResolver
                 'elo_rating' => 'EloRating',
                 'play' => 'Play',
                 'player_prop' => 'PlayerProp',
+                'depth_chart_entry' => 'DepthChartEntry',
             ]),
             resources: $this->classMap("App\\Http\\Resources\\{$namespace}", [
                 'team' => 'TeamResource',

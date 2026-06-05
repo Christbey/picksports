@@ -17,8 +17,10 @@ test('api v1 usage report summarizes legacy product route hits', function () {
 
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('api/v1/cbb-brackets')
+        ->and($output)->toContain('/api/v2/cbb-brackets')
         ->and($output)->toContain('cbb-brackets.index')
         ->and($output)->toContain('api/v1/user-bets')
+        ->and($output)->toContain('/api/v2/user-bets')
         ->and($output)->toContain('user-bets.store');
 });
 
@@ -32,6 +34,7 @@ test('api v1 usage report can output json', function () {
 
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('"path": "api/v1/groups"')
+        ->and($output)->toContain('"replacement_path": "/api/v2/groups"')
         ->and($output)->toContain('"unique_users"');
 });
 

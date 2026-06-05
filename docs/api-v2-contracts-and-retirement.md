@@ -169,6 +169,9 @@ php artisan api:v1-usage-report --path=storage/logs/laravel.log
 php artisan api:v1-usage-report --json
 ```
 
+The report includes a `replacement_path` column/value that mirrors the
+`X-API-Replacement` response header.
+
 ## Retirement Checklist
 
 1. Run production with `API_V1_USAGE_LOGGING_ENABLED=true`.

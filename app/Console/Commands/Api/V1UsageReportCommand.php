@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Api;
 
+use App\Support\Api\V1ReplacementPathResolver;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -37,10 +38,11 @@ class V1UsageReportCommand extends Command
         }
 
         $this->table(
-            ['Method', 'Path', 'Route', 'Hits', 'Users', 'Latest'],
+            ['Method', 'Path', 'Replacement', 'Route', 'Hits', 'Users', 'Latest'],
             $summary->map(fn (array $row): array => [
                 $row['method'],
                 $row['path'],
+                $row['replacement_path'],
                 $row['route_name'] ?? 'n/a',
                 $row['count'],
                 $row['unique_users'],
@@ -145,18 +147,21 @@ class V1UsageReportCommand extends Command
      */
     private function summarize($entries)
     {
+        $replacementResolver = app(V1ReplacementPathResolver::class);
+
         return $entries
             ->groupBy(fn (array $entry): string => implode('|', [
                 $entry['method'],
                 $entry['path'],
                 $entry['route_name'] ?? '',
             ]))
-            ->map(function ($group): array {
+            ->map(function ($group) use ($replacementResolver): array {
                 $first = $group->first();
 
                 return [
                     'method' => $first['method'],
                     'path' => $first['path'],
+                    'replacement_path' => $replacementResolver->resolve((string) $first['path']),
                     'route_name' => $first['route_name'],
                     'count' => $group->count(),
                     'unique_users' => $group

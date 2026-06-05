@@ -2,10 +2,12 @@
 import { Link } from '@inertiajs/vue3';
 import { Radio } from 'lucide-vue-next';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { DashboardPrediction } from '@/types';
 
 const games = ref<DashboardPrediction[]>([]);
 const loading = ref(false);
+const api = useApiV2Client();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
 const hasLiveGames = computed(() => games.value.some((game) => game.is_live));
@@ -33,13 +35,10 @@ async function fetchGames(): Promise<void> {
 
     loading.value = true;
     try {
-        const response = await fetch('/live-scoreboard', {
-            credentials: 'same-origin',
-        });
-        if (!response.ok) return;
-
-        const payload = await response.json();
-        games.value = Array.isArray(payload.games) ? payload.games : [];
+        const response = await api.liveScoreboard.show();
+        games.value = Array.isArray(response?.data?.games)
+            ? response.data.games
+            : [];
     } finally {
         loading.value = false;
     }

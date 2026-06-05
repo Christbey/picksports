@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
+use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\SportController;
 use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
@@ -22,6 +23,10 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v2')->name('v2.')->group(function (): void {
     Route::get('/sports', [SportController::class, 'index'])->name('sports.index');
     Route::get('/sports/{sport}', [SportController::class, 'show'])->name('sports.show');
+
+    Route::middleware(['auth:sanctum'])
+        ->get('/live-scoreboard', LiveScoreboardController::class)
+        ->name('live-scoreboard.show');
 
     Route::middleware(['auth:sanctum', 'admin'])
         ->prefix('/admin')

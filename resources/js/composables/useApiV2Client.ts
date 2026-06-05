@@ -19,9 +19,15 @@ import type {
     ApiV2Stat,
     ApiV2Team,
     ApiV2TeamMetric,
+    DashboardPrediction,
     GameDepthChartTeam,
     GameDepthChartsData,
 } from '@/types';
+
+type ApiV2LiveScoreboardPayload = {
+    games: DashboardPrediction[];
+    updated_at: string;
+};
 
 type RequestOptions = {
     init?: RequestInit;
@@ -46,6 +52,14 @@ export function useApiV2Client() {
 
     return {
         get,
+
+        liveScoreboard: {
+            show: (options: RequestOptions = {}) =>
+                item<ApiV2LiveScoreboardPayload>(
+                    v2.liveScoreboard.show.url(routeOptions(options.query)),
+                    options,
+                ),
+        },
 
         sports: {
             index: (options: RequestOptions = {}) =>

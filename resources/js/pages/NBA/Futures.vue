@@ -5,6 +5,7 @@ import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 
 type ForecastTeam = {
     id: number;
@@ -65,6 +66,7 @@ const playoffTeamsPerConference = ref(8);
 const playInTeamsPerConference = ref(10);
 const activeRequestId = ref(0);
 let activeAbortController: AbortController | null = null;
+const api = useApiV2Client();
 
 const availableSeasonOptions = computed(() =>
     availableSeasons.value.length > 0
@@ -282,54 +284,34 @@ const fetchForecasts = async () => {
     error.value = null;
 
     try {
-        const response = await fetch(
-            `/api/v2/sports/nba/forecasts?season=${encodeURIComponent(String(selectedSeason.value))}`,
-            {
+        const payload = await api.forecasts.index<PlayoffForecast>('nba', {
+            query: { season: selectedSeason.value },
+            init: {
                 signal: activeAbortController.signal,
-                credentials: 'same-origin',
-                headers: {
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
             },
-        );
-        if (response.redirected && response.url.includes('/login')) {
+        });
+        if (!payload) {
             throw new Error(
-                'Session expired while loading futures data. Please refresh and sign in again.',
+                'Failed to load NBA futures data. Please refresh and sign in again if your session expired.',
             );
         }
-        if (!response.ok) {
-            throw new Error(
-                `Failed to load NBA futures data (HTTP ${response.status}).`,
-            );
-        }
-
-        const contentType = response.headers.get('content-type') ?? '';
-        if (!contentType.includes('application/json')) {
-            throw new Error(
-                'Unexpected non-JSON response from futures API. Check auth/session middleware.',
-            );
-        }
-        const payload = await response.json();
         if (requestId !== activeRequestId.value) {
             return;
         }
 
-        forecasts.value = payload?.data ?? [];
-        availableSeasons.value = payload?.meta?.available_seasons ?? [];
+        forecasts.value = payload.data ?? [];
+        availableSeasons.value = payload.meta?.available_seasons ?? [];
         playoffTeamsPerConference.value =
-            payload?.meta?.playoff_teams_per_conference ?? 8;
+            payload.meta?.playoff_teams_per_conference ?? 8;
         playInTeamsPerConference.value =
-            payload?.meta?.play_in_teams_per_conference ?? 10;
+            payload.meta?.play_in_teams_per_conference ?? 10;
         const resolvedSeason = Number(
-            payload?.meta?.season ?? selectedSeason.value,
+            payload.meta?.season ?? selectedSeason.value,
         );
         const requestedSeason = Number(
-            payload?.meta?.requested_season ?? selectedSeason.value,
+            payload.meta?.requested_season ?? selectedSeason.value,
         );
-        const fallbackApplied = Boolean(
-            payload?.meta?.fallback_applied ?? false,
-        );
+        const fallbackApplied = Boolean(payload.meta?.fallback_applied ?? false);
 
         if (
             availableSeasons.value.length > 0 &&

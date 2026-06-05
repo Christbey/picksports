@@ -4,8 +4,9 @@ import { Head, Link } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
-import type { BreadcrumbItem } from '@/types';
+import type { ApiV2Query, ApiV2SportSlug, BreadcrumbItem } from '@/types';
 
 type HrefLike = string | UrlMethodPair;
 
@@ -77,14 +78,14 @@ interface GameLogColumn {
 }
 
 interface SportPlayerShellConfig {
+    sport: ApiV2SportSlug;
     sportLabel: string;
     predictionsHref: string;
     teamLink?: (id: number) => HrefLike;
     gameLink?: (id: number) => HrefLike;
-    playerEndpoint: (id: number) => string;
-    playerPropsEndpoint?: (id: number) => string;
-    statsEndpoint: (playerId: number) => string;
-    leaderboardEndpoint?: string;
+    showPlayerProps?: boolean;
+    statsQuery?: ApiV2Query;
+    leaderboardQuery?: ApiV2Query;
     summaryCards?: SummaryCard[];
     gameLogColumns?: GameLogColumn[];
 }
@@ -100,6 +101,7 @@ const gameLogs = ref<PlayerStat[]>([]);
 const leaderboardRows = ref<Record<string, unknown>[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const api = useApiV2Client();
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => {
     const items: BreadcrumbItem[] = [
@@ -423,36 +425,48 @@ const getOpponent = (
 onMounted(async () => {
     try {
         const requests: Promise<void>[] = [
-            fetch(props.config.playerEndpoint(props.playerId))
-                .then((res) => (res.ok ? res.json() : null))
-                .then((data) => {
-                    playerData.value = normalizePlayer(data?.data || null);
+            api.players
+                .show(props.config.sport, props.playerId)
+                .then((response) => {
+                    playerData.value = normalizePlayer(
+                        response?.data ?? null,
+                    );
                 }),
-            fetch(props.config.statsEndpoint(props.playerId))
-                .then((res) => (res.ok ? res.json() : null))
-                .then((data) => {
-                    gameLogs.value = (data?.data || []).map(normalizeStatRow);
+            api.stats
+                .players(props.config.sport, {
+                    query: {
+                        ...(props.config.statsQuery ?? {}),
+                        player_id: props.playerId,
+                        per_page: 100,
+                    },
+                })
+                .then((response) => {
+                    gameLogs.value = (response?.data ?? []).map(
+                        normalizeStatRow,
+                    );
                 }),
         ];
 
-        if (props.config.playerPropsEndpoint) {
+        if (props.config.showPlayerProps) {
             requests.push(
-                fetch(props.config.playerPropsEndpoint(props.playerId))
-                    .then((res) => (res.ok ? res.json() : null))
-                    .then((data) => {
-                        playerProps.value = (data?.data || []).map(
+                api.players
+                    .playerProps(props.config.sport, props.playerId)
+                    .then((response) => {
+                        playerProps.value = (response?.data ?? []).map(
                             normalizePlayerProp,
                         );
                     }),
             );
         }
 
-        if (props.config.leaderboardEndpoint) {
+        if (props.config.leaderboardQuery !== null) {
             requests.push(
-                fetch(props.config.leaderboardEndpoint)
-                    .then((res) => (res.ok ? res.json() : null))
-                    .then((data) => {
-                        leaderboardRows.value = data?.data || [];
+                api.leaderboards
+                    .players(props.config.sport, {
+                        query: props.config.leaderboardQuery ?? {},
+                    })
+                    .then((response) => {
+                        leaderboardRows.value = response?.data ?? [];
                     }),
             );
         }

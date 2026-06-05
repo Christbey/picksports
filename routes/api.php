@@ -18,7 +18,7 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
     Route::post('/security/reports/integrity', [SecurityReportController::class, 'integrity'])
         ->middleware($securityReportThrottle);
 
-    Route::prefix('auth')->name('auth.')->middleware('v1.api-deprecation')->group(function (): void {
+    Route::prefix('auth')->name('auth.')->middleware('v1.auth-api-usage')->group(function (): void {
         Route::post('/login', [TokenAuthController::class, 'login'])
             ->middleware('throttle:10,1')
             ->name('login');

@@ -43,6 +43,8 @@ Only reshape auth payloads after mobile/API consumers are updated together.
 3. Add `X-API-Replacement` headers for v1 auth routes after v2 auth tests pass.
    Done via `v1.api-deprecation` middleware.
 4. Add opt-in v1 auth usage logging separately from product API logging.
+   Done via `API_V1_AUTH_USAGE_LOGGING_ENABLED=true` and `api.v1.auth.usage`
+   log records.
 5. Update external/mobile clients to call `/api/v2/auth`.
 6. Retire `/api/v1/auth` only after production usage logs show zero v1 auth
    traffic for the agreed observation window.

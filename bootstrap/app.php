@@ -10,6 +10,7 @@ use App\Http\Middleware\EnsureV2SportApiAccess;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\LogV1ApiUsage;
+use App\Http\Middleware\LogV1AuthApiUsage;
 use App\Http\Middleware\UpdateUserLastActive;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -51,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => EnsureUserHasPermission::class,
             'v2.sport-api-access' => EnsureV2SportApiAccess::class,
             'v1.api-deprecation' => AddV1ApiDeprecationHeaders::class,
+            'v1.auth-api-usage' => LogV1AuthApiUsage::class,
             'v1.api-usage' => LogV1ApiUsage::class,
         ]);
     })

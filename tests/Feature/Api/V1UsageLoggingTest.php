@@ -56,3 +56,27 @@ test('v1 auth routes include replacement headers without product usage logging',
 
     Log::shouldNotHaveReceived('info');
 });
+
+test('v1 auth usage logging is separately opt in', function () {
+    Config::set('api.v1_usage_logging.enabled', true);
+    Config::set('api.v1_auth_usage_logging.enabled', true);
+    Log::spy();
+
+    $user = User::factory()->create();
+    $token = $user->createToken('ios-client');
+
+    $this
+        ->withHeader('Authorization', 'Bearer '.$token->plainTextToken)
+        ->getJson('/api/v1/auth/me')
+        ->assertOk();
+
+    Log::shouldHaveReceived('info')
+        ->once()
+        ->with('api.v1.auth.usage', Mockery::on(
+            fn (array $context): bool => $context['method'] === 'GET'
+                && $context['path'] === 'api/v1/auth/me'
+                && $context['user_id'] === $user->id
+        ));
+
+    Log::shouldNotHaveReceived('info', ['api.v1.usage', Mockery::any()]);
+});

@@ -4,6 +4,7 @@ import { useClipboard } from '@vueuse/core';
 import { onBeforeUnmount, ref, watch } from 'vue';
 import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
+import { usePayloadInspector } from '@/composables/usePayloadInspector';
 import AppLayout from '@/layouts/AppLayout.vue';
 import foundingUsers from '@/routes/admin/settings/founding-users';
 import groups from '@/routes/admin/settings/groups';
@@ -114,6 +115,7 @@ const groupUserSuggestions = ref<Record<number, UserLookupResult[]>>({});
 const isSearchingGroupUsers = ref<Record<number, boolean>>({});
 let groupUserSearchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let groupUserSearchAbortController: AbortController | null = null;
+const payloadInspector = usePayloadInspector();
 
 async function fetchUserSuggestions(
     url: string,
@@ -447,7 +449,10 @@ const adminAreas = [
     {
         title: 'Payload Inspector',
         description: 'Validate API v2 payload contracts for migrated surfaces.',
-        href: '/api/v2/admin/payload-inspector?profile=dashboard&include_payload=true',
+        href: payloadInspector.urlFor({
+            profile: 'dashboard',
+            includePayload: true,
+        }),
         external: true,
     },
     {

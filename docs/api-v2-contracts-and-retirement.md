@@ -15,7 +15,7 @@ them, and how to validate the remaining `/api/v1` usage before retirement.
 | Saved/tracked picks | `GET/POST/PUT/DELETE /api/v2/user-bets` | `resources/js/pages/MyBets.vue`, `resources/js/components/predictions/*` | `app/Http/Controllers/BetTrackerController.php` | `tests/Feature/BetTrackerTest.php` |
 | March Madness brackets | `GET/POST/PATCH /api/v2/cbb-brackets` | `resources/js/pages/MarchMadnessBracket.vue` | `app/Http/Controllers/Api/CBB/BracketController.php` | `tests/Feature/CbbBracketApiTest.php` |
 | Bracket groups | `GET/POST/PATCH /api/v2/groups` | `resources/js/pages/MarchMadnessBracket.vue` | `app/Http/Controllers/Api/GroupController.php` | `tests/Feature/GroupApiTest.php` |
-| Payload inspector | `GET /api/v2/admin/payload-inspector` | `resources/js/pages/settings/Admin.vue` | `app/Http/Controllers/Api/V2/Admin/PayloadInspectorController.php` | `tests/Feature/Api/V2/Admin/PayloadInspectorTest.php` |
+| Payload inspector | `GET /api/v2/admin/payload-inspector` | `resources/js/composables/usePayloadInspector.ts`, `resources/js/pages/settings/Admin.vue` | `app/Http/Controllers/Api/V2/Admin/PayloadInspectorController.php` | `tests/Feature/Api/V2/Admin/PayloadInspectorTest.php` |
 
 ## Contract Shapes
 

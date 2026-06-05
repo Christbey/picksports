@@ -312,6 +312,10 @@ Supported profiles:
 - `sport-predictions`
 - `player-props`
 - `admin-healthcheck-cards`
+- `user-bets`
+- `cbb-brackets`
+- `settings-admin`
+- `alert-preferences`
 
 Supported outputs:
 

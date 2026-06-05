@@ -730,7 +730,7 @@ export function useApiV2Client() {
 
         admin: {
             payloadInspector: (options: RequestOptions = {}) =>
-                collection<ApiV2PayloadInspector>(
+                item<ApiV2PayloadInspector>(
                     v2.admin.payloadInspector.url(routeOptions(options.query)),
                     options,
                 ),

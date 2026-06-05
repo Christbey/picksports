@@ -64,7 +64,9 @@ const signalGroups = computed(() => [
         icon: TrendingUp,
         rows: payload.value?.week_one_covers ?? [],
         metric: (row: SignalRow) =>
-            row.edge_points != null ? `${row.edge_points.toFixed(1)} pts` : null,
+            row.edge_points != null
+                ? `${row.edge_points.toFixed(1)} pts`
+                : null,
         detail: (row: SignalRow) => row.matchup ?? '',
     },
     {
@@ -104,7 +106,7 @@ async function loadSignals(): Promise<void> {
         }
 
         const response = await fetchJson<{ data: SignalsPayload }>(
-            `/api/v1/nfl/signals${params.toString() ? `?${params}` : ''}`,
+            `/api/v2/sports/nfl/signals${params.toString() ? `?${params}` : ''}`,
         );
         if (!response?.data) {
             throw new Error('Failed to load NFL signals');

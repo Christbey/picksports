@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\V2\SportPlayerController;
 use App\Http\Controllers\Api\V2\SportPlayerLeaderboardController;
 use App\Http\Controllers\Api\V2\SportPlayerPropController;
 use App\Http\Controllers\Api\V2\SportPredictionController;
+use App\Http\Controllers\Api\V2\SportSignalController;
 use App\Http\Controllers\Api\V2\SportStatController;
 use App\Http\Controllers\Api\V2\SportTeamController;
 use App\Http\Controllers\Api\V2\SportTeamMetricController;
@@ -44,6 +45,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/players/{player}/player-props', [SportPlayerPropController::class, 'playerIndex'])->name('players.player-props.index');
 
             Route::get('/player-props', [SportPlayerPropController::class, 'index'])->name('player-props.index');
+            Route::get('/signals', [SportSignalController::class, 'index'])->name('signals.index');
 
             Route::get('/predictions', [SportPredictionController::class, 'index'])->name('predictions.index');
             Route::get('/predictions/available-seasons', [SportPredictionController::class, 'availableSeasons'])->name('predictions.available-seasons');

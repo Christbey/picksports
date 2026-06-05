@@ -364,7 +364,7 @@ async function loadSignals(): Promise<void> {
         }
 
         const response = await fetchJson<{ data: SignalsPayload }>(
-            `/api/v1/mlb/signals${params.toString() ? `?${params}` : ''}`,
+            `/api/v2/sports/mlb/signals${params.toString() ? `?${params}` : ''}`,
         );
         if (!response?.data) {
             throw new Error('Failed to load MLB signals');

@@ -109,18 +109,14 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
 
             const teamFetches: Array<{
                 key: string;
-                promise: Promise<ApiEnvelope<unknown> | null>;
+                promise: Promise<unknown>;
             }> = [];
 
             if (homeTeamId) {
                 teamFetches.push(
                     {
                         key: 'homeMetrics',
-                        promise: fetchJson<
-                            ApiEnvelope<TeamMetric | TeamMetric[] | null>
-                        >(
-                            `/api/v1/${options.sport}/teams/${homeTeamId}/metrics`,
-                        ),
+                        promise: api.teams.metrics(options.sport, homeTeamId),
                     },
                     {
                         key: 'homeGames',
@@ -135,11 +131,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 teamFetches.push(
                     {
                         key: 'awayMetrics',
-                        promise: fetchJson<
-                            ApiEnvelope<TeamMetric | TeamMetric[] | null>
-                        >(
-                            `/api/v1/${options.sport}/teams/${awayTeamId}/metrics`,
-                        ),
+                        promise: api.teams.metrics(options.sport, awayTeamId),
                     },
                     {
                         key: 'awayGames',

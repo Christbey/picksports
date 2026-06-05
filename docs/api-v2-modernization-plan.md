@@ -10,6 +10,9 @@ Build a new Laravel-first API layer under `/api/v2` that supports:
 - production payload inspection
 - AI-assisted development and validation
 
+Operating details, current migrated contract examples, and the V1 retirement
+runbook live in `docs/api-v2-contracts-and-retirement.md`.
+
 This is a parallel migration, not a rewrite.
 
 `/api/v1` remains operational throughout the migration and is only retired after:

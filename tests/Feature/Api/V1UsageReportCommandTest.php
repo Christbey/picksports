@@ -27,7 +27,11 @@ test('api v1 usage report summarizes legacy product route hits', function () {
 test('api v1 usage report can output json', function () {
     $path = storage_path('logs/api-v1-usage-report-json-test.log');
     File::ensureDirectoryExists(dirname($path));
-    File::put($path, '[2026-06-05 12:00:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/groups","route_name":"groups.index","user_id":null}');
+    File::put($path, implode(PHP_EOL, [
+        '[2026-06-05 12:00:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/groups","route_name":"groups.index","user_id":null}',
+        '[2026-06-05 12:02:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/mlb/team-metrics","route_name":"mlb.team-metrics.index","user_id":1}',
+        '[2026-06-05 12:03:00] production.INFO: api.v1.usage {"method":"GET","path":"api/v1/mlb/games/99/player-stats","route_name":"mlb.games.player-stats","user_id":1}',
+    ]));
 
     $exitCode = Artisan::call('api:v1-usage-report', ['--path' => [$path], '--json' => true]);
     $output = Artisan::output();
@@ -35,6 +39,8 @@ test('api v1 usage report can output json', function () {
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('"path": "api/v1/groups"')
         ->and($output)->toContain('"replacement_path": "/api/v2/groups"')
+        ->and($output)->toContain('"replacement_path": "/api/v2/sports/mlb/metrics/teams"')
+        ->and($output)->toContain('"replacement_path": "/api/v2/sports/mlb/stats/player?game_id=99"')
         ->and($output)->toContain('"unique_users"');
 });
 

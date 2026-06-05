@@ -445,6 +445,12 @@ const adminAreas = [
         href: '/admin/healthchecks',
     },
     {
+        title: 'Payload Inspector',
+        description: 'Validate API v2 payload contracts for migrated surfaces.',
+        href: '/api/v2/admin/payload-inspector?profile=dashboard&include_payload=true',
+        external: true,
+    },
+    {
         title: 'Prediction Access Debug',
         description:
             'Inspect tier and permission-based prediction field access.',
@@ -1303,7 +1309,15 @@ const adminAreas = [
                             {{ area.description }}
                         </p>
                         <Button as-child variant="outline" class="mt-4">
-                            <Link :href="area.href">Open</Link>
+                            <a
+                                v-if="area.external"
+                                :href="area.href"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                Open
+                            </a>
+                            <Link v-else :href="area.href">Open</Link>
                         </Button>
                     </div>
                 </div>

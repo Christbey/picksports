@@ -105,6 +105,10 @@ From an authenticated admin session, inspect:
 /api/v2/admin/payload-inspector?profile=sport-predictions&sport=mlb
 /api/v2/admin/payload-inspector?profile=player-props&sport=nba
 /api/v2/admin/payload-inspector?profile=admin-healthcheck-cards&sport=mlb
+/api/v2/admin/payload-inspector?profile=user-bets&include_payload=true
+/api/v2/admin/payload-inspector?profile=cbb-brackets&include_payload=true
+/api/v2/admin/payload-inspector?profile=settings-admin&include_payload=true
+/api/v2/admin/payload-inspector?profile=alert-preferences&include_payload=true
 ```
 
 The payload should include:

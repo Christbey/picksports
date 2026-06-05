@@ -37,7 +37,17 @@ class PayloadInspectorRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'profile' => ['required', 'string', Rule::in(['dashboard'])],
+            'profile' => ['required', 'string', Rule::in([
+                'dashboard',
+                'live-scoreboard',
+                'sport-predictions',
+                'player-props',
+                'admin-healthcheck-cards',
+                'user-bets',
+                'cbb-brackets',
+                'settings-admin',
+                'alert-preferences',
+            ])],
             'date' => ['sometimes', 'date_format:Y-m-d'],
             'sports' => ['sometimes', 'array'],
             'sports.*' => ['string', Rule::in(array_keys((array) config('sports.domains', [])))],

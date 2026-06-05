@@ -2,17 +2,26 @@
 
 namespace App\Services\Api\V2\Admin;
 
+use App\Models\CbbBracket;
+use App\Models\Group;
+use App\Models\User;
+use App\Models\UserAlertPreference;
+use App\Models\UserBet;
+use App\Models\WebPushSubscription;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\Settings\FoundingUsersSettingsService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
+use Spatie\Permission\Models\Role;
 use Throwable;
 
 class DashboardPayloadInspector
 {
     public function __construct(
         private readonly SportContextResolver $sports,
+        private readonly FoundingUsersSettingsService $foundingUsersSettings,
     ) {}
 
     /**
@@ -45,12 +54,7 @@ class DashboardPayloadInspector
         }
 
         if ($inputs['include_payload']) {
-            $data['payload'] = [
-                'sports' => $contexts
-                    ->map(fn (SportContext $context): array => $this->sportPayload($context, $inputs['date']))
-                    ->values()
-                    ->all(),
-            ];
+            $data['payload'] = $this->payloadForProfile($inputs, $contexts->all());
         }
 
         return [
@@ -62,6 +66,35 @@ class DashboardPayloadInspector
                 'shell' => true,
             ],
         ];
+    }
+
+    /**
+     * @param  array{profile: string, date: string, sports: array<int, string>, include_payload: bool, include_warnings: bool}  $inputs
+     * @param  array<int, SportContext>  $contexts
+     * @return array<string, mixed>
+     */
+    private function payloadForProfile(array $inputs, array $contexts): array
+    {
+        return match ($inputs['profile']) {
+            'user-bets' => [
+                'app_surface' => $this->userBetsPayload(),
+            ],
+            'cbb-brackets' => [
+                'app_surface' => $this->cbbBracketsPayload(),
+            ],
+            'settings-admin' => [
+                'app_surface' => $this->settingsAdminPayload(),
+            ],
+            'alert-preferences' => [
+                'app_surface' => $this->alertPreferencesPayload(),
+            ],
+            default => [
+                'sports' => collect($contexts)
+                    ->map(fn (SportContext $context): array => $this->sportPayload($context, $inputs['date']))
+                    ->values()
+                    ->all(),
+            ],
+        };
     }
 
     /**
@@ -86,6 +119,209 @@ class DashboardPayloadInspector
             'predictions' => $predictions,
             'dashboard_contract' => $this->dashboardContract($games, $predictions),
             'v2_contracts' => $this->v2Contracts($context),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function userBetsPayload(): array
+    {
+        $diagnostics = $this->modelDiagnostics(UserBet::class);
+
+        return [
+            'profile' => 'user-bets',
+            'source_endpoint' => '/api/v2/user-bets',
+            'vue_consumers' => [
+                'resources/js/pages/MyBets.vue',
+                'resources/js/components/predictions/UnifiedPredictionCard.vue',
+                'resources/js/components/predictions/SavePickDialog.vue',
+            ],
+            'contract_shape' => [
+                'index' => ['bets', 'statistics', 'tracking'],
+                'resource' => ['data'],
+            ],
+            'critical_fields' => [
+                'id',
+                'bet_amount',
+                'odds',
+                'bet_type',
+                'selection_side',
+                'selection_label',
+                'result',
+                'profit_loss',
+                'placed_at',
+            ],
+            'diagnostics' => $diagnostics + [
+                'pending_count' => $this->safeCount(UserBet::class, fn ($query) => $query->where('result', 'pending')),
+                'tracked_prediction_count' => $this->safeCount(UserBet::class, fn ($query) => $query->whereNotNull('prediction_id')),
+            ],
+            'warnings' => $this->missingTableWarnings('user-bets', $diagnostics),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function cbbBracketsPayload(): array
+    {
+        $brackets = $this->modelDiagnostics(CbbBracket::class);
+        $groups = $this->modelDiagnostics(Group::class);
+
+        return [
+            'profile' => 'cbb-brackets',
+            'source_endpoints' => [
+                '/api/v2/cbb-brackets',
+                '/api/v2/cbb-brackets/leaderboard',
+                '/api/v2/groups',
+            ],
+            'vue_consumers' => [
+                'resources/js/pages/MarchMadnessBracket.vue',
+            ],
+            'contract_shape' => [
+                'brackets' => ['data'],
+                'leaderboard' => ['data'],
+                'groups' => ['data'],
+            ],
+            'critical_fields' => [
+                'public_id',
+                'season',
+                'name',
+                'group_id',
+                'picks',
+                'points_earned',
+                'max_points_remaining',
+                'correct_picks',
+                'incorrect_picks',
+                'results',
+                'is_locked',
+                'can_edit',
+            ],
+            'diagnostics' => [
+                'brackets' => $brackets + [
+                    'submitted_count' => $this->safeCount(CbbBracket::class, fn ($query) => $query->whereNotNull('submitted_at')),
+                    'grouped_count' => $this->safeCount(CbbBracket::class, fn ($query) => $query->whereNotNull('group_id')),
+                ],
+                'groups' => $groups + [
+                    'bracket_pool_count' => $this->safeCount(Group::class, fn ($query) => $query->where('type', 'bracket_pool')->where('sport', 'cbb')),
+                ],
+            ],
+            'warnings' => [
+                ...$this->missingTableWarnings('cbb-brackets', $brackets),
+                ...$this->missingTableWarnings('groups', $groups),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function settingsAdminPayload(): array
+    {
+        $groups = $this->modelDiagnostics(Group::class);
+        $users = $this->modelDiagnostics(User::class);
+        $roleName = (string) config('founding_users.role', 'founding_user');
+        $guardName = (string) config('auth.defaults.guard', 'web');
+        $roleExists = Role::query()
+            ->where('name', $roleName)
+            ->where('guard_name', $guardName)
+            ->exists();
+
+        return [
+            'profile' => 'settings-admin',
+            'source_endpoints' => [
+                '/settings/admin',
+                '/settings/admin/founding-users/search',
+                '/settings/admin/groups/users/search',
+            ],
+            'vue_consumers' => [
+                'resources/js/pages/settings/Admin.vue',
+            ],
+            'contract_shape' => [
+                'inertia_props' => ['foundingUsers', 'groups'],
+                'search_payload' => ['users'],
+            ],
+            'critical_fields' => [
+                'foundingUsers.enabled',
+                'foundingUsers.limit',
+                'foundingUsers.used',
+                'foundingUsers.remaining',
+                'groups.id',
+                'groups.public_id',
+                'groups.name',
+                'groups.members',
+            ],
+            'diagnostics' => [
+                'users' => $users,
+                'groups' => $groups + [
+                    'admin_visible_bracket_pool_count' => $this->safeCount(Group::class, fn ($query) => $query->where('type', 'bracket_pool')->where('sport', 'cbb')),
+                ],
+                'founding_users' => [
+                    'enabled' => (bool) config('founding_users.enabled', false),
+                    'limit' => $this->foundingUsersSettings->getLimit(),
+                    'role' => $roleName,
+                    'role_exists' => $roleExists,
+                    'tier_slug' => (string) config('founding_users.tier_slug', 'premium'),
+                ],
+            ],
+            'warnings' => [
+                ...$this->missingTableWarnings('settings-admin-users', $users),
+                ...$this->missingTableWarnings('settings-admin-groups', $groups),
+                ...($roleExists ? [] : [[
+                    'code' => 'founding_role_missing',
+                    'message' => 'The configured founding user role does not exist.',
+                ]]),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function alertPreferencesPayload(): array
+    {
+        $preferences = $this->modelDiagnostics(UserAlertPreference::class);
+        $pushSubscriptions = $this->modelDiagnostics(WebPushSubscription::class);
+
+        return [
+            'profile' => 'alert-preferences',
+            'source_endpoints' => [
+                '/settings/alert-preferences',
+                '/settings/web-push/subscriptions',
+                '/settings/web-push/test',
+            ],
+            'vue_consumers' => [
+                'resources/js/pages/settings/AlertPreferences.vue',
+            ],
+            'contract_shape' => [
+                'inertia_props' => ['preference', 'webPush'],
+                'web_push_response' => ['ok', 'message'],
+            ],
+            'critical_fields' => [
+                'preference.enabled',
+                'preference.sports',
+                'preference.notification_types',
+                'preference.minimum_edge',
+                'preference.digest_mode',
+                'preference.daily_digest_subscribed',
+                'webPush.configured',
+                'webPush.publicKey',
+                'webPush.hasSubscription',
+            ],
+            'diagnostics' => [
+                'preferences' => $preferences + [
+                    'enabled_count' => $this->safeCount(UserAlertPreference::class, fn ($query) => $query->where('enabled', true)),
+                    'daily_digest_subscribed_count' => $this->safeCount(UserAlertPreference::class, fn ($query) => $query->where('daily_digest_subscribed', true)),
+                ],
+                'web_push_subscriptions' => $pushSubscriptions + [
+                    'active_count' => $this->safeCount(WebPushSubscription::class, fn ($query) => $query->whereNull('expired_at')),
+                ],
+                'web_push_configured' => filled(config('webpush.vapid.public_key')) && filled(config('webpush.vapid.private_key')),
+            ],
+            'warnings' => [
+                ...$this->missingTableWarnings('alert-preferences', $preferences),
+                ...$this->missingTableWarnings('web-push-subscriptions', $pushSubscriptions),
+            ],
         ];
     }
 
@@ -278,6 +514,77 @@ class DashboardPayloadInspector
             'envelope' => ['data', 'meta'],
             'meta_fields' => ['version', 'sport', 'filters', 'pagination', 'freshness', 'warnings'],
         ];
+    }
+
+    /**
+     * @param  class-string<Model>  $modelClass
+     * @return array<string, mixed>
+     */
+    private function modelDiagnostics(string $modelClass): array
+    {
+        try {
+            $table = (new $modelClass)->getTable();
+
+            if (! Schema::hasTable($table)) {
+                return [
+                    'available' => false,
+                    'table' => $table,
+                    'total' => 0,
+                    'latest_updated_at' => null,
+                ];
+            }
+
+            return [
+                'available' => true,
+                'table' => $table,
+                'total' => $modelClass::query()->count(),
+                'latest_updated_at' => $this->latestUpdatedAt($modelClass, $table),
+            ];
+        } catch (Throwable) {
+            return [
+                'available' => false,
+                'table' => null,
+                'total' => 0,
+                'latest_updated_at' => null,
+            ];
+        }
+    }
+
+    /**
+     * @param  class-string<Model>  $modelClass
+     */
+    private function safeCount(string $modelClass, callable $callback): int
+    {
+        try {
+            $table = (new $modelClass)->getTable();
+
+            if (! Schema::hasTable($table)) {
+                return 0;
+            }
+
+            $query = $modelClass::query();
+            $callback($query);
+
+            return $query->count();
+        } catch (Throwable) {
+            return 0;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $diagnostics
+     * @return array<int, array<string, string>>
+     */
+    private function missingTableWarnings(string $profile, array $diagnostics): array
+    {
+        if (($diagnostics['available'] ?? false) === true) {
+            return [];
+        }
+
+        return [[
+            'code' => "{$profile}_table_unavailable",
+            'message' => "The {$profile} payload cannot be fully validated because its backing table is unavailable.",
+        ]];
     }
 
     /**

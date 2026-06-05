@@ -21,6 +21,10 @@ use App\Models\NFL\Player as NflPlayer;
 use App\Models\NFL\PlayerStat as NflPlayerStat;
 use App\Models\NFL\Team as NflTeam;
 use App\Models\User;
+use App\Models\WNBA\Game as WnbaGame;
+use App\Models\WNBA\Player as WnbaPlayer;
+use App\Models\WNBA\PlayerStat as WnbaPlayerStat;
+use App\Models\WNBA\Team as WnbaTeam;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
@@ -31,6 +35,7 @@ dataset('v2PlayerLeaderboardSports', [
     'nfl' => ['nfl', NflTeam::class, NflGame::class, NflPlayer::class, NflPlayerStat::class, 'passing_yards', 280],
     'mlb' => ['mlb', MlbTeam::class, MlbGame::class, MlbPlayer::class, MlbPlayerStat::class, 'hits', 3],
     'cfb' => ['cfb', CfbTeam::class, CfbGame::class, CfbPlayer::class, CfbPlayerStat::class, 'passing_yards', 325],
+    'wnba' => ['wnba', WnbaTeam::class, WnbaGame::class, WnbaPlayer::class, WnbaPlayerStat::class, 'points', 21],
 ]);
 
 it('requires authenticated access for v2 player leaderboard endpoints', function (string $slug) {
@@ -48,7 +53,7 @@ it('returns a clean json 404 for unsupported v2 player leaderboard sports', func
         ->assertNotFound()
         ->assertJsonPath('message', 'Unsupported sport: nhl');
 
-    $this->getJson('/api/v2/sports/wnba/leaderboards/players')
+    $this->getJson('/api/v2/sports/wcbb/leaderboards/players')
         ->assertNotFound()
         ->assertJsonPath('message', 'Leaderboard not available for this sport');
 });

@@ -63,6 +63,8 @@ class SportStatResource extends JsonResource
             'status' => $game->getAttribute('status'),
             'home_team_id' => $game->getAttribute('home_team_id'),
             'away_team_id' => $game->getAttribute('away_team_id'),
+            'home_team' => $this->teamSummary($game, 'homeTeam'),
+            'away_team' => $this->teamSummary($game, 'awayTeam'),
         ];
     }
 
@@ -80,6 +82,30 @@ class SportStatResource extends JsonResource
         return [
             'id' => $team->getAttribute('id'),
             'abbreviation' => $team->getAttribute('abbreviation'),
+            'display_name' => $team->getAttribute('display_name')
+                ?? trim((string) ($team->getAttribute('location') ?? $team->getAttribute('school')).' '.(string) ($team->getAttribute('name') ?? $team->getAttribute('mascot'))),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function teamSummary(Model $model, string $relation): ?array
+    {
+        if (! $model->relationLoaded($relation)) {
+            return null;
+        }
+
+        $team = $model->getRelation($relation);
+
+        if (! $team instanceof Model) {
+            return null;
+        }
+
+        return [
+            'id' => $team->getAttribute('id'),
+            'abbreviation' => $team->getAttribute('abbreviation'),
+            'name' => $team->getAttribute('name') ?? $team->getAttribute('mascot'),
             'display_name' => $team->getAttribute('display_name')
                 ?? trim((string) ($team->getAttribute('location') ?? $team->getAttribute('school')).' '.(string) ($team->getAttribute('name') ?? $team->getAttribute('mascot'))),
         ];

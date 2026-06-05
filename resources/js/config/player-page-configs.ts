@@ -12,12 +12,13 @@ export const nbaPlayerPageConfig = {
     predictionsHref: '/nba/predictions',
     teamLink: (id: number) => NBATeamController.url(id),
     gameLink: (id: number) => NBAGameController.url(id),
-    playerEndpoint: (playerId: number) => `/api/v1/nba/players/${playerId}`,
+    playerEndpoint: (playerId: number) =>
+        `/api/v2/sports/nba/players/${playerId}`,
     playerPropsEndpoint: (playerId: number) =>
-        `/api/v1/nba/players/${playerId}/player-props`,
+        `/api/v2/sports/nba/players/${playerId}/player-props`,
     statsEndpoint: (playerId: number) =>
-        `/api/v1/nba/players/${playerId}/stats`,
-    leaderboardEndpoint: '/api/v1/nba/player-stats/leaderboard',
+        `/api/v2/sports/nba/stats/players?player_id=${playerId}&per_page=100`,
+    leaderboardEndpoint: '/api/v2/sports/nba/leaderboards/players',
 };
 
 export const cbbPlayerPageConfig = {
@@ -25,12 +26,13 @@ export const cbbPlayerPageConfig = {
     predictionsHref: '/cbb/predictions',
     teamLink: (id: number) => `/cbb/teams/${id}`,
     gameLink: (id: number) => `/cbb/games/${id}`,
-    playerEndpoint: (playerId: number) => `/api/v1/cbb/players/${playerId}`,
+    playerEndpoint: (playerId: number) =>
+        `/api/v2/sports/cbb/players/${playerId}`,
     playerPropsEndpoint: (playerId: number) =>
-        `/api/v1/cbb/players/${playerId}/player-props`,
+        `/api/v2/sports/cbb/players/${playerId}/player-props`,
     statsEndpoint: (playerId: number) =>
-        `/api/v1/cbb/players/${playerId}/stats`,
-    leaderboardEndpoint: '/api/v1/cbb/player-stats/leaderboard',
+        `/api/v2/sports/cbb/stats/players?player_id=${playerId}&per_page=100`,
+    leaderboardEndpoint: '/api/v2/sports/cbb/leaderboards/players',
 };
 
 export const nflPlayerPageConfig = {
@@ -38,10 +40,11 @@ export const nflPlayerPageConfig = {
     predictionsHref: '/nfl/predictions',
     teamLink: (id: number) => NFLTeamController.url(id),
     gameLink: (id: number) => NFLGameController.url(id),
-    playerEndpoint: (playerId: number) => `/api/v1/nfl/players/${playerId}`,
+    playerEndpoint: (playerId: number) =>
+        `/api/v2/sports/nfl/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
-        `/api/v1/nfl/players/${playerId}/stats`,
-    leaderboardEndpoint: '/api/v1/nfl/player-stats/leaderboard',
+        `/api/v2/sports/nfl/stats/players?player_id=${playerId}&per_page=100`,
+    leaderboardEndpoint: '/api/v2/sports/nfl/leaderboards/players',
     summaryCards: [
         {
             label: 'YDS/G',
@@ -156,10 +159,11 @@ export const mlbPlayerPageConfig = {
     predictionsHref: '/mlb/predictions',
     teamLink: (id: number) => MLBTeamController.url(id),
     gameLink: (id: number) => MLBGameController.url(id),
-    playerEndpoint: (playerId: number) => `/api/v1/mlb/players/${playerId}`,
+    playerEndpoint: (playerId: number) =>
+        `/api/v2/sports/mlb/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
-        `/api/v1/mlb/players/${playerId}/stats?season=${currentMlbSeason}&season_type=2&stat_type=batting&per_page=200`,
-    leaderboardEndpoint: `/api/v1/mlb/player-stats/leaderboard?season=${currentMlbSeason}&season_type=2&stat_type=batting`,
+        `/api/v2/sports/mlb/stats/players?player_id=${playerId}&season=${currentMlbSeason}&season_type=2&stat_type=batting&per_page=100`,
+    leaderboardEndpoint: `/api/v2/sports/mlb/leaderboards/players?season=${currentMlbSeason}&season_type=2&stat_type=batting`,
     summaryCards: [
         {
             label: 'H/G',
@@ -276,10 +280,11 @@ export const mlbPlayerPageConfig = {
 export const cfbPlayerPageConfig = {
     sportLabel: 'CFB',
     predictionsHref: '/cfb/predictions',
-    playerEndpoint: (playerId: number) => `/api/v1/cfb/players/${playerId}`,
+    playerEndpoint: (playerId: number) =>
+        `/api/v2/sports/cfb/players/${playerId}`,
     statsEndpoint: (playerId: number) =>
-        `/api/v1/cfb/players/${playerId}/stats`,
-    leaderboardEndpoint: '/api/v1/cfb/player-stats/leaderboard',
+        `/api/v2/sports/cfb/stats/players?player_id=${playerId}&per_page=100`,
+    leaderboardEndpoint: '/api/v2/sports/cfb/leaderboards/players',
     summaryCards: nflPlayerPageConfig.summaryCards,
     gameLogColumns: nflPlayerPageConfig.gameLogColumns,
 };

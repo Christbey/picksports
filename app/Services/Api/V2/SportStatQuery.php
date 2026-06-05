@@ -153,10 +153,21 @@ class SportStatQuery
      */
     private function relationsFor(string $statModel): array
     {
-        return array_values(array_filter(
-            ['game', 'team', 'player'],
-            fn (string $relation): bool => method_exists($statModel, $relation),
-        ));
+        $relations = [];
+
+        if (method_exists($statModel, 'game')) {
+            $relations[] = 'game';
+            $relations[] = 'game.homeTeam';
+            $relations[] = 'game.awayTeam';
+        }
+
+        foreach (['team', 'player'] as $relation) {
+            if (method_exists($statModel, $relation)) {
+                $relations[] = $relation;
+            }
+        }
+
+        return $relations;
     }
 
     private function whereStatType(Builder $query, string $table, string $statType): Builder

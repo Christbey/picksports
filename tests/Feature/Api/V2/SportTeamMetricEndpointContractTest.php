@@ -118,6 +118,26 @@ it('lists v2 team metrics with stable metadata and flat metric fields', function
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2TeamMetricContractSports');
 
+it('aliases basketball efficiency fields to game page metric names', function () {
+    actAsV2TeamMetricContractUser();
+
+    $team = NbaTeam::factory()->create();
+    createV2TeamMetricContractMetric(NbaTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'offensive_efficiency' => 116.4,
+        'defensive_efficiency' => 109.2,
+        'net_rating' => 7.2,
+        'tempo' => 99.8,
+    ]);
+
+    $this->getJson("/api/v2/sports/nba/teams/{$team->id}/metrics?season=2026")
+        ->assertOk()
+        ->assertJsonPath('data.offensive_rating', 116.4)
+        ->assertJsonPath('data.defensive_rating', 109.2)
+        ->assertJsonPath('data.pace', 99.8);
+});
+
 it('lists v2 team metric seasons and latest team metric with metadata', function (
     string $slug,
     string $teamModel,

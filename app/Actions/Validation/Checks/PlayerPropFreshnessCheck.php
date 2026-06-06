@@ -37,6 +37,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $activeGames = $games->count();
         $missingProps = 0;
         $staleProps = 0;
+        $unscoredProps = 0;
         $flaggedGameIds = [];
 
         foreach ($games as $game) {
@@ -53,6 +54,11 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 $staleProps++;
                 $flaggedGameIds[] = (int) $game->id;
             }
+
+            if (! $this->hasRecommendationReadyProps($propsTable, (int) $game->id)) {
+                $unscoredProps++;
+                $flaggedGameIds[] = (int) $game->id;
+            }
         }
 
         $problemGames = count(array_unique($flaggedGameIds));
@@ -62,7 +68,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
 
         if ($problemGames > 0) {
             $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$problemGames}/{$activeGames} active games have missing or stale player props.";
+            $message = "{$problemGames}/{$activeGames} active games have missing, stale, or unscored player props.";
         }
 
         return [
@@ -76,9 +82,38 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'active_games' => $activeGames,
                 'games_missing_player_props' => $missingProps,
                 'games_with_stale_player_props' => $staleProps,
+                'games_with_unscored_player_props' => $unscoredProps,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
                 'stale_after_hours' => $staleHours,
             ],
         ];
+    }
+
+    private function hasRecommendationReadyProps(string $propsTable, int $gameId): bool
+    {
+        $requiredColumns = [
+            'recommended_side',
+            'confidence_score',
+            'predicted_over_probability',
+            'market_over_probability',
+            'edge_probability',
+            'data_quality_score',
+        ];
+
+        foreach ($requiredColumns as $column) {
+            if (! Schema::hasColumn($propsTable, $column)) {
+                return false;
+            }
+        }
+
+        return DB::table($propsTable)
+            ->where('game_id', $gameId)
+            ->whereNotNull('recommended_side')
+            ->whereNotNull('confidence_score')
+            ->whereNotNull('predicted_over_probability')
+            ->whereNotNull('market_over_probability')
+            ->whereNotNull('edge_probability')
+            ->whereNotNull('data_quality_score')
+            ->exists();
     }
 }

@@ -137,6 +137,24 @@ const oddsForSide = (prop: ApiV2PlayerProp, side: 'Over' | 'Under') =>
 const confidenceScore = (prop: ApiV2PlayerProp) =>
     Math.round(Number(prop.recommendation?.confidence_score ?? 0));
 
+const hasPropRecommendation = (prop: ApiV2PlayerProp): boolean => {
+    const recommendation = prop.recommendation;
+
+    return !!(
+        recommendation?.side &&
+        recommendation.confidence_score !== null &&
+        recommendation.confidence_score !== undefined &&
+        recommendation.predicted_over_probability !== null &&
+        recommendation.predicted_over_probability !== undefined &&
+        recommendation.market_over_probability !== null &&
+        recommendation.market_over_probability !== undefined &&
+        recommendation.edge_probability !== null &&
+        recommendation.edge_probability !== undefined &&
+        recommendation.data_quality_score !== null &&
+        recommendation.data_quality_score !== undefined
+    );
+};
+
 const edgeScore = (prop: ApiV2PlayerProp) => {
     const edge = prop.recommendation?.edge_probability;
 
@@ -202,7 +220,9 @@ const loadProps = async () => {
         return;
     }
 
-    recommendations.value = payload.data.map(mapPlayerProp);
+    recommendations.value = payload.data
+        .filter(hasPropRecommendation)
+        .map(mapPlayerProp);
     markets.value = marketOptionsFor(recommendations.value);
 
     if (
@@ -345,7 +365,8 @@ watch(
                 />
                 <p class="font-medium">No playable props yet</p>
                 <p class="text-sm text-muted-foreground">
-                    Sync props or loosen the market filter.
+                    Props are synced, but model probabilities and data-quality
+                    scores are not ready for this game yet.
                 </p>
             </div>
 

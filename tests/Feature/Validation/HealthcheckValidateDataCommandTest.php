@@ -237,6 +237,48 @@ test('healthcheck validate data passes upcoming game page readiness when pregame
         ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([]);
 });
 
+test('healthcheck validate data flags active games with unscored player props', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay(),
+    ]);
+
+    DB::table('nba_player_props')->insert([
+        'game_id' => $game->id,
+        'player_name' => 'Unscored Prop',
+        'market' => 'player_threes',
+        'bookmaker' => 'draftkings',
+        'line' => 1.5,
+        'over_price' => -110,
+        'under_price' => -110,
+        'fetched_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_player_prop_freshness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toBe('nba:sync-player-props')
+        ->and(data_get($finding->facts, 'games_with_unscored_player_props'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+});
+
 test('healthcheck validate data flags missing weather for outdoor sports', function () {
     $home = MlbTeam::factory()->create();
     $away = MlbTeam::factory()->create();

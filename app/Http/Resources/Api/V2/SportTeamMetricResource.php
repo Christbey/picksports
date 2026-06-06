@@ -44,7 +44,7 @@ class SportTeamMetricResource extends JsonResource
             return [];
         }
 
-        return collect($this->resource->getAttributes())
+        $metrics = collect($this->resource->getAttributes())
             ->except([
                 'id',
                 'team_id',
@@ -56,6 +56,22 @@ class SportTeamMetricResource extends JsonResource
             ])
             ->filter(fn (mixed $value): bool => $value !== null)
             ->all();
+
+        $this->aliasMetric($metrics, 'offensive_rating', 'offensive_efficiency');
+        $this->aliasMetric($metrics, 'defensive_rating', 'defensive_efficiency');
+        $this->aliasMetric($metrics, 'pace', 'tempo');
+
+        return $metrics;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metrics
+     */
+    private function aliasMetric(array &$metrics, string $alias, string $source): void
+    {
+        if (! array_key_exists($alias, $metrics) && array_key_exists($source, $metrics)) {
+            $metrics[$alias] = $metrics[$source];
+        }
     }
 
     /**

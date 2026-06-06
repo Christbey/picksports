@@ -176,18 +176,17 @@ class GeneratePlayoffForecast
      */
     private function activeFinalsMatchup(int $season, Collection $teams): ?array
     {
-        $postseasonTypes = $this->postseasonTypeCandidates();
         $cutoff = now()->subDays(21)->toDateString();
 
         $games = Game::query()
+            ->with(['homeTeam', 'awayTeam'])
             ->where('season', $season)
-            ->whereIn('season_type', $postseasonTypes)
             ->whereDate('game_date', '>=', $cutoff)
             ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
             ->whereNotNull('home_team_id')
             ->whereNotNull('away_team_id')
             ->orderBy('game_date')
-            ->get(['home_team_id', 'away_team_id', 'home_score', 'away_score', 'status', 'game_date']);
+            ->get(['id', 'home_team_id', 'away_team_id', 'home_score', 'away_score', 'status', 'game_date']);
 
         if ($games->isEmpty()) {
             return null;
@@ -204,6 +203,14 @@ class GeneratePlayoffForecast
             ->map(function (Collection $matchupGames, string $key): array {
                 $teamIds = array_map('intval', explode('-', $key));
                 $seriesWins = array_fill_keys($teamIds, 0);
+                $conferences = $matchupGames
+                    ->flatMap(fn (Game $game): array => [
+                        $game->homeTeam?->conference,
+                        $game->awayTeam?->conference,
+                    ])
+                    ->filter()
+                    ->unique()
+                    ->values();
 
                 foreach ($matchupGames as $game) {
                     if ((string) $game->status !== 'STATUS_FINAL' || $game->home_score === null || $game->away_score === null) {
@@ -223,10 +230,12 @@ class GeneratePlayoffForecast
                     'latest_game_date' => $matchupGames
                         ->max(fn (Game $game): string => $game->game_date?->toDateString() ?? ''),
                     'series_wins' => $seriesWins,
+                    'conference_count' => $conferences->count(),
                 ];
             })
             ->filter(function (array $matchup): bool {
                 return $matchup['game_count'] >= 2
+                    && $matchup['conference_count'] === 2
                     && (max($matchup['series_wins']) < 4 || $matchup['scheduled_count'] > 0);
             })
             ->sortByDesc(fn (array $matchup): string => (string) ($matchup['latest_game_date'] ?? ''))
@@ -241,17 +250,6 @@ class GeneratePlayoffForecast
             if (! $teamPoolIds->has($teamId)) {
                 return null;
             }
-        }
-
-        $finalistConferences = $teams
-            ->whereIn('team_id', $active['team_ids'])
-            ->pluck('conference')
-            ->filter()
-            ->unique()
-            ->values();
-
-        if ($finalistConferences->count() !== 2) {
-            return null;
         }
 
         return $active;
@@ -396,19 +394,6 @@ class GeneratePlayoffForecast
         }
 
         return $result;
-    }
-
-    /**
-     * @return array<int, int|string>
-     */
-    private function postseasonTypeCandidates(): array
-    {
-        $postseasonType = config('nba.season.types.postseason', 3);
-
-        return array_values(array_unique([
-            $postseasonType,
-            (string) $postseasonType,
-        ], SORT_REGULAR));
     }
 
     private function buildTeamPool(int $season): Collection

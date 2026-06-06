@@ -92,3 +92,31 @@ it('collapses NBA playoff forecasts to the active finals matchup once the finals
         ->and((float) PlayoffForecast::query()->where('season', 2026)->sum('champion_probability'))->toBeGreaterThan(0.99)
         ->and((float) PlayoffForecast::query()->where('season', 2026)->sum('champion_probability'))->toBeLessThan(1.01);
 });
+
+it('detects an active NBA finals matchup even when season type is not marked postseason', function () {
+    $this->travelTo('2026-06-06 12:00:00');
+
+    $knicks = createNbaForecastTeam('NY', 'Eastern', 8.6, 1620);
+    $spurs = createNbaForecastTeam('SA', 'Western', 8.4, 1615);
+    $thunder = createNbaForecastTeam('OKC', 'Western', 12.0, 1700);
+
+    createNbaFinalsGameForForecast($knicks, $spurs, [
+        'game_date' => '2026-06-04',
+        'season_type' => (string) config('nba.season.types.regular', 2),
+        'home_score' => 111,
+        'away_score' => 106,
+    ]);
+    createNbaFinalsGameForForecast($spurs, $knicks, [
+        'game_date' => '2026-06-06',
+        'season_type' => (string) config('nba.season.types.regular', 2),
+        'home_score' => 108,
+        'away_score' => 101,
+    ]);
+
+    $forecasts = (new GeneratePlayoffForecast)->execute(2026);
+
+    expect($forecasts->pluck('team_id')->sort()->values()->all())
+        ->toBe(collect([$knicks->id, $spurs->id])->sort()->values()->all())
+        ->and($forecasts->pluck('team_id')->all())
+        ->not->toContain($thunder->id);
+});

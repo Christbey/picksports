@@ -1,6 +1,8 @@
 <?php
 
 return [
+    'business_timezone' => env('SPORTS_BUSINESS_TIMEZONE', env('APP_TIMEZONE', 'UTC')),
+
     /*
     |--------------------------------------------------------------------------
     | Sport Domain Map

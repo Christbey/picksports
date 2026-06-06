@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -29,13 +30,14 @@ class PastScheduledGameStatusCheck implements ValidationCheck
 
         $lookbackDays = (int) config('validation.thresholds.past_scheduled_game_status.lookback_days', 7);
         $graceHours = (int) config('validation.thresholds.past_scheduled_game_status.grace_hours', 8);
-        $cutoff = now()->subHours($graceHours);
-        $fromDate = now()->subDays($lookbackDays)->toDateString();
+        $dates = app(SportsDateWindowService::class);
+        $cutoff = CarbonImmutable::now($dates->timezone())->subHours($graceHours);
+        $window = $dates->forRange($cutoff->subDays($lookbackDays), $cutoff);
 
         $staleGames = DB::table($gamesTable)
             ->whereIn('status', self::STALE_STATUSES)
-            ->whereDate('game_date', '>=', $fromDate)
-            ->whereDate('game_date', '<=', $cutoff->toDateString())
+            ->whereDate('game_date', '>=', $window->localStartDate())
+            ->whereDate('game_date', '<=', $window->localEndDate())
             ->orderBy('game_date')
             ->get(['id', 'status', 'game_date', 'game_time', 'short_name', 'name', 'updated_at']);
 
@@ -58,6 +60,7 @@ class PastScheduledGameStatusCheck implements ValidationCheck
                 'lookback_days' => $lookbackDays,
                 'grace_hours' => $graceHours,
                 'cutoff' => CarbonImmutable::parse($cutoff)->toIso8601String(),
+                'date_window' => $window->toArray(),
                 'stale_games' => $staleCount,
                 'oldest_game_date' => $oldestDate,
                 'newest_game_date' => $newestDate,

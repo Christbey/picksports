@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Model;
 
 class FinalizedDataCompletenessCheck implements ValidationCheck
@@ -22,11 +23,14 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
         /** @var class-string<Model> $gameModel */
         $lookbackDays = (int) config('validation.thresholds.finalized_data_completeness.lookback_days', 14);
         $gradingGraceHours = (int) config('validation.thresholds.finalized_data_completeness.grading_grace_hours', 6);
+        $dates = app(SportsDateWindowService::class);
+        $window = $dates->forRange($dates->parseLocalDate()->subDays($lookbackDays), $dates->parseLocalDate());
 
         $games = $gameModel::query()
             ->with(['prediction'])
             ->where('status', 'STATUS_FINAL')
-            ->whereDate('game_date', '>=', now()->copy()->subDays($lookbackDays)->toDateString())
+            ->whereDate('game_date', '>=', $window->localStartDate())
+            ->whereDate('game_date', '<=', $window->localEndDate())
             ->get();
 
         $totalGames = $games->count();
@@ -89,6 +93,7 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
             'recommended_action' => "espn:sync-{$sport}-game-details",
             'metadata' => [
                 'lookback_days' => $lookbackDays,
+                'date_window' => $window->toArray(),
                 'recent_final_games' => $totalGames,
                 'games_missing_player_stats' => $missingPlayerStatsCount,
                 'games_missing_team_stats' => $missingTeamStatsCount,

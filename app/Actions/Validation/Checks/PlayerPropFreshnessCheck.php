@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -17,6 +18,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $tables = $profile['tables'] ?? [];
         $gamesTable = $tables['games'] ?? null;
         $propsTable = $tables['player_props'] ?? null;
+        $gameModel = $profile['models']['game'] ?? null;
 
         if (! is_string($gamesTable) || ! is_string($propsTable) || ! Schema::hasTable($gamesTable) || ! Schema::hasTable($propsTable)) {
             return null;
@@ -26,12 +28,10 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $staleHours = (int) config('validation.thresholds.player_prop_freshness.stale_after_hours', 12);
         $warnPct = (float) config('validation.thresholds.player_prop_freshness.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.player_prop_freshness.problem_fail_pct', 0.20);
-        $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'scheduled', 'in_progress'];
+        $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
         $games = DB::table($gamesTable)
-            ->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
-            ->whereDate('game_date', '<=', now()->copy()->addDays($windowDays)->toDateString())
-            ->whereIn('status', $activeStatuses)
+            ->whereIn('id', $stageContext->activeGameIds)
             ->get(['id']);
 
         $activeGames = $games->count();
@@ -79,6 +79,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             'recommended_action' => "{$sport}:sync-player-props",
             'metadata' => [
                 'window_days' => $windowDays,
+                'season_stage' => $stageContext->toArray(),
                 'active_games' => $activeGames,
                 'games_missing_player_props' => $missingProps,
                 'games_with_stale_player_props' => $staleProps,

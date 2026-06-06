@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -33,14 +34,18 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
             return null;
         }
 
-        $inSeason = in_array((int) now()->month, (array) ($profile['active_months'] ?? []), true);
+        $dates = app(SportsDateWindowService::class);
+        $todayWindow = $dates->forDate();
+        $now = CarbonImmutable::now($dates->timezone());
+        $inSeason = in_array((int) $now->month, (array) ($profile['active_months'] ?? []), true);
         $staleHours = (int) config('validation.thresholds.current_day_game_data.stale_after_hours', 8);
         $finalStatsGraceHours = (int) config('validation.thresholds.current_day_game_data.final_stats_grace_hours', 2);
         $warnPct = (float) config('validation.thresholds.current_day_game_data.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.current_day_game_data.problem_fail_pct', 0.20);
 
         $games = DB::table($gamesTable)
-            ->whereDate('game_date', now()->toDateString())
+            ->whereDate('game_date', '>=', $todayWindow->localStartDate())
+            ->whereDate('game_date', '<=', $todayWindow->localEndDate())
             ->get(['id', 'status', 'game_date', 'updated_at']);
 
         $totalGames = $games->count();
@@ -58,13 +63,13 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
             $updatedAt = $game->updated_at ? CarbonImmutable::parse($game->updated_at) : null;
             $gameDate = $game->game_date ? CarbonImmutable::parse($game->game_date) : null;
 
-            if ($inSeason && (! $updatedAt || $updatedAt->lt(now()->subHours($staleHours)))) {
+            if ($inSeason && (! $updatedAt || $updatedAt->lt($now->subHours($staleHours)))) {
                 $staleGames++;
                 $flagged = true;
             }
 
             $isFinal = in_array((string) $game->status, self::FINAL_STATUSES, true);
-            $gameIsPastGrace = $gameDate?->lt(now()->subHours($finalStatsGraceHours)) ?? false;
+            $gameIsPastGrace = $gameDate?->lt($now->subHours($finalStatsGraceHours)) ?? false;
 
             if ($isFinal && $gameIsPastGrace) {
                 $teamStatsCount = DB::table($teamStatsTable)->where('game_id', $gameId)->count();
@@ -111,7 +116,8 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
             'message' => $message,
             'recommended_action' => "espn:sync-{$sport}-game-details",
             'metadata' => [
-                'date' => now()->toDateString(),
+                'date' => $todayWindow->localStartDate(),
+                'date_window' => $todayWindow->toArray(),
                 'in_season' => $inSeason,
                 'games_today' => $totalGames,
                 'stale_games' => $staleGames,

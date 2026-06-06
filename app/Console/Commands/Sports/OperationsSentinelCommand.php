@@ -4,8 +4,9 @@ namespace App\Console\Commands\Sports;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Services\ESPN\NBA\EspnService;
+use App\Services\Sports\SeasonStage\SeasonStageService;
+use App\Services\Sports\SportsDateWindowService;
 use App\Services\Sports\SportsPipelineRegistry;
-use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
@@ -109,8 +110,9 @@ class OperationsSentinelCommand extends Command
             return self::FAILURE;
         }
 
-        $fromDate = CarbonImmutable::parse($this->option('from-date') ?: now()->subDay()->toDateString())->startOfDay();
-        $toDate = CarbonImmutable::parse($this->option('to-date') ?: now()->addDays(7)->toDateString())->startOfDay();
+        $dateWindows = app(SportsDateWindowService::class);
+        $fromDate = $dateWindows->parseLocalDate($this->option('from-date') ?: now()->subDay()->toDateString());
+        $toDate = $dateWindows->parseLocalDate($this->option('to-date') ?: now()->addDays(7)->toDateString());
         $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
         $statLookbackDays = max(1, (int) $this->option('stat-lookback-days'));
         $statLimit = max(0, (int) $this->option('stat-limit'));
@@ -122,10 +124,20 @@ class OperationsSentinelCommand extends Command
         }
 
         $this->info(sprintf(
-            'Running %s operations sentinel for %s through %s.',
+            'Running %s operations sentinel for %s through %s (%s).',
             strtoupper($sport),
             $fromDate->toDateString(),
             $toDate->toDateString(),
+            $dateWindows->timezone(),
+        ));
+
+        $stageContext = app(SeasonStageService::class)->context($sport, $season, $fromDate);
+        $this->line(sprintf(
+            'Season stage: %s (%s); active window %s through %s.',
+            $stageContext->stage,
+            $stageContext->stageGroup,
+            $stageContext->activeWindow->localStartDate(),
+            $stageContext->activeWindow->localEndDate(),
         ));
 
         $sync = $this->scoreboardSyncAction($sport, $syncClass);

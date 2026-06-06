@@ -3,6 +3,8 @@
 namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
+use App\Services\Sports\SeasonStage\SeasonStageService;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -139,6 +141,8 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
     protected function applyFilters(Builder $query): void
     {
+        $season = null;
+
         if ($this->supportsSeasonOption() && ($season = $this->option('season'))) {
             $query->where('season', $season);
         }
@@ -149,6 +153,14 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
         if ($this->supportsDateOption() && ($date = $this->option('date'))) {
             $this->applyDateFilter($query, $date);
+        }
+
+        if ($this->shouldApplyStageWindow()) {
+            app(SeasonStageService::class)->applyActiveGameScope(
+                $query,
+                $this->sportKey(),
+                $season,
+            );
         }
     }
 
@@ -162,7 +174,22 @@ abstract class AbstractGeneratePredictionsCommand extends Command
 
     protected function applyDateFilter(Builder $query, string $date): void
     {
-        $query->whereDate('game_date', $date);
+        app(SportsDateWindowService::class)->applyGameDateWindow(
+            $query,
+            app(SportsDateWindowService::class)->forDate($date),
+        );
+    }
+
+    protected function shouldApplyStageWindow(): bool
+    {
+        return $this->supportsDateOption()
+            && ! $this->option('date')
+            && ! ($this->supportsWeekOption() && $this->option('week'));
+    }
+
+    protected function sportKey(): string
+    {
+        return strtolower(strtok($this->commandName(), ':') ?: '');
     }
 
     protected function supportsGameOption(): bool

@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -39,23 +40,23 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         }
 
         $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
-        $upcomingGames = DB::table($gamesTable)
-            ->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
-            ->whereDate('game_date', '<=', now()->copy()->addDays($windowDays)->toDateString())
-            ->whereIn('status', self::ACTIVE_STATUSES)
-            ->get([
-                'id',
-                'espn_event_id',
-                'home_team_id',
-                'away_team_id',
-                'season',
-                'season_type',
-                'game_date',
-                'status',
-                'odds_data',
-                'odds_updated_at',
-                'updated_at',
-            ]);
+        $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
+        $upcomingQuery = DB::table($gamesTable)
+            ->whereIn('id', $stageContext->activeGameIds);
+
+        $upcomingGames = $upcomingQuery->get([
+            'id',
+            'espn_event_id',
+            'home_team_id',
+            'away_team_id',
+            'season',
+            'season_type',
+            'game_date',
+            'status',
+            'odds_data',
+            'odds_updated_at',
+            'updated_at',
+        ]);
 
         $missingTeams = 0;
         $missingEspnEventIds = 0;
@@ -135,6 +136,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             'recommended_action' => "sports:operations-sentinel --sport={$sport}",
             'metadata' => [
                 'window_days' => $windowDays,
+                'season_stage' => $stageContext->toArray(),
                 'upcoming_games' => $totalGames,
                 'games_missing_teams' => $missingTeams,
                 'games_missing_espn_event_ids' => $missingEspnEventIds,

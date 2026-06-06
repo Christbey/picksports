@@ -12,6 +12,7 @@ use App\Actions\Validation\Checks\PastScheduledGameStatusCheck;
 use App\Actions\Validation\Checks\PipelineOrderCheck;
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
 use App\Actions\Validation\Checks\PredictionCompletenessCheck;
+use App\Actions\Validation\Checks\ScheduleWindowIntegrityCheck;
 use App\Actions\Validation\Checks\TeamStatCoverageCheck;
 use App\Actions\Validation\Checks\UpcomingGameReadinessCheck;
 use App\Actions\Validation\Checks\WeatherCompletenessCheck;
@@ -30,6 +31,7 @@ class SportValidator
             new GameCoverageCheck,
             new TeamStatCoverageCheck,
             new CurrentDayGameDataFreshnessCheck,
+            new ScheduleWindowIntegrityCheck,
             new UpcomingGameReadinessCheck,
             new PastScheduledGameStatusCheck,
             new PredictionCompletenessCheck,

@@ -2,6 +2,7 @@
 
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
+use App\Models\NBA\TeamMetric;
 
 function createNbaPlayoffGame(Team $home, Team $away, array $overrides = []): Game
 {
@@ -131,4 +132,69 @@ it('does not pass ended-series placeholders through the NBA game detail API', fu
 
     $this->getJson("/api/v1/nba/games/{$deadPlaceholder->id}")
         ->assertNotFound();
+});
+
+it('limits NBA season prediction generation to the near-term finals window while finals are active', function () {
+    $this->travelTo('2026-06-06 12:00:00');
+
+    $knicks = Team::factory()->create([
+        'abbreviation' => 'NY',
+        'conference' => 'Eastern',
+        'division' => 'Atlantic',
+        'elo_rating' => 1620,
+    ]);
+    $spurs = Team::factory()->create([
+        'abbreviation' => 'SA',
+        'conference' => 'Western',
+        'division' => 'Southwest',
+        'elo_rating' => 1615,
+    ]);
+
+    foreach ([[$knicks, 8.6], [$spurs, 8.4]] as [$team, $netRating]) {
+        TeamMetric::create([
+            'team_id' => $team->id,
+            'season' => 2026,
+            'wins' => 60,
+            'losses' => 22,
+            'offensive_efficiency' => 116.0,
+            'defensive_efficiency' => 108.0,
+            'net_rating' => $netRating,
+            'tempo' => 100.0,
+            'strength_of_schedule' => 1500.0,
+            'calculation_date' => now()->toDateString(),
+        ]);
+    }
+
+    createNbaPlayoffGame($knicks, $spurs, [
+        'game_date' => '2026-06-04',
+        'home_score' => 111,
+        'away_score' => 106,
+    ]);
+    createNbaPlayoffGame($spurs, $knicks, [
+        'game_date' => '2026-06-06',
+        'home_score' => 108,
+        'away_score' => 101,
+    ]);
+    createNbaPlayoffGame($spurs, $knicks, [
+        'game_date' => '2026-06-08',
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+    createNbaPlayoffGame($knicks, $spurs, [
+        'game_date' => '2026-06-10',
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+    createNbaPlayoffGame($spurs, $knicks, [
+        'game_date' => '2026-06-15',
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    $this->artisan('nba:generate-predictions', ['--season' => 2026])
+        ->expectsOutput('Generating predictions for 2 games...')
+        ->assertExitCode(0);
 });

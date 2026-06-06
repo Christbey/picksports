@@ -2,6 +2,8 @@
 
 namespace App\DataTransferObjects\ESPN\Concerns;
 
+use Carbon\CarbonImmutable;
+
 trait ParsesEspnGameFields
 {
     use CastsEspnValues;
@@ -50,8 +52,9 @@ trait ParsesEspnGameFields
             ];
         }
 
-        $timestamp = strtotime($dateTime);
-        if ($timestamp === false) {
+        try {
+            $timestamp = CarbonImmutable::parse($dateTime)->setTimezone('UTC');
+        } catch (\Throwable) {
             return [
                 'game_date' => null,
                 'game_time' => null,
@@ -59,8 +62,8 @@ trait ParsesEspnGameFields
         }
 
         return [
-            'game_date' => date('Y-m-d', $timestamp),
-            'game_time' => date('H:i:s', $timestamp),
+            'game_date' => $timestamp->toDateString(),
+            'game_time' => $timestamp->format('H:i:s'),
         ];
     }
 

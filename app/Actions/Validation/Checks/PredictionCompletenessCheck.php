@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Database\Eloquent\Model;
 
 class PredictionCompletenessCheck implements ValidationCheck
@@ -21,14 +22,13 @@ class PredictionCompletenessCheck implements ValidationCheck
 
         /** @var class-string<Model> $gameModel */
         $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
-        $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+        $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
-        $games = $gameModel::query()
+        $query = $gameModel::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
-            ->whereDate('game_date', '<=', now()->copy()->addDays($windowDays)->toDateString())
-            ->whereIn('status', $activeStatuses)
-            ->get();
+            ->whereIn('id', $stageContext->activeGameIds);
+
+        $games = $query->get();
 
         $totalGames = $games->count();
         $missingGames = $games->filter(fn (Model $game) => $game->prediction === null)->values();
@@ -54,6 +54,7 @@ class PredictionCompletenessCheck implements ValidationCheck
             'recommended_action' => "{$sport}:generate-predictions",
             'metadata' => [
                 'window_days' => $windowDays,
+                'season_stage' => $stageContext->toArray(),
                 'active_games' => $totalGames,
                 'games_missing_predictions' => $missingCount,
                 'sample_game_ids' => $missingGames->take(5)->pluck('id')->map(fn ($id) => (int) $id)->all(),

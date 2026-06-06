@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Database\Eloquent\Model;
 
 class OddsCompletenessCheck implements ValidationCheck
@@ -22,13 +23,12 @@ class OddsCompletenessCheck implements ValidationCheck
         /** @var class-string<Model> $gameModel */
         $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
         $staleHours = (int) config('validation.thresholds.odds_completeness.stale_after_hours', 8);
-        $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'];
+        $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
-        $games = $gameModel::query()
-            ->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
-            ->whereDate('game_date', '<=', now()->copy()->addDays($windowDays)->toDateString())
-            ->whereIn('status', $activeStatuses)
-            ->get();
+        $query = $gameModel::query()
+            ->whereIn('id', $stageContext->activeGameIds);
+
+        $games = $query->get();
 
         $totalGames = $games->count();
         $missingOddsCount = 0;
@@ -90,6 +90,7 @@ class OddsCompletenessCheck implements ValidationCheck
             'recommended_action' => "{$sport}:sync-odds",
             'metadata' => [
                 'window_days' => $windowDays,
+                'season_stage' => $stageContext->toArray(),
                 'active_games' => $totalGames,
                 'games_missing_odds' => $missingOddsCount,
                 'games_with_missing_required_markets' => $missingRequiredMarketsCount,

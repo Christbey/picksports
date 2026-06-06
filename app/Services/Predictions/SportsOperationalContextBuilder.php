@@ -4,12 +4,15 @@ namespace App\Services\Predictions;
 
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 class SportsOperationalContextBuilder
 {
+    public function __construct(private readonly SeasonStageService $seasonStageService) {}
+
     /**
      * @return array<string, mixed>
      */
@@ -38,6 +41,9 @@ class SportsOperationalContextBuilder
             'schema_version' => 'sports_operational_context_v1',
             'generated_at' => now()->toIso8601String(),
             'sport' => $sport,
+            'season_stage' => $this->seasonStageService
+                ->context($sport, $this->seasonFromGame($game), $game?->getAttribute('game_date'))
+                ->toArray(),
             'data_freshness' => [
                 'latest_data_fresh_at' => $this->latestDataFreshAt($latestRun),
                 'validation_completed_at' => $latestRun?->completed_at?->toIso8601String(),
@@ -100,6 +106,17 @@ class SportsOperationalContextBuilder
             ->latest('completed_at')
             ->latest('id')
             ->first();
+    }
+
+    private function seasonFromGame(?Model $game): ?int
+    {
+        if (! $game || ! array_key_exists('season', $game->getAttributes())) {
+            return null;
+        }
+
+        $season = $game->getAttribute('season');
+
+        return is_numeric($season) ? (int) $season : null;
     }
 
     private function latestDataFreshAt(?ValidationRun $run): ?string

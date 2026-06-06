@@ -6,11 +6,11 @@ use App\Models\NBA\Prediction;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Services\AI\SportsAiContentService;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
+use App\Services\Sports\SportsDateWindowService;
 use App\Services\Sports\SportsPipelineRegistry;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 
 class AnalyzeDailyPredictionsWithAiCommand extends Command
@@ -54,7 +54,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
             return self::FAILURE;
         }
 
-        $date = $this->option('date') ? Carbon::parse((string) $this->option('date')) : now();
+        $dateWindowService = app(SportsDateWindowService::class);
+        $date = $this->option('date') ? $dateWindowService->parseLocalDate((string) $this->option('date')) : $dateWindowService->parseLocalDate();
         $endDate = $date->copy()->addDays(max(0, (int) $this->option('days-forward')));
         $limit = max(1, (int) $this->option('limit'));
         $asOfDate = now()->toDateString();
@@ -220,13 +221,14 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $modelClass = $this->predictionModels[$sport];
         $season = $this->option('season') ?: config("{$sport}.season.default");
         $scheduledStatus = (string) config("{$sport}.statuses.scheduled", 'STATUS_SCHEDULED');
+        $dateWindowService = app(SportsDateWindowService::class);
+        $window = $dateWindowService->forRange($date, $endDate);
 
         return $modelClass::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
             ->when($season, fn ($query) => $query->whereHas('game', fn ($gameQuery) => $gameQuery->where('season', (int) $season)))
-            ->whereHas('game', function ($query) use ($date, $endDate, $scheduledStatus): void {
-                $query->whereDate('game_date', '>=', $date->toDateString())
-                    ->whereDate('game_date', '<=', $endDate->toDateString())
+            ->whereHas('game', function ($query) use ($dateWindowService, $window, $scheduledStatus): void {
+                $dateWindowService->applyGameDateWindow($query, $window)
                     ->where('status', $scheduledStatus);
             })
             ->limit($limit)

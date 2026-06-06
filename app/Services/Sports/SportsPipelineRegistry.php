@@ -179,6 +179,10 @@ class SportsPipelineRegistry
                 $this->step('Sync injuries', 'espn:sync-nba-injuries'),
                 $this->step('Sync odds', 'nba:sync-odds'),
                 $this->step('Sync player props', 'nba:sync-player-props'),
+                $this->step('Analyze player props', 'sports:analyze-player-props', [
+                    '--sport' => $sport,
+                    '--season' => $season,
+                ]),
                 $this->step('Sync futures odds', 'sports:sync-futures-odds', [
                     '--sport' => [$sport],
                     '--season' => $season,
@@ -197,6 +201,10 @@ class SportsPipelineRegistry
                 ]),
                 $this->step('Sync odds', 'nfl:sync-odds'),
                 $this->step('Sync player props', 'nfl:sync-player-props'),
+                $this->step('Analyze player props', 'sports:analyze-player-props', [
+                    '--sport' => $sport,
+                    '--season' => $season,
+                ]),
                 $this->step('Sync futures odds', 'sports:sync-futures-odds', [
                     '--sport' => [$sport],
                     '--season' => $season,
@@ -216,6 +224,10 @@ class SportsPipelineRegistry
                 ]),
                 $this->step('Sync odds', 'mlb:sync-odds'),
                 $this->step('Sync player props', 'mlb:sync-player-props'),
+                $this->step('Analyze player props', 'sports:analyze-player-props', [
+                    '--sport' => $sport,
+                    '--season' => $season,
+                ]),
                 $this->step('Sync futures odds', 'sports:sync-futures-odds', [
                     '--sport' => [$sport],
                     '--season' => $season,
@@ -227,6 +239,10 @@ class SportsPipelineRegistry
                 $this->step('Sync injuries', 'espn:sync-cbb-injuries'),
                 $this->step('Sync odds', 'cbb:sync-odds'),
                 $this->step('Sync player props', 'cbb:sync-player-props'),
+                $this->step('Analyze player props', 'sports:analyze-player-props', [
+                    '--sport' => $sport,
+                    '--season' => $season,
+                ]),
                 $this->step('Sync futures odds', 'sports:sync-futures-odds', [
                     '--sport' => [$sport],
                     '--season' => $season,
@@ -251,6 +267,10 @@ class SportsPipelineRegistry
                 $this->step('Sync injuries', 'espn:sync-wnba-injuries'),
                 $this->step('Sync odds', 'wnba:sync-odds'),
                 $this->step('Sync player props', 'wnba:sync-player-props'),
+                $this->step('Analyze player props', 'sports:analyze-player-props', [
+                    '--sport' => $sport,
+                    '--season' => $season,
+                ]),
             ],
             'cfb' => [
                 $this->step('Sync current week', 'espn:sync-cfb-current'),

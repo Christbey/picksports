@@ -76,7 +76,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             'status' => $status,
             'severity' => $status,
             'message' => $message,
-            'recommended_action' => "{$sport}:sync-player-props",
+            'recommended_action' => "sports:analyze-player-props --sport={$sport}",
             'metadata' => [
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),

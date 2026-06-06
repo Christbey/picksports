@@ -2,8 +2,10 @@
 
 namespace App\Providers;
 
+use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
+use App\Services\ESPN\NBA\EspnService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Date;
@@ -20,14 +22,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Wire MLB scoreboard sync with the MLB-specific EspnService so the container
-        // does not autowire the abstract BaseEspnService (which lacks MLB endpoints).
-        $this->app->bind(
-            \App\Actions\ESPN\MLB\SyncGamesFromScoreboard::class,
-            fn ($app) => new \App\Actions\ESPN\MLB\SyncGamesFromScoreboard(
-                new \App\Services\ESPN\MLB\EspnService
-            ),
-        );
+        $this->registerEspnScoreboardSyncActions();
     }
 
     /**
@@ -57,6 +52,26 @@ class AppServiceProvider extends ServiceProvider
                 ->uncompromised()
             : null
         );
+    }
+
+    protected function registerEspnScoreboardSyncActions(): void
+    {
+        $bindings = [
+            SyncGamesFromScoreboard::class => EspnService::class,
+            \App\Actions\ESPN\NFL\SyncGamesFromScoreboard::class => \App\Services\ESPN\NFL\EspnService::class,
+            \App\Actions\ESPN\MLB\SyncGamesFromScoreboard::class => \App\Services\ESPN\MLB\EspnService::class,
+            \App\Actions\ESPN\CBB\SyncGamesFromScoreboard::class => \App\Services\ESPN\CBB\EspnService::class,
+            \App\Actions\ESPN\CFB\SyncGamesFromScoreboard::class => \App\Services\ESPN\CFB\EspnService::class,
+            \App\Actions\ESPN\WCBB\SyncGamesFromScoreboard::class => \App\Services\ESPN\WCBB\EspnService::class,
+            \App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class => \App\Services\ESPN\WNBA\EspnService::class,
+        ];
+
+        foreach ($bindings as $actionClass => $serviceClass) {
+            $this->app->bind(
+                $actionClass,
+                fn () => new $actionClass(new $serviceClass),
+            );
+        }
     }
 
     protected function configureFactories(): void

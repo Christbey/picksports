@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Services\ESPN\NBA\EspnService;
 use Mockery as m;
 
 uses()->group('sports');
@@ -81,3 +82,19 @@ it('defaults to a forward readiness window through the next seven days', functio
         ->expectsOutput('Synced 9 NBA game row update(s).')
         ->assertExitCode(0);
 });
+
+it('binds every sentinel scoreboard action to a sport-specific espn service', function (string $actionClass, string $expectedServiceClass) {
+    $action = app($actionClass);
+    $property = new ReflectionProperty($action, 'espnService');
+    $service = $property->getValue($action);
+
+    expect($service)->toBeInstanceOf($expectedServiceClass);
+})->with([
+    'nba' => [SyncGamesFromScoreboard::class, EspnService::class],
+    'nfl' => [App\Actions\ESPN\NFL\SyncGamesFromScoreboard::class, App\Services\ESPN\NFL\EspnService::class],
+    'mlb' => [App\Actions\ESPN\MLB\SyncGamesFromScoreboard::class, App\Services\ESPN\MLB\EspnService::class],
+    'cbb' => [App\Actions\ESPN\CBB\SyncGamesFromScoreboard::class, App\Services\ESPN\CBB\EspnService::class],
+    'cfb' => [App\Actions\ESPN\CFB\SyncGamesFromScoreboard::class, App\Services\ESPN\CFB\EspnService::class],
+    'wcbb' => [App\Actions\ESPN\WCBB\SyncGamesFromScoreboard::class, App\Services\ESPN\WCBB\EspnService::class],
+    'wnba' => [App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class, App\Services\ESPN\WNBA\EspnService::class],
+]);

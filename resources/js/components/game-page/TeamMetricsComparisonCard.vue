@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { TeamMetricsData } from '@/types';
 
-defineProps<{
+const props = defineProps<{
     title: string;
     awayLabel?: string | null;
     homeLabel?: string | null;
@@ -18,10 +19,26 @@ defineProps<{
         lowerIsBetter?: boolean,
     ) => 'home' | 'away' | null;
 }>();
+
+const hasValue = (value: number | string | null | undefined): boolean =>
+    value !== null && value !== undefined && value !== '';
+
+const hasMetricData = computed(() =>
+    [
+        props.awayMetrics.offensive_rating,
+        props.homeMetrics.offensive_rating,
+        props.awayMetrics.defensive_rating,
+        props.homeMetrics.defensive_rating,
+        props.awayMetrics.net_rating,
+        props.homeMetrics.net_rating,
+        props.awayMetrics.pace,
+        props.homeMetrics.pace,
+    ].some(hasValue),
+);
 </script>
 
 <template>
-    <Card>
+    <Card v-if="hasMetricData">
         <CardHeader>
             <CardTitle class="tracking-tight">{{ title }}</CardTitle>
         </CardHeader>

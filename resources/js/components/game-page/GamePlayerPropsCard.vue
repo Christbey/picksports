@@ -94,6 +94,10 @@ const filteredRecommendations = computed(() => {
     return rows.slice(0, props.limit);
 });
 
+const shouldRender = computed(
+    () => loading.value || filteredRecommendations.value.length > 0,
+);
+
 const strongestRecommendation = computed(
     () => recommendations.value[0] ?? null,
 );
@@ -282,7 +286,7 @@ watch(
 </script>
 
 <template>
-    <Card>
+    <Card v-if="shouldRender">
         <CardHeader>
             <div
                 class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"
@@ -348,26 +352,12 @@ watch(
                 Loading player props...
             </div>
 
-            <div v-else-if="error" class="py-8 text-center">
+            <div v-else-if="error && filteredRecommendations.length > 0" class="py-8 text-center">
                 <BarChart3
                     class="mx-auto mb-3 h-10 w-10 text-muted-foreground"
                 />
                 <p class="font-medium">Player props unavailable</p>
                 <p class="text-sm text-muted-foreground">{{ error }}</p>
-            </div>
-
-            <div
-                v-else-if="filteredRecommendations.length === 0"
-                class="py-8 text-center"
-            >
-                <BarChart3
-                    class="mx-auto mb-3 h-10 w-10 text-muted-foreground"
-                />
-                <p class="font-medium">No playable props yet</p>
-                <p class="text-sm text-muted-foreground">
-                    Props are synced, but model probabilities and data-quality
-                    scores are not ready for this game yet.
-                </p>
             </div>
 
             <div v-else class="space-y-2">

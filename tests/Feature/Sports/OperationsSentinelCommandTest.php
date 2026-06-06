@@ -21,6 +21,7 @@ it('runs the configured operations sentinel for every supported sport', function
         '--from-date' => '2026-05-31',
         '--to-date' => '2026-06-02',
         '--season' => 2026,
+        '--skip-sync-pipeline' => true,
         '--skip-stats' => true,
         '--skip-model-pipeline' => true,
         '--skip-validation' => true,
@@ -47,9 +48,36 @@ it('fails when a sport is unsupported', function () {
 
 it('exposes player and team stat refresh controls on the sentinel command', function () {
     $this->artisan('sports:operations-sentinel --help')
+        ->expectsOutputToContain('--skip-sync-pipeline')
         ->expectsOutputToContain('--skip-stats')
         ->expectsOutputToContain('--skip-model-pipeline')
         ->expectsOutputToContain('--stat-lookback-days')
         ->expectsOutputToContain('--stat-limit')
+        ->assertExitCode(0);
+});
+
+it('defaults to a forward readiness window through the next seven days', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $sync = m::mock(SyncGamesFromScoreboard::class);
+
+    foreach (range(0, 8) as $offset) {
+        $sync->shouldReceive('execute')
+            ->once()
+            ->with(now()->subDay()->addDays($offset)->format('Ymd'))
+            ->andReturn(1);
+    }
+
+    $this->app->instance(SyncGamesFromScoreboard::class, $sync);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'nba',
+        '--season' => 2026,
+        '--skip-sync-pipeline' => true,
+        '--skip-stats' => true,
+        '--skip-model-pipeline' => true,
+        '--skip-validation' => true,
+    ])
+        ->expectsOutput('Synced 9 NBA game row update(s).')
         ->assertExitCode(0);
 });

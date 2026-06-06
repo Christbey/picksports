@@ -3,9 +3,9 @@
 namespace App\Console\Commands\Sports;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
-use App\Actions\NBA\GradePredictions;
 use App\Services\Sports\SportsPipelineRegistry;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -19,10 +19,11 @@ class OperationsSentinelCommand extends Command
         {--from-date= : Start date in YYYY-MM-DD format}
         {--to-date= : End date in YYYY-MM-DD format}
         {--season= : Season to repair/grade}
+        {--skip-sync-pipeline : Skip registry sync dependencies such as injuries, weather, odds, player props, and futures}
         {--skip-stats : Skip player/team stat refresh}
         {--skip-model-pipeline : Skip grading, Elo, team metrics, and prediction generation}
         {--stat-lookback-days=3 : Days back to refresh player/team stats from game details}
-        {--stat-limit=25 : Limit game-detail stat refresh dispatches per sentinel run}
+        {--stat-limit=100 : Limit game-detail stat refresh dispatches per sentinel run}
         {--skip-validation : Skip the final validation run}';
 
     protected $description = 'Run a sport operations sentinel without duplicating sport-specific repair logic';
@@ -41,19 +42,6 @@ class OperationsSentinelCommand extends Command
     ];
 
     /**
-     * @var array<string, class-string>
-     */
-    private array $gradePredictionActions = [
-        'nba' => GradePredictions::class,
-        'nfl' => \App\Actions\NFL\GradePredictions::class,
-        'mlb' => \App\Actions\MLB\GradePredictions::class,
-        'cbb' => \App\Actions\CBB\GradePredictions::class,
-        'cfb' => \App\Actions\CFB\GradePredictions::class,
-        'wcbb' => \App\Actions\WCBB\GradePredictions::class,
-        'wnba' => \App\Actions\WNBA\GradePredictions::class,
-    ];
-
-    /**
      * @var array<string, string>
      */
     private array $gameDetailsCommands = [
@@ -64,45 +52,6 @@ class OperationsSentinelCommand extends Command
         'cfb' => 'espn:sync-cfb-game-details',
         'wcbb' => 'espn:sync-wcbb-game-details',
         'wnba' => 'espn:sync-wnba-game-details',
-    ];
-
-    /**
-     * @var array<string, string>
-     */
-    private array $eloCommands = [
-        'nba' => 'nba:calculate-elo',
-        'nfl' => 'nfl:calculate-elo',
-        'mlb' => 'mlb:calculate-elo',
-        'cbb' => 'cbb:calculate-elo',
-        'cfb' => 'cfb:calculate-elo',
-        'wcbb' => 'wcbb:calculate-elo',
-        'wnba' => 'wnba:calculate-elo',
-    ];
-
-    /**
-     * @var array<string, string>
-     */
-    private array $teamMetricCommands = [
-        'nba' => 'nba:calculate-team-metrics',
-        'nfl' => 'nfl:calculate-team-metrics',
-        'mlb' => 'mlb:calculate-team-metrics',
-        'cbb' => 'cbb:calculate-team-metrics',
-        'cfb' => 'cfb:calculate-team-metrics',
-        'wcbb' => 'wcbb:calculate-team-metrics',
-        'wnba' => 'wnba:calculate-team-metrics',
-    ];
-
-    /**
-     * @var array<string, string>
-     */
-    private array $generatePredictionCommands = [
-        'nba' => 'nba:generate-predictions',
-        'nfl' => 'nfl:generate-predictions',
-        'mlb' => 'mlb:generate-predictions',
-        'cbb' => 'cbb:generate-predictions',
-        'cfb' => 'cfb:generate-predictions',
-        'wcbb' => 'wcbb:generate-predictions',
-        'wnba' => 'wnba:generate-predictions',
     ];
 
     public function handle(SportsPipelineRegistry $registry): int
@@ -139,16 +88,15 @@ class OperationsSentinelCommand extends Command
         }
 
         $syncClass = $this->scoreboardSyncActions[$sport] ?? null;
-        $gradeClass = $this->gradePredictionActions[$sport] ?? null;
 
-        if (! $syncClass || ! $gradeClass) {
+        if (! $syncClass) {
             $this->error("No operations sentinel is configured for {$sport} yet.");
 
             return self::FAILURE;
         }
 
         $fromDate = CarbonImmutable::parse($this->option('from-date') ?: now()->subDay()->toDateString())->startOfDay();
-        $toDate = CarbonImmutable::parse($this->option('to-date') ?: now()->addDay()->toDateString())->startOfDay();
+        $toDate = CarbonImmutable::parse($this->option('to-date') ?: now()->addDays(7)->toDateString())->startOfDay();
         $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
         $statLookbackDays = max(1, (int) $this->option('stat-lookback-days'));
         $statLimit = max(0, (int) $this->option('stat-limit'));
@@ -181,8 +129,12 @@ class OperationsSentinelCommand extends Command
             $this->refreshStats($sport, $statLookbackDays, $statLimit);
         }
 
+        if (! $this->option('skip-sync-pipeline')) {
+            $this->runSyncDependencyPipeline($registry, $sport, $season, $fromDate);
+        }
+
         if (! $this->option('skip-model-pipeline')) {
-            $this->runModelPipeline($sport, $season, $gradeClass);
+            $this->runModelPipeline($registry, $sport, $season, $fromDate);
         }
 
         if ($this->option('skip-validation')) {
@@ -220,40 +172,55 @@ class OperationsSentinelCommand extends Command
         ]);
     }
 
-    /**
-     * @param  class-string  $gradeClass
-     */
-    private function runModelPipeline(string $sport, int $season, string $gradeClass): void
+    private function runModelPipeline(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): void
     {
-        $grading = app($gradeClass)->execute($season);
-        $this->info(sprintf(
-            'Graded %d %s prediction(s) for season %d.',
-            (int) ($grading['graded'] ?? 0),
-            strtoupper($sport),
-            $season,
-        ));
+        $this->info('Running '.strtoupper($sport).' canonical model pipeline...');
 
-        $this->callPipelineCommand($this->eloCommands[$sport] ?? null, $season, strtoupper($sport).' Elo ratings');
-
-        $this->info('Recalculating '.strtoupper($sport).' team metrics after stat refresh...');
-        $this->callPipelineCommand($this->teamMetricCommands[$sport] ?? null, $season, strtoupper($sport).' team metrics');
-
-        $this->callPipelineCommand($this->generatePredictionCommands[$sport] ?? null, $season, strtoupper($sport).' predictions');
+        foreach ($this->registrySteps($registry, $sport, 'predict', $season, $referenceDate) as $step) {
+            $this->callRegistryStep($step);
+        }
     }
 
-    private function callPipelineCommand(?string $command, int $season, string $label): void
+    private function runSyncDependencyPipeline(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): void
     {
-        if (! $command) {
-            $this->warn("No command is configured for {$label}.");
+        $this->info('Running '.strtoupper($sport).' canonical sync dependencies...');
 
-            return;
+        foreach ($this->registrySteps($registry, $sport, 'sync', $season, $referenceDate) as $step) {
+            if ($this->isAlreadyHandledSyncStep($step['label'])) {
+                continue;
+            }
+
+            $this->callRegistryStep($step);
         }
+    }
 
-        $this->info("Running {$label}...");
-        Artisan::call($command, [
-            '--season' => $season,
-        ]);
+    /**
+     * @return array<int, array{label: string, command: string, arguments: array<string, mixed>}>
+     */
+    private function registrySteps(SportsPipelineRegistry $registry, string $sport, string $mode, int $season, CarbonInterface $referenceDate): array
+    {
+        return $registry->pipelineSteps($sport, $mode, $registry->context(
+            $referenceDate->toDateString(),
+            $season,
+        ));
+    }
+
+    /**
+     * @param  array{label: string, command: string, arguments: array<string, mixed>}  $step
+     */
+    private function callRegistryStep(array $step): void
+    {
+        $this->info("Running {$step['label']}...");
+        Artisan::call($step['command'], $step['arguments']);
         $this->output->write(Artisan::output());
+    }
+
+    private function isAlreadyHandledSyncStep(string $label): bool
+    {
+        return str_contains(strtolower($label), 'scoreboard')
+            || str_contains(strtolower($label), 'current')
+            || str_contains(strtolower($label), 'schedules')
+            || str_contains(strtolower($label), 'game details');
     }
 
     private function defaultSeason(string $sport): int

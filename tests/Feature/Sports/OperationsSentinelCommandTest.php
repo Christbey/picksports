@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Services\ESPN\NBA\EspnService;
 use Mockery as m;
 
@@ -97,4 +98,20 @@ it('binds every sentinel scoreboard action to a sport-specific espn service', fu
     'cfb' => [App\Actions\ESPN\CFB\SyncGamesFromScoreboard::class, App\Services\ESPN\CFB\EspnService::class],
     'wcbb' => [App\Actions\ESPN\WCBB\SyncGamesFromScoreboard::class, App\Services\ESPN\WCBB\EspnService::class],
     'wnba' => [App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class, App\Services\ESPN\WNBA\EspnService::class],
+]);
+
+it('binds every sentinel injury action to a sport-specific espn service', function (string $actionClass, string $expectedServiceClass) {
+    $action = app($actionClass);
+    $property = new ReflectionProperty($action, 'espnService');
+    $service = $property->getValue($action);
+
+    expect($service)->toBeInstanceOf($expectedServiceClass);
+})->with([
+    'nba' => [SyncPlayerInjuries::class, EspnService::class],
+    'nfl' => [App\Actions\ESPN\NFL\SyncPlayerInjuries::class, App\Services\ESPN\NFL\EspnService::class],
+    'mlb' => [App\Actions\ESPN\MLB\SyncPlayerInjuries::class, App\Services\ESPN\MLB\EspnService::class],
+    'cbb' => [App\Actions\ESPN\CBB\SyncPlayerInjuries::class, App\Services\ESPN\CBB\EspnService::class],
+    'cfb' => [App\Actions\ESPN\CFB\SyncPlayerInjuries::class, App\Services\ESPN\CFB\EspnService::class],
+    'wcbb' => [App\Actions\ESPN\WCBB\SyncPlayerInjuries::class, App\Services\ESPN\WCBB\EspnService::class],
+    'wnba' => [App\Actions\ESPN\WNBA\SyncPlayerInjuries::class, App\Services\ESPN\WNBA\EspnService::class],
 ]);

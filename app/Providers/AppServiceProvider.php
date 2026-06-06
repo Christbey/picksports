@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
 use App\Services\ESPN\NBA\EspnService;
@@ -23,6 +24,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->registerEspnScoreboardSyncActions();
+        $this->registerEspnPlayerInjurySyncActions();
     }
 
     /**
@@ -64,6 +66,26 @@ class AppServiceProvider extends ServiceProvider
             \App\Actions\ESPN\CFB\SyncGamesFromScoreboard::class => \App\Services\ESPN\CFB\EspnService::class,
             \App\Actions\ESPN\WCBB\SyncGamesFromScoreboard::class => \App\Services\ESPN\WCBB\EspnService::class,
             \App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class => \App\Services\ESPN\WNBA\EspnService::class,
+        ];
+
+        foreach ($bindings as $actionClass => $serviceClass) {
+            $this->app->bind(
+                $actionClass,
+                fn () => new $actionClass(new $serviceClass),
+            );
+        }
+    }
+
+    protected function registerEspnPlayerInjurySyncActions(): void
+    {
+        $bindings = [
+            SyncPlayerInjuries::class => EspnService::class,
+            \App\Actions\ESPN\NFL\SyncPlayerInjuries::class => \App\Services\ESPN\NFL\EspnService::class,
+            \App\Actions\ESPN\MLB\SyncPlayerInjuries::class => \App\Services\ESPN\MLB\EspnService::class,
+            \App\Actions\ESPN\CBB\SyncPlayerInjuries::class => \App\Services\ESPN\CBB\EspnService::class,
+            \App\Actions\ESPN\CFB\SyncPlayerInjuries::class => \App\Services\ESPN\CFB\EspnService::class,
+            \App\Actions\ESPN\WCBB\SyncPlayerInjuries::class => \App\Services\ESPN\WCBB\EspnService::class,
+            \App\Actions\ESPN\WNBA\SyncPlayerInjuries::class => \App\Services\ESPN\WNBA\EspnService::class,
         ];
 
         foreach ($bindings as $actionClass => $serviceClass) {

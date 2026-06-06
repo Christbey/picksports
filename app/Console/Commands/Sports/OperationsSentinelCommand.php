@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Services\ESPN\NBA\EspnService;
 use App\Services\Sports\SportsPipelineRegistry;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
@@ -39,6 +40,19 @@ class OperationsSentinelCommand extends Command
         'cfb' => \App\Actions\ESPN\CFB\SyncGamesFromScoreboard::class,
         'wcbb' => \App\Actions\ESPN\WCBB\SyncGamesFromScoreboard::class,
         'wnba' => \App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class,
+    ];
+
+    /**
+     * @var array<string, class-string>
+     */
+    private array $scoreboardEspnServices = [
+        'nba' => EspnService::class,
+        'nfl' => \App\Services\ESPN\NFL\EspnService::class,
+        'mlb' => \App\Services\ESPN\MLB\EspnService::class,
+        'cbb' => \App\Services\ESPN\CBB\EspnService::class,
+        'cfb' => \App\Services\ESPN\CFB\EspnService::class,
+        'wcbb' => \App\Services\ESPN\WCBB\EspnService::class,
+        'wnba' => \App\Services\ESPN\WNBA\EspnService::class,
     ];
 
     /**
@@ -114,7 +128,7 @@ class OperationsSentinelCommand extends Command
             $toDate->toDateString(),
         ));
 
-        $sync = app($syncClass);
+        $sync = $this->scoreboardSyncAction($sport, $syncClass);
         $synced = 0;
 
         for ($date = $fromDate; $date->lte($toDate); $date = $date->addDay()) {
@@ -146,6 +160,28 @@ class OperationsSentinelCommand extends Command
         return $this->call('healthcheck:validate-data', [
             '--sport' => $sport,
         ]);
+    }
+
+    /**
+     * @param  class-string  $syncClass
+     */
+    private function scoreboardSyncAction(string $sport, string $syncClass): object
+    {
+        try {
+            return app($syncClass);
+        } catch (\InvalidArgumentException $exception) {
+            if ($exception->getMessage() !== 'ESPN sport key must be provided.') {
+                throw $exception;
+            }
+
+            $serviceClass = $this->scoreboardEspnServices[$sport] ?? null;
+
+            if (! $serviceClass) {
+                throw $exception;
+            }
+
+            return new $syncClass(new $serviceClass);
+        }
     }
 
     private function refreshStats(string $sport, int $lookbackDays, int $limit): void

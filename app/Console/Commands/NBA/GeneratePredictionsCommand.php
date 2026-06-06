@@ -6,6 +6,7 @@ use App\Actions\NBA\GeneratePrediction;
 use App\Console\Commands\Sports\AbstractGeneratePredictionsCommand;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
+use Illuminate\Database\Eloquent\Builder;
 
 class GeneratePredictionsCommand extends AbstractGeneratePredictionsCommand
 {
@@ -20,4 +21,11 @@ class GeneratePredictionsCommand extends AbstractGeneratePredictionsCommand
     protected const PREDICTION_MODEL_CLASS = Prediction::class;
 
     protected const TEAM_NAME_FIELDS = ['school', 'mascot'];
+
+    protected function applyFilters(Builder $query): void
+    {
+        parent::applyFilters($query);
+
+        $query->withoutCompletedPlayoffSeriesPlaceholders();
+    }
 }

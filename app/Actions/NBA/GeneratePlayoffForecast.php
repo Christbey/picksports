@@ -2,6 +2,7 @@
 
 namespace App\Actions\NBA;
 
+use App\Models\NBA\Game;
 use App\Models\NBA\PlayoffForecast;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
@@ -25,6 +26,11 @@ class GeneratePlayoffForecast
         $teams = $this->attachSelectionScores($teamPool, $weights, $remainingSosWeight)
             ->sortByDesc('selection_score')
             ->values();
+
+        $finalsMatchup = $this->activeFinalsMatchup($season, $teams);
+        if ($finalsMatchup !== null) {
+            return $this->writeActiveFinalsForecast($season, $teams, $finalsMatchup);
+        }
 
         $playoffTeamsPerConference = $this->clampInt((int) ($config['playoff_teams_per_conference'] ?? 8), 1, 15);
         $playInTeamsPerConference = $this->clampInt((int) ($config['play_in_teams_per_conference'] ?? 10), $playoffTeamsPerConference, 15);
@@ -158,6 +164,251 @@ class GeneratePlayoffForecast
             ->orderByDesc('champion_probability')
             ->orderByDesc('playoff_make_probability')
             ->get();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $teams
+     * @return array{
+     *     team_ids: array<int, int>,
+     *     series_wins: array<int, int>,
+     *     latest_game_date: string|null
+     * }|null
+     */
+    private function activeFinalsMatchup(int $season, Collection $teams): ?array
+    {
+        $postseasonTypes = $this->postseasonTypeCandidates();
+        $cutoff = now()->subDays(21)->toDateString();
+
+        $games = Game::query()
+            ->where('season', $season)
+            ->whereIn('season_type', $postseasonTypes)
+            ->whereDate('game_date', '>=', $cutoff)
+            ->whereIn('status', ['STATUS_FINAL', 'STATUS_SCHEDULED', 'STATUS_DELAYED'])
+            ->whereNotNull('home_team_id')
+            ->whereNotNull('away_team_id')
+            ->orderBy('game_date')
+            ->get(['home_team_id', 'away_team_id', 'home_score', 'away_score', 'status', 'game_date']);
+
+        if ($games->isEmpty()) {
+            return null;
+        }
+
+        $matchups = $games->groupBy(function (Game $game): string {
+            $ids = [(int) $game->home_team_id, (int) $game->away_team_id];
+            sort($ids);
+
+            return implode('-', $ids);
+        });
+
+        $active = $matchups
+            ->map(function (Collection $matchupGames, string $key): array {
+                $teamIds = array_map('intval', explode('-', $key));
+                $seriesWins = array_fill_keys($teamIds, 0);
+
+                foreach ($matchupGames as $game) {
+                    if ((string) $game->status !== 'STATUS_FINAL' || $game->home_score === null || $game->away_score === null) {
+                        continue;
+                    }
+
+                    $winnerId = (int) $game->home_score > (int) $game->away_score
+                        ? (int) $game->home_team_id
+                        : (int) $game->away_team_id;
+                    $seriesWins[$winnerId] = ($seriesWins[$winnerId] ?? 0) + 1;
+                }
+
+                return [
+                    'team_ids' => $teamIds,
+                    'game_count' => $matchupGames->count(),
+                    'scheduled_count' => $matchupGames->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])->count(),
+                    'latest_game_date' => $matchupGames
+                        ->max(fn (Game $game): string => $game->game_date?->toDateString() ?? ''),
+                    'series_wins' => $seriesWins,
+                ];
+            })
+            ->filter(function (array $matchup): bool {
+                return $matchup['game_count'] >= 2
+                    && (max($matchup['series_wins']) < 4 || $matchup['scheduled_count'] > 0);
+            })
+            ->sortByDesc(fn (array $matchup): string => (string) ($matchup['latest_game_date'] ?? ''))
+            ->first();
+
+        if (! is_array($active)) {
+            return null;
+        }
+
+        $teamPoolIds = $teams->pluck('team_id')->map(fn ($teamId): int => (int) $teamId)->flip();
+        foreach ($active['team_ids'] as $teamId) {
+            if (! $teamPoolIds->has($teamId)) {
+                return null;
+            }
+        }
+
+        $finalistConferences = $teams
+            ->whereIn('team_id', $active['team_ids'])
+            ->pluck('conference')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($finalistConferences->count() !== 2) {
+            return null;
+        }
+
+        return $active;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $teams
+     * @param  array{team_ids: array<int, int>, series_wins: array<int, int>, latest_game_date: string|null}  $finalsMatchup
+     */
+    private function writeActiveFinalsForecast(int $season, Collection $teams, array $finalsMatchup): Collection
+    {
+        $finalists = $teams
+            ->whereIn('team_id', $finalsMatchup['team_ids'])
+            ->values();
+
+        if ($finalists->count() !== 2) {
+            return collect();
+        }
+
+        $winProbabilities = $this->finalsSeriesProbabilities($finalists, $finalsMatchup['series_wins']);
+        $payload = $finalists
+            ->map(function (array $team, int $index) use ($season, $winProbabilities): array {
+                $teamId = (int) $team['team_id'];
+
+                return [
+                    'team_id' => $teamId,
+                    'season' => $season,
+                    'conference' => $team['conference'],
+                    'conference_rank' => $index + 1,
+                    'projected_seed' => 1,
+                    'selection_score' => round((float) $team['selection_score'], 4),
+                    'playoff_make_probability' => 1.0,
+                    'direct_playoff_probability' => 1.0,
+                    'play_in_tournament_probability' => 0.0,
+                    'division_win_probability' => 0.0,
+                    'conference_finals_probability' => 1.0,
+                    'nba_finals_probability' => 1.0,
+                    'champion_probability' => round((float) ($winProbabilities[$teamId] ?? 0.5), 5),
+                    'simulation_runs' => 0,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        PlayoffForecast::query()
+            ->where('season', $season)
+            ->whereNotIn('team_id', $finalists->pluck('team_id')->all())
+            ->delete();
+
+        PlayoffForecast::query()->upsert(
+            $payload,
+            ['team_id', 'season'],
+            [
+                'conference',
+                'conference_rank',
+                'projected_seed',
+                'selection_score',
+                'playoff_make_probability',
+                'direct_playoff_probability',
+                'play_in_tournament_probability',
+                'division_win_probability',
+                'conference_finals_probability',
+                'nba_finals_probability',
+                'champion_probability',
+                'simulation_runs',
+                'updated_at',
+            ]
+        );
+
+        return PlayoffForecast::query()
+            ->with('team')
+            ->where('season', $season)
+            ->orderByDesc('champion_probability')
+            ->get();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $finalists
+     * @param  array<int, int>  $seriesWins
+     * @return array<int, float>
+     */
+    private function finalsSeriesProbabilities(Collection $finalists, array $seriesWins): array
+    {
+        $teamA = $finalists[0];
+        $teamB = $finalists[1];
+        $teamAId = (int) $teamA['team_id'];
+        $teamBId = (int) $teamB['team_id'];
+        $teamAGameWin = $this->matchupWinProbability(
+            array_merge($teamA, ['sim_score' => (float) $teamA['selection_score']]),
+            array_merge($teamB, ['sim_score' => (float) $teamB['selection_score']])
+        );
+
+        $teamAProbability = $this->bestOfSevenSeriesProbability(
+            (int) ($seriesWins[$teamAId] ?? 0),
+            (int) ($seriesWins[$teamBId] ?? 0),
+            $teamAGameWin
+        );
+
+        return [
+            $teamAId => $teamAProbability,
+            $teamBId => 1.0 - $teamAProbability,
+        ];
+    }
+
+    private function bestOfSevenSeriesProbability(int $wins, int $losses, float $gameWinProbability): float
+    {
+        if ($wins >= 4) {
+            return 1.0;
+        }
+
+        if ($losses >= 4) {
+            return 0.0;
+        }
+
+        $needWins = 4 - $wins;
+        $gamesRemaining = 7 - $wins - $losses;
+        $probability = 0.0;
+
+        for ($futureWins = $needWins; $futureWins <= $gamesRemaining; $futureWins++) {
+            $futureLosses = $gamesRemaining - $futureWins;
+            $probability += $this->combinations($gamesRemaining, $futureWins)
+                * ($gameWinProbability ** $futureWins)
+                * ((1 - $gameWinProbability) ** $futureLosses);
+        }
+
+        return max(0.0, min(1.0, $probability));
+    }
+
+    private function combinations(int $n, int $k): int
+    {
+        if ($k < 0 || $k > $n) {
+            return 0;
+        }
+
+        $k = min($k, $n - $k);
+        $result = 1;
+
+        for ($i = 1; $i <= $k; $i++) {
+            $result = (int) (($result * ($n - $k + $i)) / $i);
+        }
+
+        return $result;
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    private function postseasonTypeCandidates(): array
+    {
+        $postseasonType = config('nba.season.types.postseason', 3);
+
+        return array_values(array_unique([
+            $postseasonType,
+            (string) $postseasonType,
+        ], SORT_REGULAR));
     }
 
     private function buildTeamPool(int $season): Collection

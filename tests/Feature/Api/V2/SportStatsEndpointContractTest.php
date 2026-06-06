@@ -202,6 +202,33 @@ it('lists v2 player stat available seasons and dates with stable metadata', func
         ->assertJsonPath('meta.filters.season', 2026);
 })->with('v2StatsContractSports');
 
+it('marks game scoped v2 stats as postgame only for future games', function () {
+    actAsV2StatsContractUser();
+
+    $home = NbaTeam::factory()->create();
+    $away = NbaTeam::factory()->create();
+    $game = NbaGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $this->getJson("/api/v2/sports/nba/stats/player?game_id={$game->id}")
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.warnings.0.code', 'postgame_stats_not_available')
+        ->assertJsonPath('meta.warnings.0.severity', 'info')
+        ->assertJsonPath('meta.warnings.0.game_id', $game->id)
+        ->assertJsonPath('meta.warnings.0.game_status', 'STATUS_SCHEDULED');
+
+    $this->getJson("/api/v2/sports/nba/stats/team?game_id={$game->id}")
+        ->assertOk()
+        ->assertJsonCount(0, 'data')
+        ->assertJsonPath('meta.warnings.0.code', 'postgame_stats_not_available')
+        ->assertJsonPath('meta.warnings.0.game_status', 'STATUS_SCHEDULED');
+});
+
 it('lists v2 team stats with stable metadata, filters, and raw stats bag', function (
     string $slug,
     string $teamModel,

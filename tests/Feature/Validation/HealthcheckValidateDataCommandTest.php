@@ -73,6 +73,7 @@ test('healthcheck validate data persists validation run and completeness finding
 
     expect($findingTypes)->toContain(
         'validation_prediction_completeness',
+        'validation_upcoming_game_readiness',
         'validation_odds_completeness',
         'validation_injury_freshness',
         'validation_player_prop_freshness',
@@ -141,6 +142,99 @@ test('healthcheck validate data flags current day final games missing stats', fu
         ->and(data_get($finding->facts, 'final_games_missing_player_stats'))->toBe(1)
         ->and(data_get($finding->facts, 'final_games_missing_plays'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+});
+
+test('healthcheck validate data flags upcoming game page readiness gaps', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'season_type' => 2,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay(),
+        'odds_data' => null,
+        'odds_updated_at' => null,
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_upcoming_game_readiness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and($finding->recommended_action)->toBe('sports:operations-sentinel --sport=nba')
+        ->and(data_get($finding->facts, 'upcoming_games'))->toBe(1)
+        ->and(data_get($finding->facts, 'games_missing_predictions'))->toBe(1)
+        ->and(data_get($finding->facts, 'games_missing_odds'))->toBe(1)
+        ->and(data_get($finding->facts, 'games_missing_team_metrics'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.reasons'))->toContain('missing_prediction', 'missing_odds', 'missing_team_metrics');
+});
+
+test('healthcheck validate data passes upcoming game page readiness when pregame data exists', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'season_type' => 2,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay(),
+        'odds_data' => [
+            'bookmakers' => [
+                ['markets' => [['key' => 'h2h'], ['key' => 'spreads'], ['key' => 'totals']]],
+            ],
+        ],
+        'odds_updated_at' => now(),
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 2.5,
+        'predicted_total' => 224.5,
+        'win_probability' => 0.56,
+        'confidence_score' => 61.2,
+    ]);
+
+    foreach ([$home, $away] as $team) {
+        DB::table('nba_team_metrics')->insert([
+            'team_id' => $team->id,
+            'season' => (int) now()->year,
+            'offensive_efficiency' => 115.2,
+            'defensive_efficiency' => 111.8,
+            'net_rating' => 3.4,
+            'tempo' => 99.1,
+            'calculation_date' => now()->toDateString(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_upcoming_game_readiness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('passing')
+        ->and(data_get($finding->facts, 'upcoming_games'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([]);
 });
 
 test('healthcheck validate data flags missing weather for outdoor sports', function () {

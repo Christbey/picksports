@@ -117,6 +117,13 @@ class SportStatQuery
             ->values();
     }
 
+    public function gameForId(SportContext $context, int $gameId): ?Model
+    {
+        $gameModel = $this->gameModel($context);
+
+        return $gameModel::query()->find($gameId);
+    }
+
     /**
      * @return class-string<Model>
      */

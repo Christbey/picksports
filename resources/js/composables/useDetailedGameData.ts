@@ -28,6 +28,9 @@ const defaultMetricFromResponse = (
     return payload?.data ?? null;
 };
 
+const hasFinalBoxScore = (status: string | null | undefined): boolean =>
+    ['STATUS_FINAL', 'STATUS_FULL_TIME'].includes(status ?? '');
+
 export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     const api = useApiV2Client();
     const game = ref<Game | null>(null);
@@ -55,17 +58,10 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             loading.value = true;
             error.value = null;
 
-            const [gameData, predictionData, teamStatsData, playerStatsData] =
-                await Promise.all([
-                    api.games.show(options.sport, options.gameId),
-                    api.predictions.forGame(options.sport, options.gameId),
-                    api.stats.teams(options.sport, {
-                        query: { game_id: options.gameId, per_page: 100 },
-                    }),
-                    api.stats.players(options.sport, {
-                        query: { game_id: options.gameId, per_page: 100 },
-                    }),
-                ]);
+            const [gameData, predictionData] = await Promise.all([
+                api.games.show(options.sport, options.gameId),
+                api.predictions.forGame(options.sport, options.gameId),
+            ]);
 
             const fullGame = gameData?.data;
             if (fullGame) {
@@ -78,7 +74,16 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 prediction.value = predictionData?.data ?? null;
             }
 
-            if (teamStatsData) {
+            if (hasFinalBoxScore(game.value?.status)) {
+                const [teamStatsData, playerStatsData] = await Promise.all([
+                    api.stats.teams(options.sport, {
+                        query: { game_id: options.gameId, per_page: 100 },
+                    }),
+                    api.stats.players(options.sport, {
+                        query: { game_id: options.gameId, per_page: 100 },
+                    }),
+                ]);
+
                 const stats = flattenApiV2Stats(
                     teamStatsData?.data,
                 ) as TeamStatsEntry[];
@@ -86,15 +91,17 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                     stats.find((s) => s.team_type === 'home') || null;
                 awayTeamStats.value =
                     stats.find((s) => s.team_type === 'away') || null;
-            }
 
-            if (playerStatsData) {
                 const players = flattenApiV2Stats(
                     playerStatsData?.data,
                 ) as TopPerformer[];
                 topPerformers.value = options.sortTopPerformers
                     ? options.sortTopPerformers(players)
                     : players.slice(0, 10);
+            } else {
+                homeTeamStats.value = null;
+                awayTeamStats.value = null;
+                topPerformers.value = [];
             }
 
             const homeTeamId = homeTeam.value?.id ?? game.value?.home_team_id;

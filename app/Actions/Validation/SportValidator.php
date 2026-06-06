@@ -13,6 +13,7 @@ use App\Actions\Validation\Checks\PipelineOrderCheck;
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
 use App\Actions\Validation\Checks\PredictionCompletenessCheck;
 use App\Actions\Validation\Checks\TeamStatCoverageCheck;
+use App\Actions\Validation\Checks\UpcomingGameReadinessCheck;
 use App\Actions\Validation\Checks\WeatherCompletenessCheck;
 use App\Actions\Validation\Contracts\ValidationCheck;
 
@@ -29,6 +30,7 @@ class SportValidator
             new GameCoverageCheck,
             new TeamStatCoverageCheck,
             new CurrentDayGameDataFreshnessCheck,
+            new UpcomingGameReadinessCheck,
             new PastScheduledGameStatusCheck,
             new PredictionCompletenessCheck,
             new OddsCompletenessCheck,

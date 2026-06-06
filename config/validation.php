@@ -114,6 +114,11 @@ return [
             'stale_after_hours' => 8,
             'final_stats_grace_hours' => 2,
         ],
+        'upcoming_game_readiness' => [
+            'problem_warn_pct' => 0.05,
+            'problem_fail_pct' => 0.20,
+            'stale_after_hours' => 12,
+        ],
         'prediction_completeness' => [
             'missing_warn_pct' => 0.05,
             'missing_fail_pct' => 0.20,

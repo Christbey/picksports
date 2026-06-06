@@ -31,10 +31,10 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
         $games = DB::table($gamesTable)
-            ->whereIn('id', $stageContext->activeGameIds)
+            ->whereIn('id', $stageContext->marketReadyGameIds)
             ->get(['id']);
 
-        $activeGames = $games->count();
+        $marketReadyGames = $games->count();
         $missingProps = 0;
         $staleProps = 0;
         $unscoredProps = 0;
@@ -62,13 +62,13 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         }
 
         $problemGames = count(array_unique($flaggedGameIds));
-        $problemPct = $activeGames > 0 ? $problemGames / $activeGames : 0.0;
+        $problemPct = $marketReadyGames > 0 ? $problemGames / $marketReadyGames : 0.0;
         $status = 'passing';
-        $message = "Player props look fresh for {$activeGames} active games.";
+        $message = "Player props look fresh for {$marketReadyGames} market-ready active games.";
 
         if ($problemGames > 0) {
             $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$problemGames}/{$activeGames} active games have missing, stale, or unscored player props.";
+            $message = "{$problemGames}/{$marketReadyGames} market-ready active games have missing, stale, or unscored player props.";
         }
 
         return [
@@ -80,7 +80,8 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             'metadata' => [
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
-                'active_games' => $activeGames,
+                'active_games' => count($stageContext->activeGameIds),
+                'market_ready_games' => $marketReadyGames,
                 'games_missing_player_props' => $missingProps,
                 'games_with_stale_player_props' => $staleProps,
                 'games_with_unscored_player_props' => $unscoredProps,

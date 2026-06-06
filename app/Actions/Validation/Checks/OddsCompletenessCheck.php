@@ -26,7 +26,7 @@ class OddsCompletenessCheck implements ValidationCheck
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
 
         $query = $gameModel::query()
-            ->whereIn('id', $stageContext->activeGameIds);
+            ->whereIn('id', $stageContext->marketReadyGameIds);
 
         $games = $query->get();
 
@@ -75,11 +75,11 @@ class OddsCompletenessCheck implements ValidationCheck
         $failPct = (float) config('validation.thresholds.odds_completeness.problem_fail_pct', 0.20);
 
         $status = 'passing';
-        $message = "Odds coverage looks healthy for {$totalGames} active games.";
+        $message = "Odds coverage looks healthy for {$totalGames} market-ready active games.";
 
         if ($problemGames > 0) {
             $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$problemGames}/{$totalGames} active games have missing, incomplete, or stale odds data.";
+            $message = "{$problemGames}/{$totalGames} market-ready active games have missing, incomplete, or stale odds data.";
         }
 
         return [
@@ -91,7 +91,8 @@ class OddsCompletenessCheck implements ValidationCheck
             'metadata' => [
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
-                'active_games' => $totalGames,
+                'active_games' => count($stageContext->activeGameIds),
+                'market_ready_games' => $totalGames,
                 'games_missing_odds' => $missingOddsCount,
                 'games_with_missing_required_markets' => $missingRequiredMarketsCount,
                 'games_with_stale_odds' => $staleOddsCount,

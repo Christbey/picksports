@@ -88,7 +88,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             }
 
             $oddsData = $this->decodeOddsData($game->odds_data ?? null);
-            if (! is_array($oddsData) || empty($oddsData['bookmakers'])) {
+            if (in_array($gameId, $stageContext->marketReadyGameIds, true) && (! is_array($oddsData) || empty($oddsData['bookmakers']))) {
                 $missingOdds++;
                 $reasons[] = 'missing_odds';
             }
@@ -138,6 +138,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
                 'upcoming_games' => $totalGames,
+                'market_ready_games' => count($stageContext->marketReadyGameIds),
                 'games_missing_teams' => $missingTeams,
                 'games_missing_espn_event_ids' => $missingEspnEventIds,
                 'games_missing_predictions' => $missingPredictions,

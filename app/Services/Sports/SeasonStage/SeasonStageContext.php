@@ -9,6 +9,7 @@ class SeasonStageContext
 {
     /**
      * @param  array<int, int>  $activeGameIds
+     * @param  array<int, int>  $marketReadyGameIds
      * @param  array<int, int>  $visibleGameIds
      * @param  array<int, int>  $remainingTeamIds
      * @param  array<int, int>  $eliminatedTeamIds
@@ -23,6 +24,7 @@ class SeasonStageContext
         public readonly string $stageGroup,
         public readonly DateWindow $activeWindow,
         public readonly array $activeGameIds,
+        public readonly array $marketReadyGameIds,
         public readonly array $visibleGameIds,
         public readonly array $remainingTeamIds = [],
         public readonly array $eliminatedTeamIds = [],
@@ -53,6 +55,7 @@ class SeasonStageContext
             'stage_group' => $this->stageGroup,
             'active_window' => $this->activeWindow->toArray(),
             'active_game_ids' => $this->activeGameIds,
+            'market_ready_game_ids' => $this->marketReadyGameIds,
             'visible_game_ids' => $this->visibleGameIds,
             'remaining_team_ids' => $this->remainingTeamIds,
             'eliminated_team_ids' => $this->eliminatedTeamIds,

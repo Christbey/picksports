@@ -53,11 +53,11 @@ class AnalyzePlayerPropsCommand extends Command
         $this->info(sprintf(
             'Analyzing %s player props for %d active game(s) in %s stage.',
             strtoupper($sport),
-            count($context->activeGameIds),
+            count($context->marketReadyGameIds),
             $context->stage,
         ));
 
-        foreach ($context->activeGameIds as $gameId) {
+        foreach ($context->marketReadyGameIds as $gameId) {
             $recommendations = $analyzer->analyzeProps($this->sportLabels[$sport], $minGames, gameFilter: $gameId);
             $totalRecommendations += $recommendations->count();
             $this->line("Game {$gameId}: {$recommendations->count()} recommendation(s).");

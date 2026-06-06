@@ -43,6 +43,64 @@ it('resolves an active nba finals stage from the real remaining teams', function
         ->and($context->remainingTeamIds)->toEqualCanonicalizing([$knicks->id, $spurs->id]);
 });
 
+it('treats only the next championship game as market ready unless later games have odds', function () {
+    $this->travelTo('2026-06-06 12:00:00');
+
+    $knicks = Team::factory()->create(['conference' => 'Eastern']);
+    $spurs = Team::factory()->create(['conference' => 'Western']);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'home_team_id' => $knicks->id,
+        'away_team_id' => $spurs->id,
+        'game_date' => '2026-06-04',
+        'status' => 'STATUS_FINAL',
+        'home_score' => 111,
+        'away_score' => 106,
+    ]);
+
+    $nextGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'home_team_id' => $spurs->id,
+        'away_team_id' => $knicks->id,
+        'game_date' => '2026-06-08',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $ifNecessaryWithoutMarket = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'home_team_id' => $knicks->id,
+        'away_team_id' => $spurs->id,
+        'game_date' => '2026-06-10',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $ifNecessaryWithMarket = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'home_team_id' => $spurs->id,
+        'away_team_id' => $knicks->id,
+        'game_date' => '2026-06-12',
+        'status' => 'STATUS_SCHEDULED',
+        'odds_api_event_id' => 'odds-available',
+    ]);
+
+    $context = app(SeasonStageService::class)->context('nba', 2026);
+
+    expect($context->activeGameIds)->toEqualCanonicalizing([
+        $nextGame->id,
+        $ifNecessaryWithoutMarket->id,
+        $ifNecessaryWithMarket->id,
+    ])
+        ->and($context->marketReadyGameIds)->toEqualCanonicalizing([
+            $nextGame->id,
+            $ifNecessaryWithMarket->id,
+        ]);
+});
+
 it('keeps local date windows stable for utc game times crossing midnight', function () {
     Config::set('sports.business_timezone', 'America/Chicago');
 

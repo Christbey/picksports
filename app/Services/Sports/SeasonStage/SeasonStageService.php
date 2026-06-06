@@ -47,6 +47,7 @@ class SeasonStageService
                 stageGroup: 'unknown',
                 activeWindow: $activeWindow,
                 activeGameIds: [],
+                marketReadyGameIds: [],
                 visibleGameIds: [],
                 dataExpectations: $this->dataExpectations($sport, 'unknown', 0),
             );
@@ -60,6 +61,7 @@ class SeasonStageService
             ->values();
         $stage = $this->resolveStage($sport, $season, $asOfDate, $gameModel, $activeGames);
         $remainingTeamIds = $this->remainingTeamIds($activeGames);
+        $marketReadyGameIds = $this->marketReadyGameIds($activeGames, $stage['group']);
 
         return new SeasonStageContext(
             sport: $sport,
@@ -69,11 +71,56 @@ class SeasonStageService
             stageGroup: $stage['group'],
             activeWindow: $activeWindow,
             activeGameIds: $activeGames->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
+            marketReadyGameIds: $marketReadyGameIds,
             visibleGameIds: $visibleGames->pluck('id')->map(fn ($id): int => (int) $id)->values()->all(),
             remainingTeamIds: $remainingTeamIds,
             seriesContext: $stage['series_context'],
             dataExpectations: $this->dataExpectations($sport, $stage['group'], $activeGames->count()),
         );
+    }
+
+    /**
+     * @param  Collection<int, Model>  $activeGames
+     * @return array<int, int>
+     */
+    private function marketReadyGameIds(Collection $activeGames, string $stageGroup): array
+    {
+        if ($activeGames->isEmpty()) {
+            return [];
+        }
+
+        if ($stageGroup !== 'championship') {
+            return $activeGames->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
+        }
+
+        $firstGameDate = $activeGames
+            ->pluck('game_date')
+            ->filter()
+            ->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())
+            ->sort()
+            ->first();
+
+        return $activeGames
+            ->filter(function (Model $game) use ($firstGameDate): bool {
+                $gameDate = $game->getAttribute('game_date')
+                    ? CarbonImmutable::parse($game->getAttribute('game_date'))->toDateString()
+                    : null;
+
+                return $gameDate === $firstGameDate || $this->hasMarketData($game);
+            })
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    private function hasMarketData(Model $game): bool
+    {
+        $oddsData = $game->getAttribute('odds_data');
+
+        return filled($game->getAttribute('odds_api_event_id'))
+            || filled($game->getAttribute('odds_updated_at'))
+            || (is_array($oddsData) && ! empty($oddsData['bookmakers']));
     }
 
     public function applyActiveGameScope(Builder $query, string $sport, int|string|null $season = null, CarbonInterface|string|null $asOf = null, ?int $windowDays = null): Builder
@@ -298,6 +345,9 @@ class SeasonStageService
             'away_score',
             'short_name',
             'name',
+            'odds_api_event_id',
+            'odds_data',
+            'odds_updated_at',
             'is_ncaa_tournament',
             'postseason_round',
         ];

@@ -138,6 +138,7 @@ return [
         'odds_completeness' => [
             'problem_warn_pct' => 0.05,
             'problem_fail_pct' => 0.20,
+            'missing_or_stale_fail_pct' => 0.50,
             'stale_after_hours' => 8,
         ],
         'weather_completeness' => [

@@ -81,12 +81,13 @@ class OddsCompletenessCheck implements ValidationCheck
         $blockingProblemPct = $totalGames > 0 ? $blockingProblemGames / $totalGames : 0.0;
         $warnPct = (float) config('validation.thresholds.odds_completeness.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.odds_completeness.problem_fail_pct', 0.20);
+        $missingOrStaleFailPct = (float) config('validation.thresholds.odds_completeness.missing_or_stale_fail_pct', $failPct);
 
         $status = 'passing';
         $message = "Odds coverage looks healthy for {$totalGames} market-ready active games.";
 
         if ($blockingProblemGames > 0) {
-            $status = $blockingProblemPct >= $failPct ? 'failing' : ($blockingProblemPct >= $warnPct ? 'warning' : 'passing');
+            $status = $blockingProblemPct >= $missingOrStaleFailPct ? 'failing' : ($blockingProblemPct >= $warnPct ? 'warning' : 'passing');
             $message = "{$blockingProblemGames}/{$totalGames} market-ready active games have missing or stale odds data.";
         } elseif ($problemGames > 0) {
             $status = 'warning';
@@ -105,6 +106,7 @@ class OddsCompletenessCheck implements ValidationCheck
                 'active_games' => count($stageContext->activeGameIds),
                 'market_ready_games' => $totalGames,
                 'blocking_odds_problem_games' => $blockingProblemGames,
+                'missing_or_stale_fail_pct' => $missingOrStaleFailPct,
                 'games_missing_odds' => $missingOddsCount,
                 'games_with_missing_required_markets' => $missingRequiredMarketsCount,
                 'games_with_stale_odds' => $staleOddsCount,

@@ -35,6 +35,9 @@ class OddsCompletenessCheck implements ValidationCheck
         $missingRequiredMarketsCount = 0;
         $staleOddsCount = 0;
         $flaggedGameIds = [];
+        $missingOddsGameIds = [];
+        $missingRequiredMarketsGameIds = [];
+        $staleOddsGameIds = [];
 
         foreach ($games as $game) {
             $flagged = false;
@@ -43,6 +46,7 @@ class OddsCompletenessCheck implements ValidationCheck
             if (! is_array($oddsData) || empty($oddsData['bookmakers'])) {
                 $missingOddsCount++;
                 $flagged = true;
+                $missingOddsGameIds[] = (int) $game->getKey();
             } else {
                 $marketKeys = collect($oddsData['bookmakers'])
                     ->flatMap(fn ($bookmaker) => is_array($bookmaker) ? ($bookmaker['markets'] ?? []) : [])
@@ -54,6 +58,7 @@ class OddsCompletenessCheck implements ValidationCheck
                     if (! $marketKeys->contains($requiredMarket)) {
                         $missingRequiredMarketsCount++;
                         $flagged = true;
+                        $missingRequiredMarketsGameIds[] = (int) $game->getKey();
                         break;
                     }
                 }
@@ -62,6 +67,7 @@ class OddsCompletenessCheck implements ValidationCheck
             if ($game->odds_updated_at === null || $game->odds_updated_at->lt(now()->subHours($staleHours))) {
                 $staleOddsCount++;
                 $flagged = true;
+                $staleOddsGameIds[] = (int) $game->getKey();
             }
 
             if ($flagged) {
@@ -97,6 +103,9 @@ class OddsCompletenessCheck implements ValidationCheck
                 'games_with_missing_required_markets' => $missingRequiredMarketsCount,
                 'games_with_stale_odds' => $staleOddsCount,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
+                'sample_missing_odds_game_ids' => array_slice(array_values(array_unique($missingOddsGameIds)), 0, 5),
+                'sample_missing_required_market_game_ids' => array_slice(array_values(array_unique($missingRequiredMarketsGameIds)), 0, 5),
+                'sample_stale_odds_game_ids' => array_slice(array_values(array_unique($staleOddsGameIds)), 0, 5),
             ],
         ];
     }

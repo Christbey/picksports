@@ -119,7 +119,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
 
                 if (! $analysis) {
-                    $this->warn('  - skipped '.$this->matchup($prediction).' (AI analysis unavailable)');
+                    $failureReason = $aiContentService->lastDailyPredictionAnalysisFailure();
+                    $this->warn('  - skipped '.$this->matchup($prediction).' (AI analysis unavailable'.($failureReason ? ': '.$failureReason : '').')');
                     $skipped++;
 
                     continue;

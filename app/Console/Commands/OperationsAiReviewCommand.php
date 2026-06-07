@@ -181,7 +181,48 @@ class OperationsAiReviewCommand extends Command
             'status' => $finding->status,
             'message' => $finding->message,
             'recommended_action' => $finding->recommended_action,
+            'facts' => $this->compactFacts(is_array($finding->facts) ? $finding->facts : []),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $facts
+     * @return array<string, mixed>
+     */
+    private function compactFacts(array $facts): array
+    {
+        $keys = [
+            'sample_game_ids',
+            'sample_missing_game_ids',
+            'sample_stale_game_ids',
+            'sample_missing_odds_game_ids',
+            'sample_missing_required_market_game_ids',
+            'sample_stale_odds_game_ids',
+            'sample_missing_weather_game_ids',
+            'sample_stale_weather_game_ids',
+            'sample_unknown_roof_game_ids',
+            'sample_unscored_game_ids',
+            'sample_games',
+            'missing_core_fields',
+            'date_leakage',
+            'duplicate_espn_event_ids',
+            'games_missing_odds',
+            'games_with_missing_required_markets',
+            'games_with_stale_odds',
+            'games_missing_player_props',
+            'games_with_stale_player_props',
+            'games_with_unscored_player_props',
+            'games_missing_weather',
+            'games_with_stale_weather',
+            'games_with_unknown_roof_status',
+            'oldest_game_date',
+            'newest_game_date',
+        ];
+
+        return collect($facts)
+            ->only($keys)
+            ->filter(fn (mixed $value): bool => $value !== null && $value !== [] && $value !== '')
+            ->all();
     }
 
     private function fallbackTrustScore(int $failing, int $warnings, bool $lowVolumeExpected): int
@@ -229,6 +270,24 @@ class OperationsAiReviewCommand extends Command
         $this->line('Stage: '.data_get($report, 'season_stage.stage').' / '.data_get($report, 'season_stage.stage_group'));
         $this->line('Validation run: '.data_get($report, 'latest_validation.run_id').' ('.data_get($report, 'latest_validation.status').')');
         $this->line('AI analyses today: '.data_get($report, 'publishing.analyses_today'));
+
+        $blockingFindings = array_merge(
+            (array) data_get($report, 'findings.failing', []),
+            (array) data_get($report, 'findings.warnings', []),
+        );
+
+        if ($blockingFindings !== []) {
+            $this->newLine();
+            $this->line('Finding details:');
+            foreach ($blockingFindings as $finding) {
+                $this->line(' - '.data_get($finding, 'check_type').': '.data_get($finding, 'message'));
+
+                $facts = data_get($finding, 'facts', []);
+                if (is_array($facts) && $facts !== []) {
+                    $this->line('   facts: '.json_encode($facts, JSON_UNESCAPED_SLASHES));
+                }
+            }
+        }
 
         $this->newLine();
         $this->line('Recommended actions:');

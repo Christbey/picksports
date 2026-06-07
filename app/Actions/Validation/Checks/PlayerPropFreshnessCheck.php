@@ -39,6 +39,8 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $staleProps = 0;
         $unscoredProps = 0;
         $freshnessFlaggedGameIds = [];
+        $missingGameIds = [];
+        $staleGameIds = [];
         $unscoredGameIds = [];
 
         foreach ($games as $game) {
@@ -47,6 +49,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             if (! $latestFetchedAt) {
                 $missingProps++;
                 $freshnessFlaggedGameIds[] = (int) $game->id;
+                $missingGameIds[] = (int) $game->id;
 
                 continue;
             }
@@ -54,6 +57,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             if (now()->parse($latestFetchedAt)->lt(now()->subHours($staleHours))) {
                 $staleProps++;
                 $freshnessFlaggedGameIds[] = (int) $game->id;
+                $staleGameIds[] = (int) $game->id;
             }
 
             if (! $this->hasRecommendationReadyProps($propsTable, (int) $game->id)) {
@@ -90,6 +94,8 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'games_with_stale_player_props' => $staleProps,
                 'games_with_unscored_player_props' => $unscoredProps,
                 'sample_game_ids' => array_slice(array_values(array_unique($freshnessFlaggedGameIds)), 0, 5),
+                'sample_missing_game_ids' => array_slice(array_values(array_unique($missingGameIds)), 0, 5),
+                'sample_stale_game_ids' => array_slice(array_values(array_unique($staleGameIds)), 0, 5),
                 'sample_unscored_game_ids' => array_slice(array_values(array_unique($unscoredGameIds)), 0, 5),
                 'stale_after_hours' => $staleHours,
             ],

@@ -19,6 +19,8 @@ use Throwable;
 
 class SportsAiContentService
 {
+    private ?string $lastDailyPredictionAnalysisFailure = null;
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array{
@@ -39,7 +41,11 @@ class SportsAiContentService
         ?string $provider = null,
         ?string $model = null,
     ): ?array {
+        $this->lastDailyPredictionAnalysisFailure = null;
+
         if (! config('ai.features.daily_prediction_analysis.enabled', true)) {
+            $this->lastDailyPredictionAnalysisFailure = 'Daily prediction AI analysis is disabled.';
+
             return null;
         }
 
@@ -47,6 +53,8 @@ class SportsAiContentService
         $model ??= (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
 
         if (! $this->providerIsConfigured($provider)) {
+            $this->lastDailyPredictionAnalysisFailure = $this->providerAvailabilityMessage($provider);
+
             return null;
         }
 
@@ -58,6 +66,8 @@ class SportsAiContentService
             );
 
             if (! $response instanceof StructuredAgentResponse) {
+                $this->lastDailyPredictionAnalysisFailure = 'Daily prediction analysis agent returned '.class_basename($response).' instead of a structured response.';
+
                 logger()->warning('Daily prediction analysis agent returned an unexpected response type.', [
                     'provider' => $provider,
                     'response_class' => $response::class,
@@ -69,6 +79,8 @@ class SportsAiContentService
             $analysis = $this->normalizeDailyPredictionAnalysisPayload($response->toArray());
 
             if (! $analysis) {
+                $this->lastDailyPredictionAnalysisFailure = 'Daily prediction analysis response failed schema normalization.';
+
                 logger()->warning('Daily prediction analysis response failed normalization.', [
                     'provider' => $provider,
                     'model' => $response->meta->model ?? $model,
@@ -89,8 +101,15 @@ class SportsAiContentService
                 'message' => $exception->getMessage(),
             ]);
 
+            $this->lastDailyPredictionAnalysisFailure = $exception->getMessage();
+
             return null;
         }
+    }
+
+    public function lastDailyPredictionAnalysisFailure(): ?string
+    {
+        return $this->lastDailyPredictionAnalysisFailure;
     }
 
     /**

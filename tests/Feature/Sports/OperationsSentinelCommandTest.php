@@ -28,6 +28,7 @@ it('runs the configured operations sentinel for every supported sport', function
         '--skip-stats' => true,
         '--skip-queue-drain' => true,
         '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
         '--skip-validation' => true,
     ])
         ->expectsOutput('Synced 6 '.strtoupper($sport).' game row update(s).')
@@ -58,6 +59,7 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->expectsOutputToContain('--skip-queue-drain')
         ->expectsOutputToContain('--queue-drain-queue')
         ->expectsOutputToContain('--queue-drain-max-time')
+        ->expectsOutputToContain('--skip-ai-analysis')
         ->expectsOutputToContain('--skip-ai-review')
         ->expectsOutputToContain('--stat-lookback-days')
         ->expectsOutputToContain('--stat-limit')
@@ -85,6 +87,7 @@ it('defaults to the stale-status repair lookback through the next seven days', f
         '--skip-stats' => true,
         '--skip-queue-drain' => true,
         '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
         '--skip-validation' => true,
     ])
         ->expectsOutput('Synced 15 NBA game row update(s).')
@@ -120,6 +123,7 @@ it('prints the operations ai review even when final validation fails', function 
         '--skip-stats' => true,
         '--skip-queue-drain' => true,
         '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
     ])
         ->expectsOutput('Running NBA operations AI review...')
         ->expectsOutput('NBA Operations AI Review')
@@ -134,7 +138,7 @@ it('passes a bounded max time to the queue drain worker', function () {
     $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(1);
     $this->app->instance(SyncGamesFromScoreboard::class, $sync);
 
-    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --skip-sync-pipeline --skip-stats --queue-drain-queue=sync --queue-drain-max-time=60 --skip-model-pipeline --skip-validation')
+    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --skip-sync-pipeline --skip-stats --queue-drain-queue=sync --queue-drain-max-time=60 --skip-model-pipeline --skip-ai-analysis --skip-validation')
         ->expectsOutputToContain('Draining queued NBA sync jobs before model generation and validation')
         ->assertExitCode(0);
 });

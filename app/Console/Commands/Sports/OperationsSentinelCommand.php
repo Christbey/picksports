@@ -32,6 +32,7 @@ class OperationsSentinelCommand extends Command
         {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
         {--queue-drain-queue=sync : Queue to use for sentinel-dispatched sync jobs}
         {--queue-drain-max-time=600 : Max seconds to drain queued sync jobs before continuing}
+        {--skip-ai-analysis : Skip daily prediction AI analysis before validation}
         {--skip-ai-review : Skip the operations AI review after validation}
         {--skip-validation : Skip the final validation run}';
 
@@ -188,6 +189,10 @@ class OperationsSentinelCommand extends Command
             $this->runModelPipeline($registry, $sport, $season, $referenceDate);
         }
 
+        if (! $this->option('skip-ai-analysis')) {
+            $this->runAiPredictionAnalysisPipeline($registry, $sport, $season, $referenceDate);
+        }
+
         if ($this->option('skip-validation')) {
             return self::SUCCESS;
         }
@@ -276,6 +281,26 @@ class OperationsSentinelCommand extends Command
                 continue;
             }
 
+            $this->callRegistryStep($step);
+        }
+    }
+
+    private function runAiPredictionAnalysisPipeline(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): void
+    {
+        $steps = array_values(array_filter(
+            $this->registrySteps($registry, $sport, 'ai', $season, $referenceDate),
+            fn (array $step): bool => $step['command'] === 'sports:ai-daily-predictions'
+        ));
+
+        if ($steps === []) {
+            $this->warn('Daily prediction AI analysis is not configured for '.strtoupper($sport).'.');
+
+            return;
+        }
+
+        $this->info('Running '.strtoupper($sport).' daily prediction AI analysis...');
+
+        foreach ($steps as $step) {
             $this->callRegistryStep($step);
         }
     }

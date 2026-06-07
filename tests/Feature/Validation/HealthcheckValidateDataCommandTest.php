@@ -238,7 +238,7 @@ test('healthcheck validate data passes upcoming game page readiness when pregame
         ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([]);
 });
 
-test('healthcheck validate data flags active games with unscored player props', function () {
+test('healthcheck validate data warns when fresh player props have no recommendation-ready output', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
 
@@ -274,10 +274,11 @@ test('healthcheck validate data flags active games with unscored player props', 
         ->first();
 
     expect($finding)->not->toBeNull()
-        ->and($finding->status)->toBe('failing')
+        ->and($finding->status)->toBe('warning')
         ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba')
         ->and(data_get($finding->facts, 'games_with_unscored_player_props'))->toBe(1)
-        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([])
+        ->and(data_get($finding->facts, 'sample_unscored_game_ids'))->toContain($game->id);
 });
 
 test('healthcheck validate data flags missing weather for outdoor sports', function () {

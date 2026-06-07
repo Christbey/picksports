@@ -38,37 +38,41 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $missingProps = 0;
         $staleProps = 0;
         $unscoredProps = 0;
-        $flaggedGameIds = [];
+        $freshnessFlaggedGameIds = [];
+        $unscoredGameIds = [];
 
         foreach ($games as $game) {
             $latestFetchedAt = DB::table($propsTable)->where('game_id', $game->id)->max('fetched_at');
 
             if (! $latestFetchedAt) {
                 $missingProps++;
-                $flaggedGameIds[] = (int) $game->id;
+                $freshnessFlaggedGameIds[] = (int) $game->id;
 
                 continue;
             }
 
             if (now()->parse($latestFetchedAt)->lt(now()->subHours($staleHours))) {
                 $staleProps++;
-                $flaggedGameIds[] = (int) $game->id;
+                $freshnessFlaggedGameIds[] = (int) $game->id;
             }
 
             if (! $this->hasRecommendationReadyProps($propsTable, (int) $game->id)) {
                 $unscoredProps++;
-                $flaggedGameIds[] = (int) $game->id;
+                $unscoredGameIds[] = (int) $game->id;
             }
         }
 
-        $problemGames = count(array_unique($flaggedGameIds));
-        $problemPct = $marketReadyGames > 0 ? $problemGames / $marketReadyGames : 0.0;
+        $freshnessProblemGames = count(array_unique($freshnessFlaggedGameIds));
+        $freshnessProblemPct = $marketReadyGames > 0 ? $freshnessProblemGames / $marketReadyGames : 0.0;
         $status = 'passing';
         $message = "Player props look fresh for {$marketReadyGames} market-ready active games.";
 
-        if ($problemGames > 0) {
-            $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$problemGames}/{$marketReadyGames} market-ready active games have missing, stale, or unscored player props.";
+        if ($freshnessProblemGames > 0) {
+            $status = $freshnessProblemPct >= $failPct ? 'failing' : ($freshnessProblemPct >= $warnPct ? 'warning' : 'passing');
+            $message = "{$freshnessProblemGames}/{$marketReadyGames} market-ready active games have missing or stale player props.";
+        } elseif ($unscoredProps > 0) {
+            $status = 'warning';
+            $message = "Player props are fresh for {$marketReadyGames} market-ready active games; {$unscoredProps} game(s) have props without recommendation-ready outputs.";
         }
 
         return [
@@ -85,7 +89,8 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'games_missing_player_props' => $missingProps,
                 'games_with_stale_player_props' => $staleProps,
                 'games_with_unscored_player_props' => $unscoredProps,
-                'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
+                'sample_game_ids' => array_slice(array_values(array_unique($freshnessFlaggedGameIds)), 0, 5),
+                'sample_unscored_game_ids' => array_slice(array_values(array_unique($unscoredGameIds)), 0, 5),
                 'stale_after_hours' => $staleHours,
             ],
         ];

@@ -4,6 +4,7 @@ use App\Models\MLB\Game;
 
 return [
     'window_days' => 7,
+    'market_window_days' => 1,
 
     'regression_alerts' => [
         'enabled' => env('VALIDATION_REGRESSION_ALERTS_ENABLED', true),
@@ -17,6 +18,7 @@ return [
             'models' => ['game' => Game::class],
             'active_months' => [3, 4, 5, 6, 7, 8, 9, 10],
             'expected_games_per_day' => 10,
+            'market_window_days' => 1,
             'weather_command' => 'mlb:sync-game-weather --days-back=0 --days-forward=7 --force',
             'injuries_command' => 'espn:sync-mlb-injuries',
             'futures_enabled' => true,
@@ -31,6 +33,7 @@ return [
             'models' => ['game' => App\Models\NBA\Game::class],
             'active_months' => [10, 11, 12, 1, 2, 3, 4, 5, 6],
             'expected_games_per_day' => 5,
+            'market_window_days' => 1,
             'injuries_command' => 'espn:sync-nba-injuries',
             'futures_enabled' => true,
             'pipeline_order' => [
@@ -43,6 +46,7 @@ return [
             'models' => ['game' => App\Models\NFL\Game::class],
             'active_months' => [9, 10, 11, 12, 1, 2],
             'expected_games_per_day' => 1,
+            'market_window_days' => 7,
             'weather_command' => 'nfl:sync-game-weather --days-back=0 --days-forward=7 --force',
             'injuries_command' => 'espn:sync-nfl-injuries',
             'futures_enabled' => true,
@@ -57,6 +61,7 @@ return [
             'models' => ['game' => App\Models\CBB\Game::class],
             'active_months' => [11, 12, 1, 2, 3, 4],
             'expected_games_per_day' => 20,
+            'market_window_days' => 1,
             'injuries_command' => 'espn:sync-cbb-injuries',
             'futures_enabled' => true,
             'pipeline_order' => [
@@ -69,6 +74,7 @@ return [
             'models' => ['game' => App\Models\CFB\Game::class],
             'active_months' => [8, 9, 10, 11, 12, 1],
             'expected_games_per_day' => 10,
+            'market_window_days' => 7,
             'injuries_command' => 'espn:sync-cfb-injuries',
             'pipeline_order' => [
                 ['label' => 'details before predictions', 'upstream' => ['espn:sync-cfb-game-details%'], 'downstream' => ['cfb:generate-predictions%'], 'recommended_action' => 'cfb:generate-predictions'],
@@ -79,6 +85,7 @@ return [
             'models' => ['game' => App\Models\WCBB\Game::class],
             'active_months' => [11, 12, 1, 2, 3, 4],
             'expected_games_per_day' => 20,
+            'market_window_days' => 1,
             'injuries_command' => 'espn:sync-wcbb-injuries',
             'futures_enabled' => true,
             'pipeline_order' => [
@@ -90,6 +97,7 @@ return [
             'models' => ['game' => App\Models\WNBA\Game::class],
             'active_months' => [5, 6, 7, 8, 9],
             'expected_games_per_day' => 2,
+            'market_window_days' => 1,
             'injuries_command' => 'espn:sync-wnba-injuries',
             'pipeline_order' => [
                 ['label' => 'details before predictions', 'upstream' => ['espn:sync-wnba-game-details%'], 'downstream' => ['wnba:generate-predictions%'], 'recommended_action' => 'wnba:generate-predictions'],

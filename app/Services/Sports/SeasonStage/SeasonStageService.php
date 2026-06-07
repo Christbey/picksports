@@ -61,7 +61,7 @@ class SeasonStageService
             ->values();
         $stage = $this->resolveStage($sport, $season, $asOfDate, $gameModel, $activeGames);
         $remainingTeamIds = $this->remainingTeamIds($activeGames);
-        $marketReadyGameIds = $this->marketReadyGameIds($activeGames, $stage['group']);
+        $marketReadyGameIds = $this->marketReadyGameIds($sport, $activeGames, $stage['group']);
 
         return new SeasonStageContext(
             sport: $sport,
@@ -83,30 +83,41 @@ class SeasonStageService
      * @param  Collection<int, Model>  $activeGames
      * @return array<int, int>
      */
-    private function marketReadyGameIds(Collection $activeGames, string $stageGroup): array
+    private function marketReadyGameIds(string $sport, Collection $activeGames, string $stageGroup): array
     {
         if ($activeGames->isEmpty()) {
             return [];
         }
 
-        if ($stageGroup !== 'championship') {
-            return $activeGames->pluck('id')->map(fn ($id): int => (int) $id)->values()->all();
-        }
-
-        $firstGameDate = $activeGames
+        $gameDates = $activeGames
             ->pluck('game_date')
             ->filter()
             ->map(fn ($date): string => CarbonImmutable::parse($date)->toDateString())
+            ->unique()
             ->sort()
-            ->first();
+            ->values();
+
+        if ($gameDates->isEmpty()) {
+            return $activeGames
+                ->filter(fn (Model $game): bool => $this->hasMarketData($game))
+                ->pluck('id')
+                ->map(fn ($id): int => (int) $id)
+                ->values()
+                ->all();
+        }
+
+        $requiredDateCount = $stageGroup === 'championship'
+            ? 1
+            : max(1, (int) config("validation.sports.{$sport}.market_window_days", config('validation.market_window_days', 1)));
+        $requiredDates = $gameDates->take($requiredDateCount)->all();
 
         return $activeGames
-            ->filter(function (Model $game) use ($firstGameDate): bool {
+            ->filter(function (Model $game) use ($requiredDates): bool {
                 $gameDate = $game->getAttribute('game_date')
                     ? CarbonImmutable::parse($game->getAttribute('game_date'))->toDateString()
                     : null;
 
-                return $gameDate === $firstGameDate || $this->hasMarketData($game);
+                return in_array($gameDate, $requiredDates, true) || $this->hasMarketData($game);
             })
             ->pluck('id')
             ->map(fn ($id): int => (int) $id)

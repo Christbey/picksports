@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\Validation\SportValidator;
+use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
 use App\Services\Sports\SeasonStage\SeasonStageService;
@@ -98,6 +100,55 @@ it('treats only the next championship game as market ready unless later games ha
         ->and($context->marketReadyGameIds)->toEqualCanonicalizing([
             $nextGame->id,
             $ifNecessaryWithMarket->id,
+        ]);
+});
+
+it('treats only the next regular season game date as market ready unless later games have odds', function () {
+    $this->travelTo('2026-06-06 12:00:00');
+
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $todayGame = MlbGame::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'game_date' => '2026-06-06',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $tomorrowWithoutMarket = MlbGame::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'home_team_id' => $away->id,
+        'away_team_id' => $home->id,
+        'game_date' => '2026-06-07',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $laterWithMarket = MlbGame::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'game_date' => '2026-06-08',
+        'status' => 'STATUS_SCHEDULED',
+        'odds_api_event_id' => 'odds-available',
+    ]);
+
+    $context = app(SeasonStageService::class)->context('mlb', 2026);
+
+    expect($context->stage)->toBe('regular_season')
+        ->and($context->stageGroup)->toBe('regular_season')
+        ->and($context->activeGameIds)->toEqualCanonicalizing([
+            $todayGame->id,
+            $tomorrowWithoutMarket->id,
+            $laterWithMarket->id,
+        ])
+        ->and($context->marketReadyGameIds)->toEqualCanonicalizing([
+            $todayGame->id,
+            $laterWithMarket->id,
         ]);
 });
 

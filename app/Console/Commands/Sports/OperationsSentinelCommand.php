@@ -112,7 +112,8 @@ class OperationsSentinelCommand extends Command
         }
 
         $dateWindows = app(SportsDateWindowService::class);
-        $fromDate = $dateWindows->parseLocalDate($this->option('from-date') ?: now()->subDay()->toDateString());
+        $pastStatusLookbackDays = (int) config('validation.thresholds.past_scheduled_game_status.lookback_days', 7);
+        $fromDate = $dateWindows->parseLocalDate($this->option('from-date') ?: now()->subDays($pastStatusLookbackDays)->toDateString());
         $toDate = $dateWindows->parseLocalDate($this->option('to-date') ?: now()->addDays(7)->toDateString());
         $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
         $statLookbackDays = max(1, (int) $this->option('stat-lookback-days'));

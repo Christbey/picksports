@@ -58,15 +58,15 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->assertExitCode(0);
 });
 
-it('defaults to a forward readiness window through the next seven days', function () {
+it('defaults to the stale-status repair lookback through the next seven days', function () {
     $this->travelTo('2026-06-01 08:00:00');
 
     $sync = m::mock(SyncGamesFromScoreboard::class);
 
-    foreach (range(0, 8) as $offset) {
+    foreach (range(0, 14) as $offset) {
         $sync->shouldReceive('execute')
             ->once()
-            ->with(now()->subDay()->addDays($offset)->format('Ymd'))
+            ->with(now()->subDays(7)->addDays($offset)->format('Ymd'))
             ->andReturn(1);
     }
 
@@ -80,7 +80,7 @@ it('defaults to a forward readiness window through the next seven days', functio
         '--skip-model-pipeline' => true,
         '--skip-validation' => true,
     ])
-        ->expectsOutput('Synced 9 NBA game row update(s).')
+        ->expectsOutput('Synced 15 NBA game row update(s).')
         ->assertExitCode(0);
 });
 

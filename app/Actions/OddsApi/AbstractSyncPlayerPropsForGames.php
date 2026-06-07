@@ -23,6 +23,19 @@ abstract class AbstractSyncPlayerPropsForGames
 
     public const MARKETS_BASKETBALL = ['player_points', 'player_rebounds', 'player_assists', 'player_threes'];
 
+    public const MARKETS_MLB = [
+        'batter_home_runs',
+        'batter_hits',
+        'batter_total_bases',
+        'batter_rbis',
+        'batter_runs_scored',
+        'batter_hits_runs_rbis',
+        'pitcher_strikeouts',
+        'pitcher_hits_allowed',
+        'pitcher_walks',
+        'pitcher_earned_runs',
+    ];
+
     public const MARKETS_STANDARD = ['player_points', 'player_rebounds', 'player_assists'];
 
     public function __construct(

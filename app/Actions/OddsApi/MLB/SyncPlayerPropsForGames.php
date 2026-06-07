@@ -13,7 +13,7 @@ class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
 
     protected const PRESEASON_SPORT_KEY = 'baseball_mlb_preseason';
 
-    protected const DEFAULT_MARKETS = self::MARKETS_STANDARD;
+    protected const DEFAULT_MARKETS = self::MARKETS_MLB;
 
     protected const GAME_MODEL_CLASS = Game::class;
 

@@ -1,6 +1,11 @@
 <?php
 
 use App\AI\Agents\PlayerPropNarrativeAgent;
+use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\Player as MlbPlayer;
+use App\Models\MLB\PlayerProp as MlbPlayerProp;
+use App\Models\MLB\PlayerStat as MlbPlayerStat;
+use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
 use App\Models\NBA\PlayerProp;
@@ -63,6 +68,65 @@ test('analyzes props for completed games', function () {
     expect($recommendations)->toHaveCount(1);
     expect($recommendations->first()['recommendation'])->toBe('Over');
     expect($recommendations->first()['market'])->toBe('Points');
+});
+
+test('analyzes mlb pitcher strikeout props', function () {
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'game_time' => '19:00:00',
+        'season' => 2026,
+    ]);
+
+    $player = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Logan Webb',
+        'first_name' => 'Logan',
+        'last_name' => 'Webb',
+    ]);
+
+    for ($i = 0; $i < 5; $i++) {
+        $historicalGame = MlbGame::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 1)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        MlbPlayerStat::factory()->pitching()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'strikeouts_pitched' => 8,
+        ]);
+    }
+
+    MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Logan Webb',
+        'market' => 'pitcher_strikeouts',
+        'line' => 1.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $analyzer = new PlayerPropAnalyzer;
+    $recommendations = $analyzer->analyzeProps('MLB', 3, '2026-06-07');
+    $prop = MlbPlayerProp::query()->first();
+
+    expect($prop?->recommended_side)->toBe('Over')
+        ->and($prop?->confidence_score)->not->toBeNull()
+        ->and($prop?->predicted_over_probability)->not->toBeNull()
+        ->and($prop?->market_over_probability)->not->toBeNull()
+        ->and($prop?->edge_probability)->not->toBeNull()
+        ->and($prop?->data_quality_score)->not->toBeNull();
 });
 
 test('analyzes props regardless of game status', function () {

@@ -411,6 +411,11 @@ class SportsPipelineRegistry
                 '--date' => $context['reference_date']->format('Y-m-d'),
                 '--season' => $this->seasonForSport($sport, $context),
             ]),
+            $this->step('Review operations with AI', 'operations:ai-review', [
+                '--sport' => $sport,
+                '--season' => $this->seasonForSport($sport, $context),
+                '--date' => $context['reference_date']->format('Y-m-d'),
+            ]),
         ];
     }
 

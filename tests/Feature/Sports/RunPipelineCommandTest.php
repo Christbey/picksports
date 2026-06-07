@@ -34,6 +34,7 @@ it('prints a dry run plan for explicit ai analysis mode', function () {
         ->expectsOutput('Pipeline: MLB [ai]')
         ->expectsOutput('Dry run only. No commands will be executed.')
         ->expectsOutputToContain('sports:ai-daily-predictions --sport=mlb --date=2026-05-23 --season=2026')
+        ->expectsOutputToContain('operations:ai-review --sport=mlb --season=2026 --date=2026-05-23')
         ->assertSuccessful();
 });
 
@@ -42,6 +43,7 @@ it('prints a dry run ai analysis plan for wnba', function () {
         ->expectsOutput('Pipeline: WNBA [ai]')
         ->expectsOutput('Dry run only. No commands will be executed.')
         ->expectsOutputToContain('sports:ai-daily-predictions --sport=wnba --date=2026-06-10 --season=2026')
+        ->expectsOutputToContain('operations:ai-review --sport=wnba --season=2026 --date=2026-06-10')
         ->assertSuccessful();
 });
 

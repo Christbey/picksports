@@ -649,6 +649,18 @@ class SportsAiContentService
             && trim((string) config('services.openai.api_key', '')) !== '';
     }
 
+    public function providerAvailabilityMessage(string $provider): ?string
+    {
+        if ($this->providerIsConfigured($provider)) {
+            return null;
+        }
+
+        return match ($provider) {
+            'openai' => 'OpenAI is not configured. Set OPENAI_API_KEY for the production environment and clear config cache.',
+            default => "AI provider [{$provider}] is not configured.",
+        };
+    }
+
     /**
      * @param  array<string, mixed>  $decoded
      * @return array{

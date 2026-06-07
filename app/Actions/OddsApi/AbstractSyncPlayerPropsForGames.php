@@ -158,6 +158,12 @@ abstract class AbstractSyncPlayerPropsForGames
 
     protected function matchEvent(array $event, string $oddsSportKey): ?Model
     {
+        $game = $this->matchExistingOddsEvent((string) $event['id'], $oddsSportKey);
+
+        if ($game) {
+            return $game;
+        }
+
         $gameDates = $this->candidateGameDates((string) $event['commence_time']);
         $gameModel = $this->gameModelClass();
 
@@ -190,6 +196,27 @@ abstract class AbstractSyncPlayerPropsForGames
         }
 
         return null;
+    }
+
+    protected function matchExistingOddsEvent(string $eventId, string $oddsSportKey): ?Model
+    {
+        if ($eventId === '') {
+            return null;
+        }
+
+        $gameModel = $this->gameModelClass();
+        $query = $gameModel::query()
+            ->where('odds_api_event_id', $eventId);
+
+        $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
+        if ($seasonType !== null) {
+            $query->whereIn('season_type', $this->resolveSeasonTypeCandidates($seasonType));
+        }
+
+        return $query
+            ->orderByDesc('odds_updated_at')
+            ->orderByDesc('game_date')
+            ->first();
     }
 
     /**

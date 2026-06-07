@@ -90,3 +90,86 @@ it('requests mlb player prop markets and stores matched props', function () {
         ->and($prop->market)->toBe('pitcher_strikeouts')
         ->and((float) $prop->line)->toBe(5.5);
 });
+
+it('stores props on the game already matched by odds event id', function () {
+    $homeTeam = Team::factory()->create([
+        'location' => 'San Francisco',
+        'name' => 'Giants',
+        'abbreviation' => 'SF',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'New York',
+        'name' => 'Yankees',
+        'abbreviation' => 'NYY',
+    ]);
+    $player = Player::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'first_name' => 'Logan',
+        'last_name' => 'Webb',
+        'full_name' => 'Logan Webb',
+    ]);
+
+    $duplicateGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'game_date' => '2026-06-07',
+        'game_time' => '19:05:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'short_name' => 'NYY @ SF',
+        'odds_api_event_id' => null,
+    ]);
+
+    $oddsLinkedGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'game_date' => '2026-06-07',
+        'game_time' => '19:05:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'short_name' => 'NYY @ SF',
+        'odds_api_event_id' => 'mlb-odds-event-1',
+        'odds_updated_at' => now(),
+    ]);
+
+    $event = [
+        'id' => 'mlb-odds-event-1',
+        'home_team' => 'San Francisco Giants',
+        'away_team' => 'New York Yankees',
+        'commence_time' => '2026-06-08T00:05:00Z',
+    ];
+
+    $oddsService = m::mock(OddsApiService::class);
+    $oddsService->shouldReceive('getOdds')
+        ->once()
+        ->with('baseball_mlb')
+        ->andReturn([$event]);
+    $oddsService->shouldNotReceive('fuzzyMatchTeams');
+    $oddsService->shouldReceive('getPlayerProps')
+        ->once()
+        ->with('mlb-odds-event-1', 'baseball_mlb', AbstractSyncPlayerPropsForGames::MARKETS_MLB)
+        ->andReturn([
+            'bookmakers' => [[
+                'key' => 'draftkings',
+                'markets' => [[
+                    'key' => 'pitcher_strikeouts',
+                    'outcomes' => [
+                        ['name' => 'Over', 'description' => 'Logan Webb', 'point' => 5.5, 'price' => -110],
+                        ['name' => 'Under', 'description' => 'Logan Webb', 'point' => 5.5, 'price' => -120],
+                    ],
+                ]],
+            ]],
+        ]);
+    $oddsService->shouldReceive('mappedEspnPlayerId')->once()->andReturn(null);
+    $oddsService->shouldReceive('mappedEspnPlayerName')->once()->andReturn(null);
+
+    $stored = (new SyncPlayerPropsForGames($oddsService, app(SportsViewCache::class)))
+        ->execute(null, 'baseball_mlb');
+
+    expect($stored)->toBe(1)
+        ->and(PlayerProp::query()->where('game_id', $oddsLinkedGame->id)->exists())->toBeTrue()
+        ->and(PlayerProp::query()->where('game_id', $duplicateGame->id)->exists())->toBeFalse()
+        ->and(PlayerProp::query()->value('player_id'))->toBe($player->id);
+});

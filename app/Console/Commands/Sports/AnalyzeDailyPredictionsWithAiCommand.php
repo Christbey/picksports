@@ -59,6 +59,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $endDate = $date->copy()->addDays(max(0, (int) $this->option('days-forward')));
         $limit = max(1, (int) $this->option('limit'));
         $asOfDate = now()->toDateString();
+        $requestedProvider = $this->option('provider') ? (string) $this->option('provider') : (string) config('ai.features.daily_prediction_analysis.provider', 'openai');
+        $requestedModel = $this->option('model') ? (string) $this->option('model') : (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
         $processed = 0;
         $skipped = 0;
 
@@ -66,6 +68,14 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
             $this->error('Missing sports_ai_prediction_analyses table. Run php artisan migrate before saving AI analyses.');
 
             return self::FAILURE;
+        }
+
+        $providerUnavailable = ! $this->option('dry-run')
+            ? $aiContentService->providerAvailabilityMessage($requestedProvider)
+            : null;
+
+        if ($providerUnavailable !== null) {
+            $this->warn($providerUnavailable);
         }
 
         foreach ($sports as $sport) {
@@ -103,8 +113,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 $startedAt = microtime(true);
                 $analysis = $aiContentService->generateDailyPredictionAnalysis(
                     $payload,
-                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
-                    model: $this->option('model') ? (string) $this->option('model') : null,
+                    provider: $requestedProvider,
+                    model: $requestedModel,
                 );
                 $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
 
@@ -117,19 +127,19 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
                 $dataFreshness = $aiContentService->generateDataFreshnessAssessment(
                     $payload,
-                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
-                    model: $this->option('model') ? (string) $this->option('model') : null,
+                    provider: $requestedProvider,
+                    model: $requestedModel,
                 );
                 $marketReadiness = $aiContentService->generateMarketReadinessAssessment(
                     $payload,
-                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
-                    model: $this->option('model') ? (string) $this->option('model') : null,
+                    provider: $requestedProvider,
+                    model: $requestedModel,
                 );
                 $modelAudit = $aiContentService->generateModelAuditAssessment(
                     $payload,
                     $analysis,
-                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
-                    model: $this->option('model') ? (string) $this->option('model') : null,
+                    provider: $requestedProvider,
+                    model: $requestedModel,
                 );
                 $publishingGuardrail = $aiContentService->generatePublishingGuardrailAssessment(
                     $payload,
@@ -137,8 +147,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     $dataFreshness,
                     $marketReadiness,
                     $modelAudit,
-                    provider: $this->option('provider') ? (string) $this->option('provider') : null,
-                    model: $this->option('model') ? (string) $this->option('model') : null,
+                    provider: $requestedProvider,
+                    model: $requestedModel,
                 );
 
                 $shadowAgents = [
@@ -149,7 +159,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 ];
                 $publishingDecision = $this->effectivePublishingDecision($analysis, $publishingGuardrail);
 
-                [$provider, $model] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
+                [$generatedProvider, $generatedModel] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
 
                 SportsAiPredictionAnalysis::query()->updateOrCreate(
                     [
@@ -161,8 +171,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     [
                         'game_id' => $gameId,
                         'game_date' => $gameDate,
-                        'provider' => $provider,
-                        'model' => $model,
+                        'provider' => $generatedProvider,
+                        'model' => $generatedModel,
                         'input_hash' => $inputHash,
                         'raw_payload' => $payload,
                         'recommendation' => $publishingDecision['recommendation'],

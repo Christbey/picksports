@@ -162,6 +162,38 @@ it('keeps local date windows stable for utc game times crossing midnight', funct
         ->and($window->utcEndDateTime())->toBe('2026-06-02 04:59:59');
 });
 
+it('does not include local dates beyond the active stage window', function () {
+    Config::set('sports.business_timezone', 'America/Chicago');
+    $this->travelTo('2026-06-07 09:00:00');
+
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $insideWindow = MlbGame::factory()->create([
+        'season' => 2026,
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'game_date' => '2026-06-14',
+        'game_time' => '23:30:00',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $outsideWindow = MlbGame::factory()->create([
+        'season' => 2026,
+        'home_team_id' => $away->id,
+        'away_team_id' => $home->id,
+        'game_date' => '2026-06-15',
+        'game_time' => '00:30:00',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $context = app(SeasonStageService::class)->context('mlb', 2026);
+
+    expect($context->visibleGameIds)->toContain($insideWindow->id)
+        ->and($context->visibleGameIds)->not->toContain($outsideWindow->id)
+        ->and($context->activeGameIds)->not->toContain($outsideWindow->id);
+});
+
 it('adds schedule window validation metadata for active game/date/week/month coverage', function () {
     $this->travelTo('2026-06-06 12:00:00');
 

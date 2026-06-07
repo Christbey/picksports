@@ -58,7 +58,7 @@ class SportsDailyPredictionAnalysisAgent implements Agent, HasStructuredOutput
                 'spread' => $schema->string()->nullable()->required(),
                 'total' => $schema->string()->nullable()->required(),
                 'props' => $schema->string()->nullable()->required(),
-            ])->required(),
+            ])->withoutAdditionalProperties()->required(),
         ];
     }
 }

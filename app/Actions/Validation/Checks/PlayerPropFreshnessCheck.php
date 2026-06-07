@@ -32,7 +32,9 @@ class PlayerPropFreshnessCheck implements ValidationCheck
 
         $games = DB::table($gamesTable)
             ->whereIn('id', $stageContext->marketReadyGameIds)
-            ->get(['id']);
+            ->get(['id', 'odds_api_event_id', 'odds_data', 'odds_updated_at'])
+            ->filter(fn (object $game): bool => $this->hasOddsAnchor($game))
+            ->values();
 
         $marketReadyGames = $games->count();
         $missingProps = 0;
@@ -89,7 +91,8 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
                 'active_games' => count($stageContext->activeGameIds),
-                'market_ready_games' => $marketReadyGames,
+                'market_ready_games' => count($stageContext->marketReadyGameIds),
+                'player_prop_expected_games' => $marketReadyGames,
                 'games_missing_player_props' => $missingProps,
                 'games_with_stale_player_props' => $staleProps,
                 'games_with_unscored_player_props' => $unscoredProps,
@@ -100,6 +103,21 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'stale_after_hours' => $staleHours,
             ],
         ];
+    }
+
+    private function hasOddsAnchor(object $game): bool
+    {
+        if (filled($game->odds_api_event_id ?? null) || filled($game->odds_updated_at ?? null)) {
+            return true;
+        }
+
+        $oddsData = $game->odds_data ?? null;
+        if (is_string($oddsData)) {
+            $decoded = json_decode($oddsData, true);
+            $oddsData = is_array($decoded) ? $decoded : null;
+        }
+
+        return is_array($oddsData) && ! empty($oddsData['bookmakers']);
     }
 
     private function hasRecommendationReadyProps(string $propsTable, int $gameId): bool

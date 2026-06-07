@@ -55,7 +55,9 @@ class SeasonStageService
 
         /** @var class-string<Model> $gameModel */
         $visibleGames = $this->visibleGameQuery($gameModel, $season, $activeWindow)
-            ->get($this->gameColumns($gameModel));
+            ->get($this->gameColumns($gameModel))
+            ->filter(fn (Model $game): bool => $this->gameBelongsToWindow($game, $activeWindow))
+            ->values();
         $activeGames = $visibleGames
             ->filter(fn (Model $game): bool => in_array((string) $game->getAttribute('status'), self::ACTIVE_STATUSES, true))
             ->values();
@@ -174,6 +176,18 @@ class SeasonStageService
         }
 
         return $query;
+    }
+
+    private function gameBelongsToWindow(Model $game, DateWindow $window): bool
+    {
+        $displayDate = $this->dates->gameDateForDisplay(
+            $game->getAttribute('game_date'),
+            $game->getAttribute('game_time'),
+        );
+
+        return $displayDate !== null
+            && $displayDate >= $window->localStartDate()
+            && $displayDate <= $window->localEndDate();
     }
 
     /**

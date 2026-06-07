@@ -55,7 +55,9 @@ class PastScheduledGameStatusCheck implements ValidationCheck
 
         $staleGames = $staleQuery
             ->orderBy('game_date')
-            ->get(['id', 'status', 'game_date', 'game_time', 'short_name', 'name', 'updated_at']);
+            ->get(['id', 'status', 'game_date', 'game_time', 'short_name', 'name', 'updated_at'])
+            ->filter(fn (object $game): bool => $this->isPastGraceCutoff($dates, $game, $cutoff))
+            ->values();
 
         $staleCount = $staleGames->count();
         $status = $staleCount > 0 ? 'failing' : 'passing';
@@ -95,5 +97,16 @@ class PastScheduledGameStatusCheck implements ValidationCheck
                 'sample_game_ids' => $staleGames->pluck('id')->take(8)->map(fn ($id): int => (int) $id)->values()->all(),
             ],
         ];
+    }
+
+    private function isPastGraceCutoff(SportsDateWindowService $dates, object $game, CarbonImmutable $cutoff): bool
+    {
+        $gameDateTime = $dates->gameDateTimeUtc($game->game_date ?? null, $game->game_time ?? null);
+
+        if (! $gameDateTime) {
+            return true;
+        }
+
+        return $gameDateTime->lte($cutoff->utc());
     }
 }

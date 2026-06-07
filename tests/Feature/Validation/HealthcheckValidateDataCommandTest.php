@@ -248,6 +248,18 @@ test('healthcheck validate data warns when fresh player props have no recommenda
         'season' => (int) now()->year,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => now()->copy()->addDay(),
+        'odds_api_event_id' => 'odds-event-1',
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'draftkings',
+                'markets' => [
+                    ['key' => 'h2h'],
+                    ['key' => 'spreads'],
+                    ['key' => 'totals'],
+                ],
+            ]],
+        ],
     ]);
 
     DB::table('nba_player_props')->insert([
@@ -344,6 +356,36 @@ test('healthcheck validate data flags past mlb games stuck as scheduled', functi
         ->and(data_get($finding->facts, 'stale_games'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
         ->and(data_get($finding->facts, 'sample_games.0.matchup'))->toBe('NYM @ SF');
+});
+
+test('healthcheck validate data does not flag same day future games as past scheduled', function () {
+    $this->travelTo('2026-06-07 09:00:00');
+
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'game_time' => '19:10:00',
+        'short_name' => 'NYM @ SF',
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'mlb'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_past_scheduled_game_status')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and(data_get($finding->facts, 'sample_game_ids'))->not->toContain($game->id);
 });
 
 test('healthcheck validate data summary is scoped to the current validation run', function () {

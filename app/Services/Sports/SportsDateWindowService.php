@@ -98,7 +98,7 @@ class SportsDateWindowService
         }
 
         if (is_string($gameTime) && preg_match('/^\d{1,2}:\d{2}/', $gameTime) === 1) {
-            return CarbonImmutable::parse($base->toDateString().' '.$gameTime, 'UTC');
+            return CarbonImmutable::parse($base->toDateString().' '.$gameTime, $this->timezone())->utc();
         }
 
         return $base->setTimezone('UTC');

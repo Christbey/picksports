@@ -2,6 +2,7 @@
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
+use App\Actions\Validation\SportValidator;
 use App\Services\ESPN\NBA\EspnService;
 use Mockery as m;
 
@@ -25,6 +26,7 @@ it('runs the configured operations sentinel for every supported sport', function
         '--season' => 2026,
         '--skip-sync-pipeline' => true,
         '--skip-stats' => true,
+        '--skip-queue-drain' => true,
         '--skip-model-pipeline' => true,
         '--skip-validation' => true,
     ])
@@ -53,6 +55,8 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->expectsOutputToContain('--skip-sync-pipeline')
         ->expectsOutputToContain('--skip-stats')
         ->expectsOutputToContain('--skip-model-pipeline')
+        ->expectsOutputToContain('--skip-queue-drain')
+        ->expectsOutputToContain('--skip-ai-review')
         ->expectsOutputToContain('--stat-lookback-days')
         ->expectsOutputToContain('--stat-limit')
         ->assertExitCode(0);
@@ -77,11 +81,48 @@ it('defaults to the stale-status repair lookback through the next seven days', f
         '--season' => 2026,
         '--skip-sync-pipeline' => true,
         '--skip-stats' => true,
+        '--skip-queue-drain' => true,
         '--skip-model-pipeline' => true,
         '--skip-validation' => true,
     ])
         ->expectsOutput('Synced 15 NBA game row update(s).')
         ->assertExitCode(0);
+});
+
+it('prints the operations ai review even when final validation fails', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $sync = m::mock(SyncGamesFromScoreboard::class);
+    $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(1);
+    $this->app->instance(SyncGamesFromScoreboard::class, $sync);
+
+    $validator = m::mock(SportValidator::class);
+    $validator->shouldReceive('validate')
+        ->once()
+        ->with('nba')
+        ->andReturn([[
+            'check_type' => 'validation_stub_failure',
+            'status' => 'failing',
+            'message' => 'Stub validation failed.',
+            'metadata' => [],
+            'recommended_action' => 'repair:nba',
+        ]]);
+    $this->app->instance(SportValidator::class, $validator);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'nba',
+        '--from-date' => '2026-06-01',
+        '--to-date' => '2026-06-01',
+        '--season' => 2026,
+        '--skip-sync-pipeline' => true,
+        '--skip-stats' => true,
+        '--skip-queue-drain' => true,
+        '--skip-model-pipeline' => true,
+    ])
+        ->expectsOutput('Running NBA operations AI review...')
+        ->expectsOutput('NBA Operations AI Review')
+        ->expectsOutputToContain('Status: blocked')
+        ->assertExitCode(1);
 });
 
 it('binds every sentinel scoreboard action to a sport-specific espn service', function (string $actionClass, string $expectedServiceClass) {

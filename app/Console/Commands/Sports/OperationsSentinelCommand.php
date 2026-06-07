@@ -27,6 +27,8 @@ class OperationsSentinelCommand extends Command
         {--skip-model-pipeline : Skip grading, Elo, team metrics, and prediction generation}
         {--stat-lookback-days=3 : Days back to refresh player/team stats from game details}
         {--stat-limit=100 : Limit game-detail stat refresh dispatches per sentinel run}
+        {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
+        {--skip-ai-review : Skip the operations AI review after validation}
         {--skip-validation : Skip the final validation run}';
 
     protected $description = 'Run a sport operations sentinel without duplicating sport-specific repair logic';
@@ -115,6 +117,7 @@ class OperationsSentinelCommand extends Command
         $pastStatusLookbackDays = (int) config('validation.thresholds.past_scheduled_game_status.lookback_days', 7);
         $fromDate = $dateWindows->parseLocalDate($this->option('from-date') ?: now()->subDays($pastStatusLookbackDays)->toDateString());
         $toDate = $dateWindows->parseLocalDate($this->option('to-date') ?: now()->addDays(7)->toDateString());
+        $referenceDate = $dateWindows->parseLocalDate(now()->toDateString());
         $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
         $statLookbackDays = max(1, (int) $this->option('stat-lookback-days'));
         $statLimit = max(0, (int) $this->option('stat-limit'));
@@ -133,7 +136,7 @@ class OperationsSentinelCommand extends Command
             $dateWindows->timezone(),
         ));
 
-        $stageContext = app(SeasonStageService::class)->context($sport, $season, $fromDate);
+        $stageContext = app(SeasonStageService::class)->context($sport, $season, $referenceDate);
         $this->line(sprintf(
             'Season stage: %s (%s); active window %s through %s.',
             $stageContext->stage,
@@ -170,11 +173,15 @@ class OperationsSentinelCommand extends Command
         }
 
         if (! $this->option('skip-sync-pipeline')) {
-            $this->runSyncDependencyPipeline($registry, $sport, $season, $fromDate);
+            $this->runSyncDependencyPipeline($registry, $sport, $season, $referenceDate);
+        }
+
+        if (! $this->option('skip-queue-drain')) {
+            $this->drainQueuedSyncJobs($sport);
         }
 
         if (! $this->option('skip-model-pipeline')) {
-            $this->runModelPipeline($registry, $sport, $season, $fromDate);
+            $this->runModelPipeline($registry, $sport, $season, $referenceDate);
         }
 
         if ($this->option('skip-validation')) {
@@ -183,9 +190,20 @@ class OperationsSentinelCommand extends Command
 
         $this->info('Running '.strtoupper($sport).' validation after sentinel repair pass...');
 
-        return $this->call('healthcheck:validate-data', [
+        $validationExitCode = $this->call('healthcheck:validate-data', [
             '--sport' => $sport,
         ]);
+
+        if (! $this->option('skip-ai-review')) {
+            $this->info('Running '.strtoupper($sport).' operations AI review...');
+            $this->call('operations:ai-review', [
+                '--sport' => $sport,
+                '--season' => $season,
+                '--date' => $referenceDate->toDateString(),
+            ]);
+        }
+
+        return $validationExitCode;
     }
 
     /**
@@ -255,6 +273,18 @@ class OperationsSentinelCommand extends Command
 
             $this->callRegistryStep($step);
         }
+    }
+
+    private function drainQueuedSyncJobs(string $sport): void
+    {
+        $this->info('Draining queued '.strtoupper($sport).' sync jobs before model generation and validation...');
+
+        $this->callAndRecord('queue:work', [
+            '--stop-when-empty' => true,
+            '--queue' => 'default',
+            '--timeout' => 120,
+        ], $sport, 'operations-sentinel');
+        $this->output->write(Artisan::output());
     }
 
     /**

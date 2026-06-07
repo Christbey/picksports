@@ -76,16 +76,21 @@ class OddsCompletenessCheck implements ValidationCheck
         }
 
         $problemGames = count(array_unique($flaggedGameIds));
-        $problemPct = $totalGames > 0 ? $problemGames / $totalGames : 0.0;
+        $blockingGameIds = array_unique(array_merge($missingOddsGameIds, $staleOddsGameIds));
+        $blockingProblemGames = count($blockingGameIds);
+        $blockingProblemPct = $totalGames > 0 ? $blockingProblemGames / $totalGames : 0.0;
         $warnPct = (float) config('validation.thresholds.odds_completeness.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.odds_completeness.problem_fail_pct', 0.20);
 
         $status = 'passing';
         $message = "Odds coverage looks healthy for {$totalGames} market-ready active games.";
 
-        if ($problemGames > 0) {
-            $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$problemGames}/{$totalGames} market-ready active games have missing, incomplete, or stale odds data.";
+        if ($blockingProblemGames > 0) {
+            $status = $blockingProblemPct >= $failPct ? 'failing' : ($blockingProblemPct >= $warnPct ? 'warning' : 'passing');
+            $message = "{$blockingProblemGames}/{$totalGames} market-ready active games have missing or stale odds data.";
+        } elseif ($problemGames > 0) {
+            $status = 'warning';
+            $message = "{$problemGames}/{$totalGames} market-ready active games have odds but are missing one or more secondary markets.";
         }
 
         return [
@@ -99,6 +104,7 @@ class OddsCompletenessCheck implements ValidationCheck
                 'season_stage' => $stageContext->toArray(),
                 'active_games' => count($stageContext->activeGameIds),
                 'market_ready_games' => $totalGames,
+                'blocking_odds_problem_games' => $blockingProblemGames,
                 'games_missing_odds' => $missingOddsCount,
                 'games_with_missing_required_markets' => $missingRequiredMarketsCount,
                 'games_with_stale_odds' => $staleOddsCount,

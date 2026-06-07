@@ -58,6 +58,7 @@ class WeatherCompletenessCheck implements ValidationCheck
         $unknownRoof = 0;
         $flaggedGameIds = [];
         $blockingFlaggedGameIds = [];
+        $blockingMissingWeatherGameIds = [];
         $missingWeatherGameIds = [];
         $staleWeatherGameIds = [];
         $unknownRoofGameIds = [];
@@ -90,6 +91,10 @@ class WeatherCompletenessCheck implements ValidationCheck
 
                 if (in_array((int) $game->id, $marketReadyGameIds, true)) {
                     $blockingFlaggedGameIds[] = (int) $game->id;
+
+                    if (! $game->weather_id) {
+                        $blockingMissingWeatherGameIds[] = (int) $game->id;
+                    }
                 }
             }
         }
@@ -97,13 +102,17 @@ class WeatherCompletenessCheck implements ValidationCheck
         $problemGames = count(array_unique($flaggedGameIds));
         $problemPct = $totalGames > 0 ? $problemGames / $totalGames : 0.0;
         $blockingProblemGames = count(array_unique($blockingFlaggedGameIds));
-        $blockingProblemPct = count($marketReadyGameIds) > 0 ? $blockingProblemGames / count($marketReadyGameIds) : 0.0;
+        $blockingMissingWeatherGames = count(array_unique($blockingMissingWeatherGameIds));
+        $blockingProblemPct = count($marketReadyGameIds) > 0 ? $blockingMissingWeatherGames / count($marketReadyGameIds) : 0.0;
         $status = 'passing';
         $message = "Weather coverage looks healthy for {$totalGames} upcoming games.";
 
-        if ($blockingProblemGames > 0) {
+        if ($blockingMissingWeatherGames > 0) {
             $status = $blockingProblemPct >= $failPct ? 'failing' : ($blockingProblemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$blockingProblemGames}/".count($marketReadyGameIds).' market-ready active games have missing, stale, or incomplete weather data.';
+            $message = "{$blockingMissingWeatherGames}/".count($marketReadyGameIds).' market-ready active games are missing weather data.';
+        } elseif ($blockingProblemGames > 0) {
+            $status = 'warning';
+            $message = "{$blockingProblemGames}/".count($marketReadyGameIds).' market-ready active games have stale or incomplete weather context.';
         } elseif ($problemGames > 0) {
             $status = $problemPct >= $warnPct ? 'warning' : 'passing';
             $message = "{$problemGames}/{$totalGames} upcoming games have missing, stale, or incomplete weather data.";
@@ -120,11 +129,13 @@ class WeatherCompletenessCheck implements ValidationCheck
                 'upcoming_games' => $totalGames,
                 'market_ready_games' => count($marketReadyGameIds),
                 'market_ready_weather_problem_games' => $blockingProblemGames,
+                'market_ready_missing_weather_games' => $blockingMissingWeatherGames,
                 'games_missing_weather' => $missingWeather,
                 'games_with_stale_weather' => $staleWeather,
                 'games_with_unknown_roof_status' => $unknownRoof,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
                 'sample_market_ready_weather_problem_game_ids' => array_slice(array_values(array_unique($blockingFlaggedGameIds)), 0, 5),
+                'sample_market_ready_missing_weather_game_ids' => array_slice(array_values(array_unique($blockingMissingWeatherGameIds)), 0, 5),
                 'sample_missing_weather_game_ids' => array_slice(array_values(array_unique($missingWeatherGameIds)), 0, 5),
                 'sample_stale_weather_game_ids' => array_slice(array_values(array_unique($staleWeatherGameIds)), 0, 5),
                 'sample_unknown_roof_game_ids' => array_slice(array_values(array_unique($unknownRoofGameIds)), 0, 5),

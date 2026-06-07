@@ -85,7 +85,12 @@ abstract class AbstractSyncGameDetailsCommand extends Command
     protected function dispatchGameDetailsSync(string $eventId): void
     {
         $job = $this->gameDetailsJobClass();
-        $job::dispatch($eventId);
+        $dispatch = $job::dispatch($eventId);
+        $queue = $this->option('queue');
+
+        if (is_string($queue) && $queue !== '') {
+            $dispatch->onQueue($queue);
+        }
     }
 
     protected function buildSignature(): string
@@ -95,7 +100,8 @@ abstract class AbstractSyncGameDetailsCommand extends Command
             {--refresh-existing : Include games that already have player stats so stale box scores can be refreshed}
             {--lookback-days= : Limit sweep mode to games on or after this many days ago}
             {--limit=0 : Limit number of games dispatched in sweep mode}
-            {--latest : Dispatch newest matching games first in sweep mode}",
+            {--latest : Dispatch newest matching games first in sweep mode}
+            {--queue= : Queue name for dispatched game-detail jobs}",
             $this->commandName()
         );
     }

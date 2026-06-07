@@ -30,6 +30,7 @@ class OperationsSentinelCommand extends Command
         {--stat-lookback-days=3 : Days back to refresh player/team stats from game details}
         {--stat-limit=100 : Limit game-detail stat refresh dispatches per sentinel run}
         {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
+        {--queue-drain-queue=sync : Queue to use for sentinel-dispatched sync jobs}
         {--queue-drain-max-time=600 : Max seconds to drain queued sync jobs before continuing}
         {--skip-ai-review : Skip the operations AI review after validation}
         {--skip-validation : Skip the final validation run}';
@@ -252,6 +253,7 @@ class OperationsSentinelCommand extends Command
             '--lookback-days' => $lookbackDays,
             '--latest' => true,
             '--limit' => $limit,
+            '--queue' => $this->queueDrainQueue(),
         ], $sport, 'operations-sentinel');
         $this->output->write(Artisan::output());
     }
@@ -281,37 +283,45 @@ class OperationsSentinelCommand extends Command
     private function drainQueuedSyncJobs(string $sport): void
     {
         $maxTime = max(60, (int) $this->option('queue-drain-max-time'));
-        $pendingJobs = $this->pendingDefaultQueueJobs();
+        $queue = $this->queueDrainQueue();
+        $pendingJobs = $this->pendingQueueJobs($queue);
 
         $this->info(sprintf(
             'Draining queued %s sync jobs before model generation and validation%s (max %d seconds)...',
             strtoupper($sport),
-            $pendingJobs === null ? '' : " ({$pendingJobs} pending default job(s))",
+            $pendingJobs === null ? " on [{$queue}]" : " ({$pendingJobs} pending [{$queue}] job(s))",
             $maxTime,
         ));
 
         $this->callAndRecord('queue:work', [
             '--stop-when-empty' => true,
-            '--queue' => 'default',
+            '--queue' => $queue,
             '--timeout' => 120,
             '--max-time' => $maxTime,
         ], $sport, 'operations-sentinel');
         $this->output->write(Artisan::output());
 
-        $remainingJobs = $this->pendingDefaultQueueJobs();
+        $remainingJobs = $this->pendingQueueJobs($queue);
         if ($remainingJobs !== null && $remainingJobs > 0) {
-            $this->warn("Queue drain stopped with {$remainingJobs} default job(s) still pending.");
+            $this->warn("Queue drain stopped with {$remainingJobs} [{$queue}] job(s) still pending.");
         }
     }
 
-    private function pendingDefaultQueueJobs(): ?int
+    private function queueDrainQueue(): string
+    {
+        $queue = $this->option('queue-drain-queue');
+
+        return is_string($queue) && trim($queue) !== '' ? trim($queue) : 'sync';
+    }
+
+    private function pendingQueueJobs(string $queue): ?int
     {
         if (! Schema::hasTable('jobs')) {
             return null;
         }
 
         return (int) DB::table('jobs')
-            ->where('queue', 'default')
+            ->where('queue', $queue)
             ->count();
     }
 

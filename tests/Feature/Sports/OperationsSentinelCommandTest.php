@@ -56,6 +56,7 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->expectsOutputToContain('--skip-stats')
         ->expectsOutputToContain('--skip-model-pipeline')
         ->expectsOutputToContain('--skip-queue-drain')
+        ->expectsOutputToContain('--queue-drain-queue')
         ->expectsOutputToContain('--queue-drain-max-time')
         ->expectsOutputToContain('--skip-ai-review')
         ->expectsOutputToContain('--stat-lookback-days')
@@ -133,7 +134,7 @@ it('passes a bounded max time to the queue drain worker', function () {
     $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(1);
     $this->app->instance(SyncGamesFromScoreboard::class, $sync);
 
-    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --skip-sync-pipeline --skip-stats --queue-drain-max-time=60 --skip-model-pipeline --skip-validation')
+    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --skip-sync-pipeline --skip-stats --queue-drain-queue=sync --queue-drain-max-time=60 --skip-model-pipeline --skip-validation')
         ->expectsOutputToContain('Draining queued NBA sync jobs before model generation and validation')
         ->assertExitCode(0);
 });

@@ -176,6 +176,28 @@ it('dispatches final mlb games missing player stats even when linescores exist',
     );
 });
 
+it('can dispatch mlb game detail jobs to a requested queue', function () {
+    Queue::fake();
+
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'espn_event_id' => '401999201',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    artisan('espn:sync-mlb-game-details --queue=sync')->assertSuccessful();
+
+    Queue::assertPushedOn(
+        'sync',
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $game->espn_event_id
+    );
+});
+
 it('can refresh final mlb games that already have player stats', function () {
     Queue::fake();
 

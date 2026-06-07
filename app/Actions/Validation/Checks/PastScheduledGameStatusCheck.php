@@ -5,6 +5,7 @@ namespace App\Actions\Validation\Checks;
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -24,6 +25,7 @@ class PastScheduledGameStatusCheck implements ValidationCheck
     public function run(string $sport, array $profile): ?array
     {
         $gamesTable = $profile['tables']['games'] ?? null;
+        $gameModel = $profile['models']['game'] ?? null;
         if (! is_string($gamesTable) || ! Schema::hasTable($gamesTable)) {
             return null;
         }
@@ -34,10 +36,24 @@ class PastScheduledGameStatusCheck implements ValidationCheck
         $cutoff = CarbonImmutable::now($dates->timezone())->subHours($graceHours);
         $window = $dates->forRange($cutoff->subDays($lookbackDays), $cutoff);
 
-        $staleGames = DB::table($gamesTable)
+        $staleQuery = DB::table($gamesTable)
             ->whereIn('status', self::STALE_STATUSES)
             ->whereDate('game_date', '>=', $window->localStartDate())
-            ->whereDate('game_date', '<=', $window->localEndDate())
+            ->whereDate('game_date', '<=', $window->localEndDate());
+
+        if (is_string($gameModel) && is_subclass_of($gameModel, Model::class) && method_exists($gameModel, 'scopeWithoutCompletedPlayoffSeriesPlaceholders')) {
+            /** @var class-string<Model> $gameModel */
+            $visibleGameIds = $gameModel::query()
+                ->withoutCompletedPlayoffSeriesPlaceholders()
+                ->whereIn('status', self::STALE_STATUSES)
+                ->whereDate('game_date', '>=', $window->localStartDate())
+                ->whereDate('game_date', '<=', $window->localEndDate())
+                ->pluck('id');
+
+            $staleQuery->whereIn('id', $visibleGameIds);
+        }
+
+        $staleGames = $staleQuery
             ->orderBy('game_date')
             ->get(['id', 'status', 'game_date', 'game_time', 'short_name', 'name', 'updated_at']);
 

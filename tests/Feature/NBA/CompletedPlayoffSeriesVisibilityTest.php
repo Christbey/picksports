@@ -3,6 +3,7 @@
 use App\Models\NBA\Game;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
+use App\Models\ValidationFinding;
 
 function createNbaPlayoffGame(Team $home, Team $away, array $overrides = []): Game
 {
@@ -132,6 +133,67 @@ it('does not pass ended-series placeholders through the NBA game detail API', fu
 
     $this->getJson("/api/v1/nba/games/{$deadPlaceholder->id}")
         ->assertNotFound();
+});
+
+it('does not fail past scheduled validation for hidden ended-series placeholders', function () {
+    $this->travelTo(now()->setTime(12, 0));
+
+    $home = Team::factory()->create(['abbreviation' => 'BOS']);
+    $away = Team::factory()->create(['abbreviation' => 'MIA']);
+
+    for ($game = 1; $game <= 4; $game++) {
+        createNbaPlayoffGame($home, $away, [
+            'game_date' => now()->subDays(6 - $game)->toDateString(),
+            'home_score' => 112,
+            'away_score' => 101,
+        ]);
+    }
+
+    createNbaPlayoffGame($away, $home, [
+        'game_date' => now()->subDay()->toDateString(),
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba']);
+
+    $finding = ValidationFinding::query()
+        ->where('check_type', 'validation_past_scheduled_game_status')
+        ->latest('id')
+        ->first();
+
+    expect($finding?->status)->toBe('passing');
+});
+
+it('still fails past scheduled validation for visible stale nba games', function () {
+    $this->travelTo(now()->setTime(12, 0));
+
+    $home = Team::factory()->create(['abbreviation' => 'NY']);
+    $away = Team::factory()->create(['abbreviation' => 'SA']);
+
+    createNbaPlayoffGame($home, $away, [
+        'game_date' => now()->subDays(2)->toDateString(),
+        'home_score' => 111,
+        'away_score' => 106,
+    ]);
+
+    createNbaPlayoffGame($away, $home, [
+        'game_date' => now()->subDay()->toDateString(),
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $finding = ValidationFinding::query()
+        ->where('check_type', 'validation_past_scheduled_game_status')
+        ->latest('id')
+        ->first();
+
+    expect($finding?->status)->toBe('failing');
 });
 
 it('limits NBA season prediction generation to the near-term finals window while finals are active', function () {

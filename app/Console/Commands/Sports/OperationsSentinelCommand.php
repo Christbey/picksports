@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Services\CommandHeartbeatService;
 use App\Services\ESPN\NBA\EspnService;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
@@ -150,6 +151,18 @@ class OperationsSentinelCommand extends Command
         }
 
         $this->info('Synced '.$synced.' '.strtoupper($sport).' game row update(s).');
+        app(CommandHeartbeatService::class)->recordSuccess(
+            $this->renderCommand("espn:sync-{$sport}-games-scoreboard", [
+                '--from-date' => $fromDate->toDateString(),
+                '--to-date' => $toDate->toDateString(),
+            ]),
+            $sport,
+            'operations-sentinel',
+            [
+                'parent_command' => 'sports:operations-sentinel',
+                'synced_rows' => $synced,
+            ],
+        );
 
         if (! $this->option('skip-stats')) {
             $this->refreshStats($sport, $statLookbackDays, $statLimit);
@@ -212,12 +225,13 @@ class OperationsSentinelCommand extends Command
             $lookbackDays,
         ));
 
-        $this->call($gameDetailsCommand, [
+        $this->callAndRecord($gameDetailsCommand, [
             '--refresh-existing' => true,
             '--lookback-days' => $lookbackDays,
             '--latest' => true,
             '--limit' => $limit,
-        ]);
+        ], $sport, 'operations-sentinel');
+        $this->output->write(Artisan::output());
     }
 
     private function runModelPipeline(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): void
@@ -259,8 +273,71 @@ class OperationsSentinelCommand extends Command
     private function callRegistryStep(array $step): void
     {
         $this->info("Running {$step['label']}...");
-        Artisan::call($step['command'], $step['arguments']);
+        $this->callAndRecord($step['command'], $step['arguments'], null, 'operations-sentinel');
         $this->output->write(Artisan::output());
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function callAndRecord(string $command, array $arguments, ?string $sport = null, string $source = 'operations-sentinel'): int
+    {
+        $heartbeat = app(CommandHeartbeatService::class);
+        $renderedCommand = $this->renderCommand($command, $arguments);
+
+        try {
+            $exitCode = Artisan::call($command, $arguments);
+
+            if ($exitCode === self::SUCCESS) {
+                $heartbeat->recordSuccess($renderedCommand, $sport, $source, [
+                    'parent_command' => 'sports:operations-sentinel',
+                    'arguments' => $arguments,
+                ]);
+            } else {
+                $heartbeat->recordFailure($renderedCommand, $sport, $source, 'Command exited with code '.$exitCode, [
+                    'parent_command' => 'sports:operations-sentinel',
+                    'arguments' => $arguments,
+                ]);
+            }
+
+            return $exitCode;
+        } catch (\Throwable $exception) {
+            $heartbeat->recordFailure($renderedCommand, $sport, $source, $exception->getMessage(), [
+                'parent_command' => 'sports:operations-sentinel',
+                'arguments' => $arguments,
+            ]);
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $arguments
+     */
+    private function renderCommand(string $command, array $arguments): string
+    {
+        $renderedArguments = collect($arguments)
+            ->flatMap(function (mixed $value, string $key): array {
+                if (is_bool($value)) {
+                    return $value ? [$key] : [];
+                }
+
+                if (is_array($value)) {
+                    return collect($value)
+                        ->map(fn (mixed $item): string => $key.'='.$item)
+                        ->all();
+                }
+
+                if ($value === null || $value === '') {
+                    return [];
+                }
+
+                return [$key.'='.$value];
+            })
+            ->values()
+            ->all();
+
+        return trim($command.' '.implode(' ', $renderedArguments));
     }
 
     private function isAlreadyHandledSyncStep(string $label): bool

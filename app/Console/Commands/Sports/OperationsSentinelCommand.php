@@ -12,6 +12,8 @@ use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class OperationsSentinelCommand extends Command
 {
@@ -28,6 +30,7 @@ class OperationsSentinelCommand extends Command
         {--stat-lookback-days=3 : Days back to refresh player/team stats from game details}
         {--stat-limit=100 : Limit game-detail stat refresh dispatches per sentinel run}
         {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
+        {--queue-drain-max-time=600 : Max seconds to drain queued sync jobs before continuing}
         {--skip-ai-review : Skip the operations AI review after validation}
         {--skip-validation : Skip the final validation run}';
 
@@ -277,14 +280,39 @@ class OperationsSentinelCommand extends Command
 
     private function drainQueuedSyncJobs(string $sport): void
     {
-        $this->info('Draining queued '.strtoupper($sport).' sync jobs before model generation and validation...');
+        $maxTime = max(60, (int) $this->option('queue-drain-max-time'));
+        $pendingJobs = $this->pendingDefaultQueueJobs();
+
+        $this->info(sprintf(
+            'Draining queued %s sync jobs before model generation and validation%s (max %d seconds)...',
+            strtoupper($sport),
+            $pendingJobs === null ? '' : " ({$pendingJobs} pending default job(s))",
+            $maxTime,
+        ));
 
         $this->callAndRecord('queue:work', [
             '--stop-when-empty' => true,
             '--queue' => 'default',
             '--timeout' => 120,
+            '--max-time' => $maxTime,
         ], $sport, 'operations-sentinel');
         $this->output->write(Artisan::output());
+
+        $remainingJobs = $this->pendingDefaultQueueJobs();
+        if ($remainingJobs !== null && $remainingJobs > 0) {
+            $this->warn("Queue drain stopped with {$remainingJobs} default job(s) still pending.");
+        }
+    }
+
+    private function pendingDefaultQueueJobs(): ?int
+    {
+        if (! Schema::hasTable('jobs')) {
+            return null;
+        }
+
+        return (int) DB::table('jobs')
+            ->where('queue', 'default')
+            ->count();
     }
 
     /**

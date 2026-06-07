@@ -81,7 +81,7 @@ class HealthcheckValidateData extends Command
         $this->persistAiSummary($run);
         $this->validationRegressionAlertService->maybeNotify($run);
 
-        return $this->displayResults();
+        return $this->displayResults($run);
     }
 
     protected function recordCheck(
@@ -128,14 +128,12 @@ class HealthcheckValidateData extends Command
         $this->line("  [{$checkType}] <fg={$color}>{$status}</>: {$message}");
     }
 
-    protected function displayResults(): int
+    protected function displayResults(ValidationRun $run): int
     {
         $this->newLine();
         $this->info('Validation Summary:');
 
-        $results = Healthcheck::query()
-            ->where('checked_at', '>=', now()->subMinutes(10))
-            ->where('check_type', 'like', 'validation_%')
+        $results = $run->findings()
             ->select('status', DB::raw('count(*) as count'))
             ->groupBy('status')
             ->get();
@@ -151,11 +149,7 @@ class HealthcheckValidateData extends Command
             $this->line("<fg={$color}>{$result->status}: {$result->count} checks</>");
         }
 
-        $failing = Healthcheck::query()
-            ->where('checked_at', '>=', now()->subMinutes(10))
-            ->where('check_type', 'like', 'validation_%')
-            ->where('status', 'failing')
-            ->count();
+        $failing = $run->findings()->where('status', 'failing')->count();
 
         return $failing > 0 ? Command::FAILURE : Command::SUCCESS;
     }

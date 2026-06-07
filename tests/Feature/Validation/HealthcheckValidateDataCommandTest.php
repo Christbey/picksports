@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Validation\SportValidator;
 use App\AI\Agents\ValidationReviewSummaryAgent;
 use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
@@ -274,7 +275,7 @@ test('healthcheck validate data flags active games with unscored player props', 
 
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('failing')
-        ->and($finding->recommended_action)->toBe('nba:sync-player-props')
+        ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba')
         ->and(data_get($finding->facts, 'games_with_unscored_player_props'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
 });
@@ -342,6 +343,36 @@ test('healthcheck validate data flags past mlb games stuck as scheduled', functi
         ->and(data_get($finding->facts, 'stale_games'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
         ->and(data_get($finding->facts, 'sample_games.0.matchup'))->toBe('NYM @ SF');
+});
+
+test('healthcheck validate data summary is scoped to the current validation run', function () {
+    Healthcheck::query()->create([
+        'sport' => 'nba',
+        'check_type' => 'validation_past_scheduled_game_status',
+        'status' => 'failing',
+        'message' => 'Old stale game failure from a previous run.',
+        'metadata' => [],
+        'checked_at' => now()->subMinute(),
+    ]);
+
+    $validator = Mockery::mock(SportValidator::class);
+    $validator->shouldReceive('validate')
+        ->once()
+        ->with('nba')
+        ->andReturn([[
+            'check_type' => 'validation_stub_check',
+            'status' => 'passing',
+            'message' => 'Current run is clean.',
+            'metadata' => [],
+        ]]);
+
+    $this->app->instance(SportValidator::class, $validator);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->expectsOutput('Validation Summary:')
+        ->expectsOutputToContain('passing:')
+        ->doesntExpectOutputToContain('failing:')
+        ->assertExitCode(0);
 });
 
 test('healthcheck validate data flags ungraded final mlb predictions', function () {

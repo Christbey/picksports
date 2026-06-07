@@ -69,13 +69,16 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         }
 
         $freshnessProblemGames = count(array_unique($freshnessFlaggedGameIds));
-        $freshnessProblemPct = $marketReadyGames > 0 ? $freshnessProblemGames / $marketReadyGames : 0.0;
+        $staleProblemPct = $marketReadyGames > 0 ? count(array_unique($staleGameIds)) / $marketReadyGames : 0.0;
         $status = 'passing';
         $message = "Player props look fresh for {$marketReadyGames} market-ready active games.";
 
-        if ($freshnessProblemGames > 0) {
-            $status = $freshnessProblemPct >= $failPct ? 'failing' : ($freshnessProblemPct >= $warnPct ? 'warning' : 'passing');
-            $message = "{$freshnessProblemGames}/{$marketReadyGames} market-ready active games have missing or stale player props.";
+        if ($staleProps > 0) {
+            $status = $staleProblemPct >= $failPct ? 'failing' : ($staleProblemPct >= $warnPct ? 'warning' : 'passing');
+            $message = "{$staleProps}/{$marketReadyGames} market-ready active games have stale player props.";
+        } elseif ($freshnessProblemGames > 0) {
+            $status = 'warning';
+            $message = "{$freshnessProblemGames}/{$marketReadyGames} market-ready active games do not currently have player props from the provider.";
         } elseif ($unscoredProps > 0) {
             $status = 'warning';
             $message = "Player props are fresh for {$marketReadyGames} market-ready active games; {$unscoredProps} game(s) have props without recommendation-ready outputs.";

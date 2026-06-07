@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -34,6 +35,8 @@ class WeatherCompletenessCheck implements ValidationCheck
         $warnPct = (float) config('validation.thresholds.weather_completeness.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.weather_completeness.problem_fail_pct', 0.20);
         $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'scheduled', 'in_progress'];
+        $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
+        $marketReadyGameIds = $stageContext->marketReadyGameIds;
 
         $games = DB::table($gamesTable)
             ->leftJoin($weatherTable, "{$weatherTable}.game_id", '=', "{$gamesTable}.id")
@@ -54,6 +57,7 @@ class WeatherCompletenessCheck implements ValidationCheck
         $staleWeather = 0;
         $unknownRoof = 0;
         $flaggedGameIds = [];
+        $blockingFlaggedGameIds = [];
         $missingWeatherGameIds = [];
         $staleWeatherGameIds = [];
         $unknownRoofGameIds = [];
@@ -83,16 +87,25 @@ class WeatherCompletenessCheck implements ValidationCheck
 
             if ($flagged) {
                 $flaggedGameIds[] = (int) $game->id;
+
+                if (in_array((int) $game->id, $marketReadyGameIds, true)) {
+                    $blockingFlaggedGameIds[] = (int) $game->id;
+                }
             }
         }
 
         $problemGames = count(array_unique($flaggedGameIds));
         $problemPct = $totalGames > 0 ? $problemGames / $totalGames : 0.0;
+        $blockingProblemGames = count(array_unique($blockingFlaggedGameIds));
+        $blockingProblemPct = count($marketReadyGameIds) > 0 ? $blockingProblemGames / count($marketReadyGameIds) : 0.0;
         $status = 'passing';
         $message = "Weather coverage looks healthy for {$totalGames} upcoming games.";
 
-        if ($problemGames > 0) {
-            $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
+        if ($blockingProblemGames > 0) {
+            $status = $blockingProblemPct >= $failPct ? 'failing' : ($blockingProblemPct >= $warnPct ? 'warning' : 'passing');
+            $message = "{$blockingProblemGames}/".count($marketReadyGameIds).' market-ready active games have missing, stale, or incomplete weather data.';
+        } elseif ($problemGames > 0) {
+            $status = $problemPct >= $warnPct ? 'warning' : 'passing';
             $message = "{$problemGames}/{$totalGames} upcoming games have missing, stale, or incomplete weather data.";
         }
 
@@ -105,10 +118,13 @@ class WeatherCompletenessCheck implements ValidationCheck
             'metadata' => [
                 'window_days' => $windowDays,
                 'upcoming_games' => $totalGames,
+                'market_ready_games' => count($marketReadyGameIds),
+                'market_ready_weather_problem_games' => $blockingProblemGames,
                 'games_missing_weather' => $missingWeather,
                 'games_with_stale_weather' => $staleWeather,
                 'games_with_unknown_roof_status' => $unknownRoof,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
+                'sample_market_ready_weather_problem_game_ids' => array_slice(array_values(array_unique($blockingFlaggedGameIds)), 0, 5),
                 'sample_missing_weather_game_ids' => array_slice(array_values(array_unique($missingWeatherGameIds)), 0, 5),
                 'sample_stale_weather_game_ids' => array_slice(array_values(array_unique($staleWeatherGameIds)), 0, 5),
                 'sample_unknown_roof_game_ids' => array_slice(array_values(array_unique($unknownRoofGameIds)), 0, 5),

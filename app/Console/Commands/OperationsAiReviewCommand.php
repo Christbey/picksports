@@ -201,6 +201,7 @@ class OperationsAiReviewCommand extends Command
             'sample_missing_weather_game_ids',
             'sample_stale_weather_game_ids',
             'sample_unknown_roof_game_ids',
+            'sample_market_ready_weather_problem_game_ids',
             'sample_unscored_game_ids',
             'sample_games',
             'missing_core_fields',
@@ -215,6 +216,7 @@ class OperationsAiReviewCommand extends Command
             'games_missing_weather',
             'games_with_stale_weather',
             'games_with_unknown_roof_status',
+            'market_ready_weather_problem_games',
             'oldest_game_date',
             'newest_game_date',
         ];

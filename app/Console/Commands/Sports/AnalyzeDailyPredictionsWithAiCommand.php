@@ -63,6 +63,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $requestedModel = $this->option('model') ? (string) $this->option('model') : (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
         $processed = 0;
         $skipped = 0;
+        $rateLimited = false;
 
         if (! $this->option('dry-run') && ! Schema::hasTable('sports_ai_prediction_analyses')) {
             $this->error('Missing sports_ai_prediction_analyses table. Run php artisan migrate before saving AI analyses.');
@@ -84,6 +85,10 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
             $this->line(strtoupper($sport).': '.$predictions->count().' prediction(s) for '.$date->toDateString().($endDate->isSameDay($date) ? '' : ' through '.$endDate->toDateString()));
 
             foreach ($predictions as $prediction) {
+                if ($rateLimited) {
+                    break;
+                }
+
                 $payload = $payloadBuilder->build($sport, $prediction);
                 $inputHash = $payloadBuilder->hash($payload);
                 $gameId = (int) ($prediction->game?->id ?? $prediction->game_id ?? 0);
@@ -122,6 +127,11 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     $failureReason = $aiContentService->lastDailyPredictionAnalysisFailure();
                     $this->warn('  - skipped '.$this->matchup($prediction).' (AI analysis unavailable'.($failureReason ? ': '.$failureReason : '').')');
                     $skipped++;
+
+                    if ($failureReason && str_contains(strtolower($failureReason), 'rate limited')) {
+                        $rateLimited = true;
+                        $this->warn('  - stopping remaining AI daily prediction analysis for this run because the provider is rate limited.');
+                    }
 
                     continue;
                 }

@@ -214,6 +214,7 @@ abstract class AbstractSyncGamesFromScoreboard
                 if (! in_array($existingGame->status, GameData::finalStatuses(), true)) {
                     $existingGame->update($attributes);
                 }
+                $this->touchSyncedGame($existingGame);
                 $game = $existingGame->fresh();
                 app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, $previousStatus);
             } else {
@@ -369,8 +370,25 @@ abstract class AbstractSyncGamesFromScoreboard
         }
 
         $game->update($updates);
+        $this->touchSyncedGame($game);
 
         app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
+    }
+
+    protected function touchSyncedGame(Model $game): void
+    {
+        if (! $game->usesTimestamps()) {
+            return;
+        }
+
+        $updatedAtColumn = $game->getUpdatedAtColumn();
+        if ($updatedAtColumn === null) {
+            return;
+        }
+
+        $game->forceFill([
+            $updatedAtColumn => $game->freshTimestamp(),
+        ])->saveQuietly();
     }
 
     /**

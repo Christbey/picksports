@@ -6,6 +6,7 @@ use App\Actions\MLB\UpdateLivePrediction;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
 use App\Services\ESPN\BaseEspnService;
+use Illuminate\Support\Carbon;
 use Mockery as m;
 
 uses()->group('espn', 'mlb');
@@ -200,6 +201,89 @@ it('updates orphaned scheduled mlb games from summary using local venue date', f
         ->and($game->away_score)->toBe(2)
         ->and($game->game_date?->toDateString())->toBe('2026-05-31')
         ->and($game->game_time)->toBe('19:10:00');
+});
+
+it('refreshes the game row timestamp when scoreboard confirms unchanged mlb games', function () {
+    Carbon::setTestNow('2026-06-07 12:00:00');
+
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $game = Game::factory()->create([
+        'espn_event_id' => '401814900',
+        'espn_uid' => 's:1~l:10~e:401814900',
+        'season' => 2026,
+        'week' => 12,
+        'season_type' => (string) config('mlb.season.types.regular'),
+        'game_date' => '2026-06-09',
+        'game_time' => '19:10:00',
+        'name' => 'Texas Rangers at Seattle Mariners',
+        'short_name' => 'TEX @ SEA',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 0,
+        'away_score' => 0,
+        'updated_at' => now()->subDay(),
+    ]);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'mlb';
+
+        public function getScoreboard(?string $date = null): ?array
+        {
+            return [
+                'events' => [[
+                    'id' => '401814900',
+                    'uid' => 's:1~l:10~e:401814900',
+                    'date' => '2026-06-10T00:10:00Z',
+                    'name' => 'Texas Rangers at Seattle Mariners',
+                    'shortName' => 'TEX @ SEA',
+                    'season' => ['year' => 2026, 'type' => (int) config('mlb.season.types.regular')],
+                    'week' => ['number' => 12],
+                    'status' => [
+                        'type' => ['name' => 'STATUS_SCHEDULED'],
+                        'period' => 0,
+                        'displayClock' => '',
+                    ],
+                    'competitions' => [[
+                        'venue' => [
+                            'address' => [
+                                'city' => 'Seattle',
+                                'state' => 'WA',
+                            ],
+                        ],
+                        'competitors' => [
+                            [
+                                'homeAway' => 'home',
+                                'score' => '0',
+                                'team' => ['id' => '10'],
+                            ],
+                            [
+                                'homeAway' => 'away',
+                                'score' => '0',
+                                'team' => ['id' => '20'],
+                            ],
+                        ],
+                    ]],
+                ]],
+            ];
+        }
+    };
+
+    $predictionAction = m::mock(UpdateLivePrediction::class);
+    $predictionAction->shouldReceive('execute')->once();
+
+    $synced = (new SyncGamesFromScoreboard($service, $predictionAction))->execute('20260609');
+
+    expect($synced)->toBe(1);
+
+    $game->refresh();
+
+    expect($game->updated_at?->toDateTimeString())->toBe(now()->toDateTimeString());
+
+    Carbon::setTestNow();
 });
 
 it('normalizes mislabeled pre-opener mlb games to spring training during sync', function () {

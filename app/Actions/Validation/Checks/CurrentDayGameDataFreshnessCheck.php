@@ -46,7 +46,7 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
         $games = DB::table($gamesTable)
             ->whereDate('game_date', '>=', $todayWindow->localStartDate())
             ->whereDate('game_date', '<=', $todayWindow->localEndDate())
-            ->get(['id', 'status', 'game_date', 'updated_at']);
+            ->get(['id', 'espn_event_id', 'short_name', 'name', 'status', 'game_date', 'updated_at']);
 
         $totalGames = $games->count();
         $staleGames = 0;
@@ -105,6 +105,8 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
                 $flaggedGameIds[] = $gameId;
                 $sampleGames[] = [
                     'game_id' => $gameId,
+                    'espn_event_id' => $game->espn_event_id,
+                    'matchup' => $game->short_name ?: $game->name,
                     'game_date' => $gameDate?->toDateString(),
                     'status' => $game->status,
                     'updated_at' => $updatedAt?->toIso8601String(),

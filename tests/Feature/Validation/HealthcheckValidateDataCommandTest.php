@@ -115,6 +115,8 @@ test('healthcheck validate data flags current day final games missing stats', fu
     $away = Team::factory()->create();
 
     $game = Game::factory()->create([
+        'espn_event_id' => '401999900',
+        'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -144,6 +146,8 @@ test('healthcheck validate data flags current day final games missing stats', fu
         ->and(data_get($finding->facts, 'final_games_missing_plays'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
         ->and(data_get($finding->facts, 'sample_games.0.game_id'))->toBe($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.espn_event_id'))->toBe('401999900')
+        ->and(data_get($finding->facts, 'sample_games.0.matchup'))->toBe('BOS @ LAL')
         ->and(data_get($finding->facts, 'sample_games.0.reasons'))->toContain(
             'missing_team_stats',
             'missing_both_team_stats',
@@ -305,6 +309,8 @@ test('healthcheck validate data flags missing weather for outdoor sports', funct
     $away = MlbTeam::factory()->create();
 
     $game = MlbGame::factory()->create([
+        'espn_event_id' => '401999901',
+        'short_name' => 'NYM @ SF',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -338,6 +344,8 @@ test('healthcheck validate data flags past mlb games stuck as scheduled', functi
     $away = MlbTeam::factory()->create();
 
     $game = MlbGame::factory()->create([
+        'espn_event_id' => '401999901',
+        'short_name' => 'NYM @ SF',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -430,6 +438,8 @@ test('healthcheck validate data flags ungraded final mlb predictions', function 
     $away = MlbTeam::factory()->create();
 
     $game = MlbGame::factory()->create([
+        'espn_event_id' => '401999901',
+        'short_name' => 'NYM @ SF',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -469,10 +479,20 @@ test('healthcheck validate data flags ungraded final mlb predictions', function 
         ->where('check_type', 'validation_finalized_data_completeness')
         ->first();
 
+    $sampleGame = collect(data_get($finding->facts, 'sample_games'))->firstWhere('game_id', $game->id);
+
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('failing')
         ->and(data_get($finding->facts, 'games_missing_grading'))->toBe(1)
-        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
+        ->and(data_get($sampleGame, 'espn_event_id'))->toBe('401999901')
+        ->and(data_get($sampleGame, 'matchup'))->toBe('NYM @ SF')
+        ->and(data_get($sampleGame, 'reasons'))->toContain(
+            'missing_player_stats',
+            'missing_team_stats',
+            'missing_plays',
+            'missing_prediction_grading',
+        );
 });
 
 test('healthcheck validate data flags stale futures odds', function () {

@@ -39,23 +39,28 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
         $missingPlaysCount = 0;
         $missingGradingCount = 0;
         $flaggedGameIds = [];
+        $sampleGames = [];
 
         foreach ($games as $game) {
             $flagged = false;
+            $reasons = [];
 
             if (! $game->playerStats()->exists()) {
                 $missingPlayerStatsCount++;
                 $flagged = true;
+                $reasons[] = 'missing_player_stats';
             }
 
             if (! $game->teamStats()->exists()) {
                 $missingTeamStatsCount++;
                 $flagged = true;
+                $reasons[] = 'missing_team_stats';
             }
 
             if (! $game->plays()->exists()) {
                 $missingPlaysCount++;
                 $flagged = true;
+                $reasons[] = 'missing_plays';
             }
 
             $prediction = $game->prediction;
@@ -65,10 +70,19 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
             if ($prediction !== null && $gameEndedLongEnoughAgo && $prediction->graded_at === null) {
                 $missingGradingCount++;
                 $flagged = true;
+                $reasons[] = 'missing_prediction_grading';
             }
 
             if ($flagged) {
                 $flaggedGameIds[] = (int) $game->getKey();
+                $sampleGames[] = [
+                    'game_id' => (int) $game->getKey(),
+                    'espn_event_id' => $game->espn_event_id ?? null,
+                    'matchup' => $game->short_name ?: $game->name,
+                    'game_date' => $game->game_date?->toDateString(),
+                    'status' => $game->status,
+                    'reasons' => $reasons,
+                ];
             }
         }
 
@@ -100,6 +114,7 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
                 'games_missing_plays' => $missingPlaysCount,
                 'games_missing_grading' => $missingGradingCount,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
+                'sample_games' => array_slice($sampleGames, 0, 5),
                 'grading_grace_hours' => $gradingGraceHours,
             ],
         ];

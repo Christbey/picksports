@@ -55,10 +55,12 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
         $finalGamesMissingPlayerStats = 0;
         $finalGamesMissingPlays = 0;
         $flaggedGameIds = [];
+        $sampleGames = [];
 
         foreach ($games as $game) {
             $gameId = (int) $game->id;
             $flagged = false;
+            $reasons = [];
 
             $updatedAt = $game->updated_at ? CarbonImmutable::parse($game->updated_at) : null;
             $gameDate = $game->game_date ? CarbonImmutable::parse($game->game_date) : null;
@@ -66,6 +68,7 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
             if ($inSeason && (! $updatedAt || $updatedAt->lt($now->subHours($staleHours)))) {
                 $staleGames++;
                 $flagged = true;
+                $reasons[] = 'stale_game_row';
             }
 
             $isFinal = in_array((string) $game->status, self::FINAL_STATUSES, true);
@@ -76,26 +79,37 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
                 if ($teamStatsCount === 0) {
                     $finalGamesMissingTeamStats++;
                     $flagged = true;
+                    $reasons[] = 'missing_team_stats';
                 }
 
                 if ($teamStatsCount < 2) {
                     $finalGamesMissingBothTeamStats++;
                     $flagged = true;
+                    $reasons[] = 'missing_both_team_stats';
                 }
 
                 if (! DB::table($playerStatsTable)->where('game_id', $gameId)->exists()) {
                     $finalGamesMissingPlayerStats++;
                     $flagged = true;
+                    $reasons[] = 'missing_player_stats';
                 }
 
                 if (! DB::table($playsTable)->where('game_id', $gameId)->exists()) {
                     $finalGamesMissingPlays++;
                     $flagged = true;
+                    $reasons[] = 'missing_plays';
                 }
             }
 
             if ($flagged) {
                 $flaggedGameIds[] = $gameId;
+                $sampleGames[] = [
+                    'game_id' => $gameId,
+                    'game_date' => $gameDate?->toDateString(),
+                    'status' => $game->status,
+                    'updated_at' => $updatedAt?->toIso8601String(),
+                    'reasons' => $reasons,
+                ];
             }
         }
 
@@ -126,6 +140,7 @@ class CurrentDayGameDataFreshnessCheck implements ValidationCheck
                 'final_games_missing_player_stats' => $finalGamesMissingPlayerStats,
                 'final_games_missing_plays' => $finalGamesMissingPlays,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
+                'sample_games' => array_slice($sampleGames, 0, 5),
                 'stale_after_hours' => $staleHours,
                 'final_stats_grace_hours' => $finalStatsGraceHours,
             ],

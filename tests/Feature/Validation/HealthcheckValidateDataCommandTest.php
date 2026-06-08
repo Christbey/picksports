@@ -142,7 +142,14 @@ test('healthcheck validate data flags current day final games missing stats', fu
         ->and(data_get($finding->facts, 'final_games_missing_both_team_stats'))->toBe(1)
         ->and(data_get($finding->facts, 'final_games_missing_player_stats'))->toBe(1)
         ->and(data_get($finding->facts, 'final_games_missing_plays'))->toBe(1)
-        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.game_id'))->toBe($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.reasons'))->toContain(
+            'missing_team_stats',
+            'missing_both_team_stats',
+            'missing_player_stats',
+            'missing_plays',
+        );
 });
 
 test('healthcheck validate data flags upcoming game page readiness gaps', function () {

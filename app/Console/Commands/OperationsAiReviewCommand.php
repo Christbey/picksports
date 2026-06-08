@@ -220,6 +220,9 @@ class OperationsAiReviewCommand extends Command
             'market_ready_weather_problem_games',
             'market_ready_missing_weather_games',
             'blocking_odds_problem_games',
+            'rules_checked',
+            'violations',
+            'missing_heartbeats',
             'oldest_game_date',
             'newest_game_date',
         ];

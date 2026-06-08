@@ -142,3 +142,54 @@ it('blocks publishing when the latest sport validation run has failing findings'
         ->and($report['safe_to_publish'])->toBeFalse()
         ->and($report['recommended_actions'])->toContain('Run the operations sentinel before publishing.');
 });
+
+it('includes pipeline order violation facts in operations ai review output', function () {
+    $run = ValidationRun::query()->create([
+        'command_name' => 'healthcheck:validate-data',
+        'scope' => 'sport:mlb',
+        'status' => 'failing',
+        'summary' => ['passing' => 10, 'warning' => 0, 'failing' => 1],
+        'ai_summary' => [],
+        'started_at' => now()->subMinute(),
+        'completed_at' => now(),
+    ]);
+
+    ValidationFinding::query()->create([
+        'validation_run_id' => $run->id,
+        'sport' => 'mlb',
+        'check_type' => 'validation_pipeline_order',
+        'scope_type' => 'sport',
+        'scope_id' => 'mlb',
+        'status' => 'failing',
+        'severity' => 'failing',
+        'message' => '1 pipeline dependency violation(s) need downstream reruns.',
+        'recommended_action' => 'mlb:generate-predictions',
+        'facts' => [
+            'rules_checked' => 3,
+            'violations' => [[
+                'label' => 'weather before predictions',
+                'upstream_command' => 'mlb:sync-game-weather --days-back=0 --days-forward=7 --force',
+                'upstream_ran_at' => '2026-06-08 09:00:00',
+                'downstream_command' => 'mlb:generate-predictions --season=2026',
+                'downstream_ran_at' => '2026-06-08 08:00:00',
+                'recommended_action' => 'mlb:generate-predictions',
+            ]],
+        ],
+        'detected_at' => now(),
+    ]);
+
+    $exit = Artisan::call('operations:ai-review', [
+        '--sport' => 'mlb',
+        '--season' => 2026,
+        '--date' => '2026-06-08',
+        '--json' => true,
+    ]);
+
+    expect($exit)->toBe(0);
+
+    $report = json_decode(Artisan::output(), true);
+
+    expect(data_get($report, 'findings.failing.0.facts.rules_checked'))->toBe(3)
+        ->and(data_get($report, 'findings.failing.0.facts.violations.0.label'))->toBe('weather before predictions')
+        ->and(data_get($report, 'findings.failing.0.facts.violations.0.recommended_action'))->toBe('mlb:generate-predictions');
+});

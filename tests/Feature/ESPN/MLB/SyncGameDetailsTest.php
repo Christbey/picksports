@@ -198,6 +198,17 @@ it('can dispatch mlb game detail jobs to a requested queue', function () {
     );
 });
 
+it('can run an mlb game detail job synchronously without dispatching to the queue', function () {
+    Queue::fake();
+
+    artisan('espn:sync-mlb-game-details', ['eventId' => '401999202', '--sync' => true])
+        ->expectsOutput('Running MLB game details sync job for event 401999202...')
+        ->expectsOutput('MLB game details sync job completed successfully.')
+        ->assertSuccessful();
+
+    Queue::assertNothingPushed();
+});
+
 it('can refresh final mlb games that already have player stats', function () {
     Queue::fake();
 

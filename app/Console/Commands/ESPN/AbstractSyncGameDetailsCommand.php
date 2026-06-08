@@ -34,9 +34,13 @@ abstract class AbstractSyncGameDetailsCommand extends Command
         $sport = $this->sportCode();
 
         if ($eventId) {
-            $this->info("Dispatching {$sport} game details sync job for event {$eventId}...");
+            $action = $this->shouldRunSynchronously() ? 'Running' : 'Dispatching';
+            $this->info("{$action} {$sport} game details sync job for event {$eventId}...");
             $this->dispatchGameDetailsSync((string) $eventId);
-            $this->info("{$sport} game details sync job dispatched successfully.");
+            $this->info($this->shouldRunSynchronously()
+                ? "{$sport} game details sync job completed successfully."
+                : "{$sport} game details sync job dispatched successfully."
+            );
 
             return Command::SUCCESS;
         }
@@ -59,7 +63,10 @@ abstract class AbstractSyncGameDetailsCommand extends Command
         }
 
         $this->info("Found {$games->count()} {$descriptor}.");
-        $this->info('Dispatching game details sync jobs...');
+        $this->info($this->shouldRunSynchronously()
+            ? 'Running game details sync jobs...'
+            : 'Dispatching game details sync jobs...'
+        );
 
         $bar = $this->output->createProgressBar($games->count());
         $bar->start();
@@ -72,7 +79,10 @@ abstract class AbstractSyncGameDetailsCommand extends Command
         $bar->finish();
         $this->newLine(2);
 
-        $this->info("Dispatched {$games->count()} game details sync jobs successfully.");
+        $this->info($this->shouldRunSynchronously()
+            ? "Ran {$games->count()} game details sync jobs successfully."
+            : "Dispatched {$games->count()} game details sync jobs successfully."
+        );
 
         return Command::SUCCESS;
     }
@@ -85,6 +95,13 @@ abstract class AbstractSyncGameDetailsCommand extends Command
     protected function dispatchGameDetailsSync(string $eventId): void
     {
         $job = $this->gameDetailsJobClass();
+
+        if ($this->shouldRunSynchronously()) {
+            app()->call([new $job($eventId), 'handle']);
+
+            return;
+        }
+
         $dispatch = $job::dispatch($eventId);
         $queue = $this->option('queue');
 
@@ -101,9 +118,15 @@ abstract class AbstractSyncGameDetailsCommand extends Command
             {--lookback-days= : Limit sweep mode to games on or after this many days ago}
             {--limit=0 : Limit number of games dispatched in sweep mode}
             {--latest : Dispatch newest matching games first in sweep mode}
+            {--sync : Run matching game detail jobs inline instead of dispatching them to the queue}
             {--queue= : Queue name for dispatched game-detail jobs}",
             $this->commandName()
         );
+    }
+
+    protected function shouldRunSynchronously(): bool
+    {
+        return (bool) $this->option('sync');
     }
 
     protected function commandName(): string

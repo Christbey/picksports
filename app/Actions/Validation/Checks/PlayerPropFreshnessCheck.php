@@ -32,7 +32,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
 
         $games = DB::table($gamesTable)
             ->whereIn('id', $stageContext->marketReadyGameIds)
-            ->get(['id', 'odds_api_event_id', 'odds_data', 'odds_updated_at'])
+            ->get(['id', 'espn_event_id', 'short_name', 'name', 'game_date', 'odds_api_event_id', 'odds_data', 'odds_updated_at'])
             ->filter(fn (object $game): bool => $this->hasOddsAnchor($game))
             ->values();
 
@@ -44,14 +44,18 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $missingGameIds = [];
         $staleGameIds = [];
         $unscoredGameIds = [];
+        $sampleGames = [];
 
         foreach ($games as $game) {
+            $reasons = [];
             $latestFetchedAt = DB::table($propsTable)->where('game_id', $game->id)->max('fetched_at');
 
             if (! $latestFetchedAt) {
                 $missingProps++;
                 $freshnessFlaggedGameIds[] = (int) $game->id;
                 $missingGameIds[] = (int) $game->id;
+                $reasons[] = 'provider_missing_player_props';
+                $sampleGames[] = $this->sampleGame($game, $reasons, null);
 
                 continue;
             }
@@ -60,11 +64,17 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 $staleProps++;
                 $freshnessFlaggedGameIds[] = (int) $game->id;
                 $staleGameIds[] = (int) $game->id;
+                $reasons[] = 'stale_player_props';
             }
 
             if (! $this->hasRecommendationReadyProps($propsTable, (int) $game->id)) {
                 $unscoredProps++;
                 $unscoredGameIds[] = (int) $game->id;
+                $reasons[] = 'unscored_player_props';
+            }
+
+            if ($reasons !== []) {
+                $sampleGames[] = $this->sampleGame($game, $reasons, $latestFetchedAt);
             }
         }
 
@@ -103,6 +113,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'sample_missing_game_ids' => array_slice(array_values(array_unique($missingGameIds)), 0, 5),
                 'sample_stale_game_ids' => array_slice(array_values(array_unique($staleGameIds)), 0, 5),
                 'sample_unscored_game_ids' => array_slice(array_values(array_unique($unscoredGameIds)), 0, 5),
+                'sample_games' => array_slice($sampleGames, 0, 5),
                 'stale_after_hours' => $staleHours,
             ],
         ];
@@ -149,5 +160,22 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             ->whereNotNull('edge_probability')
             ->whereNotNull('data_quality_score')
             ->exists();
+    }
+
+    /**
+     * @param  array<int, string>  $reasons
+     * @return array<string, mixed>
+     */
+    private function sampleGame(object $game, array $reasons, mixed $latestFetchedAt): array
+    {
+        return [
+            'game_id' => (int) $game->id,
+            'espn_event_id' => $game->espn_event_id,
+            'odds_api_event_id' => $game->odds_api_event_id,
+            'matchup' => $game->short_name ?: $game->name,
+            'game_date' => $game->game_date ? now()->parse($game->game_date)->toDateString() : null,
+            'latest_player_props_fetched_at' => $latestFetchedAt ? now()->parse($latestFetchedAt)->toIso8601String() : null,
+            'reasons' => $reasons,
+        ];
     }
 }

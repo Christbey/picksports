@@ -45,7 +45,13 @@ class WeatherCompletenessCheck implements ValidationCheck
             ->whereIn("{$gamesTable}.status", $activeStatuses)
             ->get([
                 "{$gamesTable}.id",
+                "{$gamesTable}.espn_event_id",
+                "{$gamesTable}.short_name",
+                "{$gamesTable}.name",
                 "{$gamesTable}.game_date",
+                "{$gamesTable}.venue_name",
+                "{$gamesTable}.venue_city",
+                "{$gamesTable}.venue_state",
                 "{$weatherTable}.id as weather_id",
                 "{$weatherTable}.updated_at as weather_updated_at",
                 "{$weatherTable}.is_indoor",
@@ -62,14 +68,17 @@ class WeatherCompletenessCheck implements ValidationCheck
         $missingWeatherGameIds = [];
         $staleWeatherGameIds = [];
         $unknownRoofGameIds = [];
+        $sampleGames = [];
 
         foreach ($games as $game) {
             $flagged = false;
+            $reasons = [];
 
             if (! $game->weather_id) {
                 $missingWeather++;
                 $flagged = true;
                 $missingWeatherGameIds[] = (int) $game->id;
+                $reasons[] = 'missing_weather';
             } else {
                 $weatherUpdatedAt = $game->weather_updated_at ? now()->parse($game->weather_updated_at) : null;
 
@@ -77,17 +86,20 @@ class WeatherCompletenessCheck implements ValidationCheck
                     $staleWeather++;
                     $flagged = true;
                     $staleWeatherGameIds[] = (int) $game->id;
+                    $reasons[] = 'stale_weather';
                 }
 
                 if ($sport === 'mlb' && ! (bool) $game->is_indoor && $game->roof_status === 'unknown_retractable') {
                     $unknownRoof++;
                     $flagged = true;
                     $unknownRoofGameIds[] = (int) $game->id;
+                    $reasons[] = 'unknown_retractable_roof_status';
                 }
             }
 
             if ($flagged) {
                 $flaggedGameIds[] = (int) $game->id;
+                $sampleGames[] = $this->sampleGame($game, $reasons, in_array((int) $game->id, $marketReadyGameIds, true));
 
                 if (in_array((int) $game->id, $marketReadyGameIds, true)) {
                     $blockingFlaggedGameIds[] = (int) $game->id;
@@ -139,8 +151,34 @@ class WeatherCompletenessCheck implements ValidationCheck
                 'sample_missing_weather_game_ids' => array_slice(array_values(array_unique($missingWeatherGameIds)), 0, 5),
                 'sample_stale_weather_game_ids' => array_slice(array_values(array_unique($staleWeatherGameIds)), 0, 5),
                 'sample_unknown_roof_game_ids' => array_slice(array_values(array_unique($unknownRoofGameIds)), 0, 5),
+                'sample_games' => array_slice($sampleGames, 0, 5),
                 'stale_after_hours' => $staleHours,
             ],
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $reasons
+     * @return array<string, mixed>
+     */
+    private function sampleGame(object $game, array $reasons, bool $marketReady): array
+    {
+        return [
+            'game_id' => (int) $game->id,
+            'espn_event_id' => $game->espn_event_id,
+            'matchup' => $game->short_name ?: $game->name,
+            'game_date' => $game->game_date ? now()->parse($game->game_date)->toDateString() : null,
+            'venue' => trim(implode(', ', array_filter([
+                $game->venue_name,
+                $game->venue_city,
+                $game->venue_state,
+            ]))),
+            'market_ready' => $marketReady,
+            'weather_id' => $game->weather_id,
+            'weather_updated_at' => $game->weather_updated_at ? now()->parse($game->weather_updated_at)->toIso8601String() : null,
+            'is_indoor' => $game->is_indoor,
+            'roof_status' => $game->roof_status,
+            'reasons' => $reasons,
         ];
     }
 }

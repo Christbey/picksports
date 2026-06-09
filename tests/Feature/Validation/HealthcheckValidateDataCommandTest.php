@@ -161,6 +161,8 @@ test('healthcheck validate data flags upcoming game page readiness gaps', functi
     $away = Team::factory()->create();
 
     $game = Game::factory()->create([
+        'espn_event_id' => '401999777',
+        'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -197,6 +199,8 @@ test('healthcheck validate data passes upcoming game page readiness when pregame
     $away = Team::factory()->create();
 
     $game = Game::factory()->create([
+        'espn_event_id' => '401999777',
+        'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -254,6 +258,8 @@ test('healthcheck validate data warns when fresh player props have no recommenda
     $away = Team::factory()->create();
 
     $game = Game::factory()->create([
+        'espn_event_id' => '401999777',
+        'short_name' => 'BOS @ LAL',
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'season' => (int) now()->year,
@@ -296,12 +302,18 @@ test('healthcheck validate data warns when fresh player props have no recommenda
         ->where('check_type', 'validation_player_prop_freshness')
         ->first();
 
+    $sampleGame = collect(data_get($finding->facts, 'sample_games'))->firstWhere('game_id', $game->id);
+
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('warning')
         ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba')
         ->and(data_get($finding->facts, 'games_with_unscored_player_props'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([])
-        ->and(data_get($finding->facts, 'sample_unscored_game_ids'))->toContain($game->id);
+        ->and(data_get($finding->facts, 'sample_unscored_game_ids'))->toContain($game->id)
+        ->and(data_get($sampleGame, 'espn_event_id'))->toBe('401999777')
+        ->and(data_get($sampleGame, 'odds_api_event_id'))->toBe('odds-event-1')
+        ->and(data_get($sampleGame, 'matchup'))->toBe('BOS @ LAL')
+        ->and(data_get($sampleGame, 'reasons'))->toContain('unscored_player_props');
 });
 
 test('healthcheck validate data flags missing weather for outdoor sports', function () {
@@ -336,7 +348,12 @@ test('healthcheck validate data flags missing weather for outdoor sports', funct
         ->and($finding->recommended_action)->toBe('mlb:sync-game-weather --days-back=0 --days-forward=7 --force')
         ->and(data_get($finding->facts, 'upcoming_games'))->toBe(1)
         ->and(data_get($finding->facts, 'games_missing_weather'))->toBe(1)
-        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id);
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.espn_event_id'))->toBe('401999901')
+        ->and(data_get($finding->facts, 'sample_games.0.matchup'))->toBe('NYM @ SF')
+        ->and(data_get($finding->facts, 'sample_games.0.venue'))->toBe('Kauffman Stadium, Kansas City, MO')
+        ->and(data_get($finding->facts, 'sample_games.0.market_ready'))->toBeTrue()
+        ->and(data_get($finding->facts, 'sample_games.0.reasons'))->toContain('missing_weather');
 });
 
 test('healthcheck validate data flags past mlb games stuck as scheduled', function () {

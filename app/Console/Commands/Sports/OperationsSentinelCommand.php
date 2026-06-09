@@ -24,6 +24,8 @@ class OperationsSentinelCommand extends Command
         {--from-date= : Start date in YYYY-MM-DD format}
         {--to-date= : End date in YYYY-MM-DD format}
         {--season= : Season to repair/grade}
+        {--repair : Run the canonical repair pipeline; kept as an explicit operator alias because repair is the default behavior}
+        {--ai : Run AI prediction analysis and operations review; kept as an explicit operator alias unless skip flags are provided}
         {--skip-sync-pipeline : Skip registry sync dependencies such as injuries, weather, odds, player props, and futures}
         {--skip-stats : Skip player/team stat refresh}
         {--skip-model-pipeline : Skip grading, Elo, team metrics, and prediction generation}
@@ -126,6 +128,8 @@ class OperationsSentinelCommand extends Command
         $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
         $statLookbackDays = max(1, (int) $this->option('stat-lookback-days'));
         $statLimit = max(0, (int) $this->option('stat-limit'));
+        $repairRequested = (bool) $this->option('repair');
+        $aiRequested = (bool) $this->option('ai');
 
         if ($toDate->lt($fromDate)) {
             $this->error('--to-date must be on or after --from-date.');
@@ -140,6 +144,14 @@ class OperationsSentinelCommand extends Command
             $toDate->toDateString(),
             $dateWindows->timezone(),
         ));
+
+        if ($repairRequested) {
+            $this->line('Repair mode requested; running the canonical repair pipeline.');
+        }
+
+        if ($aiRequested) {
+            $this->line('AI mode requested; daily prediction analysis and operations review will run unless explicitly skipped.');
+        }
 
         $stageContext = app(SeasonStageService::class)->context($sport, $season, $referenceDate);
         $this->line(sprintf(

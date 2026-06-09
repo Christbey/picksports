@@ -53,6 +53,8 @@ it('fails when a sport is unsupported', function () {
 
 it('exposes player and team stat refresh controls on the sentinel command', function () {
     $this->artisan('sports:operations-sentinel --help')
+        ->expectsOutputToContain('--repair')
+        ->expectsOutputToContain('--ai')
         ->expectsOutputToContain('--skip-sync-pipeline')
         ->expectsOutputToContain('--skip-stats')
         ->expectsOutputToContain('--skip-model-pipeline')
@@ -63,6 +65,20 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->expectsOutputToContain('--skip-ai-review')
         ->expectsOutputToContain('--stat-lookback-days')
         ->expectsOutputToContain('--stat-limit')
+        ->assertExitCode(0);
+});
+
+it('accepts explicit repair and ai operator aliases', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $sync = m::mock(SyncGamesFromScoreboard::class);
+    $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(1);
+    $this->app->instance(SyncGamesFromScoreboard::class, $sync);
+
+    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --repair --ai --skip-sync-pipeline --skip-stats --skip-queue-drain --skip-model-pipeline --skip-ai-analysis --skip-ai-review --skip-validation')
+        ->expectsOutput('Repair mode requested; running the canonical repair pipeline.')
+        ->expectsOutput('AI mode requested; daily prediction analysis and operations review will run unless explicitly skipped.')
+        ->expectsOutput('Synced 1 NBA game row update(s).')
         ->assertExitCode(0);
 });
 

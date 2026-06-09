@@ -176,11 +176,13 @@ it('keeps common retractable roof mlb venues in configured weather coordinates',
     expect($coordinates)
         ->toHaveKeys([
             'American Family Field',
+            'Busch Stadium',
             'Chase Field',
             'Daikin Park',
             'Globe Life Field',
             'loanDepot park',
             'Rogers Centre',
             'T-Mobile Park',
+            'Truist Park',
         ]);
 });

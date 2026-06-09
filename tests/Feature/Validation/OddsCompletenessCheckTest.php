@@ -119,6 +119,50 @@ test('odds completeness treats provider unavailable odds outside the expected wi
         ->and(data_get($sampleGame, 'flagged'))->toBeFalse();
 });
 
+test('odds completeness treats partial secondary markets outside the expected window as availability info', function () {
+    $this->travelTo('2026-06-09 15:00:00');
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'season_type' => 2,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-10',
+        'game_time' => '19:00:00',
+        'odds_api_event_id' => fake()->uuid(),
+        'odds_data' => [
+            'bookmakers' => [
+                [
+                    'key' => 'draftkings',
+                    'markets' => [
+                        ['key' => 'h2h'],
+                    ],
+                ],
+            ],
+        ],
+        'odds_updated_at' => now(),
+    ]);
+
+    $result = app(OddsCompletenessCheck::class)->run('nba', config('validation.sports.nba'));
+    $sampleGame = collect(data_get($result, 'metadata.sample_games'))->firstWhere('game_id', $game->id);
+
+    expect($result['status'])->toBe('passing')
+        ->and($result['metadata']['market_ready_games'])->toBe(1)
+        ->and($result['metadata']['blocking_odds_problem_games'])->toBe(0)
+        ->and($result['metadata']['games_with_missing_required_markets'])->toBe(1)
+        ->and($result['metadata']['secondary_markets_unavailable_far_games'])->toBe(1)
+        ->and($result['metadata']['secondary_markets_unavailable_expected_window_games'])->toBe(0)
+        ->and($result['metadata']['sample_game_ids'])->toBe([])
+        ->and($result['metadata']['sample_missing_required_market_game_ids'])->toContain($game->id)
+        ->and($result['metadata']['sample_expected_missing_required_market_game_ids'])->toBe([])
+        ->and(data_get($sampleGame, 'odds_availability_bucket'))->toBe('early')
+        ->and(data_get($sampleGame, 'flagged'))->toBeFalse();
+});
+
 function completeOddsPayload(): array
 {
     return [

@@ -63,6 +63,7 @@ class SyncGameWeatherCommand extends Command
             }
 
             $row = GameWeather::query()->updateOrCreate(['game_id' => $game->id], $weather);
+            $row->touch();
             $row->wasRecentlyCreated ? $created++ : $updated++;
         }
 

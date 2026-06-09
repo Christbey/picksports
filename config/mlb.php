@@ -434,6 +434,7 @@ return [
             'venue_coordinates' => [
                 'Angel Stadium' => ['latitude' => 33.8003, 'longitude' => -117.8827],
                 'American Family Field' => ['latitude' => 43.0280, 'longitude' => -87.9712],
+                'Busch Stadium' => ['latitude' => 38.6226, 'longitude' => -90.1928],
                 'Chase Field' => ['latitude' => 33.4455, 'longitude' => -112.0667],
                 'Citi Field' => ['latitude' => 40.7571, 'longitude' => -73.8458],
                 'Citizens Bank Park' => ['latitude' => 39.9061, 'longitude' => -75.1665],
@@ -459,6 +460,7 @@ return [
                 'T-Mobile Park' => ['latitude' => 47.5914, 'longitude' => -122.3325],
                 'Target Field' => ['latitude' => 44.9817, 'longitude' => -93.2776],
                 'Tropicana Field' => ['latitude' => 27.7683, 'longitude' => -82.6534],
+                'Truist Park' => ['latitude' => 33.8907, 'longitude' => -84.4677],
                 'Wrigley Field' => ['latitude' => 41.9484, 'longitude' => -87.6553],
                 'Yankee Stadium' => ['latitude' => 40.8296, 'longitude' => -73.9262],
             ],

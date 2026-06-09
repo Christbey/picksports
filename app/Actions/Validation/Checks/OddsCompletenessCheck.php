@@ -44,13 +44,18 @@ class OddsCompletenessCheck implements ValidationCheck
         $missingRequiredMarketsGameIds = [];
         $staleOddsGameIds = [];
         $expectedMissingOddsGameIds = [];
+        $expectedMissingRequiredMarketsGameIds = [];
         $providerUnavailableFarGames = 0;
         $providerUnavailableSoftWindowGames = 0;
         $providerUnavailableExpectedWindowGames = 0;
+        $secondaryMarketsUnavailableFarGames = 0;
+        $secondaryMarketsUnavailableSoftWindowGames = 0;
+        $secondaryMarketsUnavailableExpectedWindowGames = 0;
         $sampleGames = [];
 
         foreach ($games as $game) {
             $flagged = false;
+            $hasMissingRequiredMarket = false;
             $oddsData = $game->odds_data;
             $hoursUntilStart = $this->hoursUntilStart($dates, $game);
             $availabilityBucket = $this->availabilityBucket($hoursUntilStart, $softAvailabilityHours, $expectedAvailabilityHours);
@@ -78,8 +83,19 @@ class OddsCompletenessCheck implements ValidationCheck
                 foreach (['spreads', 'totals', 'h2h'] as $requiredMarket) {
                     if (! $marketKeys->contains($requiredMarket)) {
                         $missingRequiredMarketsCount++;
-                        $flagged = true;
+                        $hasMissingRequiredMarket = true;
                         $missingRequiredMarketsGameIds[] = (int) $game->getKey();
+
+                        if ($availabilityBucket === 'expected') {
+                            $secondaryMarketsUnavailableExpectedWindowGames++;
+                            $expectedMissingRequiredMarketsGameIds[] = (int) $game->getKey();
+                            $flagged = true;
+                        } elseif ($availabilityBucket === 'soft') {
+                            $secondaryMarketsUnavailableSoftWindowGames++;
+                        } else {
+                            $secondaryMarketsUnavailableFarGames++;
+                        }
+
                         break;
                     }
                 }
@@ -95,7 +111,7 @@ class OddsCompletenessCheck implements ValidationCheck
                 $flaggedGameIds[] = (int) $game->getKey();
             }
 
-            if ($flagged || ! is_array($oddsData) || empty($oddsData['bookmakers'])) {
+            if ($flagged || ! is_array($oddsData) || empty($oddsData['bookmakers']) || $hasMissingRequiredMarket) {
                 $sampleGames[] = $this->sampleGame($game, $hoursUntilStart, $availabilityBucket, $flagged);
             }
         }
@@ -117,8 +133,9 @@ class OddsCompletenessCheck implements ValidationCheck
         } elseif ($problemGames > 0) {
             $status = 'warning';
             $message = "{$problemGames}/{$totalGames} market-ready active games have odds but are missing one or more secondary markets.";
-        } elseif ($missingOddsCount > 0) {
-            $message = "Odds coverage is recommendation-ready where available; {$missingOddsCount}/{$totalGames} market-ready active games are outside the expected odds window or provider has not posted odds.";
+        } elseif ($missingOddsCount > 0 || $missingRequiredMarketsCount > 0) {
+            $unavailableGames = count(array_unique(array_merge($missingOddsGameIds, $missingRequiredMarketsGameIds)));
+            $message = "Odds coverage is recommendation-ready where available; {$unavailableGames}/{$totalGames} market-ready active games are outside the expected odds window or provider has not posted full markets.";
         }
 
         return [
@@ -140,10 +157,14 @@ class OddsCompletenessCheck implements ValidationCheck
                 'provider_unavailable_far_odds' => $providerUnavailableFarGames,
                 'provider_unavailable_soft_window_odds' => $providerUnavailableSoftWindowGames,
                 'provider_unavailable_expected_window_odds' => $providerUnavailableExpectedWindowGames,
+                'secondary_markets_unavailable_far_games' => $secondaryMarketsUnavailableFarGames,
+                'secondary_markets_unavailable_soft_window_games' => $secondaryMarketsUnavailableSoftWindowGames,
+                'secondary_markets_unavailable_expected_window_games' => $secondaryMarketsUnavailableExpectedWindowGames,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
                 'sample_missing_odds_game_ids' => array_slice(array_values(array_unique($missingOddsGameIds)), 0, 5),
                 'sample_expected_missing_odds_game_ids' => array_slice(array_values(array_unique($expectedMissingOddsGameIds)), 0, 5),
                 'sample_missing_required_market_game_ids' => array_slice(array_values(array_unique($missingRequiredMarketsGameIds)), 0, 5),
+                'sample_expected_missing_required_market_game_ids' => array_slice(array_values(array_unique($expectedMissingRequiredMarketsGameIds)), 0, 5),
                 'sample_stale_odds_game_ids' => array_slice(array_values(array_unique($staleOddsGameIds)), 0, 5),
                 'sample_games' => array_slice($sampleGames, 0, 5),
                 'soft_availability_hours' => $softAvailabilityHours,

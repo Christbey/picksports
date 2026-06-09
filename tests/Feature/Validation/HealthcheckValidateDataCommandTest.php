@@ -160,6 +160,9 @@ test('healthcheck validate data flags current day final games missing stats', fu
 });
 
 test('healthcheck validate data flags upcoming game page readiness gaps', function () {
+    config()->set('validation.thresholds.odds_completeness.soft_availability_hours', 9999);
+    config()->set('validation.thresholds.odds_completeness.expected_availability_hours', 9999);
+
     $home = Team::factory()->create();
     $away = Team::factory()->create();
 
@@ -195,6 +198,67 @@ test('healthcheck validate data flags upcoming game page readiness gaps', functi
         ->and(data_get($finding->facts, 'games_missing_team_metrics'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toContain($game->id)
         ->and(data_get($finding->facts, 'sample_games.0.reasons'))->toContain('missing_prediction', 'missing_odds', 'missing_team_metrics');
+});
+
+test('healthcheck validate data does not flag future provider unavailable odds as readiness gaps', function () {
+    $this->travelTo('2026-06-09 15:00:00');
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'espn_event_id' => '401999778',
+        'short_name' => 'BOS @ LAL',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'season_type' => 2,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-10',
+        'game_time' => '19:00:00',
+        'odds_api_event_id' => fake()->uuid(),
+        'odds_data' => null,
+        'odds_updated_at' => null,
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 2.5,
+        'predicted_total' => 224.5,
+        'win_probability' => 0.56,
+        'confidence_score' => 61.2,
+    ]);
+
+    foreach ([$home, $away] as $team) {
+        DB::table('nba_team_metrics')->insert([
+            'team_id' => $team->id,
+            'season' => 2026,
+            'offensive_efficiency' => 115.2,
+            'defensive_efficiency' => 111.8,
+            'net_rating' => 3.4,
+            'tempo' => 99.1,
+            'calculation_date' => now()->toDateString(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_upcoming_game_readiness')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('passing')
+        ->and(data_get($finding->facts, 'games_missing_odds'))->toBe(1)
+        ->and(data_get($finding->facts, 'provider_unavailable_far_odds'))->toBe(1)
+        ->and(data_get($finding->facts, 'provider_unavailable_expected_window_odds'))->toBe(0)
+        ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([]);
 });
 
 test('healthcheck validate data passes upcoming game page readiness when pregame data exists', function () {

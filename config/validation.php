@@ -140,6 +140,8 @@ return [
             'problem_fail_pct' => 0.20,
             'missing_or_stale_fail_pct' => 0.50,
             'stale_after_hours' => 8,
+            'soft_availability_hours' => 24,
+            'expected_availability_hours' => 6,
         ],
         'weather_completeness' => [
             'problem_warn_pct' => 0.05,

@@ -4,6 +4,7 @@ namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Services\Sports\SeasonStage\SeasonStageService;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -41,6 +42,7 @@ class UpcomingGameReadinessCheck implements ValidationCheck
 
         $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
+        $dates = app(SportsDateWindowService::class);
         $upcomingQuery = DB::table($gamesTable)
             ->whereIn('id', $stageContext->activeGameIds);
 
@@ -52,8 +54,10 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             'season',
             'season_type',
             'game_date',
+            'game_time',
             'status',
             'odds_data',
+            'odds_api_event_id',
             'odds_updated_at',
             'updated_at',
         ]);
@@ -64,9 +68,14 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         $missingOdds = 0;
         $missingTeamMetrics = 0;
         $staleGameRows = 0;
+        $providerUnavailableFarOdds = 0;
+        $providerUnavailableSoftOdds = 0;
+        $providerUnavailableExpectedOdds = 0;
         $flaggedGameIds = [];
         $sampleGames = [];
         $staleHours = (int) config('validation.thresholds.upcoming_game_readiness.stale_after_hours', 12);
+        $softOddsAvailabilityHours = (int) config('validation.thresholds.odds_completeness.soft_availability_hours', 24);
+        $expectedOddsAvailabilityHours = (int) config('validation.thresholds.odds_completeness.expected_availability_hours', 6);
 
         foreach ($upcomingGames as $game) {
             $gameId = (int) $game->id;
@@ -90,7 +99,21 @@ class UpcomingGameReadinessCheck implements ValidationCheck
             $oddsData = $this->decodeOddsData($game->odds_data ?? null);
             if (in_array($gameId, $stageContext->marketReadyGameIds, true) && (! is_array($oddsData) || empty($oddsData['bookmakers']))) {
                 $missingOdds++;
-                $reasons[] = 'missing_odds';
+                $oddsAvailabilityBucket = $this->oddsAvailabilityBucket(
+                    $dates,
+                    $game,
+                    $softOddsAvailabilityHours,
+                    $expectedOddsAvailabilityHours,
+                );
+
+                if ($oddsAvailabilityBucket === 'expected') {
+                    $providerUnavailableExpectedOdds++;
+                    $reasons[] = 'missing_odds';
+                } elseif ($oddsAvailabilityBucket === 'soft') {
+                    $providerUnavailableSoftOdds++;
+                } else {
+                    $providerUnavailableFarOdds++;
+                }
             }
 
             if (! $this->hasMetricsForBothTeams($teamMetricsTable, $game)) {
@@ -143,6 +166,9 @@ class UpcomingGameReadinessCheck implements ValidationCheck
                 'games_missing_espn_event_ids' => $missingEspnEventIds,
                 'games_missing_predictions' => $missingPredictions,
                 'games_missing_odds' => $missingOdds,
+                'provider_unavailable_far_odds' => $providerUnavailableFarOdds,
+                'provider_unavailable_soft_window_odds' => $providerUnavailableSoftOdds,
+                'provider_unavailable_expected_window_odds' => $providerUnavailableExpectedOdds,
                 'games_missing_team_metrics' => $missingTeamMetrics,
                 'stale_game_rows' => $staleGameRows,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
@@ -185,5 +211,21 @@ class UpcomingGameReadinessCheck implements ValidationCheck
         $decoded = json_decode($value, true);
 
         return is_array($decoded) ? $decoded : null;
+    }
+
+    private function oddsAvailabilityBucket(SportsDateWindowService $dates, object $game, int $softAvailabilityHours, int $expectedAvailabilityHours): string
+    {
+        $start = $dates->gameDateTimeUtc($game->game_date ?? null, $game->game_time ?? null);
+        $hoursUntilStart = $start?->diffInRealHours(now()->utc(), false) * -1;
+
+        if ($hoursUntilStart === null || $hoursUntilStart > $softAvailabilityHours) {
+            return 'early';
+        }
+
+        if ($hoursUntilStart > $expectedAvailabilityHours) {
+            return 'soft';
+        }
+
+        return 'expected';
     }
 }

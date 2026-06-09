@@ -126,6 +126,55 @@ class HealthcheckValidateData extends Command
         };
 
         $this->line("  [{$checkType}] <fg={$color}>{$status}</>: {$message}");
+
+        if ($status !== 'passing') {
+            $this->displayFindingDetails($metadata, $recommendedAction);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function displayFindingDetails(array $metadata, ?string $recommendedAction): void
+    {
+        $sampleGames = collect((array) data_get($metadata, 'sample_games', []))
+            ->take(3)
+            ->map(function (mixed $game): string {
+                if (! is_array($game)) {
+                    return (string) $game;
+                }
+
+                $label = data_get($game, 'matchup') ?: data_get($game, 'game_id');
+                $eventId = data_get($game, 'espn_event_id');
+                $reasons = collect((array) data_get($game, 'reasons', []))
+                    ->filter()
+                    ->implode(',');
+
+                return trim(implode(' | ', array_filter([
+                    'game_id='.data_get($game, 'game_id'),
+                    $eventId ? 'espn='.$eventId : null,
+                    $label ? 'matchup='.$label : null,
+                    $reasons ? 'reasons='.$reasons : null,
+                ])));
+            })
+            ->filter()
+            ->values();
+
+        if ($sampleGames->isNotEmpty()) {
+            $this->line('    samples: '.$sampleGames->implode(' ; '));
+        } elseif (data_get($metadata, 'sample_game_ids') !== null) {
+            $sampleIds = collect((array) data_get($metadata, 'sample_game_ids'))
+                ->take(5)
+                ->implode(',');
+
+            if ($sampleIds !== '') {
+                $this->line('    sample_game_ids: '.$sampleIds);
+            }
+        }
+
+        if ($recommendedAction) {
+            $this->line('    recommended: '.$recommendedAction);
+        }
     }
 
     protected function displayResults(ValidationRun $run): int

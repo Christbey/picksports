@@ -194,6 +194,7 @@ class OperationsAiReviewCommand extends Command
         $keys = [
             'sample_game_ids',
             'sample_missing_game_ids',
+            'sample_expected_missing_game_ids',
             'sample_stale_game_ids',
             'sample_missing_odds_game_ids',
             'sample_missing_required_market_game_ids',
@@ -212,6 +213,9 @@ class OperationsAiReviewCommand extends Command
             'games_with_missing_required_markets',
             'games_with_stale_odds',
             'games_missing_player_props',
+            'provider_unavailable_far_games',
+            'provider_unavailable_soft_window_games',
+            'provider_unavailable_expected_window_games',
             'games_with_stale_player_props',
             'games_with_unscored_player_props',
             'games_missing_weather',

@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
 use App\Actions\Validation\SportValidator;
 use App\AI\Agents\ValidationReviewSummaryAgent;
 use App\Models\CommandHeartbeat;
@@ -314,6 +315,64 @@ test('healthcheck validate data warns when fresh player props have no recommenda
         ->and(data_get($sampleGame, 'odds_api_event_id'))->toBe('odds-event-1')
         ->and(data_get($sampleGame, 'matchup'))->toBe('BOS @ LAL')
         ->and(data_get($sampleGame, 'reasons'))->toContain('unscored_player_props');
+});
+
+test('player prop freshness treats missing provider props outside the expected window as availability info', function () {
+    $this->travelTo('2026-06-08 10:00:00');
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-10',
+        'game_time' => '19:00:00',
+        'odds_api_event_id' => 'odds-event-far',
+        'odds_updated_at' => now(),
+    ]);
+
+    $result = app(PlayerPropFreshnessCheck::class)->run('nba', config('validation.sports.nba'));
+    $sampleGame = collect(data_get($result, 'metadata.sample_games'))->firstWhere('game_id', $game->id);
+
+    expect($result['status'])->toBe('passing')
+        ->and(data_get($result, 'metadata.games_missing_player_props'))->toBe(1)
+        ->and(data_get($result, 'metadata.provider_unavailable_far_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.provider_unavailable_expected_window_games'))->toBe(0)
+        ->and(data_get($result, 'metadata.sample_game_ids'))->toBe([])
+        ->and(data_get($sampleGame, 'prop_availability_bucket'))->toBe('early')
+        ->and(data_get($sampleGame, 'reasons'))->toContain('provider_missing_player_props_early_window');
+});
+
+test('player prop freshness warns when provider props are missing inside the expected window', function () {
+    $this->travelTo('2026-06-08 10:00:00');
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-08',
+        'game_time' => '14:00:00',
+        'odds_api_event_id' => 'odds-event-near',
+        'odds_updated_at' => now(),
+    ]);
+
+    $result = app(PlayerPropFreshnessCheck::class)->run('nba', config('validation.sports.nba'));
+    $sampleGame = collect(data_get($result, 'metadata.sample_games'))->firstWhere('game_id', $game->id);
+
+    expect($result['status'])->toBe('warning')
+        ->and(data_get($result, 'metadata.games_missing_player_props'))->toBe(1)
+        ->and(data_get($result, 'metadata.provider_unavailable_expected_window_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.sample_game_ids'))->toContain($game->id)
+        ->and(data_get($result, 'metadata.sample_expected_missing_game_ids'))->toContain($game->id)
+        ->and(data_get($sampleGame, 'prop_availability_bucket'))->toBe('expected')
+        ->and(data_get($sampleGame, 'reasons'))->toContain('provider_missing_player_props_near_start');
 });
 
 test('healthcheck validate data flags missing weather for outdoor sports', function () {

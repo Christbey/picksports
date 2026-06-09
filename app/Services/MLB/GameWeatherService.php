@@ -23,15 +23,7 @@ class GameWeatherService
             ];
         }
 
-        if ($this->hasUnknownRetractableRoof($game)) {
-            return [
-                'provider' => 'open_meteo',
-                'is_indoor' => false,
-                'roof_status' => 'unknown_retractable',
-                'location_source' => 'retractable_roof_venue',
-                'observed_at' => $this->gameDateTime($game)?->toDateTimeString(),
-            ];
-        }
+        $hasUnknownRetractableRoof = $this->hasUnknownRetractableRoof($game);
 
         $location = $this->resolveLocation($game);
         if ($location === null) {
@@ -95,7 +87,7 @@ class GameWeatherService
             'humidity_percent' => $this->hourlyValue($payload, 'relative_humidity_2m', $hourIndex),
             'condition_code' => (string) $this->hourlyValue($payload, 'weather_code', $hourIndex),
             'is_indoor' => false,
-            'roof_status' => 'open_air',
+            'roof_status' => $hasUnknownRetractableRoof ? 'unknown_retractable' : 'open_air',
             'raw_payload' => $payload,
         ];
     }

@@ -1,11 +1,13 @@
 <?php
 
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
+use App\Actions\Validation\Checks\WeatherCompletenessCheck;
 use App\Actions\Validation\SportValidator;
 use App\AI\Agents\ValidationReviewSummaryAgent;
 use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
 use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\GameWeather as MlbGameWeather;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
@@ -413,6 +415,42 @@ test('healthcheck validate data flags missing weather for outdoor sports', funct
         ->and(data_get($finding->facts, 'sample_games.0.venue'))->toBe('Kauffman Stadium, Kansas City, MO')
         ->and(data_get($finding->facts, 'sample_games.0.market_ready'))->toBeTrue()
         ->and(data_get($finding->facts, 'sample_games.0.reasons'))->toContain('missing_weather');
+});
+
+test('weather completeness treats fresh unknown retractable roof as advisory context', function () {
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'espn_event_id' => '401999902',
+        'short_name' => 'ARI @ MIA',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay(),
+        'venue_name' => 'loanDepot park',
+        'venue_city' => 'Miami',
+        'venue_state' => 'Florida',
+    ]);
+
+    MlbGameWeather::query()->create([
+        'game_id' => $game->id,
+        'provider' => 'open_meteo',
+        'is_indoor' => false,
+        'roof_status' => 'unknown_retractable',
+        'updated_at' => now(),
+    ]);
+
+    $result = app(WeatherCompletenessCheck::class)->run('mlb', config('validation.sports.mlb'));
+
+    expect($result['status'])->toBe('passing')
+        ->and(data_get($result, 'metadata.games_with_unknown_roof_status'))->toBe(1)
+        ->and(data_get($result, 'metadata.games_missing_weather'))->toBe(0)
+        ->and(data_get($result, 'metadata.games_with_stale_weather'))->toBe(0)
+        ->and(data_get($result, 'metadata.sample_game_ids'))->toBe([])
+        ->and(data_get($result, 'metadata.sample_roof_context_games.0.game_id'))->toBe($game->id)
+        ->and(data_get($result, 'metadata.sample_roof_context_games.0.reasons'))->toContain('unknown_retractable_roof_status');
 });
 
 test('healthcheck validate data flags past mlb games stuck as scheduled', function () {

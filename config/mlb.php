@@ -443,6 +443,7 @@ return [
                 'Globe Life Field' => ['latitude' => 32.7473, 'longitude' => -97.0842],
                 'Great American Ball Park' => ['latitude' => 39.0979, 'longitude' => -84.5082],
                 'Kauffman Stadium' => ['latitude' => 39.0517, 'longitude' => -94.4803],
+                'Las Vegas Ballpark' => ['latitude' => 36.1595, 'longitude' => -115.3300],
                 'Nationals Park' => ['latitude' => 38.8730, 'longitude' => -77.0074],
                 'Oracle Park' => ['latitude' => 37.7786, 'longitude' => -122.3893],
                 'Oriole Park at Camden Yards' => ['latitude' => 39.2839, 'longitude' => -76.6217],

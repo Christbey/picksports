@@ -206,6 +206,7 @@ class OperationsAiReviewCommand extends Command
             'sample_market_ready_missing_weather_game_ids',
             'sample_unscored_game_ids',
             'sample_games',
+            'sample_roof_context_games',
             'missing_core_fields',
             'date_leakage',
             'duplicate_espn_event_ids',

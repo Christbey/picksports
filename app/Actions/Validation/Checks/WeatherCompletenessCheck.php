@@ -69,10 +69,12 @@ class WeatherCompletenessCheck implements ValidationCheck
         $staleWeatherGameIds = [];
         $unknownRoofGameIds = [];
         $sampleGames = [];
+        $roofContextGames = [];
 
         foreach ($games as $game) {
             $flagged = false;
             $reasons = [];
+            $hasUnknownRetractableRoof = false;
 
             if (! $game->weather_id) {
                 $missingWeather++;
@@ -91,10 +93,13 @@ class WeatherCompletenessCheck implements ValidationCheck
 
                 if ($sport === 'mlb' && ! (bool) $game->is_indoor && $game->roof_status === 'unknown_retractable') {
                     $unknownRoof++;
-                    $flagged = true;
+                    $hasUnknownRetractableRoof = true;
                     $unknownRoofGameIds[] = (int) $game->id;
-                    $reasons[] = 'unknown_retractable_roof_status';
                 }
+            }
+
+            if ($hasUnknownRetractableRoof) {
+                $roofContextGames[] = $this->sampleGame($game, ['unknown_retractable_roof_status'], in_array((int) $game->id, $marketReadyGameIds, true));
             }
 
             if ($flagged) {
@@ -152,6 +157,7 @@ class WeatherCompletenessCheck implements ValidationCheck
                 'sample_stale_weather_game_ids' => array_slice(array_values(array_unique($staleWeatherGameIds)), 0, 5),
                 'sample_unknown_roof_game_ids' => array_slice(array_values(array_unique($unknownRoofGameIds)), 0, 5),
                 'sample_games' => array_slice($sampleGames, 0, 5),
+                'sample_roof_context_games' => array_slice($roofContextGames, 0, 5),
                 'stale_after_hours' => $staleHours,
             ],
         ];

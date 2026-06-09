@@ -169,3 +169,18 @@ it('uses configured Las Vegas Ballpark coordinates for mlb weather', function ()
         ->and($weather['roof_status'])->toBe('open_air')
         ->and((float) $weather['temperature_f'])->toBe(94.0);
 });
+
+it('keeps common retractable roof mlb venues in configured weather coordinates', function () {
+    $coordinates = (array) config('mlb.prediction.actual_weather.venue_coordinates');
+
+    expect($coordinates)
+        ->toHaveKeys([
+            'American Family Field',
+            'Chase Field',
+            'Daikin Park',
+            'Globe Life Field',
+            'loanDepot park',
+            'Rogers Centre',
+            'T-Mobile Park',
+        ]);
+});

@@ -53,11 +53,11 @@ abstract class AbstractBasketballSyncPlayerStats
                     continue;
                 }
 
-                $player = $playerModel::query()->where('espn_id', $playerEspnId)->first();
-
-                if (! $player || $this->shouldSkipAthlete($athleteData)) {
+                if ($this->shouldSkipAthlete($athleteData)) {
                     continue;
                 }
+
+                $player = $this->resolvePlayer($playerModel, (string) $playerEspnId, $athleteData, $team);
 
                 $stats = $athleteData['stats'] ?? [];
 
@@ -92,6 +92,35 @@ abstract class AbstractBasketballSyncPlayerStats
         }
 
         return $synced;
+    }
+
+    /**
+     * @param  class-string<Model>  $playerModel
+     */
+    protected function resolvePlayer(string $playerModel, string $playerEspnId, array $athleteData, Model $team): Model
+    {
+        $athlete = $athleteData['athlete'] ?? [];
+        $attributes = [
+            'team_id' => $team->getKey(),
+            'first_name' => $athlete['firstName'] ?? null,
+            'last_name' => $athlete['lastName'] ?? null,
+            'full_name' => $athlete['displayName'] ?? $athlete['fullName'] ?? $athlete['shortName'] ?? null,
+            'jersey_number' => $athlete['jersey'] ?? null,
+            'position' => $athlete['position']['abbreviation'] ?? $athlete['position']['name'] ?? null,
+            'headshot_url' => $athlete['headshot']['href'] ?? null,
+        ];
+
+        $fillable = $playerModel::query()->getModel()->getFillable();
+        $attributes = array_filter(
+            $attributes,
+            fn ($value, string $key): bool => $value !== null && in_array($key, $fillable, true),
+            ARRAY_FILTER_USE_BOTH
+        );
+
+        return $playerModel::query()->updateOrCreate(
+            ['espn_id' => $playerEspnId],
+            $attributes
+        );
     }
 
     protected function shouldSkipAthlete(array $athleteData): bool

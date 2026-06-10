@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -28,6 +29,7 @@ class TeamStatCoverageCheck implements ValidationCheck
 
         $season = (int) now()->year;
         $totalTeams = DB::table($teamsTable)->count();
+        $stageContext = app(SeasonStageService::class)->context($sport, $season);
 
         if ($totalTeams === 0) {
             return [
@@ -51,6 +53,27 @@ class TeamStatCoverageCheck implements ValidationCheck
         $teamsWithStats = $teamsWithStatsIds->unique()->count();
         $missingTeams = max($totalTeams - $teamsWithStats, 0);
         $missingPct = $totalTeams > 0 ? $missingTeams / $totalTeams : 1.0;
+        $completedGames = DB::table($gamesTable)
+            ->where('season', $season)
+            ->whereIn('status', ['STATUS_FINAL', 'final', 'completed'])
+            ->count();
+
+        if ($completedGames === 0 && in_array($stageContext->stageGroup, ['offseason', 'preseason', 'unknown'], true)) {
+            return [
+                'check_type' => 'validation_team_stat_coverage',
+                'status' => 'passing',
+                'message' => "No completed {$sport} games found for {$season}; current-season team stats are not expected yet.",
+                'metadata' => [
+                    'season' => $season,
+                    'stage' => $stageContext->stage,
+                    'stage_group' => $stageContext->stageGroup,
+                    'total_teams' => $totalTeams,
+                    'teams_with_stats' => $teamsWithStats,
+                    'teams_missing_stats' => $missingTeams,
+                    'completed_games' => $completedGames,
+                ],
+            ];
+        }
 
         $warnPct = (float) config('validation.thresholds.team_stat_coverage.missing_teams_warn_pct', 0.0);
         $failPct = (float) config('validation.thresholds.team_stat_coverage.missing_teams_fail_pct', 0.05);
@@ -75,6 +98,7 @@ class TeamStatCoverageCheck implements ValidationCheck
                 'total_teams' => $totalTeams,
                 'teams_with_stats' => $teamsWithStats,
                 'teams_missing_stats' => $missingTeams,
+                'completed_games' => $completedGames,
             ],
         ];
     }

@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
+use App\Actions\Validation\Checks\TeamStatCoverageCheck;
 use App\Actions\Validation\Checks\WeatherCompletenessCheck;
 use App\Actions\Validation\SportValidator;
 use App\AI\Agents\ValidationReviewSummaryAgent;
@@ -19,6 +20,7 @@ use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
 use App\Notifications\ValidationRegressionAlert;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
@@ -551,6 +553,32 @@ test('weather completeness does not require roof status on nfl weather rows', fu
         ->and(data_get($result, 'metadata.games_missing_weather'))->toBe(0)
         ->and(data_get($result, 'metadata.games_with_stale_weather'))->toBe(0)
         ->and(data_get($result, 'metadata.games_with_unknown_roof_status'))->toBe(0);
+});
+
+test('team stat coverage does not fail nfl before the season has completed games', function () {
+    Carbon::setTestNow('2026-06-09 12:00:00');
+
+    $home = NflTeam::factory()->create();
+    $away = NflTeam::factory()->create();
+
+    NflGame::factory()->create([
+        'espn_event_id' => '401999904',
+        'short_name' => 'DAL @ PHI',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addMonths(3),
+    ]);
+
+    $result = app(TeamStatCoverageCheck::class)
+        ->run('nfl', config('validation.sports.nfl'));
+
+    expect($result['status'])->toBe('passing')
+        ->and($result['message'])->toContain('current-season team stats are not expected yet')
+        ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
+        ->and(data_get($result, 'metadata.completed_games'))->toBe(0)
+        ->and(data_get($result, 'metadata.teams_missing_stats'))->toBeGreaterThan(0);
 });
 
 test('healthcheck validate data flags past mlb games stuck as scheduled', function () {

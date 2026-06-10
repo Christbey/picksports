@@ -22,7 +22,8 @@ abstract class AbstractSyncTeamsCommand extends Command
 
     public function __construct()
     {
-        $this->signature = $this->commandName()."\n {--espn-id= : Sync a single ESPN team id immediately}";
+        $this->signature = $this->commandName()."\n {--espn-id= : Sync a single ESPN team id immediately}
+            {--sync : Run the all-teams sync inline instead of dispatching it to the queue}";
         $this->description = "Sync {$this->sportCode()} teams from ESPN API";
 
         parent::__construct();
@@ -49,6 +50,16 @@ abstract class AbstractSyncTeamsCommand extends Command
             return Command::SUCCESS;
         }
 
+        if ($this->option('sync')) {
+            $this->info("Syncing {$sport} teams inline...");
+
+            $this->runTeamsSyncInline();
+
+            $this->info("{$sport} teams sync completed successfully.");
+
+            return Command::SUCCESS;
+        }
+
         $this->info("Dispatching {$sport} teams sync job...");
 
         $this->dispatchTeamsSync();
@@ -62,6 +73,13 @@ abstract class AbstractSyncTeamsCommand extends Command
     {
         $job = $this->teamsSyncJobClass();
         $job::dispatch();
+    }
+
+    protected function runTeamsSyncInline(): void
+    {
+        $job = $this->teamsSyncJobClass();
+
+        app()->call([new $job, 'handle']);
     }
 
     protected function commandName(): string

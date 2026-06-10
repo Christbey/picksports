@@ -68,6 +68,12 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->assertExitCode(0);
 });
 
+it('exposes inline team sync for espn team sync commands', function () {
+    $this->artisan('espn:sync-cfb-teams --help')
+        ->expectsOutputToContain('--sync')
+        ->assertExitCode(0);
+});
+
 it('accepts explicit repair and ai operator aliases', function () {
     $this->travelTo('2026-06-01 08:00:00');
 

@@ -273,6 +273,7 @@ class SportsPipelineRegistry
                 ]),
             ],
             'cfb' => [
+                $this->step('Sync teams', 'espn:sync-cfb-teams', ['--sync' => true]),
                 $this->step('Sync current week', 'espn:sync-cfb-current'),
                 $this->step('Sync game details', 'espn:sync-cfb-game-details'),
                 $this->step('Sync injuries', 'espn:sync-cfb-injuries'),

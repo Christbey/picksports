@@ -1,10 +1,12 @@
 <?php
 
+use App\Actions\Validation\Checks\GameCoverageCheck;
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
 use App\Actions\Validation\Checks\TeamStatCoverageCheck;
 use App\Actions\Validation\Checks\WeatherCompletenessCheck;
 use App\Actions\Validation\SportValidator;
 use App\AI\Agents\ValidationReviewSummaryAgent;
+use App\Models\CFB\Team as CfbTeam;
 use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
 use App\Models\MLB\Game as MlbGame;
@@ -579,6 +581,20 @@ test('team stat coverage does not fail nfl before the season has completed games
         ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
         ->and(data_get($result, 'metadata.completed_games'))->toBe(0)
         ->and(data_get($result, 'metadata.teams_missing_stats'))->toBeGreaterThan(0);
+});
+
+test('game coverage does not fail cfb before the season schedule exists', function () {
+    Carbon::setTestNow('2026-06-10 12:00:00');
+
+    CfbTeam::factory()->count(3)->create();
+
+    $result = app(GameCoverageCheck::class)->run('cfb', config('validation.sports.cfb'));
+
+    expect($result['status'])->toBe('passing')
+        ->and($result['message'])->toContain('season schedule coverage is not expected yet')
+        ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
+        ->and(data_get($result, 'metadata.season_games'))->toBe(0)
+        ->and(data_get($result, 'metadata.teams_missing_games'))->toBe(3);
 });
 
 test('healthcheck validate data flags past mlb games stuck as scheduled', function () {

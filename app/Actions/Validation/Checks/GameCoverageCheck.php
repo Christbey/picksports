@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\Sports\SeasonStage\SeasonStageService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -26,6 +27,7 @@ class GameCoverageCheck implements ValidationCheck
         $expectedPerDay = (int) ($profile['expected_games_per_day'] ?? 0);
         $season = (int) now()->year;
         $inSeason = in_array((int) now()->month, (array) ($profile['active_months'] ?? []), true);
+        $stageContext = app(SeasonStageService::class)->context($sport, $season);
 
         $totalTeams = DB::table($teamsTable)->count();
 
@@ -58,6 +60,9 @@ class GameCoverageCheck implements ValidationCheck
 
         $teamsWithGames = $teamsWithGamesIds->count();
         $missingTeams = max($totalTeams - $teamsWithGames, 0);
+        $seasonGames = DB::table($gamesTable)
+            ->where('season', $season)
+            ->count();
 
         $upcomingGames = DB::table($gamesTable)
             ->where('game_date', '>=', now()->startOfDay())
@@ -75,7 +80,9 @@ class GameCoverageCheck implements ValidationCheck
         $status = 'passing';
         $message = "Team game coverage looks healthy. {$teamsWithGames}/{$totalTeams} teams have games this season.";
 
-        if ($missingPct >= $failPct) {
+        if ($seasonGames === 0 && in_array($stageContext->stageGroup, ['offseason', 'preseason'], true)) {
+            $message = "No {$sport} games found for {$season}; season schedule coverage is not expected yet.";
+        } elseif ($missingPct >= $failPct) {
             $status = 'failing';
             $message = "{$missingTeams}/{$totalTeams} teams are missing games this season.";
         } elseif ($missingPct > $warnPct) {
@@ -95,9 +102,12 @@ class GameCoverageCheck implements ValidationCheck
             'metadata' => [
                 'season' => $season,
                 'in_season' => $inSeason,
+                'stage' => $stageContext->stage,
+                'stage_group' => $stageContext->stageGroup,
                 'total_teams' => $totalTeams,
                 'teams_with_games' => $teamsWithGames,
                 'teams_missing_games' => $missingTeams,
+                'season_games' => $seasonGames,
                 'upcoming_games' => $upcomingGames,
                 'expected_upcoming_games' => $expectedUpcoming,
             ],

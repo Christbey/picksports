@@ -12,6 +12,9 @@ use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
+use App\Models\NFL\Game as NflGame;
+use App\Models\NFL\GameWeather as NflGameWeather;
+use App\Models\NFL\Team as NflTeam;
 use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
@@ -515,6 +518,39 @@ test('weather completeness treats fresh unknown retractable roof as advisory con
         ->and(data_get($result, 'metadata.sample_game_ids'))->toBe([])
         ->and(data_get($result, 'metadata.sample_roof_context_games.0.game_id'))->toBe($game->id)
         ->and(data_get($result, 'metadata.sample_roof_context_games.0.reasons'))->toContain('unknown_retractable_roof_status');
+});
+
+test('weather completeness does not require roof status on nfl weather rows', function () {
+    $home = NflTeam::factory()->create();
+    $away = NflTeam::factory()->create();
+
+    $game = NflGame::factory()->create([
+        'espn_event_id' => '401999903',
+        'short_name' => 'DAL @ PHI',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay(),
+        'venue_name' => 'Lincoln Financial Field',
+        'venue_city' => 'Philadelphia',
+        'venue_state' => 'PA',
+    ]);
+
+    NflGameWeather::query()->create([
+        'game_id' => $game->id,
+        'provider' => 'open_meteo',
+        'is_indoor' => false,
+        'updated_at' => now(),
+    ]);
+
+    $result = app(WeatherCompletenessCheck::class)->run('nfl', config('validation.sports.nfl'));
+
+    expect($result['status'])->toBe('passing')
+        ->and(data_get($result, 'metadata.upcoming_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.games_missing_weather'))->toBe(0)
+        ->and(data_get($result, 'metadata.games_with_stale_weather'))->toBe(0)
+        ->and(data_get($result, 'metadata.games_with_unknown_roof_status'))->toBe(0);
 });
 
 test('healthcheck validate data flags past mlb games stuck as scheduled', function () {

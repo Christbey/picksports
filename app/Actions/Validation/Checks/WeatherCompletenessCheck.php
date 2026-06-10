@@ -37,26 +37,32 @@ class WeatherCompletenessCheck implements ValidationCheck
         $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'scheduled', 'in_progress'];
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
         $marketReadyGameIds = $stageContext->marketReadyGameIds;
+        $hasRoofStatus = Schema::hasColumn($weatherTable, 'roof_status');
+
+        $select = [
+            "{$gamesTable}.id",
+            "{$gamesTable}.espn_event_id",
+            "{$gamesTable}.short_name",
+            "{$gamesTable}.name",
+            "{$gamesTable}.game_date",
+            "{$gamesTable}.venue_name",
+            "{$gamesTable}.venue_city",
+            "{$gamesTable}.venue_state",
+            "{$weatherTable}.id as weather_id",
+            "{$weatherTable}.updated_at as weather_updated_at",
+            "{$weatherTable}.is_indoor",
+        ];
+
+        if ($hasRoofStatus) {
+            $select[] = "{$weatherTable}.roof_status";
+        }
 
         $games = DB::table($gamesTable)
             ->leftJoin($weatherTable, "{$weatherTable}.game_id", '=', "{$gamesTable}.id")
             ->whereDate("{$gamesTable}.game_date", '>=', now()->startOfDay()->toDateString())
             ->whereDate("{$gamesTable}.game_date", '<=', now()->copy()->addDays($windowDays)->toDateString())
             ->whereIn("{$gamesTable}.status", $activeStatuses)
-            ->get([
-                "{$gamesTable}.id",
-                "{$gamesTable}.espn_event_id",
-                "{$gamesTable}.short_name",
-                "{$gamesTable}.name",
-                "{$gamesTable}.game_date",
-                "{$gamesTable}.venue_name",
-                "{$gamesTable}.venue_city",
-                "{$gamesTable}.venue_state",
-                "{$weatherTable}.id as weather_id",
-                "{$weatherTable}.updated_at as weather_updated_at",
-                "{$weatherTable}.is_indoor",
-                "{$weatherTable}.roof_status",
-            ]);
+            ->get($select);
 
         $totalGames = $games->count();
         $missingWeather = 0;
@@ -91,7 +97,7 @@ class WeatherCompletenessCheck implements ValidationCheck
                     $reasons[] = 'stale_weather';
                 }
 
-                if ($sport === 'mlb' && ! (bool) $game->is_indoor && $game->roof_status === 'unknown_retractable') {
+                if ($sport === 'mlb' && $hasRoofStatus && ! (bool) $game->is_indoor && $game->roof_status === 'unknown_retractable') {
                     $unknownRoof++;
                     $hasUnknownRetractableRoof = true;
                     $unknownRoofGameIds[] = (int) $game->id;
@@ -183,7 +189,7 @@ class WeatherCompletenessCheck implements ValidationCheck
             'weather_id' => $game->weather_id,
             'weather_updated_at' => $game->weather_updated_at ? now()->parse($game->weather_updated_at)->toIso8601String() : null,
             'is_indoor' => $game->is_indoor,
-            'roof_status' => $game->roof_status,
+            'roof_status' => property_exists($game, 'roof_status') ? $game->roof_status : null,
             'reasons' => $reasons,
         ];
     }

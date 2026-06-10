@@ -3,6 +3,7 @@
 namespace App\Actions\OddsApi;
 
 use App\Models\NBA\Team;
+use App\Models\NFL\Player;
 use App\Models\Sports\FuturesOdd;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
@@ -20,7 +21,6 @@ class SyncFuturesOdds
         'mlb' => 'baseball_mlb_world_series_winner',
         'nfl' => 'americanfootball_nfl_super_bowl_winner',
         'cbb' => 'basketball_ncaab_championship_winner',
-        'wcbb' => 'basketball_wncaab_championship_winner',
     ];
 
     /**
@@ -295,7 +295,7 @@ class SyncFuturesOdds
 
         $mappedPlayerId = $this->oddsApiService->mappedEspnPlayerId($oddsSportKey, $playerName);
         if ($mappedPlayerId) {
-            $mappedPlayer = \App\Models\NFL\Player::query()->find($mappedPlayerId);
+            $mappedPlayer = Player::query()->find($mappedPlayerId);
             if ($mappedPlayer !== null) {
                 return (int) $mappedPlayer->id;
             }
@@ -303,7 +303,7 @@ class SyncFuturesOdds
 
         $mappedPlayerName = $this->oddsApiService->mappedEspnPlayerName($oddsSportKey, $playerName);
         if ($mappedPlayerName) {
-            $exactMapped = \App\Models\NFL\Player::query()
+            $exactMapped = Player::query()
                 ->whereRaw('LOWER(full_name) = ?', [mb_strtolower($mappedPlayerName)])
                 ->first();
 
@@ -312,7 +312,7 @@ class SyncFuturesOdds
             }
         }
 
-        $exact = \App\Models\NFL\Player::query()
+        $exact = Player::query()
             ->whereRaw('LOWER(full_name) = ?', [mb_strtolower($playerName)])
             ->first();
 
@@ -321,7 +321,7 @@ class SyncFuturesOdds
         }
 
         $normalizedInput = $this->oddsApiService->normalizePlayerName($playerName);
-        $candidate = \App\Models\NFL\Player::query()
+        $candidate = Player::query()
             ->whereNotNull('full_name')
             ->get()
             ->map(function ($player) use ($normalizedInput) {

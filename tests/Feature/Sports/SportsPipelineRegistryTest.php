@@ -18,3 +18,16 @@ it('bootstraps cfb teams synchronously before current week sync', function () {
         ->label->toBe('Sync current week')
         ->command->toBe('espn:sync-cfb-current');
 });
+
+it('keeps wcbb regular odds enabled without unsupported futures odds', function () {
+    $registry = app(SportsPipelineRegistry::class);
+    $context = $registry->context(date: '2026-06-10', season: 2026);
+
+    $commands = collect($registry->pipelineSteps('wcbb', 'sync', $context))
+        ->pluck('command')
+        ->all();
+
+    expect($commands)
+        ->toContain('wcbb:sync-odds')
+        ->not->toContain('sports:sync-futures-odds');
+});

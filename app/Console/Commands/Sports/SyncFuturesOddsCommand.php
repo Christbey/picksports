@@ -8,7 +8,7 @@ use Illuminate\Console\Command;
 class SyncFuturesOddsCommand extends Command
 {
     protected $signature = 'sports:sync-futures-odds
-        {--sport=* : Sport slugs to sync (nba, mlb, nfl, cbb, wcbb)}
+        {--sport=* : Sport slugs to sync (nba, mlb, nfl, cbb)}
         {--season= : Season to tag on stored futures rows}
         {--odds-sport=* : Override sport key mapping in format sport:odds_api_key}';
 
@@ -19,6 +19,12 @@ class SyncFuturesOddsCommand extends Command
         $sports = $this->resolvedSports();
         $season = $this->resolvedSeason();
         $overrides = $this->resolvedOddsSportOverrides();
+
+        if ($sports === []) {
+            $this->warn('No supported futures sports requested. Supported sports: nba, mlb, nfl, cbb.');
+
+            return self::SUCCESS;
+        }
 
         $this->info('Syncing futures odds for ['.implode(', ', $sports).']'.($season ? " (season {$season})" : '').'...');
 
@@ -45,14 +51,14 @@ class SyncFuturesOddsCommand extends Command
     {
         $sports = $this->option('sport');
         if (! is_array($sports) || $sports === []) {
-            return ['nba', 'mlb', 'nfl', 'cbb', 'wcbb'];
+            return ['nba', 'mlb', 'nfl', 'cbb'];
         }
 
-        $allowed = ['nba', 'mlb', 'nfl', 'cbb', 'wcbb'];
+        $allowed = ['nba', 'mlb', 'nfl', 'cbb'];
         $normalized = array_values(array_unique(array_map(static fn ($sport) => strtolower((string) $sport), $sports)));
         $filtered = array_values(array_filter($normalized, static fn ($sport) => in_array($sport, $allowed, true)));
 
-        return $filtered === [] ? ['nba', 'mlb', 'nfl', 'cbb', 'wcbb'] : $filtered;
+        return $filtered === [] ? [] : $filtered;
     }
 
     protected function resolvedSeason(): ?int

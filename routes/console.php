@@ -527,11 +527,6 @@ $scheduleDailySeasonJob(
     $wcbbInSeason,
     'WCBB: Generate Tournament Forecast'
 );
-$scheduleOddsSyncWindow(
-    "sports:sync-futures-odds --sport=wcbb --season={$fallSeasonYear}",
-    $wcbbInSeason,
-    'WCBB: Sync Futures Odds'
-);
 $scheduleHalfHourlyWindowJob(
     'espn:sync-wcbb-injuries',
     '08:00',

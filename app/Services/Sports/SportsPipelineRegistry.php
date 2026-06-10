@@ -253,10 +253,6 @@ class SportsPipelineRegistry
                 $this->step('Sync game details', 'espn:sync-wcbb-game-details'),
                 $this->step('Sync injuries', 'espn:sync-wcbb-injuries'),
                 $this->step('Sync odds', 'wcbb:sync-odds'),
-                $this->step('Sync futures odds', 'sports:sync-futures-odds', [
-                    '--sport' => [$sport],
-                    '--season' => $season,
-                ]),
             ],
             'wnba' => [
                 $this->step('Sync scoreboard window', 'espn:sync-wnba-games-scoreboard', [

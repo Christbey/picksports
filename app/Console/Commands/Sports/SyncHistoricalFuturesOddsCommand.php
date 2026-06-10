@@ -9,7 +9,7 @@ use Illuminate\Support\Carbon;
 class SyncHistoricalFuturesOddsCommand extends Command
 {
     protected $signature = 'sports:sync-historical-futures-odds
-        {--sport=* : Sport slugs to sync (nba, mlb, nfl, cbb, wcbb)}
+        {--sport=* : Sport slugs to sync (nba, mlb, nfl, cbb)}
         {--season= : Season to tag on stored futures rows}
         {--date=* : ISO-8601 timestamps to capture}
         {--from-date= : Start date in Y-m-d format}
@@ -36,6 +36,12 @@ class SyncHistoricalFuturesOddsCommand extends Command
         $overrides = $this->resolvedOddsSportOverrides();
         $markets = $this->resolvedMarkets();
         $bookmaker = trim((string) $this->option('bookmaker'));
+
+        if ($sports === []) {
+            $this->warn('No supported historical futures sports requested. Supported sports: nba, mlb, nfl, cbb.');
+
+            return self::SUCCESS;
+        }
 
         $this->info(
             'Syncing historical futures snapshots for ['.implode(', ', $sports)
@@ -69,14 +75,14 @@ class SyncHistoricalFuturesOddsCommand extends Command
     {
         $sports = $this->option('sport');
         if (! is_array($sports) || $sports === []) {
-            return ['nba', 'mlb', 'nfl', 'cbb', 'wcbb'];
+            return ['nba', 'mlb', 'nfl', 'cbb'];
         }
 
-        $allowed = ['nba', 'mlb', 'nfl', 'cbb', 'wcbb'];
+        $allowed = ['nba', 'mlb', 'nfl', 'cbb'];
         $normalized = array_values(array_unique(array_map(static fn ($sport) => strtolower((string) $sport), $sports)));
         $filtered = array_values(array_filter($normalized, static fn ($sport) => in_array($sport, $allowed, true)));
 
-        return $filtered === [] ? ['nba', 'mlb', 'nfl', 'cbb', 'wcbb'] : $filtered;
+        return $filtered === [] ? [] : $filtered;
     }
 
     protected function resolvedSeason(): ?int

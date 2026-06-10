@@ -87,7 +87,6 @@ return [
             'expected_games_per_day' => 20,
             'market_window_days' => 1,
             'injuries_command' => 'espn:sync-wcbb-injuries',
-            'futures_enabled' => true,
             'pipeline_order' => [
                 ['label' => 'details before predictions', 'upstream' => ['espn:sync-wcbb-game-details%'], 'downstream' => ['wcbb:generate-predictions%'], 'recommended_action' => 'wcbb:generate-predictions'],
             ],

@@ -193,13 +193,18 @@ $schedulePlayerPropsWindow = function (
 
 $scheduleEveryMinuteJob = function (
     string $command,
-    string $name
+    string $name,
+    ?callable $when = null,
 ) use ($attachCommandHeartbeat) {
     $event = Schedule::command($command)
         ->everyMinute()
         ->name($name)
         ->withoutOverlapping()
         ->runInBackground();
+
+    if ($when) {
+        $event->when($when);
+    }
 
     $attachCommandHeartbeat($event, $command, $name);
 };
@@ -795,7 +800,8 @@ $attachCommandHeartbeat($pruneFailedJobsEvent, 'queue:prune-failed --hours=168',
 
 $scheduleEveryMinuteJob(
     'alerts:send-daily-digests',
-    'Alerts: Send Daily Digests'
+    'Alerts: Send Daily Digests',
+    fn () => (bool) config('alerts.daily_digest.enabled', true)
 );
 
 $adminEmailReportEvent = Schedule::command('alerts:send-admin-email-report')

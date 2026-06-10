@@ -2,6 +2,7 @@
 
 use App\AI\Agents\DailyDigestSummaryAgent;
 use App\Mail\DailyPredictionsDigestMail;
+use App\Models\DailyDigestSend;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -11,6 +12,7 @@ use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\DailyDigestService;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Mail;
 
 beforeEach(function () {
     Carbon::setTestNow(Carbon::parse('2026-03-22 10:00:00'));
@@ -148,6 +150,45 @@ test('build digest for user includes ai-generated summary when enabled', functio
         ->and($payload['summary']['intro'])->toContain('clear NBA moneyline lean')
         ->and($payload['summary']['highlights'])->toHaveCount(1)
         ->and($payload['predictions'])->toHaveCount(1);
+});
+
+test('daily digest skips before building payloads when production mail transport is localhost', function () {
+    $this->app->detectEnvironment(fn () => 'production');
+    config()->set('alerts.daily_digest.enabled', true);
+    config()->set('mail.default', 'smtp');
+    config()->set('mail.mailers.smtp.host', '127.0.0.1');
+    config()->set('mail.mailers.smtp.port', 2525);
+    config()->set('ai.features.daily_digest_summary.enabled', true);
+
+    Mail::fake();
+    DailyDigestSummaryAgent::fake([])->preventStrayPrompts();
+
+    makeDailyDigestUser();
+    makeDailyDigestPrediction();
+
+    $sent = app(DailyDigestService::class)->sendDueDigests(now());
+
+    expect($sent)->toBe(0)
+        ->and(DailyDigestSend::query()->count())->toBe(0);
+
+    Mail::assertNothingSent();
+});
+
+test('daily digest can be disabled by config', function () {
+    config()->set('alerts.daily_digest.enabled', false);
+
+    Mail::fake();
+    DailyDigestSummaryAgent::fake([])->preventStrayPrompts();
+
+    makeDailyDigestUser();
+    makeDailyDigestPrediction();
+
+    $sent = app(DailyDigestService::class)->sendDueDigests(now());
+
+    expect($sent)->toBe(0)
+        ->and(DailyDigestSend::query()->count())->toBe(0);
+
+    Mail::assertNothingSent();
 });
 
 test('build digest for user falls back to deterministic summary when ai digest summary is disabled', function () {

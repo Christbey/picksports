@@ -16,6 +16,7 @@ return [
     ],
 
     'daily_digest' => [
+        'enabled' => env('DAILY_DIGEST_EMAILS_ENABLED', true),
         'sports' => ['mlb', 'nba', 'nfl', 'cbb', 'cfb', 'wcbb', 'wnba'],
         'sport_priority' => ['mlb', 'nfl', 'nba', 'cbb', 'cfb', 'wcbb', 'wnba'],
     ],

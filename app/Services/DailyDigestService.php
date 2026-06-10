@@ -60,7 +60,17 @@ class DailyDigestService
     {
         $now ??= now();
 
-        if (! config('subscriptions.features.email_alerts_enabled', true)) {
+        if (! config('subscriptions.features.email_alerts_enabled', true) || ! config('alerts.daily_digest.enabled', true)) {
+            return 0;
+        }
+
+        if (! $this->mailTransportCanSend()) {
+            Log::error('Daily digest emails skipped because mail transport is not configured for production delivery.', [
+                'mailer' => config('mail.default'),
+                'host' => config('mail.mailers.smtp.host'),
+                'port' => config('mail.mailers.smtp.port'),
+            ]);
+
             return 0;
         }
 
@@ -71,17 +81,21 @@ class DailyDigestService
             ->whereNotNull('email')
             ->get();
 
-        foreach ($users as $user) {
-            if (! $this->isDueForDigest($user, $now)) {
-                continue;
-            }
+        $dueUsers = $users
+            ->filter(fn (User $user): bool => $this->isDueForDigest($user, $now))
+            ->values();
 
-            $payload = $this->buildDigestForUser($user, $now);
+        if ($dueUsers->isEmpty()) {
+            return 0;
+        }
 
-            if ($payload === null) {
-                continue;
-            }
+        $payload = $this->buildDigestForUser($dueUsers->first(), $now);
 
+        if ($payload === null) {
+            return 0;
+        }
+
+        foreach ($dueUsers as $user) {
             try {
                 Mail::to($user)->send(new DailyPredictionsDigestMail(
                     user: $user,
@@ -109,6 +123,23 @@ class DailyDigestService
         }
 
         return $sent;
+    }
+
+    private function mailTransportCanSend(): bool
+    {
+        if (! app()->environment('production')) {
+            return true;
+        }
+
+        $mailer = (string) config('mail.default');
+
+        if ($mailer !== 'smtp') {
+            return ! in_array($mailer, ['log', 'array'], true);
+        }
+
+        $host = strtolower(trim((string) config('mail.mailers.smtp.host')));
+
+        return ! in_array($host, ['127.0.0.1', 'localhost', '0.0.0.0'], true);
     }
 
     public function isDueForDigest(User $user, CarbonInterface $now): bool

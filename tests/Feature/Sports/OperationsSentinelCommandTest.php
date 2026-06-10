@@ -75,7 +75,7 @@ it('accepts explicit repair and ai operator aliases', function () {
     $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(1);
     $this->app->instance(SyncGamesFromScoreboard::class, $sync);
 
-    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --repair --ai --skip-sync-pipeline --skip-stats --skip-queue-drain --skip-model-pipeline --skip-ai-analysis --skip-ai-review --skip-validation')
+    $this->artisan('sports:operations-sentinel --sport=nba --from-date=2026-06-01 --to-date=2026-06-01 --season=2026 --repair --ai --ai-rate-limit-retries=2 --ai-rate-limit-delay=1 --skip-sync-pipeline --skip-stats --skip-queue-drain --skip-model-pipeline --skip-ai-analysis --skip-ai-review --skip-validation')
         ->expectsOutput('Repair mode requested; running the canonical repair pipeline.')
         ->expectsOutput('AI mode requested; daily prediction analysis and operations review will run unless explicitly skipped.')
         ->expectsOutput('Synced 1 NBA game row update(s).')

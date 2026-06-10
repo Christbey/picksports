@@ -11,9 +11,15 @@ use App\Models\NBA\Team;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
+use App\Services\AI\SportsAiContentService;
 use Illuminate\Support\Facades\Artisan;
+use Mockery as m;
 
 uses()->group('sports', 'ai');
+
+afterEach(function () {
+    m::close();
+});
 
 it('persists structured daily ai analysis for a slate prediction', function () {
     config()->set('services.openai.api_key', 'test-openai-key');
@@ -335,4 +341,65 @@ it('can enforce publishing guardrail downgrades when enabled', function () {
         ->and($analysis->metadata['publishing_enforcement']['applied'])->toBeTrue()
         ->and($analysis->metadata['publishing_enforcement']['original_bet_classification'])->toBe('bet')
         ->and($analysis->metadata['publishing_enforcement']['effective_bet_classification'])->toBe('watch');
+});
+
+it('retries daily prediction analysis when the provider rate limits', function () {
+    config()->set('services.openai.api_key', 'test-openai-key');
+    config()->set('ai.providers.openai.key', 'test-openai-key');
+    config()->set('nba.season.default', 2026);
+
+    $home = Team::factory()->create([
+        'location' => 'Los Angeles',
+        'name' => 'Lakers',
+        'abbreviation' => 'LAL',
+    ]);
+    $away = Team::factory()->create([
+        'location' => 'Boston',
+        'name' => 'Celtics',
+        'abbreviation' => 'BOS',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => 2,
+        'game_date' => '2026-05-23',
+        'game_time' => '19:00:00',
+        'status' => config('nba.statuses.scheduled'),
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'short_name' => 'BOS @ LAL',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 2.4,
+        'predicted_total' => 224.5,
+        'win_probability' => 0.58,
+        'confidence_score' => 61,
+    ]);
+
+    $aiContentService = m::mock(SportsAiContentService::class);
+    $aiContentService->shouldReceive('providerAvailabilityMessage')
+        ->with('openai')
+        ->andReturnNull();
+    $aiContentService->shouldReceive('generateDailyPredictionAnalysis')
+        ->twice()
+        ->andReturnNull();
+    $aiContentService->shouldReceive('lastDailyPredictionAnalysisFailure')
+        ->twice()
+        ->andReturn('Application rate limited by AI provider [openai].');
+
+    $this->app->instance(SportsAiContentService::class, $aiContentService);
+
+    $this->artisan('sports:ai-daily-predictions', [
+        '--sport' => ['nba'],
+        '--date' => '2026-05-23',
+        '--season' => 2026,
+        '--limit' => 5,
+        '--retry-rate-limit' => 1,
+        '--retry-rate-limit-delay' => 1,
+    ])
+        ->expectsOutputToContain('rate limited while analyzing BOS @ LAL; retrying in 1 second(s) (1/1).')
+        ->expectsOutputToContain('stopping remaining AI daily prediction analysis for this run because the provider is rate limited.')
+        ->assertExitCode(0);
 });

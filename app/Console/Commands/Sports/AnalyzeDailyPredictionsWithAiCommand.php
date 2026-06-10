@@ -25,7 +25,9 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         {--force : Regenerate even when the input hash has not changed}
         {--dry-run : Show which predictions would be analyzed without calling AI}
         {--provider= : Override AI provider}
-        {--model= : Override AI model}';
+        {--model= : Override AI model}
+        {--retry-rate-limit=0 : Number of times to retry a rate-limited AI request before stopping}
+        {--retry-rate-limit-delay=60 : Seconds to wait between rate-limit retries}';
 
     protected $description = 'Send daily prediction payloads through the structured AI analysis layer for one or more sports';
 
@@ -61,6 +63,8 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $asOfDate = now()->toDateString();
         $requestedProvider = $this->option('provider') ? (string) $this->option('provider') : (string) config('ai.features.daily_prediction_analysis.provider', 'openai');
         $requestedModel = $this->option('model') ? (string) $this->option('model') : (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
+        $rateLimitRetries = max(0, (int) $this->option('retry-rate-limit'));
+        $rateLimitRetryDelay = max(1, (int) $this->option('retry-rate-limit-delay'));
         $processed = 0;
         $skipped = 0;
         $rateLimited = false;
@@ -116,19 +120,39 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 }
 
                 $startedAt = microtime(true);
-                $analysis = $aiContentService->generateDailyPredictionAnalysis(
-                    $payload,
-                    provider: $requestedProvider,
-                    model: $requestedModel,
-                );
+                $analysis = null;
+                $failureReason = null;
+
+                for ($attempt = 0; $attempt <= $rateLimitRetries; $attempt++) {
+                    $analysis = $aiContentService->generateDailyPredictionAnalysis(
+                        $payload,
+                        provider: $requestedProvider,
+                        model: $requestedModel,
+                    );
+                    $failureReason = $aiContentService->lastDailyPredictionAnalysisFailure();
+
+                    if ($analysis || ! $this->isRateLimitFailure($failureReason) || $attempt >= $rateLimitRetries) {
+                        break;
+                    }
+
+                    $this->warn(sprintf(
+                        '  - rate limited while analyzing %s; retrying in %d second(s) (%d/%d).',
+                        $this->matchup($prediction),
+                        $rateLimitRetryDelay,
+                        $attempt + 1,
+                        $rateLimitRetries,
+                    ));
+
+                    sleep($rateLimitRetryDelay);
+                }
+
                 $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
 
                 if (! $analysis) {
-                    $failureReason = $aiContentService->lastDailyPredictionAnalysisFailure();
                     $this->warn('  - skipped '.$this->matchup($prediction).' (AI analysis unavailable'.($failureReason ? ': '.$failureReason : '').')');
                     $skipped++;
 
-                    if ($failureReason && str_contains(strtolower($failureReason), 'rate limited')) {
+                    if ($this->isRateLimitFailure($failureReason)) {
                         $rateLimited = true;
                         $this->warn('  - stopping remaining AI daily prediction analysis for this run because the provider is rate limited.');
                     }
@@ -261,6 +285,21 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $game = $prediction->game;
 
         return (string) ($game?->short_name ?: $game?->name ?: 'prediction '.$prediction->id);
+    }
+
+    private function isRateLimitFailure(?string $failureReason): bool
+    {
+        if (! $failureReason) {
+            return false;
+        }
+
+        $normalized = strtolower($failureReason);
+
+        return str_contains($normalized, 'rate limited')
+            || str_contains($normalized, 'rate limit')
+            || str_contains($normalized, 'too many requests')
+            || str_contains($normalized, 'code 429')
+            || str_contains($normalized, 'status 429');
     }
 
     /**

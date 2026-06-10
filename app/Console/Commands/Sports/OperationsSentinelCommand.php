@@ -34,6 +34,8 @@ class OperationsSentinelCommand extends Command
         {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
         {--queue-drain-queue=sync : Queue to use for sentinel-dispatched sync jobs}
         {--queue-drain-max-time=600 : Max seconds to drain queued sync jobs before continuing}
+        {--ai-rate-limit-retries=1 : Number of AI daily prediction retries when the provider rate limits}
+        {--ai-rate-limit-delay=120 : Seconds to wait between AI rate-limit retries}
         {--skip-ai-analysis : Skip daily prediction AI analysis before validation}
         {--skip-ai-review : Skip the operations AI review after validation}
         {--skip-validation : Skip the final validation run}';
@@ -313,6 +315,11 @@ class OperationsSentinelCommand extends Command
         $this->info('Running '.strtoupper($sport).' daily prediction AI analysis...');
 
         foreach ($steps as $step) {
+            if ($step['command'] === 'sports:ai-daily-predictions') {
+                $step['arguments']['--retry-rate-limit'] = max(0, (int) $this->option('ai-rate-limit-retries'));
+                $step['arguments']['--retry-rate-limit-delay'] = max(1, (int) $this->option('ai-rate-limit-delay'));
+            }
+
             $this->callRegistryStep($step);
         }
     }

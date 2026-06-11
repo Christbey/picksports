@@ -216,9 +216,9 @@ class OperationsSentinelCommand extends Command
             return self::SUCCESS;
         }
 
-        $validationExitCode = $this->runValidationPass($sport, 'after sentinel repair pass');
+        [$validationExitCode, $validationRun] = $this->runValidationPass($sport, 'after sentinel repair pass');
 
-        if ($this->shouldAutoRepairValidation() && $this->repairValidationFindings($registry, $sport, $season, $referenceDate)) {
+        if ($this->shouldAutoRepairValidation() && $validationRun && $this->repairValidationFindings($registry, $validationRun, $sport, $season, $referenceDate)) {
             if (! $this->option('skip-queue-drain')) {
                 $this->drainQueuedSyncJobs($sport);
             }
@@ -227,7 +227,7 @@ class OperationsSentinelCommand extends Command
                 $this->runModelPipeline($registry, $sport, $season, $referenceDate);
             }
 
-            $validationExitCode = $this->runValidationPass($sport, 'after targeted validation repair');
+            [$validationExitCode] = $this->runValidationPass($sport, 'after targeted validation repair');
         }
 
         if (! $this->option('skip-ai-review')) {
@@ -242,13 +242,27 @@ class OperationsSentinelCommand extends Command
         return $validationExitCode;
     }
 
-    private function runValidationPass(string $sport, string $label): int
+    /**
+     * @return array{0: int, 1: ValidationRun|null}
+     */
+    private function runValidationPass(string $sport, string $label): array
     {
         $this->info('Running '.strtoupper($sport)." validation {$label}...");
+        $lastRunId = (int) (ValidationRun::query()
+            ->where('command_name', 'healthcheck:validate-data')
+            ->max('id') ?? 0);
 
-        return $this->call('healthcheck:validate-data', [
+        $exitCode = $this->call('healthcheck:validate-data', [
             '--sport' => $sport,
         ]);
+
+        $run = ValidationRun::query()
+            ->where('command_name', 'healthcheck:validate-data')
+            ->where('id', '>', $lastRunId)
+            ->latest('id')
+            ->first();
+
+        return [$exitCode, $run];
     }
 
     private function shouldAutoRepairValidation(): bool
@@ -259,20 +273,16 @@ class OperationsSentinelCommand extends Command
             || ! $this->option('skip-model-pipeline');
     }
 
-    private function repairValidationFindings(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): bool
+    private function repairValidationFindings(SportsPipelineRegistry $registry, ValidationRun $run, string $sport, int $season, CarbonInterface $referenceDate): bool
     {
-        $run = $this->latestValidationRun($sport);
-
-        if (! $run) {
-            return false;
-        }
-
         $findings = $run->findings()
             ->where('sport', $sport)
             ->whereIn('status', ['warning', 'failing'])
             ->get();
 
         if ($findings->isEmpty()) {
+            $this->line('Validation produced no warning/failing findings that require a sentinel repair pass.');
+
             return false;
         }
 
@@ -300,6 +310,12 @@ class OperationsSentinelCommand extends Command
 
         $handled = false;
         $checkTypes = $findings->pluck('check_type')->unique()->values();
+        $this->warn(sprintf(
+            'Validation run %d produced %d warning/failing finding(s): %s',
+            $run->id,
+            $findings->count(),
+            $checkTypes->implode(', '),
+        ));
         $gameDetailEventIds = $findings
             ->whereIn('check_type', $repairableGameDetailChecks)
             ->flatMap(fn ($finding) => $this->eventIdsFromFinding($sport, (array) $finding->facts))
@@ -339,16 +355,11 @@ class OperationsSentinelCommand extends Command
             $handled = true;
         }
 
-        return $handled;
-    }
+        if (! $handled) {
+            $this->warn('Validation findings were not repairable by the sentinel; leaving final status to validation and AI review.');
+        }
 
-    private function latestValidationRun(string $sport): ?ValidationRun
-    {
-        return ValidationRun::query()
-            ->where('command_name', 'healthcheck:validate-data')
-            ->where('scope', "sport:{$sport}")
-            ->latest('id')
-            ->first();
+        return $handled;
     }
 
     /**

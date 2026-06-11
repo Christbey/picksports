@@ -3,9 +3,12 @@
 namespace App\Services;
 
 use App\Models\CommandHeartbeat;
+use Illuminate\Support\Str;
 
 class CommandHeartbeatService
 {
+    private const SOURCE_MAX_LENGTH = 20;
+
     public function recordSuccess(string $command, ?string $sport = null, string $source = 'schedule', array $metadata = []): void
     {
         $this->record(
@@ -50,7 +53,7 @@ class CommandHeartbeatService
             'sport' => $sport ?? $this->inferSportFromCommand($command),
             'command' => $command,
             'status' => $status,
-            'source' => $source,
+            'source' => Str::substr($source, 0, self::SOURCE_MAX_LENGTH),
             'error' => $error,
             'metadata' => $metadata,
             'ran_at' => now(),

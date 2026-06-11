@@ -347,7 +347,7 @@ class OperationsSentinelCommand extends Command
                     $this->callAndRecord($command, [
                         'eventId' => (string) $eventId,
                         '--queue' => $this->queueDrainQueue(),
-                    ], $sport, 'operations-sentinel-validation-repair');
+                    ], $sport, 'sentinel-repair');
                     $this->output->write(Artisan::output());
                 }
 

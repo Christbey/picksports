@@ -3,6 +3,8 @@
 namespace App\Console\Commands\Sports;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Models\ValidationRun;
+use App\Services\Api\V2\SportContextResolver;
 use App\Services\CommandHeartbeatService;
 use App\Services\ESPN\NBA\EspnService;
 use App\Services\Sports\SeasonStage\SeasonStageService;
@@ -10,6 +12,8 @@ use App\Services\Sports\SportsDateWindowService;
 use App\Services\Sports\SportsPipelineRegistry;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -34,6 +38,7 @@ class OperationsSentinelCommand extends Command
         {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
         {--queue-drain-queue=sync : Queue to use for sentinel-dispatched sync jobs}
         {--queue-drain-max-time=600 : Max seconds to drain queued sync jobs before continuing}
+        {--auto-repair-validation : Run one targeted repair pass from validation findings before returning the final status}
         {--ai-rate-limit-retries=1 : Number of AI daily prediction retries when the provider rate limits}
         {--ai-rate-limit-delay=120 : Seconds to wait between AI rate-limit retries}
         {--skip-ai-analysis : Skip daily prediction AI analysis before validation}
@@ -211,11 +216,19 @@ class OperationsSentinelCommand extends Command
             return self::SUCCESS;
         }
 
-        $this->info('Running '.strtoupper($sport).' validation after sentinel repair pass...');
+        $validationExitCode = $this->runValidationPass($sport, 'after sentinel repair pass');
 
-        $validationExitCode = $this->call('healthcheck:validate-data', [
-            '--sport' => $sport,
-        ]);
+        if ($this->shouldAutoRepairValidation() && $this->repairValidationFindings($registry, $sport, $season, $referenceDate)) {
+            if (! $this->option('skip-queue-drain')) {
+                $this->drainQueuedSyncJobs($sport);
+            }
+
+            if (! $this->option('skip-model-pipeline')) {
+                $this->runModelPipeline($registry, $sport, $season, $referenceDate);
+            }
+
+            $validationExitCode = $this->runValidationPass($sport, 'after targeted validation repair');
+        }
 
         if (! $this->option('skip-ai-review')) {
             $this->info('Running '.strtoupper($sport).' operations AI review...');
@@ -227,6 +240,173 @@ class OperationsSentinelCommand extends Command
         }
 
         return $validationExitCode;
+    }
+
+    private function runValidationPass(string $sport, string $label): int
+    {
+        $this->info('Running '.strtoupper($sport)." validation {$label}...");
+
+        return $this->call('healthcheck:validate-data', [
+            '--sport' => $sport,
+        ]);
+    }
+
+    private function shouldAutoRepairValidation(): bool
+    {
+        return (bool) $this->option('auto-repair-validation')
+            || ! $this->option('skip-stats')
+            || ! $this->option('skip-sync-pipeline')
+            || ! $this->option('skip-model-pipeline');
+    }
+
+    private function repairValidationFindings(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): bool
+    {
+        $run = $this->latestValidationRun($sport);
+
+        if (! $run) {
+            return false;
+        }
+
+        $findings = $run->findings()
+            ->where('sport', $sport)
+            ->whereIn('status', ['warning', 'failing'])
+            ->get();
+
+        if ($findings->isEmpty()) {
+            return false;
+        }
+
+        $repairableGameDetailChecks = [
+            'validation_current_day_game_data_freshness',
+            'validation_upcoming_game_readiness',
+            'validation_past_scheduled_game_status',
+            'validation_finalized_data_completeness',
+        ];
+
+        $syncDependencyChecks = [
+            'validation_odds_completeness',
+            'validation_player_prop_freshness',
+            'validation_weather_completeness',
+            'validation_injury_freshness',
+            'validation_futures_odds_freshness',
+        ];
+
+        $modelPipelineChecks = [
+            'validation_prediction_completeness',
+            'validation_pipeline_order',
+            'validation_upcoming_game_readiness',
+            'validation_finalized_data_completeness',
+        ];
+
+        $handled = false;
+        $checkTypes = $findings->pluck('check_type')->unique()->values();
+        $gameDetailEventIds = $findings
+            ->whereIn('check_type', $repairableGameDetailChecks)
+            ->flatMap(fn ($finding) => $this->eventIdsFromFinding($sport, (array) $finding->facts))
+            ->unique()
+            ->values();
+
+        if ($gameDetailEventIds->isNotEmpty()) {
+            $command = $this->gameDetailsCommands[$sport] ?? null;
+
+            if ($command) {
+                $this->warn(sprintf(
+                    'Validation found %d stale/incomplete %s game(s); dispatching targeted game-detail repair.',
+                    $gameDetailEventIds->count(),
+                    strtoupper($sport),
+                ));
+
+                foreach ($gameDetailEventIds as $eventId) {
+                    $this->callAndRecord($command, [
+                        'eventId' => (string) $eventId,
+                        '--queue' => $this->queueDrainQueue(),
+                    ], $sport, 'operations-sentinel-validation-repair');
+                    $this->output->write(Artisan::output());
+                }
+
+                $handled = true;
+            }
+        }
+
+        if ($checkTypes->intersect($syncDependencyChecks)->isNotEmpty() && ! $this->option('skip-sync-pipeline')) {
+            $this->warn('Validation found stale market/dependency data; rerunning sync dependency pipeline once.');
+            $this->runSyncDependencyPipeline($registry, $sport, $season, $referenceDate);
+            $handled = true;
+        }
+
+        if ($checkTypes->intersect($modelPipelineChecks)->isNotEmpty() && ! $this->option('skip-model-pipeline')) {
+            $this->warn('Validation found downstream model or grading drift; model pipeline will rerun after queued repairs drain.');
+            $handled = true;
+        }
+
+        return $handled;
+    }
+
+    private function latestValidationRun(string $sport): ?ValidationRun
+    {
+        return ValidationRun::query()
+            ->where('command_name', 'healthcheck:validate-data')
+            ->where('scope', "sport:{$sport}")
+            ->latest('id')
+            ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $facts
+     * @return Collection<int, string>
+     */
+    private function eventIdsFromFinding(string $sport, array $facts): Collection
+    {
+        $eventIds = collect((array) data_get($facts, 'sample_games', []))
+            ->map(fn (mixed $game): ?string => is_array($game) ? data_get($game, 'espn_event_id') : null)
+            ->filter()
+            ->map(fn (mixed $eventId): string => (string) $eventId);
+
+        $gameIds = collect((array) data_get($facts, 'sample_game_ids', []))
+            ->merge(collect((array) data_get($facts, 'sample_games', []))
+                ->map(fn (mixed $game): mixed => is_array($game) ? data_get($game, 'game_id') : null))
+            ->filter()
+            ->map(fn (mixed $gameId): int => (int) $gameId)
+            ->unique()
+            ->values();
+
+        if ($gameIds->isEmpty()) {
+            return $eventIds->values();
+        }
+
+        $gameModel = app(SportContextResolver::class)->find($sport)?->models['game'] ?? null;
+
+        if (! is_string($gameModel) || ! is_subclass_of($gameModel, Model::class)) {
+            return $eventIds->values();
+        }
+
+        $gameTable = (new $gameModel)->getTable();
+        $eventColumns = collect(['espn_event_id', 'espn_id'])
+            ->filter(fn (string $column): bool => Schema::hasColumn($gameTable, $column))
+            ->values();
+
+        if ($eventColumns->isEmpty()) {
+            return $eventIds->values();
+        }
+
+        $gameEventIds = $gameModel::query()
+            ->whereIn('id', $gameIds->all())
+            ->get($eventColumns->all())
+            ->map(function (Model $game) use ($eventColumns): ?string {
+                foreach ($eventColumns as $column) {
+                    $value = $game->getAttribute($column);
+
+                    if ($value !== null && $value !== '') {
+                        return (string) $value;
+                    }
+                }
+
+                return null;
+            })
+            ->filter()
+            ->map(fn (mixed $eventId): string => (string) $eventId);
+
+        return $eventIds->merge($gameEventIds)->unique()->values();
     }
 
     /**

@@ -3,7 +3,10 @@
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Actions\Validation\SportValidator;
+use App\Models\MLB\Game as MlbGame;
+use App\Models\MLB\Team as MlbTeam;
 use App\Services\ESPN\NBA\EspnService;
+use Illuminate\Support\Carbon;
 use Mockery as m;
 
 uses()->group('sports');
@@ -113,6 +116,97 @@ it('defaults to the stale-status repair lookback through the next seven days', f
         '--skip-validation' => true,
     ])
         ->expectsOutput('Synced 15 NBA game row update(s).')
+        ->assertExitCode(0);
+});
+
+it('syncs mlb scoreboards from the regular-season opener when completed-game coverage looks wrong', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'week' => 2,
+        'game_date' => '2026-05-01',
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    $syncClass = App\Actions\ESPN\MLB\SyncGamesFromScoreboard::class;
+    $sync = m::mock($syncClass);
+
+    $expectedDates = collect();
+    for ($date = Carbon::parse('2026-05-01'); $date->lte(Carbon::parse('2026-06-08')); $date = $date->addDay()) {
+        $expectedDates->push($date->format('Ymd'));
+    }
+
+    foreach ($expectedDates as $scoreboardDate) {
+        $sync->shouldReceive('execute')
+            ->once()
+            ->with($scoreboardDate)
+            ->andReturn(1);
+    }
+
+    $this->app->instance($syncClass, $sync);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'mlb',
+        '--season' => 2026,
+        '--skip-sync-pipeline' => true,
+        '--skip-stats' => true,
+        '--skip-queue-drain' => true,
+        '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
+        '--skip-validation' => true,
+    ])
+        ->expectsOutput('Synced '.$expectedDates->count().' MLB game row update(s).')
+        ->assertExitCode(0);
+});
+
+it('keeps the lightweight mlb scoreboard window when completed-game coverage looks healthy', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    foreach (range(1, 150) as $index) {
+        MlbGame::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'season' => 2026,
+            'season_type' => config('mlb.season.types.regular'),
+            'week' => 2,
+            'game_date' => Carbon::parse('2026-05-01')->addDays($index % 31)->toDateString(),
+            'status' => 'STATUS_FINAL',
+        ]);
+    }
+
+    $syncClass = App\Actions\ESPN\MLB\SyncGamesFromScoreboard::class;
+    $sync = m::mock($syncClass);
+
+    foreach (range(0, 14) as $offset) {
+        $sync->shouldReceive('execute')
+            ->once()
+            ->with(now()->subDays(7)->addDays($offset)->format('Ymd'))
+            ->andReturn(1);
+    }
+
+    $this->app->instance($syncClass, $sync);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'mlb',
+        '--season' => 2026,
+        '--skip-sync-pipeline' => true,
+        '--skip-stats' => true,
+        '--skip-queue-drain' => true,
+        '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
+        '--skip-validation' => true,
+    ])
+        ->expectsOutput('Synced 15 MLB game row update(s).')
         ->assertExitCode(0);
 });
 

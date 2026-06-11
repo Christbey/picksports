@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
+use App\Models\MLB\Game as MlbGame;
 use App\Models\ValidationRun;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\CommandHeartbeatService;
@@ -10,9 +11,11 @@ use App\Services\ESPN\NBA\EspnService;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
 use App\Services\Sports\SportsPipelineRegistry;
+use App\Support\MlbRegularSeasonWindow;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -137,10 +140,10 @@ class OperationsSentinelCommand extends Command
 
         $dateWindows = app(SportsDateWindowService::class);
         $pastStatusLookbackDays = (int) config('validation.thresholds.past_scheduled_game_status.lookback_days', 7);
-        $fromDate = $dateWindows->parseLocalDate($this->option('from-date') ?: now()->subDays($pastStatusLookbackDays)->toDateString());
+        $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
+        $fromDate = $dateWindows->parseLocalDate($this->option('from-date') ?: $this->defaultScoreboardFromDate($sport, $season, $pastStatusLookbackDays));
         $toDate = $dateWindows->parseLocalDate($this->option('to-date') ?: now()->addDays(7)->toDateString());
         $referenceDate = $dateWindows->parseLocalDate(now()->toDateString());
-        $season = (int) ($this->option('season') ?: $this->defaultSeason($sport));
         $statLookbackDays = max(1, (int) $this->option('stat-lookback-days'));
         $statLimit = max(0, (int) $this->option('stat-limit'));
         $repairRequested = (bool) $this->option('repair');
@@ -670,8 +673,53 @@ class OperationsSentinelCommand extends Command
     {
         return str_contains(strtolower($label), 'scoreboard')
             || str_contains(strtolower($label), 'current')
-            || str_contains(strtolower($label), 'schedules')
             || str_contains(strtolower($label), 'game details');
+    }
+
+    private function defaultScoreboardFromDate(string $sport, int $season, int $pastStatusLookbackDays): string
+    {
+        if ($sport === 'mlb') {
+            $openerDate = MlbRegularSeasonWindow::openerDate($season) ?: sprintf('%d-03-01', $season);
+
+            if ($this->mlbSeasonToDateScoreboardIsNeeded($season, $openerDate)) {
+                return $openerDate;
+            }
+        }
+
+        return now()->subDays($pastStatusLookbackDays)->toDateString();
+    }
+
+    private function mlbSeasonToDateScoreboardIsNeeded(int $season, string $openerDate): bool
+    {
+        $today = now()->toDateString();
+        $daysSinceOpener = max(0, Carbon::parse($openerDate)->diffInDays(Carbon::parse($today)));
+
+        if ($daysSinceOpener < 14) {
+            return false;
+        }
+
+        $completedGames = MlbGame::query()
+            ->where('season', $season)
+            ->where('status', config('mlb.statuses.final'))
+            ->whereIn('season_type', config('mlb.season.analytics_types', [2, 3]))
+            ->whereDate('game_date', '>=', $openerDate)
+            ->whereDate('game_date', '<=', $today)
+            ->count();
+
+        $stalePastGames = MlbGame::query()
+            ->where('season', $season)
+            ->whereIn('status', [
+                config('mlb.statuses.scheduled'),
+                config('mlb.statuses.delayed'),
+                config('mlb.statuses.in_progress'),
+            ])
+            ->whereDate('game_date', '>=', $openerDate)
+            ->whereDate('game_date', '<', $today)
+            ->exists();
+
+        $minimumExpectedCompletedGames = max(30, (int) floor(($daysSinceOpener - 7) * 6));
+
+        return $stalePastGames || $completedGames < $minimumExpectedCompletedGames;
     }
 
     private function defaultSeason(string $sport): int

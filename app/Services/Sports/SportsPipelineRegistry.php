@@ -303,6 +303,7 @@ class SportsPipelineRegistry
             ],
             'mlb' => [
                 $this->step('Grade predictions', 'mlb:grade-predictions', ['--season' => $season]),
+                $this->step('Normalize season types', 'mlb:normalize-season-types', ['--season' => $season]),
                 $this->step('Calculate Elo', 'mlb:calculate-elo', ['--season' => $season]),
                 $this->step('Calculate team metrics', 'mlb:calculate-team-metrics', ['--season' => $season]),
                 $this->step('Generate predictions', 'mlb:generate-predictions', ['--season' => $season]),

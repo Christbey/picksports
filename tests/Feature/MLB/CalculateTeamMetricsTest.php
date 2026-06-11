@@ -756,6 +756,9 @@ it('executes for all teams and returns count of calculated metrics', function ()
     foreach ($teams as $team) {
         $game = Game::factory()->create([
             'season' => $this->season,
+            'season_type' => config('mlb.season.types.regular'),
+            'week' => 2,
+            'game_date' => '2024-04-01',
             'status' => 'STATUS_FINAL',
             'home_team_id' => $team->id,
             'away_team_id' => $opponent->id,

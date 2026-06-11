@@ -34,7 +34,7 @@ class OperationsSentinelCommand extends Command
         {--skip-stats : Skip player/team stat refresh}
         {--skip-model-pipeline : Skip grading, Elo, team metrics, and prediction generation}
         {--stat-lookback-days=3 : Days back to refresh player/team stats from game details}
-        {--stat-limit=100 : Limit game-detail stat refresh dispatches per sentinel run}
+        {--stat-limit=300 : Limit game-detail stat refresh dispatches per sentinel pass}
         {--skip-queue-drain : Skip draining queued sync jobs before model generation and validation}
         {--queue-drain-queue=sync : Queue to use for sentinel-dispatched sync jobs}
         {--queue-drain-max-time=600 : Max seconds to drain queued sync jobs before continuing}
@@ -85,6 +85,14 @@ class OperationsSentinelCommand extends Command
         'wcbb' => 'espn:sync-wcbb-game-details',
         'wnba' => 'espn:sync-wnba-game-details',
     ];
+
+    /**
+     * These detail commands only sweep completed games when no event ID is provided,
+     * so they are safe to use as season-to-date stat backfills before metrics run.
+     *
+     * @var array<int, string>
+     */
+    private array $seasonToDateStatBackfillSports = ['nba', 'nfl', 'mlb'];
 
     public function handle(SportsPipelineRegistry $registry): int
     {
@@ -452,8 +460,22 @@ class OperationsSentinelCommand extends Command
             return;
         }
 
+        if (in_array($sport, $this->seasonToDateStatBackfillSports, true)) {
+            $this->info(sprintf(
+                'Backfilling %s completed games still missing player/team stats across the season.',
+                strtoupper($sport),
+            ));
+
+            $this->callAndRecord($gameDetailsCommand, [
+                '--latest' => true,
+                '--limit' => $limit,
+                '--queue' => $this->queueDrainQueue(),
+            ], $sport, 'operations-sentinel');
+            $this->output->write(Artisan::output());
+        }
+
         $this->info(sprintf(
-            'Refreshing %s player/team stats from game details for the last %d day(s).',
+            'Refreshing %s recent player/team stats from game details for the last %d day(s).',
             strtoupper($sport),
             $lookbackDays,
         ));

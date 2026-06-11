@@ -3,9 +3,11 @@
 use App\Actions\ESPN\MLB\SyncGameDetails;
 use App\Jobs\ESPN\MLB\FetchGameDetails;
 use App\Models\MLB\Game;
+use App\Models\MLB\Play;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
+use App\Models\MLB\TeamStat;
 use App\Services\ESPN\MLB\EspnService;
 use Illuminate\Support\Facades\Queue;
 use Mockery as m;
@@ -148,6 +150,19 @@ it('dispatches final mlb games missing player stats even when linescores exist',
         'player_id' => $player->id,
         'game_id' => $gameWithStats->id,
         'team_id' => $homeTeam->id,
+    ]);
+    TeamStat::factory()->create([
+        'team_id' => $homeTeam->id,
+        'game_id' => $gameWithStats->id,
+        'team_type' => 'home',
+    ]);
+    Play::query()->create([
+        'game_id' => $gameWithStats->id,
+        'espn_play_id' => '401999101-1',
+        'sequence_number' => 1,
+        'inning' => 9,
+        'inning_half' => 'bottom',
+        'play_text' => 'Game over',
     ]);
 
     $missingStatsGame = Game::factory()->create([

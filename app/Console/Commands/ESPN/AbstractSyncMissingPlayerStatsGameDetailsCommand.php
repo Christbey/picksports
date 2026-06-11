@@ -24,9 +24,20 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
             ->when($this->requiresFinalStatus(), fn ($query) => $query->where('status', 'STATUS_FINAL'))
             ->whereNotNull('espn_event_id')
             ->when($this->lookbackDays() !== null, fn ($query) => $query->whereDate('game_date', '>=', now()->copy()->subDays($this->lookbackDays())->toDateString()))
-            ->when(! $this->option('refresh-existing'), fn ($query) => $query->whereDoesntHave('playerStats'))
-            ->orderBy('game_date', 'asc')
+            ->when(! $this->option('refresh-existing'), fn ($query) => $query->where(fn ($query) => $this->whereMissingDetails($query, $gameModel)))
+            ->orderBy('game_date', $this->option('latest') ? 'desc' : 'asc')
             ->get();
+    }
+
+    protected function whereMissingDetails($query, string $gameModel): void
+    {
+        $query->whereDoesntHave('playerStats');
+
+        foreach (['teamStats', 'plays'] as $relation) {
+            if (method_exists($gameModel, $relation)) {
+                $query->orWhereDoesntHave($relation);
+            }
+        }
     }
 
     protected function lookbackDays(): ?int

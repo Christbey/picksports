@@ -247,6 +247,15 @@ it('does not dispatch existing player stat games by default', function () {
         'game_id' => $this->game->id,
         'team_id' => $this->homeTeam->id,
     ]);
+    TeamStat::factory()->create([
+        'team_id' => $this->homeTeam->id,
+        'game_id' => $this->game->id,
+        'team_type' => 'home',
+    ]);
+    Play::factory()->create([
+        'game_id' => $this->game->id,
+        'sequence_number' => 1,
+    ]);
 
     $missingStatsGame = Game::factory()->create([
         'espn_event_id' => '401585602',

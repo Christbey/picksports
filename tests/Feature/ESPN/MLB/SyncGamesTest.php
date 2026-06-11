@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\ESPN\MLB\SyncGames;
+use App\Actions\ESPN\MLB\SyncGamesFromSchedule;
 use App\Actions\ESPN\MLB\SyncGamesFromScoreboard;
 use App\Actions\MLB\UpdateLivePrediction;
 use App\Models\MLB\Game;
@@ -125,6 +126,69 @@ it('stores mlb west coast night games on the local venue date', function () {
     expect($game)->not->toBeNull()
         ->and($game->game_date?->format('Y-m-d'))->toBe('2026-03-25')
         ->and($game->game_time)->toBe('17:05:00');
+});
+
+it('does not downgrade finalized mlb games when schedule sync has stale status', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $game = Game::factory()->create([
+        'espn_event_id' => '401815711',
+        'espn_uid' => 's:1~l:10~e:401815711',
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'week' => 12,
+        'game_date' => '2026-06-11',
+        'game_time' => '18:40:00',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 5,
+        'away_score' => 2,
+    ]);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'mlb';
+
+        public function getSchedule(string $teamId, ?int $season = null): ?array
+        {
+            return [
+                'events' => [[
+                    'id' => '401815711',
+                    'uid' => 's:1~l:10~e:401815711',
+                    'date' => '2026-06-11T23:40:00Z',
+                    'name' => 'Arizona Diamondbacks at Miami Marlins',
+                    'shortName' => 'ARI @ MIA',
+                    'season' => ['year' => $season, 'type' => 2],
+                    'week' => ['number' => 12],
+                    'competitions' => [[
+                        'status' => ['type' => ['name' => 'STATUS_SCHEDULED']],
+                        'competitors' => [
+                            [
+                                'homeAway' => 'home',
+                                'score' => '0',
+                                'team' => ['id' => '10'],
+                            ],
+                            [
+                                'homeAway' => 'away',
+                                'score' => '0',
+                                'team' => ['id' => '20'],
+                            ],
+                        ],
+                    ]],
+                ]],
+            ];
+        }
+    };
+
+    $synced = (new SyncGamesFromSchedule($service))->execute('10', 2026);
+
+    expect($synced)->toBe(1);
+
+    $game->refresh();
+
+    expect($game->status)->toBe('STATUS_FINAL');
 });
 
 it('updates orphaned scheduled mlb games from summary using local venue date', function () {

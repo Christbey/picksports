@@ -87,11 +87,15 @@ abstract class AbstractSyncGamesFromSchedule
 
             if ($existingGame) {
                 if ($this->shouldUpdateExistingGame($existingGame, $dto, $game)) {
-                    $existingGame->update(
-                        $homeTeam && $awayTeam
-                            ? $this->existingGameAttributes($dto, $game, $homeTeam, $awayTeam, $existingGame)
-                            : $attributes
-                    );
+                    $updateAttributes = $homeTeam && $awayTeam
+                        ? $this->existingGameAttributes($dto, $game, $homeTeam, $awayTeam, $existingGame)
+                        : $attributes;
+
+                    if (array_key_exists('status', $attributes)) {
+                        $updateAttributes['status'] = $attributes['status'];
+                    }
+
+                    $existingGame->update($updateAttributes);
                 }
             } else {
                 $gameModel::query()->create($attributes);

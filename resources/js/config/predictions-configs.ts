@@ -48,7 +48,6 @@ export const wnbaPredictionsConfig: SportPredictionsConfig = {
     showGameTime: true,
     confidenceIsDecimal: false,
     confidenceDecimals: 1,
-    filterMode: 'none',
 };
 
 export const cfbPredictionsConfig: SportPredictionsConfig = {

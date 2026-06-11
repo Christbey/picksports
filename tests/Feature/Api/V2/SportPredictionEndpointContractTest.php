@@ -108,7 +108,8 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
         ->assertJsonPath('meta.filters.season', 2026)
         ->assertJsonPath('data.0.id', $prediction->id)
         ->assertJsonPath('data.0.sport', $slug)
-        ->assertJsonPath('data.0.game_id', $game->id);
+        ->assertJsonPath('data.0.game_id', $game->id)
+        ->assertJsonPath('data.0.game.game_time', '18:05:00');
 
     expect($response->json('meta.pagination'))->toBeArray()
         ->and($response->json('meta.freshness'))->toBeArray()
@@ -151,7 +152,21 @@ it('lists v2 prediction available dates with optional season filtering', functio
 ) {
     v2PredictionContractActingAsBypassUser();
 
-    [$game] = v2PredictionContractCreateGamePrediction($teamModel, $gameModel, $predictionModel);
+    [, $stalePrediction] = v2PredictionContractCreateGamePrediction(
+        $teamModel,
+        $gameModel,
+        $predictionModel,
+        ['season' => 2025, 'game_date' => '2025-06-10'],
+        ['season' => 2025],
+    );
+
+    [$game] = v2PredictionContractCreateGamePrediction(
+        $teamModel,
+        $gameModel,
+        $predictionModel,
+        ['season' => 2026, 'game_date' => '2026-06-10'],
+        ['season' => 2026],
+    );
 
     $expectedDate = substr((string) $game->getAttribute('game_date'), 0, 10);
 
@@ -173,6 +188,11 @@ it('lists v2 prediction available dates with optional season filtering', functio
         ->assertJsonPath('meta.sport', $slug)
         ->assertJsonPath('meta.contract', 'sports.predictions.available-dates')
         ->assertJsonPath('meta.filters.season', 2026);
+
+    $this->getJson("/api/v2/sports/{$slug}/predictions?season=2026&per_page=10")
+        ->assertOk()
+        ->assertJsonMissingPath('data.1')
+        ->assertJsonMissing(['id' => $stalePrediction->id]);
 })->with('v2PredictionContractSports');
 
 it('shows a v2 prediction with sport, freshness, and warning metadata', function (
@@ -330,18 +350,21 @@ function v2PredictionContractCreateGamePrediction(
     string $teamModel,
     string $gameModel,
     string $predictionModel,
+    array $gameOverrides = [],
+    array $predictionOverrides = [],
 ): array {
     $homeTeam = $teamModel::factory()->create();
     $awayTeam = $teamModel::factory()->create();
 
-    $game = $gameModel::factory()->create(array_filter([
+    $game = $gameModel::factory()->create(array_filter(array_replace([
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'season' => 2026,
         'status' => 'STATUS_SCHEDULED',
-    ], fn ($value) => $value !== null));
+        'game_time' => '18:05:00',
+    ], $gameOverrides), fn ($value) => $value !== null));
 
-    $prediction = $predictionModel::query()->create(v2PredictionContractAttributes($predictionModel, $game->id));
+    $prediction = $predictionModel::query()->create(v2PredictionContractAttributes($predictionModel, $game->id, $predictionOverrides));
 
     return [$game, $prediction];
 }
@@ -349,12 +372,12 @@ function v2PredictionContractCreateGamePrediction(
 /**
  * @return array<string, mixed>
  */
-function v2PredictionContractAttributes(string $predictionModel, int $gameId): array
+function v2PredictionContractAttributes(string $predictionModel, int $gameId, array $overrides = []): array
 {
     $table = (new $predictionModel)->getTable();
     $columns = array_flip(Schema::getColumnListing($table));
 
-    return array_intersect_key([
+    return array_intersect_key(array_replace([
         'game_id' => $gameId,
         'season' => 2026,
         'season_type' => '2',
@@ -374,5 +397,5 @@ function v2PredictionContractAttributes(string $predictionModel, int $gameId): a
         'feature_version' => 'v2-contract-test',
         'blend_version' => 'v2-contract-test',
         'model_metadata' => ['raw_inputs' => ['should_not' => 'leak']],
-    ], $columns);
+    ], $overrides), $columns);
 }

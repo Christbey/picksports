@@ -98,7 +98,17 @@ class SportPredictionQuery
 
         $query = $predictionModel::query()
             ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
-            ->when(($filters['season'] ?? null) && $this->hasColumn($predictionTable, 'season'), fn (Builder $query): Builder => $query->where("{$predictionTable}.season", $filters['season']))
+            ->when($filters['season'] ?? null, function (Builder $query, int $season) use ($predictionTable, $gameTable): Builder {
+                if ($this->hasColumn($predictionTable, 'season')) {
+                    return $query->where("{$predictionTable}.season", $season);
+                }
+
+                if ($this->hasColumn($gameTable, 'season')) {
+                    return $query->where("{$gameTable}.season", $season);
+                }
+
+                return $query;
+            })
             ->whereNotNull("{$gameTable}.game_date")
             ->selectRaw('DATE('.DB::getQueryGrammar()->wrap("{$gameTable}.game_date").') as game_date')
             ->distinct()
@@ -119,12 +129,30 @@ class SportPredictionQuery
         ?Authenticatable $user = null,
     ): Builder {
         $predictionModel = $this->predictionModel($context);
+        $gameModel = $this->gameModel($context);
         $table = (new $predictionModel)->getTable();
+        $gameTable = (new $gameModel)->getTable();
 
         return $predictionModel::query()
             ->with($this->relationsFor($predictionModel, $context))
-            ->when(($filters['season'] ?? null) && $this->hasColumn($table, 'season'), fn (Builder $query): Builder => $query->where('season', $filters['season']))
-            ->when(($filters['season_type'] ?? null) && $this->hasColumn($table, 'season_type'), fn (Builder $query): Builder => $query->where('season_type', $filters['season_type']))
+            ->when($filters['season'] ?? null, function (Builder $query, int $season) use ($table, $gameTable): Builder {
+                if ($this->hasColumn($table, 'season')) {
+                    return $query->where("{$table}.season", $season);
+                }
+
+                return $this->hasColumn($gameTable, 'season')
+                    ? $this->whereGameColumn($query, 'season', $season)
+                    : $query;
+            })
+            ->when($filters['season_type'] ?? null, function (Builder $query, string $seasonType) use ($table, $gameTable): Builder {
+                if ($this->hasColumn($table, 'season_type')) {
+                    return $query->where("{$table}.season_type", $seasonType);
+                }
+
+                return $this->hasColumn($gameTable, 'season_type')
+                    ? $this->whereGameColumn($query, 'season_type', $seasonType)
+                    : $query;
+            })
             ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
             ->when($filters['team_id'] ?? null, fn (Builder $query, int $teamId): Builder => $this->whereTeam($query, $teamId))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $this->whereGameColumn($query, 'status', $status))

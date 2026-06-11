@@ -85,7 +85,7 @@ class SportPredictionResource extends JsonResource
             'name' => $game->getAttribute('name'),
             'short_name' => $game->getAttribute('short_name'),
             'game_date' => $this->serializeDateValue($game->getAttribute('game_date')),
-            'game_time' => $this->serializeDateValue($game->getAttribute('game_time')),
+            'game_time' => $this->serializeTimeValue($game->getAttribute('game_time')),
             'status' => $game->getAttribute('status'),
             'home_team_id' => $game->getAttribute('home_team_id'),
             'away_team_id' => $game->getAttribute('away_team_id'),
@@ -308,5 +308,24 @@ class SportPredictionResource extends JsonResource
         }
 
         return (string) $value;
+    }
+
+    private function serializeTimeValue(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_object($value) && method_exists($value, 'format')) {
+            return $value->format('H:i:s');
+        }
+
+        $time = (string) $value;
+
+        if (preg_match('/\b(\d{2}:\d{2}(?::\d{2})?)\b/', $time, $matches) === 1) {
+            return strlen($matches[1]) === 5 ? "{$matches[1]}:00" : $matches[1];
+        }
+
+        return $time;
     }
 }

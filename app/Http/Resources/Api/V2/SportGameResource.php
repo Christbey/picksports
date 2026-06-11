@@ -34,7 +34,7 @@ class SportGameResource extends JsonResource
             'name' => $this->name ?? null,
             'short_name' => $this->short_name ?? null,
             'game_date' => $this->serializeDateValue($this->game_date ?? null),
-            'game_time' => $this->serializeDateValue($this->game_time ?? null),
+            'game_time' => $this->serializeTimeValue($this->game_time ?? null),
             'venue' => $this->venue_name ?? $this->venue ?? null,
             'venue_name' => $this->venue_name ?? $this->venue ?? null,
             'venue_city' => $this->venue_city ?? null,
@@ -88,6 +88,25 @@ class SportGameResource extends JsonResource
         }
 
         return (string) $value;
+    }
+
+    private function serializeTimeValue(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        if (is_object($value) && method_exists($value, 'format')) {
+            return $value->format('H:i:s');
+        }
+
+        $time = (string) $value;
+
+        if (preg_match('/\b(\d{2}:\d{2}(?::\d{2})?)\b/', $time, $matches) === 1) {
+            return strlen($matches[1]) === 5 ? "{$matches[1]}:00" : $matches[1];
+        }
+
+        return $time;
     }
 
     /**

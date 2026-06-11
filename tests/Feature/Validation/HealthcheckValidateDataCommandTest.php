@@ -785,6 +785,25 @@ test('healthcheck validate data flags stale futures odds', function () {
 });
 
 test('healthcheck validate data flags pipeline order violations', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 3.5,
+        'predicted_total' => 228.5,
+        'win_probability' => 0.63,
+        'confidence_score' => 74.2,
+    ]);
+
     CommandHeartbeat::query()->create([
         'sport' => 'nba',
         'command' => 'espn:sync-nba-game-details',
@@ -814,7 +833,74 @@ test('healthcheck validate data flags pipeline order violations', function () {
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('failing')
         ->and($finding->recommended_action)->toBe('nba:generate-predictions')
-        ->and(data_get($finding->facts, 'violations.0.label'))->toBe('details before predictions');
+        ->and(data_get($finding->facts, 'violations.0.label'))->toBe('details before predictions')
+        ->and(data_get($finding->facts, 'violations.0.temporal_scope.blocking_active_games'))->toBe(1);
+});
+
+test('healthcheck validate data ignores detail sync order for games that already started', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_FINAL',
+        'game_date' => now()->copy()->subDay()->toDateString(),
+        'game_time' => '18:00:00',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 3.5,
+        'predicted_total' => 228.5,
+        'win_probability' => 0.63,
+        'confidence_score' => 74.2,
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'espn:sync-nba-game-details',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now(),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'nba:generate-predictions',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subHour(),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'nba:sync-odds',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subMinutes(30),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'nba:sync-player-props',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subMinutes(20),
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'nba']);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_pipeline_order')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('passing')
+        ->and(data_get($finding->facts, 'violations'))->toBe([]);
 });
 
 test('healthcheck validate data persists ai validation summary when enabled', function () {

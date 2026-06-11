@@ -4,8 +4,11 @@ namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Models\CommandHeartbeat;
+use App\Services\Sports\SportsDateWindowService;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class PipelineOrderCheck implements ValidationCheck
@@ -53,6 +56,12 @@ class PipelineOrderCheck implements ValidationCheck
             }
 
             if ($upstreamHeartbeat->ran_at->gt($downstreamHeartbeat->ran_at)) {
+                $temporalScope = $this->temporalScopeForRule($sport, $profile, $label, $upstreamHeartbeat->ran_at);
+
+                if (($temporalScope['blocking_active_games'] ?? null) === 0) {
+                    continue;
+                }
+
                 $violations[] = [
                     'label' => $label,
                     'upstream_command' => $upstreamHeartbeat->command,
@@ -60,6 +69,7 @@ class PipelineOrderCheck implements ValidationCheck
                     'downstream_command' => $downstreamHeartbeat->command,
                     'downstream_ran_at' => $downstreamHeartbeat->ran_at->toDateTimeString(),
                     'recommended_action' => $recommendedAction,
+                    'temporal_scope' => $temporalScope,
                 ];
             }
         }
@@ -110,5 +120,90 @@ class PipelineOrderCheck implements ValidationCheck
             })
             ->latest('ran_at')
             ->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private function temporalScopeForRule(string $sport, array $profile, string $label, CarbonInterface $upstreamRanAt): array
+    {
+        if (! str_contains(strtolower($label), 'details before predictions')) {
+            return [];
+        }
+
+        $gamesTable = (string) data_get($profile, 'tables.games', '');
+        $predictionsTable = "{$sport}_predictions";
+
+        if (
+            $gamesTable === ''
+            || ! Schema::hasTable($gamesTable)
+            || ! Schema::hasTable($predictionsTable)
+            || ! Schema::hasColumn($gamesTable, 'game_date')
+            || ! Schema::hasColumn($gamesTable, 'game_time')
+            || ! Schema::hasColumn($gamesTable, 'status')
+        ) {
+            return [];
+        }
+
+        $dates = app(SportsDateWindowService::class);
+        $windowDays = max(1, (int) ($profile['market_window_days'] ?? config('validation.market_window_days', 1)));
+        $startDate = $dates->parseLocalDate();
+        $endDate = $startDate->addDays($windowDays);
+        $upstreamUtc = $upstreamRanAt->copy()->utc();
+        $gameColumns = collect(['espn_event_id', 'short_name', 'name'])
+            ->filter(fn (string $column): bool => Schema::hasColumn($gamesTable, $column))
+            ->values();
+        $predictionUpdatedAtColumn = Schema::hasColumn($predictionsTable, 'updated_at')
+            ? "{$predictionsTable}.updated_at as prediction_updated_at"
+            : DB::raw('NULL as prediction_updated_at');
+        $selectColumns = collect([
+            "{$gamesTable}.id",
+            "{$gamesTable}.game_date",
+            "{$gamesTable}.game_time",
+            $predictionUpdatedAtColumn,
+        ])
+            ->merge($gameColumns->map(fn (string $column): string => "{$gamesTable}.{$column}"))
+            ->all();
+
+        $games = DB::table($gamesTable)
+            ->leftJoin($predictionsTable, "{$predictionsTable}.game_id", '=', "{$gamesTable}.id")
+            ->whereDate("{$gamesTable}.game_date", '>=', $startDate->toDateString())
+            ->whereDate("{$gamesTable}.game_date", '<=', $endDate->toDateString())
+            ->whereIn("{$gamesTable}.status", [
+                'STATUS_SCHEDULED',
+                'STATUS_PRE_GAME',
+                'STATUS_DELAYED',
+                'scheduled',
+            ])
+            ->get($selectColumns);
+
+        $blockingGames = [];
+
+        foreach ($games as $game) {
+            $startsAt = $dates->gameDateTimeUtc($game->game_date ?? null, $game->game_time ?? null);
+
+            if (! $startsAt || $startsAt->lte($upstreamUtc)) {
+                continue;
+            }
+
+            $blockingGames[] = [
+                'game_id' => (int) $game->id,
+                'espn_event_id' => $game->espn_event_id ?? null,
+                'matchup' => ($game->short_name ?? null) ?: ($game->name ?? null),
+                'starts_at' => $startsAt->toIso8601String(),
+                'prediction_updated_at' => $game->prediction_updated_at,
+            ];
+        }
+
+        return [
+            'rule' => 'pregame_only',
+            'window_start' => $startDate->toDateString(),
+            'window_end' => $endDate->toDateString(),
+            'upstream_ran_at' => $upstreamUtc->toIso8601String(),
+            'checked_active_games' => $games->count(),
+            'blocking_active_games' => count($blockingGames),
+            'sample_games' => array_slice($blockingGames, 0, 5),
+        ];
     }
 }

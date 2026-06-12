@@ -338,7 +338,7 @@ class OperationsSentinelCommand extends Command
 
             if ($command) {
                 $this->warn(sprintf(
-                    'Validation found %d stale/incomplete %s game(s); dispatching targeted game-detail repair.',
+                    'Validation found %d stale/incomplete %s game(s); running targeted game-detail repair.',
                     $gameDetailEventIds->count(),
                     strtoupper($sport),
                 ));
@@ -346,7 +346,7 @@ class OperationsSentinelCommand extends Command
                 foreach ($gameDetailEventIds as $eventId) {
                     $this->callAndRecord($command, [
                         'eventId' => (string) $eventId,
-                        '--queue' => $this->queueDrainQueue(),
+                        '--sync' => true,
                     ], $sport, 'sentinel-repair');
                     $this->output->write(Artisan::output());
                 }

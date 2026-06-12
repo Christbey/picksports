@@ -78,7 +78,7 @@ it('can run a fast validation-only sentinel pass', function () {
     $validator = m::mock(SportValidator::class);
     $validator->shouldReceive('validate')
         ->once()
-        ->with('nba')
+        ->with('nba', 'full')
         ->andReturn([]);
     $this->app->instance(SportValidator::class, $validator);
 
@@ -89,7 +89,30 @@ it('can run a fast validation-only sentinel pass', function () {
         '--skip-ai-review' => true,
     ])
         ->expectsOutput('Validation-only mode requested; skipping repair, sync, stats, queue, model, prediction, and AI writeup pipelines.')
-        ->expectsOutput('Running NBA validation validation-only sentinel pass...')
+        ->expectsOutput('Running NBA validation full validation-only sentinel pass...')
+        ->expectsOutput('Validation Summary:')
+        ->assertExitCode(0);
+});
+
+it('can run validation-only sentinel pass for source data checks only', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $validator = m::mock(SportValidator::class);
+    $validator->shouldReceive('validate')
+        ->once()
+        ->with('nba', 'data')
+        ->andReturn([]);
+    $this->app->instance(SportValidator::class, $validator);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'nba',
+        '--season' => 2026,
+        '--validate-only' => true,
+        '--data-only' => true,
+        '--skip-ai-review' => true,
+    ])
+        ->expectsOutput('Data-only validation requested; skipping derived prediction and AI readiness checks.')
+        ->expectsOutput('Running NBA validation data validation-only sentinel pass...')
         ->expectsOutput('Validation Summary:')
         ->assertExitCode(0);
 });
@@ -243,7 +266,7 @@ it('prints the operations ai review even when final validation fails', function 
     $validator = m::mock(SportValidator::class);
     $validator->shouldReceive('validate')
         ->once()
-        ->with('nba')
+        ->with('nba', 'full')
         ->andReturn([[
             'check_type' => 'validation_stub_failure',
             'status' => 'failing',

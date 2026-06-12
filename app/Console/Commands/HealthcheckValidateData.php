@@ -14,7 +14,10 @@ use Illuminate\Support\Facades\DB;
 
 class HealthcheckValidateData extends Command
 {
-    protected $signature = 'healthcheck:validate-data {--sport= : Specific sport to validate (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}';
+    protected $signature = 'healthcheck:validate-data
+        {--sport= : Specific sport to validate (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}
+        {--scope=full : Validation scope to run: full or data}
+        {--data-only : Shortcut for --scope=data; validates source data freshness/completeness without derived prediction or AI readiness checks}';
 
     protected $description = 'Run deep data validation checks across sports';
 
@@ -31,6 +34,12 @@ class HealthcheckValidateData extends Command
         $this->info('Running data validation checks...');
 
         $sports = $this->option('sport') ? [$this->option('sport')] : SportCatalog::ALL;
+        $scope = $this->validationScope();
+
+        if ($scope === null) {
+            return Command::FAILURE;
+        }
+
         $run = ValidationRun::query()->create([
             'command_name' => 'healthcheck:validate-data',
             'scope' => $this->option('sport') ? 'sport:'.$this->option('sport') : 'all_sports',
@@ -39,9 +48,9 @@ class HealthcheckValidateData extends Command
         ]);
 
         foreach ($sports as $sport) {
-            $this->line("Validating {$sport}...");
+            $this->line("Validating {$sport} ({$scope})...");
 
-            $results = $this->sportValidator->validate($sport);
+            $results = $this->sportValidator->validate($sport, $scope);
 
             if ($results === []) {
                 $this->recordCheck(
@@ -82,6 +91,20 @@ class HealthcheckValidateData extends Command
         $this->validationRegressionAlertService->maybeNotify($run);
 
         return $this->displayResults($run);
+    }
+
+    private function validationScope(): ?string
+    {
+        $scope = (string) ($this->option('data-only') ? 'data' : $this->option('scope'));
+        $scope = strtolower(trim($scope));
+
+        if (! in_array($scope, SportValidator::supportedScopes(), true)) {
+            $this->error('Invalid --scope value. Supported scopes: '.implode(', ', SportValidator::supportedScopes()).'.');
+
+            return null;
+        }
+
+        return $scope;
     }
 
     protected function recordCheck(

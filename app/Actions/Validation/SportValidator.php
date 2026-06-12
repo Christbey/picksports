@@ -23,32 +23,86 @@ class SportValidator
     /**
      * @var array<int, ValidationCheck>
      */
-    private array $checks;
+    private array $fullChecks;
+
+    /**
+     * @var array<int, ValidationCheck>
+     */
+    private array $dataChecks;
 
     public function __construct()
     {
-        $this->checks = [
-            new GameCoverageCheck,
-            new TeamStatCoverageCheck,
-            new CurrentDayGameDataFreshnessCheck,
-            new ScheduleWindowIntegrityCheck,
-            new UpcomingGameReadinessCheck,
-            new PastScheduledGameStatusCheck,
-            new PredictionCompletenessCheck,
-            new OddsCompletenessCheck,
-            new InjuryFreshnessCheck,
-            new PlayerPropFreshnessCheck,
-            new FuturesOddsFreshnessCheck,
-            new WeatherCompletenessCheck,
-            new PipelineOrderCheck,
-            new FinalizedDataCompletenessCheck,
+        $gameCoverage = new GameCoverageCheck;
+        $teamStatCoverage = new TeamStatCoverageCheck;
+        $currentDayGameDataFreshness = new CurrentDayGameDataFreshnessCheck;
+        $scheduleWindowIntegrity = new ScheduleWindowIntegrityCheck;
+        $upcomingGameReadiness = new UpcomingGameReadinessCheck;
+        $pastScheduledGameStatus = new PastScheduledGameStatusCheck;
+        $predictionCompleteness = new PredictionCompletenessCheck;
+        $oddsCompleteness = new OddsCompletenessCheck;
+        $injuryFreshness = new InjuryFreshnessCheck;
+        $playerPropFreshness = new PlayerPropFreshnessCheck;
+        $futuresOddsFreshness = new FuturesOddsFreshnessCheck;
+        $weatherCompleteness = new WeatherCompletenessCheck;
+        $pipelineOrder = new PipelineOrderCheck;
+        $finalizedDataCompleteness = new FinalizedDataCompletenessCheck;
+
+        $this->fullChecks = [
+            $gameCoverage,
+            $teamStatCoverage,
+            $currentDayGameDataFreshness,
+            $scheduleWindowIntegrity,
+            $upcomingGameReadiness,
+            $pastScheduledGameStatus,
+            $predictionCompleteness,
+            $oddsCompleteness,
+            $injuryFreshness,
+            $playerPropFreshness,
+            $futuresOddsFreshness,
+            $weatherCompleteness,
+            $pipelineOrder,
+            $finalizedDataCompleteness,
         ];
+
+        $this->dataChecks = [
+            $gameCoverage,
+            $teamStatCoverage,
+            $currentDayGameDataFreshness,
+            $scheduleWindowIntegrity,
+            $upcomingGameReadiness,
+            $pastScheduledGameStatus,
+            $oddsCompleteness,
+            $injuryFreshness,
+            $playerPropFreshness,
+            $futuresOddsFreshness,
+            $weatherCompleteness,
+            $finalizedDataCompleteness,
+        ];
+    }
+
+    /**
+     * @return array<int, ValidationCheck>
+     */
+    private function checksForScope(string $scope): array
+    {
+        return match ($scope) {
+            'data' => $this->dataChecks,
+            default => $this->fullChecks,
+        };
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public static function supportedScopes(): array
+    {
+        return ['full', 'data'];
     }
 
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function validate(string $sport): array
+    public function validate(string $sport, string $scope = 'full'): array
     {
         $profile = config("validation.sports.{$sport}");
 
@@ -58,7 +112,7 @@ class SportValidator
 
         $results = [];
 
-        foreach ($this->checks as $check) {
+        foreach ($this->checksForScope($scope) as $check) {
             $result = $check->run($sport, $profile);
             if ($result !== null) {
                 $results[] = $result;

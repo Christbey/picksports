@@ -675,7 +675,7 @@ test('healthcheck validate data summary is scoped to the current validation run'
     $validator = Mockery::mock(SportValidator::class);
     $validator->shouldReceive('validate')
         ->once()
-        ->with('nba')
+        ->with('nba', 'full')
         ->andReturn([[
             'check_type' => 'validation_stub_check',
             'status' => 'passing',
@@ -862,6 +862,49 @@ test('pipeline order treats stale ai daily predictions as advisory warning', fun
         ->and($result['message'])->toBe('1 advisory pipeline dependency check(s) should be refreshed.')
         ->and(data_get($result, 'metadata.violations.0.label'))->toBe('odds before AI daily predictions')
         ->and(data_get($result, 'metadata.violations.0.severity'))->toBe('warning');
+});
+
+test('data validation scope excludes derived prediction readiness checks', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDay()->toDateString(),
+        'game_time' => '18:00:00',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 3.5,
+        'predicted_total' => 228.5,
+        'win_probability' => 0.63,
+        'confidence_score' => 74.2,
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'espn:sync-nba-game-details',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now(),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nba',
+        'command' => 'nba:generate-predictions',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subHour(),
+    ]);
+
+    $results = collect(app(SportValidator::class)->validate('nba', 'data'));
+
+    expect($results->pluck('check_type'))
+        ->not->toContain('validation_prediction_completeness')
+        ->not->toContain('validation_pipeline_order');
 });
 
 test('healthcheck validate data ignores detail sync order for games that already started', function () {

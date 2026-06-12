@@ -34,6 +34,7 @@ class OperationsSentinelCommand extends Command
         {--repair : Run the canonical repair pipeline; kept as an explicit operator alias because repair is the default behavior}
         {--ai : Run AI prediction analysis and operations review; kept as an explicit operator alias unless skip flags are provided}
         {--validate-only : Only run validation and operations AI review; skip repair, sync, stats, queues, models, predictions, and AI writeups}
+        {--data-only : With --validate-only, only validate source data freshness/completeness and skip derived prediction or AI readiness checks}
         {--skip-sync-pipeline : Skip registry sync dependencies such as injuries, weather, odds, player props, and futures}
         {--skip-stats : Skip player/team stat refresh}
         {--skip-model-pipeline : Skip grading, Elo, team metrics, and prediction generation}
@@ -183,9 +184,14 @@ class OperationsSentinelCommand extends Command
         ));
 
         if ($validateOnly) {
+            $validationScope = $this->option('data-only') ? 'data' : 'full';
             $this->line('Validation-only mode requested; skipping repair, sync, stats, queue, model, prediction, and AI writeup pipelines.');
 
-            [$validationExitCode] = $this->runValidationPass($sport, 'validation-only sentinel pass');
+            if ($validationScope === 'data') {
+                $this->line('Data-only validation requested; skipping derived prediction and AI readiness checks.');
+            }
+
+            [$validationExitCode] = $this->runValidationPass($sport, "{$validationScope} validation-only sentinel pass", $validationScope);
 
             if (! $this->option('skip-ai-review')) {
                 $this->info('Running '.strtoupper($sport).' operations AI review...');
@@ -279,7 +285,7 @@ class OperationsSentinelCommand extends Command
     /**
      * @return array{0: int, 1: ValidationRun|null}
      */
-    private function runValidationPass(string $sport, string $label): array
+    private function runValidationPass(string $sport, string $label, string $scope = 'full'): array
     {
         $this->info('Running '.strtoupper($sport)." validation {$label}...");
         $lastRunId = (int) (ValidationRun::query()
@@ -288,6 +294,7 @@ class OperationsSentinelCommand extends Command
 
         $exitCode = $this->call('healthcheck:validate-data', [
             '--sport' => $sport,
+            '--scope' => $scope,
         ]);
 
         $run = ValidationRun::query()

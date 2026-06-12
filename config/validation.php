@@ -25,7 +25,7 @@ return [
             'pipeline_order' => [
                 ['label' => 'details before predictions', 'upstream' => ['espn:sync-mlb-game-details%'], 'downstream' => ['mlb:generate-predictions%'], 'recommended_action' => 'mlb:generate-predictions'],
                 ['label' => 'weather before predictions', 'upstream' => ['mlb:sync-game-weather%'], 'downstream' => ['mlb:generate-predictions%'], 'recommended_action' => 'mlb:generate-predictions'],
-                ['label' => 'odds before AI daily predictions', 'upstream' => ['mlb:sync-odds%'], 'downstream' => ['sports:ai-daily-predictions --sport=mlb%'], 'recommended_action' => 'sports:ai-daily-predictions --sport=mlb'],
+                ['label' => 'odds before AI daily predictions', 'upstream' => ['mlb:sync-odds%'], 'downstream' => ['sports:ai-daily-predictions --sport=mlb%'], 'recommended_action' => 'sports:ai-daily-predictions --sport=mlb', 'severity' => 'warning'],
             ],
         ],
         'nba' => [

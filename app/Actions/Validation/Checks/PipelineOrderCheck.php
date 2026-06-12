@@ -38,6 +38,9 @@ class PipelineOrderCheck implements ValidationCheck
             $upstream = (array) $rule['upstream'];
             $downstream = (array) $rule['downstream'];
             $label = (string) ($rule['label'] ?? 'pipeline dependency');
+            $ruleSeverity = in_array(($rule['severity'] ?? null), ['warning', 'failing'], true)
+                ? (string) $rule['severity']
+                : 'failing';
             $recommendedAction = (string) ($rule['recommended_action'] ?? ($downstream[0] ?? 'review manually'));
             $upstreamHeartbeat = $this->latestSuccess($sport, $upstream);
             $downstreamHeartbeat = $this->latestSuccess($sport, $downstream);
@@ -69,17 +72,25 @@ class PipelineOrderCheck implements ValidationCheck
                     'downstream_command' => $downstreamHeartbeat->command,
                     'downstream_ran_at' => $downstreamHeartbeat->ran_at->toDateTimeString(),
                     'recommended_action' => $recommendedAction,
+                    'severity' => $ruleSeverity,
                     'temporal_scope' => $temporalScope,
                 ];
             }
         }
 
+        $blockingViolations = array_values(array_filter(
+            $violations,
+            fn (array $violation): bool => ($violation['severity'] ?? 'failing') === 'failing'
+        ));
         $status = 'passing';
         $message = 'Pipeline order looks healthy for configured dependencies.';
 
-        if ($violations !== []) {
+        if ($blockingViolations !== []) {
             $status = 'failing';
-            $message = count($violations).' pipeline dependency violation(s) need downstream reruns.';
+            $message = count($blockingViolations).' pipeline dependency violation(s) need downstream reruns.';
+        } elseif ($violations !== []) {
+            $status = 'warning';
+            $message = count($violations).' advisory pipeline dependency check(s) should be refreshed.';
         } elseif ($missingHeartbeats !== []) {
             $status = 'warning';
             $message = count($missingHeartbeats).' pipeline dependency check(s) are missing heartbeat history.';

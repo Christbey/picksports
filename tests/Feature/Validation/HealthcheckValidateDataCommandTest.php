@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Validation\Checks\GameCoverageCheck;
+use App\Actions\Validation\Checks\PipelineOrderCheck;
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
 use App\Actions\Validation\Checks\TeamStatCoverageCheck;
 use App\Actions\Validation\Checks\WeatherCompletenessCheck;
@@ -835,6 +836,32 @@ test('healthcheck validate data flags pipeline order violations', function () {
         ->and($finding->recommended_action)->toBe('nba:generate-predictions')
         ->and(data_get($finding->facts, 'violations.0.label'))->toBe('details before predictions')
         ->and(data_get($finding->facts, 'violations.0.temporal_scope.blocking_active_games'))->toBe(1);
+});
+
+test('pipeline order treats stale ai daily predictions as advisory warning', function () {
+    CommandHeartbeat::query()->create([
+        'sport' => 'mlb',
+        'command' => 'mlb:sync-odds',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now(),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'mlb',
+        'command' => 'sports:ai-daily-predictions --sport=mlb --date='.now()->toDateString(),
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subHour(),
+    ]);
+
+    $result = app(PipelineOrderCheck::class)->run('mlb', config('validation.sports.mlb'));
+
+    expect($result)->not->toBeNull()
+        ->and($result['status'])->toBe('warning')
+        ->and($result['message'])->toBe('1 advisory pipeline dependency check(s) should be refreshed.')
+        ->and(data_get($result, 'metadata.violations.0.label'))->toBe('odds before AI daily predictions')
+        ->and(data_get($result, 'metadata.violations.0.severity'))->toBe('warning');
 });
 
 test('healthcheck validate data ignores detail sync order for games that already started', function () {

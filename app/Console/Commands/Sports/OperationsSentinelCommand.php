@@ -33,6 +33,7 @@ class OperationsSentinelCommand extends Command
         {--season= : Season to repair/grade}
         {--repair : Run the canonical repair pipeline; kept as an explicit operator alias because repair is the default behavior}
         {--ai : Run AI prediction analysis and operations review; kept as an explicit operator alias unless skip flags are provided}
+        {--validate-only : Only run validation and operations AI review; skip repair, sync, stats, queues, models, predictions, and AI writeups}
         {--skip-sync-pipeline : Skip registry sync dependencies such as injuries, weather, odds, player props, and futures}
         {--skip-stats : Skip player/team stat refresh}
         {--skip-model-pipeline : Skip grading, Elo, team metrics, and prediction generation}
@@ -148,6 +149,7 @@ class OperationsSentinelCommand extends Command
         $statLimit = max(0, (int) $this->option('stat-limit'));
         $repairRequested = (bool) $this->option('repair');
         $aiRequested = (bool) $this->option('ai');
+        $validateOnly = (bool) $this->option('validate-only');
 
         if ($toDate->lt($fromDate)) {
             $this->error('--to-date must be on or after --from-date.');
@@ -179,6 +181,23 @@ class OperationsSentinelCommand extends Command
             $stageContext->activeWindow->localStartDate(),
             $stageContext->activeWindow->localEndDate(),
         ));
+
+        if ($validateOnly) {
+            $this->line('Validation-only mode requested; skipping repair, sync, stats, queue, model, prediction, and AI writeup pipelines.');
+
+            [$validationExitCode] = $this->runValidationPass($sport, 'validation-only sentinel pass');
+
+            if (! $this->option('skip-ai-review')) {
+                $this->info('Running '.strtoupper($sport).' operations AI review...');
+                $this->call('operations:ai-review', [
+                    '--sport' => $sport,
+                    '--season' => $season,
+                    '--date' => $referenceDate->toDateString(),
+                ]);
+            }
+
+            return $validationExitCode;
+        }
 
         $sync = $this->scoreboardSyncAction($sport, $syncClass);
         $synced = 0;

@@ -58,6 +58,7 @@ it('exposes player and team stat refresh controls on the sentinel command', func
     $this->artisan('sports:operations-sentinel --help')
         ->expectsOutputToContain('--repair')
         ->expectsOutputToContain('--ai')
+        ->expectsOutputToContain('--validate-only')
         ->expectsOutputToContain('--skip-sync-pipeline')
         ->expectsOutputToContain('--skip-stats')
         ->expectsOutputToContain('--skip-model-pipeline')
@@ -68,6 +69,28 @@ it('exposes player and team stat refresh controls on the sentinel command', func
         ->expectsOutputToContain('--skip-ai-review')
         ->expectsOutputToContain('--stat-lookback-days')
         ->expectsOutputToContain('--stat-limit')
+        ->assertExitCode(0);
+});
+
+it('can run a fast validation-only sentinel pass', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $validator = m::mock(SportValidator::class);
+    $validator->shouldReceive('validate')
+        ->once()
+        ->with('nba')
+        ->andReturn([]);
+    $this->app->instance(SportValidator::class, $validator);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'nba',
+        '--season' => 2026,
+        '--validate-only' => true,
+        '--skip-ai-review' => true,
+    ])
+        ->expectsOutput('Validation-only mode requested; skipping repair, sync, stats, queue, model, prediction, and AI writeup pipelines.')
+        ->expectsOutput('Running NBA validation validation-only sentinel pass...')
+        ->expectsOutput('Validation Summary:')
         ->assertExitCode(0);
 });
 

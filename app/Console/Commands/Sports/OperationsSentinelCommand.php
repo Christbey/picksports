@@ -238,6 +238,10 @@ class OperationsSentinelCommand extends Command
                 $this->runModelPipeline($registry, $sport, $season, $referenceDate);
             }
 
+            if (! $this->option('skip-ai-analysis')) {
+                $this->runAiPredictionAnalysisPipeline($registry, $sport, $season, $referenceDate);
+            }
+
             [$validationExitCode] = $this->runValidationPass($sport, 'after targeted validation repair');
         }
 

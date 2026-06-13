@@ -132,6 +132,85 @@ test('analyzes mlb pitcher strikeout props', function () {
         ->and(data_get($prop?->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(8.0);
 });
 
+test('clears stale player prop recommendation when analysis can no longer recompute it', function () {
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'season' => 2026,
+    ]);
+
+    $prop = MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_name' => 'Unknown Stale Player',
+        'market' => 'batter_runs_scored',
+        'line' => 0.5,
+        'over_price' => 112,
+        'under_price' => -142,
+        'recommended_side' => 'Over',
+        'confidence_score' => 98,
+        'predicted_over_probability' => 67.6,
+        'market_over_probability' => 43.7,
+        'edge_probability' => 23.9,
+        'data_quality_score' => 90,
+        'match_quality_score' => 95,
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->analyzeProps('MLB', 3, '2026-06-07');
+    $prop->refresh();
+
+    expect($recommendations)->toHaveCount(0)
+        ->and($prop->recommended_side)->toBeNull()
+        ->and($prop->confidence_score)->toBeNull()
+        ->and($prop->confidence_decomposition)->toBeNull();
+});
+
+test('precomputed player prop board ignores legacy rows without stat and cover records', function () {
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'season' => 2026,
+    ]);
+
+    $player = MlbPlayer::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Legacy Row',
+        'first_name' => 'Legacy',
+        'last_name' => 'Row',
+    ]);
+
+    MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Legacy Row',
+        'market' => 'batter_runs_scored',
+        'line' => 0.5,
+        'over_price' => 112,
+        'under_price' => -142,
+        'recommended_side' => 'Over',
+        'confidence_score' => 98,
+        'predicted_over_probability' => 67.6,
+        'market_over_probability' => 43.7,
+        'edge_probability' => 23.9,
+        'data_quality_score' => 90,
+        'match_quality_score' => 95,
+        'confidence_decomposition' => ['confidence_cap' => 96],
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->precomputedRecommendations('MLB', '2026-06-07');
+
+    expect($recommendations)->toHaveCount(0);
+});
+
 test('caps volatile mlb player prop signal strength below elite confidence', function () {
     $homeTeam = MlbTeam::factory()->create();
     $awayTeam = MlbTeam::factory()->create();

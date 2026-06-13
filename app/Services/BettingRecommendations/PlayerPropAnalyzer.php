@@ -188,6 +188,8 @@ class PlayerPropAnalyzer
 
             if ($recommendation && $recommendation['confidence'] >= 60) {
                 $recommendations->push($recommendation);
+            } elseif ($recommendation === null) {
+                $this->clearPredictionSnapshot($prop);
             }
         }
 
@@ -1036,6 +1038,27 @@ class PlayerPropAnalyzer
         ])->saveQuietly();
     }
 
+    protected function clearPredictionSnapshot(Model $prop): void
+    {
+        $prop->forceFill([
+            'recommended_side' => null,
+            'confidence_score' => null,
+            'predicted_over_probability' => null,
+            'market_over_probability' => null,
+            'edge_probability' => null,
+            'data_quality_score' => null,
+            'match_quality_score' => null,
+            'context_adjustment_factor' => null,
+            'confidence_decomposition' => null,
+            'narrative_json' => null,
+            'narrative_provider' => null,
+            'narrative_model' => null,
+            'narrative_input_hash' => null,
+            'narrative_latency_ms' => null,
+            'narrative_generated_at' => null,
+        ])->saveQuietly();
+    }
+
     protected function precomputedRecommendationPayload(Model $prop, string $sport): ?array
     {
         $player = $prop->player ?? null;
@@ -1052,6 +1075,10 @@ class PlayerPropAnalyzer
         $contextFactor = $prop->context_adjustment_factor !== null ? (float) $prop->context_adjustment_factor : null;
         $statSummary = data_get($prop->confidence_decomposition, 'stat_summary', []);
         $coverRecord = data_get($prop->confidence_decomposition, 'cover_record');
+
+        if (! is_array($statSummary) || $statSummary === [] || ! is_array($coverRecord)) {
+            return null;
+        }
 
         return [
             'prop' => $prop,

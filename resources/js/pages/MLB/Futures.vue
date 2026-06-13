@@ -42,7 +42,11 @@ type PlayoffForecast = {
     league_rank: number | null;
     projected_seed: number | null;
     playoff_make_probability: number;
+    division_win_probability: number;
+    division_series_probability: number;
+    league_championship_series_probability: number;
     league_championship_probability: number;
+    pennant_probability: number;
     world_series_probability: number;
     champion_probability: number;
     selection_score: number;
@@ -130,7 +134,7 @@ const leagueBreakdown = computed(() => {
             projectedIn: number;
             expectedBids: number;
             predictedWinner: string;
-            winnerLcsProbability: number;
+            winnerPennantProbability: number;
         }
     >();
 
@@ -143,7 +147,8 @@ const leagueBreakdown = computed(() => {
             projectedIn: 0,
             expectedBids: 0,
             predictedWinner: formatTeam(row.team, row.team_id),
-            winnerLcsProbability: row.league_championship_probability,
+            winnerPennantProbability:
+                row.pennant_probability ?? row.league_championship_probability,
         };
 
         current.teamsTracked += 1;
@@ -151,10 +156,12 @@ const leagueBreakdown = computed(() => {
         current.expectedBids += row.playoff_make_probability;
 
         if (
-            row.league_championship_probability > current.winnerLcsProbability
+            (row.pennant_probability ?? row.league_championship_probability) >
+            current.winnerPennantProbability
         ) {
             current.predictedWinner = formatTeam(row.team, row.team_id);
-            current.winnerLcsProbability = row.league_championship_probability;
+            current.winnerPennantProbability =
+                row.pennant_probability ?? row.league_championship_probability;
         }
 
         byLeague.set(league, current);
@@ -446,10 +453,10 @@ onMounted(async () => {
                                                 }}</span>
                                                 <span
                                                     class="text-xs text-muted-foreground"
-                                                    >LCS
+                                                    >Pennant
                                                     {{
                                                         formatPct(
-                                                            row.winnerLcsProbability,
+                                                            row.winnerPennantProbability,
                                                             1,
                                                         )
                                                     }}</span
@@ -634,11 +641,36 @@ onMounted(async () => {
                                         class="mb-1 flex items-center justify-between text-xs"
                                     >
                                         <span class="text-muted-foreground"
-                                            >League Championship</span
+                                            >Division</span
                                         >
                                         <span class="font-medium">{{
                                             formatPct(
-                                                row.league_championship_probability,
+                                                row.division_win_probability,
+                                                2,
+                                            )
+                                        }}</span>
+                                    </div>
+                                    <div
+                                        class="h-2 overflow-hidden rounded-full bg-muted"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-amber-500"
+                                            :style="{
+                                                width: `${toPct(row.division_win_probability)}%`,
+                                            }"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        class="mb-1 flex items-center justify-between text-xs"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >Division Series</span
+                                        >
+                                        <span class="font-medium">{{
+                                            formatPct(
+                                                row.division_series_probability,
                                                 2,
                                             )
                                         }}</span>
@@ -649,7 +681,32 @@ onMounted(async () => {
                                         <div
                                             class="h-full rounded-full bg-sky-500"
                                             :style="{
-                                                width: `${toPct(row.league_championship_probability)}%`,
+                                                width: `${toPct(row.division_series_probability)}%`,
+                                            }"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        class="mb-1 flex items-center justify-between text-xs"
+                                    >
+                                        <span class="text-muted-foreground"
+                                            >LCS</span
+                                        >
+                                        <span class="font-medium">{{
+                                            formatPct(
+                                                row.league_championship_series_probability,
+                                                2,
+                                            )
+                                        }}</span>
+                                    </div>
+                                    <div
+                                        class="h-2 overflow-hidden rounded-full bg-muted"
+                                    >
+                                        <div
+                                            class="h-full rounded-full bg-indigo-500"
+                                            :style="{
+                                                width: `${toPct(row.league_championship_series_probability)}%`,
                                             }"
                                         />
                                     </div>
@@ -663,18 +720,19 @@ onMounted(async () => {
                                         >
                                         <span class="font-medium">{{
                                             formatPct(
-                                                row.world_series_probability,
+                                                row.pennant_probability ??
+                                                    row.league_championship_probability,
                                                 2,
                                             )
                                         }}</span>
                                     </div>
                                     <div
-                                        class="h-2 overflow-hidden rounded-full bg-violet-500/20"
+                                        class="h-2 overflow-hidden rounded-full bg-muted"
                                     >
                                         <div
                                             class="h-full rounded-full bg-violet-500"
                                             :style="{
-                                                width: `${toPct(row.world_series_probability)}%`,
+                                                width: `${toPct(row.pennant_probability ?? row.league_championship_probability)}%`,
                                             }"
                                         />
                                     </div>

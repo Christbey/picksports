@@ -31,7 +31,7 @@ class GeneratePlayoffForecastCommand extends Command
 
         $leaders = $forecasts->sortByDesc('champion_probability')->take(12)->values();
         $this->table(
-            ['Team', 'League', 'Seed', 'Make %', 'LCS %', 'WS %', 'Champion %'],
+            ['Team', 'League', 'Seed', 'Make %', 'Div %', 'LDS %', 'LCS %', 'WS %', 'Champion %'],
             $leaders->map(function ($forecast) {
                 $teamName = trim(implode(' ', array_filter([
                     $forecast->team->location ?? null,
@@ -46,8 +46,10 @@ class GeneratePlayoffForecastCommand extends Command
                     $forecast->league ?? '-',
                     $forecast->projected_seed ? (string) $forecast->projected_seed : '-',
                     round(((float) $forecast->playoff_make_probability) * 100, 1).'%',
+                    round(((float) ($forecast->division_win_probability ?? 0)) * 100, 1).'%',
+                    round(((float) ($forecast->division_series_probability ?? 0)) * 100, 1).'%',
+                    round(((float) ($forecast->league_championship_series_probability ?? 0)) * 100, 1).'%',
                     round(((float) $forecast->league_championship_probability) * 100, 1).'%',
-                    round(((float) $forecast->world_series_probability) * 100, 1).'%',
                     round(((float) $forecast->champion_probability) * 100, 2).'%',
                 ];
             })

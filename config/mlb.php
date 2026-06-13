@@ -487,11 +487,10 @@ return [
     */
 
     'playoff_forecast' => [
-        'simulations' => 1,
+        'simulations' => env('MLB_PLAYOFF_FORECAST_SIMULATIONS', 5000),
         'playoff_spots_per_league' => 6,
-        'bubble_steepness' => 1.1,
-        'league_championship_base' => 0.44,
-        'league_champ_seed_penalty' => 0.07,
+        'simulation_regular_season_noise' => env('MLB_PLAYOFF_FORECAST_REGULAR_SEASON_NOISE', 0.55),
+        'simulation_matchup_scale' => env('MLB_PLAYOFF_FORECAST_MATCHUP_SCALE', 0.85),
         'regression' => [
             'enabled' => true,
             'metric_factor' => 0.45,

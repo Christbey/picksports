@@ -101,6 +101,53 @@ it('resolves MLB futures leagues from canonical alignment when team rows are bla
         ->and($forecasts->pluck('league')->contains('Unknown'))->toBeFalse();
 });
 
+it('generates ordered MLB stage probabilities from the simulated playoff bracket', function () {
+    config(['mlb.playoff_forecast.simulations' => 750]);
+
+    foreach ([
+        ['NYY', 94, 68],
+        ['BAL', 88, 74],
+        ['CLE', 86, 76],
+        ['DET', 82, 80],
+        ['SEA', 91, 71],
+        ['TEX', 84, 78],
+        ['ATL', 96, 66],
+        ['NYM', 85, 77],
+        ['MIL', 90, 72],
+        ['STL', 83, 79],
+        ['LAD', 95, 67],
+        ['SD', 87, 75],
+    ] as [$abbreviation, $wins, $losses]) {
+        $team = Team::factory()->create([
+            'abbreviation' => $abbreviation,
+            'league' => null,
+            'division' => null,
+            'elo_rating' => 1500,
+        ]);
+
+        createMlbForecastMetric($team, [
+            'wins' => $wins,
+            'losses' => $losses,
+            'offensive_rating' => 100 + (($wins - 81) * 1.5),
+            'pitching_rating' => 100 + (($wins - 81) * 1.2),
+        ]);
+    }
+
+    $forecasts = (new GeneratePlayoffForecast)->execute(2026);
+
+    expect((float) $forecasts->sum('champion_probability'))->toBeGreaterThan(0.99)
+        ->and((float) $forecasts->sum('champion_probability'))->toBeLessThan(1.01);
+
+    foreach ($forecasts as $forecast) {
+        expect((float) $forecast->playoff_make_probability)->toBeGreaterThanOrEqual((float) $forecast->division_series_probability)
+            ->and((float) $forecast->division_series_probability)->toBeGreaterThanOrEqual((float) $forecast->league_championship_series_probability)
+            ->and((float) $forecast->league_championship_series_probability)->toBeGreaterThanOrEqual((float) $forecast->pennant_probability)
+            ->and((float) $forecast->pennant_probability)->toBe((float) $forecast->world_series_probability)
+            ->and((float) $forecast->pennant_probability)->toBeGreaterThanOrEqual((float) $forecast->champion_probability)
+            ->and((float) $forecast->playoff_make_probability)->toBeGreaterThanOrEqual((float) $forecast->division_win_probability);
+    }
+});
+
 function createMlbForecastMetric(Team $team, array $overrides = []): TeamMetric
 {
     return TeamMetric::query()->create(array_merge([

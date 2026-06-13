@@ -194,6 +194,42 @@ class PlayerPropAnalyzer
         return $recommendations->sortByDesc('confidence')->values();
     }
 
+    public function precomputedRecommendations(
+        string $sport = 'NBA',
+        ?string $dateFilter = null,
+        ?int $gameFilter = null,
+        ?string $marketFilter = null,
+        int $limit = 75
+    ): Collection {
+        $sportConfig = $this->getSportConfig($sport);
+        $playerPropModel = $sportConfig['player_prop_model'];
+
+        $props = $playerPropModel::query()
+            ->whereNotNull('recommended_side')
+            ->where('confidence_score', '>=', 60)
+            ->whereHas('game', function ($query) use ($dateFilter, $gameFilter): void {
+                if ($dateFilter) {
+                    $query->whereDate('game_date', $dateFilter);
+                }
+
+                if ($gameFilter) {
+                    $query->where('id', $gameFilter);
+                }
+            })
+            ->when($marketFilter !== null && $marketFilter !== '', fn ($query) => $query->where('market', $marketFilter))
+            ->with(['player.team', 'game.homeTeam', 'game.awayTeam'])
+            ->orderByDesc('confidence_score')
+            ->orderByDesc('edge_probability')
+            ->orderByDesc('fetched_at')
+            ->limit(max(1, min($limit, 150)))
+            ->get();
+
+        return $props
+            ->map(fn (Model $prop): ?array => $this->precomputedRecommendationPayload($prop, $sport))
+            ->filter()
+            ->values();
+    }
+
     /**
      * Analyze a single prop and generate recommendation
      */
@@ -890,6 +926,89 @@ class PlayerPropAnalyzer
             'context_adjustment_factor' => $contextFactor,
             'confidence_decomposition' => $analysis['confidence_decomposition'] ?? null,
         ])->saveQuietly();
+    }
+
+    protected function precomputedRecommendationPayload(Model $prop, string $sport): ?array
+    {
+        $player = $prop->player ?? null;
+        $game = $prop->game ?? null;
+        $side = $prop->recommended_side;
+
+        if (! $player instanceof Model || ! $game instanceof Model || ! in_array($side, ['Over', 'Under'], true)) {
+            return null;
+        }
+
+        $modelOverProbability = $prop->predicted_over_probability !== null ? (float) $prop->predicted_over_probability : null;
+        $marketOverProbability = $prop->market_over_probability !== null ? (float) $prop->market_over_probability : null;
+        $edgeProbability = $prop->edge_probability !== null ? (float) $prop->edge_probability : null;
+        $contextFactor = $prop->context_adjustment_factor !== null ? (float) $prop->context_adjustment_factor : null;
+
+        return [
+            'prop' => $prop,
+            'player' => $player,
+            'game' => $game,
+            'market' => $this->formatMarketName((string) $prop->market),
+            'line' => $prop->line,
+            'recommendation' => $side,
+            'odds' => $side === 'Over' ? $prop->over_price : $prop->under_price,
+            'confidence' => (int) $prop->confidence_score,
+            'season_avg' => null,
+            'recent_avg' => null,
+            'last5_avg' => null,
+            'vs_opponent_avg' => null,
+            'home_away_avg' => null,
+            'hit_rate_vs_opponent' => null,
+            'times_covered_last5' => null,
+            'times_covered_season' => null,
+            'consistency' => null,
+            'streak' => null,
+            'edge' => $edgeProbability !== null ? round($edgeProbability / 10, 1) : 0,
+            'model_over_probability' => $modelOverProbability,
+            'market_over_probability' => $marketOverProbability,
+            'edge_probability' => $edgeProbability,
+            'reasoning' => $this->precomputedReasoning($prop, $side, $modelOverProbability, $marketOverProbability, $edgeProbability),
+            'context' => $contextFactor !== null ? [
+                'pace_factor' => 1.0,
+                'opponent_factor' => 1.0,
+                'minutes_factor' => 1.0,
+                'combined_factor' => $contextFactor,
+            ] : null,
+            'data_quality_score' => $prop->data_quality_score,
+            'match_quality_score' => $prop->match_quality_score,
+            'confidence_decomposition' => $prop->confidence_decomposition,
+            'narrative' => is_array($prop->narrative_json ?? null) ? $prop->narrative_json : null,
+        ];
+    }
+
+    protected function precomputedReasoning(
+        Model $prop,
+        string $side,
+        ?float $modelOverProbability,
+        ?float $marketOverProbability,
+        ?float $edgeProbability
+    ): array {
+        $reasoning = ['Precomputed recommendation from the latest player-prop analysis run.'];
+
+        if ($modelOverProbability !== null && $marketOverProbability !== null) {
+            $modelSideProbability = $side === 'Under' ? 100 - $modelOverProbability : $modelOverProbability;
+            $marketSideProbability = $side === 'Under' ? 100 - $marketOverProbability : $marketOverProbability;
+            $reasoning[] = sprintf(
+                'Model %s probability %.1f%% vs market implied %.1f%%.',
+                strtolower($side),
+                $modelSideProbability,
+                $marketSideProbability
+            );
+        }
+
+        if ($edgeProbability !== null) {
+            $reasoning[] = sprintf('Stored probability edge %.1fpp.', $edgeProbability);
+        }
+
+        if ($prop->fetched_at !== null) {
+            $reasoning[] = 'Odds fetched '.$prop->fetched_at->diffForHumans().'.';
+        }
+
+        return $reasoning;
     }
 
     /**

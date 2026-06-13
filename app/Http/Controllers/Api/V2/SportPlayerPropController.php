@@ -28,18 +28,20 @@ class SportPlayerPropController extends Controller
             'date' => ['nullable', 'date'],
             'game' => ['nullable', 'integer'],
             'market' => ['nullable', 'string', 'max:100'],
+            'limit' => ['nullable', 'integer', 'min:1', 'max:150'],
         ]);
 
         $resolvedDate = $this->resolveBoardDate($analyzer, $sportCode, $validated['date'] ?? null);
         $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
         $marketFilter = $validated['market'] ?? null;
+        $limit = isset($validated['limit']) ? (int) $validated['limit'] : 75;
 
-        $recommendations = $analyzer->analyzeProps(
+        $recommendations = $analyzer->precomputedRecommendations(
             sport: $sportCode,
-            minGames: 3,
             dateFilter: $resolvedDate,
             gameFilter: $gameFilter,
             marketFilter: $marketFilter,
+            limit: $limit,
         );
 
         return response()->json([
@@ -63,7 +65,11 @@ class SportPlayerPropController extends Controller
                     'withheld_field_groups' => ['raw_data'],
                 ],
                 'freshness' => [],
-                'warnings' => [],
+                'warnings' => $recommendations->isEmpty()
+                    ? ['No precomputed player prop recommendations found for the selected filters. Run sports:analyze-player-props if this slate should have recommendations.']
+                    : [],
+                'limit' => $limit,
+                'source' => 'precomputed',
             ],
         ]);
     }
@@ -175,7 +181,7 @@ class SportPlayerPropController extends Controller
         }
 
         $dates = $analyzer->getAvailableDatesForSport($sportCode);
-        if ($sportCode !== 'NBA' || $dates->isEmpty()) {
+        if ($dates->isEmpty()) {
             return $requestedDate;
         }
 

@@ -164,7 +164,7 @@ const applyFilters = () => {
 };
 
 const buildQueryParams = (): Record<string, string> => {
-    const params: Record<string, string> = {};
+    const params: Record<string, string> = { limit: '75' };
     if (selectedDate.value) params.date = selectedDate.value;
     if (selectedGame.value) params.game = selectedGame.value;
     if (selectedMarket.value) params.market = selectedMarket.value;

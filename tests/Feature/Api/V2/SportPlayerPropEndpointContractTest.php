@@ -23,6 +23,7 @@ use App\Models\WNBA\PlayerProp as WnbaPlayerProp;
 use App\Models\WNBA\Team as WnbaTeam;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
@@ -62,9 +63,9 @@ it('returns the v2 player prop recommendation board envelope from the analyzer',
 
     $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
     $analyzer
-        ->shouldReceive('analyzeProps')
+        ->shouldReceive('precomputedRecommendations')
         ->once()
-        ->with('NBA', 3, '2026-06-10', 99, 'player_points')
+        ->with('NBA', '2026-06-10', 99, 'player_points', 75)
         ->andReturn(collect());
     $analyzer
         ->shouldReceive('getAvailableDatesForSport')
@@ -102,7 +103,46 @@ it('returns the v2 player prop recommendation board envelope from the analyzer',
         ->assertJsonPath('filters.market', 'player_points')
         ->assertJsonPath('meta.version', 'v2')
         ->assertJsonPath('meta.sport', 'nba')
-        ->assertJsonPath('meta.contract', 'sports.player-props.board');
+        ->assertJsonPath('meta.contract', 'sports.player-props.board')
+        ->assertJsonPath('meta.source', 'precomputed');
+});
+
+it('defaults the player prop board date to today or the next available slate for every sport', function () {
+    Carbon::setTestNow('2026-06-13 10:00:00');
+    actAsV2PlayerPropContractUser();
+
+    $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
+    $analyzer
+        ->shouldReceive('getAvailableDatesForSport')
+        ->twice()
+        ->with('MLB')
+        ->andReturn(collect([
+            ['value' => '2026-06-12', 'label' => 'Jun 12'],
+            ['value' => '2026-06-14', 'label' => 'Jun 14'],
+        ]));
+    $analyzer
+        ->shouldReceive('precomputedRecommendations')
+        ->once()
+        ->with('MLB', '2026-06-14', null, null, 75)
+        ->andReturn(collect());
+    $analyzer
+        ->shouldReceive('getAvailableGamesForSport')
+        ->once()
+        ->with('MLB', '2026-06-14')
+        ->andReturn(collect());
+    $analyzer
+        ->shouldReceive('getAvailableMarketsForSport')
+        ->once()
+        ->with('MLB', '2026-06-14', null)
+        ->andReturn(collect());
+
+    app()->instance(PlayerPropAnalyzer::class, $analyzer);
+
+    $this->getJson('/api/v2/sports/mlb/player-props/board')
+        ->assertOk()
+        ->assertJsonPath('filters.date', '2026-06-14');
+
+    Carbon::setTestNow();
 });
 
 it('lists v2 market player props with stable shape, filters, pagination, freshness, and warnings', function (

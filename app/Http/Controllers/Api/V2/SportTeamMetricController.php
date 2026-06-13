@@ -18,7 +18,7 @@ class SportTeamMetricController extends Controller
         SportTeamMetricQuery $metrics,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-        $filters = $request->validatedFilters();
+        $filters = $metrics->normalizeFilters($context, $request->validatedFilters());
         $paginator = $metrics->paginate($context, $filters, $request->user());
 
         $paginator->setCollection(
@@ -60,7 +60,7 @@ class SportTeamMetricController extends Controller
         SportTeamMetricQuery $metrics,
     ): JsonResponse {
         $context = $sports->resolve($sport);
-        $filters = $request->validatedFilters();
+        $filters = $metrics->normalizeFilters($context, $request->validatedFilters());
         $metric = $metrics->latestForTeam($context, $team, $filters, $request->user());
 
         return response()->json([

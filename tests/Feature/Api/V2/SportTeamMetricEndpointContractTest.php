@@ -138,6 +138,46 @@ it('aliases basketball efficiency fields to game page metric names', function ()
         ->assertJsonPath('data.pace', 99.8);
 });
 
+it('defaults mlb team metrics to regular season rows', function () {
+    actAsV2TeamMetricContractUser();
+
+    $team = MlbTeam::factory()->create([
+        'abbreviation' => 'KC',
+    ]);
+
+    createV2TeamMetricContractMetric(MlbTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.spring_training', 1),
+        'wins' => 4,
+        'losses' => 3,
+        'offensive_rating' => 225.0,
+        'calculation_date' => '2026-03-20',
+    ]);
+
+    $regularMetric = createV2TeamMetricContractMetric(MlbTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'wins' => 28,
+        'losses' => 40,
+        'offensive_rating' => 132.4,
+        'calculation_date' => '2026-06-12',
+    ]);
+
+    $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&per_page=5')
+        ->assertOk()
+        ->assertJsonPath('meta.filters.season_type', (string) config('mlb.season.types.regular', 2))
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $regularMetric->id)
+        ->assertJsonPath('data.0.wins', 28)
+        ->assertJsonPath('data.0.losses', 40);
+
+    $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&season_type=all&per_page=5')
+        ->assertOk()
+        ->assertJsonCount(2, 'data');
+});
+
 it('lists v2 team metric seasons and latest team metric with metadata', function (
     string $slug,
     string $teamModel,

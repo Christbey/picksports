@@ -38,6 +38,20 @@ class CalculateTeamMetrics
             return null;
         }
 
+        if (count($teamStats) !== $games->count() || count($opponentStats) !== $games->count()) {
+            Log::warning('Skipping MLB team metrics because completed game stats are incomplete', [
+                'team_id' => $team->id,
+                'team_name' => "{$team->city} {$team->name}",
+                'season' => $season,
+                'season_type' => $resolvedSeasonType,
+                'completed_games' => $games->count(),
+                'team_stat_games' => count($teamStats),
+                'opponent_stat_games' => count($opponentStats),
+            ]);
+
+            return null;
+        }
+
         $record = $this->calculateWinLossRecord($games, $team);
 
         // Calculate baseball-specific metrics

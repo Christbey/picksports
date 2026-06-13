@@ -44,6 +44,7 @@ return [
             'postseason' => 'Postseason',
         ],
         'analytics_types' => [2, 3],
+        'default_team_metrics_type' => 2,
         'games' => [
             'regular_season' => 162,
             'playoff_rounds' => 4,

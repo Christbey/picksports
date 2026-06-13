@@ -22,6 +22,7 @@ interface CreateSportTeamMetricsConfigParams {
     defaultSort: string;
     columns: MetricsConfig['columns'];
     hasMeetsMinimum?: boolean;
+    defaultSeasonType?: string;
     breadcrumbHref?: string;
     seasonTypeOptions?: MetricsConfig['seasonTypeOptions'];
 }
@@ -49,6 +50,7 @@ export function createSportTeamMetricsConfig(
         defaultSort: params.defaultSort,
         columns: params.columns,
         hasMeetsMinimum: params.hasMeetsMinimum,
+        defaultSeasonType: params.defaultSeasonType,
         seasonTypeOptions: params.seasonTypeOptions,
     };
 }
@@ -758,6 +760,7 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'mlb',
     title: 'MLB Team Metrics',
     subtitle: 'Advanced metrics for MLB teams',
+    defaultSeasonType: '2',
     seasonTypeOptions: [
         { value: '1', label: 'Spring Training' },
         { value: '2', label: 'Regular Season' },

@@ -13,6 +13,7 @@ use App\Models\Healthcheck;
 use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\GameWeather as MlbGameWeather;
 use App\Models\MLB\Team as MlbTeam;
+use App\Models\MLB\TeamStat;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -752,6 +753,47 @@ test('healthcheck validate data flags ungraded final mlb predictions', function 
             'missing_plays',
             'missing_prediction_grading',
         );
+});
+
+test('healthcheck validate data fails when completed mlb games are missing full team stats', function () {
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'espn_event_id' => '401999902',
+        'short_name' => 'KC @ TEX',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'game_date' => now()->copy()->subDay()->toDateString(),
+        'home_score' => 6,
+        'away_score' => 4,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $home->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'runs' => 6,
+    ]);
+
+    $this->artisan('healthcheck:validate-data', ['--sport' => 'mlb'])
+        ->assertExitCode(1);
+
+    $run = ValidationRun::query()->latest('id')->first();
+
+    $finding = ValidationFinding::query()
+        ->where('validation_run_id', $run->id)
+        ->where('check_type', 'validation_team_stat_coverage')
+        ->first();
+
+    expect($finding)->not->toBeNull()
+        ->and($finding->status)->toBe('failing')
+        ->and(data_get($finding->facts, 'completed_games_missing_full_team_stats'))->toBe(1)
+        ->and(data_get($finding->facts, 'sample_games.0.game_id'))->toBe($game->id)
+        ->and(data_get($finding->facts, 'sample_games.0.team_stats_count'))->toBe(1);
 });
 
 test('healthcheck validate data flags stale futures odds', function () {

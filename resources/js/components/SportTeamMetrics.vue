@@ -36,6 +36,7 @@ export interface MetricsConfig {
     defaultSort: string;
     columns: Column[];
     hasMeetsMinimum?: boolean;
+    defaultSeasonType?: string;
     seasonTypeOptions?: Array<{ value: string; label: string }>;
 }
 
@@ -54,7 +55,7 @@ const metrics = ref<any[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const searchQuery = ref('');
-const selectedSeasonType = ref('');
+const selectedSeasonType = ref(props.config.defaultSeasonType ?? '');
 const sortBy = ref(props.config.defaultSort);
 const sortDesc = ref(true);
 const tierLimit = ref<number | null>(null);

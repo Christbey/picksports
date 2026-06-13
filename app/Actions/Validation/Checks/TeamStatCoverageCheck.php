@@ -4,6 +4,7 @@ namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Services\Sports\SeasonStage\SeasonStageService;
+use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -53,10 +54,68 @@ class TeamStatCoverageCheck implements ValidationCheck
         $teamsWithStats = $teamsWithStatsIds->unique()->count();
         $missingTeams = max($totalTeams - $teamsWithStats, 0);
         $missingPct = $totalTeams > 0 ? $missingTeams / $totalTeams : 1.0;
-        $completedGames = DB::table($gamesTable)
+        $completedGamesQuery = DB::table($gamesTable)
             ->where('season', $season)
-            ->whereIn('status', ['STATUS_FINAL', 'final', 'completed'])
+            ->whereIn('status', ['STATUS_FINAL', 'final', 'completed']);
+
+        if ($sport === 'mlb') {
+            $analyticsTypes = collect((array) config('mlb.season.analytics_types', []))
+                ->flatMap(fn (mixed $type): array => [(string) $type, is_numeric($type) ? (int) $type : $type])
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($analyticsTypes !== [] && Schema::hasColumn($gamesTable, 'season_type')) {
+                $completedGamesQuery->whereIn('season_type', $analyticsTypes);
+            }
+
+            if (($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null && Schema::hasColumn($gamesTable, 'game_date')) {
+                $completedGamesQuery->whereDate('game_date', '>=', $openerDate);
+            }
+        }
+
+        $completedGames = (clone $completedGamesQuery)->count();
+        $teamStatsByGame = DB::table($teamStatsTable)
+            ->select('game_id', DB::raw('COUNT(DISTINCT team_id) as team_stats_count'))
+            ->groupBy('game_id');
+
+        $completedGamesMissingFullTeamStats = (clone $completedGamesQuery)
+            ->leftJoinSub($teamStatsByGame, 'team_stats_by_game', "{$gamesTable}.id", '=', 'team_stats_by_game.game_id')
+            ->where(fn ($query) => $query
+                ->whereNull('team_stats_by_game.team_stats_count')
+                ->orWhere('team_stats_by_game.team_stats_count', '<', 2))
             ->count();
+
+        $sampleColumns = ["{$gamesTable}.id"];
+        foreach (['espn_event_id', 'short_name', 'name', 'game_date'] as $column) {
+            if (Schema::hasColumn($gamesTable, $column)) {
+                $sampleColumns[] = "{$gamesTable}.{$column}";
+            }
+        }
+        $sampleColumns[] = DB::raw('COALESCE(team_stats_by_game.team_stats_count, 0) as team_stats_count');
+
+        $missingStatsSampleGames = (clone $completedGamesQuery)
+            ->leftJoinSub($teamStatsByGame, 'team_stats_by_game', "{$gamesTable}.id", '=', 'team_stats_by_game.game_id')
+            ->where(fn ($query) => $query
+                ->whereNull('team_stats_by_game.team_stats_count')
+                ->orWhere('team_stats_by_game.team_stats_count', '<', 2))
+            ->select($sampleColumns)
+            ->when(
+                Schema::hasColumn($gamesTable, 'game_date'),
+                fn ($query) => $query->orderBy("{$gamesTable}.game_date"),
+                fn ($query) => $query->orderBy("{$gamesTable}.id"),
+            )
+            ->limit(5)
+            ->get()
+            ->map(fn (object $game): array => [
+                'game_id' => (int) $game->id,
+                'espn_event_id' => $game->espn_event_id ?? null,
+                'matchup' => ($game->short_name ?? null) ?: ($game->name ?? null),
+                'game_date' => isset($game->game_date) ? (string) $game->game_date : null,
+                'team_stats_count' => (int) $game->team_stats_count,
+                'reasons' => ['missing_full_team_stats'],
+            ])
+            ->all();
 
         if ($completedGames === 0 && in_array($stageContext->stageGroup, ['offseason', 'preseason', 'unknown'], true)) {
             return [
@@ -81,7 +140,10 @@ class TeamStatCoverageCheck implements ValidationCheck
         $status = 'passing';
         $message = "Team stat coverage looks healthy. {$teamsWithStats}/{$totalTeams} teams have stats this season.";
 
-        if ($missingPct >= $failPct) {
+        if ($completedGamesMissingFullTeamStats > 0) {
+            $status = 'failing';
+            $message = "{$completedGamesMissingFullTeamStats}/{$completedGames} completed {$sport} game(s) are missing one or both team stat rows.";
+        } elseif ($missingPct >= $failPct) {
             $status = 'failing';
             $message = "{$missingTeams}/{$totalTeams} teams are missing team stats this season.";
         } elseif ($missingPct > $warnPct) {
@@ -99,7 +161,10 @@ class TeamStatCoverageCheck implements ValidationCheck
                 'teams_with_stats' => $teamsWithStats,
                 'teams_missing_stats' => $missingTeams,
                 'completed_games' => $completedGames,
+                'completed_games_missing_full_team_stats' => $completedGamesMissingFullTeamStats,
+                'sample_games' => $missingStatsSampleGames,
             ],
+            'recommended_action' => "espn:sync-{$sport}-game-details",
         ];
     }
 }

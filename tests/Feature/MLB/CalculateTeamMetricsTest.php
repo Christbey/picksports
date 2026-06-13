@@ -124,6 +124,61 @@ it('calculates batting average correctly across multiple games', function () {
     expect($metric->batting_average)->toBe(0.281);
 });
 
+it('does not save season metrics when completed game team stats are incomplete', function () {
+    $opponent = Team::factory()->create();
+
+    $gameWithStats = Game::factory()->create([
+        'season' => $this->season,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 5,
+        'away_score' => 3,
+        'game_date' => "{$this->season}-04-01",
+    ]);
+
+    Game::factory()->create([
+        'season' => $this->season,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $opponent->id,
+        'away_team_id' => $this->team->id,
+        'home_score' => 6,
+        'away_score' => 1,
+        'game_date' => "{$this->season}-04-02",
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $gameWithStats->id,
+        'team_type' => 'home',
+        'runs' => 5,
+        'hits' => 10,
+        'at_bats' => 35,
+        'innings_pitched' => 9,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $gameWithStats->id,
+        'team_type' => 'away',
+        'runs' => 3,
+        'hits' => 7,
+        'at_bats' => 33,
+        'innings_pitched' => 9,
+    ]);
+
+    $metric = $this->action->execute($this->team, $this->season, config('mlb.season.types.regular', 2));
+
+    expect($metric)->toBeNull()
+        ->and(TeamMetric::query()
+            ->where('team_id', $this->team->id)
+            ->where('season', $this->season)
+            ->where('season_type', (string) config('mlb.season.types.regular', 2))
+            ->exists())->toBeFalse();
+});
+
 it('calculates team ERA correctly across multiple games', function () {
     $opponent = Team::factory()->create();
 

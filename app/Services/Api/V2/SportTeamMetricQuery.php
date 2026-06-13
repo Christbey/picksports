@@ -23,7 +23,7 @@ class SportTeamMetricQuery
         array $filters = [],
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
-        return $this->query($context, $filters, $user)
+        return $this->query($context, $this->normalizeFilters($context, $filters), $user)
             ->paginate($this->perPage($filters));
     }
 
@@ -39,11 +39,13 @@ class SportTeamMetricQuery
         $metricModel = $this->metricModel($context);
         $table = (new $metricModel)->getTable();
 
+        $filters = $this->normalizeFilters($context, $filters);
+
         return $metricModel::query()
             ->with($this->relationsFor($metricModel))
             ->where('team_id', (int) $team)
             ->when(($filters['season'] ?? null) && $this->hasColumn($table, 'season'), fn (Builder $query): Builder => $query->where('season', $filters['season']))
-            ->when(($filters['season_type'] ?? null) && $this->hasColumn($table, 'season_type'), fn (Builder $query): Builder => $query->whereIn('season_type', $this->seasonTypeCandidates($context, (string) $filters['season_type'])))
+            ->when($this->shouldFilterSeasonType($filters) && $this->hasColumn($table, 'season_type'), fn (Builder $query): Builder => $query->whereIn('season_type', $this->seasonTypeCandidates($context, (string) $filters['season_type'])))
             ->when($this->hasColumn($table, 'season'), fn (Builder $query): Builder => $query->orderByDesc('season'))
             ->when($this->hasColumn($table, 'calculation_date'), fn (Builder $query): Builder => $query->orderByDesc('calculation_date'))
             ->orderByDesc('id')
@@ -85,13 +87,49 @@ class SportTeamMetricQuery
     ): Builder {
         $metricModel = $this->metricModel($context);
         $table = (new $metricModel)->getTable();
+        $filters = $this->normalizeFilters($context, $filters);
 
         return $metricModel::query()
             ->with($this->relationsFor($metricModel))
             ->when(($filters['team_id'] ?? null) && $this->hasColumn($table, 'team_id'), fn (Builder $query): Builder => $query->where('team_id', $filters['team_id']))
             ->when(($filters['season'] ?? null) && $this->hasColumn($table, 'season'), fn (Builder $query): Builder => $query->where('season', $filters['season']))
-            ->when(($filters['season_type'] ?? null) && $this->hasColumn($table, 'season_type'), fn (Builder $query): Builder => $query->whereIn('season_type', $this->seasonTypeCandidates($context, (string) $filters['season_type'])))
+            ->when($this->shouldFilterSeasonType($filters) && $this->hasColumn($table, 'season_type'), fn (Builder $query): Builder => $query->whereIn('season_type', $this->seasonTypeCandidates($context, (string) $filters['season_type'])))
             ->orderByDesc($this->orderColumn($table));
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     * @return array<string, mixed>
+     */
+    public function normalizeFilters(SportContext $context, array $filters): array
+    {
+        $seasonType = isset($filters['season_type']) ? trim((string) $filters['season_type']) : null;
+
+        if ($seasonType === 'all') {
+            $filters['season_type'] = 'all';
+
+            return $filters;
+        }
+
+        if ($seasonType === null || $seasonType === '') {
+            $defaultSeasonType = config("{$context->slug}.season.default_team_metrics_type");
+
+            if ($defaultSeasonType !== null && $defaultSeasonType !== '') {
+                $filters['season_type'] = (string) $defaultSeasonType;
+            }
+        }
+
+        return $filters;
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function shouldFilterSeasonType(array $filters): bool
+    {
+        return isset($filters['season_type'])
+            && trim((string) $filters['season_type']) !== ''
+            && trim((string) $filters['season_type']) !== 'all';
     }
 
     /**

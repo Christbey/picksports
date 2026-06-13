@@ -67,7 +67,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.08,
             'home_away_weight' => 0.04,
             'min_edge' => 0.055,
-            'volatility_floor' => 0.4,
+            'volatility_floor' => 0.75,
         ],
         'batter_hits' => [
             'season_weight' => 0.34,
@@ -76,7 +76,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.08,
             'home_away_weight' => 0.04,
             'min_edge' => 0.04,
-            'volatility_floor' => 0.8,
+            'volatility_floor' => 1.05,
         ],
         'batter_rbis' => [
             'season_weight' => 0.30,
@@ -85,7 +85,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.08,
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
-            'volatility_floor' => 0.7,
+            'volatility_floor' => 1.0,
         ],
         'batter_runs_scored' => [
             'season_weight' => 0.30,
@@ -94,7 +94,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.08,
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
-            'volatility_floor' => 0.7,
+            'volatility_floor' => 1.0,
         ],
         'batter_walks' => [
             'season_weight' => 0.34,
@@ -103,7 +103,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.10,
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
-            'volatility_floor' => 0.6,
+            'volatility_floor' => 0.9,
         ],
         'batter_strikeouts' => [
             'season_weight' => 0.34,
@@ -112,7 +112,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.10,
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
-            'volatility_floor' => 0.8,
+            'volatility_floor' => 1.05,
         ],
         'pitcher_strikeouts' => [
             'season_weight' => 0.35,
@@ -121,7 +121,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.06,
             'home_away_weight' => 0.04,
             'min_edge' => 0.045,
-            'volatility_floor' => 1.4,
+            'volatility_floor' => 1.8,
         ],
         'pitcher_hits_allowed' => [
             'season_weight' => 0.35,
@@ -130,7 +130,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.06,
             'home_away_weight' => 0.04,
             'min_edge' => 0.045,
-            'volatility_floor' => 1.4,
+            'volatility_floor' => 1.8,
         ],
         'pitcher_walks' => [
             'season_weight' => 0.36,
@@ -139,7 +139,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.08,
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
-            'volatility_floor' => 0.8,
+            'volatility_floor' => 1.05,
         ],
         'pitcher_earned_runs' => [
             'season_weight' => 0.35,
@@ -148,7 +148,7 @@ class PlayerPropAnalyzer
             'vs_opp_weight' => 0.06,
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
-            'volatility_floor' => 1.2,
+            'volatility_floor' => 1.5,
         ],
     ];
 
@@ -557,10 +557,22 @@ class PlayerPropAnalyzer
             $reasoning[] = 'Outlier grade: edge and data quality both clear elite thresholds.';
         }
 
+        $confidenceCap = $this->confidenceCap(
+            market: (string) $prop->market,
+            edgeProbability: $edgeProbability,
+            dataQualityScore: $dataQualityScore,
+            matchQualityScore: $matchQualityScore,
+            seasonSample: $seasonSample
+        );
+        if ($confidence > $confidenceCap) {
+            $reasoning[] = sprintf('Signal cap applied at %d for market volatility, edge, sample, and data quality.', $confidenceCap);
+        }
+        $confidence = min($confidence, $confidenceCap);
+
         return [
             'recommendation' => $recommendation,
             'odds' => $odds,
-            'confidence' => round(max(32, min(99, $confidence))),
+            'confidence' => round(max(32, min(96, $confidence))),
             'edge' => round($projectionDiff, 1),
             'model_over_probability' => round($modelOverProbability * 100, 1),
             'market_over_probability' => round($marketOverProbability * 100, 1),
@@ -574,6 +586,7 @@ class PlayerPropAnalyzer
                 'match_quality_score' => $matchQualityScore,
                 'context_factor' => round((float) ($context['combined_factor'] ?? 1.0), 3),
                 'uncertainty_penalty' => $uncertaintyPenalty,
+                'confidence_cap' => $confidenceCap,
             ],
         ];
     }
@@ -643,6 +656,78 @@ class PlayerPropAnalyzer
         $samplePenalty = max(0, 8 - min(8, (int) floor($seasonSample / 2)));
 
         return max(0, min(14, $volatilityPenalty + $samplePenalty));
+    }
+
+    protected function confidenceCap(
+        string $market,
+        float $edgeProbability,
+        int $dataQualityScore,
+        int $matchQualityScore,
+        int $seasonSample
+    ): int {
+        return min(
+            $this->marketConfidenceCap($market),
+            $this->edgeConfidenceCap($edgeProbability),
+            $this->dataQualityConfidenceCap($dataQualityScore),
+            $this->matchQualityConfidenceCap($matchQualityScore),
+            $this->sampleConfidenceCap($seasonSample),
+        );
+    }
+
+    protected function marketConfidenceCap(string $market): int
+    {
+        return match ($market) {
+            'batter_home_runs' => 82,
+            'batter_rbis', 'batter_runs_scored', 'batter_walks', 'batter_strikeouts' => 86,
+            'batter_hits', 'pitcher_walks', 'pitcher_earned_runs' => 88,
+            'pitcher_hits_allowed' => 90,
+            'pitcher_strikeouts' => 92,
+            default => 94,
+        };
+    }
+
+    protected function edgeConfidenceCap(float $edgeProbability): int
+    {
+        return match (true) {
+            $edgeProbability < 0.06 => 70,
+            $edgeProbability < 0.08 => 76,
+            $edgeProbability < 0.10 => 82,
+            $edgeProbability < 0.14 => 88,
+            $edgeProbability < 0.18 => 92,
+            default => 96,
+        };
+    }
+
+    protected function dataQualityConfidenceCap(int $dataQualityScore): int
+    {
+        return match (true) {
+            $dataQualityScore < 55 => 68,
+            $dataQualityScore < 65 => 74,
+            $dataQualityScore < 75 => 82,
+            $dataQualityScore < 85 => 88,
+            default => 96,
+        };
+    }
+
+    protected function matchQualityConfidenceCap(int $matchQualityScore): int
+    {
+        return match (true) {
+            $matchQualityScore < 70 => 72,
+            $matchQualityScore < 80 => 82,
+            $matchQualityScore < 90 => 90,
+            default => 96,
+        };
+    }
+
+    protected function sampleConfidenceCap(int $seasonSample): int
+    {
+        return match (true) {
+            $seasonSample < 6 => 72,
+            $seasonSample < 10 => 80,
+            $seasonSample < 15 => 86,
+            $seasonSample < 25 => 92,
+            default => 96,
+        };
     }
 
     protected function estimateVolatility(?array $consistency, float $floor): float

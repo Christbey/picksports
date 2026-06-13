@@ -228,8 +228,8 @@ const loadBoard = async () => {
 };
 
 const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 80) return 'bg-green-500';
-    if (confidence >= 70) return 'bg-emerald-500';
+    if (confidence >= 85) return 'bg-green-500';
+    if (confidence >= 75) return 'bg-emerald-500';
     if (confidence >= 60) return 'bg-yellow-500';
     return 'bg-gray-500';
 };
@@ -237,15 +237,15 @@ const getConfidenceColor = (confidence: number) => {
 const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : odds.toString());
 
 const getSignalBand = (confidence: number) => {
-    if (confidence >= 80) return 'Very Strong';
-    if (confidence >= 70) return 'Strong';
+    if (confidence >= 85) return 'Very Strong';
+    if (confidence >= 75) return 'Strong';
     if (confidence >= 60) return 'Lean';
     return 'Low';
 };
 
 const getSignalBandVariant = (confidence: number) => {
-    if (confidence >= 80) return 'default';
-    if (confidence >= 70) return 'secondary';
+    if (confidence >= 85) return 'default';
+    if (confidence >= 75) return 'secondary';
     if (confidence >= 60) return 'outline';
     return 'outline';
 };
@@ -611,8 +611,8 @@ onMounted(() => {
                             <div
                                 class="flex justify-between text-xs text-muted-foreground"
                             >
-                                <span>Signal Strength</span>
-                                <span>{{ rec.confidence }}%</span>
+                                <span>Signal Score</span>
+                                <span>{{ rec.confidence }}/100</span>
                             </div>
                             <div
                                 class="h-2 overflow-hidden rounded-full bg-muted"

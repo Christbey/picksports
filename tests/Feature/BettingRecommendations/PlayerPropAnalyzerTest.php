@@ -129,6 +129,62 @@ test('analyzes mlb pitcher strikeout props', function () {
         ->and($prop?->data_quality_score)->not->toBeNull();
 });
 
+test('caps volatile mlb player prop signal strength below elite confidence', function () {
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'game_time' => '19:00:00',
+        'season' => 2026,
+    ]);
+
+    $player = MlbPlayer::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Power Bat',
+        'first_name' => 'Power',
+        'last_name' => 'Bat',
+    ]);
+
+    for ($i = 0; $i < 30; $i++) {
+        $historicalGame = MlbGame::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 1)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        MlbPlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'home_runs' => 2,
+        ]);
+    }
+
+    MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Power Bat',
+        'market' => 'batter_home_runs',
+        'line' => 0.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->analyzeProps('MLB', 3, '2026-06-07');
+    $prop = MlbPlayerProp::query()->first();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($prop?->recommended_side)->toBe('Over')
+        ->and((int) $prop?->confidence_score)->toBeLessThanOrEqual(82)
+        ->and(data_get($prop?->confidence_decomposition, 'confidence_cap'))->toBe(82);
+});
+
 test('analyzes props regardless of game status', function () {
     $homeTeam = Team::factory()->create();
     $awayTeam = Team::factory()->create();

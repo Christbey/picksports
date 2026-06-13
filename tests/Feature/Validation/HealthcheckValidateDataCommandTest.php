@@ -382,7 +382,7 @@ test('healthcheck validate data warns when fresh player props have no recommenda
 
     expect($finding)->not->toBeNull()
         ->and($finding->status)->toBe('warning')
-        ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba')
+        ->and($finding->recommended_action)->toBe('sports:analyze-player-props --sport=nba --season='.now()->year.' --only-missing')
         ->and(data_get($finding->facts, 'games_with_unscored_player_props'))->toBe(1)
         ->and(data_get($finding->facts, 'sample_game_ids'))->toBe([])
         ->and(data_get($finding->facts, 'sample_unscored_game_ids'))->toContain($game->id)

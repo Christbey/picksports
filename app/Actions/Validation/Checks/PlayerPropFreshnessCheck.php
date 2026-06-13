@@ -129,7 +129,7 @@ class PlayerPropFreshnessCheck implements ValidationCheck
             'status' => $status,
             'severity' => $status,
             'message' => $message,
-            'recommended_action' => "sports:analyze-player-props --sport={$sport}",
+            'recommended_action' => $this->recommendedAction($sport, $stageContext->season, $unscoredProps),
             'metadata' => [
                 'window_days' => $windowDays,
                 'season_stage' => $stageContext->toArray(),
@@ -153,6 +153,21 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'expected_availability_hours' => $expectedAvailabilityHours,
             ],
         ];
+    }
+
+    private function recommendedAction(string $sport, ?int $season, int $unscoredProps): string
+    {
+        $command = "sports:analyze-player-props --sport={$sport}";
+
+        if ($season !== null) {
+            $command .= " --season={$season}";
+        }
+
+        if ($unscoredProps > 0) {
+            $command .= ' --only-missing';
+        }
+
+        return $command;
     }
 
     private function hasOddsAnchor(object $game): bool

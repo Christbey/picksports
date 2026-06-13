@@ -188,6 +188,63 @@ test('caps volatile mlb player prop signal strength below elite confidence', fun
         ->and(data_get($prop?->confidence_decomposition, 'confidence_cap'))->toBe(82);
 });
 
+test('cover record caps player prop signal when the season record does not support the recommendation', function () {
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'game_time' => '19:00:00',
+        'season' => 2026,
+    ]);
+
+    $player = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Recent Surge',
+        'first_name' => 'Recent',
+        'last_name' => 'Surge',
+    ]);
+
+    for ($i = 16; $i >= 0; $i--) {
+        $historicalGame = MlbGame::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 1)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        MlbPlayerStat::factory()->pitching()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'strikeouts_pitched' => $i < 5 ? 10 : 4,
+        ]);
+    }
+
+    MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Recent Surge',
+        'market' => 'pitcher_strikeouts',
+        'line' => 5.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->analyzeProps('MLB', 3, '2026-06-07');
+    $prop = MlbPlayerProp::query()->first();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($prop?->recommended_side)->toBe('Over')
+        ->and((int) $prop?->confidence_score)->toBeLessThanOrEqual(68)
+        ->and(data_get($prop?->confidence_decomposition, 'cover_record.season.recommendation_record'))->toBe('5-12')
+        ->and(data_get($prop?->confidence_decomposition, 'cover_record_adjustment.applied_cap'))->toBe(68);
+});
+
 test('analyzes props regardless of game status', function () {
     $homeTeam = Team::factory()->create();
     $awayTeam = Team::factory()->create();

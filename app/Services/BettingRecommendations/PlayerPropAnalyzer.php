@@ -331,6 +331,7 @@ class PlayerPropAnalyzer
             playerStatModel: $sportConfig['player_stat_model'],
             sport: $sport
         );
+        $analysis = $this->applyCoverRecordSignalAdjustment($analysis, $coverRecord);
         $analysis['confidence_decomposition']['cover_record'] = $coverRecord;
         $analysis['confidence_decomposition']['stat_summary'] = [
             'season_avg' => round($seasonAvg, 1),
@@ -1405,6 +1406,101 @@ class PlayerPropAnalyzer
             'record' => "{$over}-{$under}".($pushes > 0 ? "-{$pushes}" : ''),
             'recommendation_record' => "{$wins}-{$losses}".($pushes > 0 ? "-{$pushes}" : ''),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $analysis
+     * @param  array<string, array<string, mixed>|null>  $coverRecord
+     * @return array<string, mixed>
+     */
+    protected function applyCoverRecordSignalAdjustment(array $analysis, array $coverRecord): array
+    {
+        if (empty($analysis['recommendation']) || ! isset($analysis['confidence'])) {
+            return $analysis;
+        }
+
+        $confidence = (int) $analysis['confidence'];
+        $originalConfidence = $confidence;
+        $originalCap = (int) data_get($analysis, 'confidence_decomposition.confidence_cap', 96);
+        $cap = $originalCap;
+        $delta = 0;
+        $reasons = [];
+
+        $season = $coverRecord['season'] ?? null;
+        $last10 = $coverRecord['last_10'] ?? null;
+        $last5 = $coverRecord['last_5'] ?? null;
+
+        $seasonRate = $this->coverRecordWinRate($season, 12);
+        $last10Rate = $this->coverRecordWinRate($last10, 8);
+        $last5Rate = $this->coverRecordWinRate($last5, 5);
+
+        if ($seasonRate !== null && $seasonRate < 45.0) {
+            $cap = min($cap, 68);
+            $reasons[] = sprintf('Season cover record is weak for the recommendation (%.1f%%); signal capped.', $seasonRate);
+        } elseif ($seasonRate !== null && $seasonRate < 50.0) {
+            $cap = min($cap, 74);
+            $delta -= 3;
+            $reasons[] = sprintf('Season cover record is below break-even for the recommendation (%.1f%%).', $seasonRate);
+        }
+
+        if ($last10Rate !== null && $last10Rate < 40.0) {
+            $delta -= 8;
+            $reasons[] = sprintf('Last 10 cover record is poor for the recommendation (%.1f%%).', $last10Rate);
+        } elseif ($last10Rate !== null && $last10Rate < 50.0) {
+            $delta -= 4;
+            $reasons[] = sprintf('Last 10 cover record is below break-even for the recommendation (%.1f%%).', $last10Rate);
+        }
+
+        if ($last5Rate !== null && $last5Rate < 40.0) {
+            $delta -= 4;
+            $reasons[] = sprintf('Last 5 cover record does not support the recommendation (%.1f%%).', $last5Rate);
+        }
+
+        if ($seasonRate !== null && $last10Rate !== null && $seasonRate >= 60.0 && $last10Rate >= 60.0) {
+            $delta += 3;
+            $reasons[] = 'Season and last 10 cover records both confirm the recommendation.';
+
+            if ($last5Rate !== null && $last5Rate >= 60.0) {
+                $delta += 2;
+                $reasons[] = 'Last 5 cover record also confirms the recommendation.';
+            }
+        }
+
+        if ($seasonRate !== null && $last5Rate !== null && (($seasonRate >= 60.0 && $last5Rate <= 40.0) || ($seasonRate <= 40.0 && $last5Rate >= 60.0))) {
+            $delta -= 5;
+            $reasons[] = 'Season and recent cover records conflict; uncertainty penalty applied.';
+        }
+
+        $confidence = max(32, min($cap, $confidence + $delta));
+
+        if ($reasons !== []) {
+            $analysis['reasoning'] = array_merge($analysis['reasoning'] ?? [], $reasons);
+        }
+
+        $analysis['confidence'] = $confidence;
+        $analysis['confidence_decomposition']['cover_record_adjustment'] = [
+            'original_confidence' => $originalConfidence,
+            'original_cap' => $originalCap,
+            'applied_cap' => $cap,
+            'delta' => $delta,
+            'season_win_rate' => $seasonRate,
+            'last_10_win_rate' => $last10Rate,
+            'last_5_win_rate' => $last5Rate,
+        ];
+
+        return $analysis;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $record
+     */
+    protected function coverRecordWinRate(?array $record, int $minimumGames): ?float
+    {
+        if (! is_array($record) || (int) ($record['games'] ?? 0) < $minimumGames || $record['win_rate'] === null) {
+            return null;
+        }
+
+        return (float) $record['win_rate'];
     }
 
     protected function seasonCoverRecordLimit(string $sport): int

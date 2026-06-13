@@ -273,7 +273,7 @@ class PlayerPropAnalyzer
         $homeAwayAvg = $homeAwayProfile['avg'];
         $hitRate = $this->calculateHitRateVsOpponent($player->id, $opponentId, $statField, $prop->line, $sportConfig['player_stat_model']);
         $timesCoveredLast5 = $this->calculateTimesCovered($player->id, $statField, $prop->line, 5, $sportConfig['player_stat_model']);
-        $timesCoveredSeason = $this->calculateTimesCovered($player->id, $statField, $prop->line, 82, $sportConfig['player_stat_model']);
+        $timesCoveredSeason = $this->calculateTimesCovered($player->id, $statField, $prop->line, $this->seasonCoverRecordLimit($sport), $sportConfig['player_stat_model']);
         $consistency = $this->calculateConsistency($player->id, $statField, 10, $sportConfig['player_stat_model']);
         $streak = $this->calculateStreak($player->id, $statField, $prop->line, $sportConfig['player_stat_model']);
         $context = $this->buildContextAdjustments(
@@ -320,6 +320,27 @@ class PlayerPropAnalyzer
             return null;
         }
 
+        $coverRecord = $this->buildCoverRecord(
+            playerId: $player->id,
+            opponentId: (int) $opponentId,
+            playerTeamId: (int) $player->team_id,
+            statField: $statField,
+            line: (float) $prop->line,
+            recommendation: (string) $analysis['recommendation'],
+            isHome: $isHome,
+            playerStatModel: $sportConfig['player_stat_model'],
+            sport: $sport
+        );
+        $analysis['confidence_decomposition']['cover_record'] = $coverRecord;
+        $analysis['confidence_decomposition']['stat_summary'] = [
+            'season_avg' => round($seasonAvg, 1),
+            'recent_avg' => round($recentAvg ?? $seasonAvg, 1),
+            'last5_avg' => round($last5Avg ?? $seasonAvg, 1),
+            'vs_opponent_avg' => $vsOpponentAvg ? round($vsOpponentAvg, 1) : null,
+            'home_away_avg' => $homeAwayAvg ? round($homeAwayAvg, 1) : null,
+            'consistency' => $consistency,
+        ];
+
         $this->persistPredictionSnapshot($prop, $analysis, $dataQualityScore, $matchQualityScore, $context['combined_factor']);
 
         return $this->playerPropNarrativeService->attachNarrative([
@@ -339,6 +360,7 @@ class PlayerPropAnalyzer
             'hit_rate_vs_opponent' => $hitRate,
             'times_covered_last5' => $timesCoveredLast5,
             'times_covered_season' => $timesCoveredSeason,
+            'cover_record' => $coverRecord,
             'consistency' => $consistency,
             'streak' => $streak,
             'edge' => $analysis['edge'],
@@ -1027,6 +1049,8 @@ class PlayerPropAnalyzer
         $marketOverProbability = $prop->market_over_probability !== null ? (float) $prop->market_over_probability : null;
         $edgeProbability = $prop->edge_probability !== null ? (float) $prop->edge_probability : null;
         $contextFactor = $prop->context_adjustment_factor !== null ? (float) $prop->context_adjustment_factor : null;
+        $statSummary = data_get($prop->confidence_decomposition, 'stat_summary', []);
+        $coverRecord = data_get($prop->confidence_decomposition, 'cover_record');
 
         return [
             'prop' => $prop,
@@ -1037,15 +1061,16 @@ class PlayerPropAnalyzer
             'recommendation' => $side,
             'odds' => $side === 'Over' ? $prop->over_price : $prop->under_price,
             'confidence' => (int) $prop->confidence_score,
-            'season_avg' => null,
-            'recent_avg' => null,
-            'last5_avg' => null,
-            'vs_opponent_avg' => null,
-            'home_away_avg' => null,
-            'hit_rate_vs_opponent' => null,
-            'times_covered_last5' => null,
-            'times_covered_season' => null,
-            'consistency' => null,
+            'season_avg' => data_get($statSummary, 'season_avg'),
+            'recent_avg' => data_get($statSummary, 'recent_avg'),
+            'last5_avg' => data_get($statSummary, 'last5_avg'),
+            'vs_opponent_avg' => data_get($statSummary, 'vs_opponent_avg'),
+            'home_away_avg' => data_get($statSummary, 'home_away_avg'),
+            'hit_rate_vs_opponent' => data_get($coverRecord, 'vs_opponent'),
+            'times_covered_last5' => data_get($coverRecord, 'last_5'),
+            'times_covered_season' => data_get($coverRecord, 'season'),
+            'cover_record' => $coverRecord,
+            'consistency' => data_get($statSummary, 'consistency'),
             'streak' => null,
             'edge' => $edgeProbability !== null ? round($edgeProbability / 10, 1) : 0,
             'model_over_probability' => $modelOverProbability,
@@ -1278,6 +1303,119 @@ class PlayerPropAnalyzer
             'hits' => $hits,
             'games' => $stats->count(),
         ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>|null>
+     */
+    protected function buildCoverRecord(
+        int $playerId,
+        int $opponentId,
+        int $playerTeamId,
+        string $statField,
+        float $line,
+        string $recommendation,
+        bool $isHome,
+        string $playerStatModel,
+        string $sport
+    ): array {
+        $baseQuery = fn () => $this->finalizedPlayerStatsQuery($playerId, $playerStatModel);
+
+        $homeAwayStats = $baseQuery()
+            ->whereHas('game', function ($query) use ($isHome, $playerTeamId): void {
+                $query->where($isHome ? 'home_team_id' : 'away_team_id', $playerTeamId);
+            })
+            ->take(20)
+            ->get();
+
+        $vsOpponentStats = $baseQuery()
+            ->whereHas('game', function ($query) use ($opponentId): void {
+                $query->where(function ($nested) use ($opponentId): void {
+                    $nested->where('home_team_id', $opponentId)
+                        ->orWhere('away_team_id', $opponentId);
+                });
+            })
+            ->take(10)
+            ->get();
+
+        return [
+            'season' => $this->coverRecordFromStats(
+                $baseQuery()->take($this->seasonCoverRecordLimit($sport))->get(),
+                $statField,
+                $line,
+                $recommendation
+            ),
+            'last_10' => $this->coverRecordFromStats(
+                $baseQuery()->take(10)->get(),
+                $statField,
+                $line,
+                $recommendation
+            ),
+            'last_5' => $this->coverRecordFromStats(
+                $baseQuery()->take(5)->get(),
+                $statField,
+                $line,
+                $recommendation
+            ),
+            'home_away' => $this->coverRecordFromStats($homeAwayStats, $statField, $line, $recommendation),
+            'vs_opponent' => $this->coverRecordFromStats($vsOpponentStats, $statField, $line, $recommendation),
+        ];
+    }
+
+    /**
+     * @param  Collection<int, Model>  $stats
+     * @return array<string, mixed>|null
+     */
+    protected function coverRecordFromStats(Collection $stats, string $statField, float $line, string $recommendation): ?array
+    {
+        if ($stats->isEmpty()) {
+            return null;
+        }
+
+        $over = 0;
+        $under = 0;
+        $pushes = 0;
+
+        foreach ($stats as $stat) {
+            $value = (float) ($stat->{$statField} ?? 0);
+
+            if ($value > $line) {
+                $over++;
+            } elseif ($value < $line) {
+                $under++;
+            } else {
+                $pushes++;
+            }
+        }
+
+        $games = $stats->count();
+        $wins = $recommendation === 'Under' ? $under : $over;
+        $losses = $recommendation === 'Under' ? $over : $under;
+
+        return [
+            'games' => $games,
+            'over' => $over,
+            'under' => $under,
+            'pushes' => $pushes,
+            'hits' => $over,
+            'recommendation' => $recommendation,
+            'wins' => $wins,
+            'losses' => $losses,
+            'win_rate' => $games > 0 ? round(($wins / $games) * 100, 1) : null,
+            'record' => "{$over}-{$under}".($pushes > 0 ? "-{$pushes}" : ''),
+            'recommendation_record' => "{$wins}-{$losses}".($pushes > 0 ? "-{$pushes}" : ''),
+        ];
+    }
+
+    protected function seasonCoverRecordLimit(string $sport): int
+    {
+        return match (strtoupper($sport)) {
+            'MLB' => 162,
+            'NFL' => 17,
+            'WNBA' => 44,
+            'CBB' => 40,
+            default => 82,
+        };
     }
 
     /**

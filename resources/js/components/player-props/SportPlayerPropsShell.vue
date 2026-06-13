@@ -16,6 +16,20 @@ import { Label } from '@/components/ui/label';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
 
+type CoverRecord = {
+    games: number;
+    over: number;
+    under: number;
+    pushes: number;
+    hits: number;
+    recommendation: 'Over' | 'Under';
+    wins: number;
+    losses: number;
+    win_rate: number | null;
+    record: string;
+    recommendation_record: string;
+};
+
 type Recommendation = {
     id: number;
     player: {
@@ -37,6 +51,13 @@ type Recommendation = {
         last5_avg: number;
         times_covered_last5: { hits: number; games: number } | null;
         times_covered_season: { hits: number; games: number } | null;
+        cover_record: {
+            season: CoverRecord | null;
+            last_10: CoverRecord | null;
+            last_5: CoverRecord | null;
+            home_away: CoverRecord | null;
+            vs_opponent: CoverRecord | null;
+        } | null;
         vs_opponent_avg: number | null;
         consistency: {
             std_dev: number;
@@ -249,6 +270,25 @@ const getSignalBandVariant = (confidence: number) => {
     if (confidence >= 60) return 'outline';
     return 'outline';
 };
+
+const getCoverRecordRows = (rec: Recommendation) => {
+    const record = rec.stats?.cover_record;
+    if (!record) return [];
+
+    return [
+        ['Season', record.season],
+        ['Last 10', record.last_10],
+        ['Last 5', record.last_5],
+        ['Home/Away', record.home_away],
+        ['vs Opponent', record.vs_opponent],
+    ].filter((row): row is [string, CoverRecord] => row[1] !== null);
+};
+
+const formatCoverRecord = (record: CoverRecord, recommendation: 'Over' | 'Under') =>
+    `${recommendation} ${record.recommendation_record}`;
+
+const formatCoverRate = (record: CoverRecord) =>
+    record.win_rate === null ? 'N/A' : `${record.win_rate.toFixed(1)}%`;
 
 const getInitials = (name: string) =>
     name
@@ -706,57 +746,50 @@ onMounted(() => {
                                         </span>
                                     </div>
                                     <div
-                                        v-if="rec.stats?.times_covered_last5"
-                                        class="flex justify-between text-sm"
+                                        v-if="getCoverRecordRows(rec).length"
+                                        class="space-y-1 border-t pt-2"
                                     >
-                                        <span class="text-muted-foreground"
-                                            >Hit
-                                            {{ rec.recommendation }} (L5)</span
+                                        <div
+                                            class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
                                         >
-                                        <span class="font-medium">
-                                            {{
-                                                rec.recommendation === 'Under'
-                                                    ? rec.stats
-                                                          .times_covered_last5
-                                                          .games -
-                                                      rec.stats
-                                                          .times_covered_last5
-                                                          .hits
-                                                    : rec.stats
-                                                          .times_covered_last5
-                                                          .hits
-                                            }}/{{
-                                                rec.stats.times_covered_last5
-                                                    .games
-                                            }}
-                                        </span>
-                                    </div>
-                                    <div
-                                        v-if="rec.stats?.times_covered_season"
-                                        class="flex justify-between text-sm"
-                                    >
-                                        <span class="text-muted-foreground"
-                                            >Hit
-                                            {{ rec.recommendation }}
-                                            (Season)</span
+                                            Cover Record
+                                        </div>
+                                        <div
+                                            v-for="[
+                                                label,
+                                                record,
+                                            ] in getCoverRecordRows(rec)"
+                                            :key="`${rec.id}-${label}`"
+                                            class="grid grid-cols-[76px_1fr_auto] items-center gap-2 text-xs"
                                         >
-                                        <span class="font-medium">
-                                            {{
-                                                rec.recommendation === 'Under'
-                                                    ? rec.stats
-                                                          .times_covered_season
-                                                          .games -
-                                                      rec.stats
-                                                          .times_covered_season
-                                                          .hits
-                                                    : rec.stats
-                                                          .times_covered_season
-                                                          .hits
-                                            }}/{{
-                                                rec.stats.times_covered_season
-                                                    .games
-                                            }}
-                                        </span>
+                                            <span class="text-muted-foreground">
+                                                {{ label }}
+                                            </span>
+                                            <span class="font-medium">
+                                                {{
+                                                    formatCoverRecord(
+                                                        record,
+                                                        rec.recommendation,
+                                                    )
+                                                }}
+                                            </span>
+                                            <span
+                                                class="text-muted-foreground"
+                                            >
+                                                {{ formatCoverRate(record) }}
+                                            </span>
+                                            <span
+                                                class="col-span-3 text-[11px] text-muted-foreground"
+                                            >
+                                                Raw O/U:
+                                                {{ record.record }}
+                                                <template
+                                                    v-if="record.pushes > 0"
+                                                >
+                                                    incl. pushes
+                                                </template>
+                                            </span>
+                                        </div>
                                     </div>
                                     <div
                                         v-if="rec.stats?.consistency"

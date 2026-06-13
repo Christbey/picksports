@@ -126,7 +126,10 @@ test('analyzes mlb pitcher strikeout props', function () {
         ->and($prop?->predicted_over_probability)->not->toBeNull()
         ->and($prop?->market_over_probability)->not->toBeNull()
         ->and($prop?->edge_probability)->not->toBeNull()
-        ->and($prop?->data_quality_score)->not->toBeNull();
+        ->and($prop?->data_quality_score)->not->toBeNull()
+        ->and(data_get($prop?->confidence_decomposition, 'cover_record.season.recommendation_record'))->toBe('5-0')
+        ->and(data_get($prop?->confidence_decomposition, 'cover_record.last_5.record'))->toBe('5-0')
+        ->and(data_get($prop?->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(8.0);
 });
 
 test('caps volatile mlb player prop signal strength below elite confidence', function () {

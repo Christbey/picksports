@@ -47,6 +47,7 @@ class BettingRecommendationResource extends JsonResource
                 'hit_rate_vs_opponent' => $this->resource['hit_rate_vs_opponent'] ?? null,
                 'times_covered_last5' => $this->resource['times_covered_last5'] ?? null,
                 'times_covered_season' => $this->resource['times_covered_season'] ?? null,
+                'cover_record' => $this->resource['cover_record'] ?? null,
                 'consistency' => $this->resource['consistency'] ?? null,
             ],
             'streak' => $this->resource['streak'] ?? null,

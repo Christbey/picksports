@@ -7,6 +7,7 @@ use App\Models\CFB\TeamMetric as CfbTeamMetric;
 use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\MLB\TeamMetric as MlbTeamMetric;
+use App\Models\MLB\TeamStat as MlbTeamStat;
 use App\Models\NBA\Team as NbaTeam;
 use App\Models\NBA\TeamMetric as NbaTeamMetric;
 use App\Models\NFL\Team as NflTeam;
@@ -193,23 +194,48 @@ it('derives mlb team metric records from completed games when stored rows are st
         'abbreviation' => 'STL',
     ]);
 
-    MlbGame::factory()->regularSeason()->create([
+    $win = MlbGame::factory()->regularSeason()->create([
         'season' => 2026,
         'game_date' => '2026-06-01',
         'status' => config('mlb.statuses.final'),
         'home_team_id' => $team->id,
         'away_team_id' => $opponent->id,
-        'home_score' => 5,
-        'away_score' => 3,
+        'home_score' => 0,
+        'away_score' => 0,
     ]);
-    MlbGame::factory()->regularSeason()->create([
+    MlbTeamStat::factory()->create([
+        'team_id' => $team->id,
+        'game_id' => $win->id,
+        'team_type' => 'home',
+        'runs' => 5,
+    ]);
+    MlbTeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $win->id,
+        'team_type' => 'away',
+        'runs' => 3,
+    ]);
+
+    $loss = MlbGame::factory()->regularSeason()->create([
         'season' => 2026,
         'game_date' => '2026-06-02',
         'status' => config('mlb.statuses.final'),
         'home_team_id' => $opponent->id,
         'away_team_id' => $team->id,
-        'home_score' => 6,
-        'away_score' => 2,
+        'home_score' => 0,
+        'away_score' => 0,
+    ]);
+    MlbTeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $loss->id,
+        'team_type' => 'home',
+        'runs' => 6,
+    ]);
+    MlbTeamStat::factory()->create([
+        'team_id' => $team->id,
+        'game_id' => $loss->id,
+        'team_type' => 'away',
+        'runs' => 2,
     ]);
 
     createV2TeamMetricContractMetric(MlbTeamMetric::class, [

@@ -2,8 +2,8 @@
 
 namespace App\Concerns;
 
-use App\Support\MlbRegularSeasonWindow;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
+use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
@@ -228,8 +228,7 @@ trait FiltersTeamGames
 
         foreach ($games as $game) {
             $isHome = (int) $game->home_team_id === (int) $team->id;
-            $teamScore = (int) ($isHome ? ($game->home_score ?? 0) : ($game->away_score ?? 0));
-            $opponentScore = (int) ($isHome ? ($game->away_score ?? 0) : ($game->home_score ?? 0));
+            [$teamScore, $opponentScore] = $this->resolvedGameScoreForTeam($game, $team, $isHome);
 
             if ($teamScore > $opponentScore) {
                 $wins++;
@@ -239,6 +238,61 @@ trait FiltersTeamGames
         }
 
         return ['wins' => $wins, 'losses' => $losses];
+    }
+
+    /**
+     * @return array{0: float, 1: float}
+     */
+    protected function resolvedGameScoreForTeam(Model $game, Model $team, bool $isHome): array
+    {
+        $gameTeamScore = $isHome ? $game->home_score : $game->away_score;
+        $gameOpponentScore = $isHome ? $game->away_score : $game->home_score;
+
+        if ($gameTeamScore !== null || $gameOpponentScore !== null) {
+            $teamScore = (float) ($gameTeamScore ?? 0);
+            $opponentScore = (float) ($gameOpponentScore ?? 0);
+
+            if ($teamScore !== 0.0 || $opponentScore !== 0.0) {
+                return [$teamScore, $opponentScore];
+            }
+        }
+
+        if (! method_exists($game, 'relationLoaded') || ! $game->relationLoaded('teamStats')) {
+            return [(float) ($gameTeamScore ?? 0), (float) ($gameOpponentScore ?? 0)];
+        }
+
+        $teamStat = $game->teamStats->firstWhere('team_id', $team->id)
+            ?? $this->statByTeamType($game->teamStats, $isHome ? 'home' : 'away');
+        $opponentStat = $this->statByTeamType($game->teamStats, $isHome ? 'away' : 'home');
+
+        if (! $opponentStat) {
+            $opponentId = $isHome ? $game->away_team_id : $game->home_team_id;
+            $opponentStat = $game->teamStats->firstWhere('team_id', $opponentId);
+        }
+
+        $teamStatScore = $this->scoreFromTeamStat($teamStat);
+        $opponentStatScore = $this->scoreFromTeamStat($opponentStat);
+
+        if ($teamStatScore !== null && $opponentStatScore !== null) {
+            return [$teamStatScore, $opponentStatScore];
+        }
+
+        return [(float) ($gameTeamScore ?? 0), (float) ($gameOpponentScore ?? 0)];
+    }
+
+    protected function scoreFromTeamStat(?Model $stat): ?float
+    {
+        if (! $stat) {
+            return null;
+        }
+
+        foreach (['runs', 'points', 'score'] as $column) {
+            if ($stat->getAttribute($column) !== null) {
+                return (float) $stat->getAttribute($column);
+            }
+        }
+
+        return null;
     }
 
     /**

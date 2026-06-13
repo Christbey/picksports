@@ -20,6 +20,8 @@ it('calculates baseball metrics correctly for a single game', function () {
         'status' => 'STATUS_FINAL',
         'home_team_id' => $this->team->id,
         'away_team_id' => $opponent->id,
+        'home_score' => 0,
+        'away_score' => 0,
     ]);
 
     // Create team stats for the game
@@ -63,6 +65,8 @@ it('calculates baseball metrics correctly for a single game', function () {
         ->and($metric->runs_per_game)->toBe(5.0)
         ->and($metric->runs_allowed_per_game)->toBe(3.0)
         ->and($metric->run_differential_per_game)->toBe(2.0)
+        ->and($metric->wins)->toBe(1)
+        ->and($metric->losses)->toBe(0)
         ->and($metric->home_runs_per_game)->toBe(2.0)
         ->and($metric->batting_average)->toBe(0.286) // 10/35 rounded to 3 decimals
         ->and($metric->on_base_percentage)->toBe(0.359) // (10 + 4) / (35 + 4)
@@ -81,6 +85,7 @@ it('calculates batting average correctly across multiple games', function () {
     $game1 = Game::factory()->create([
         'season' => $this->season,
         'status' => 'STATUS_FINAL',
+        'game_date' => "{$this->season}-06-01",
         'home_team_id' => $this->team->id,
         'away_team_id' => $opponent->id,
     ]);
@@ -88,6 +93,7 @@ it('calculates batting average correctly across multiple games', function () {
     $game2 = Game::factory()->create([
         'season' => $this->season,
         'status' => 'STATUS_FINAL',
+        'game_date' => "{$this->season}-06-02",
         'home_team_id' => $opponent->id,
         'away_team_id' => $this->team->id,
     ]);

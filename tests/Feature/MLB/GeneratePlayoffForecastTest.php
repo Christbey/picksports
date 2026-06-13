@@ -77,6 +77,30 @@ it('falls back to team stat runs instead of stale game scores for MLB futures re
         ->and((int) $forecasts->firstWhere('team_id', $loser->id)->league_rank)->toBe(2);
 });
 
+it('resolves MLB futures leagues from canonical alignment when team rows are blank', function () {
+    $braves = Team::factory()->create([
+        'abbreviation' => 'ATL',
+        'league' => null,
+        'division' => null,
+        'elo_rating' => 1500,
+    ]);
+    $yankees = Team::factory()->create([
+        'abbreviation' => 'NYY',
+        'league' => null,
+        'division' => null,
+        'elo_rating' => 1500,
+    ]);
+
+    createMlbForecastMetric($braves, ['wins' => 70, 'losses' => 50]);
+    createMlbForecastMetric($yankees, ['wins' => 70, 'losses' => 50]);
+
+    $forecasts = (new GeneratePlayoffForecast)->execute(2026);
+
+    expect($forecasts->firstWhere('team_id', $braves->id)->league)->toBe('National League')
+        ->and($forecasts->firstWhere('team_id', $yankees->id)->league)->toBe('American League')
+        ->and($forecasts->pluck('league')->contains('Unknown'))->toBeFalse();
+});
+
 function createMlbForecastMetric(Team $team, array $overrides = []): TeamMetric
 {
     return TeamMetric::query()->create(array_merge([

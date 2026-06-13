@@ -141,7 +141,7 @@ class GeneratePlayoffForecast
 
             return [
                 'team_id' => (int) $metric->team_id,
-                'league' => trim((string) ($metric->team->league ?? '')) ?: 'Unknown',
+                'league' => $this->leagueForMetric($metric),
                 'win_pct' => $games > 0 ? $wins / $games : 0.5,
                 'offensive_rating' => (float) ($metric->offensive_rating ?? 0),
                 'pitching_rating' => (float) ($metric->pitching_rating ?? 0),
@@ -213,7 +213,7 @@ class GeneratePlayoffForecast
 
             return [
                 'team_id' => (int) $metric->team_id,
-                'league' => trim((string) ($metric->team->league ?? '')) ?: 'Unknown',
+                'league' => $this->leagueForMetric($metric),
                 'win_pct' => $this->regressToMean($prevWinPct, 0.5, $winPctFactor),
                 'offensive_rating' => $this->regressToMean((float) ($metric->offensive_rating ?? $avgOff), $avgOff, $metricFactor),
                 'pitching_rating' => $this->regressToMean((float) ($metric->pitching_rating ?? $avgPitch), $avgPitch, $metricFactor),
@@ -269,6 +269,21 @@ class GeneratePlayoffForecast
             (int) ($record->wins ?? 0),
             (int) ($record->losses ?? 0),
         ];
+    }
+
+    private function leagueForMetric(TeamMetric $metric): string
+    {
+        $league = trim((string) ($metric->team->league ?? ''));
+        if ($league !== '') {
+            return $league;
+        }
+
+        $abbreviation = strtoupper(trim((string) ($metric->team->abbreviation ?? '')));
+        $alignmentLeague = config("mlb.teams.alignment.{$abbreviation}.league");
+
+        return is_string($alignmentLeague) && trim($alignmentLeague) !== ''
+            ? trim($alignmentLeague)
+            : 'Unknown';
     }
 
     private function attachSelectionScores(Collection $teams, array $weights): Collection

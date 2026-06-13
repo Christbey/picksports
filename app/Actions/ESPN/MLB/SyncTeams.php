@@ -14,14 +14,16 @@ class SyncTeams extends AbstractSyncTeams
 
     protected function mapTeamAttributes(object $dto, array $resolvedTeam, array $rawTeam): array
     {
+        $alignment = $this->alignmentForAbbreviation($dto->abbreviation);
+
         return [
             'espn_id' => $dto->espnId,
             'abbreviation' => $dto->abbreviation,
             'location' => $dto->location,
             'name' => $dto->name,
             'nickname' => $dto->name,
-            'league' => $dto->conference,
-            'division' => $dto->division,
+            'league' => $dto->conference ?: ($alignment['league'] ?? null),
+            'division' => $dto->division ?: ($alignment['division'] ?? null),
             'color' => $dto->color,
             'logo_url' => $this->mirrorLogo(
                 $dto->logoUrl,
@@ -32,5 +34,15 @@ class SyncTeams extends AbstractSyncTeams
                 ], (string) $dto->espnId)
             ),
         ];
+    }
+
+    /**
+     * @return array{league:string,division:string}|null
+     */
+    protected function alignmentForAbbreviation(string $abbreviation): ?array
+    {
+        $alignment = config('mlb.teams.alignment.'.strtoupper($abbreviation));
+
+        return is_array($alignment) ? $alignment : null;
     }
 }

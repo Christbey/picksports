@@ -64,6 +64,7 @@ class SportTeamMetricResource extends JsonResource
                 'created_at',
                 'updated_at',
             ])
+            ->mapWithKeys(fn (mixed $value, string $key): array => [$key => $this->metricAttribute($key)])
             ->filter(fn (mixed $value): bool => $value !== null)
             ->all();
 
@@ -72,6 +73,19 @@ class SportTeamMetricResource extends JsonResource
         $this->aliasMetric($metrics, 'pace', 'tempo');
 
         return $metrics;
+    }
+
+    private function metricAttribute(string $key): mixed
+    {
+        $value = $this->resource instanceof Model ? $this->resource->getAttribute($key) : null;
+
+        if (is_numeric($value)) {
+            return str_contains((string) $value, '.')
+                ? (float) $value
+                : (int) $value;
+        }
+
+        return $value;
     }
 
     /**

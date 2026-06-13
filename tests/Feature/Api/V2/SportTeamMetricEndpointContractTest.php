@@ -184,6 +184,91 @@ it('defaults mlb team metrics to regular season rows', function () {
         ->assertJsonCount(2, 'data');
 });
 
+it('exposes every mlb team metrics table column used by the frontend', function () {
+    actAsV2TeamMetricContractUser();
+
+    $team = MlbTeam::factory()->create([
+        'abbreviation' => 'LAD',
+        'location' => 'Los Angeles',
+        'name' => 'Dodgers',
+    ]);
+
+    createV2TeamMetricContractMetric(MlbTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'wins' => 43,
+        'losses' => 27,
+        'runs_per_game' => 5.43,
+        'runs_allowed_per_game' => 3.31,
+        'run_differential_per_game' => 2.12,
+        'batting_average' => 0.264,
+        'on_base_percentage' => 0.343,
+        'slugging_percentage' => 0.443,
+        'ops' => 0.786,
+        'home_runs_per_game' => 1.36,
+        'team_era' => 3.29,
+        'strikeouts_pitched_per_game' => 8.94,
+        'whip' => 1.09,
+        'offensive_rating' => 148.1,
+        'pitching_rating' => 73.3,
+        'strength_of_schedule' => 1483.142,
+        'recent_form_rating' => 1.25,
+        'injury_adjusted_team_rating' => 1512.456,
+        'rest_travel_fatigue' => 0.75,
+        'calculation_date' => '2026-06-12',
+    ]);
+
+    $response = $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&season_type=2&per_page=5')
+        ->assertOk()
+        ->assertJsonPath('data.0.team.abbreviation', 'LAD')
+        ->assertJsonPath('data.0.record_label', '43-27')
+        ->assertJsonPath('data.0.games_played', 70)
+        ->assertJsonPath('data.0.runs_per_game', 5.43)
+        ->assertJsonPath('data.0.runs_allowed_per_game', 3.31)
+        ->assertJsonPath('data.0.run_differential_per_game', 2.12)
+        ->assertJsonPath('data.0.batting_average', 0.264)
+        ->assertJsonPath('data.0.on_base_percentage', 0.343)
+        ->assertJsonPath('data.0.slugging_percentage', 0.443)
+        ->assertJsonPath('data.0.ops', 0.786)
+        ->assertJsonPath('data.0.home_runs_per_game', 1.36)
+        ->assertJsonPath('data.0.team_era', 3.29)
+        ->assertJsonPath('data.0.strikeouts_pitched_per_game', 8.94)
+        ->assertJsonPath('data.0.whip', 1.09)
+        ->assertJsonPath('data.0.offensive_rating', 148.1)
+        ->assertJsonPath('data.0.pitching_rating', 73.3)
+        ->assertJsonPath('data.0.strength_of_schedule', 1483.142)
+        ->assertJsonPath('data.0.recent_form_rating', 1.25)
+        ->assertJsonPath('data.0.injury_adjusted_team_rating', 1512.456)
+        ->assertJsonPath('data.0.rest_travel_fatigue', 0.75);
+
+    foreach ([
+        'wins',
+        'losses',
+        'runs_per_game',
+        'runs_allowed_per_game',
+        'run_differential_per_game',
+        'batting_average',
+        'on_base_percentage',
+        'slugging_percentage',
+        'ops',
+        'home_runs_per_game',
+        'team_era',
+        'strikeouts_pitched_per_game',
+        'whip',
+        'offensive_rating',
+        'pitching_rating',
+        'strength_of_schedule',
+        'recent_form_rating',
+        'injury_adjusted_team_rating',
+        'rest_travel_fatigue',
+    ] as $field) {
+        $value = $response->json("data.0.{$field}");
+
+        expect(is_int($value) || is_float($value))->toBeTrue("Expected {$field} to be numeric.");
+    }
+});
+
 it('derives mlb team metric records from completed games when stored rows are stale zeros', function () {
     actAsV2TeamMetricContractUser();
 

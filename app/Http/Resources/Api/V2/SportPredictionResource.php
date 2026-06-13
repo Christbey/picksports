@@ -87,6 +87,8 @@ class SportPredictionResource extends JsonResource
             'game_date' => $this->serializeDateValue($game->getAttribute('game_date')),
             'game_time' => $this->serializeTimeValue($game->getAttribute('game_time')),
             'status' => $game->getAttribute('status'),
+            'home_score' => $game->getAttribute('home_score'),
+            'away_score' => $game->getAttribute('away_score'),
             'home_team_id' => $game->getAttribute('home_team_id'),
             'away_team_id' => $game->getAttribute('away_team_id'),
             'home_team' => $this->team($game, 'homeTeam'),

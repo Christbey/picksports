@@ -227,6 +227,18 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
         home_win_probability: homeWinProbability,
         away_win_probability: numberValue(projection.away_win_probability),
         confidence_score: numberValue(projection.confidence_score),
+        actual_spread: numberValue(prediction.actual_spread),
+        actual_total: numberValue(prediction.actual_total),
+        spread_error: numberValue(prediction.spread_error),
+        total_error: numberValue(prediction.total_error),
+        winner_correct:
+            typeof prediction.winner_correct === 'boolean'
+                ? prediction.winner_correct
+                : undefined,
+        graded_at:
+            typeof prediction.graded_at === 'string'
+                ? prediction.graded_at
+                : undefined,
         created_at: prediction.created_at,
         updated_at: prediction.updated_at,
         game: {
@@ -234,6 +246,8 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
             game_date: game?.game_date ?? '',
             game_time: game?.game_time ?? undefined,
             status: prediction.status ?? game?.status ?? '',
+            home_score: numberValue(game?.home_score),
+            away_score: numberValue(game?.away_score),
             week: numberValue(game?.week),
             season_type:
                 game?.season_type === null || game?.season_type === undefined

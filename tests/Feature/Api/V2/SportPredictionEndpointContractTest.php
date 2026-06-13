@@ -71,7 +71,24 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
 ) {
     v2PredictionContractActingAsBypassUser();
 
-    [$game, $prediction] = v2PredictionContractCreateGamePrediction($teamModel, $gameModel, $predictionModel);
+    [$game, $prediction] = v2PredictionContractCreateGamePrediction(
+        $teamModel,
+        $gameModel,
+        $predictionModel,
+        [
+            'status' => 'STATUS_FINAL',
+            'home_score' => 5,
+            'away_score' => 3,
+        ],
+        [
+            'actual_spread' => 2.0,
+            'actual_total' => 8.0,
+            'spread_error' => 5.5,
+            'total_error' => 209.5,
+            'winner_correct' => true,
+            'graded_at' => now(),
+        ],
+    );
 
     $response = $this->getJson("/api/v2/sports/{$slug}/predictions?season=2026&per_page=5")
         ->assertOk()
@@ -91,6 +108,12 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
                         'predicted_total',
                         'confidence_score',
                     ],
+                    'actual_spread',
+                    'actual_total',
+                    'spread_error',
+                    'total_error',
+                    'winner_correct',
+                    'graded_at',
                     'market_summary',
                     'created_at',
                     'updated_at',
@@ -109,7 +132,14 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
         ->assertJsonPath('data.0.id', $prediction->id)
         ->assertJsonPath('data.0.sport', $slug)
         ->assertJsonPath('data.0.game_id', $game->id)
-        ->assertJsonPath('data.0.game.game_time', '18:05:00');
+        ->assertJsonPath('data.0.game.game_time', '18:05:00')
+        ->assertJsonPath('data.0.game.home_score', 5)
+        ->assertJsonPath('data.0.game.away_score', 3)
+        ->assertJsonPath('data.0.actual_spread', 2)
+        ->assertJsonPath('data.0.actual_total', 8)
+        ->assertJsonPath('data.0.spread_error', 5.5)
+        ->assertJsonPath('data.0.total_error', 209.5)
+        ->assertJsonPath('data.0.winner_correct', true);
 
     expect($response->json('meta.pagination'))->toBeArray()
         ->and($response->json('meta.freshness'))->toBeArray()

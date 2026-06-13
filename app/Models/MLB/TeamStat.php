@@ -33,6 +33,8 @@ class TeamStat extends Model
         'home_runs',
         'rbis',
         'walks',
+        'hit_by_pitch',
+        'sacrifice_flies',
         'strikeouts',
         'stolen_bases',
         'left_on_base',

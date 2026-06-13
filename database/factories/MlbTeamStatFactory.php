@@ -64,6 +64,8 @@ class MlbTeamStatFactory extends Factory
             'home_runs' => $homeRuns,
             'rbis' => $rbis,
             'walks' => $walks,
+            'hit_by_pitch' => null,
+            'sacrifice_flies' => null,
             'strikeouts' => $strikeouts,
             'stolen_bases' => $stolenBases,
             'left_on_base' => $leftOnBase,

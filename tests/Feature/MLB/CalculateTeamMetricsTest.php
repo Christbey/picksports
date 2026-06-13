@@ -130,6 +130,42 @@ it('calculates batting average correctly across multiple games', function () {
     expect($metric->batting_average)->toBe(0.281);
 });
 
+it('calculates official on base percentage when hbp and sacrifice flies are available', function () {
+    $opponent = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'season' => $this->season,
+        'status' => 'STATUS_FINAL',
+        'game_date' => "{$this->season}-06-01",
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $opponent->id,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'hits' => 9,
+        'walks' => 4,
+        'hit_by_pitch' => 2,
+        'sacrifice_flies' => 1,
+        'at_bats' => 34,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $game->id,
+        'team_type' => 'away',
+        'runs' => 3,
+    ]);
+
+    $metric = $this->action->execute($this->team, $this->season);
+
+    // Official OBP: (H + BB + HBP) / (AB + BB + HBP + SF) = 15 / 41 = .366.
+    expect($metric)->toBeInstanceOf(TeamMetric::class)
+        ->and($metric->on_base_percentage)->toBe(0.366);
+});
+
 it('does not save season metrics when completed game team stats are incomplete', function () {
     $opponent = Team::factory()->create();
 
@@ -278,6 +314,7 @@ it('calculates runs per game correctly', function () {
             'season' => $this->season,
             'week' => 13,
             'status' => 'STATUS_FINAL',
+            'game_date' => "{$this->season}-06-0".($i + 1),
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
         ]);
@@ -307,6 +344,7 @@ it('calculates runs allowed per game correctly', function () {
         $game = Game::factory()->create([
             'season' => $this->season,
             'status' => 'STATUS_FINAL',
+            'game_date' => "{$this->season}-06-0".($i + 1),
             'home_team_id' => $this->team->id,
             'away_team_id' => $opponent->id,
         ]);
@@ -497,6 +535,47 @@ it('calculates strength of schedule based on opponent ELO ratings', function () 
 
     // Average: (1600 + 1400 + 1500) / 3 = 1500
     expect((float) $metric->strength_of_schedule)->toBe(1500.0);
+});
+
+it('calculates rest travel fatigue from compressed schedule and venue changes', function () {
+    $opponent = Team::factory()->create();
+
+    foreach ([
+        ['date' => "{$this->season}-06-01", 'home' => true, 'city' => 'Kansas City', 'state' => 'MO'],
+        ['date' => "{$this->season}-06-02", 'home' => false, 'city' => 'Chicago', 'state' => 'IL'],
+        ['date' => "{$this->season}-06-03", 'home' => false, 'city' => 'Chicago', 'state' => 'IL'],
+        ['date' => "{$this->season}-06-06", 'home' => true, 'city' => 'Kansas City', 'state' => 'MO'],
+    ] as $index => $row) {
+        $game = Game::factory()->create([
+            'season' => $this->season,
+            'status' => 'STATUS_FINAL',
+            'game_date' => $row['date'],
+            'home_team_id' => $row['home'] ? $this->team->id : $opponent->id,
+            'away_team_id' => $row['home'] ? $opponent->id : $this->team->id,
+            'venue_city' => $row['city'],
+            'venue_state' => $row['state'],
+            'venue_name' => "{$row['city']} Ballpark",
+        ]);
+
+        TeamStat::factory()->create([
+            'team_id' => $this->team->id,
+            'game_id' => $game->id,
+            'team_type' => $row['home'] ? 'home' : 'away',
+            'runs' => 5 + $index,
+        ]);
+        TeamStat::factory()->create([
+            'team_id' => $opponent->id,
+            'game_id' => $game->id,
+            'team_type' => $row['home'] ? 'away' : 'home',
+            'runs' => 3,
+        ]);
+    }
+
+    $metric = $this->action->execute($this->team, $this->season);
+
+    expect($metric)->toBeInstanceOf(TeamMetric::class)
+        ->and((float) $metric->rest_travel_fatigue)->toBeGreaterThan(0.0)
+        ->and((float) $metric->rest_travel_fatigue)->toBeLessThan(10.0);
 });
 
 it('returns null when team has no completed games', function () {

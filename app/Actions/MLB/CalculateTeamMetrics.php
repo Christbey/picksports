@@ -460,15 +460,31 @@ class CalculateTeamMetrics
     {
         $totalHits = 0;
         $totalWalks = 0;
+        $totalHitByPitch = 0;
+        $totalSacrificeFlies = 0;
         $totalAtBats = 0;
+        $hasOfficialInputs = false;
 
         foreach ($teamStats as $stat) {
             $totalHits += $stat->hits ?? 0;
             $totalWalks += $stat->walks ?? 0;
+            $totalHitByPitch += $stat->hit_by_pitch ?? 0;
+            $totalSacrificeFlies += $stat->sacrifice_flies ?? 0;
             $totalAtBats += $stat->at_bats ?? 0;
+            $hasOfficialInputs = $hasOfficialInputs
+                || $stat->hit_by_pitch !== null
+                || $stat->sacrifice_flies !== null;
         }
 
         $plateAppearances = $totalAtBats + $totalWalks;
+
+        if ($hasOfficialInputs) {
+            $plateAppearances += $totalHitByPitch + $totalSacrificeFlies;
+
+            return $plateAppearances > 0
+                ? (($totalHits + $totalWalks + $totalHitByPitch) / $plateAppearances)
+                : 0;
+        }
 
         return $plateAppearances > 0 ? (($totalHits + $totalWalks) / $plateAppearances) : 0;
     }

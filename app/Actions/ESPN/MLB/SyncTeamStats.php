@@ -49,6 +49,18 @@ class SyncTeamStats
                 'home_runs' => $stats['batting']['homeRuns'] ?? null,
                 'rbis' => $stats['batting']['RBIs'] ?? null,
                 'walks' => $stats['batting']['walks'] ?? null,
+                'hit_by_pitch' => $this->firstStatValue($stats['batting'] ?? [], [
+                    'hitByPitch',
+                    'hitByPitches',
+                    'hit_by_pitch',
+                    'HBP',
+                ]),
+                'sacrifice_flies' => $this->firstStatValue($stats['batting'] ?? [], [
+                    'sacrificeFlies',
+                    'sacFlies',
+                    'sacrifice_flies',
+                    'SF',
+                ]),
                 'strikeouts' => $stats['batting']['strikeouts'] ?? null,
                 'stolen_bases' => $stats['batting']['stolenBases'] ?? null,
                 'left_on_base' => $stats['batting']['runnersLeftOnBase'] ?? null,
@@ -142,6 +154,21 @@ class SyncTeamStats
         $innings = $pitchingStats['innings'] ?? null;
 
         return $this->estimatedPitchersUsed($pitchCount, $innings);
+    }
+
+    /**
+     * @param  array<string, mixed>  $stats
+     * @param  array<int, string>  $keys
+     */
+    protected function firstStatValue(array $stats, array $keys): mixed
+    {
+        foreach ($keys as $key) {
+            if (array_key_exists($key, $stats)) {
+                return $stats[$key];
+            }
+        }
+
+        return null;
     }
 
     protected function estimatedPitchersUsed(mixed $pitchCount, mixed $innings): ?int

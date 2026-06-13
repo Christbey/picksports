@@ -353,7 +353,9 @@ trait FiltersTeamGames
 
         $fatigue = 0.0;
         $priorDate = null;
+        $priorVenue = null;
         $gameDates = [];
+        $densityWindows = 0;
 
         foreach ($recentGames as $game) {
             if (! $game->game_date) {
@@ -364,20 +366,28 @@ trait FiltersTeamGames
             $gameDates[] = $date;
 
             $isAway = (int) $game->away_team_id === (int) $team->id;
-            $fatigue += $isAway ? 0.35 : 0.10;
+            $fatigue += $isAway ? 0.30 : 0.05;
 
             if ($priorDate !== null) {
                 $days = $priorDate->diffInDays($date);
                 if ($days <= 1) {
-                    $fatigue += 1.25;
+                    $fatigue += 1.10;
                 } elseif ($days === 2) {
-                    $fatigue += 0.65;
+                    $fatigue += 0.45;
+                } elseif ($days === 3) {
+                    $fatigue += 0.15;
                 } elseif ($days >= 4) {
-                    $fatigue -= 0.25;
+                    $fatigue -= 0.35;
                 }
             }
 
+            $venue = $this->gameVenueSignature($game);
+            if ($priorVenue !== null && $venue !== null && $venue !== $priorVenue) {
+                $fatigue += $isAway ? 0.65 : 0.35;
+            }
+
             $priorDate = $date;
+            $priorVenue = $venue ?? $priorVenue;
         }
 
         // Density boost for compressed schedule (3+ games in 4-day windows).
@@ -392,13 +402,30 @@ trait FiltersTeamGames
                 }
             }
             if ($windowCount >= 3) {
-                $fatigue += 0.60;
+                $densityWindows++;
             }
         }
+
+        $fatigue += min(1.8, $densityWindows * 0.30);
 
         $fatigue = max(0.0, min(10.0, $fatigue));
 
         return round($fatigue, $precision);
+    }
+
+    protected function gameVenueSignature(Model $game): ?string
+    {
+        $parts = array_filter([
+            $game->getAttribute('venue_city'),
+            $game->getAttribute('venue_state'),
+            $game->getAttribute('venue_name'),
+        ], fn (mixed $value): bool => $value !== null && trim((string) $value) !== '');
+
+        if ($parts === []) {
+            return null;
+        }
+
+        return strtolower(implode('|', array_map(fn (mixed $value): string => trim((string) $value), $parts)));
     }
 
     /**

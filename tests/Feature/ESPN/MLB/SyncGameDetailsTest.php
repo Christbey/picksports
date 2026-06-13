@@ -164,6 +164,40 @@ it('normalizes mlb team innings pitched from baseball decimal notation', functio
         ->and(abs(((float) $stat->innings_pitched) - (8 + (1 / 3))))->toBeLessThan(0.0001);
 });
 
+it('stores official mlb team obp inputs from boxscore team stats', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    (new SyncTeamStats)->execute([
+        'boxscore' => [
+            'teams' => [[
+                'team' => ['id' => '10'],
+                'statistics' => [[
+                    'name' => 'batting',
+                    'stats' => [
+                        ['name' => 'hits', 'displayValue' => '9'],
+                        ['name' => 'walks', 'displayValue' => '4'],
+                        ['name' => 'hitByPitch', 'displayValue' => '2'],
+                        ['name' => 'sacrificeFlies', 'displayValue' => '1'],
+                    ],
+                ]],
+            ]],
+        ],
+    ], $game);
+
+    $stat = TeamStat::query()->where('game_id', $game->id)->where('team_id', $homeTeam->id)->first();
+
+    expect($stat)->not->toBeNull()
+        ->and($stat->hit_by_pitch)->toBe(2)
+        ->and($stat->sacrifice_flies)->toBe(1);
+});
+
 it('dispatches final mlb games missing player stats even when linescores exist', function () {
     Queue::fake();
 

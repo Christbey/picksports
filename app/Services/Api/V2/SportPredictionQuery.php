@@ -55,13 +55,12 @@ class SportPredictionQuery
         $gameTable = (new $gameModel)->getTable();
 
         if ($this->hasColumn($predictionTable, 'season')) {
-            return $this->query($context, [], $user)
-                ->toBase()
-                ->select("{$predictionTable}.season")
+            return $predictionModel::query()
+                ->select("{$predictionTable}.season as available_season")
                 ->whereNotNull("{$predictionTable}.season")
                 ->distinct()
-                ->orderByDesc("{$predictionTable}.season")
-                ->pluck('season')
+                ->orderByDesc('available_season')
+                ->pluck('available_season')
                 ->map(fn (mixed $season): int => (int) $season)
                 ->values();
         }
@@ -73,10 +72,10 @@ class SportPredictionQuery
         return $predictionModel::query()
             ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
             ->whereNotNull("{$gameTable}.season")
-            ->select("{$gameTable}.season")
+            ->select("{$gameTable}.season as available_season")
             ->distinct()
-            ->orderByDesc("{$gameTable}.season")
-            ->pluck('season')
+            ->orderByDesc('available_season')
+            ->pluck('available_season')
             ->map(fn (mixed $season): int => (int) $season)
             ->values();
     }

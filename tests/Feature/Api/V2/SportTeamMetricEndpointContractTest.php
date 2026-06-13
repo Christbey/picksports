@@ -4,6 +4,7 @@ use App\Models\CBB\Team as CbbTeam;
 use App\Models\CBB\TeamMetric as CbbTeamMetric;
 use App\Models\CFB\Team as CfbTeam;
 use App\Models\CFB\TeamMetric as CfbTeamMetric;
+use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\MLB\TeamMetric as MlbTeamMetric;
 use App\Models\NBA\Team as NbaTeam;
@@ -110,7 +111,10 @@ it('lists v2 team metrics with stable metadata and flat metric fields', function
         ->assertJsonPath('data.0.sport', $slug)
         ->assertJsonPath('data.0.team_id', $team->id)
         ->assertJsonPath('data.0.wins', 12)
-        ->assertJsonPath('data.0.losses', 4);
+        ->assertJsonPath('data.0.losses', 4)
+        ->assertJsonPath('data.0.games_played', 16)
+        ->assertJsonPath('data.0.record_label', '12-4')
+        ->assertJsonPath('data.0.record.source', 'metric');
 
     expect($response->json('data.0.team'))->toBeArray()
         ->and($response->json('meta.pagination'))->toBeArray()
@@ -171,11 +175,60 @@ it('defaults mlb team metrics to regular season rows', function () {
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $regularMetric->id)
         ->assertJsonPath('data.0.wins', 28)
-        ->assertJsonPath('data.0.losses', 40);
+        ->assertJsonPath('data.0.losses', 40)
+        ->assertJsonPath('data.0.record_label', '28-40');
 
     $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&season_type=all&per_page=5')
         ->assertOk()
         ->assertJsonCount(2, 'data');
+});
+
+it('derives mlb team metric records from completed games when stored rows are stale zeros', function () {
+    actAsV2TeamMetricContractUser();
+
+    $team = MlbTeam::factory()->create([
+        'abbreviation' => 'KC',
+    ]);
+    $opponent = MlbTeam::factory()->create([
+        'abbreviation' => 'STL',
+    ]);
+
+    MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'game_date' => '2026-06-01',
+        'status' => config('mlb.statuses.final'),
+        'home_team_id' => $team->id,
+        'away_team_id' => $opponent->id,
+        'home_score' => 5,
+        'away_score' => 3,
+    ]);
+    MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'game_date' => '2026-06-02',
+        'status' => config('mlb.statuses.final'),
+        'home_team_id' => $opponent->id,
+        'away_team_id' => $team->id,
+        'home_score' => 6,
+        'away_score' => 2,
+    ]);
+
+    createV2TeamMetricContractMetric(MlbTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'wins' => 0,
+        'losses' => 0,
+        'offensive_rating' => 132.4,
+        'calculation_date' => '2026-06-12',
+    ]);
+
+    $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&per_page=5')
+        ->assertOk()
+        ->assertJsonPath('data.0.wins', 1)
+        ->assertJsonPath('data.0.losses', 1)
+        ->assertJsonPath('data.0.games_played', 2)
+        ->assertJsonPath('data.0.record_label', '1-1')
+        ->assertJsonPath('data.0.record.source', 'derived_games');
 });
 
 it('lists v2 team metric seasons and latest team metric with metadata', function (

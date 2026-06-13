@@ -55,6 +55,27 @@ export function createSportTeamMetricsConfig(
     };
 }
 
+function formatRecord(metric: any, fallback = '-'): string {
+    if (metric.record_label) {
+        return metric.record_label;
+    }
+
+    if (metric.record?.wins !== undefined && metric.record?.losses !== undefined) {
+        return `${metric.record.wins}-${metric.record.losses}`;
+    }
+
+    if (
+        metric.wins !== null &&
+        metric.wins !== undefined &&
+        metric.losses !== null &&
+        metric.losses !== undefined
+    ) {
+        return `${metric.wins}-${metric.losses}`;
+    }
+
+    return fallback;
+}
+
 function createProBasketballTeamMetricsConfig(
     params: CreateProBasketballTeamMetricsConfigParams,
 ): MetricsConfig {
@@ -88,8 +109,7 @@ function createProBasketballTeamMetricsConfig(
     const columns: MetricsConfig['columns'] = [
         {
             label: 'Record',
-            value: (m: any) =>
-                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
+            value: (m: any) => formatRecord(m),
             class: () => 'text-muted-foreground',
         },
         {
@@ -253,8 +273,7 @@ export const cbbTeamMetricsConfig = createSportTeamMetricsConfig({
     columns: [
         {
             label: 'Record',
-            value: (m: any) =>
-                m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`,
+            value: (m: any) => formatRecord(m, `${m.games_played}`),
             class: () => 'text-muted-foreground',
         },
         {
@@ -390,8 +409,7 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
     columns: [
         {
             label: 'Record',
-            value: (m: any) =>
-                m.wins !== null ? `${m.wins}-${m.losses}` : `${m.games_played}`,
+            value: (m: any) => formatRecord(m, `${m.games_played}`),
             class: () => 'text-muted-foreground',
         },
         {
@@ -590,8 +608,7 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
     columns: [
         {
             label: 'Record',
-            value: (m: any) =>
-                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
+            value: (m: any) => formatRecord(m),
             class: () => 'text-muted-foreground',
         },
         {
@@ -800,8 +817,7 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
     columns: [
         {
             label: 'Record',
-            value: (m: any) =>
-                m.wins !== null ? `${m.wins}-${m.losses}` : '-',
+            value: (m: any) => formatRecord(m),
             class: () => 'text-muted-foreground',
         },
         {

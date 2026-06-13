@@ -2,7 +2,9 @@
 
 namespace App\Http\Resources\Api\V2;
 
+use App\Models\MLB\Game as MlbGame;
 use App\Services\Api\V2\SportContext;
+use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -21,13 +23,21 @@ class SportTeamMetricResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $metrics = $this->metrics();
+        $record = $this->record($metrics);
+
         return [
-            ...$this->metrics(),
+            ...$metrics,
             'id' => $this->attribute('id'),
             'sport' => $this->context->slug,
             'team_id' => $this->attribute('team_id'),
             'season' => $this->attribute('season'),
             'season_type' => $this->attribute('season_type'),
+            'wins' => $record['wins'],
+            'losses' => $record['losses'],
+            'games_played' => $record['games_played'],
+            'record' => $record,
+            'record_label' => $record['label'],
             'team' => $this->team(),
             'calculation_date' => $this->serializeDateValue($this->attribute('calculation_date')),
             'created_at' => $this->serializeDateValue($this->attribute('created_at')),
@@ -62,6 +72,103 @@ class SportTeamMetricResource extends JsonResource
         $this->aliasMetric($metrics, 'pace', 'tempo');
 
         return $metrics;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metrics
+     * @return array{wins: int|null, losses: int|null, games_played: int, label: string|null, source: string}
+     */
+    private function record(array $metrics): array
+    {
+        $wins = $this->nullableInt($metrics['wins'] ?? $this->attribute('wins'));
+        $losses = $this->nullableInt($metrics['losses'] ?? $this->attribute('losses'));
+        $source = 'metric';
+
+        if ($this->shouldDeriveMlbRecord($wins, $losses)) {
+            $derived = $this->deriveMlbRecord();
+
+            if ($derived['games_played'] > 0) {
+                $wins = $derived['wins'];
+                $losses = $derived['losses'];
+                $source = 'derived_games';
+            }
+        }
+
+        $gamesPlayed = $wins !== null && $losses !== null
+            ? $wins + $losses
+            : ($this->nullableInt($metrics['games_played'] ?? $this->attribute('games_played')) ?? 0);
+
+        return [
+            'wins' => $wins,
+            'losses' => $losses,
+            'games_played' => $gamesPlayed,
+            'label' => $wins !== null && $losses !== null ? "{$wins}-{$losses}" : null,
+            'source' => $source,
+        ];
+    }
+
+    private function shouldDeriveMlbRecord(?int $wins, ?int $losses): bool
+    {
+        return $this->context->slug === 'mlb'
+            && $this->attribute('team_id') !== null
+            && $this->attribute('season') !== null
+            && ($wins === null || $losses === null || ($wins + $losses) === 0);
+    }
+
+    /**
+     * @return array{wins: int, losses: int, games_played: int}
+     */
+    private function deriveMlbRecord(): array
+    {
+        $teamId = (int) $this->attribute('team_id');
+        $season = (int) $this->attribute('season');
+        $seasonType = $this->attribute('season_type') ?? config('mlb.season.default_team_metrics_type');
+        $finalStatus = (string) config('mlb.statuses.final');
+
+        $query = MlbGame::query()
+            ->where('season', $season)
+            ->where('season_type', $seasonType)
+            ->where('status', $finalStatus)
+            ->where(function ($query) use ($teamId) {
+                $query->where('home_team_id', $teamId)
+                    ->orWhere('away_team_id', $teamId);
+            });
+
+        if ((string) $seasonType === (string) config('mlb.season.types.regular')
+            && ($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null) {
+            $query->whereDate('game_date', '>=', $openerDate);
+        }
+
+        $wins = 0;
+        $losses = 0;
+
+        $query->get(['home_team_id', 'away_team_id', 'home_score', 'away_score'])
+            ->each(function (MlbGame $game) use ($teamId, &$wins, &$losses): void {
+                $isHome = (int) $game->home_team_id === $teamId;
+                $teamScore = (int) ($isHome ? $game->home_score : $game->away_score);
+                $opponentScore = (int) ($isHome ? $game->away_score : $game->home_score);
+
+                if ($teamScore > $opponentScore) {
+                    $wins++;
+                } elseif ($teamScore < $opponentScore) {
+                    $losses++;
+                }
+            });
+
+        return [
+            'wins' => $wins,
+            'losses' => $losses,
+            'games_played' => $wins + $losses,
+        ];
+    }
+
+    private function nullableInt(mixed $value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return (int) $value;
     }
 
     /**

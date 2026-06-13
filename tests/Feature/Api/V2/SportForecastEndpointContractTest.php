@@ -6,6 +6,7 @@ use App\Models\MLB\PlayoffForecast as MlbPlayoffForecast;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\PlayoffForecast as NbaPlayoffForecast;
 use App\Models\NBA\Team as NbaTeam;
+use App\Models\Sports\FuturesOdd;
 use App\Models\User;
 use App\Models\WCBB\Team as WcbbTeam;
 use App\Models\WCBB\TournamentForecast as WcbbTournamentForecast;
@@ -114,6 +115,62 @@ it('lists mlb playoff forecasts with v2 metadata and v1-compatible rows', functi
                 ],
             ],
         ]);
+});
+
+it('decorates mlb futures forecasts with championship odds instead of newer non-title markets', function () {
+    Cache::flush();
+    actAsV2ForecastContractUser();
+
+    $team = MlbTeam::factory()->create(['abbreviation' => 'LAD']);
+    MlbPlayoffForecast::query()->create([
+        'team_id' => $team->id,
+        'season' => 2026,
+        'league' => 'National',
+        'league_rank' => 1,
+        'projected_seed' => 1,
+        'selection_score' => 2.20,
+        'playoff_make_probability' => 0.90,
+        'league_championship_probability' => 0.30,
+        'world_series_probability' => 0.20,
+        'champion_probability' => 0.10,
+        'simulation_runs' => 5000,
+    ]);
+
+    FuturesOdd::query()->create([
+        'row_key' => sha1('mlb-title-odds'),
+        'sport' => 'mlb',
+        'season' => 2026,
+        'odds_api_sport_key' => 'baseball_mlb_world_series_winner',
+        'mlb_team_id' => $team->id,
+        'bookmaker' => 'draftkings',
+        'market_key' => 'championship_winner',
+        'outcome_name' => 'Los Angeles Dodgers',
+        'price' => 450,
+        'implied_probability' => 0.181818,
+        'fetched_at' => now()->subHour(),
+    ]);
+
+    FuturesOdd::query()->create([
+        'row_key' => sha1('mlb-season-wins-odds'),
+        'sport' => 'mlb',
+        'season' => 2026,
+        'odds_api_sport_key' => 'baseball_mlb',
+        'mlb_team_id' => $team->id,
+        'bookmaker' => 'draftkings',
+        'market_key' => 'season_wins',
+        'outcome_name' => 'Over',
+        'outcome_description' => 'Los Angeles Dodgers',
+        'outcome_point' => 94.5,
+        'price' => -110,
+        'implied_probability' => 0.52381,
+        'fetched_at' => now(),
+    ]);
+
+    $this->getJson('/api/v2/sports/mlb/forecasts?season=2026')
+        ->assertOk()
+        ->assertJsonPath('data.0.market_odds.market_key', 'championship_winner')
+        ->assertJsonPath('data.0.market_odds.price', 450)
+        ->assertJsonPath('data.0.market_edge.market_probability', 0.181818);
 });
 
 it('lists cbb tournament forecasts with live field metadata', function () {

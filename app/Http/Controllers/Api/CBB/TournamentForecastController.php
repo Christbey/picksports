@@ -96,7 +96,11 @@ class TournamentForecastController extends Controller
                 foreach ($missingActualTeams as $team) {
                     $data[] = $this->fallbackForecastRow($team, $season);
                 }
-                $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason('cbb', $season);
+                $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason(
+                    'cbb',
+                    $season,
+                    $this->futuresOddsLookup->championshipMarketKeys()
+                );
                 $data = array_map(function (array $row) use ($marketOddsByTeam): array {
                     $teamId = $row['team_id'] !== null ? (int) $row['team_id'] : 0;
                     $row['market_odds'] = $teamId > 0 ? ($marketOddsByTeam[$teamId] ?? null) : null;

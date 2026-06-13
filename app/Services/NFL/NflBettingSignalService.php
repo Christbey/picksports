@@ -275,7 +275,11 @@ class NflBettingSignalService
     {
         $report = $this->forecastService->forecast($season, $asOfDate->toDateString());
         $rows = array_values((array) ($report['teams'] ?? []));
-        $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason('nfl', $season);
+        $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason(
+            'nfl',
+            $season,
+            $this->futuresOddsLookup->championshipMarketKeys()
+        );
 
         $rows = array_map(function (array $row) use ($marketOddsByTeam): array {
             $teamId = (int) ($row['team_id'] ?? 0);

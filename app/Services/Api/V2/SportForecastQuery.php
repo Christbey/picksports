@@ -411,7 +411,12 @@ class SportForecastQuery
      */
     private function withMarketEdges(array $data, string $sport, int $season, string $probabilityKey): array
     {
-        $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason($sport, $season);
+        $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason(
+            $sport,
+            $season,
+            $this->futuresOddsLookup->championshipMarketKeys()
+        );
+
         $data = array_map(function (array $row) use ($marketOddsByTeam): array {
             $teamId = (int) ($row['team_id'] ?? 0);
             $row['market_odds'] = $teamId > 0 ? ($marketOddsByTeam[$teamId] ?? null) : null;

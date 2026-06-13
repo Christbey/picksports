@@ -136,9 +136,7 @@ class GeneratePlayoffForecast
                 return null;
             }
 
-            $record = $records->get($metric->team_id);
-            $wins = (int) ($record->wins ?? 0);
-            $losses = (int) ($record->losses ?? 0);
+            [$wins, $losses] = $this->recordForMetric($metric, $records);
             $games = $wins + $losses;
 
             return [
@@ -209,9 +207,7 @@ class GeneratePlayoffForecast
                 return null;
             }
 
-            $record = $records->get($metric->team_id);
-            $wins = (int) ($record->wins ?? 0);
-            $losses = (int) ($record->losses ?? 0);
+            [$wins, $losses] = $this->recordForMetric($metric, $records);
             $games = $wins + $losses;
             $prevWinPct = $games > 0 ? ($wins / $games) : 0.5;
 
@@ -232,22 +228,47 @@ class GeneratePlayoffForecast
 
     private function seasonRecords(int $season): Collection
     {
+        $regularSeasonType = (string) config('mlb.season.types.regular', 2);
+
         return collect(DB::select(
             "SELECT team_id,
-                SUM(CASE WHEN won = 1 THEN 1 ELSE 0 END) AS wins,
-                SUM(CASE WHEN won = 0 THEN 1 ELSE 0 END) AS losses
+                SUM(CASE WHEN team_runs > opponent_runs THEN 1 ELSE 0 END) AS wins,
+                SUM(CASE WHEN team_runs < opponent_runs THEN 1 ELSE 0 END) AS losses
             FROM (
-                SELECT home_team_id AS team_id, CASE WHEN home_score > away_score THEN 1 ELSE 0 END AS won
-                FROM mlb_games
-                WHERE status = 'STATUS_FINAL' AND season = ?
-                UNION ALL
-                SELECT away_team_id AS team_id, CASE WHEN away_score > home_score THEN 1 ELSE 0 END AS won
-                FROM mlb_games
-                WHERE status = 'STATUS_FINAL' AND season = ?
+                SELECT stats.team_id AS team_id,
+                    stats.runs AS team_runs,
+                    opponent_stats.runs AS opponent_runs
+                FROM mlb_team_stats stats
+                INNER JOIN mlb_games games ON games.id = stats.game_id
+                INNER JOIN mlb_team_stats opponent_stats
+                    ON opponent_stats.game_id = stats.game_id
+                    AND opponent_stats.team_id <> stats.team_id
+                WHERE games.status = 'STATUS_FINAL'
+                    AND games.season = ?
+                    AND games.season_type = ?
+                    AND stats.runs IS NOT NULL
+                    AND opponent_stats.runs IS NOT NULL
             ) results
             GROUP BY team_id",
-            [$season, $season]
+            [$season, $regularSeasonType]
         ))->keyBy('team_id');
+    }
+
+    private function recordForMetric(TeamMetric $metric, Collection $fallbackRecords): array
+    {
+        $metricWins = (int) ($metric->wins ?? 0);
+        $metricLosses = (int) ($metric->losses ?? 0);
+
+        if (($metricWins + $metricLosses) > 0) {
+            return [$metricWins, $metricLosses];
+        }
+
+        $record = $fallbackRecords->get($metric->team_id);
+
+        return [
+            (int) ($record->wins ?? 0),
+            (int) ($record->losses ?? 0),
+        ];
     }
 
     private function attachSelectionScores(Collection $teams, array $weights): Collection

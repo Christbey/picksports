@@ -65,7 +65,11 @@ class PlayoffForecastController extends Controller
                     return $direction === 'asc' ? $comparison : -$comparison;
                 });
 
-                $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason('nfl', $season);
+                $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason(
+                    'nfl',
+                    $season,
+                    $this->futuresOddsLookup->championshipMarketKeys()
+                );
                 $data = array_map(function (array $row) use ($marketOddsByTeam): array {
                     $teamId = (int) ($row['team_id'] ?? 0);
                     $row['market_odds'] = $marketOddsByTeam[$teamId] ?? null;

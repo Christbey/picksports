@@ -88,7 +88,11 @@ class PlayoffForecastController extends Controller
                     ->values();
 
                 $data = PlayoffForecastResource::collection($forecasts)->resolve($request);
-                $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason('mlb', $season);
+                $marketOddsByTeam = $this->futuresOddsLookup->byTeamForSeason(
+                    'mlb',
+                    $season,
+                    $this->futuresOddsLookup->championshipMarketKeys()
+                );
                 $data = array_map(function (array $row) use ($marketOddsByTeam): array {
                     $teamId = (int) ($row['team_id'] ?? 0);
                     $row['market_odds'] = $marketOddsByTeam[$teamId] ?? null;

@@ -22,17 +22,20 @@ class FuturesOddsLookupService
     /**
      * @return array<int, array{bookmaker:string,market_key:string,price:?int,implied_probability:?float,fetched_at:?string,odds_api_sport_key:string}>
      */
-    public function byTeamForSeason(string $sport, int $season): array
+    public function byTeamForSeason(string $sport, int $season, array|string|null $marketKeys = null): array
     {
         $teamForeignKey = self::TEAM_FOREIGN_KEY_BY_SPORT[$sport] ?? null;
         if ($teamForeignKey === null) {
             return [];
         }
 
+        $resolvedMarketKeys = $this->resolvedMarketKeys($marketKeys);
+
         $rows = FuturesOdd::query()
             ->where('sport', $sport)
             ->where('season', $season)
             ->whereNotNull($teamForeignKey)
+            ->when($resolvedMarketKeys !== [], fn ($query) => $query->whereIn('market_key', $resolvedMarketKeys))
             ->orderByDesc('fetched_at')
             ->orderByDesc('id')
             ->get([
@@ -64,6 +67,14 @@ class FuturesOddsLookupService
         }
 
         return $byTeam;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function championshipMarketKeys(): array
+    {
+        return ['championship_winner', 'outrights'];
     }
 
     /**
@@ -138,11 +149,7 @@ class FuturesOddsLookupService
      */
     public function snapshotDatesForSeasonMarket(string $sport, int $season, array|string $marketKeys): array
     {
-        $resolvedMarketKeys = is_array($marketKeys) ? $marketKeys : [$marketKeys];
-        $resolvedMarketKeys = array_values(array_unique(array_filter(array_map(
-            static fn ($marketKey) => trim((string) $marketKey),
-            $resolvedMarketKeys
-        ))));
+        $resolvedMarketKeys = $this->resolvedMarketKeys($marketKeys);
 
         $query = FuturesOddsSnapshot::query()
             ->where('sport', $sport)
@@ -162,6 +169,23 @@ class FuturesOddsLookupService
                 : (string) $timestamp)
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function resolvedMarketKeys(array|string|null $marketKeys): array
+    {
+        if ($marketKeys === null) {
+            return [];
+        }
+
+        $resolvedMarketKeys = is_array($marketKeys) ? $marketKeys : [$marketKeys];
+
+        return array_values(array_unique(array_filter(array_map(
+            static fn ($marketKey) => trim((string) $marketKey),
+            $resolvedMarketKeys
+        ))));
     }
 
     /**

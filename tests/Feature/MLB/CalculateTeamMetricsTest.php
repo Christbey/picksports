@@ -234,6 +234,42 @@ it('calculates team ERA correctly across multiple games', function () {
     expect($metric->team_era)->toBe(4.24);
 });
 
+it('normalizes baseball innings notation when calculating pitching metrics', function () {
+    $opponent = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'season' => $this->season,
+        'status' => 'STATUS_FINAL',
+        'game_date' => "{$this->season}-06-01",
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $opponent->id,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'runs' => 5,
+        'earned_runs' => 3,
+        'innings_pitched' => 8.1,
+        'hits_allowed' => 8,
+        'walks_allowed' => 2,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $game->id,
+        'team_type' => 'away',
+        'runs' => 3,
+    ]);
+
+    $metric = $this->action->execute($this->team, $this->season);
+
+    expect($metric)->toBeInstanceOf(TeamMetric::class)
+        ->and($metric->team_era)->toBe(3.24)
+        ->and($metric->whip)->toBe(1.2);
+});
+
 it('calculates runs per game correctly', function () {
     $opponent = Team::factory()->create();
 

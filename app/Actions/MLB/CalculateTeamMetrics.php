@@ -285,7 +285,7 @@ class CalculateTeamMetrics
 
         foreach ($teamStats as $stat) {
             $totalEarnedRuns += $stat->earned_runs ?? 0;
-            $totalInningsPitched += $stat->innings_pitched ?? 0;
+            $totalInningsPitched += $this->normalizeInningsPitched($stat->innings_pitched) ?? 0;
             $totalStrikeouts += $stat->strikeouts_pitched ?? 0;
             $totalWalksAllowed += $stat->walks_allowed ?? 0;
         }
@@ -521,7 +521,7 @@ class CalculateTeamMetrics
 
         foreach ($teamStats as $stat) {
             $totalEarnedRuns += $stat->earned_runs ?? 0;
-            $totalInningsPitched += $stat->innings_pitched ?? 0;
+            $totalInningsPitched += $this->normalizeInningsPitched($stat->innings_pitched) ?? 0;
         }
 
         if ($totalInningsPitched == 0) {
@@ -553,7 +553,7 @@ class CalculateTeamMetrics
         foreach ($teamStats as $stat) {
             $totalWalksAllowed += $stat->walks_allowed ?? 0;
             $totalHitsAllowed += $stat->hits_allowed ?? 0;
-            $totalInningsPitched += $stat->innings_pitched ?? 0;
+            $totalInningsPitched += $this->normalizeInningsPitched($stat->innings_pitched) ?? 0;
         }
 
         if ($totalInningsPitched <= 0) {
@@ -561,6 +561,23 @@ class CalculateTeamMetrics
         }
 
         return ($totalWalksAllowed + $totalHitsAllowed) / $totalInningsPitched;
+    }
+
+    protected function normalizeInningsPitched(mixed $value): ?float
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $number = (float) $value;
+        $whole = (int) floor($number);
+        $fractionDigit = (int) round(($number - $whole) * 10);
+
+        if ($fractionDigit === 1 || $fractionDigit === 2) {
+            return $whole + ($fractionDigit / 3);
+        }
+
+        return $number;
     }
 
     public function executeForAllTeams(int $season, int|string|null $seasonType = null): int

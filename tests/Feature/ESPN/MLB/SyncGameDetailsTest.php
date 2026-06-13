@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\ESPN\MLB\SyncGameDetails;
+use App\Actions\ESPN\MLB\SyncTeamStats;
 use App\Jobs\ESPN\MLB\FetchGameDetails;
 use App\Models\MLB\Game;
 use App\Models\MLB\Play;
@@ -128,6 +129,39 @@ it('updates inning half and count state from mlb game details', function () {
         ->and($game->probable_away_pitcher_espn_id)->toBe('7002')
         ->and($game->home_score)->toBe(3)
         ->and($game->away_score)->toBe(4);
+});
+
+it('normalizes mlb team innings pitched from baseball decimal notation', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '10']);
+    $awayTeam = Team::factory()->create(['espn_id' => '20']);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    $synced = (new SyncTeamStats)->execute([
+        'boxscore' => [
+            'teams' => [[
+                'team' => ['id' => '10'],
+                'statistics' => [[
+                    'name' => 'pitching',
+                    'stats' => [
+                        ['name' => 'innings', 'displayValue' => '8.1'],
+                        ['name' => 'hits', 'displayValue' => '8'],
+                        ['name' => 'earnedRuns', 'displayValue' => '3'],
+                    ],
+                ]],
+            ]],
+        ],
+    ], $game);
+
+    $stat = TeamStat::query()->where('game_id', $game->id)->where('team_id', $homeTeam->id)->first();
+
+    expect($synced)->toBe(1)
+        ->and($stat)->not->toBeNull()
+        ->and(abs(((float) $stat->innings_pitched) - (8 + (1 / 3))))->toBeLessThan(0.0001);
 });
 
 it('dispatches final mlb games missing player stats even when linescores exist', function () {

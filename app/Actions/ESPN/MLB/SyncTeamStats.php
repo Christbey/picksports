@@ -55,7 +55,7 @@ class SyncTeamStats
                 'batting_average' => $stats['batting']['avg'] ?? null,
                 // Pitching stats
                 'pitchers_used' => $this->resolvePitchersUsed($stats['pitching'] ?? []),
-                'innings_pitched' => $stats['pitching']['innings'] ?? null,
+                'innings_pitched' => $this->normalizeInningsPitched($stats['pitching']['innings'] ?? null),
                 'hits_allowed' => $stats['pitching']['hits'] ?? null,
                 'runs_allowed' => $stats['pitching']['runs'] ?? null,
                 'earned_runs' => $stats['pitching']['earnedRuns'] ?? null,
@@ -147,7 +147,7 @@ class SyncTeamStats
     protected function estimatedPitchersUsed(mixed $pitchCount, mixed $innings): ?int
     {
         $pitchCount = is_numeric($pitchCount) ? (int) $pitchCount : null;
-        $innings = is_numeric($innings) ? (float) $innings : null;
+        $innings = $this->normalizeInningsPitched($innings);
 
         if ($pitchCount === null && $innings === null) {
             return null;

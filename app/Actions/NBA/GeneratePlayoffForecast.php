@@ -402,6 +402,7 @@ class GeneratePlayoffForecast
             ->with('team')
             ->where('season', $season)
             ->get();
+        $metrics = $this->preferredMetricsForForecast($metrics);
 
         if ($metrics->isEmpty()) {
             return collect();
@@ -477,6 +478,26 @@ class GeneratePlayoffForecast
                 'power_rating' => 0.0,
             ];
         })->filter()->values();
+    }
+
+    /**
+     * @param  Collection<int, TeamMetric>  $metrics
+     * @return Collection<int, TeamMetric>
+     */
+    private function preferredMetricsForForecast(Collection $metrics): Collection
+    {
+        $postseasonType = (string) config('nba.season.types.postseason', 3);
+        $regularType = (string) config('nba.season.types.regular', 2);
+
+        return $metrics
+            ->groupBy(fn (TeamMetric $metric): int => (int) $metric->team_id)
+            ->map(function (Collection $teamMetrics) use ($postseasonType, $regularType): ?TeamMetric {
+                return $teamMetrics->first(fn (TeamMetric $metric): bool => (string) $metric->season_type === $postseasonType)
+                    ?? $teamMetrics->first(fn (TeamMetric $metric): bool => (string) $metric->season_type === $regularType)
+                    ?? $teamMetrics->sortByDesc('calculation_date')->first();
+            })
+            ->filter()
+            ->values();
     }
 
     private function attachSelectionScores(Collection $teams, array $weights, float $remainingSosWeight): Collection

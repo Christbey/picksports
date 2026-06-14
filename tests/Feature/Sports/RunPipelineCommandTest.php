@@ -9,6 +9,8 @@ it('prints a dry run plan for the nba full pipeline', function () {
         ->expectsOutput('Pipeline: NBA [full]')
         ->expectsOutput('Dry run only. No commands will be executed.')
         ->expectsOutputToContain('espn:sync-nba-games-scoreboard --from-date=2026-03-29 --to-date=2026-04-05')
+        ->expectsOutputToContain('nba:calculate-team-metrics --season=2026 --season-type=2')
+        ->expectsOutputToContain('nba:calculate-team-metrics --season=2026 --season-type=3')
         ->expectsOutputToContain('nba:generate-predictions --season=2026')
         ->expectsOutputToContain('sports:analyze-player-props --sport=nba --season=2026')
         ->expectsOutputToContain('sports:sync-futures-odds --sport=nba --season=2026')

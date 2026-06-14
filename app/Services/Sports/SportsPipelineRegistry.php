@@ -291,7 +291,14 @@ class SportsPipelineRegistry
             'nba' => [
                 $this->step('Grade predictions', 'nba:grade-predictions', ['--season' => $season]),
                 $this->step('Calculate Elo', 'nba:calculate-elo', ['--season' => $season]),
-                $this->step('Calculate team metrics', 'nba:calculate-team-metrics', ['--season' => $season]),
+                $this->step('Calculate regular season team metrics', 'nba:calculate-team-metrics', [
+                    '--season' => $season,
+                    '--season-type' => config('nba.season.types.regular', 2),
+                ]),
+                $this->step('Calculate postseason team metrics', 'nba:calculate-team-metrics', [
+                    '--season' => $season,
+                    '--season-type' => config('nba.season.types.postseason', 3),
+                ]),
                 $this->step('Generate predictions', 'nba:generate-predictions', ['--season' => $season]),
                 $this->step('Generate playoff forecast', 'nba:generate-playoff-forecast', ['--season' => $season]),
             ],
@@ -330,7 +337,14 @@ class SportsPipelineRegistry
             'wnba' => [
                 $this->step('Grade predictions', 'wnba:grade-predictions', ['--season' => $season]),
                 $this->step('Calculate Elo', 'wnba:calculate-elo', ['--season' => $season]),
-                $this->step('Calculate team metrics', 'wnba:calculate-team-metrics', ['--season' => $season]),
+                $this->step('Calculate regular season team metrics', 'wnba:calculate-team-metrics', [
+                    '--season' => $season,
+                    '--season-type' => config('wnba.season.types.regular', 2),
+                ]),
+                $this->step('Calculate postseason team metrics', 'wnba:calculate-team-metrics', [
+                    '--season' => $season,
+                    '--season-type' => config('wnba.season.types.postseason', 3),
+                ]),
                 $this->step('Generate predictions', 'wnba:generate-predictions', ['--season' => $season]),
             ],
             'cfb' => [

@@ -33,12 +33,13 @@ class SportSignalQuery
             'sport' => $context->slug,
             'season' => $season,
             'as_of_date' => $asOfDate->toDateString(),
+            'cache_minute' => $context->slug === 'mlb' ? $asOfDate->format('Y-m-d H:i') : null,
         ]);
 
         return $this->sportsViewCache->remember(
             segment: SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
             key: $cacheKey,
-            ttlSeconds: 120,
+            ttlSeconds: $context->slug === 'mlb' ? 30 : 120,
             resolver: fn (): array => $service->signals($season, $asOfDate),
         );
     }

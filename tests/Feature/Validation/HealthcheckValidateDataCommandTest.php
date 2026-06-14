@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Validation\Checks\GameCoverageCheck;
+use App\Actions\Validation\Checks\InjuryFreshnessCheck;
 use App\Actions\Validation\Checks\PipelineOrderCheck;
 use App\Actions\Validation\Checks\PlayerPropFreshnessCheck;
 use App\Actions\Validation\Checks\TeamStatCoverageCheck;
@@ -168,6 +169,25 @@ test('healthcheck validate data flags current day final games missing stats', fu
         );
 });
 
+test('injury freshness warns on future refresh timestamps instead of reporting negative age', function () {
+    CommandHeartbeat::query()->create([
+        'sport' => 'wnba',
+        'command' => 'espn:sync-wnba-injuries',
+        'status' => 'success',
+        'source' => 'test',
+        'ran_at' => now()->addHours(2),
+    ]);
+
+    $finding = app(InjuryFreshnessCheck::class)->run('wnba', config('validation.sports.wnba'));
+
+    expect($finding)->not->toBeNull()
+        ->and($finding['status'])->toBe('warning')
+        ->and($finding['message'])->toContain('timestamp is in the future')
+        ->and($finding['message'])->not->toContain('hour(s) ago')
+        ->and(data_get($finding, 'metadata.age_hours'))->toBe(0)
+        ->and(data_get($finding, 'metadata.fresh_at_is_future'))->toBeTrue();
+});
+
 test('healthcheck validate data flags upcoming game page readiness gaps', function () {
     config()->set('validation.thresholds.odds_completeness.soft_availability_hours', 9999);
     config()->set('validation.thresholds.odds_completeness.expected_availability_hours', 9999);
@@ -242,6 +262,7 @@ test('healthcheck validate data does not flag future provider unavailable odds a
         DB::table('nba_team_metrics')->insert([
             'team_id' => $team->id,
             'season' => 2026,
+            'season_type' => 2,
             'offensive_efficiency' => 115.2,
             'defensive_efficiency' => 111.8,
             'net_rating' => 3.4,
@@ -303,6 +324,7 @@ test('healthcheck validate data passes upcoming game page readiness when pregame
         DB::table('nba_team_metrics')->insert([
             'team_id' => $team->id,
             'season' => (int) now()->year,
+            'season_type' => 2,
             'offensive_efficiency' => 115.2,
             'defensive_efficiency' => 111.8,
             'net_rating' => 3.4,

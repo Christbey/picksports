@@ -165,6 +165,30 @@ it('defaults to the stale-status repair lookback through the next seven days', f
         ->assertExitCode(0);
 });
 
+it('runs season-to-date missing stat backfill for wnba', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $syncClass = App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class;
+    $sync = m::mock($syncClass);
+    $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(0);
+    $this->app->instance($syncClass, $sync);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'wnba',
+        '--from-date' => '2026-06-01',
+        '--to-date' => '2026-06-01',
+        '--season' => 2026,
+        '--skip-sync-pipeline' => true,
+        '--skip-queue-drain' => true,
+        '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
+        '--skip-validation' => true,
+    ])
+        ->expectsOutput('Backfilling WNBA completed games still missing player/team stats across the season.')
+        ->expectsOutputToContain('Finding all completed games without stats')
+        ->assertExitCode(0);
+});
+
 it('syncs mlb scoreboards from the regular-season opener when completed-game coverage looks wrong', function () {
     $this->travelTo('2026-06-01 08:00:00');
 

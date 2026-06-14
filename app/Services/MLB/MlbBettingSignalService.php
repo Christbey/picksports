@@ -8,6 +8,7 @@ use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -18,6 +19,7 @@ class MlbBettingSignalService
     public function __construct(
         protected FuturesOddsLookupService $futuresOddsLookup,
         protected FuturesEdgeService $futuresEdgeService,
+        protected SportsDateWindowService $dateWindows,
     ) {}
 
     /**
@@ -41,6 +43,7 @@ class MlbBettingSignalService
             'run_line' => $this->runLineSignals($slatePredictions),
             'totals' => $this->totalSignals($slatePredictions),
             'ballpark' => $this->ballparkSignals($slatePredictions),
+            'live' => $this->liveSignals($season, $asOfDate),
             'bet_filter' => $this->betFilterSummary(),
             'moneyline_readiness' => $this->moneylineReadiness($slatePredictions),
             'recommended_bets' => $this->recommendedBets($slatePredictions),
@@ -445,6 +448,137 @@ class MlbBettingSignalService
         usort($signals, fn (array $left, array $right): int => abs((float) $right['total_adjustment']) <=> abs((float) $left['total_adjustment']));
 
         return array_slice($signals, 0, 10);
+    }
+
+    /**
+     * Live rows are monitoring signals only. They should show the operator
+     * current model state without feeding the pregame bet filter.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    protected function liveSignals(int $season, CarbonInterface $asOfDate): array
+    {
+        $window = $this->dateWindows->forRange(
+            Carbon::parse($asOfDate)->subDay(),
+            Carbon::parse($asOfDate)->addDay()
+        );
+        $liveStatuses = array_values(array_filter([
+            config('mlb.statuses.in_progress'),
+            config('mlb.statuses.delayed'),
+        ]));
+
+        $query = Prediction::query()
+            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->where('season', $season)
+            ->whereHas('game', function ($query) use ($liveStatuses, $window): void {
+                $query->whereIn('status', $liveStatuses);
+                $this->dateWindows->applyGameDateWindow($query, $window);
+            });
+
+        return $query
+            ->get()
+            ->filter(fn (Prediction $prediction): bool => $prediction->game !== null)
+            ->map(fn (Prediction $prediction): array => $this->liveSignalRow($prediction))
+            ->sortByDesc(fn (array $row): float => (float) ($row['live_probability_delta'] ?? 0.0))
+            ->values()
+            ->take(12)
+            ->all();
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    protected function liveSignalRow(Prediction $prediction): array
+    {
+        $game = $prediction->game;
+        $liveWinProbability = $prediction->live_win_probability !== null
+            ? (float) $prediction->live_win_probability
+            : null;
+        $pregameWinProbability = $prediction->win_probability !== null
+            ? (float) $prediction->win_probability
+            : null;
+        $pickSide = ($liveWinProbability ?? $pregameWinProbability ?? 0.5) >= 0.5 ? 'home' : 'away';
+        $pickTeam = $pickSide === 'home' ? $game?->homeTeam : $game?->awayTeam;
+        $updatedAt = $prediction->live_updated_at ? Carbon::parse($prediction->live_updated_at) : null;
+        $staleMinutes = (int) config('mlb.signals.live_stale_minutes', 6);
+        $isStale = $updatedAt === null || $updatedAt->lt(now()->subMinutes($staleMinutes));
+        $probabilityDelta = $liveWinProbability !== null && $pregameWinProbability !== null
+            ? abs($liveWinProbability - $pregameWinProbability)
+            : null;
+
+        return [
+            'type' => 'live',
+            'game_id' => (int) ($game?->id ?? 0),
+            'game_date' => $game?->game_date?->toDateString(),
+            'matchup' => (string) ($game?->short_name ?: $game?->name ?: ''),
+            'status' => (string) ($game?->status ?? ''),
+            'inning' => $game?->inning !== null ? (int) $game->inning : null,
+            'inning_state' => $game?->inning_state,
+            'home_score' => $game?->home_score !== null ? (int) $game->home_score : null,
+            'away_score' => $game?->away_score !== null ? (int) $game->away_score : null,
+            'pick_side' => $pickSide,
+            'team_id' => (int) ($pickTeam?->id ?? 0),
+            'team_name' => $this->teamName($pickTeam),
+            'pregame_win_probability' => $pregameWinProbability !== null ? round($pregameWinProbability, 4) : null,
+            'live_win_probability' => $liveWinProbability !== null ? round($liveWinProbability, 4) : null,
+            'live_probability_delta' => $probabilityDelta !== null ? round($probabilityDelta, 4) : null,
+            'live_predicted_spread' => $prediction->live_predicted_spread !== null ? (float) $prediction->live_predicted_spread : null,
+            'live_predicted_total' => $prediction->live_predicted_total !== null ? (float) $prediction->live_predicted_total : null,
+            'live_outs_remaining' => $prediction->live_outs_remaining !== null ? (int) $prediction->live_outs_remaining : null,
+            'live_updated_at' => $updatedAt?->toIso8601String(),
+            'is_stale' => $isStale,
+            'signal' => $this->liveSignalLabel($prediction, $isStale, $probabilityDelta),
+            'reason_codes' => $this->liveSignalReasons($prediction, $isStale, $probabilityDelta),
+            'risk_flags' => $isStale ? ['live_model_stale'] : [],
+        ];
+    }
+
+    protected function liveSignalLabel(Prediction $prediction, bool $isStale, ?float $probabilityDelta): string
+    {
+        $status = (string) ($prediction->game?->status ?? '');
+
+        return match (true) {
+            $prediction->live_win_probability === null => 'live_model_missing',
+            $isStale => 'stale_live_model',
+            $status === config('mlb.statuses.delayed') => 'delayed_game_monitor',
+            ($probabilityDelta ?? 0.0) >= 0.20 => 'major_live_swing',
+            max((float) $prediction->live_win_probability, 1 - (float) $prediction->live_win_probability) >= 0.75 => 'live_control',
+            default => 'live_monitor',
+        };
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function liveSignalReasons(Prediction $prediction, bool $isStale, ?float $probabilityDelta): array
+    {
+        $reasons = ['live_prediction_monitor'];
+
+        if ($prediction->live_win_probability !== null) {
+            $reasons[] = 'live_win_probability_available';
+        }
+
+        if ($prediction->live_predicted_spread !== null) {
+            $reasons[] = 'live_spread_available';
+        }
+
+        if ($prediction->live_predicted_total !== null) {
+            $reasons[] = 'live_total_available';
+        }
+
+        if (($probabilityDelta ?? 0.0) >= 0.20) {
+            $reasons[] = 'major_pregame_to_live_probability_move';
+        }
+
+        if ($isStale) {
+            $reasons[] = 'live_model_stale';
+        }
+
+        if (($prediction->game?->status ?? null) === config('mlb.statuses.delayed')) {
+            $reasons[] = 'game_delayed';
+        }
+
+        return array_values(array_unique($reasons));
     }
 
     protected function runLineEdge(Prediction $prediction): float

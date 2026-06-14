@@ -59,6 +59,11 @@ The primary Vue-facing internal API is the Laravel JSON API mounted under
 `/api/v2`. Legacy product routes remain mounted under `/api/v1` for external
 or not-yet-retired clients, with usage logging documented in
 [api-v2-contracts-and-retirement.md](/Users/bey/Herd/github/picksports/docs/api-v2-contracts-and-retirement.md).
+The current v2 route matrix, filters, frontend owners, and contract-test
+coverage are documented in
+[api-v2-reference.md](/Users/bey/Herd/github/picksports/docs/api-v2-reference.md).
+The generated route-level OpenAPI artifact is
+[openapi-v2.json](/Users/bey/Herd/github/picksports/docs/openapi-v2.json).
 
 Route bootstrap:
 - [routes/api.php](/Users/bey/Herd/github/picksports/routes/api.php)

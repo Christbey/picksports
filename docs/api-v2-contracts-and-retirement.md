@@ -4,6 +4,11 @@ This document is the operating companion to `docs/api-v2-modernization-plan.md`.
 It lists the Vue-facing contracts that have moved to `/api/v2`, where to change
 them, and how to validate the remaining `/api/v1` usage before retirement.
 
+For the full current route matrix, supported filters, authentication rules, and
+contract-test ownership, see `docs/api-v2-reference.md`. The generated
+OpenAPI artifact lives in `docs/openapi-v2.json` and can be refreshed with
+`php artisan api:v2-openapi-generate`.
+
 ## Current V2 Vue Surfaces
 
 | Surface | V2 endpoint | Frontend owner | Backend owner | Contract tests |

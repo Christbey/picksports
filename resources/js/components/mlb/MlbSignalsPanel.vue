@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+    Activity,
     AlertTriangle,
     BadgeCheck,
     BarChart3,
@@ -10,7 +11,7 @@ import {
     Target,
     TrendingUp,
 } from 'lucide-vue-next';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { Card, CardContent, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -28,8 +29,21 @@ interface SignalRow {
     team_name?: string;
     matchup?: string;
     signal?: string;
+    status?: string;
+    inning?: number | null;
+    inning_state?: string | null;
+    home_score?: number | null;
+    away_score?: number | null;
     pick_side?: string;
     win_probability?: number;
+    pregame_win_probability?: number;
+    live_win_probability?: number;
+    live_probability_delta?: number;
+    live_predicted_spread?: number;
+    live_predicted_total?: number;
+    live_outs_remaining?: number;
+    live_updated_at?: string | null;
+    is_stale?: boolean;
     model_probability?: number;
     confidence_score?: number;
     predicted_spread?: number;
@@ -132,6 +146,7 @@ interface SignalsPayload {
     run_line: SignalRow[];
     totals: SignalRow[];
     ballpark: SignalRow[];
+    live: SignalRow[];
     streaks: SignalRow[];
 }
 
@@ -143,8 +158,10 @@ const loading = ref(true);
 const error = ref<string | null>(null);
 const payload = ref<SignalsPayload | null>(null);
 const api = useApiV2Client();
+let refreshTimer: number | undefined;
 
 const bestBets = computed(() => payload.value?.recommended_bets ?? []);
+const liveRows = computed(() => payload.value?.live ?? []);
 const moneylineReadiness = computed(
     () => payload.value?.moneyline_readiness ?? null,
 );
@@ -212,6 +229,15 @@ const signalGroups = computed(() => [
             `${row.venue_name ?? row.matchup ?? ''} | ${labelize(row.home_run_signal)} | ${labelize(row.runs_signal)}`,
     },
     {
+        key: 'live',
+        title: 'Live Monitor',
+        icon: Activity,
+        rows: payload.value?.live ?? [],
+        metric: (row: SignalRow) => formatPercent(row.live_win_probability),
+        detail: (row: SignalRow) =>
+            `${formatLiveScore(row)} | ${labelize(row.signal)}${row.is_stale ? ' | stale' : ''}`,
+    },
+    {
         key: 'streaks',
         title: 'Streaks',
         icon: AlertTriangle,
@@ -256,6 +282,12 @@ const bettingSignalMix = computed(() => [
         detail: 'run total',
     },
     {
+        key: 'live',
+        label: 'Live',
+        count: payload.value?.live?.length ?? 0,
+        detail: 'monitor',
+    },
+    {
         key: 'context',
         label: 'Park/Streak',
         count:
@@ -289,6 +321,19 @@ function formatSignedRuns(value?: number | null): string | null {
 function formatNumber(value?: number | null): string {
     if (value == null) return '-';
     return value.toFixed(1);
+}
+
+function formatLiveScore(row: SignalRow): string {
+    const score =
+        row.away_score != null && row.home_score != null
+            ? `${row.away_score}-${row.home_score}`
+            : 'score pending';
+    const inning =
+        row.inning != null
+            ? `${labelize(row.inning_state)} ${row.inning}`.trim()
+            : labelize(row.status);
+
+    return `${score} ${inning}`.trim();
 }
 
 function formatAmericanOdds(value?: number | null): string {
@@ -354,8 +399,10 @@ function scoreBarClass(score?: number | null): string {
     return 'bg-amber-500';
 }
 
-async function loadSignals(): Promise<void> {
-    loading.value = true;
+async function loadSignals(silent = false): Promise<void> {
+    if (!silent) {
+        loading.value = true;
+    }
     error.value = null;
 
     try {
@@ -371,11 +418,28 @@ async function loadSignals(): Promise<void> {
         error.value =
             e instanceof Error ? e.message : 'Unable to load MLB signals';
     } finally {
-        loading.value = false;
+        if (!silent) {
+            loading.value = false;
+        }
     }
 }
 
-onMounted(loadSignals);
+function startPolling(): void {
+    refreshTimer = window.setInterval(() => {
+        void loadSignals(true);
+    }, 30000);
+}
+
+onMounted(() => {
+    void loadSignals();
+    startPolling();
+});
+
+onUnmounted(() => {
+    if (refreshTimer !== undefined) {
+        window.clearInterval(refreshTimer);
+    }
+});
 </script>
 
 <template>
@@ -434,6 +498,12 @@ onMounted(loadSignals);
                             </span>
                             <span class="rounded-full border px-2.5 py-1">
                                 {{ bestBets.length }} bets
+                            </span>
+                            <span
+                                v-if="liveRows.length > 0"
+                                class="rounded-full border px-2.5 py-1"
+                            >
+                                {{ liveRows.length }} live
                             </span>
                             <span class="rounded-full border px-2.5 py-1">
                                 {{ totalSignalCount }} signals
@@ -700,6 +770,96 @@ onMounted(loadSignals);
                             Pass rate
                             {{ payload.pass_summary.pass_rate.toFixed(1) }}%
                         </span>
+                    </div>
+
+                    <div
+                        v-if="liveRows.length > 0"
+                        class="rounded-lg border border-sky-500/30 bg-sky-500/5 p-3"
+                    >
+                        <div class="mb-3 flex items-center gap-2">
+                            <Activity class="h-4 w-4 text-sky-600" />
+                            <div class="text-sm font-semibold">
+                                Live Monitor
+                            </div>
+                        </div>
+                        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                            <div
+                                v-for="row in liveRows.slice(0, 4)"
+                                :key="`live-${row.game_id}`"
+                                class="rounded-lg border border-border/80 bg-card/70 p-3"
+                            >
+                                <div
+                                    class="mb-2 flex items-start justify-between gap-3"
+                                >
+                                    <div class="min-w-0">
+                                        <div
+                                            class="truncate text-sm font-semibold"
+                                        >
+                                            {{ row.matchup }}
+                                        </div>
+                                        <div
+                                            class="truncate text-xs text-muted-foreground"
+                                        >
+                                            {{ formatLiveScore(row) }}
+                                        </div>
+                                    </div>
+                                    <span
+                                        class="shrink-0 rounded-full border px-2 py-1 text-xs font-medium"
+                                        :class="
+                                            row.is_stale
+                                                ? 'border-amber-500/50 text-amber-700 dark:text-amber-300'
+                                                : 'border-sky-500/50 text-sky-700 dark:text-sky-300'
+                                        "
+                                    >
+                                        {{ labelize(row.signal) }}
+                                    </span>
+                                </div>
+                                <div class="grid gap-2 text-xs sm:grid-cols-3">
+                                    <div class="rounded-md bg-muted/40 px-2 py-1">
+                                        <div class="text-muted-foreground">
+                                            Live WP
+                                        </div>
+                                        <div class="font-medium">
+                                            {{
+                                                formatPercent(
+                                                    row.live_win_probability,
+                                                ) ?? '-'
+                                            }}
+                                        </div>
+                                    </div>
+                                    <div class="rounded-md bg-muted/40 px-2 py-1">
+                                        <div class="text-muted-foreground">
+                                            Spread
+                                        </div>
+                                        <div class="font-medium">
+                                            {{
+                                                formatNumber(
+                                                    row.live_predicted_spread,
+                                                )
+                                            }}
+                                        </div>
+                                    </div>
+                                    <div class="rounded-md bg-muted/40 px-2 py-1">
+                                        <div class="text-muted-foreground">
+                                            Total
+                                        </div>
+                                        <div class="font-medium">
+                                            {{
+                                                formatNumber(
+                                                    row.live_predicted_total,
+                                                )
+                                            }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    class="mt-2 text-xs text-muted-foreground"
+                                >
+                                    {{ row.live_outs_remaining ?? '-' }} outs
+                                    remaining
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div

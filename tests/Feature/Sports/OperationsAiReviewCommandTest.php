@@ -193,3 +193,51 @@ it('includes pipeline order violation facts in operations ai review output', fun
         ->and(data_get($report, 'findings.failing.0.facts.violations.0.label'))->toBe('weather before predictions')
         ->and(data_get($report, 'findings.failing.0.facts.violations.0.recommended_action'))->toBe('mlb:generate-predictions');
 });
+
+it('includes live prediction freshness facts and operator guidance', function () {
+    $run = ValidationRun::query()->create([
+        'command_name' => 'healthcheck:validate-data',
+        'scope' => 'sport:mlb',
+        'status' => 'failing',
+        'summary' => ['passing' => 10, 'warning' => 0, 'failing' => 1],
+        'ai_summary' => [],
+        'started_at' => now()->subMinute(),
+        'completed_at' => now(),
+    ]);
+
+    ValidationFinding::query()->create([
+        'validation_run_id' => $run->id,
+        'sport' => 'mlb',
+        'check_type' => 'validation_live_prediction_freshness',
+        'scope_type' => 'sport',
+        'scope_id' => 'mlb',
+        'status' => 'failing',
+        'severity' => 'failing',
+        'message' => '1/1 live mlb game(s) have missing or stale live prediction data.',
+        'recommended_action' => 'espn:sync-mlb-games-scoreboard',
+        'facts' => [
+            'live_games' => 1,
+            'problem_games' => 1,
+            'stale_live_models' => 1,
+            'stale_after_minutes' => 6,
+            'sample_game_ids' => [123],
+        ],
+        'detected_at' => now(),
+    ]);
+
+    $exit = Artisan::call('operations:ai-review', [
+        '--sport' => 'mlb',
+        '--season' => 2026,
+        '--date' => '2026-06-14',
+        '--json' => true,
+    ]);
+
+    expect($exit)->toBe(0);
+
+    $report = json_decode(Artisan::output(), true);
+
+    expect(data_get($report, 'findings.failing.0.facts.live_games'))->toBe(1)
+        ->and(data_get($report, 'findings.failing.0.facts.stale_live_models'))->toBe(1)
+        ->and($report['recommended_actions'])->toContain('espn:sync-mlb-games-scoreboard')
+        ->and($report['operator_notes'])->toContain('Live prediction freshness findings should be treated as scoreboard heartbeat issues, not model-generation issues.');
+});

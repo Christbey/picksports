@@ -55,21 +55,25 @@ class InjuryFreshnessCheck implements ValidationCheck
             ];
         }
 
-        $ageHours = now()->diffInHours($freshAt);
-        $status = 'passing';
+        $now = now();
+        $freshAtIsFuture = $freshAt->greaterThan($now);
+        $ageHours = $freshAtIsFuture ? 0 : (int) $freshAt->diffInHours($now);
+        $status = $freshAtIsFuture ? 'warning' : 'passing';
 
-        if ($ageHours > $failingHours) {
+        if (! $freshAtIsFuture && $ageHours > $failingHours) {
             $status = 'failing';
-        } elseif ($ageHours > $warningHours) {
+        } elseif (! $freshAtIsFuture && $ageHours > $warningHours) {
             $status = 'warning';
         }
 
-        $message = match ($status) {
-            'passing' => "Injury data is fresh. Last refresh {$ageHours} hour(s) ago.",
-            'warning' => "Injury data is getting stale. Last refresh {$ageHours} hour(s) ago.",
-            'failing' => "Injury data is stale. Last refresh {$ageHours} hour(s) ago.",
-            default => 'Injury data freshness is unknown.',
-        };
+        $message = $freshAtIsFuture
+            ? "Injury data refresh timestamp is in the future ({$freshAt->toDateTimeString()}); check server and provider clocks."
+            : match ($status) {
+                'passing' => "Injury data is fresh. Last refresh {$ageHours} hour(s) ago.",
+                'warning' => "Injury data is getting stale. Last refresh {$ageHours} hour(s) ago.",
+                'failing' => "Injury data is stale. Last refresh {$ageHours} hour(s) ago.",
+                default => 'Injury data freshness is unknown.',
+            };
 
         return [
             'check_type' => 'validation_injury_freshness',
@@ -84,6 +88,7 @@ class InjuryFreshnessCheck implements ValidationCheck
                 'last_data_update_at' => $lastDataUpdate,
                 'fresh_at' => $freshAt->toDateTimeString(),
                 'age_hours' => $ageHours,
+                'fresh_at_is_future' => $freshAtIsFuture,
                 'warning_after_hours' => $warningHours,
                 'failing_after_hours' => $failingHours,
             ],

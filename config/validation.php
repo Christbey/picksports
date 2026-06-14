@@ -14,11 +14,12 @@ return [
 
     'sports' => [
         'mlb' => [
-            'tables' => ['teams' => 'mlb_teams', 'games' => 'mlb_games', 'team_stats' => 'mlb_team_stats', 'player_stats' => 'mlb_player_stats', 'plays' => 'mlb_plays', 'weather' => 'mlb_game_weather', 'injuries' => 'mlb_player_injuries', 'player_props' => 'mlb_player_props'],
+            'tables' => ['teams' => 'mlb_teams', 'games' => 'mlb_games', 'predictions' => 'mlb_predictions', 'team_stats' => 'mlb_team_stats', 'player_stats' => 'mlb_player_stats', 'plays' => 'mlb_plays', 'weather' => 'mlb_game_weather', 'injuries' => 'mlb_player_injuries', 'player_props' => 'mlb_player_props'],
             'models' => ['game' => Game::class],
             'active_months' => [3, 4, 5, 6, 7, 8, 9, 10],
             'expected_games_per_day' => 10,
             'market_window_days' => 1,
+            'live_prediction_remaining_column' => 'live_outs_remaining',
             'weather_command' => 'mlb:sync-game-weather --days-back=0 --days-forward=7 --force',
             'injuries_command' => 'espn:sync-mlb-injuries',
             'futures_enabled' => true,
@@ -120,6 +121,11 @@ return [
             'problem_fail_pct' => 0.20,
             'stale_after_hours' => 8,
             'final_stats_grace_hours' => 2,
+        ],
+        'live_prediction_freshness' => [
+            'stale_after_minutes' => 6,
+            'problem_warn_pct' => 0.01,
+            'problem_fail_pct' => 0.01,
         ],
         'upcoming_game_readiness' => [
             'problem_warn_pct' => 0.05,

@@ -11,7 +11,10 @@ Build a new Laravel-first API layer under `/api/v2` that supports:
 - AI-assisted development and validation
 
 Operating details, current migrated contract examples, and the V1 retirement
-runbook live in `docs/api-v2-contracts-and-retirement.md`.
+runbook live in `docs/api-v2-contracts-and-retirement.md`. The full current
+route matrix, supported filters, auth rules, and contract-test ownership live
+in `docs/api-v2-reference.md`. The generated OpenAPI artifact lives in
+`docs/openapi-v2.json`.
 
 This is a parallel migration, not a rewrite.
 
@@ -145,6 +148,8 @@ Access logic must never be duplicated in resources or controllers.
 - All new functionality targets `/api/v2` only.
 - Backend and frontend implementation must stay DRY.
 - The API and frontend must be AI-friendly: predictable file locations, explicit contracts, small single-purpose classes/composables, documented payload examples, and tests that agents can use to verify behavior.
+- Refresh `docs/openapi-v2.json` with `php artisan api:v2-openapi-generate`
+  whenever the v2 route surface changes.
 
 ## Desired Laravel Structure
 

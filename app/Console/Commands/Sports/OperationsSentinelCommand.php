@@ -97,7 +97,7 @@ class OperationsSentinelCommand extends Command
      *
      * @var array<int, string>
      */
-    private array $seasonToDateStatBackfillSports = ['nba', 'nfl', 'mlb'];
+    private array $seasonToDateStatBackfillSports = ['nba', 'nfl', 'mlb', 'wnba'];
 
     public function handle(SportsPipelineRegistry $registry): int
     {

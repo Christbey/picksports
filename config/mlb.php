@@ -539,6 +539,7 @@ return [
         'total_min_edge' => env('MLB_SIGNALS_TOTAL_MIN_EDGE', 0.75),
         'min_streak_length' => env('MLB_SIGNALS_MIN_STREAK_LENGTH', 4),
         'odds_stale_hours' => env('MLB_SIGNALS_ODDS_STALE_HOURS', 12),
+        'live_stale_minutes' => env('MLB_SIGNALS_LIVE_STALE_MINUTES', 6),
         'bet_filter' => [
             'moneyline_enabled' => env('MLB_BET_FILTER_MONEYLINE_ENABLED', true),
             'run_line_enabled' => env('MLB_BET_FILTER_RUN_LINE_ENABLED', false),

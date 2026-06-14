@@ -185,6 +185,47 @@ it('defaults mlb team metrics to regular season rows', function () {
         ->assertJsonCount(2, 'data');
 });
 
+it('defaults wnba team metrics to regular season rows', function () {
+    actAsV2TeamMetricContractUser();
+
+    $team = WnbaTeam::factory()->create([
+        'abbreviation' => 'LV',
+    ]);
+
+    createV2TeamMetricContractMetric(WnbaTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('wnba.season.types.postseason', 3),
+        'wins' => 2,
+        'losses' => 0,
+        'offensive_efficiency' => 111.0,
+        'calculation_date' => '2026-09-20',
+    ]);
+
+    $regularMetric = createV2TeamMetricContractMetric(WnbaTeamMetric::class, [
+        'team_id' => $team->id,
+        'season' => 2026,
+        'season_type' => (string) config('wnba.season.types.regular', 2),
+        'wins' => 18,
+        'losses' => 8,
+        'offensive_efficiency' => 104.5,
+        'calculation_date' => '2026-06-14',
+    ]);
+
+    $this->getJson('/api/v2/sports/wnba/metrics/teams?season=2026&per_page=5')
+        ->assertOk()
+        ->assertJsonPath('meta.filters.season_type', (string) config('wnba.season.types.regular', 2))
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $regularMetric->id)
+        ->assertJsonPath('data.0.wins', 18)
+        ->assertJsonPath('data.0.losses', 8)
+        ->assertJsonPath('data.0.record_label', '18-8');
+
+    $this->getJson('/api/v2/sports/wnba/metrics/teams?season=2026&season_type=all&per_page=5')
+        ->assertOk()
+        ->assertJsonCount(2, 'data');
+});
+
 it('exposes every mlb team metrics table column used by the frontend', function () {
     actAsV2TeamMetricContractUser();
 

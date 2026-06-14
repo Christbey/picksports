@@ -29,12 +29,13 @@ class SignalController extends Controller
             'controller' => static::class,
             'season' => $season,
             'as_of_date' => $asOfDate->toDateString(),
+            'cache_minute' => $asOfDate->format('Y-m-d H:i'),
         ]);
 
         $payload = $this->sportsViewCache->remember(
             segment: SportsViewCache::SEGMENT_PREDICTIONS_INDEX,
             key: $cacheKey,
-            ttlSeconds: 120,
+            ttlSeconds: 30,
             resolver: fn (): array => [
                 'data' => $this->signalService->signals($season, $asOfDate),
             ],

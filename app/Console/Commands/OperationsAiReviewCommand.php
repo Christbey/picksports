@@ -128,6 +128,10 @@ class OperationsAiReviewCommand extends Command
         $stageGroup = (string) data_get($stage, 'stage_group', 'unknown');
         $lowVolumeExpected = $stageGroup === 'championship'
             && $warnings->contains(fn (ValidationFinding $finding): bool => $finding->check_type === 'validation_game_coverage');
+        $hasLiveFreshnessFinding = $findings->contains(
+            fn (ValidationFinding $finding): bool => $finding->check_type === 'validation_live_prediction_freshness'
+                && in_array($finding->status, ['failing', 'warning'], true)
+        );
 
         $status = match (true) {
             $failing->isNotEmpty() => 'blocked',
@@ -166,7 +170,7 @@ class OperationsAiReviewCommand extends Command
             'recommended_actions' => $requiredActions === []
                 ? ['No operational action required. Continue scheduled sentinel monitoring.']
                 : $requiredActions,
-            'operator_notes' => $this->operatorNotes($status, $stage, $lowVolumeExpected, $analyses),
+            'operator_notes' => $this->operatorNotes($status, $stage, $lowVolumeExpected, $hasLiveFreshnessFinding, $analyses),
             'generated_by' => data_get($aiSummary, 'generated_by', 'operations-ai-review-v1'),
         ];
     }
@@ -232,6 +236,12 @@ class OperationsAiReviewCommand extends Command
             'games_with_unknown_roof_status',
             'market_ready_weather_problem_games',
             'market_ready_missing_weather_games',
+            'live_games',
+            'problem_games',
+            'missing_predictions',
+            'missing_live_model_fields',
+            'stale_live_models',
+            'stale_after_minutes',
             'blocking_odds_problem_games',
             'rules_checked',
             'violations',
@@ -258,7 +268,7 @@ class OperationsAiReviewCommand extends Command
      * @param  Collection<int, SportsAiPredictionAnalysis>  $analyses
      * @return array<int, string>
      */
-    private function operatorNotes(string $status, array $stage, bool $lowVolumeExpected, Collection $analyses): array
+    private function operatorNotes(string $status, array $stage, bool $lowVolumeExpected, bool $hasLiveFreshnessFinding, Collection $analyses): array
     {
         $notes = [
             'Stage context: '.strtoupper((string) data_get($stage, 'sport')).' is in '.(string) data_get($stage, 'stage').' / '.(string) data_get($stage, 'stage_group').'.',
@@ -270,6 +280,10 @@ class OperationsAiReviewCommand extends Command
 
         if ($analyses->isEmpty()) {
             $notes[] = 'No saved AI daily prediction analyses found for the selected as-of date.';
+        }
+
+        if ($hasLiveFreshnessFinding) {
+            $notes[] = 'Live prediction freshness findings should be treated as scoreboard heartbeat issues, not model-generation issues.';
         }
 
         if ($status === 'clear') {

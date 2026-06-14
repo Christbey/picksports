@@ -68,6 +68,10 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         'game_date' => '2026-05-24',
         'game_time' => '16:05:00',
         'status' => config('mlb.statuses.in_progress'),
+        'inning' => 6,
+        'inning_state' => 'top',
+        'home_score' => 3,
+        'away_score' => 2,
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'short_name' => 'CHC @ STL',
@@ -138,6 +142,11 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         'win_probability' => 0.62,
         'confidence_score' => 64,
         'vegas_spread' => null,
+        'live_predicted_spread' => 1.1,
+        'live_win_probability' => 0.71,
+        'live_predicted_total' => 7.6,
+        'live_outs_remaining' => 24,
+        'live_updated_at' => now(),
         'model_version' => 'test',
         'feature_version' => 'test',
         'blend_version' => 'test',
@@ -164,6 +173,10 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         ->assertJsonPath('data.moneyline_readiness.candidate_count', 1)
         ->assertJsonPath('data.moneyline_readiness.priced_count', 1)
         ->assertJsonPath('data.moneyline_readiness.usable_count', 1)
+        ->assertJsonPath('data.live.0.type', 'live')
+        ->assertJsonPath('data.live.0.matchup', 'CHC @ STL')
+        ->assertJsonPath('data.live.0.live_win_probability', 0.71)
+        ->assertJsonPath('data.live.0.signal', 'live_monitor')
         ->assertJsonPath('data.recommended_bets.0.type', 'moneyline')
         ->assertJsonPath('data.recommended_bets.0.classification', 'bet')
         ->assertJsonPath('data.ballpark.0.venue_name', 'Coors Field')

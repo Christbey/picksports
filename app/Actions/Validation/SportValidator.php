@@ -7,6 +7,7 @@ use App\Actions\Validation\Checks\FinalizedDataCompletenessCheck;
 use App\Actions\Validation\Checks\FuturesOddsFreshnessCheck;
 use App\Actions\Validation\Checks\GameCoverageCheck;
 use App\Actions\Validation\Checks\InjuryFreshnessCheck;
+use App\Actions\Validation\Checks\LivePredictionFreshnessCheck;
 use App\Actions\Validation\Checks\OddsCompletenessCheck;
 use App\Actions\Validation\Checks\PastScheduledGameStatusCheck;
 use App\Actions\Validation\Checks\PipelineOrderCheck;
@@ -35,6 +36,7 @@ class SportValidator
         $gameCoverage = new GameCoverageCheck;
         $teamStatCoverage = new TeamStatCoverageCheck;
         $currentDayGameDataFreshness = new CurrentDayGameDataFreshnessCheck;
+        $livePredictionFreshness = new LivePredictionFreshnessCheck;
         $scheduleWindowIntegrity = new ScheduleWindowIntegrityCheck;
         $upcomingGameReadiness = new UpcomingGameReadinessCheck;
         $pastScheduledGameStatus = new PastScheduledGameStatusCheck;
@@ -51,6 +53,7 @@ class SportValidator
             $gameCoverage,
             $teamStatCoverage,
             $currentDayGameDataFreshness,
+            $livePredictionFreshness,
             $scheduleWindowIntegrity,
             $upcomingGameReadiness,
             $pastScheduledGameStatus,
@@ -68,6 +71,7 @@ class SportValidator
             $gameCoverage,
             $teamStatCoverage,
             $currentDayGameDataFreshness,
+            $livePredictionFreshness,
             $scheduleWindowIntegrity,
             $upcomingGameReadiness,
             $pastScheduledGameStatus,

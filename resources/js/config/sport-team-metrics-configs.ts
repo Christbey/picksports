@@ -164,6 +164,7 @@ function createProBasketballTeamMetricsConfig(
         sport: params.sport,
         title: params.title,
         subtitle: params.subtitle,
+        defaultSeasonType: '2',
         seasonTypeOptions: params.seasonTypeOptions,
         teamLink: params.teamLink,
         defaultSort: 'net_rating',

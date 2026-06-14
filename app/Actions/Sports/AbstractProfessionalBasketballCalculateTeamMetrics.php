@@ -60,8 +60,9 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
 
     public function execute(Model $team, int $season, int|string|null $seasonType = null): ?Model
     {
-        $games = $this->getCompletedGamesForTeam($team, $season, $this->sportCode(), $seasonType);
-        $resolvedSeasonType = $this->resolveMetricSeasonType($games, $seasonType);
+        $requestedSeasonType = $this->requestedSeasonType($seasonType);
+        $games = $this->getCompletedGamesForTeam($team, $season, $this->sportCode(), $requestedSeasonType);
+        $resolvedSeasonType = $this->resolveMetricSeasonType($games, $requestedSeasonType);
 
         if ($games->isEmpty()) {
             if ($this->shouldLogNoGames()) {
@@ -286,5 +287,14 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
         return $resolved->count() === 1
             ? (string) $resolved->first()
             : (string) config($this->configPrefix().'.season.types.regular', 2);
+    }
+
+    protected function requestedSeasonType(int|string|null $seasonType): int|string|null
+    {
+        if ($seasonType !== null && $seasonType !== '') {
+            return $seasonType;
+        }
+
+        return config($this->configPrefix().'.season.default_team_metrics_type');
     }
 }

@@ -18,7 +18,7 @@ class WnbaTeamMetricFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'season_type' => '2',
         ];
     }
 }

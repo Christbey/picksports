@@ -130,6 +130,7 @@ it('aliases basketball efficiency fields to game page metric names', function ()
     createV2TeamMetricContractMetric(NbaTeamMetric::class, [
         'team_id' => $team->id,
         'season' => 2026,
+        'season_type' => '2',
         'offensive_efficiency' => 116.4,
         'defensive_efficiency' => 109.2,
         'net_rating' => 7.2,
@@ -333,13 +334,17 @@ it('derives mlb team metric records from completed games when stored rows are st
         'calculation_date' => '2026-06-12',
     ]);
 
-    $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&per_page=5')
-        ->assertOk()
-        ->assertJsonPath('data.0.wins', 1)
-        ->assertJsonPath('data.0.losses', 1)
-        ->assertJsonPath('data.0.games_played', 2)
-        ->assertJsonPath('data.0.record_label', '1-1')
-        ->assertJsonPath('data.0.record.source', 'derived_games');
+    $response = $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&per_page=5')
+        ->assertOk();
+
+    $row = collect($response->json('data'))->firstWhere('team_id', $team->id);
+
+    expect($row)->not->toBeNull()
+        ->and($row['wins'])->toBe(1)
+        ->and($row['losses'])->toBe(1)
+        ->and($row['games_played'])->toBe(2)
+        ->and($row['record_label'])->toBe('1-1')
+        ->and($row['record']['source'])->toBe('derived_games');
 });
 
 it('lists v2 team metric seasons and latest team metric with metadata', function (

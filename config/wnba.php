@@ -37,6 +37,13 @@ return [
             'postseason' => 3,
             'allstar' => 4,
         ],
+        'type_names' => [
+            'preseason' => 'Preseason',
+            'regular' => 'Regular Season',
+            'postseason' => 'Postseason',
+            'allstar' => 'All-Star',
+        ],
+        'default_team_metrics_type' => env('WNBA_DEFAULT_TEAM_METRICS_TYPE', 2),
         'games' => [
             'regular_season' => 40,
             'playoff_rounds' => 4,

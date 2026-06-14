@@ -24,7 +24,7 @@ class NbaGameFactory extends Factory
             'espn_uid' => $this->faker->unique()->numerify('s:40~l:46~e:#########'),
             'season' => $this->faker->numberBetween(2020, 2025),
             'week' => $this->faker->numberBetween(1, 26),
-            'season_type' => $this->faker->numberBetween(1, 3),
+            'season_type' => config('nba.season.types.regular', 2),
             'game_date' => $this->faker->date(),
             'game_time' => $this->faker->time(),
             'name' => $this->faker->words(3, true),

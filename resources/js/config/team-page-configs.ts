@@ -31,7 +31,7 @@ const basketballMetricTiles = [
         rankingKey: 'pace',
     },
     {
-        label: 'SOS',
+        label: 'SOS Elo',
         value: (m: any) => formatNumber(m.strength_of_schedule, 3),
         rankingKey: 'strength_of_schedule',
     },

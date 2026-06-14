@@ -100,6 +100,30 @@ it('returns null when no completed games exist', function () {
     expect($metric)->toBeNull();
 });
 
+it('does not save metrics when completed game stats are incomplete', function () {
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => 2,
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $this->opponent1->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'points' => 110,
+        'possessions' => 100.0,
+    ]);
+
+    $action = new CalculateTeamMetrics;
+    $metric = $action->execute($this->team, 2026, 2);
+
+    expect($metric)->toBeNull()
+        ->and(TeamMetric::query()->where('team_id', $this->team->id)->where('season', 2026)->exists())->toBeFalse();
+});
+
 it('estimates possessions when not provided', function () {
     $game = Game::factory()->create([
         'season' => 2026,
@@ -312,4 +336,61 @@ it('calculates metrics for multiple seasons separately', function () {
     // Metrics should be different (2026 had better performance)
     expect($metric2026->offensive_efficiency)->toBeGreaterThan($metric2025->offensive_efficiency);
     expect($metric2026->net_rating)->toBeGreaterThan($metric2025->net_rating);
+});
+
+it('stores regular season and postseason metrics separately', function () {
+    $regularGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => 2,
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $this->opponent1->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $regularGame->id,
+        'points' => 100,
+        'possessions' => 100.0,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->opponent1->id,
+        'game_id' => $regularGame->id,
+        'points' => 95,
+        'possessions' => 99.0,
+    ]);
+
+    $postseasonGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => 3,
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $this->opponent2->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $postseasonGame->id,
+        'points' => 120,
+        'possessions' => 96.0,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->opponent2->id,
+        'game_id' => $postseasonGame->id,
+        'points' => 108,
+        'possessions' => 98.0,
+    ]);
+
+    $action = new CalculateTeamMetrics;
+    $regularMetric = $action->execute($this->team, 2026, 2);
+    $postseasonMetric = $action->execute($this->team, 2026, 3);
+
+    expect($regularMetric)->not->toBeNull()
+        ->and($regularMetric->season_type)->toBe('2')
+        ->and($postseasonMetric)->not->toBeNull()
+        ->and($postseasonMetric->season_type)->toBe('3')
+        ->and(TeamMetric::query()->where('team_id', $this->team->id)->where('season', 2026)->count())->toBe(2)
+        ->and((float) $postseasonMetric->offensive_efficiency)->toBeGreaterThan((float) $regularMetric->offensive_efficiency);
 });

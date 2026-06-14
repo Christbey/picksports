@@ -30,6 +30,8 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
      */
     protected const TEAM_DISPLAY_FIELDS = [];
 
+    protected int|string|null $requestedMetricSeasonType = null;
+
     public function __construct()
     {
         $this->signature = $this->buildSignature();
@@ -42,10 +44,11 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
     {
         $calculateMetrics = app($this->calculateMetricsActionClass());
         $season = $this->option('season') ?? date('Y');
+        $this->requestedMetricSeasonType = $this->requestedSeasonType();
 
         $singleTeamResult = $this->handleSingleTeamMetricsCalculation(
             $season,
-            fn (Model $team, int|string $seasonValue) => $calculateMetrics->execute($team, $seasonValue),
+            fn (Model $team, int|string $seasonValue) => $this->calculateMetricForTeam($calculateMetrics, $team, $seasonValue),
             fn (Model $team) => $this->teamDisplayName($team)
         );
         if ($singleTeamResult !== null) {
@@ -60,7 +63,7 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
         $teams = $this->modifyTeamsQuery($teamModelClass::query(), $season)->get();
         $calculated = $this->runWithProgressBar(
             $teams,
-            fn ($team) => $calculateMetrics->execute($team, $season)
+            fn ($team) => $this->calculateMetricForTeam($calculateMetrics, $team, $season)
         );
 
         $totalTeams = $teams->count();
@@ -146,6 +149,26 @@ abstract class AbstractCalculateTeamMetricsCommand extends Command
             "%s\n {--season= : Calculate metrics for a specific season (defaults to current year)}\n {--team= : Calculate metrics for a specific team ID}",
             $this->commandName()
         );
+    }
+
+    protected function requestedSeasonType(): int|string|null
+    {
+        if (! $this->getDefinition()->hasOption('season-type')) {
+            return null;
+        }
+
+        $seasonType = $this->option('season-type');
+
+        return $seasonType !== null && $seasonType !== '' ? $seasonType : null;
+    }
+
+    protected function calculateMetricForTeam(mixed $calculateMetrics, Model $team, int|string $season): ?Model
+    {
+        if ($this->requestedMetricSeasonType !== null) {
+            return $calculateMetrics->execute($team, (int) $season, $this->requestedMetricSeasonType);
+        }
+
+        return $calculateMetrics->execute($team, (int) $season);
     }
 
     protected function commandName(): string

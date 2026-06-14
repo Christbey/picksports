@@ -5,8 +5,10 @@ namespace App\Actions\Sports;
 use App\Actions\Sports\Concerns\CalculatesTeamTrueEpaFromPlays;
 use App\Concerns\FiltersTeamGames;
 use App\Services\MetricValidator;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractProfessionalBasketballCalculateTeamMetrics
 {
@@ -56,9 +58,10 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
         return trim((string) (($team->city ?? '').' '.($team->name ?? '')));
     }
 
-    public function execute(Model $team, int $season): ?Model
+    public function execute(Model $team, int $season, int|string|null $seasonType = null): ?Model
     {
-        $games = $this->getCompletedGamesForTeam($team, $season, $this->sportCode());
+        $games = $this->getCompletedGamesForTeam($team, $season, $this->sportCode(), $seasonType);
+        $resolvedSeasonType = $this->resolveMetricSeasonType($games, $seasonType);
 
         if ($games->isEmpty()) {
             if ($this->shouldLogNoGames()) {
@@ -66,6 +69,7 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
                     'team_id' => $team->id,
                     'team_name' => $this->teamDisplayName($team),
                     'season' => $season,
+                    'season_type' => $resolvedSeasonType,
                     'sport' => $this->sportKey(),
                 ]);
             }
@@ -75,6 +79,21 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
 
         extract($this->gatherTeamStatsFromGames($games, $team));
         if (empty($teamStats)) {
+            return null;
+        }
+
+        if (count($teamStats) !== $games->count() || count($opponentStats) !== $games->count()) {
+            Log::warning('Skipping professional basketball team metrics because completed game stats are incomplete', [
+                'team_id' => $team->id,
+                'team_name' => $this->teamDisplayName($team),
+                'season' => $season,
+                'season_type' => $resolvedSeasonType,
+                'sport' => $this->sportKey(),
+                'completed_games' => $games->count(),
+                'team_stat_games' => count($teamStats),
+                'opponent_stat_games' => count($opponentStats),
+            ]);
+
             return null;
         }
 
@@ -105,6 +124,7 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
                 'team_id' => $team->id,
                 'team_name' => $this->teamDisplayName($team),
                 'season' => $season,
+                'season_type' => $resolvedSeasonType,
                 'sport' => $this->sportKey(),
                 'games_count' => count($teamStats),
                 'offensive_efficiency' => round($offensiveEfficiency, 1),
@@ -123,8 +143,12 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
                 'team_id' => $team->id,
                 'team_name' => $this->teamDisplayName($team),
                 'season' => $season,
+                'season_type' => $resolvedSeasonType,
             ]);
         }
+
+        $metricModel = $this->teamMetricModelClass();
+        $metricTable = (new $metricModel)->getTable();
 
         $payload = [
             'wins' => $record['wins'],
@@ -141,6 +165,10 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
             'calculation_date' => now()->toDateString(),
         ];
 
+        if (Schema::hasColumn($metricTable, 'season_type')) {
+            $payload['season_type'] = $resolvedSeasonType;
+        }
+
         if ($this->includesTrueEpaMetrics()) {
             $payload = [
                 ...$payload,
@@ -150,13 +178,17 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
             ];
         }
 
-        $metricModel = $this->teamMetricModelClass();
+        $identity = [
+            'team_id' => $team->id,
+            'season' => $season,
+        ];
+
+        if (Schema::hasColumn($metricTable, 'season_type')) {
+            $identity['season_type'] = $resolvedSeasonType;
+        }
 
         return $metricModel::updateOrCreate(
-            [
-                'team_id' => $team->id,
-                'season' => $season,
-            ],
+            $identity,
             $payload
         );
     }
@@ -221,19 +253,38 @@ abstract class AbstractProfessionalBasketballCalculateTeamMetrics
         return $fga - $orb + $to + (config($this->configPrefix().'.possession_coefficient') * $fta);
     }
 
-    public function executeForAllTeams(int $season): int
+    public function executeForAllTeams(int $season, int|string|null $seasonType = null): int
     {
         $teamModel = $this->teamModelClass();
         $teams = $teamModel::all();
         $calculated = 0;
 
         foreach ($teams as $team) {
-            $metric = $this->execute($team, $season);
+            $metric = $this->execute($team, $season, $seasonType);
             if ($metric) {
                 $calculated++;
             }
         }
 
         return $calculated;
+    }
+
+    protected function resolveMetricSeasonType(Collection $games, int|string|null $seasonType): string
+    {
+        if ($seasonType !== null && $seasonType !== '') {
+            return (string) collect($this->resolveSeasonTypeCandidates($this->sportKey(), $seasonType))
+                ->first(fn ($candidate) => is_numeric($candidate) || ctype_digit((string) $candidate), (string) $seasonType);
+        }
+
+        $resolved = $games
+            ->pluck('season_type')
+            ->filter(fn ($type) => $type !== null && $type !== '')
+            ->map(fn ($type) => (string) $type)
+            ->unique()
+            ->values();
+
+        return $resolved->count() === 1
+            ? (string) $resolved->first()
+            : (string) config($this->configPrefix().'.season.types.regular', 2);
     }
 }

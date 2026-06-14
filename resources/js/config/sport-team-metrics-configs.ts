@@ -131,22 +131,22 @@ function createProBasketballTeamMetricsConfig(
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'SOS',
+            label: 'SOS Elo',
             value: (m: any) => formatNumber(m.strength_of_schedule, 3),
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'Form',
+            label: 'L5 Form',
             value: (m: any) => formatNumber(m.recent_form_rating, 2),
             class: (m: any) => ratingClass(m.recent_form_rating, 3),
         },
         {
-            label: 'InjAdj',
+            label: 'Avail Elo',
             value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'Fatigue',
+            label: 'Sched Fat',
             value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
             class: (m: any) => fatigueClass(m.rest_travel_fatigue),
         },

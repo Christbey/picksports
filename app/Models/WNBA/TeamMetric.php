@@ -14,9 +14,17 @@ class TeamMetric extends Model
 
     protected $table = 'wnba_team_metrics';
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $metric): void {
+            $metric->season_type ??= (string) config('wnba.season.types.regular', 2);
+        });
+    }
+
     protected $fillable = [
         'team_id',
         'season',
+        'season_type',
         'wins',
         'losses',
         'offensive_efficiency',
@@ -39,6 +47,7 @@ class TeamMetric extends Model
             'net_rating' => 'decimal:1',
             'wins' => 'integer',
             'losses' => 'integer',
+            'season_type' => 'string',
             'tempo' => 'decimal:1',
             'strength_of_schedule' => 'decimal:3',
             'recent_form_rating' => 'decimal:3',

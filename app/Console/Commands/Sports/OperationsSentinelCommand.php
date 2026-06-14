@@ -99,6 +99,14 @@ class OperationsSentinelCommand extends Command
      */
     private array $seasonToDateStatBackfillSports = ['nba', 'nfl', 'mlb', 'wnba'];
 
+    /**
+     * WNBA team metrics are strict about complete game-level stat rows and the
+     * schedule is small enough that inline repair is preferable to queue drift.
+     *
+     * @var array<int, string>
+     */
+    private array $inlineSeasonToDateStatBackfillSports = ['wnba'];
+
     public function handle(SportsPipelineRegistry $registry): int
     {
         $lock = Cache::lock('sports:operations-sentinel', self::LOCK_SECONDS);
@@ -357,6 +365,26 @@ class OperationsSentinelCommand extends Command
             $findings->count(),
             $checkTypes->implode(', '),
         ));
+
+        if ($checkTypes->contains('validation_team_stat_coverage') && ! $this->option('skip-stats')) {
+            $command = $this->gameDetailsCommands[$sport] ?? null;
+
+            if ($command) {
+                $this->warn(sprintf(
+                    'Validation found missing %s team stat coverage; running season-to-date game-detail repair inline.',
+                    strtoupper($sport),
+                ));
+
+                $this->callAndRecord($command, [
+                    '--latest' => true,
+                    '--limit' => max(0, (int) $this->option('stat-limit')),
+                    '--sync' => true,
+                ], $sport, 'sentinel-repair');
+                $this->output->write(Artisan::output());
+                $handled = true;
+            }
+        }
+
         $gameDetailEventIds = $findings
             ->whereIn('check_type', $repairableGameDetailChecks)
             ->flatMap(fn ($finding) => $this->eventIdsFromFinding($sport, (array) $finding->facts))
@@ -503,6 +531,7 @@ class OperationsSentinelCommand extends Command
                 '--latest' => true,
                 '--limit' => $limit,
                 '--queue' => $this->queueDrainQueue(),
+                '--sync' => $this->shouldRunSeasonToDateStatBackfillInline($sport),
             ], $sport, 'operations-sentinel');
             $this->output->write(Artisan::output());
         }
@@ -521,6 +550,11 @@ class OperationsSentinelCommand extends Command
             '--queue' => $this->queueDrainQueue(),
         ], $sport, 'operations-sentinel');
         $this->output->write(Artisan::output());
+    }
+
+    private function shouldRunSeasonToDateStatBackfillInline(string $sport): bool
+    {
+        return in_array($sport, $this->inlineSeasonToDateStatBackfillSports, true);
     }
 
     private function runModelPipeline(SportsPipelineRegistry $registry, string $sport, int $season, CarbonInterface $referenceDate): void

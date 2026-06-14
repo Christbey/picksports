@@ -3,6 +3,7 @@
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Actions\Validation\SportValidator;
+use App\Models\CommandHeartbeat;
 use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Team as MlbTeam;
 use App\Services\ESPN\NBA\EspnService;
@@ -187,6 +188,70 @@ it('runs season-to-date missing stat backfill for wnba', function () {
         ->expectsOutput('Backfilling WNBA completed games still missing player/team stats across the season.')
         ->expectsOutputToContain('Finding all completed games without stats')
         ->assertExitCode(0);
+
+    expect(CommandHeartbeat::query()
+        ->where('sport', 'wnba')
+        ->where('command', 'like', 'espn:sync-wnba-game-details%--sync%')
+        ->exists())->toBeTrue();
+});
+
+it('repairs wnba team stat coverage validation with an inline game-detail sweep', function () {
+    $this->travelTo('2026-06-01 08:00:00');
+
+    $syncClass = App\Actions\ESPN\WNBA\SyncGamesFromScoreboard::class;
+    $sync = m::mock($syncClass);
+    $sync->shouldReceive('execute')->once()->with('20260601')->andReturn(0);
+    $this->app->instance($syncClass, $sync);
+
+    $validator = m::mock(SportValidator::class);
+    $validator->shouldReceive('validate')
+        ->once()
+        ->with('wnba', 'full')
+        ->andReturn([[
+            'check_type' => 'validation_team_stat_coverage',
+            'status' => 'failing',
+            'message' => '2/10 completed wnba game(s) are missing one or both team stat rows.',
+            'metadata' => [
+                'sample_games' => [[
+                    'game_id' => 1,
+                    'espn_event_id' => '401866519',
+                    'matchup' => 'NY @ CON',
+                    'reasons' => ['missing_full_team_stats'],
+                ]],
+            ],
+            'recommended_action' => 'espn:sync-wnba-game-details',
+        ]]);
+    $validator->shouldReceive('validate')
+        ->once()
+        ->with('wnba', 'full')
+        ->andReturn([[
+            'check_type' => 'validation_team_stat_coverage',
+            'status' => 'passing',
+            'message' => 'Team stat coverage looks healthy.',
+            'metadata' => [],
+        ]]);
+    $this->app->instance(SportValidator::class, $validator);
+
+    $this->artisan('sports:operations-sentinel', [
+        '--sport' => 'wnba',
+        '--from-date' => '2026-06-01',
+        '--to-date' => '2026-06-01',
+        '--season' => 2026,
+        '--skip-sync-pipeline' => true,
+        '--skip-queue-drain' => true,
+        '--skip-model-pipeline' => true,
+        '--skip-ai-analysis' => true,
+        '--skip-ai-review' => true,
+    ])
+        ->expectsOutput('Validation found missing WNBA team stat coverage; running season-to-date game-detail repair inline.')
+        ->expectsOutput('Running WNBA validation after targeted validation repair...')
+        ->assertExitCode(0);
+
+    expect(CommandHeartbeat::query()
+        ->where('sport', 'wnba')
+        ->where('source', 'sentinel-repair')
+        ->where('command', 'like', 'espn:sync-wnba-game-details%--sync%')
+        ->exists())->toBeTrue();
 });
 
 it('syncs mlb scoreboards from the regular-season opener when completed-game coverage looks wrong', function () {

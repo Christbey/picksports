@@ -788,12 +788,12 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
     sortOptions: [
         {
             key: 'offensive_rating',
-            label: 'Offense',
+            label: 'Offense+',
             getValue: (m: any) => m.offensive_rating,
         },
         {
             key: 'pitching_rating',
-            label: 'Pitching',
+            label: 'Pitching+',
             getValue: (m: any) => m.pitching_rating,
         },
         {
@@ -873,32 +873,32 @@ export const mlbTeamMetricsConfig = createSportTeamMetricsConfig({
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'ORtg',
+            label: 'Off+',
             value: (m: any) => formatNumber(m.offensive_rating),
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'PRtg',
+            label: 'Pitch+',
             value: (m: any) => formatNumber(m.pitching_rating),
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'SOS',
+            label: 'SOS Elo',
             value: (m: any) => formatNumber(m.strength_of_schedule, 3),
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'Form',
+            label: 'L5 Form',
             value: (m: any) => formatNumber(m.recent_form_rating, 2),
             class: (m: any) => ratingClass(m.recent_form_rating, 2),
         },
         {
-            label: 'InjAdj',
+            label: 'Avail Elo',
             value: (m: any) => formatNumber(m.injury_adjusted_team_rating, 1),
             class: () => 'text-muted-foreground',
         },
         {
-            label: 'Fatigue',
+            label: 'Sched Fat',
             value: (m: any) => formatNumber(m.rest_travel_fatigue, 2),
             class: (m: any) => fatigueClass(m.rest_travel_fatigue),
         },

@@ -2,6 +2,9 @@
 
 use App\Actions\MLB\CalculateTeamMetrics;
 use App\Models\MLB\Game;
+use App\Models\MLB\Player;
+use App\Models\MLB\PlayerInjury;
+use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Models\MLB\TeamStat;
@@ -409,7 +412,7 @@ it('ignores opening-day spring training finals when calculating current-season m
         ->and(TeamMetric::query()->where('team_id', $this->team->id)->where('season', 2026)->exists())->toBeFalse();
 });
 
-it('calculates offensive rating based on runs, batting, and power', function () {
+it('calculates offense plus as a 100-centered runs, ops, and power index', function () {
     $opponent = Team::factory()->create();
 
     $game = Game::factory()->create([
@@ -425,7 +428,11 @@ it('calculates offensive rating based on runs, batting, and power', function () 
         'runs' => 6,
         'hits' => 12,
         'at_bats' => 36,
+        'doubles' => 0,
+        'triples' => 0,
         'walks' => 5,
+        'hit_by_pitch' => null,
+        'sacrifice_flies' => null,
         'home_runs' => 3,
     ]);
 
@@ -436,13 +443,12 @@ it('calculates offensive rating based on runs, batting, and power', function () 
 
     $metric = $this->action->execute($this->team, $this->season);
 
-    // Formula: (runs_per_game * 20) + (batting_avg * 100) + (home_run_rate * 10)
-    // (6 * 20) + (0.333 * 100) + (3 * 10) = 120 + 33.3 + 30 = 183.3
-    expect($metric->offensive_rating)->toBeGreaterThan(180)
-        ->and($metric->offensive_rating)->toBeLessThan(185);
+    // Formula: 100 + ((R/G - 4.40) * 12) + ((OPS - .720) * 120) + ((HR/G - 1.10) * 5)
+    // OPS = ((12 + 5) / (36 + 5)) + ((9 + (3 * 4)) / 36) = .998
+    expect($metric->offensive_rating)->toBe(162.1);
 });
 
-it('calculates pitching rating based on ERA, strikeouts, and walks', function () {
+it('calculates pitching plus as a 100-centered run prevention index', function () {
     $opponent = Team::factory()->create();
 
     $game = Game::factory()->create([
@@ -457,23 +463,22 @@ it('calculates pitching rating based on ERA, strikeouts, and walks', function ()
         'game_id' => $game->id,
         'earned_runs' => 2,
         'innings_pitched' => 9,
+        'hits_allowed' => 6,
         'strikeouts_pitched' => 10,
         'walks_allowed' => 2,
+        'home_runs_allowed' => 1,
     ]);
 
     TeamStat::factory()->create([
         'team_id' => $opponent->id,
         'game_id' => $game->id,
+        'runs' => 2,
     ]);
 
     $metric = $this->action->execute($this->team, $this->season);
 
-    // ERA = (2/9)*9 = 2.0
-    // ERA component = max(0, 100 - (2.0 * 10)) = 80
-    // K's per game = 10
-    // Walks per game = 2
-    // Rating = 80 + 10 - 2 = 88
-    expect($metric->pitching_rating)->toBe(88.0);
+    // Formula includes RA/G, ERA, WHIP, K-BB/G, and HR allowed/G.
+    expect($metric->pitching_rating)->toBe(157.8);
 });
 
 it('calculates defensive rating based on fielding percentage and plays', function () {
@@ -576,6 +581,61 @@ it('calculates rest travel fatigue from compressed schedule and venue changes', 
     expect($metric)->toBeInstanceOf(TeamMetric::class)
         ->and((float) $metric->rest_travel_fatigue)->toBeGreaterThan(0.0)
         ->and((float) $metric->rest_travel_fatigue)->toBeLessThan(10.0);
+});
+
+it('weights MLB injury adjustment by recent player production', function () {
+    $opponent = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'season' => $this->season,
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $opponent->id,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $opponent->id,
+        'game_id' => $game->id,
+    ]);
+
+    $player = Player::factory()->create([
+        'team_id' => $this->team->id,
+        'position' => '1B',
+    ]);
+
+    PlayerStat::factory()->create([
+        'player_id' => $player->id,
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+        'stat_type' => 'batting',
+        'at_bats' => 10,
+        'hits' => 6,
+        'doubles' => 1,
+        'triples' => 0,
+        'home_runs' => 3,
+        'walks' => 2,
+        'runs' => 4,
+        'rbis' => 5,
+        'stolen_bases' => 1,
+    ]);
+
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $this->team->id,
+        'injury_key' => 'test-high-impact-out',
+        'status' => 'Out',
+        'is_active' => true,
+    ]);
+
+    $metric = $this->action->execute($this->team, $this->season);
+
+    expect($metric)->toBeInstanceOf(TeamMetric::class)
+        ->and((float) $metric->injury_adjusted_team_rating)->toBe(1455.0);
 });
 
 it('returns null when team has no completed games', function () {

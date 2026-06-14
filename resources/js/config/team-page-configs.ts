@@ -379,22 +379,22 @@ export const createMlbTeamConfig = (gameLink: GameLink): TeamPageConfig => ({
             rankingKey: 'team_era',
         },
         {
-            label: 'ORtg',
+            label: 'Off+',
             value: (m) => formatNumber(m.offensive_rating),
             rankingKey: 'offensive_rating',
         },
         {
-            label: 'PRtg',
+            label: 'Pitch+',
             value: (m) => formatNumber(m.pitching_rating),
             rankingKey: 'pitching_rating',
         },
         {
-            label: 'DRtg',
+            label: 'Field+',
             value: (m) => formatNumber(m.defensive_rating),
             rankingKey: 'defensive_rating',
         },
         {
-            label: 'SOS',
+            label: 'SOS Elo',
             value: (m) => formatNumber(m.strength_of_schedule, 3),
             rankingKey: 'strength_of_schedule',
         },

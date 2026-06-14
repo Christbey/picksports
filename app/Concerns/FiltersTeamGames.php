@@ -538,6 +538,10 @@ trait FiltersTeamGames
 
     protected function injuryImpactMultiplierForMetrics(string $sport, int $playerId): float
     {
+        if ($sport === 'mlb') {
+            return $this->mlbInjuryImpactMultiplierForMetrics($playerId);
+        }
+
         if (! in_array($sport, ['nba', 'wnba', 'cbb', 'wcbb'], true) || $playerId <= 0) {
             return 1.0;
         }
@@ -597,5 +601,141 @@ trait FiltersTeamGames
         }
 
         return round(max(0.5, min(2.0, $multiplier)), 2);
+    }
+
+    protected function mlbInjuryImpactMultiplierForMetrics(int $playerId): float
+    {
+        if ($playerId <= 0 || ! Schema::hasTable('mlb_player_stats')) {
+            return 1.0;
+        }
+
+        $rows = DB::table('mlb_player_stats')
+            ->where('player_id', $playerId)
+            ->orderByDesc('game_id')
+            ->limit(16)
+            ->get([
+                'stat_type',
+                'at_bats',
+                'runs',
+                'hits',
+                'doubles',
+                'triples',
+                'home_runs',
+                'rbis',
+                'walks',
+                'stolen_bases',
+                'innings_pitched',
+                'hits_allowed',
+                'earned_runs',
+                'walks_allowed',
+                'strikeouts_pitched',
+                'home_runs_allowed',
+            ]);
+
+        if ($rows->isEmpty()) {
+            return 1.0;
+        }
+
+        $battingMultiplier = $this->mlbBattingInjuryMultiplier($rows);
+        $pitchingMultiplier = $this->mlbPitchingInjuryMultiplier($rows);
+        $multiplier = max($battingMultiplier, $pitchingMultiplier, 1.0);
+
+        return round(max(0.5, min(2.5, $multiplier)), 2);
+    }
+
+    protected function mlbBattingInjuryMultiplier(\Illuminate\Support\Collection $rows): float
+    {
+        $totals = [
+            'ab' => 0.0,
+            'hits' => 0.0,
+            'doubles' => 0.0,
+            'triples' => 0.0,
+            'hr' => 0.0,
+            'walks' => 0.0,
+            'runs' => 0.0,
+            'rbi' => 0.0,
+            'sb' => 0.0,
+            'games' => 0.0,
+        ];
+
+        foreach ($rows as $row) {
+            if (($row->stat_type ?? null) !== 'batting') {
+                continue;
+            }
+
+            $totals['ab'] += (float) ($row->at_bats ?? 0);
+            $totals['hits'] += (float) ($row->hits ?? 0);
+            $totals['doubles'] += (float) ($row->doubles ?? 0);
+            $totals['triples'] += (float) ($row->triples ?? 0);
+            $totals['hr'] += (float) ($row->home_runs ?? 0);
+            $totals['walks'] += (float) ($row->walks ?? 0);
+            $totals['runs'] += (float) ($row->runs ?? 0);
+            $totals['rbi'] += (float) ($row->rbis ?? 0);
+            $totals['sb'] += (float) ($row->stolen_bases ?? 0);
+            $totals['games']++;
+        }
+
+        if ($totals['games'] <= 0 || ($totals['ab'] + $totals['walks']) < 8) {
+            return 1.0;
+        }
+
+        $singles = max(0.0, $totals['hits'] - $totals['doubles'] - $totals['triples'] - $totals['hr']);
+        $totalBases = $singles + (2 * $totals['doubles']) + (3 * $totals['triples']) + (4 * $totals['hr']);
+        $obp = ($totals['ab'] + $totals['walks']) > 0
+            ? (($totals['hits'] + $totals['walks']) / ($totals['ab'] + $totals['walks']))
+            : 0.0;
+        $slg = $totals['ab'] > 0 ? ($totalBases / $totals['ab']) : 0.0;
+        $ops = $obp + $slg;
+        $homeRunsPerGame = $totals['hr'] / max(1.0, $totals['games']);
+        $runProductionPerGame = ($totals['runs'] + $totals['rbi']) / max(1.0, $totals['games']);
+        $stolenBasesPerGame = $totals['sb'] / max(1.0, $totals['games']);
+
+        $score = (($ops - 0.720) * 1.75)
+            + (($homeRunsPerGame - 0.12) * 0.75)
+            + (($runProductionPerGame - 0.85) * 0.20)
+            + (($stolenBasesPerGame - 0.08) * 0.15);
+
+        return 1.0 + max(-0.5, min(1.5, $score));
+    }
+
+    protected function mlbPitchingInjuryMultiplier(\Illuminate\Support\Collection $rows): float
+    {
+        $totals = [
+            'ip' => 0.0,
+            'hits_allowed' => 0.0,
+            'earned_runs' => 0.0,
+            'walks_allowed' => 0.0,
+            'strikeouts' => 0.0,
+            'home_runs_allowed' => 0.0,
+        ];
+
+        foreach ($rows as $row) {
+            if (($row->stat_type ?? null) !== 'pitching') {
+                continue;
+            }
+
+            $totals['ip'] += $this->normalizeInningsPitched($row->innings_pitched) ?? 0.0;
+            $totals['hits_allowed'] += (float) ($row->hits_allowed ?? 0);
+            $totals['earned_runs'] += (float) ($row->earned_runs ?? 0);
+            $totals['walks_allowed'] += (float) ($row->walks_allowed ?? 0);
+            $totals['strikeouts'] += (float) ($row->strikeouts_pitched ?? 0);
+            $totals['home_runs_allowed'] += (float) ($row->home_runs_allowed ?? 0);
+        }
+
+        if ($totals['ip'] < 3.0) {
+            return 1.0;
+        }
+
+        $era = ($totals['earned_runs'] / $totals['ip']) * 9;
+        $whip = ($totals['hits_allowed'] + $totals['walks_allowed']) / $totals['ip'];
+        $kMinusWalksPerNine = (($totals['strikeouts'] - $totals['walks_allowed']) / $totals['ip']) * 9;
+        $homeRunsAllowedPerNine = ($totals['home_runs_allowed'] / $totals['ip']) * 9;
+
+        $score = ((4.20 - $era) * 0.12)
+            + ((1.30 - $whip) * 0.55)
+            + (($kMinusWalksPerNine - 5.20) * 0.06)
+            + ((1.10 - $homeRunsAllowedPerNine) * 0.05);
+
+        return 1.0 + max(-0.5, min(1.5, $score));
     }
 }

@@ -37,8 +37,8 @@ class MetricValidator
             'tempo' => ['min' => 55, 'max' => 80],
         ],
         'mlb' => [
-            'offensive_rating' => ['min' => 0, 'max' => 200],
-            'pitching_rating' => ['min' => 0, 'max' => 150],
+            'offensive_rating' => ['min' => 50, 'max' => 180],
+            'pitching_rating' => ['min' => 50, 'max' => 180],
             'team_era' => ['min' => 2.0, 'max' => 7.0],
             'batting_average' => ['min' => 0.200, 'max' => 0.350],
         ],

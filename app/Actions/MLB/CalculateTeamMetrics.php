@@ -56,7 +56,7 @@ class CalculateTeamMetrics
 
         // Calculate baseball-specific metrics
         $offensiveRating = $this->calculateOffensiveRating($teamStats);
-        $pitchingRating = $this->calculatePitchingRating($teamStats);
+        $pitchingRating = $this->calculatePitchingRating($teamStats, $opponentStats);
         $defensiveRating = $this->calculateDefensiveRating($teamStats);
         $runsPerGame = $this->calculateRunsPerGame($teamStats);
         $runsAllowedPerGame = $this->calculateRunsAllowedPerGame($opponentStats);
@@ -221,34 +221,67 @@ class CalculateTeamMetrics
      */
     protected function calculateOffensiveRating(array $teamStats): float
     {
-        // Offensive Rating based on runs scored, hits, OBP components
+        // 100-centered offense index using available run production and quality indicators.
         $totalRuns = 0;
         $totalHits = 0;
         $totalAtBats = 0;
         $totalWalks = 0;
+        $totalHitByPitch = 0;
+        $totalSacrificeFlies = 0;
+        $totalDoubles = 0;
+        $totalTriples = 0;
         $totalHomeRuns = 0;
         $gameCount = count($teamStats);
+        $hasOfficialObpInputs = false;
 
         foreach ($teamStats as $stat) {
             $totalRuns += $stat->runs ?? 0;
             $totalHits += $stat->hits ?? 0;
             $totalAtBats += $stat->at_bats ?? 0;
             $totalWalks += $stat->walks ?? 0;
+            $totalHitByPitch += $stat->hit_by_pitch ?? 0;
+            $totalSacrificeFlies += $stat->sacrifice_flies ?? 0;
+            $totalDoubles += $stat->doubles ?? 0;
+            $totalTriples += $stat->triples ?? 0;
             $totalHomeRuns += $stat->home_runs ?? 0;
+            $hasOfficialObpInputs = $hasOfficialObpInputs
+                || $stat->hit_by_pitch !== null
+                || $stat->sacrifice_flies !== null;
         }
 
         if ($gameCount == 0) {
             return 0;
         }
 
-        // Weighted formula: runs per game * multiplier + batting metrics
         $runsPerGame = $totalRuns / $gameCount;
-        $battingAvg = $totalAtBats > 0 ? ($totalHits / $totalAtBats) : 0;
-        $homeRunRate = $gameCount > 0 ? ($totalHomeRuns / $gameCount) : 0;
+        $homeRunRate = $totalHomeRuns / $gameCount;
+        $obpDenominator = $totalAtBats + $totalWalks;
 
-        return ($runsPerGame * config('mlb.metrics.offensive_rating.runs_multiplier'))
-            + ($battingAvg * config('mlb.metrics.offensive_rating.batting_avg_multiplier'))
-            + ($homeRunRate * config('mlb.metrics.offensive_rating.home_run_multiplier'));
+        if ($hasOfficialObpInputs) {
+            $obpDenominator += $totalHitByPitch + $totalSacrificeFlies;
+        }
+
+        $onBasePercentage = $obpDenominator > 0
+            ? (($totalHits + $totalWalks + ($hasOfficialObpInputs ? $totalHitByPitch : 0)) / $obpDenominator)
+            : 0.0;
+        $singles = max(0, $totalHits - $totalDoubles - $totalTriples - $totalHomeRuns);
+        $totalBases = $singles + (2 * $totalDoubles) + (3 * $totalTriples) + (4 * $totalHomeRuns);
+        $sluggingPercentage = $totalAtBats > 0 ? ($totalBases / $totalAtBats) : 0.0;
+        $ops = $onBasePercentage + $sluggingPercentage;
+
+        $rating = (float) config('mlb.metrics.offensive_rating.baseline', 100.0)
+            + (($runsPerGame - (float) config('mlb.metrics.offensive_rating.league_runs_per_game', 4.40))
+                * (float) config('mlb.metrics.offensive_rating.runs_per_game_weight', 12.0))
+            + (($ops - (float) config('mlb.metrics.offensive_rating.league_ops', 0.720))
+                * (float) config('mlb.metrics.offensive_rating.ops_weight', 120.0))
+            + (($homeRunRate - (float) config('mlb.metrics.offensive_rating.league_home_runs_per_game', 1.10))
+                * (float) config('mlb.metrics.offensive_rating.home_run_rate_weight', 5.0));
+
+        return $this->clampRating(
+            $rating,
+            (float) config('mlb.metrics.offensive_rating.min', 50.0),
+            (float) config('mlb.metrics.offensive_rating.max', 180.0)
+        );
     }
 
     /**
@@ -274,13 +307,15 @@ class CalculateTeamMetrics
      * @param  array<int, TeamStat>  $teamStats  Team statistics records
      * @return float Composite pitching rating
      */
-    protected function calculatePitchingRating(array $teamStats): float
+    protected function calculatePitchingRating(array $teamStats, array $opponentStats = []): float
     {
-        // Pitching Rating based on ERA, strikeouts, walks
+        // 100-centered run prevention index. Higher is better.
         $totalEarnedRuns = 0;
         $totalInningsPitched = 0;
         $totalStrikeouts = 0;
         $totalWalksAllowed = 0;
+        $totalHitsAllowed = 0;
+        $totalHomeRunsAllowed = 0;
         $gameCount = count($teamStats);
 
         foreach ($teamStats as $stat) {
@@ -288,6 +323,8 @@ class CalculateTeamMetrics
             $totalInningsPitched += $this->normalizeInningsPitched($stat->innings_pitched) ?? 0;
             $totalStrikeouts += $stat->strikeouts_pitched ?? 0;
             $totalWalksAllowed += $stat->walks_allowed ?? 0;
+            $totalHitsAllowed += $stat->hits_allowed ?? 0;
+            $totalHomeRunsAllowed += $stat->home_runs_allowed ?? 0;
         }
 
         if ($totalInningsPitched == 0 || $gameCount == 0) {
@@ -297,16 +334,39 @@ class CalculateTeamMetrics
         $era = ($totalEarnedRuns / $totalInningsPitched) * 9;
         $strikeoutsPerGame = $totalStrikeouts / $gameCount;
         $walksPerGame = $totalWalksAllowed / $gameCount;
+        $kMinusWalksPerGame = $strikeoutsPerGame - $walksPerGame;
+        $whip = ($totalWalksAllowed + $totalHitsAllowed) / $totalInningsPitched;
+        $homeRunsAllowedPerGame = $totalHomeRunsAllowed / $gameCount;
+        $runsAllowedPerGame = $opponentStats !== []
+            ? $this->calculateRunsAllowedPerGame($opponentStats)
+            : ($totalEarnedRuns / $gameCount);
 
-        // Lower ERA = better pitching, more K's = better, fewer walks = better
-        // Inverse ERA (max-ERA bounded) + K's per game - walks per game
-        $eraComponent = max(
-            0,
-            config('mlb.metrics.pitching_rating.era_max')
-            - ($era * config('mlb.metrics.pitching_rating.era_scale'))
+        $rating = (float) config('mlb.metrics.pitching_rating.baseline', 100.0)
+            + (((float) config('mlb.metrics.pitching_rating.league_runs_allowed_per_game', 4.40) - $runsAllowedPerGame)
+                * (float) config('mlb.metrics.pitching_rating.runs_allowed_weight', 8.0))
+            + (((float) config('mlb.metrics.pitching_rating.league_era', 4.20) - $era)
+                * (float) config('mlb.metrics.pitching_rating.era_weight', 7.0))
+            + (((float) config('mlb.metrics.pitching_rating.league_whip', 1.30) - $whip)
+                * (float) config('mlb.metrics.pitching_rating.whip_weight', 35.0))
+            + (($kMinusWalksPerGame - (float) config('mlb.metrics.pitching_rating.league_k_minus_walks_per_game', 5.20))
+                * (float) config('mlb.metrics.pitching_rating.k_minus_walk_weight', 3.0))
+            + (((float) config('mlb.metrics.pitching_rating.league_home_runs_allowed_per_game', 1.10) - $homeRunsAllowedPerGame)
+                * (float) config('mlb.metrics.pitching_rating.home_runs_allowed_weight', 4.0));
+
+        return $this->clampRating(
+            $rating,
+            (float) config('mlb.metrics.pitching_rating.min', 50.0),
+            (float) config('mlb.metrics.pitching_rating.max', 180.0)
         );
+    }
 
-        return $eraComponent + $strikeoutsPerGame - $walksPerGame;
+    protected function clampRating(float $rating, float $min, float $max): float
+    {
+        if (! is_finite($rating)) {
+            return 0.0;
+        }
+
+        return max($min, min($max, $rating));
     }
 
     /**

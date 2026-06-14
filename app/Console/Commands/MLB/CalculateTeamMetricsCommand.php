@@ -6,8 +6,8 @@ use App\Actions\MLB\CalculateTeamMetrics;
 use App\Console\Commands\Sports\AbstractCalculateTeamMetricsCommand;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
 {
@@ -121,7 +121,7 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
 
     protected function topTeamsTitle(): string
     {
-        return 'Top 10 Teams by Offensive Rating:';
+        return 'Top 10 Teams by Offense+:';
     }
 
     protected function topRatingColumn(): string
@@ -131,7 +131,7 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
 
     protected function topTableHeaders(): array
     {
-        return ['Rank', 'Team', 'Off Rtg', 'Pitch Rtg', 'Def Rtg', 'R/G', 'RA/G', 'OPS', 'WHIP', 'SOS'];
+        return ['Rank', 'Team', 'Off+', 'Pitch+', 'Field+', 'R/G', 'RA/G', 'OPS', 'WHIP', 'SOS Elo'];
     }
 
     protected function topTableFields(): array
@@ -155,9 +155,9 @@ class CalculateTeamMetricsCommand extends AbstractCalculateTeamMetricsCommand
             ['Metric', 'Value'],
             [
                 ['Season Type', $metric->season_type ?? 'N/A'],
-                ['Offensive Rating', round($metric->offensive_rating, 2)],
-                ['Pitching Rating', round($metric->pitching_rating, 2)],
-                ['Defensive Rating', round($metric->defensive_rating, 2)],
+                ['Offense+', round($metric->offensive_rating, 2)],
+                ['Pitching+', round($metric->pitching_rating, 2)],
+                ['Fielding+', round($metric->defensive_rating, 2)],
                 ['Runs Per Game', round($metric->runs_per_game, 2)],
                 ['Runs Allowed Per Game', round($metric->runs_allowed_per_game, 2)],
                 ['Run Differential/Game', round((float) ($metric->run_differential_per_game ?? 0), 2)],

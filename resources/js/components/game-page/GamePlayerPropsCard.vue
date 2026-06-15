@@ -42,6 +42,11 @@ type PlayerPropRecommendation = {
     market_over_probability?: number | null;
     edge_probability?: number | null;
     data_quality_score?: number | null;
+    signal_quality?: {
+        label?: string;
+        tier?: string;
+        reason_codes?: string[];
+    } | null;
     reasoning: string[];
 };
 
@@ -201,6 +206,10 @@ const mapPlayerProp = (prop: ApiV2PlayerProp): PlayerPropRecommendation => {
             prop.recommendation?.market_over_probability ?? null,
         edge_probability: prop.recommendation?.edge_probability ?? null,
         data_quality_score: prop.recommendation?.data_quality_score ?? null,
+        signal_quality:
+            (prop.recommendation?.signal_quality as
+                | PlayerPropRecommendation['signal_quality']
+                | undefined) ?? null,
         reasoning: [],
     };
 };
@@ -257,10 +266,13 @@ const recommendationTone = (rec: PlayerPropRecommendation) =>
         ? 'text-emerald-600 dark:text-emerald-400'
         : 'text-red-600 dark:text-red-400';
 
-const confidenceLabel = (confidence: number) => {
-    if (confidence >= 85) return 'Best';
-    if (confidence >= 75) return 'Strong';
-    if (confidence >= 65) return 'Lean';
+const confidenceLabel = (rec: PlayerPropRecommendation) => {
+    if (rec.signal_quality?.label) return rec.signal_quality.label;
+
+    const dataQuality = Number(rec.data_quality_score ?? 0);
+    if (rec.confidence >= 88 && dataQuality >= 85) return 'Very Strong';
+    if (rec.confidence >= 75 && dataQuality >= 75) return 'Strong';
+    if (rec.confidence >= 65) return 'Lean';
 
     return 'Watch';
 };
@@ -418,7 +430,7 @@ watch(
 
                     <div class="flex items-center gap-2 md:justify-end">
                         <Badge variant="secondary">
-                            {{ confidenceLabel(rec.confidence) }}
+                            {{ confidenceLabel(rec) }}
                             {{ rec.confidence }}%
                         </Badge>
                         <Badge

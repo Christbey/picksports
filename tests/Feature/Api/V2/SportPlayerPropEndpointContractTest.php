@@ -218,7 +218,9 @@ it('lists v2 market player props with stable shape, filters, pagination, freshne
         ->assertJsonPath('data.0.game_id', $game->id)
         ->assertJsonPath('data.0.player_id', $player->id)
         ->assertJsonPath('data.0.market', 'player_points')
-        ->assertJsonPath('data.0.bookmaker', 'draftkings');
+        ->assertJsonPath('data.0.bookmaker', 'draftkings')
+        ->assertJsonPath('data.0.recommendation.signal_quality.label', 'Lean')
+        ->assertJsonPath('data.0.recommendation.signal_quality.tier', 'lean');
 
     expect($team)->toBeInstanceOf(Model::class)
         ->and($opponent)->toBeInstanceOf(Model::class)
@@ -426,7 +428,14 @@ function createV2PlayerPropContractProp(string $playerPropModel, array $override
         'data_quality_score' => 90,
         'match_quality_score' => 95,
         'context_adjustment_factor' => 1.000,
-        'confidence_decomposition' => ['form' => 0.4],
+        'confidence_decomposition' => [
+            'schema_version' => 'player-prop-signal-v2',
+            'signal_quality' => [
+                'label' => 'Lean',
+                'tier' => 'lean',
+                'reason_codes' => [],
+            ],
+        ],
         'narrative_json' => ['summary' => 'This AI-written explanation must not leak.'],
         'narrative_provider' => 'openai',
         'narrative_model' => 'gpt-contract',

@@ -253,6 +253,7 @@ it('shows a v2 prediction with sport, freshness, and warning metadata', function
                     'predicted_spread',
                     'predicted_total',
                     'confidence_score',
+                    'confidence_context',
                 ],
                 'home_win_probability',
                 'away_win_probability',
@@ -261,6 +262,7 @@ it('shows a v2 prediction with sport, freshness, and warning metadata', function
                 'predicted_total',
                 'confidence_score',
                 'confidence_level',
+                'confidence_context',
                 'actual_spread',
                 'actual_total',
                 'winner_correct',
@@ -287,7 +289,8 @@ it('shows a v2 prediction with sport, freshness, and warning metadata', function
         ->assertJsonPath('data.predicted_spread', -3.5)
         ->assertJsonPath('data.predicted_total', 217.5)
         ->assertJsonPath('data.confidence_score', 71.25)
-        ->assertJsonPath('data.confidence_level', 'medium');
+        ->assertJsonPath('data.confidence_level', 'medium')
+        ->assertJsonPath('data.confidence_context.label', 'Medium');
 
     expect($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
@@ -321,6 +324,7 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
                     'predicted_spread',
                     'predicted_total',
                     'confidence_score',
+                    'confidence_context',
                 ],
                 'home_win_probability',
                 'away_win_probability',
@@ -329,6 +333,7 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
                 'predicted_total',
                 'confidence_score',
                 'confidence_level',
+                'confidence_context',
                 'actual_spread',
                 'actual_total',
                 'winner_correct',
@@ -355,11 +360,38 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
         ->assertJsonPath('data.predicted_spread', -3.5)
         ->assertJsonPath('data.predicted_total', 217.5)
         ->assertJsonPath('data.confidence_score', 71.25)
-        ->assertJsonPath('data.confidence_level', 'medium');
+        ->assertJsonPath('data.confidence_level', 'medium')
+        ->assertJsonPath('data.confidence_context.label', 'Medium');
 
     expect($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2PredictionContractSports');
+
+it('marks high raw prediction confidence as watch when sample context is missing', function () {
+    v2PredictionContractActingAsBypassUser();
+
+    [, $prediction] = v2PredictionContractCreateGamePrediction(
+        MlbTeam::class,
+        MlbGame::class,
+        MlbPrediction::class,
+        [],
+        [
+            'win_probability' => 0.92,
+            'confidence_score' => 92.0,
+            'model_metadata' => [
+                'raw_inputs' => ['source' => 'legacy-high-confidence-row'],
+            ],
+        ],
+    );
+
+    $this->getJson("/api/v2/sports/mlb/predictions/{$prediction->id}")
+        ->assertOk()
+        ->assertJsonPath('data.confidence_level', 'high')
+        ->assertJsonPath('data.confidence_context.label', 'Watch')
+        ->assertJsonPath('data.confidence_context.tier', 'watch')
+        ->assertJsonPath('data.confidence_context.raw_level', 'high')
+        ->assertJsonPath('data.confidence_context.reason_codes.0', 'sample_context_missing');
+});
 
 function v2PredictionContractActingAsBypassUser(): User
 {

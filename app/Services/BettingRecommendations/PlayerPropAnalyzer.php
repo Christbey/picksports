@@ -10,6 +10,8 @@ use Illuminate\Support\Collection;
 
 class PlayerPropAnalyzer
 {
+    protected const SIGNAL_MODEL_VERSION = 'player-prop-signal-v2';
+
     public function __construct(
         protected ?OddsApiService $oddsApiService = null,
         protected ?PlayerPropNarrativeService $playerPropNarrativeService = null
@@ -343,6 +345,14 @@ class PlayerPropAnalyzer
             'home_away_avg' => $homeAwayAvg ? round($homeAwayAvg, 1) : null,
             'consistency' => $consistency,
         ];
+        $analysis['confidence_decomposition']['schema_version'] = self::SIGNAL_MODEL_VERSION;
+        $analysis['confidence_decomposition']['signal_quality'] = $this->signalQuality(
+            confidence: (int) $analysis['confidence'],
+            dataQualityScore: $dataQualityScore,
+            matchQualityScore: $matchQualityScore,
+            seasonSample: (int) ($timesCoveredSeason['games'] ?? 0),
+            coverRecord: $coverRecord
+        );
 
         $this->persistPredictionSnapshot($prop, $analysis, $dataQualityScore, $matchQualityScore, $context['combined_factor']);
 
@@ -1075,8 +1085,14 @@ class PlayerPropAnalyzer
         $contextFactor = $prop->context_adjustment_factor !== null ? (float) $prop->context_adjustment_factor : null;
         $statSummary = data_get($prop->confidence_decomposition, 'stat_summary', []);
         $coverRecord = data_get($prop->confidence_decomposition, 'cover_record');
+        $schemaVersion = data_get($prop->confidence_decomposition, 'schema_version');
 
-        if (! is_array($statSummary) || $statSummary === [] || ! is_array($coverRecord)) {
+        if (
+            $schemaVersion !== self::SIGNAL_MODEL_VERSION
+            || ! is_array($statSummary)
+            || $statSummary === []
+            || ! is_array($coverRecord)
+        ) {
             return null;
         }
 
@@ -1528,6 +1544,85 @@ class PlayerPropAnalyzer
         }
 
         return (float) $record['win_rate'];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>|null>  $coverRecord
+     * @return array{label:string,tier:string,reason_codes:array<int,string>}
+     */
+    protected function signalQuality(
+        int $confidence,
+        int $dataQualityScore,
+        int $matchQualityScore,
+        int $seasonSample,
+        array $coverRecord
+    ): array {
+        $seasonRate = $this->coverRecordWinRate($coverRecord['season'] ?? null, 12);
+        $last10Rate = $this->coverRecordWinRate($coverRecord['last_10'] ?? null, 8);
+        $reasonCodes = [];
+
+        if ($seasonSample < 6) {
+            $reasonCodes[] = 'thin_season_sample';
+        }
+
+        if ($dataQualityScore < 75) {
+            $reasonCodes[] = 'limited_data_quality';
+        }
+
+        if ($matchQualityScore < 90) {
+            $reasonCodes[] = 'player_match_not_exact';
+        }
+
+        if ($seasonRate !== null && $seasonRate < 50.0) {
+            $reasonCodes[] = 'season_cover_record_not_supportive';
+        }
+
+        if ($last10Rate !== null && $last10Rate < 50.0) {
+            $reasonCodes[] = 'recent_cover_record_not_supportive';
+        }
+
+        $eligibleForVeryStrong = $confidence >= 88
+            && $dataQualityScore >= 85
+            && $matchQualityScore >= 90
+            && $seasonSample >= 15
+            && ($seasonRate === null || $seasonRate >= 55.0)
+            && ($last10Rate === null || $last10Rate >= 55.0);
+
+        if ($eligibleForVeryStrong) {
+            return [
+                'label' => 'Very Strong',
+                'tier' => 'very_strong',
+                'reason_codes' => $reasonCodes,
+            ];
+        }
+
+        $eligibleForStrong = $confidence >= 76
+            && $dataQualityScore >= 75
+            && $matchQualityScore >= 82
+            && $seasonSample >= 8
+            && ($seasonRate === null || $seasonRate >= 48.0);
+
+        if ($eligibleForStrong) {
+            return [
+                'label' => 'Strong',
+                'tier' => 'strong',
+                'reason_codes' => $reasonCodes,
+            ];
+        }
+
+        if ($confidence >= 60) {
+            return [
+                'label' => 'Lean',
+                'tier' => 'lean',
+                'reason_codes' => $reasonCodes,
+            ];
+        }
+
+        return [
+            'label' => 'Low',
+            'tier' => 'low',
+            'reason_codes' => $reasonCodes,
+        ];
     }
 
     protected function seasonCoverRecordLimit(string $sport): int

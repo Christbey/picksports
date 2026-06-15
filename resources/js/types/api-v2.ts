@@ -169,6 +169,14 @@ export type ApiV2Prediction = {
     status?: string | null;
     pick?: ApiV2Record;
     projection?: ApiV2Record;
+    confidence_context?: {
+        label?: string | null;
+        tier?: string | null;
+        raw_level?: string | null;
+        reason_codes?: string[];
+        sample_games?: number | null;
+        [key: string]: unknown;
+    } | null;
     market_summary?: ApiV2Record;
     created_at?: string | null;
     updated_at?: string | null;
@@ -241,6 +249,13 @@ export type ApiV2PlayerProp = {
         data_quality_score?: number | null;
         match_quality_score?: number | null;
         context_adjustment_factor?: number | null;
+        confidence_decomposition?: Record<string, unknown> | null;
+        signal_quality?: {
+            label?: string | null;
+            tier?: string | null;
+            reason_codes?: string[];
+            [key: string]: unknown;
+        } | null;
         [key: string]: unknown;
     };
     grading?: {

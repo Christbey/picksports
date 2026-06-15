@@ -293,6 +293,13 @@ export interface PredictionSummary {
     predicted_spread: number;
     predicted_total: number;
     confidence_level: string;
+    confidence_context?: {
+        label?: string | null;
+        tier?: string | null;
+        raw_level?: string | null;
+        reason_codes?: string[];
+        sample_games?: number | null;
+    } | null;
     confidence_score?: number | null;
     actual_total?: number | null;
     winner_correct?: boolean | null;

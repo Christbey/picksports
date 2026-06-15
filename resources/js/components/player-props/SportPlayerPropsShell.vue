@@ -80,10 +80,16 @@ type Recommendation = {
     data_quality_score?: number | null;
     match_quality_score?: number | null;
     confidence_decomposition?: {
+        schema_version?: string;
         model_edge_score: number;
         data_quality_score: number;
         match_quality_score: number;
         context_factor: number;
+        signal_quality?: {
+            label?: string;
+            tier?: string;
+            reason_codes?: string[];
+        };
     } | null;
     actual_value?: number | null;
     hit_over?: boolean | null;
@@ -248,26 +254,33 @@ const loadBoard = async () => {
     }
 };
 
-const getConfidenceColor = (confidence: number) => {
-    if (confidence >= 85) return 'bg-green-500';
-    if (confidence >= 75) return 'bg-emerald-500';
-    if (confidence >= 60) return 'bg-yellow-500';
+const getConfidenceColor = (rec: Recommendation) => {
+    const tier = rec.confidence_decomposition?.signal_quality?.tier;
+    if (tier === 'very_strong') return 'bg-green-500';
+    if (tier === 'strong') return 'bg-emerald-500';
+    if (rec.confidence >= 60) return 'bg-yellow-500';
     return 'bg-gray-500';
 };
 
 const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : odds.toString());
 
-const getSignalBand = (confidence: number) => {
-    if (confidence >= 85) return 'Very Strong';
-    if (confidence >= 75) return 'Strong';
+const getSignalBand = (rec: Recommendation) => {
+    const label = rec.confidence_decomposition?.signal_quality?.label;
+    if (label) return label;
+
+    const confidence = rec.confidence;
+    const dataQuality = Number(rec.data_quality_score ?? 0);
+    if (confidence >= 88 && dataQuality >= 85) return 'Very Strong';
+    if (confidence >= 75 && dataQuality >= 75) return 'Strong';
     if (confidence >= 60) return 'Lean';
     return 'Low';
 };
 
-const getSignalBandVariant = (confidence: number) => {
-    if (confidence >= 85) return 'default';
-    if (confidence >= 75) return 'secondary';
-    if (confidence >= 60) return 'outline';
+const getSignalBandVariant = (rec: Recommendation) => {
+    const tier = rec.confidence_decomposition?.signal_quality?.tier;
+    if (tier === 'very_strong') return 'default';
+    if (tier === 'strong') return 'secondary';
+    if (rec.confidence >= 60) return 'outline';
     return 'outline';
 };
 
@@ -558,14 +571,10 @@ onMounted(() => {
                                             {{ rec.player.team }}
                                         </CardDescription>
                                         <Badge
-                                            :variant="
-                                                getSignalBandVariant(
-                                                    rec.confidence,
-                                                )
-                                            "
+                                            :variant="getSignalBandVariant(rec)"
                                             class="max-w-full shrink text-[10px]"
                                         >
-                                            {{ getSignalBand(rec.confidence) }}
+                                            {{ getSignalBand(rec) }}
                                         </Badge>
                                         <Badge
                                             v-if="
@@ -659,7 +668,7 @@ onMounted(() => {
                             >
                                 <div
                                     class="h-full transition-all"
-                                    :class="getConfidenceColor(rec.confidence)"
+                                    :class="getConfidenceColor(rec)"
                                     :style="{ width: `${rec.confidence}%` }"
                                 />
                             </div>

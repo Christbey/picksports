@@ -129,7 +129,9 @@ test('analyzes mlb pitcher strikeout props', function () {
         ->and($prop?->data_quality_score)->not->toBeNull()
         ->and(data_get($prop?->confidence_decomposition, 'cover_record.season.recommendation_record'))->toBe('5-0')
         ->and(data_get($prop?->confidence_decomposition, 'cover_record.last_5.record'))->toBe('5-0')
-        ->and(data_get($prop?->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(8.0);
+        ->and(data_get($prop?->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(8.0)
+        ->and(data_get($prop?->confidence_decomposition, 'schema_version'))->toBe('player-prop-signal-v2')
+        ->and(data_get($prop?->confidence_decomposition, 'signal_quality.label'))->toBeString();
 });
 
 test('clears stale player prop recommendation when analysis can no longer recompute it', function () {
@@ -204,6 +206,62 @@ test('precomputed player prop board ignores legacy rows without stat and cover r
         'data_quality_score' => 90,
         'match_quality_score' => 95,
         'confidence_decomposition' => ['confidence_cap' => 96],
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->precomputedRecommendations('MLB', '2026-06-07');
+
+    expect($recommendations)->toHaveCount(0);
+});
+
+test('precomputed player prop board ignores unversioned legacy high confidence rows', function () {
+    $homeTeam = MlbTeam::factory()->create();
+    $awayTeam = MlbTeam::factory()->create();
+
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-07',
+        'season' => 2026,
+    ]);
+
+    $player = MlbPlayer::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Legacy High Confidence',
+        'first_name' => 'Legacy',
+        'last_name' => 'High Confidence',
+    ]);
+
+    MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Legacy High Confidence',
+        'market' => 'batter_runs_scored',
+        'line' => 0.5,
+        'over_price' => 112,
+        'under_price' => -142,
+        'recommended_side' => 'Over',
+        'confidence_score' => 98,
+        'predicted_over_probability' => 67.6,
+        'market_over_probability' => 43.7,
+        'edge_probability' => 23.9,
+        'data_quality_score' => 90,
+        'match_quality_score' => 95,
+        'confidence_decomposition' => [
+            'stat_summary' => [
+                'season_avg' => 0,
+                'recent_avg' => 0,
+                'last5_avg' => 0,
+            ],
+            'cover_record' => [
+                'season' => [
+                    'games' => 20,
+                    'recommendation' => 'Over',
+                    'recommendation_record' => '0-20',
+                    'win_rate' => 0,
+                ],
+            ],
+        ],
     ]);
 
     $recommendations = (new PlayerPropAnalyzer)->precomputedRecommendations('MLB', '2026-06-07');

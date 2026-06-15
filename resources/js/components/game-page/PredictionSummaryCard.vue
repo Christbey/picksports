@@ -15,6 +15,9 @@ defineProps<{
     awayBarClass: string;
     homeBarClass: string;
 }>();
+
+const confidenceDisplayLabel = (prediction: PredictionSummary) =>
+    prediction.confidence_context?.label || prediction.confidence_level;
 </script>
 
 <template>
@@ -94,7 +97,7 @@ defineProps<{
                     <div
                         class="text-2xl font-semibold tracking-tight capitalize"
                     >
-                        {{ prediction.confidence_level }}
+                        {{ confidenceDisplayLabel(prediction) }}
                     </div>
                     <div
                         v-if="prediction.confidence_score"

@@ -38,6 +38,7 @@ class SportPredictionResource extends JsonResource
             'predicted_total' => $this->floatAttribute('predicted_total'),
             'confidence_score' => $this->floatAttribute('confidence_score'),
             'confidence_level' => $this->confidenceLevel(),
+            'confidence_context' => $this->confidenceContext(),
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
             'home_team_elo' => $this->floatAttribute('home_team_elo'),
@@ -125,6 +126,7 @@ class SportPredictionResource extends JsonResource
             'predicted_spread' => $this->floatAttribute('predicted_spread'),
             'predicted_total' => $this->floatAttribute('predicted_total'),
             'confidence_score' => $this->floatAttribute('confidence_score'),
+            'confidence_context' => $this->confidenceContext(),
         ];
     }
 
@@ -207,6 +209,11 @@ class SportPredictionResource extends JsonResource
     {
         $confidenceScore = $this->floatAttribute('confidence_score');
 
+        return $this->rawConfidenceLevel($confidenceScore);
+    }
+
+    private function rawConfidenceLevel(?float $confidenceScore): string
+    {
         if ($confidenceScore === null) {
             return 'unavailable';
         }
@@ -216,6 +223,132 @@ class SportPredictionResource extends JsonResource
             $confidenceScore >= 60 => 'medium',
             default => 'low',
         };
+    }
+
+    /**
+     * @return array{label:string,tier:string,raw_level:string,reason_codes:array<int,string>,sample_games:int|null}
+     */
+    private function confidenceContext(): array
+    {
+        $confidenceScore = $this->floatAttribute('confidence_score');
+        $rawLevel = $this->rawConfidenceLevel($confidenceScore);
+        $metadata = is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : [];
+        $sampleGames = $this->confidenceSampleGames($metadata);
+        $reasonCodes = [];
+
+        if ($confidenceScore === null) {
+            return [
+                'label' => 'Unavailable',
+                'tier' => 'unavailable',
+                'raw_level' => $rawLevel,
+                'reason_codes' => ['missing_confidence_score'],
+                'sample_games' => $sampleGames,
+            ];
+        }
+
+        if ($sampleGames === null) {
+            $reasonCodes[] = 'sample_context_missing';
+        } elseif ($sampleGames < 8) {
+            $reasonCodes[] = 'thin_sample_context';
+        } elseif ($sampleGames < 15) {
+            $reasonCodes[] = 'limited_sample_context';
+        }
+
+        $pitcherConfidence = $this->minimumPitcherConfidence($metadata);
+        if ($pitcherConfidence !== null && $pitcherConfidence < 0.75) {
+            $reasonCodes[] = 'probable_pitcher_context_low_confidence';
+        }
+
+        $marketContext = is_array($metadata['market_context'] ?? null) ? $metadata['market_context'] : [];
+        if (
+            $rawLevel === 'high'
+            && $this->context->slug !== 'mlb'
+            && $marketContext !== []
+            && ! (bool) ($marketContext['spread_available'] ?? $marketContext['moneyline_available'] ?? false)
+        ) {
+            $reasonCodes[] = 'market_context_not_confirmed';
+        }
+
+        $blockingReasons = array_intersect($reasonCodes, [
+            'sample_context_missing',
+            'thin_sample_context',
+            'probable_pitcher_context_low_confidence',
+            'market_context_not_confirmed',
+        ]);
+
+        if ($rawLevel === 'high' && $blockingReasons === []) {
+            return [
+                'label' => 'High',
+                'tier' => 'high',
+                'raw_level' => $rawLevel,
+                'reason_codes' => $reasonCodes,
+                'sample_games' => $sampleGames,
+            ];
+        }
+
+        if ($rawLevel === 'high') {
+            return [
+                'label' => 'Watch',
+                'tier' => 'watch',
+                'raw_level' => $rawLevel,
+                'reason_codes' => $reasonCodes,
+                'sample_games' => $sampleGames,
+            ];
+        }
+
+        if ($rawLevel === 'medium') {
+            return [
+                'label' => 'Medium',
+                'tier' => 'medium',
+                'raw_level' => $rawLevel,
+                'reason_codes' => $reasonCodes,
+                'sample_games' => $sampleGames,
+            ];
+        }
+
+        return [
+            'label' => 'Low',
+            'tier' => 'low',
+            'raw_level' => $rawLevel,
+            'reason_codes' => $reasonCodes,
+            'sample_games' => $sampleGames,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function confidenceSampleGames(array $metadata): ?int
+    {
+        foreach ([
+            'season_context.sample_games',
+            'sample_games',
+            'raw_inputs.sample_games',
+            'analysis_layer.sample_games',
+        ] as $key) {
+            $value = data_get($metadata, $key);
+
+            if (is_numeric($value)) {
+                return (int) $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function minimumPitcherConfidence(array $metadata): ?float
+    {
+        $home = data_get($metadata, 'pitcher_inputs.home_confidence');
+        $away = data_get($metadata, 'pitcher_inputs.away_confidence');
+
+        if (! is_numeric($home) || ! is_numeric($away)) {
+            return null;
+        }
+
+        return min((float) $home, (float) $away);
     }
 
     private function isLivePrediction(): bool

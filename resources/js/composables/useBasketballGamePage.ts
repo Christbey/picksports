@@ -164,6 +164,45 @@ const normalizePrediction = (
                 : confidenceScore >= 60
                   ? 'medium'
                   : 'low';
+    const rawConfidenceContext = source.confidence_context;
+    const confidenceContext =
+        rawConfidenceContext && typeof rawConfidenceContext === 'object'
+            ? {
+                  label:
+                      typeof (rawConfidenceContext as Record<string, unknown>)
+                          .label === 'string'
+                          ? ((rawConfidenceContext as Record<string, unknown>)
+                                .label as string)
+                          : null,
+                  tier:
+                      typeof (rawConfidenceContext as Record<string, unknown>)
+                          .tier === 'string'
+                          ? ((rawConfidenceContext as Record<string, unknown>)
+                                .tier as string)
+                          : null,
+                  raw_level:
+                      typeof (rawConfidenceContext as Record<string, unknown>)
+                          .raw_level === 'string'
+                          ? ((rawConfidenceContext as Record<string, unknown>)
+                                .raw_level as string)
+                          : null,
+                  reason_codes: Array.isArray(
+                      (rawConfidenceContext as Record<string, unknown>)
+                          .reason_codes,
+                  )
+                      ? (
+                            (rawConfidenceContext as Record<string, unknown>)
+                                .reason_codes as unknown[]
+                        )
+                            .map((item) => String(item))
+                            .filter((item) => item.length > 0)
+                      : [],
+                  sample_games: toOptionalNumber(
+                      (rawConfidenceContext as Record<string, unknown>)
+                          .sample_games,
+                  ),
+              }
+            : null;
 
     const rawNarrative = source.narrative;
     const narrative =
@@ -317,6 +356,7 @@ const normalizePrediction = (
         predicted_spread: toNumber(source.predicted_spread),
         predicted_total: toNumber(source.predicted_total),
         confidence_level: confidenceLevel,
+        confidence_context: confidenceContext,
         confidence_score: confidenceScore,
         narrative,
         depth_chart_context: normalizeDepthChartContext(

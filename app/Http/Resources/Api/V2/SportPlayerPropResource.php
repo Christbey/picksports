@@ -45,6 +45,7 @@ class SportPlayerPropResource extends JsonResource
                 'data_quality_score' => $this->attribute('data_quality_score'),
                 'match_quality_score' => $this->attribute('match_quality_score'),
                 'context_adjustment_factor' => $this->floatAttribute('context_adjustment_factor'),
+                'signal_quality' => $this->signalQuality(),
             ],
             'grading' => [
                 'actual_value' => $this->floatAttribute('actual_value'),
@@ -154,6 +155,21 @@ class SportPlayerPropResource extends JsonResource
         $value = $this->attribute($key);
 
         return $value === null ? null : (float) $value;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function signalQuality(): ?array
+    {
+        $decomposition = $this->attribute('confidence_decomposition');
+        if (! is_array($decomposition)) {
+            return null;
+        }
+
+        $quality = $decomposition['signal_quality'] ?? null;
+
+        return is_array($quality) ? $quality : null;
     }
 
     private function serializeDateValue(mixed $value): ?string

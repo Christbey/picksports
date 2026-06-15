@@ -3,6 +3,7 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Prediction;
+use App\Support\NflReasonCodeCatalog;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -21,6 +22,14 @@ class AnalyzeReasonCodesCommand extends Command
                             {--max-code-frequency=0.8 : Treat codes on this share of games as background unless included}';
 
     protected $description = 'Analyze NFL prediction hit rates by reason-code combinations';
+
+    public function __construct(
+        protected ?NflReasonCodeCatalog $reasonCodeCatalog = null,
+    ) {
+        parent::__construct();
+
+        $this->reasonCodeCatalog ??= app(NflReasonCodeCatalog::class);
+    }
 
     public function handle(): int
     {
@@ -335,19 +344,7 @@ class AnalyzeReasonCodesCommand extends Command
     protected function backgroundReasonCodes(Collection $predictions, float $maxCodeFrequency): Collection
     {
         $total = max(1, $predictions->count());
-        $explicitBackgroundCodes = collect([
-            'adaptive_calibration_signal',
-            'adaptive_point_calibration_signal',
-            'bend_dont_break_defense',
-            'contextual_adjustments',
-            'home_away_split_signal',
-            'multi_factor_confluence',
-            'ol_dl_matchup_signal',
-            'recent_matchup_record_context',
-            'rolling_efficiency_mature_sample',
-            'rolling_efficiency_signal',
-            'slow_pace_under_signal',
-        ]);
+        $explicitBackgroundCodes = collect($this->reasonCodeCatalog->backgroundCodes());
 
         $highFrequencyCodes = [];
         foreach ($predictions as $prediction) {

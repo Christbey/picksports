@@ -13,6 +13,7 @@ use App\Models\NFL\TeamMetric;
 use App\Services\NFL\PlayerPositionGradeService;
 use App\Services\Sports\DepthChartImpactService;
 use App\Support\NflBetRuleEngine;
+use App\Support\NflReasonCodeCatalog;
 use App\Support\NflValidatedSignalCombos;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -72,10 +73,12 @@ class GeneratePredictionFromHistoricalElo
 
     public function __construct(
         protected ?DepthChartImpactService $depthChartImpactService = null,
-        protected ?PlayerPositionGradeService $playerPositionGradeService = null
+        protected ?PlayerPositionGradeService $playerPositionGradeService = null,
+        protected ?NflReasonCodeCatalog $reasonCodeCatalog = null,
     ) {
         $this->depthChartImpactService ??= app(DepthChartImpactService::class);
         $this->playerPositionGradeService ??= app(PlayerPositionGradeService::class);
+        $this->reasonCodeCatalog ??= app(NflReasonCodeCatalog::class);
     }
 
     public function execute(Game $game): string
@@ -2897,6 +2900,7 @@ class GeneratePredictionFromHistoricalElo
             'bet_classification' => $betClassification,
             'model_signal_classification' => $modelSignalClassification,
             'reason_codes' => $reasonCodes,
+            'reason_code_metadata' => $this->reasonCodeCatalog->metadataForCodes($reasonCodes),
             'bet_rule_evaluation' => $betRuleEvaluation,
             'validated_signals' => $validatedSignals,
             'best_validated_signal' => $validatedSignals[0] ?? null,
@@ -3109,7 +3113,11 @@ class GeneratePredictionFromHistoricalElo
                     $codes[] = 'wind_under_signal';
                 }
                 if ((float) ($actualWeather['precipitation_inches'] ?? 0) >= (float) config('nfl.predictions.actual_weather.precip_under_threshold_inches', 0.03)) {
-                    $codes[] = 'rain_under_signal';
+                    if ((float) ($actualWeather['temperature_f'] ?? 99) <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
+                        $codes[] = 'snow_under_signal';
+                    } else {
+                        $codes[] = 'rain_under_signal';
+                    }
                     $codes[] = 'weather_increases_turnover_risk';
                 }
                 if ((float) ($actualWeather['temperature_f'] ?? 99) <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
@@ -3442,17 +3450,11 @@ class GeneratePredictionFromHistoricalElo
         $weatherAdjustment = (float) ($weather['total_adjustment'] ?? 0.0);
         if ($weatherAdjustment < 0) {
             $codes[] = 'total_weather_suppression';
-            $codes[] = 'bad_weather_favors_run_game';
-            $codes[] = 'weather_increases_turnover_risk';
-            $codes[] = 'kicking_weather_risk';
         }
         if ($weatherReason === 'cold_outdoor_proxy') {
-            $codes[] = 'cold_weather_under_signal';
-            $codes[] = 'snow_under_signal';
-            $codes[] = 'wind_under_signal';
-        }
-        if (in_array($weatherReason, ['cold_outdoor_proxy', 'hot_outdoor_proxy'], true)) {
-            $codes[] = 'rain_under_signal';
+            $codes[] = 'cold_outdoor_total_proxy';
+        } elseif ($weatherReason === 'hot_outdoor_proxy') {
+            $codes[] = 'hot_outdoor_total_proxy';
         }
     }
 

@@ -135,7 +135,12 @@ it('uses stored nfl weather to adjust game totals', function () {
 
     expect(data_get($prediction->model_metadata, 'actual_weather.applied'))->toBeTrue()
         ->and((float) data_get($prediction->model_metadata, 'actual_weather.total_adjustment'))->toBeLessThan(0)
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('wind_under_signal');
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('wind_under_signal')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('snow_under_signal')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('rain_under_signal')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_code_metadata.wind_under_signal.source'))->toBe('actual_weather')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_code_metadata.wind_under_signal.market_type'))->toBe('total')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_code_metadata.wind_under_signal.is_actionable'))->toBeTrue();
 });
 
 it('adds opponent-adjusted efficiency metadata to nfl predictions', function () {
@@ -1134,6 +1139,10 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_h2h_record_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_division_record_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_conference_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('cold_outdoor_total_proxy')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('snow_under_signal')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('wind_under_signal')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('rain_under_signal')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.bet_classification'))->not->toBeNull()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.spread_points'))->not->toBeNull();
 });

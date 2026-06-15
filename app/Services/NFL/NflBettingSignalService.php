@@ -7,6 +7,7 @@ use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
+use App\Support\NflReasonCodeCatalog;
 use Carbon\CarbonInterface;
 
 class NflBettingSignalService
@@ -15,6 +16,7 @@ class NflBettingSignalService
         protected TeamPlayoffForecastService $forecastService,
         protected FuturesOddsLookupService $futuresOddsLookup,
         protected FuturesEdgeService $futuresEdgeService,
+        protected NflReasonCodeCatalog $reasonCodeCatalog,
     ) {}
 
     /**
@@ -57,6 +59,7 @@ class NflBettingSignalService
                 'pass_classification',
                 'odds_health',
                 'result_feedback_loop',
+                'reason_code_metadata',
             ],
             'nfl_specific_deviations' => [
                 'analysis_layer_is_persisted_on_prediction_metadata',
@@ -177,6 +180,7 @@ class NflBettingSignalService
             $spreadEdge = data_get($analysis, 'calculated_edge.spread_points');
             $totalEdge = data_get($analysis, 'calculated_edge.total_points');
             $market = is_numeric($spreadEdge) && abs((float) $spreadEdge) >= abs((float) $totalEdge) ? 'spread' : 'moneyline';
+            $reasonCodes = array_slice((array) ($analysis['reason_codes'] ?? []), 0, 8);
 
             $rows[] = [
                 'type' => $market,
@@ -189,7 +193,8 @@ class NflBettingSignalService
                 'score' => data_get($analysis, 'trust_score') !== null ? (float) data_get($analysis, 'trust_score') : null,
                 'classification' => $classification,
                 'edge_points' => is_numeric($spreadEdge) ? round(abs((float) $spreadEdge), 2) : null,
-                'reason_codes' => array_slice((array) ($analysis['reason_codes'] ?? []), 0, 8),
+                'reason_codes' => $reasonCodes,
+                'reason_code_metadata' => $this->reasonCodeMetadata($analysis, $reasonCodes),
                 'risk_flags' => array_slice((array) ($analysis['risk_flags'] ?? []), 0, 8),
             ];
         }
@@ -198,6 +203,21 @@ class NflBettingSignalService
             ?: (($right['edge_points'] ?? 0) <=> ($left['edge_points'] ?? 0)));
 
         return array_slice($rows, 0, 10);
+    }
+
+    /**
+     * @param  array<string,mixed>  $analysis
+     * @param  list<string>  $reasonCodes
+     * @return array<string,array<string,mixed>>
+     */
+    protected function reasonCodeMetadata(array $analysis, array $reasonCodes): array
+    {
+        $metadata = (array) ($analysis['reason_code_metadata'] ?? []);
+        if ($metadata !== []) {
+            return array_intersect_key($metadata, array_flip($reasonCodes));
+        }
+
+        return $this->reasonCodeCatalog->metadataForCodes($reasonCodes);
     }
 
     /**

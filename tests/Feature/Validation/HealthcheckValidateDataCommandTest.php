@@ -21,6 +21,8 @@ use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\GameWeather as NflGameWeather;
+use App\Models\NFL\Player as NflPlayer;
+use App\Models\NFL\PlayerInjury as NflPlayerInjury;
 use App\Models\NFL\Team as NflTeam;
 use App\Models\User;
 use App\Models\ValidationFinding;
@@ -892,6 +894,44 @@ test('offseason college basketball injury freshness does not block without activ
     expect($result)->not->toBeNull()
         ->and($result['status'])->toBe('passing')
         ->and($result['recommended_action'])->toBeNull()
+        ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
+        ->and(data_get($result, 'metadata.active_games_in_window'))->toBe(0);
+});
+
+test('offseason nfl injury freshness does not block without active games even when stale injuries exist', function () {
+    $this->travelTo('2026-06-14 12:00:00');
+
+    $team = NflTeam::factory()->create();
+    $player = NflPlayer::factory()->create(['team_id' => $team->id]);
+
+    NflPlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $team->id,
+        'injury_key' => 'offseason-knee',
+        'status' => 'Questionable',
+        'detail' => 'Knee',
+        'type' => 'Knee',
+        'injury_date' => now()->subDays(10)->toDateString(),
+        'source_updated_at' => now()->subDays(10),
+        'is_active' => true,
+        'created_at' => now()->subDays(10),
+        'updated_at' => now()->subDays(10),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nfl',
+        'command' => 'espn:sync-nfl-injuries',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subDays(5),
+    ]);
+
+    $result = app(InjuryFreshnessCheck::class)->run('nfl', config('validation.sports.nfl'));
+
+    expect($result)->not->toBeNull()
+        ->and($result['status'])->toBe('passing')
+        ->and($result['recommended_action'])->toBeNull()
+        ->and(data_get($result, 'metadata.active_injuries'))->toBe(1)
         ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
         ->and(data_get($result, 'metadata.active_games_in_window'))->toBe(0);
 });

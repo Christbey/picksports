@@ -31,12 +31,12 @@ class InjuryFreshnessCheck implements ValidationCheck
         $activeInjuries = (int) DB::table($injuriesTable)->where('is_active', true)->count();
         $offseasonContext = $this->offseasonContext($sport, $profile);
 
-        if (($offseasonContext['offseason_without_active_games'] ?? false) === true && $activeInjuries === 0) {
+        if (($offseasonContext['offseason_without_active_games'] ?? false) === true) {
             return [
                 'check_type' => 'validation_injury_freshness',
                 'status' => 'passing',
                 'severity' => 'passing',
-                'message' => "No active {$sport} games or injuries are present; injury freshness is not required during the offseason.",
+                'message' => "No active {$sport} games are present; injury freshness is not required during the offseason.",
                 'recommended_action' => null,
                 'metadata' => [
                     'in_season' => $inSeason,

@@ -46,8 +46,12 @@ Source:
 For each completed game:
 - identify the team stat row
 - identify the opponent stat row
+- prefer the exact `team_id` match for each side
+- use `team_type` only as a safe fallback when it does not conflict with the expected team
 - collect opponent pre-game Elo when available from Elo history
 - fall back to current opponent Elo if per-game history is missing
+
+Team-metric calculators must not persist season metrics from partial final-game stats. A completed game needs both the selected team's stat row and the opponent stat row before it can be included in the official metric row. This guard exists for MLB, NBA, WNBA, CBB, WCBB, NFL, and CFB.
 
 Shared derived inputs:
 - `wins` / `losses`
@@ -198,6 +202,8 @@ turnover_differential =
    - team_interceptions - team_fumbles_lost)
   / games_played
 ```
+
+Gridiron metrics require complete team and opponent stat rows for every completed game used in the calculation. Incomplete final-game stats return no metric row instead of saving misleading yards, turnover, or opponent-context values.
 
 ### NFL team metrics
 

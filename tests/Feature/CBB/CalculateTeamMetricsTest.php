@@ -131,6 +131,27 @@ it('returns null when no completed games exist', function () {
     expect($metric)->toBeNull();
 });
 
+it('does not calculate metrics when completed game stats are incomplete', function () {
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $this->opponent1->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+        'points' => 80,
+        'possessions' => 70.0,
+    ]);
+
+    $metric = (new CalculateTeamMetrics)->execute($this->team, 2026);
+
+    expect($metric)->toBeNull()
+        ->and(TeamMetric::query()->where('team_id', $this->team->id)->where('season', 2026)->exists())->toBeFalse();
+});
+
 it('calculates rolling window metrics', function () {
     $rollingWindowSize = config('cbb.metrics.rolling_window_size');
 

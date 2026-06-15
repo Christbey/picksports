@@ -133,15 +133,9 @@ trait FiltersTeamGames
         foreach ($games as $game) {
             $isHome = $game->home_team_id === $team->id;
 
-            $teamStat = $game->teamStats->firstWhere('team_id', $team->id);
-            if (! $teamStat) {
-                $teamStat = $this->statByTeamType($game->teamStats, $isHome ? 'home' : 'away');
-            }
             $opponentId = $isHome ? $game->away_team_id : $game->home_team_id;
-            $opponentStat = $game->teamStats->firstWhere('team_id', $opponentId);
-            if (! $opponentStat) {
-                $opponentStat = $this->statByTeamType($game->teamStats, $isHome ? 'away' : 'home');
-            }
+            $teamStat = $this->statForTeamSide($game->teamStats, (int) $team->id, $isHome ? 'home' : 'away');
+            $opponentStat = $this->statForTeamSide($game->teamStats, (int) $opponentId, $isHome ? 'away' : 'home');
 
             if ($teamStat) {
                 $teamStats[] = $teamStat;
@@ -169,6 +163,23 @@ trait FiltersTeamGames
     protected function statByTeamType(Collection $stats, string $teamType): ?Model
     {
         return $stats->first(function ($stat) use ($teamType) {
+            return strtolower((string) ($stat->team_type ?? '')) === $teamType;
+        });
+    }
+
+    protected function statForTeamSide(Collection $stats, int $teamId, string $teamType): ?Model
+    {
+        $stat = $stats->firstWhere('team_id', $teamId);
+        if ($stat) {
+            return $stat;
+        }
+
+        return $stats->first(function ($stat) use ($teamId, $teamType) {
+            $statTeamId = $stat->team_id ?? null;
+            if ($statTeamId !== null && (int) $statTeamId !== $teamId) {
+                return false;
+            }
+
             return strtolower((string) ($stat->team_type ?? '')) === $teamType;
         });
     }
@@ -261,14 +272,9 @@ trait FiltersTeamGames
             return [(float) ($gameTeamScore ?? 0), (float) ($gameOpponentScore ?? 0)];
         }
 
-        $teamStat = $game->teamStats->firstWhere('team_id', $team->id)
-            ?? $this->statByTeamType($game->teamStats, $isHome ? 'home' : 'away');
-        $opponentStat = $this->statByTeamType($game->teamStats, $isHome ? 'away' : 'home');
-
-        if (! $opponentStat) {
-            $opponentId = $isHome ? $game->away_team_id : $game->home_team_id;
-            $opponentStat = $game->teamStats->firstWhere('team_id', $opponentId);
-        }
+        $opponentId = $isHome ? $game->away_team_id : $game->home_team_id;
+        $teamStat = $this->statForTeamSide($game->teamStats, (int) $team->id, $isHome ? 'home' : 'away');
+        $opponentStat = $this->statForTeamSide($game->teamStats, (int) $opponentId, $isHome ? 'away' : 'home');
 
         $teamStatScore = $this->scoreFromTeamStat($teamStat);
         $opponentStatScore = $this->scoreFromTeamStat($opponentStat);

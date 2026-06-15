@@ -340,6 +340,29 @@ it('returns null when games exist but no team stats', function () {
     expect($metric)->toBeNull();
 });
 
+it('returns null when completed game stats are missing one side', function () {
+    $game = Game::factory()->create([
+        'season' => 2025,
+        'home_team_id' => $this->team->id,
+        'away_team_id' => $this->opponent1->id,
+        'home_score' => 28,
+        'away_score' => 21,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    TeamStat::factory()->create([
+        'team_id' => $this->team->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'total_yards' => 380,
+    ]);
+
+    $metric = (new CalculateTeamMetrics)->execute($this->team, 2025);
+
+    expect($metric)->toBeNull()
+        ->and(TeamMetric::query()->where('team_id', $this->team->id)->where('season', 2025)->exists())->toBeFalse();
+});
+
 it('ignores non-final games', function () {
     // Create scheduled game (shouldn't be counted)
     $scheduledGame = Game::factory()->create([

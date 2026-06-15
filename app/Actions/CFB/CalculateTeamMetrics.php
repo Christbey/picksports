@@ -15,6 +15,7 @@ use App\Models\CfbdTeamMapping;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Log;
 
 class CalculateTeamMetrics
 {
@@ -72,6 +73,19 @@ class CalculateTeamMetrics
             return null;
         }
 
+        if (count($teamStats) !== $games->count() || count($opponentStats) !== $games->count()) {
+            Log::warning('Skipping CFB team metrics because completed game stats are incomplete', [
+                'team_id' => $team->id,
+                'team_name' => $team->display_name ?? $team->school ?? $team->id,
+                'season' => $season,
+                'completed_games' => $games->count(),
+                'team_stat_games' => count($teamStats),
+                'opponent_stat_games' => count($opponentStats),
+            ]);
+
+            return null;
+        }
+
         $record = $this->calculateWinLossRecord($games, $team);
 
         // Calculate metrics
@@ -125,7 +139,7 @@ class CalculateTeamMetrics
             'passing_yards_per_game' => round($passingYardsPerGame, 1),
             'rushing_yards_per_game' => round($rushingYardsPerGame, 1),
             'turnover_differential' => round($turnoverDifferential, 1),
-            'strength_of_schedule' => round($strengthOfSchedule, 3),
+            'strength_of_schedule' => $this->roundOrNull($strengthOfSchedule, 3),
             'recent_form_rating' => $recentFormRating,
             'injury_adjusted_team_rating' => $injuryAdjustedTeamRating,
             'injury_total_adjustment' => $injuryAdjustedTotalAdjustment,

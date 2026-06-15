@@ -70,6 +70,20 @@ abstract class AbstractCollegeBasketballCalculateTeamMetrics
             return null;
         }
 
+        if (count($teamStats) !== $games->count() || count($opponentStats) !== $games->count()) {
+            Log::warning('Skipping college basketball team metrics because completed game stats are incomplete', [
+                'team_id' => $team->id,
+                'team_name' => $this->teamDisplayName($team),
+                'season' => $season,
+                'sport' => $this->sportKey(),
+                'completed_games' => $games->count(),
+                'team_stat_games' => count($teamStats),
+                'opponent_stat_games' => count($opponentStats),
+            ]);
+
+            return null;
+        }
+
         $homeTeamStats = [];
         $awayTeamStats = [];
         $homeOpponentStats = [];

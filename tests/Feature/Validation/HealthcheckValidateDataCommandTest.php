@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Validation\Checks\FuturesOddsFreshnessCheck;
 use App\Actions\Validation\Checks\GameCoverageCheck;
 use App\Actions\Validation\Checks\InjuryFreshnessCheck;
 use App\Actions\Validation\Checks\PipelineOrderCheck;
@@ -849,6 +850,52 @@ test('healthcheck validate data flags stale futures odds', function () {
         ->and(data_get($finding->facts, 'stale'))->toBeTrue();
 });
 
+test('offseason college basketball futures freshness does not block without active games', function () {
+    $this->travelTo('2026-06-14 12:00:00');
+
+    DB::table('sports_futures_odds')->insert([
+        'row_key' => 'cbb-title-houston',
+        'sport' => 'cbb',
+        'season' => (int) now()->year,
+        'odds_api_sport_key' => 'basketball_ncaab_championship_winner',
+        'bookmaker' => 'draftkings',
+        'market_key' => 'championship_winner',
+        'outcome_name' => 'Houston Cougars',
+        'price' => 1200,
+        'fetched_at' => now()->subDays(30),
+        'created_at' => now()->subDays(30),
+        'updated_at' => now()->subDays(30),
+    ]);
+
+    $result = app(FuturesOddsFreshnessCheck::class)->run('cbb', config('validation.sports.cbb'));
+
+    expect($result)->not->toBeNull()
+        ->and($result['status'])->toBe('passing')
+        ->and($result['recommended_action'])->toBeNull()
+        ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
+        ->and(data_get($result, 'metadata.active_games_in_window'))->toBe(0);
+});
+
+test('offseason college basketball injury freshness does not block without active games or injuries', function () {
+    $this->travelTo('2026-06-14 12:00:00');
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'cbb',
+        'command' => 'espn:sync-cbb-injuries',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subDays(60),
+    ]);
+
+    $result = app(InjuryFreshnessCheck::class)->run('cbb', config('validation.sports.cbb'));
+
+    expect($result)->not->toBeNull()
+        ->and($result['status'])->toBe('passing')
+        ->and($result['recommended_action'])->toBeNull()
+        ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
+        ->and(data_get($result, 'metadata.active_games_in_window'))->toBe(0);
+});
+
 test('healthcheck validate data flags pipeline order violations', function () {
     $home = Team::factory()->create();
     $away = Team::factory()->create();
@@ -902,7 +949,45 @@ test('healthcheck validate data flags pipeline order violations', function () {
         ->and(data_get($finding->facts, 'violations.0.temporal_scope.blocking_active_games'))->toBe(1);
 });
 
+test('pipeline order ignores stale market dependencies when no active games are affected', function () {
+    $this->travelTo('2026-06-14 12:00:00');
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'cbb',
+        'command' => 'cbb:sync-odds',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now(),
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'cbb',
+        'command' => 'cbb:sync-player-props',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subHour(),
+    ]);
+
+    $result = app(PipelineOrderCheck::class)->run('cbb', config('validation.sports.cbb'));
+
+    expect($result)->not->toBeNull()
+        ->and($result['status'])->toBe('passing')
+        ->and(data_get($result, 'metadata.violations'))->toBe([]);
+});
+
 test('pipeline order treats stale ai daily predictions as advisory warning', function () {
+    $home = MlbTeam::factory()->create();
+    $away = MlbTeam::factory()->create();
+
+    MlbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => (int) now()->year,
+        'status' => config('mlb.statuses.scheduled'),
+        'game_date' => now()->copy()->toDateString(),
+        'game_time' => '18:00:00',
+    ]);
+
     CommandHeartbeat::query()->create([
         'sport' => 'mlb',
         'command' => 'mlb:sync-odds',
@@ -919,7 +1004,16 @@ test('pipeline order treats stale ai daily predictions as advisory warning', fun
         'ran_at' => now()->subHour(),
     ]);
 
-    $result = app(PipelineOrderCheck::class)->run('mlb', config('validation.sports.mlb'));
+    $profile = config('validation.sports.mlb');
+    $profile['pipeline_order'] = [[
+        'label' => 'odds before AI daily predictions',
+        'upstream' => ['mlb:sync-odds%'],
+        'downstream' => ['sports:ai-daily-predictions --sport=mlb%'],
+        'recommended_action' => 'sports:ai-daily-predictions --sport=mlb',
+        'severity' => 'warning',
+    ]];
+
+    $result = app(PipelineOrderCheck::class)->run('mlb', $profile);
 
     expect($result)->not->toBeNull()
         ->and($result['status'])->toBe('warning')

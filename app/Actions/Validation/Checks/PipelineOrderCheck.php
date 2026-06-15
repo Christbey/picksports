@@ -46,6 +46,12 @@ class PipelineOrderCheck implements ValidationCheck
             $downstreamHeartbeat = $this->latestSuccess($sport, $downstream);
 
             if (! $upstreamHeartbeat || ! $downstreamHeartbeat) {
+                $temporalScope = $this->activeWindowScope($profile);
+
+                if (($temporalScope['blocking_active_games'] ?? null) === 0) {
+                    continue;
+                }
+
                 $missingHeartbeats[] = [
                     'label' => $label,
                     'upstream' => $upstream,
@@ -53,6 +59,7 @@ class PipelineOrderCheck implements ValidationCheck
                     'upstream_found' => $upstreamHeartbeat !== null,
                     'downstream_found' => $downstreamHeartbeat !== null,
                     'recommended_action' => $recommendedAction,
+                    'temporal_scope' => $temporalScope,
                 ];
 
                 continue;
@@ -140,7 +147,7 @@ class PipelineOrderCheck implements ValidationCheck
     private function temporalScopeForRule(string $sport, array $profile, string $label, CarbonInterface $upstreamRanAt): array
     {
         if (! str_contains(strtolower($label), 'details before predictions')) {
-            return [];
+            return $this->activeWindowScope($profile);
         }
 
         $gamesTable = (string) data_get($profile, 'tables.games', '');
@@ -215,6 +222,48 @@ class PipelineOrderCheck implements ValidationCheck
             'checked_active_games' => $games->count(),
             'blocking_active_games' => count($blockingGames),
             'sample_games' => array_slice($blockingGames, 0, 5),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private function activeWindowScope(array $profile): array
+    {
+        $gamesTable = (string) data_get($profile, 'tables.games', '');
+
+        if ($gamesTable === '' || ! Schema::hasTable($gamesTable) || ! Schema::hasColumn($gamesTable, 'game_date')) {
+            return [];
+        }
+
+        $dates = app(SportsDateWindowService::class);
+        $windowDays = max(1, (int) ($profile['market_window_days'] ?? config('validation.market_window_days', 1)));
+        $startDate = $dates->parseLocalDate();
+        $endDate = $startDate->addDays($windowDays);
+        $query = DB::table($gamesTable)
+            ->whereDate('game_date', '>=', $startDate->toDateString())
+            ->whereDate('game_date', '<=', $endDate->toDateString());
+
+        if (Schema::hasColumn($gamesTable, 'status')) {
+            $query->whereIn('status', [
+                'STATUS_SCHEDULED',
+                'STATUS_PRE_GAME',
+                'STATUS_DELAYED',
+                'STATUS_IN_PROGRESS',
+                'scheduled',
+                'in_progress',
+            ]);
+        }
+
+        $activeGames = (int) $query->count();
+
+        return [
+            'rule' => 'active_window',
+            'window_start' => $startDate->toDateString(),
+            'window_end' => $endDate->toDateString(),
+            'checked_active_games' => $activeGames,
+            'blocking_active_games' => $activeGames,
         ];
     }
 }

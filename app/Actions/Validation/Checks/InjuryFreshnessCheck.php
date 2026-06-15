@@ -4,6 +4,8 @@ namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Models\CommandHeartbeat;
+use App\Services\Sports\SeasonStage\SeasonStageService;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -27,6 +29,24 @@ class InjuryFreshnessCheck implements ValidationCheck
         $warningHours = (int) config('validation.thresholds.injury_freshness.warning_after_hours', $inSeason ? 12 : 72);
         $failingHours = (int) config('validation.thresholds.injury_freshness.failing_after_hours', $inSeason ? 24 : 168);
         $activeInjuries = (int) DB::table($injuriesTable)->where('is_active', true)->count();
+        $offseasonContext = $this->offseasonContext($sport, $profile);
+
+        if (($offseasonContext['offseason_without_active_games'] ?? false) === true && $activeInjuries === 0) {
+            return [
+                'check_type' => 'validation_injury_freshness',
+                'status' => 'passing',
+                'severity' => 'passing',
+                'message' => "No active {$sport} games or injuries are present; injury freshness is not required during the offseason.",
+                'recommended_action' => null,
+                'metadata' => [
+                    'in_season' => $inSeason,
+                    'active_injuries' => $activeInjuries,
+                    'warning_after_hours' => $warningHours,
+                    'failing_after_hours' => $failingHours,
+                ] + $offseasonContext,
+            ];
+        }
+
         $lastDataUpdate = DB::table($injuriesTable)->max('updated_at');
         $lastSync = CommandHeartbeat::query()
             ->where('sport', $sport)
@@ -91,7 +111,58 @@ class InjuryFreshnessCheck implements ValidationCheck
                 'fresh_at_is_future' => $freshAtIsFuture,
                 'warning_after_hours' => $warningHours,
                 'failing_after_hours' => $failingHours,
-            ],
+            ] + $offseasonContext,
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     * @return array<string, mixed>
+     */
+    private function offseasonContext(string $sport, array $profile): array
+    {
+        $stage = app(SeasonStageService::class)->context($sport, (int) now()->year);
+        $activeGames = $this->activeGameCount($profile);
+
+        return [
+            'stage' => $stage->stage,
+            'stage_group' => $stage->stageGroup,
+            'active_games_in_window' => $activeGames,
+            'offseason_without_active_games' => in_array($stage->stageGroup, ['offseason', 'preseason'], true)
+                && $activeGames === 0,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $profile
+     */
+    private function activeGameCount(array $profile): int
+    {
+        $gamesTable = (string) data_get($profile, 'tables.games', '');
+
+        if ($gamesTable === '' || ! Schema::hasTable($gamesTable) || ! Schema::hasColumn($gamesTable, 'game_date')) {
+            return 0;
+        }
+
+        $dates = app(SportsDateWindowService::class);
+        $windowDays = max(1, (int) ($profile['market_window_days'] ?? config('validation.market_window_days', 1)));
+        $startDate = $dates->parseLocalDate();
+        $endDate = $startDate->addDays($windowDays);
+        $query = DB::table($gamesTable)
+            ->whereDate('game_date', '>=', $startDate->toDateString())
+            ->whereDate('game_date', '<=', $endDate->toDateString());
+
+        if (Schema::hasColumn($gamesTable, 'status')) {
+            $query->whereIn('status', [
+                'STATUS_SCHEDULED',
+                'STATUS_PRE_GAME',
+                'STATUS_DELAYED',
+                'STATUS_IN_PROGRESS',
+                'scheduled',
+                'in_progress',
+            ]);
+        }
+
+        return (int) $query->count();
     }
 }

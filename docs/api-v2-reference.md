@@ -210,6 +210,131 @@ being migrated:
 Do not reshape these without changing the Vue consumer and tests in the same
 change.
 
+## NFL API Contract
+
+NFL uses the shared `/api/v2/sports/{sport}` route family with `sport=nfl`.
+The current source of truth is:
+
+- Route registration: `routes/api-v2.php`.
+- Capability map: `config/sports.php` under `domains.nfl`.
+- V2 context and serializers: `app/Services/Api/V2` and
+  `app/Http/Resources/Api/V2`.
+- NFL domain models/resources: `app/Models/NFL` and
+  `app/Http/Resources/NFL`.
+- Contract tests: `tests/Feature/Api/V2`.
+
+### NFL Supported Surface
+
+NFL supports these shared v2 surfaces:
+
+| Surface | Endpoint family | Notes |
+| --- | --- | --- |
+| Games | `/api/v2/sports/nfl/games` | Filter by `season`, `season_type`, `week`, status, team, and date windows. |
+| Teams | `/api/v2/sports/nfl/teams` | Conference and division filters should map to NFL alignment. |
+| Players | `/api/v2/sports/nfl/players` | Supports team, position, status, search, and pagination. |
+| Predictions | `/api/v2/sports/nfl/predictions` | Includes confidence context, prediction outputs, market summary, grading fields, and live fields when present. |
+| Team metrics | `/api/v2/sports/nfl/metrics/teams` | Uses NFL team metric calculations and derived record context. |
+| Team stats | `/api/v2/sports/nfl/stats/team` | Includes game/team stat rows and season-average endpoint. |
+| Player stats | `/api/v2/sports/nfl/stats/player` | Includes player stat rows and available date/season endpoints. |
+| Player leaderboards | `/api/v2/sports/nfl/leaderboards/players` | Defaults to `min_games=4` unless overridden. |
+| Injuries | `/api/v2/sports/nfl/injuries` | Should return active injury context when in season; offseason gaps should be explicit. |
+| Depth charts | `/api/v2/sports/nfl/games/{game}/depth-charts` and `/teams/{team}/depth-charts` | NFL has depth-chart capability enabled. |
+| Player props | `/api/v2/sports/nfl/player-props`, `/markets/player-props`, `/player-props/board` | Provider coverage may be empty outside market windows. Empty contracts should not throw provider errors. |
+| Futures odds | `/api/v2/sports/nfl/markets/futures` and `/teams/{team}/futures` | Supports team and player futures where provider rows exist. |
+| Forecasts | `/api/v2/sports/nfl/forecasts` | Uses `TeamPlayoffForecastService`; supports playoff, conference, and Super Bowl probability fields. |
+| Signals | `/api/v2/sports/nfl/signals` | Uses `NflBettingSignalService`; returns model/market signal groups rather than raw predictions only. |
+
+### NFL-Specific Payload Expectations
+
+NFL prediction payloads should keep the standard v2 fields:
+
+- `game`, `pick`, `projection`, `home_win_probability`,
+  `away_win_probability`, `predicted_spread`, `predicted_total`,
+  `confidence_score`, `confidence_level`, `confidence_context`,
+  `market_summary`, grading fields, and freshness metadata.
+- `confidence_score` is the raw model score. UI and publishing logic should
+  prefer `confidence_context.label` and `confidence_context.reason_codes`
+  before treating a prediction as high quality.
+- `depth_chart_context` may appear when injury/depth chart weighting is
+  available. Missing depth-chart context should be visible as missing or stale
+  operational data, not silently promoted as a clean signal.
+- Live fields such as `live_predicted_spread`, `live_predicted_total`,
+  `live_win_probability`, and `live_updated_at` are nullable and should only be
+  interpreted for live games.
+
+NFL team metrics and leaderboards should expose football-appropriate fields
+rather than basketball/baseball aliases. Use the API resources and contract
+tests as the schema authority, then verify production payloads through the
+payload inspector before changing Vue.
+
+### NFL Offseason And Provider Behavior
+
+NFL has a long offseason. During offseason or pre-schedule windows:
+
+- `games`, `predictions`, `stats`, `props`, `signals`, and weather-dependent
+  outputs may return empty `data` arrays with normal `meta` instead of errors.
+- Team stats are not expected until completed games exist for the selected
+  season.
+- Futures may be present before games begin if provider markets exist.
+- Injuries and depth charts can be stale or unavailable depending on provider
+  coverage. Validation should reflect that stage context rather than blocking
+  every offseason page by default.
+- Player props should be treated as market-window data. Missing props before
+  books post lines should produce warnings or empty payloads, not broken Vue.
+
+### NFL Validation Commands
+
+Use these when validating the API/data path locally or on production:
+
+```bash
+php8.4 artisan sports:operations-sentinel --sport=nfl --season=2026 --validate-only --skip-ai-review
+php8.4 artisan healthcheck:validate-data --sport=nfl
+php8.4 artisan operations:ai-review --sport=nfl --season=2026 --date=2026-06-14
+```
+
+Use these when repairing the data path during an active NFL season:
+
+```bash
+php8.4 artisan sports:operations-sentinel --sport=nfl --season=2026 --repair --ai
+php8.4 artisan espn:sync-nfl-current
+php8.4 artisan espn:sync-nfl-games-scoreboard
+php8.4 artisan espn:sync-nfl-game-details
+php8.4 artisan espn:sync-nfl-depth-charts --season=2026
+php8.4 artisan espn:sync-nfl-injuries
+php8.4 artisan nfl:sync-game-weather --season=2026 --days-back=0 --days-forward=7 --force
+php8.4 artisan nfl:sync-odds
+php8.4 artisan nfl:sync-player-props
+php8.4 artisan sports:sync-futures-odds --sport=nfl --season=2026
+```
+
+After any repair pass, rerun validation and inspect representative v2 payloads:
+
+```txt
+/api/v2/admin/payload-inspector?profile=sport-predictions&sport=nfl
+/api/v2/admin/payload-inspector?profile=player-props&sport=nfl
+/api/v2/admin/payload-inspector?profile=dashboard&sport=nfl
+```
+
+### NFL Contract Coverage Checklist
+
+Before changing NFL API behavior, update or add tests for the relevant shared
+contract:
+
+- `SportGameEndpointContractTest`
+- `SportPredictionEndpointContractTest`
+- `SportTeamMetricEndpointContractTest`
+- `SportStatsEndpointContractTest`
+- `SportDepthChartEndpointContractTest`
+- `SportPlayerPropEndpointContractTest`
+- `SportFuturesOddEndpointContractTest`
+- `SportSignalEndpointContractTest`
+- `SportForecastEndpointContractTest`
+- `SportPlayerLeaderboardEndpointContractTest`
+
+The API should remain Laravel-first and Vue-friendly: keep query behavior in
+query/services, keep resources as serializers, avoid hard-coded Vue fetch URLs,
+and document any NFL-specific field or provider caveat in this section.
+
 ## Signals Contract
 
 `GET /api/v2/sports/{sport}/signals` returns betting signals for the selected

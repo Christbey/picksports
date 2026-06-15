@@ -16,7 +16,9 @@ class AnalyzeReasonCodesCommand extends Command
                             {--min-games=20 : Minimum games for generated combinations}
                             {--top=25 : Number of generated combinations to show}
                             {--max-size=3 : Maximum generated combination size}
-                            {--max-codes-per-game=14 : Maximum eligible generated-combo codes per prediction}';
+                            {--max-codes-per-game=14 : Maximum eligible generated-combo codes per prediction}
+                            {--include-background-codes : Include broad/high-frequency model plumbing codes in generated reports}
+                            {--max-code-frequency=0.8 : Treat codes on this share of games as background unless included}';
 
     protected $description = 'Analyze NFL prediction hit rates by reason-code combinations';
 
@@ -28,6 +30,8 @@ class AnalyzeReasonCodesCommand extends Command
             $top = max(1, (int) $this->option('top'));
             $maxSize = max(1, min(5, (int) $this->option('max-size')));
             $maxCodesPerGame = max(4, (int) $this->option('max-codes-per-game'));
+            $includeBackgroundCodes = (bool) $this->option('include-background-codes');
+            $maxCodeFrequency = max(0.0, min(1.0, (float) $this->option('max-code-frequency')));
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
@@ -71,6 +75,22 @@ class AnalyzeReasonCodesCommand extends Command
         $this->info("Analyzing {$predictions->count()} predictions with reason codes from {$scope['label']}...");
         $this->newLine();
 
+        $backgroundCodes = $includeBackgroundCodes
+            ? collect()
+            : $this->backgroundReasonCodes($predictions, $maxCodeFrequency);
+
+        if ($backgroundCodes->isNotEmpty()) {
+            $this->warn(sprintf(
+                'Filtering %d background/noisy reason code(s) from generated reports. Use --include-background-codes to audit raw combinations.',
+                $backgroundCodes->count()
+            ));
+            $this->table(
+                ['Excluded Background Codes'],
+                $backgroundCodes->map(fn (string $code): array => [$code])->all()
+            );
+            $this->newLine();
+        }
+
         if ($requiredCodes->isNotEmpty()) {
             $matches = $predictions
                 ->filter(fn (Prediction $prediction): bool => $requiredCodes->every(
@@ -86,10 +106,17 @@ class AnalyzeReasonCodesCommand extends Command
             $this->newLine();
         }
 
-        $this->info("Top Reason-Code Combinations (minimum {$minGames} games)");
+        $this->info("Top Actionable Standalone Reason Codes (minimum {$minGames} games)");
+        $this->table(
+            ['Reason Code', 'Games', 'Winner Acc', 'Avg Trust', 'Spread MAE', 'Seasons'],
+            $this->standaloneRows($predictions, $minGames, $top, $backgroundCodes)
+        );
+        $this->newLine();
+
+        $this->info("Top Actionable Reason-Code Combinations (minimum {$minGames} games)");
         $this->table(
             ['Reason Codes', 'Games', 'Winner Acc', 'Avg Trust', 'Spread MAE', 'Seasons'],
-            $this->combinationRows($predictions, $maxSize, $minGames, $top, $maxCodesPerGame)
+            $this->combinationRows($predictions, $maxSize, $minGames, $top, $maxCodesPerGame, $backgroundCodes)
         );
 
         return Command::SUCCESS;
@@ -138,19 +165,19 @@ class AnalyzeReasonCodesCommand extends Command
      * @param  Collection<int, Prediction>  $predictions
      * @return array<int, array<int, mixed>>
      */
-    protected function combinationRows(Collection $predictions, int $maxSize, int $minGames, int $top, int $maxCodesPerGame): array
+    protected function combinationRows(Collection $predictions, int $maxSize, int $minGames, int $top, int $maxCodesPerGame, Collection $backgroundCodes): array
     {
         $groups = [];
         $standaloneCounts = [];
 
         foreach ($predictions as $prediction) {
-            foreach ($this->reasonCodes($prediction) as $code) {
+            foreach ($this->actionableReasonCodes($prediction, $backgroundCodes) as $code) {
                 $standaloneCounts[$code] = ($standaloneCounts[$code] ?? 0) + 1;
             }
         }
 
         foreach ($predictions as $prediction) {
-            $codes = collect($this->reasonCodes($prediction))
+            $codes = collect($this->actionableReasonCodes($prediction, $backgroundCodes))
                 ->filter(fn (string $code): bool => ($standaloneCounts[$code] ?? 0) >= $minGames)
                 ->sortByDesc(fn (string $code): int => $standaloneCounts[$code] ?? 0)
                 ->take($maxCodesPerGame)
@@ -171,6 +198,39 @@ class AnalyzeReasonCodesCommand extends Command
         return collect($groups)
             ->filter(fn (Collection $rows): bool => $rows->count() >= $minGames)
             ->map(fn (Collection $rows, string $key): array => $this->summaryRow(str_replace('|', ' + ', $key), $rows))
+            ->sort(function (array $left, array $right): int {
+                $leftAccuracy = (float) rtrim((string) $left[2], '%');
+                $rightAccuracy = (float) rtrim((string) $right[2], '%');
+
+                if ($leftAccuracy !== $rightAccuracy) {
+                    return $rightAccuracy <=> $leftAccuracy;
+                }
+
+                return (int) $right[1] <=> (int) $left[1];
+            })
+            ->take($top)
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, Prediction>  $predictions
+     * @return array<int, array<int, mixed>>
+     */
+    protected function standaloneRows(Collection $predictions, int $minGames, int $top, Collection $backgroundCodes): array
+    {
+        $groups = [];
+
+        foreach ($predictions as $prediction) {
+            foreach ($this->actionableReasonCodes($prediction, $backgroundCodes) as $code) {
+                $groups[$code] ??= collect();
+                $groups[$code]->push($prediction);
+            }
+        }
+
+        return collect($groups)
+            ->filter(fn (Collection $rows): bool => $rows->count() >= $minGames)
+            ->map(fn (Collection $rows, string $code): array => $this->summaryRow($code, $rows))
             ->sort(function (array $left, array $right): int {
                 $leftAccuracy = (float) rtrim((string) $left[2], '%');
                 $rightAccuracy = (float) rtrim((string) $right[2], '%');
@@ -255,6 +315,54 @@ class AnalyzeReasonCodesCommand extends Command
             ->sort()
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function actionableReasonCodes(Prediction $prediction, Collection $backgroundCodes): array
+    {
+        return collect($this->reasonCodes($prediction))
+            ->reject(fn (string $code): bool => $backgroundCodes->contains($code))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, Prediction>  $predictions
+     * @return Collection<int, string>
+     */
+    protected function backgroundReasonCodes(Collection $predictions, float $maxCodeFrequency): Collection
+    {
+        $total = max(1, $predictions->count());
+        $explicitBackgroundCodes = collect([
+            'adaptive_calibration_signal',
+            'adaptive_point_calibration_signal',
+            'bend_dont_break_defense',
+            'contextual_adjustments',
+            'home_away_split_signal',
+            'multi_factor_confluence',
+            'ol_dl_matchup_signal',
+            'recent_matchup_record_context',
+            'rolling_efficiency_mature_sample',
+            'rolling_efficiency_signal',
+            'slow_pace_under_signal',
+        ]);
+
+        $highFrequencyCodes = [];
+        foreach ($predictions as $prediction) {
+            foreach ($this->reasonCodes($prediction) as $code) {
+                $highFrequencyCodes[$code] = ($highFrequencyCodes[$code] ?? 0) + 1;
+            }
+        }
+
+        return collect($highFrequencyCodes)
+            ->filter(fn (int $count): bool => ($count / $total) >= $maxCodeFrequency)
+            ->keys()
+            ->merge($explicitBackgroundCodes)
+            ->unique()
+            ->sort()
+            ->values();
     }
 
     protected function predictionWinnerCorrect(Prediction $prediction): bool

@@ -49,3 +49,49 @@ it('analyzes required reason-code sets and generated combinations', function () 
         ->expectsOutputToContain('100%')
         ->assertSuccessful();
 });
+
+it('filters broad background reason codes from generated reports by default', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $createPrediction = function (array $gameOverrides, float $winProbability, array $reasonCodes) use ($homeTeam, $awayTeam): void {
+        $game = Game::factory()->create(array_merge([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'season' => 2025,
+            'status' => 'STATUS_FINAL',
+            'home_score' => 24,
+            'away_score' => 17,
+        ], $gameOverrides));
+
+        Prediction::factory()->create([
+            'game_id' => $game->id,
+            'predicted_spread' => $winProbability > 0.5 ? 4.5 : -4.5,
+            'predicted_total' => 44.5,
+            'win_probability' => $winProbability,
+            'confidence_score' => 68,
+            'model_metadata' => [
+                'analysis_layer' => [
+                    'applied' => true,
+                    'trust_score' => 68,
+                    'reason_codes' => $reasonCodes,
+                ],
+            ],
+        ]);
+    };
+
+    $createPrediction([], 0.7, ['rolling_efficiency_signal', 'ol_dl_matchup_signal', 'qb_form_improving']);
+    $createPrediction(['home_score' => 31, 'away_score' => 17], 0.7, ['rolling_efficiency_signal', 'ol_dl_matchup_signal', 'qb_form_improving']);
+    $createPrediction(['home_score' => 14, 'away_score' => 21], 0.7, ['rolling_efficiency_signal', 'ol_dl_matchup_signal', 'weather_wind_edge']);
+
+    $this->artisan('nfl:analyze-reason-codes', [
+        '--season' => 2025,
+        '--min-games' => 1,
+        '--top' => 10,
+    ])
+        ->expectsOutputToContain('Filtering')
+        ->expectsOutputToContain('Top Actionable Standalone Reason Codes')
+        ->expectsOutputToContain('qb_form_improving')
+        ->doesntExpectOutputToContain('rolling_efficiency_signal + ol_dl_matchup_signal')
+        ->assertSuccessful();
+});

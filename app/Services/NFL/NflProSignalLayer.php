@@ -83,11 +83,30 @@ class NflProSignalLayer
             ...$regressionReasonCodes,
             ...$riskReasonCodes,
         ]));
+        $marketScores = $this->marketScores(
+            $winProbability,
+            $spreadEdge,
+            $totalEdge,
+            $crossedKeyNumbers,
+            $nearKeyNumbers,
+            $teaserCandidate,
+            $marketMovement,
+            $numberDiscipline,
+            $injuryReplacement,
+            $weatherRoof,
+            $efficiencyMismatch,
+            $regressionContext,
+            $metadata,
+            $riskFlags,
+            $allReasonCodes
+        );
 
         return [
             'version' => 'nfl-pro-signal-layer-v1',
             'score' => $score,
             'tier' => $this->tier($score),
+            'market_scores' => $marketScores,
+            'recommended_markets' => $this->marketRecommendations($marketScores),
             'market_context' => [
                 'pick_side' => $pickSide,
                 'market_spread' => $marketSpread !== null ? round($marketSpread, 3) : null,
@@ -125,6 +144,120 @@ class NflProSignalLayer
             'risk_flags' => array_values(array_unique($riskFlags)),
             'score_components' => $scoreComponents,
         ];
+    }
+
+    /**
+     * @param  list<int>  $crossedKeyNumbers
+     * @param  list<int>  $nearKeyNumbers
+     * @param  list<string>  $riskFlags
+     * @param  list<string>  $reasonCodes
+     * @return array<string,array<string,mixed>>
+     */
+    private function marketScores(
+        float $winProbability,
+        ?float $spreadEdge,
+        ?float $totalEdge,
+        array $crossedKeyNumbers,
+        array $nearKeyNumbers,
+        bool $teaserCandidate,
+        array $marketMovement,
+        array $numberDiscipline,
+        array $injuryReplacement,
+        array $weatherRoof,
+        array $efficiencyMismatch,
+        array $regressionContext,
+        array $metadata,
+        array $riskFlags,
+        array $reasonCodes
+    ): array {
+        $winnerComponents = [
+            'base' => 18,
+            'win_probability' => (int) max(0, min(34, floor(($winProbability - 0.5) * 100))),
+            'spread_edge' => $spreadEdge !== null && abs($spreadEdge) >= 4.0 ? 8 : ($spreadEdge !== null && abs($spreadEdge) >= 2.0 ? 4 : 0),
+            'key_number_10_context' => in_array(10, $crossedKeyNumbers, true) ? 5 : 0,
+            'qb_context' => abs((float) data_get($metadata, 'qb_form.signal_spread', 0.0)) >= 1.0 ? 6 : 0,
+            'trenches_context' => abs((float) data_get($metadata, 'line_matchup.signal_spread', 0.0)) >= 1.0 ? 4 : 0,
+            'efficiency_context' => (bool) ($efficiencyMismatch['epa_edge'] ?? false) ? 5 : 0,
+            'injury_qb_context' => (bool) ($injuryReplacement['qb_replacement_edge'] ?? false) ? 5 : 0,
+            'low_data_penalty' => in_array('low_data_quality', $reasonCodes, true) ? -8 : 0,
+            'clv_penalty' => (bool) ($marketMovement['negative_clv_profile'] ?? false) ? -4 : 0,
+        ];
+
+        $spreadComponents = [
+            'base' => 18,
+            'spread_edge' => $spreadEdge !== null ? (int) min(24, floor(abs($spreadEdge) * 5)) : 0,
+            'key_number_3' => in_array(3, $crossedKeyNumbers, true) ? 10 : 0,
+            'key_number_7' => in_array(7, $crossedKeyNumbers, true) ? 5 : 0,
+            'near_key_number' => count($nearKeyNumbers) * 2,
+            'teaser_corridor' => $teaserCandidate ? match ($numberDiscipline['teaser_corridor_quality'] ?? 'standard') {
+                'premium' => 8,
+                'thin' => 2,
+                default => 5,
+            } : 0,
+            'low_total_key_number' => (bool) ($numberDiscipline['low_total_key_number_boost'] ?? false) ? 8 : 0,
+            'turnover_regression' => (bool) ($regressionContext['turnover_luck_flagged'] ?? false) ? 8 : 0,
+            'trenches_context' => abs((float) data_get($metadata, 'line_matchup.signal_spread', 0.0)) >= 1.0 ? 4 : 0,
+            'rest_travel_context' => (bool) data_get($metadata, 'contextual_factors.schedule_spot.applied', false) ? 2 : 0,
+            'roof_context' => (bool) ($weatherRoof['roof_weather_protected'] ?? false) ? 2 : 0,
+            'positive_clv' => (bool) ($marketMovement['positive_clv_profile'] ?? false) ? 5 : 0,
+            'market_overreaction_penalty' => in_array('market_overreaction', $reasonCodes, true) ? -8 : 0,
+            'division_penalty' => in_array('division_dog_key_number', $reasonCodes, true) ? -5 : 0,
+            'key_number_10_penalty' => in_array(10, $crossedKeyNumbers, true) ? -8 : 0,
+            'key_number_5_penalty' => in_array(5, $crossedKeyNumbers, true) ? -2 : 0,
+            'low_data_penalty' => in_array('low_data_quality', $reasonCodes, true) ? -6 : 0,
+            'negative_clv_penalty' => (bool) ($marketMovement['negative_clv_profile'] ?? false) ? -8 : 0,
+            'dead_number_penalty' => (bool) ($numberDiscipline['dead_number_tax'] ?? false) ? -6 : 0,
+        ];
+
+        $totalComponents = [
+            'base' => 16,
+            'total_edge' => $totalEdge !== null ? (int) min(28, floor(abs($totalEdge) * 6)) : 0,
+            'weather_total_suppression' => (bool) ($weatherRoof['weather_total_suppression'] ?? false) ? 12 : 0,
+            'roof_context' => (bool) ($weatherRoof['roof_weather_protected'] ?? false) ? 6 : 0,
+            'low_data_context' => in_array('low_data_quality', $reasonCodes, true) ? 2 : 0,
+            'pace_pressure_penalty' => in_array('pace_total_pressure', $reasonCodes, true) ? -6 : 0,
+            'low_total_key_number_penalty' => (bool) ($numberDiscipline['low_total_key_number_boost'] ?? false) ? -6 : 0,
+            'negative_clv_penalty' => (bool) ($marketMovement['negative_clv_profile'] ?? false) ? -4 : 0,
+            'risk_penalty' => count($riskFlags) * -2,
+        ];
+
+        return [
+            'winner' => $this->marketScorePayload($winnerComponents),
+            'spread' => $this->marketScorePayload($spreadComponents),
+            'total' => $this->marketScorePayload($totalComponents),
+        ];
+    }
+
+    /**
+     * @param  array<string,int>  $components
+     * @return array<string,mixed>
+     */
+    private function marketScorePayload(array $components): array
+    {
+        $score = (int) round(max(0, min(100, array_sum($components))));
+
+        return [
+            'score' => $score,
+            'tier' => $this->tier($score),
+            'components' => $components,
+        ];
+    }
+
+    /**
+     * @param  array<string,array<string,mixed>>  $marketScores
+     * @return list<array<string,mixed>>
+     */
+    private function marketRecommendations(array $marketScores): array
+    {
+        return collect($marketScores)
+            ->filter(fn (array $payload): bool => (int) ($payload['score'] ?? 0) >= 60)
+            ->map(fn (array $payload, string $market): array => [
+                'market' => $market,
+                'score' => (int) $payload['score'],
+                'tier' => (string) $payload['tier'],
+            ])
+            ->values()
+            ->all();
     }
 
     /**
@@ -207,7 +340,7 @@ class NflProSignalLayer
         }
 
         $clv = $this->number($marketMovement['closing_line_value_points'] ?? null);
-        if ($clv !== null) {
+        if ($clv !== null && abs($clv) >= 0.25) {
             $codes[] = $clv >= 0 ? 'positive_clv_profile' : 'negative_clv_profile';
         }
 
@@ -403,8 +536,8 @@ class NflProSignalLayer
             'last_snapshot_spread' => $lastSnapshotSpread !== null ? round($lastSnapshotSpread, 3) : null,
             'line_movement_points' => $lineMovement !== null ? round($lineMovement, 3) : null,
             'closing_line_value_points' => $closingLineValue !== null ? round($closingLineValue, 3) : null,
-            'positive_clv_profile' => $closingLineValue !== null && $closingLineValue >= 0,
-            'negative_clv_profile' => $closingLineValue !== null && $closingLineValue < 0,
+            'positive_clv_profile' => $closingLineValue !== null && $closingLineValue >= 0.25,
+            'negative_clv_profile' => $closingLineValue !== null && $closingLineValue <= -0.25,
             'steam_freshness' => $lineMovement !== null && abs($lineMovement) >= 1.0 && ($spanMinutes === null || $spanMinutes <= 360),
             'market_setter_slow_book_gap' => $bookRange !== null && $bookRange >= 1.0,
             'buyback_resistance' => $buybackResistance,

@@ -98,6 +98,9 @@ it('identifies the five key number and valid teaser corridor', function () {
 
     expect(data_get($layer, 'market_context.crossed_key_numbers'))->toBe([3, 5, 7])
         ->and(data_get($layer, 'market_context.teaser_candidate'))->toBeTrue()
+        ->and(data_get($layer, 'market_scores.winner.score'))->toBeInt()
+        ->and(data_get($layer, 'market_scores.spread.score'))->toBeInt()
+        ->and(data_get($layer, 'market_scores.total.score'))->toBeInt()
         ->and(data_get($layer, 'reason_codes'))->toContain('key_number_edge_5')
         ->and(data_get($layer, 'reason_codes'))->toContain('teaser_candidate')
         ->and(data_get($layer, 'reason_codes'))->toContain('weather_total_suppression')
@@ -323,6 +326,8 @@ it('reports pro signal tiers and reason-code backtest rows', function () {
     ])
         ->expectsOutputToContain('NFL Pro Signal Layer Report')
         ->expectsOutputToContain('Winner %')
+        ->expectsOutputToContain('By Winner Tier')
+        ->expectsOutputToContain('By Spread Tier')
         ->expectsOutputToContain('official_candidate')
         ->expectsOutputToContain('teaser_candidate')
         ->assertSuccessful();
@@ -375,7 +380,58 @@ it('reports pro signal rows using snapshot odds when pro layer market context is
     ])
         ->expectsOutputToContain('NFL Pro Signal Layer Report')
         ->expectsOutputToContain('Winner %')
+        ->expectsOutputToContain('By Spread Tier')
         ->expectsOutputToContain('lean')
         ->expectsOutputToContain('market_overreaction')
         ->assertSuccessful();
+});
+
+it('does not create a positive clv profile from a flat closing line', function () {
+    $game = nflProSignalGame([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 24,
+        'away_score' => 17,
+        'odds_data' => nflProSignalOddsPayload(-2.5),
+    ]);
+
+    GameOddsSnapshot::query()->create([
+        'sport' => 'nfl',
+        'game_table' => $game->getTable(),
+        'game_id' => $game->id,
+        'source' => 'test',
+        'captured_at' => now()->subHour(),
+        'payload_hash' => 'flat-clv-open',
+        'odds_data' => nflProSignalOddsPayload(-2.5),
+    ]);
+    GameOddsSnapshot::query()->create([
+        'sport' => 'nfl',
+        'game_table' => $game->getTable(),
+        'game_id' => $game->id,
+        'source' => 'test',
+        'captured_at' => now(),
+        'payload_hash' => 'flat-clv-close',
+        'odds_data' => nflProSignalOddsPayload(-2.5),
+    ]);
+
+    $layer = app(NflProSignalLayer::class)->build(
+        $game->fresh(['homeTeam', 'awayTeam']),
+        [],
+        [
+            'reason_codes' => ['strong_model_signal'],
+            'risk_flags' => [],
+            'calculated_edge' => [
+                'market_spread' => 2.5,
+                'market_total' => 43.5,
+                'spread_points' => 4.0,
+                'total_points' => null,
+            ],
+        ],
+        6.5,
+        44.0,
+        0.68
+    );
+
+    expect(data_get($layer, 'market_movement.closing_line_value_points'))->toBe(0.0)
+        ->and(data_get($layer, 'market_movement.positive_clv_profile'))->toBeFalse()
+        ->and(data_get($layer, 'reason_codes'))->not->toContain('positive_clv_profile');
 });

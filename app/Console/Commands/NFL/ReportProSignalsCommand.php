@@ -43,6 +43,30 @@ class ReportProSignalsCommand extends Command
             $this->summaryRows($rows->groupBy('tier'))
         );
 
+        $this->newLine();
+        $this->info('By Winner Tier');
+        $this->table(
+            ['Tier', 'Bets', 'Winner', 'Winner %', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
+            $this->summaryRows($rows->groupBy('winner_tier'))
+        );
+
+        $this->newLine();
+        $this->info('By Spread Tier');
+        $this->table(
+            ['Tier', 'Bets', 'Winner', 'Winner %', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
+            $this->summaryRows($rows->groupBy('spread_tier'))
+        );
+
+        $totalRows = $rows->filter(fn (array $row): bool => $row['ou_result'] !== null);
+        if ($totalRows->isNotEmpty()) {
+            $this->newLine();
+            $this->info('By Total Tier');
+            $this->table(
+                ['Tier', 'Bets', 'Winner', 'Winner %', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
+                $this->summaryRows($totalRows->groupBy('total_tier'))
+            );
+        }
+
         $reasonRows = $rows
             ->flatMap(function (array $row): array {
                 return collect($row['reason_codes'])
@@ -151,6 +175,9 @@ class ReportProSignalsCommand extends Command
 
         return [
             'tier' => (string) ($layer['tier'] ?? 'unknown'),
+            'winner_tier' => (string) data_get($layer, 'market_scores.winner.tier', $layer['tier'] ?? 'unknown'),
+            'spread_tier' => (string) data_get($layer, 'market_scores.spread.tier', $layer['tier'] ?? 'unknown'),
+            'total_tier' => (string) data_get($layer, 'market_scores.total.tier', $layer['tier'] ?? 'unknown'),
             'reason_codes' => array_values(array_unique((array) ($layer['reason_codes'] ?? []))),
             'winner_correct' => $winnerCorrect,
             'winner_push' => $winnerPush,

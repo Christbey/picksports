@@ -7,6 +7,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class PlayerPropAnalyzer
 {
@@ -151,6 +152,96 @@ class PlayerPropAnalyzer
             'home_away_weight' => 0.04,
             'min_edge' => 0.05,
             'volatility_floor' => 1.5,
+        ],
+        'player_pass_yds' => [
+            'season_weight' => 0.34,
+            'recent_weight' => 0.33,
+            'last5_weight' => 0.20,
+            'vs_opp_weight' => 0.08,
+            'home_away_weight' => 0.05,
+            'min_edge' => 0.045,
+            'volatility_floor' => 48.0,
+        ],
+        'player_pass_tds' => [
+            'season_weight' => 0.34,
+            'recent_weight' => 0.32,
+            'last5_weight' => 0.20,
+            'vs_opp_weight' => 0.08,
+            'home_away_weight' => 0.06,
+            'min_edge' => 0.06,
+            'volatility_floor' => 1.05,
+        ],
+        'player_pass_completions' => [
+            'season_weight' => 0.34,
+            'recent_weight' => 0.33,
+            'last5_weight' => 0.20,
+            'vs_opp_weight' => 0.08,
+            'home_away_weight' => 0.05,
+            'min_edge' => 0.045,
+            'volatility_floor' => 5.5,
+        ],
+        'player_pass_attempts' => [
+            'season_weight' => 0.34,
+            'recent_weight' => 0.33,
+            'last5_weight' => 0.20,
+            'vs_opp_weight' => 0.08,
+            'home_away_weight' => 0.05,
+            'min_edge' => 0.045,
+            'volatility_floor' => 7.0,
+        ],
+        'player_pass_interceptions' => [
+            'season_weight' => 0.36,
+            'recent_weight' => 0.30,
+            'last5_weight' => 0.18,
+            'vs_opp_weight' => 0.08,
+            'home_away_weight' => 0.08,
+            'min_edge' => 0.065,
+            'volatility_floor' => 0.85,
+        ],
+        'player_rush_yds' => [
+            'season_weight' => 0.32,
+            'recent_weight' => 0.34,
+            'last5_weight' => 0.22,
+            'vs_opp_weight' => 0.07,
+            'home_away_weight' => 0.05,
+            'min_edge' => 0.05,
+            'volatility_floor' => 22.0,
+        ],
+        'player_rush_attempts' => [
+            'season_weight' => 0.30,
+            'recent_weight' => 0.36,
+            'last5_weight' => 0.22,
+            'vs_opp_weight' => 0.06,
+            'home_away_weight' => 0.06,
+            'min_edge' => 0.05,
+            'volatility_floor' => 5.0,
+        ],
+        'player_receptions' => [
+            'season_weight' => 0.32,
+            'recent_weight' => 0.34,
+            'last5_weight' => 0.22,
+            'vs_opp_weight' => 0.07,
+            'home_away_weight' => 0.05,
+            'min_edge' => 0.05,
+            'volatility_floor' => 2.0,
+        ],
+        'player_reception_yds' => [
+            'season_weight' => 0.32,
+            'recent_weight' => 0.34,
+            'last5_weight' => 0.22,
+            'vs_opp_weight' => 0.07,
+            'home_away_weight' => 0.05,
+            'min_edge' => 0.05,
+            'volatility_floor' => 24.0,
+        ],
+        'player_anytime_td' => [
+            'season_weight' => 0.36,
+            'recent_weight' => 0.30,
+            'last5_weight' => 0.20,
+            'vs_opp_weight' => 0.06,
+            'home_away_weight' => 0.08,
+            'min_edge' => 0.07,
+            'volatility_floor' => 0.55,
         ],
     ];
 
@@ -522,12 +613,14 @@ class PlayerPropAnalyzer
             $line,
             $projectionDiff
         );
+        $usageLabel = str_replace('_', ' ', (string) ($context['usage_context'] ?? 'minutes_trend'));
         $reasoning[] = sprintf(
-            'Context multiplier %.3f (pace %.3f, opponent %.3f, minutes %.3f).',
+            'Context multiplier %.3f (pace %.3f, opponent %.3f, %s %.3f).',
             $context['combined_factor'] ?? 1.0,
             $context['pace_factor'] ?? 1.0,
             $context['opponent_factor'] ?? 1.0,
-            $context['minutes_factor'] ?? 1.0
+            $usageLabel,
+            $context['usage_factor'] ?? $context['minutes_factor'] ?? 1.0
         );
 
         if ($hitRate && $hitRate['games'] >= 3) {
@@ -717,6 +810,10 @@ class PlayerPropAnalyzer
             'batter_hits', 'pitcher_walks', 'pitcher_earned_runs' => 88,
             'pitcher_hits_allowed' => 90,
             'pitcher_strikeouts' => 92,
+            'player_anytime_td', 'player_pass_tds', 'player_pass_interceptions' => 82,
+            'player_rush_attempts', 'player_receptions', 'player_pass_completions', 'player_pass_attempts' => 88,
+            'player_rush_yds', 'player_reception_yds' => 90,
+            'player_pass_yds' => 92,
             default => 94,
         };
     }
@@ -890,7 +987,7 @@ class PlayerPropAnalyzer
     }
 
     /**
-     * @return array{pace_factor: float, opponent_factor: float, minutes_factor: float, combined_factor: float}
+     * @return array{pace_factor: float, opponent_factor: float, minutes_factor: float, usage_factor: float, usage_context: string, combined_factor: float}
      */
     protected function buildContextAdjustments(
         Model $game,
@@ -902,7 +999,8 @@ class PlayerPropAnalyzer
     ): array {
         $paceFactor = 1.0;
         $opponentFactor = 1.0;
-        $minutesFactor = $this->minutesTrendFactor($playerId, $sportConfig['player_stat_model']);
+        $usageContext = $this->usageContextFactor($playerId, $market, $sportConfig);
+        $minutesFactor = $usageContext['factor'];
 
         if (isset($sportConfig['team_metric_model'])) {
             $teamMetricModel = $sportConfig['team_metric_model'];
@@ -950,6 +1048,8 @@ class PlayerPropAnalyzer
             'pace_factor' => round($paceFactor, 3),
             'opponent_factor' => round($opponentFactor, 3),
             'minutes_factor' => round($minutesFactor, 3),
+            'usage_factor' => round($minutesFactor, 3),
+            'usage_context' => $usageContext['label'],
             'combined_factor' => round($combined, 3),
         ];
     }
@@ -973,7 +1073,77 @@ class PlayerPropAnalyzer
             'pitcher_hits_allowed' => 'hits_allowed',
             'pitcher_walks' => 'walks_allowed',
             'pitcher_earned_runs' => 'earned_runs',
+            'player_pass_yds' => 'passing_yards',
+            'player_pass_tds' => 'passing_touchdowns',
+            'player_pass_completions' => 'passing_completions',
+            'player_pass_attempts' => 'passing_attempts',
+            'player_pass_interceptions' => 'interceptions',
+            'player_rush_yds' => 'rushing_yards',
+            'player_rush_attempts' => 'rushing_attempts',
             default => null,
+        };
+    }
+
+    /**
+     * @return array{factor:float,label:string}
+     */
+    protected function usageContextFactor(int $playerId, string $market, array $sportConfig): array
+    {
+        $oddsSportKey = (string) ($sportConfig['odds_sport_key'] ?? '');
+        if (! str_starts_with($oddsSportKey, 'americanfootball_')) {
+            return [
+                'factor' => $this->minutesTrendFactor($playerId, $sportConfig['player_stat_model']),
+                'label' => 'minutes_trend',
+            ];
+        }
+
+        return [
+            'factor' => $this->footballUsageTrendFactor($playerId, $market, $sportConfig['player_stat_model']),
+            'label' => $this->footballUsageContextLabel($market),
+        ];
+    }
+
+    protected function footballUsageTrendFactor(int $playerId, string $market, string $playerStatModel): float
+    {
+        $stats = $this->finalizedPlayerStatsQuery($playerId, $playerStatModel)->take(16)->get();
+        if ($stats->count() < 6) {
+            return 1.0;
+        }
+
+        $recent = $stats->take(8)->map(fn (Model $stat): float => $this->footballUsageValue($stat, $market));
+        $prior = $stats->skip(8)->take(8)->map(fn (Model $stat): float => $this->footballUsageValue($stat, $market));
+
+        $recentAvg = (float) $recent->avg();
+        $priorAvg = (float) $prior->avg();
+        if ($recentAvg <= 0 || $priorAvg <= 0) {
+            return 1.0;
+        }
+
+        $delta = ($recentAvg - $priorAvg) / max(1.0, $priorAvg);
+
+        return max(0.90, min(1.10, 1 + ($delta * 0.35)));
+    }
+
+    protected function footballUsageValue(Model $stat, string $market): float
+    {
+        return match ($market) {
+            'player_pass_yds', 'player_pass_tds', 'player_pass_completions', 'player_pass_interceptions' => (float) ($stat->passing_attempts ?? 0),
+            'player_pass_attempts' => (float) ($stat->passing_attempts ?? 0),
+            'player_rush_yds', 'player_rush_attempts' => (float) ($stat->rushing_attempts ?? 0),
+            'player_receptions', 'player_reception_yds' => (float) (($stat->receiving_targets ?? 0) ?: ($stat->receptions ?? 0)),
+            'player_anytime_td' => (float) ($stat->rushing_attempts ?? 0) + (float) (($stat->receiving_targets ?? 0) ?: ($stat->receptions ?? 0)),
+            default => 0.0,
+        };
+    }
+
+    protected function footballUsageContextLabel(string $market): string
+    {
+        return match ($market) {
+            'player_pass_yds', 'player_pass_tds', 'player_pass_completions', 'player_pass_attempts', 'player_pass_interceptions' => 'passing_volume_trend',
+            'player_rush_yds', 'player_rush_attempts' => 'rushing_volume_trend',
+            'player_receptions', 'player_reception_yds' => 'target_volume_trend',
+            'player_anytime_td' => 'touch_volume_trend',
+            default => 'football_usage_trend',
         };
     }
 
@@ -1125,6 +1295,8 @@ class PlayerPropAnalyzer
                 'pace_factor' => 1.0,
                 'opponent_factor' => 1.0,
                 'minutes_factor' => 1.0,
+                'usage_factor' => 1.0,
+                'usage_context' => 'stored_context_factor',
                 'combined_factor' => $contextFactor,
             ] : null,
             'data_quality_score' => $prop->data_quality_score,
@@ -1178,7 +1350,7 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        return $stats->avg($statField);
+        return $this->averageStatValue($stats, $statField);
     }
 
     /**
@@ -1194,7 +1366,7 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        return $this->recencyWeightedAverage($stats->pluck($statField)->all(), 0.86);
+        return $this->recencyWeightedAverage($this->statValues($stats, $statField), 0.86);
     }
 
     /**
@@ -1221,7 +1393,7 @@ class PlayerPropAnalyzer
         }
 
         return [
-            'avg' => $this->recencyWeightedAverage($stats->pluck($statField)->all(), 0.82),
+            'avg' => $this->recencyWeightedAverage($this->statValues($stats, $statField), 0.82),
             'games' => $stats->count(),
         ];
     }
@@ -1259,7 +1431,7 @@ class PlayerPropAnalyzer
         }
 
         return [
-            'avg' => $this->recencyWeightedAverage($stats->pluck($statField)->all(), 0.90),
+            'avg' => $this->recencyWeightedAverage($this->statValues($stats, $statField), 0.90),
             'games' => $stats->count(),
         ];
     }
@@ -1292,6 +1464,38 @@ class PlayerPropAnalyzer
     }
 
     /**
+     * @param  Collection<int, Model>  $stats
+     */
+    protected function averageStatValue(Collection $stats, string $statField): ?float
+    {
+        $values = $this->statValues($stats, $statField);
+
+        return $values === [] ? null : array_sum($values) / count($values);
+    }
+
+    /**
+     * @param  Collection<int, Model>  $stats
+     * @return list<float>
+     */
+    protected function statValues(Collection $stats, string $statField): array
+    {
+        return $stats
+            ->map(fn (Model $stat): float => $this->statValue($stat, $statField))
+            ->values()
+            ->all();
+    }
+
+    protected function statValue(Model $stat, string $statField): float
+    {
+        if ($statField === 'total_touchdowns') {
+            return (float) ($stat->rushing_touchdowns ?? 0)
+                + (float) ($stat->receiving_touchdowns ?? 0);
+        }
+
+        return is_numeric($stat->{$statField} ?? null) ? (float) $stat->{$statField} : 0.0;
+    }
+
+    /**
      * Calculate hit rate vs opponent (how often player crosses the line)
      */
     protected function calculateHitRateVsOpponent(
@@ -1315,7 +1519,7 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        $hits = $stats->filter(fn ($stat) => $stat->{$statField} > $line)->count();
+        $hits = $stats->filter(fn ($stat) => $this->statValue($stat, $statField) > $line)->count();
 
         return [
             'hits' => $hits,
@@ -1341,7 +1545,7 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        $hits = $stats->filter(fn ($stat) => $stat->{$statField} > $line)->count();
+        $hits = $stats->filter(fn ($stat) => $this->statValue($stat, $statField) > $line)->count();
 
         return [
             'hits' => $hits,
@@ -1421,7 +1625,7 @@ class PlayerPropAnalyzer
         $pushes = 0;
 
         foreach ($stats as $stat) {
-            $value = (float) ($stat->{$statField} ?? 0);
+            $value = $this->statValue($stat, $statField);
 
             if ($value > $line) {
                 $over++;
@@ -1653,7 +1857,7 @@ class PlayerPropAnalyzer
             return null;
         }
 
-        $values = $stats->pluck($statField)->toArray();
+        $values = $this->statValues($stats, $statField);
         $mean = array_sum($values) / count($values);
 
         // Calculate standard deviation
@@ -1699,7 +1903,7 @@ class PlayerPropAnalyzer
         $lastResult = null;
 
         foreach ($stats as $stat) {
-            $isOver = $stat->{$statField} > $line;
+            $isOver = $this->statValue($stat, $statField) > $line;
             $currentResult = $isOver ? 'over' : 'under';
 
             if ($lastResult === null) {
@@ -1730,9 +1934,20 @@ class PlayerPropAnalyzer
 
     protected function finalizedPlayerStatsQuery(int $playerId, string $playerStatModel)
     {
+        /** @var Model $statModel */
+        $statModel = new $playerStatModel;
+        $statTable = $statModel->getTable();
+        $gameTable = $statModel->game()->getRelated()->getTable();
+
         return $playerStatModel::where('player_id', $playerId)
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->orderBy('id', 'desc');
+            ->orderByDesc(
+                DB::table($gameTable)
+                    ->select("{$gameTable}.game_date")
+                    ->whereColumn("{$gameTable}.id", "{$statTable}.game_id")
+                    ->limit(1)
+            )
+            ->orderByDesc("{$statTable}.id");
     }
 
     /**
@@ -1868,6 +2083,16 @@ class PlayerPropAnalyzer
             'pitcher_hits_allowed' => 'hits_allowed',
             'pitcher_walks' => 'walks_allowed',
             'pitcher_earned_runs' => 'earned_runs',
+            'player_pass_yds' => 'passing_yards',
+            'player_pass_tds' => 'passing_touchdowns',
+            'player_pass_completions' => 'passing_completions',
+            'player_pass_attempts' => 'passing_attempts',
+            'player_pass_interceptions' => 'interceptions_thrown',
+            'player_rush_yds' => 'rushing_yards',
+            'player_rush_attempts' => 'rushing_attempts',
+            'player_receptions' => 'receptions',
+            'player_reception_yds' => 'receiving_yards',
+            'player_anytime_td' => 'total_touchdowns',
             default => null,
         };
     }
@@ -1895,6 +2120,16 @@ class PlayerPropAnalyzer
             'pitcher_hits_allowed' => 'Pitcher Hits Allowed',
             'pitcher_walks' => 'Pitcher Walks',
             'pitcher_earned_runs' => 'Pitcher Earned Runs',
+            'player_pass_yds' => 'Passing Yards',
+            'player_pass_tds' => 'Passing Touchdowns',
+            'player_pass_completions' => 'Pass Completions',
+            'player_pass_attempts' => 'Pass Attempts',
+            'player_pass_interceptions' => 'Interceptions Thrown',
+            'player_rush_yds' => 'Rushing Yards',
+            'player_rush_attempts' => 'Rushing Attempts',
+            'player_receptions' => 'Receptions',
+            'player_reception_yds' => 'Receiving Yards',
+            'player_anytime_td' => 'Anytime Touchdown',
             default => str_replace('_', ' ', ucwords($market, '_')),
         };
     }
@@ -1929,6 +2164,7 @@ class PlayerPropAnalyzer
                 'player_model' => 'App\\Models\\NFL\\Player',
                 'player_stat_model' => 'App\\Models\\NFL\\PlayerStat',
                 'team_model' => 'App\\Models\\NFL\\Team',
+                'team_stat_model' => 'App\\Models\\NFL\\TeamStat',
                 'player_prop_model' => 'App\\Models\\NFL\\PlayerProp',
                 'odds_sport_key' => 'americanfootball_nfl',
             ],

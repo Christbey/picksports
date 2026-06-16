@@ -36,6 +36,19 @@ abstract class AbstractSyncPlayerPropsForGames
         'pitcher_earned_runs',
     ];
 
+    public const MARKETS_NFL = [
+        'player_pass_tds',
+        'player_pass_yds',
+        'player_pass_completions',
+        'player_pass_attempts',
+        'player_pass_interceptions',
+        'player_rush_yds',
+        'player_rush_attempts',
+        'player_receptions',
+        'player_reception_yds',
+        'player_anytime_td',
+    ];
+
     public const MARKETS_STANDARD = ['player_points', 'player_rebounds', 'player_assists'];
 
     public function __construct(

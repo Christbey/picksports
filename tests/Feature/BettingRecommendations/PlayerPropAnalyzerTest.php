@@ -11,6 +11,11 @@ use App\Models\NBA\Player;
 use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
 use App\Models\NBA\Team;
+use App\Models\NFL\Game as NflGame;
+use App\Models\NFL\Player as NflPlayer;
+use App\Models\NFL\PlayerProp as NflPlayerProp;
+use App\Models\NFL\PlayerStat as NflPlayerStat;
+use App\Models\NFL\Team as NflTeam;
 use App\Models\OddsApiPlayerMapping;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 
@@ -919,4 +924,73 @@ test('uses ai structured agent for player prop narratives when openai provider i
         ->and($recommendations->first()['narrative']['summary'])->toContain('Over 24.5 Points')
         ->and($prop->narrative_provider)->toBe('openai')
         ->and($prop->narrative_model)->toBe('gpt-4o-mini');
+});
+
+test('analyzes nfl passing yard props with football usage context', function () {
+    $homeTeam = NflTeam::factory()->create();
+    $awayTeam = NflTeam::factory()->create();
+
+    $game = NflGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-09-13',
+        'game_time' => '19:20:00',
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.regular', 2),
+    ]);
+
+    $player = NflPlayer::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Patrick Mahomes',
+        'first_name' => 'Patrick',
+        'last_name' => 'Mahomes',
+        'position' => 'QB',
+    ]);
+
+    for ($i = 0; $i < 12; $i++) {
+        $historicalGame = NflGame::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 7)->toDateString(),
+            'season' => 2026,
+            'season_type' => config('nfl.season.types.regular', 2),
+        ]);
+
+        NflPlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'passing_attempts' => $i < 8 ? 40 : 30,
+            'passing_completions' => 27,
+            'passing_yards' => 315,
+            'passing_touchdowns' => 2,
+            'interceptions_thrown' => 0,
+        ]);
+    }
+
+    $prop = NflPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Patrick Mahomes',
+        'market' => 'player_pass_yds',
+        'line' => 250.5,
+        'over_price' => -110,
+        'under_price' => -110,
+        'bookmaker' => 'draftkings',
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->analyzeProps('NFL', 3, '2026-09-13');
+
+    $prop->refresh();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($recommendations->first()['recommendation'])->toBe('Over')
+        ->and($recommendations->first()['market'])->toBe('Passing Yards')
+        ->and($prop->recommended_side)->toBe('Over')
+        ->and(data_get($prop->confidence_decomposition, 'schema_version'))->toBe('player-prop-signal-v2')
+        ->and(data_get($prop->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(315.0)
+        ->and(data_get($recommendations->first(), 'context.usage_context'))->toBe('passing_volume_trend')
+        ->and(data_get($recommendations->first(), 'context.usage_factor'))->toBeGreaterThan(1.0);
 });

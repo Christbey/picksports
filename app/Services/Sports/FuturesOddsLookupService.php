@@ -241,6 +241,14 @@ class FuturesOddsLookupService
                 continue;
             }
 
+            if ($existing !== null && (
+                (string) ($existing['bookmaker'] ?? '') !== (string) $row->bookmaker
+                || (string) ($existing['market_key'] ?? '') !== (string) $row->market_key
+                || (string) ($existing['captured_at'] ?? '') !== (string) $row->captured_at?->toIso8601String()
+            )) {
+                continue;
+            }
+
             if ($existing === null) {
                 $byTeam[$teamId] = [
                     'bookmaker' => (string) $row->bookmaker,
@@ -250,6 +258,10 @@ class FuturesOddsLookupService
                     'under_price' => null,
                     'over_implied_probability' => null,
                     'under_implied_probability' => null,
+                    'over_no_vig_probability' => null,
+                    'under_no_vig_probability' => null,
+                    'overround' => null,
+                    'is_complete_market' => false,
                     'captured_at' => $row->captured_at?->toIso8601String(),
                     'odds_api_sport_key' => (string) $row->odds_api_sport_key,
                     'team_name' => (string) ($row->outcome_description ?: ''),
@@ -260,6 +272,25 @@ class FuturesOddsLookupService
             $byTeam[$teamId]["{$side}_implied_probability"] = $row->implied_probability !== null
                 ? (float) $row->implied_probability
                 : null;
+        }
+
+        foreach ($byTeam as $teamId => $market) {
+            $over = $market['over_implied_probability'] ?? null;
+            $under = $market['under_implied_probability'] ?? null;
+
+            if (! is_numeric($over) || ! is_numeric($under)) {
+                continue;
+            }
+
+            $overround = (float) $over + (float) $under;
+            if ($overround <= 0.0) {
+                continue;
+            }
+
+            $byTeam[$teamId]['over_no_vig_probability'] = round((float) $over / $overround, 6);
+            $byTeam[$teamId]['under_no_vig_probability'] = round((float) $under / $overround, 6);
+            $byTeam[$teamId]['overround'] = round($overround, 6);
+            $byTeam[$teamId]['is_complete_market'] = true;
         }
 
         return $byTeam;

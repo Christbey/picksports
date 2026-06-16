@@ -55,6 +55,8 @@ class TeamFuturesBettingReportService
             $underProbability = $this->numericOrNull($row['under_probability'] ?? null);
             $marketOverProbability = $this->numericOrNull($marketOdds['over_implied_probability'] ?? null);
             $marketUnderProbability = $this->numericOrNull($marketOdds['under_implied_probability'] ?? null);
+            $marketOverNoVigProbability = $this->numericOrNull($marketOdds['over_no_vig_probability'] ?? null);
+            $marketUnderNoVigProbability = $this->numericOrNull($marketOdds['under_no_vig_probability'] ?? null);
 
             $candidates = [];
             if ($overPrice !== null && $overProbability !== null && $marketOverProbability !== null) {
@@ -63,7 +65,8 @@ class TeamFuturesBettingReportService
                     side: 'over',
                     modelProbability: $overProbability,
                     calibratedProbability: $this->calibrateProbability($overProbability, $calibration),
-                    marketProbability: $marketOverProbability,
+                    marketProbability: $marketOverNoVigProbability ?? $marketOverProbability,
+                    rawMarketProbability: $marketOverProbability,
                     price: $overPrice
                 );
             }
@@ -74,7 +77,8 @@ class TeamFuturesBettingReportService
                     side: 'under',
                     modelProbability: $underProbability,
                     calibratedProbability: $this->calibrateProbability($underProbability, $calibration),
-                    marketProbability: $marketUnderProbability,
+                    marketProbability: $marketUnderNoVigProbability ?? $marketUnderProbability,
+                    rawMarketProbability: $marketUnderProbability,
                     price: $underPrice
                 );
             }
@@ -123,6 +127,7 @@ class TeamFuturesBettingReportService
         float $modelProbability,
         float $calibratedProbability,
         float $marketProbability,
+        float $rawMarketProbability,
         float $price
     ): array {
         $edge = $calibratedProbability - $marketProbability;
@@ -141,6 +146,8 @@ class TeamFuturesBettingReportService
             'raw_model_probability' => round($modelProbability, 4),
             'model_probability' => round($calibratedProbability, 4),
             'market_probability' => round($marketProbability, 4),
+            'raw_market_probability' => round($rawMarketProbability, 4),
+            'market_overround' => $this->numericOrNull(data_get($row, 'market_odds.overround')),
             'edge' => round($edge, 4),
             'expected_value' => round($expectedValue, 4),
             'fair_price' => $this->fairAmericanOdds($calibratedProbability),

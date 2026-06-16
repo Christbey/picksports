@@ -85,5 +85,8 @@ it('writes an nfl team futures bets report with ranked edges', function () {
         ->and($report['bets'][0]['side'])->toBe('over')
         ->and($report['bets'][0]['edge'])->toBeGreaterThan(0.01)
         ->and($report['bets'][0]['model_probability'])->not->toBe($report['bets'][0]['raw_model_probability'])
+        ->and($report['bets'][0]['market_probability'])->toEqualWithDelta(0.5, 0.0001)
+        ->and($report['bets'][0]['raw_market_probability'])->toEqualWithDelta(0.5238, 0.0001)
+        ->and($report['bets'][0]['market_overround'])->toBeGreaterThan(1.0)
         ->and($report['bets'][0]['fair_price'])->toBeInt();
 });

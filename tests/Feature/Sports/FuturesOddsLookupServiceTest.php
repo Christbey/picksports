@@ -115,5 +115,61 @@ it('returns the latest nfl team win totals market at or before a timestamp', fun
     expect($rows[$team->id]['line'])->toBe(11.5)
         ->and($rows[$team->id]['over_price'])->toBe(-110)
         ->and($rows[$team->id]['under_price'])->toBe(-110)
+        ->and($rows[$team->id]['is_complete_market'])->toBeTrue()
+        ->and($rows[$team->id]['over_no_vig_probability'])->toEqualWithDelta(0.5, 0.0001)
+        ->and($rows[$team->id]['under_no_vig_probability'])->toEqualWithDelta(0.5, 0.0001)
+        ->and($rows[$team->id]['overround'])->toBeGreaterThan(1.0)
         ->and($rows[$team->id]['captured_at'])->toContain('2025-08-01');
+});
+
+it('does not pair nfl team win total sides from different snapshots', function () {
+    $team = Team::factory()->create([
+        'name' => 'Lions',
+        'location' => 'Detroit',
+        'abbreviation' => 'DET',
+    ]);
+
+    FuturesOddsSnapshot::create([
+        'snapshot_key' => sha1('mixed-old-under'),
+        'row_key' => sha1('mixed-old-under-row'),
+        'sport' => 'nfl',
+        'season' => 2025,
+        'odds_api_sport_key' => 'sportsoddshistory_nfl_team',
+        'bookmaker' => 'draftkings',
+        'market_key' => 'season_wins',
+        'outcome_name' => 'Under',
+        'outcome_description' => 'Lions',
+        'outcome_point' => 9.5,
+        'price' => -110,
+        'implied_probability' => 0.5238,
+        'captured_at' => Carbon::parse('2025-08-01T12:00:00Z'),
+        'nfl_team_id' => $team->id,
+    ]);
+
+    FuturesOddsSnapshot::create([
+        'snapshot_key' => sha1('mixed-new-over'),
+        'row_key' => sha1('mixed-new-over-row'),
+        'sport' => 'nfl',
+        'season' => 2025,
+        'odds_api_sport_key' => 'sportsoddshistory_nfl_team',
+        'bookmaker' => 'draftkings',
+        'market_key' => 'season_wins',
+        'outcome_name' => 'Over',
+        'outcome_description' => 'Lions',
+        'outcome_point' => 9.5,
+        'price' => 100,
+        'implied_probability' => 0.5,
+        'captured_at' => Carbon::parse('2025-08-03T12:00:00Z'),
+        'nfl_team_id' => $team->id,
+    ]);
+
+    $rows = app(FuturesOddsLookupService::class)
+        ->nflTeamWinTotalsBySeasonAt(2025, Carbon::parse('2025-08-04T12:00:00Z'));
+
+    expect($rows[$team->id]['line'])->toBe(9.5)
+        ->and($rows[$team->id]['over_price'])->toBe(100)
+        ->and($rows[$team->id]['under_price'])->toBeNull()
+        ->and($rows[$team->id]['is_complete_market'])->toBeFalse()
+        ->and($rows[$team->id]['over_no_vig_probability'])->toBeNull()
+        ->and($rows[$team->id]['captured_at'])->toContain('2025-08-03');
 });

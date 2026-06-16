@@ -346,17 +346,23 @@ class AnalyzeReasonCodesCommand extends Command
         $total = max(1, $predictions->count());
         $explicitBackgroundCodes = collect($this->reasonCodeCatalog->backgroundCodes());
 
-        $highFrequencyCodes = [];
+        $codeCounts = [];
         foreach ($predictions as $prediction) {
             foreach ($this->reasonCodes($prediction) as $code) {
-                $highFrequencyCodes[$code] = ($highFrequencyCodes[$code] ?? 0) + 1;
+                $codeCounts[$code] = ($codeCounts[$code] ?? 0) + 1;
             }
         }
 
-        return collect($highFrequencyCodes)
+        $counts = collect($codeCounts);
+        $nonActionableCodes = $counts
+            ->keys()
+            ->filter(fn (string $code): bool => (bool) ($this->reasonCodeCatalog->metadata($code)['is_actionable'] ?? false) === false);
+
+        return $counts
             ->filter(fn (int $count): bool => ($count / $total) >= $maxCodeFrequency)
             ->keys()
             ->merge($explicitBackgroundCodes)
+            ->merge($nonActionableCodes)
             ->unique()
             ->sort()
             ->values();

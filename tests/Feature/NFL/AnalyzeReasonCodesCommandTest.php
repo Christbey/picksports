@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\NFL\AnalyzeReasonCodesCommand;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
@@ -94,4 +95,50 @@ it('filters broad background reason codes from generated reports by default', fu
         ->expectsOutputToContain('qb_form_improving')
         ->doesntExpectOutputToContain('rolling_efficiency_signal + ol_dl_matchup_signal')
         ->assertSuccessful();
+});
+
+it('treats diagnostic and non-actionable catalog codes as background', function () {
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2025,
+        'status' => 'STATUS_FINAL',
+        'home_score' => 24,
+        'away_score' => 17,
+    ]);
+
+    $prediction = Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 4.5,
+        'predicted_total' => 44.5,
+        'win_probability' => 0.7,
+        'confidence_score' => 68,
+        'model_metadata' => [
+            'analysis_layer' => [
+                'applied' => true,
+                'trust_score' => 68,
+                'reason_codes' => [
+                    'strong_model_signal',
+                    'cold_outdoor_total_proxy',
+                    'turnover_regression_risk',
+                    'high_favorite_confidence',
+                ],
+            ],
+        ],
+    ]);
+
+    $command = app(AnalyzeReasonCodesCommand::class);
+    $method = new ReflectionMethod($command, 'backgroundReasonCodes');
+    $method->setAccessible(true);
+
+    $backgroundCodes = $method->invoke($command, collect([$prediction]), 2.0);
+
+    expect($backgroundCodes->all())
+        ->toContain('cold_outdoor_total_proxy')
+        ->toContain('turnover_regression_risk')
+        ->toContain('high_favorite_confidence')
+        ->not->toContain('strong_model_signal');
 });

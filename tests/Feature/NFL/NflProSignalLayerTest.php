@@ -322,6 +322,7 @@ it('reports pro signal tiers and reason-code backtest rows', function () {
         '--min-sample' => 1,
     ])
         ->expectsOutputToContain('NFL Pro Signal Layer Report')
+        ->expectsOutputToContain('Winner %')
         ->expectsOutputToContain('official_candidate')
         ->expectsOutputToContain('teaser_candidate')
         ->assertSuccessful();
@@ -373,6 +374,7 @@ it('reports pro signal rows using snapshot odds when pro layer market context is
         '--min-sample' => 1,
     ])
         ->expectsOutputToContain('NFL Pro Signal Layer Report')
+        ->expectsOutputToContain('Winner %')
         ->expectsOutputToContain('lean')
         ->expectsOutputToContain('market_overreaction')
         ->assertSuccessful();

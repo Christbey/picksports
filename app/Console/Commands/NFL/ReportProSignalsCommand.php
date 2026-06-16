@@ -39,7 +39,7 @@ class ReportProSignalsCommand extends Command
 
         $this->info('By Signal Tier');
         $this->table(
-            ['Tier', 'Bets', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
+            ['Tier', 'Bets', 'Winner', 'Winner %', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
             $this->summaryRows($rows->groupBy('tier'))
         );
 
@@ -60,7 +60,7 @@ class ReportProSignalsCommand extends Command
         $this->newLine();
         $this->info('By Reason Code');
         $this->table(
-            ['Reason Code', 'Bets', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
+            ['Reason Code', 'Bets', 'Winner', 'Winner %', 'ATS', 'ATS Win %', 'OU', 'OU Win %', 'ROI Proxy', 'Avg CLV', 'Brier'],
             $reasonRows
         );
 
@@ -135,6 +135,9 @@ class ReportProSignalsCommand extends Command
         }
 
         $actualMargin = (float) $game->home_score - (float) $game->away_score;
+        $winnerCorrect = ($pick === 'home' && $actualMargin > 0)
+            || ($pick === 'away' && $actualMargin < 0);
+        $winnerPush = abs($actualMargin) < 0.0001;
         $coverMargin = $pick === 'home'
             ? $actualMargin - $marketSpread
             : (-$actualMargin) + $marketSpread;
@@ -149,6 +152,8 @@ class ReportProSignalsCommand extends Command
         return [
             'tier' => (string) ($layer['tier'] ?? 'unknown'),
             'reason_codes' => array_values(array_unique((array) ($layer['reason_codes'] ?? []))),
+            'winner_correct' => $winnerCorrect,
+            'winner_push' => $winnerPush,
             'result' => $result,
             'won' => $result === 'win',
             'push' => $result === 'push',
@@ -188,6 +193,10 @@ class ReportProSignalsCommand extends Command
      */
     private function summaryRow(string $label, Collection $items): array
     {
+        $winnerWins = $items->where('winner_correct', true)->count();
+        $winnerPushes = $items->where('winner_push', true)->count();
+        $winnerLosses = $items->count() - $winnerWins - $winnerPushes;
+        $winnerGraded = $winnerWins + $winnerLosses;
         $wins = $items->where('won', true)->count();
         $pushes = $items->where('push', true)->count();
         $losses = $items->count() - $wins - $pushes;
@@ -202,6 +211,8 @@ class ReportProSignalsCommand extends Command
         return [
             $label,
             (string) $items->count(),
+            "{$winnerWins}-{$winnerLosses}-{$winnerPushes}",
+            $winnerGraded > 0 ? number_format(($winnerWins / $winnerGraded) * 100, 1).'%' : 'n/a',
             "{$wins}-{$losses}-{$pushes}",
             $graded > 0 ? number_format(($wins / $graded) * 100, 1).'%' : 'n/a',
             $ouItems->isNotEmpty() ? "{$ouWins}-{$ouLosses}-{$ouPushes}" : 'n/a',

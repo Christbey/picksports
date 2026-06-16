@@ -20,10 +20,12 @@ class NflProSignalLayer
         float $predictedTotal,
         float $winProbability
     ): array {
-        $marketSpread = $this->number(data_get($analysis, 'calculated_edge.market_spread'));
-        $marketTotal = $this->number(data_get($analysis, 'calculated_edge.market_total'));
-        $spreadEdge = $this->number(data_get($analysis, 'calculated_edge.spread_points'));
-        $totalEdge = $this->number(data_get($analysis, 'calculated_edge.total_points'));
+        $marketSpread = $this->number(data_get($analysis, 'calculated_edge.market_spread')) ?? $this->entryMarketSpread($game);
+        $marketTotal = $this->number(data_get($analysis, 'calculated_edge.market_total')) ?? $this->entryMarketTotal($game);
+        $spreadEdge = $this->number(data_get($analysis, 'calculated_edge.spread_points'))
+            ?? ($marketSpread !== null ? $predictedSpread - $marketSpread : null);
+        $totalEdge = $this->number(data_get($analysis, 'calculated_edge.total_points'))
+            ?? ($marketTotal !== null ? $predictedTotal - $marketTotal : null);
         $reasonCodes = array_values(array_unique((array) ($analysis['reason_codes'] ?? [])));
         $riskFlags = array_values(array_unique((array) ($analysis['risk_flags'] ?? [])));
         $keyNumbers = $this->keyNumbers();
@@ -669,6 +671,42 @@ class NflProSignalLayer
         return $first !== null && $last !== null ? $last - $first : null;
     }
 
+    private function entryMarketSpread(Game $game): ?float
+    {
+        return $this->homeMarginSpread($this->oddsData($game))
+            ?? $this->snapshotMarketSpread($game, 'asc');
+    }
+
+    private function entryMarketTotal(Game $game): ?float
+    {
+        return $this->marketTotal($this->oddsData($game))
+            ?? $this->snapshotMarketTotal($game, 'asc');
+    }
+
+    private function snapshotMarketSpread(Game $game, string $direction): ?float
+    {
+        $snapshot = GameOddsSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('game_table', $game->getTable())
+            ->where('game_id', $game->id)
+            ->orderBy('captured_at', $direction)
+            ->first();
+
+        return $snapshot ? $this->homeMarginSpread((array) $snapshot->odds_data) : null;
+    }
+
+    private function snapshotMarketTotal(Game $game, string $direction): ?float
+    {
+        $snapshot = GameOddsSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('game_table', $game->getTable())
+            ->where('game_id', $game->id)
+            ->orderBy('captured_at', $direction)
+            ->first();
+
+        return $snapshot ? $this->marketTotal((array) $snapshot->odds_data) : null;
+    }
+
     private function spreadClv(string $pickSide, float $entrySpread, float $closingSpread): float
     {
         return $pickSide === 'home'
@@ -764,6 +802,25 @@ class NflProSignalLayer
                 foreach ((array) ($market['outcomes'] ?? []) as $outcome) {
                     if (($outcome['name'] ?? null) === $homeTeamName && is_numeric($outcome['point'] ?? null)) {
                         return -1 * (float) $outcome['point'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function marketTotal(array $oddsData): ?float
+    {
+        foreach ((array) ($oddsData['bookmakers'] ?? []) as $bookmaker) {
+            foreach ((array) ($bookmaker['markets'] ?? []) as $market) {
+                if (($market['key'] ?? null) !== 'totals') {
+                    continue;
+                }
+
+                foreach ((array) ($market['outcomes'] ?? []) as $outcome) {
+                    if (is_numeric($outcome['point'] ?? null)) {
+                        return (float) $outcome['point'];
                     }
                 }
             }

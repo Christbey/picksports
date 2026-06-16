@@ -238,6 +238,45 @@ it('adds v2 market injury weather efficiency and regression context', function (
         ->and(data_get($layer, 'reason_codes'))->toContain('efficiency_mismatch_edge');
 });
 
+it('uses historical odds snapshots when game odds data is empty', function () {
+    $game = nflProSignalGame([
+        'odds_data' => null,
+    ]);
+    GameOddsSnapshot::query()->create([
+        'sport' => 'nfl',
+        'game_table' => $game->getTable(),
+        'game_id' => $game->id,
+        'source' => 'historical',
+        'captured_at' => now()->subDay(),
+        'payload_hash' => 'snapshot-fallback-entry',
+        'odds_data' => nflProSignalOddsPayload(-2.5),
+    ]);
+
+    $layer = app(NflProSignalLayer::class)->build(
+        $game->fresh(['homeTeam', 'awayTeam']),
+        [],
+        [
+            'reason_codes' => ['strong_model_signal'],
+            'risk_flags' => [],
+            'calculated_edge' => [
+                'market_spread' => null,
+                'market_total' => null,
+                'spread_points' => null,
+                'total_points' => null,
+            ],
+        ],
+        6.5,
+        46.0,
+        0.69
+    );
+
+    expect(data_get($layer, 'market_context.market_spread'))->toBe(2.5)
+        ->and(data_get($layer, 'market_context.market_total'))->toBe(43.5)
+        ->and(data_get($layer, 'market_context.spread_edge'))->toBe(4.0)
+        ->and(data_get($layer, 'market_context.total_edge'))->toBe(2.5)
+        ->and(data_get($layer, 'reason_codes'))->toContain('market_overreaction');
+});
+
 it('reports pro signal tiers and reason-code backtest rows', function () {
     $game = nflProSignalGame([
         'season' => 2025,
@@ -285,5 +324,56 @@ it('reports pro signal tiers and reason-code backtest rows', function () {
         ->expectsOutputToContain('NFL Pro Signal Layer Report')
         ->expectsOutputToContain('official_candidate')
         ->expectsOutputToContain('teaser_candidate')
+        ->assertSuccessful();
+});
+
+it('reports pro signal rows using snapshot odds when pro layer market context is empty', function () {
+    $game = nflProSignalGame([
+        'season' => 2025,
+        'status' => 'STATUS_FINAL',
+        'home_score' => 27,
+        'away_score' => 20,
+        'odds_data' => null,
+    ]);
+
+    Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 6.5,
+        'predicted_total' => 47.0,
+        'win_probability' => 0.68,
+        'confidence_score' => 72.0,
+        'model_metadata' => [
+            'analysis_layer' => [
+                'pro_signal_layer' => [
+                    'score' => 68,
+                    'tier' => 'lean',
+                    'market_context' => [
+                        'pick_side' => null,
+                        'market_spread' => null,
+                        'market_total' => null,
+                    ],
+                    'reason_codes' => ['market_overreaction'],
+                ],
+            ],
+        ],
+    ]);
+    GameOddsSnapshot::query()->create([
+        'sport' => 'nfl',
+        'game_table' => $game->getTable(),
+        'game_id' => $game->id,
+        'source' => 'test',
+        'captured_at' => now()->subDay(),
+        'payload_hash' => 'report-snapshot-fallback-entry',
+        'odds_data' => nflProSignalOddsPayload(-2.5),
+    ]);
+
+    $this->artisan(ReportProSignalsCommand::class, [
+        '--from-season' => 2025,
+        '--to-season' => 2025,
+        '--min-sample' => 1,
+    ])
+        ->expectsOutputToContain('NFL Pro Signal Layer Report')
+        ->expectsOutputToContain('lean')
+        ->expectsOutputToContain('market_overreaction')
         ->assertSuccessful();
 });

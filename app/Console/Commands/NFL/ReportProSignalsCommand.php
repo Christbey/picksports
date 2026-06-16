@@ -23,7 +23,11 @@ class ReportProSignalsCommand extends Command
         $rows = $this->rows();
 
         if ($rows->isEmpty()) {
-            $this->warn('No completed NFL predictions with stored pro signal layers found for the selected seasons.');
+            $proLayerCount = $this->proLayerCount();
+            $this->warn($proLayerCount > 0
+                ? "Found {$proLayerCount} completed NFL prediction(s) with pro signal layers, but none had usable spread market data."
+                : 'No completed NFL predictions with stored pro signal layers found for the selected seasons.'
+            );
 
             return self::SUCCESS;
         }
@@ -89,6 +93,27 @@ class ReportProSignalsCommand extends Command
             ->values();
     }
 
+    private function proLayerCount(): int
+    {
+        return Prediction::query()
+            ->whereHas('game', function ($query): void {
+                $query->where('status', 'STATUS_FINAL')
+                    ->whereNotNull('home_score')
+                    ->whereNotNull('away_score');
+
+                if ($this->option('from-season')) {
+                    $query->where('season', '>=', (int) $this->option('from-season'));
+                }
+
+                if ($this->option('to-season')) {
+                    $query->where('season', '<=', (int) $this->option('to-season'));
+                }
+            })
+            ->get()
+            ->filter(fn (Prediction $prediction): bool => is_array(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer')))
+            ->count();
+    }
+
     /**
      * @return array<string,mixed>|null
      */
@@ -96,10 +121,14 @@ class ReportProSignalsCommand extends Command
     {
         $game = $prediction->game;
         $layer = data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer');
-        $marketSpread = $this->number(data_get($layer, 'market_context.market_spread'));
-        $marketTotal = $this->number(data_get($layer, 'market_context.market_total'));
-        $totalEdge = $this->number(data_get($layer, 'market_context.total_edge'));
+        $marketSpread = $this->number(data_get($layer, 'market_context.market_spread')) ?? ($game ? $this->entryMarketSpread($game) : null);
+        $marketTotal = $this->number(data_get($layer, 'market_context.market_total')) ?? ($game ? $this->entryMarketTotal($game) : null);
+        $totalEdge = $this->number(data_get($layer, 'market_context.total_edge'))
+            ?? ($marketTotal !== null && $prediction->predicted_total !== null ? (float) $prediction->predicted_total - $marketTotal : null);
         $pick = data_get($layer, 'market_context.pick_side');
+        if (! in_array($pick, ['home', 'away'], true) && $marketSpread !== null && $prediction->predicted_spread !== null) {
+            $pick = (float) $prediction->predicted_spread >= $marketSpread ? 'home' : 'away';
+        }
 
         if (! $game || ! is_array($layer) || ! in_array($pick, ['home', 'away'], true) || $marketSpread === null) {
             return null;
@@ -207,6 +236,42 @@ class ReportProSignalsCommand extends Command
         return $snapshot ? $this->homeMarginSpread((array) $snapshot->odds_data) : null;
     }
 
+    private function entryMarketSpread(Game $game): ?float
+    {
+        return $this->homeMarginSpread($this->oddsData($game))
+            ?? $this->snapshotMarketSpread($game, 'asc');
+    }
+
+    private function entryMarketTotal(Game $game): ?float
+    {
+        return $this->marketTotal($this->oddsData($game))
+            ?? $this->snapshotMarketTotal($game, 'asc');
+    }
+
+    private function snapshotMarketSpread(Game $game, string $direction): ?float
+    {
+        $snapshot = GameOddsSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('game_table', $game->getTable())
+            ->where('game_id', $game->id)
+            ->orderBy('captured_at', $direction)
+            ->first();
+
+        return $snapshot ? $this->homeMarginSpread((array) $snapshot->odds_data) : null;
+    }
+
+    private function snapshotMarketTotal(Game $game, string $direction): ?float
+    {
+        $snapshot = GameOddsSnapshot::query()
+            ->where('sport', 'nfl')
+            ->where('game_table', $game->getTable())
+            ->where('game_id', $game->id)
+            ->orderBy('captured_at', $direction)
+            ->first();
+
+        return $snapshot ? $this->marketTotal((array) $snapshot->odds_data) : null;
+    }
+
     private function spreadClv(string $pick, float $entrySpread, ?float $closingSpread): ?float
     {
         if ($closingSpread === null) {
@@ -240,6 +305,38 @@ class ReportProSignalsCommand extends Command
         }
 
         return null;
+    }
+
+    private function marketTotal(array $oddsData): ?float
+    {
+        foreach ((array) ($oddsData['bookmakers'] ?? []) as $bookmaker) {
+            foreach ((array) ($bookmaker['markets'] ?? []) as $market) {
+                if (($market['key'] ?? null) !== 'totals') {
+                    continue;
+                }
+
+                foreach ((array) ($market['outcomes'] ?? []) as $outcome) {
+                    if (is_numeric($outcome['point'] ?? null)) {
+                        return (float) $outcome['point'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function oddsData(Game $game): array
+    {
+        $oddsData = $game->odds_data;
+        if (is_string($oddsData)) {
+            $oddsData = json_decode($oddsData, true);
+        }
+
+        return is_array($oddsData) ? $oddsData : [];
     }
 
     private function scopeLabel(): string

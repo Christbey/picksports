@@ -115,6 +115,7 @@ class PredictionResource extends AbstractPredictionResource
             'best_validated_signal' => $analysis['best_validated_signal'] ?? null,
             'calculated_edge' => $analysis['calculated_edge'] ?? null,
             'analysis_confidence' => $analysis['analysis_confidence'] ?? null,
+            'pro_signal_layer' => $analysis['pro_signal_layer'] ?? null,
         ];
     }
 

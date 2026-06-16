@@ -706,7 +706,7 @@ return [
 
         'max_units' => 2.0,
 
-        'key_numbers' => [3, 7, 10],
+        'key_numbers' => [3, 5, 7, 10],
 
         'risk' => [
             'early_season_weeks' => 2,

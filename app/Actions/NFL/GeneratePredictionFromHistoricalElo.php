@@ -10,6 +10,7 @@ use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\TeamMetric;
+use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\PlayerPositionGradeService;
 use App\Services\Sports\DepthChartImpactService;
 use App\Support\NflBetRuleEngine;
@@ -75,10 +76,12 @@ class GeneratePredictionFromHistoricalElo
         protected ?DepthChartImpactService $depthChartImpactService = null,
         protected ?PlayerPositionGradeService $playerPositionGradeService = null,
         protected ?NflReasonCodeCatalog $reasonCodeCatalog = null,
+        protected ?NflProSignalLayer $proSignalLayer = null,
     ) {
         $this->depthChartImpactService ??= app(DepthChartImpactService::class);
         $this->playerPositionGradeService ??= app(PlayerPositionGradeService::class);
         $this->reasonCodeCatalog ??= app(NflReasonCodeCatalog::class);
+        $this->proSignalLayer ??= app(NflProSignalLayer::class);
     }
 
     public function execute(Game $game): string
@@ -2892,7 +2895,7 @@ class GeneratePredictionFromHistoricalElo
             $betClassification = 'validated_winner_watchlist';
         }
 
-        $this->lastModelMetadata['analysis_layer'] = [
+        $analysis = [
             'enabled' => true,
             'applied' => true,
             'trust_score' => round($trustScore, 1),
@@ -2916,6 +2919,27 @@ class GeneratePredictionFromHistoricalElo
                 'trust_score' => round($trustScore, 1),
             ],
         ];
+
+        $proSignalLayer = $this->proSignalLayer->build(
+            $game,
+            $this->lastModelMetadata,
+            $analysis,
+            $predictedSpread,
+            $predictedTotal,
+            $winProbability
+        );
+        $analysis['pro_signal_layer'] = $proSignalLayer;
+        $analysis['reason_codes'] = array_values(array_unique([
+            ...$reasonCodes,
+            ...(array) ($proSignalLayer['reason_codes'] ?? []),
+        ]));
+        $analysis['risk_flags'] = array_values(array_unique([
+            ...$riskFlags,
+            ...(array) ($proSignalLayer['risk_flags'] ?? []),
+        ]));
+        $analysis['reason_code_metadata'] = $this->reasonCodeCatalog->metadataForCodes($analysis['reason_codes']);
+
+        $this->lastModelMetadata['analysis_layer'] = $analysis;
     }
 
     /**

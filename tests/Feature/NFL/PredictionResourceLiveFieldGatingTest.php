@@ -145,6 +145,13 @@ test('includes nfl prediction analysis with betting value permission', function 
                 ],
                 'calculated_edge' => ['spread_points' => 0],
                 'analysis_confidence' => ['score' => 71.5, 'label' => 'strong'],
+                'pro_signal_layer' => [
+                    'score' => 58,
+                    'tier' => 'watchlist',
+                    'market_context' => ['crossed_key_numbers' => [3, 5]],
+                    'reason_codes' => ['key_number_edge_5'],
+                    'risk_flags' => [],
+                ],
             ],
         ],
     ])->load('game');
@@ -157,6 +164,7 @@ test('includes nfl prediction analysis with betting value permission', function 
     expect($data['prediction_analysis']['trust_score'])->toBe(71.5)
         ->and($data['prediction_analysis']['model_signal_classification'])->toBe('strong_model_side')
         ->and($data['prediction_analysis']['reason_codes'])->toContain('strong_model_signal')
+        ->and($data['prediction_analysis']['pro_signal_layer']['market_context']['crossed_key_numbers'])->toBe([3, 5])
         ->and($data['prediction_analysis']['best_validated_signal']['winner_hit_rate'])->toBe(73.2)
         ->and($data['prediction_analysis']['validated_signals'][0]['sample_size'])->toBe(127);
 });

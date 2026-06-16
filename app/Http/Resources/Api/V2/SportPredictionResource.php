@@ -39,6 +39,7 @@ class SportPredictionResource extends JsonResource
             'confidence_score' => $this->floatAttribute('confidence_score'),
             'confidence_level' => $this->confidenceLevel(),
             'confidence_context' => $this->confidenceContext(),
+            'pro_signal_layer' => $this->proSignalLayer(),
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
             'home_team_elo' => $this->floatAttribute('home_team_elo'),
@@ -313,6 +314,21 @@ class SportPredictionResource extends JsonResource
             'reason_codes' => $reasonCodes,
             'sample_games' => $sampleGames,
         ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function proSignalLayer(): ?array
+    {
+        if ($this->context->slug !== 'nfl') {
+            return null;
+        }
+
+        $metadata = is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : [];
+        $layer = data_get($metadata, 'analysis_layer.pro_signal_layer');
+
+        return is_array($layer) ? $layer : null;
     }
 
     /**

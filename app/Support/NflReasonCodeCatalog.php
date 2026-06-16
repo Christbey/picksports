@@ -72,8 +72,27 @@ class NflReasonCodeCatalog
 
     protected function source(string $code): string
     {
-        if (str_contains($code, 'market') || str_contains($code, 'line_move') || str_contains($code, 'key_number')) {
+        if (
+            str_contains($code, 'market')
+            || str_contains($code, 'line_move')
+            || str_contains($code, 'key_number')
+            || str_contains($code, 'clv')
+            || str_contains($code, 'teaser')
+            || str_contains($code, 'steam')
+            || str_contains($code, 'slow_book')
+            || str_contains($code, 'dead_number')
+            || str_contains($code, 'buyback')
+            || str_contains($code, 'teaser_corridor')
+        ) {
             return 'market';
+        }
+
+        if (str_contains($code, 'turnover_luck') || str_contains($code, 'overperformance') || str_contains($code, 'one_score_regression')) {
+            return 'regression';
+        }
+
+        if (str_contains($code, 'efficiency_mismatch') || str_contains($code, 'success_rate')) {
+            return 'model';
         }
 
         if (str_contains($code, 'weather') || str_contains($code, 'outdoor_total_proxy') || str_contains($code, 'wind_') || str_contains($code, 'rain_') || str_contains($code, 'snow_')) {
@@ -88,7 +107,7 @@ class NflReasonCodeCatalog
             return 'trenches';
         }
 
-        if (str_contains($code, 'injury') || str_contains($code, '_out_') || str_contains($code, 'depth')) {
+        if (str_contains($code, 'injury') || str_contains($code, '_out_') || str_contains($code, 'depth') || str_contains($code, 'replacement_value')) {
             return 'injury';
         }
 
@@ -113,7 +132,7 @@ class NflReasonCodeCatalog
             return 'total';
         }
 
-        if (str_contains($code, 'spread') || str_contains($code, 'cover') || str_contains($code, 'key_number')) {
+        if (str_contains($code, 'spread') || str_contains($code, 'cover') || str_contains($code, 'key_number') || str_contains($code, 'teaser')) {
             return 'spread';
         }
 
@@ -161,7 +180,10 @@ class NflReasonCodeCatalog
             || str_contains($code, 'missing_')
             || str_contains($code, 'no_market')
             || str_contains($code, 'proxy')
-            || str_contains($code, 'stale_');
+            || str_contains($code, 'stale_')
+            || str_contains($code, 'negative_clv')
+            || str_contains($code, 'dead_number_tax')
+            || str_contains($code, 'overreaction');
     }
 
     protected function isActionable(string $code, string $source, bool $diagnostic): bool
@@ -182,6 +204,12 @@ class NflReasonCodeCatalog
         return str_contains($code, 'market')
             || str_contains($code, 'key_number')
             || str_contains($code, 'line_move')
+            || str_contains($code, 'teaser')
+            || str_contains($code, 'clv')
+            || str_contains($code, 'steam')
+            || str_contains($code, 'dead_number')
+            || str_contains($code, 'buyback')
+            || str_contains($code, 'slow_book')
             || str_contains($code, 'bettable');
     }
 

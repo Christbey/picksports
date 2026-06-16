@@ -1144,5 +1144,7 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('wind_under_signal')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('rain_under_signal')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.bet_classification'))->not->toBeNull()
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.spread_points'))->not->toBeNull();
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.spread_points'))->not->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.version'))->toBe('nfl-pro-signal-layer-v1')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.market_context.key_numbers'))->toContain(5);
 });

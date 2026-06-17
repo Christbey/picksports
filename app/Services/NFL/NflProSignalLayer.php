@@ -184,10 +184,10 @@ class NflProSignalLayer
         ];
 
         $spreadComponents = [
-            'base' => 18,
+            'base' => 16,
             'spread_edge' => $spreadEdge !== null ? (int) min(24, floor(abs($spreadEdge) * 5)) : 0,
-            'key_number_3' => in_array(3, $crossedKeyNumbers, true) ? 10 : 0,
-            'key_number_7' => in_array(7, $crossedKeyNumbers, true) ? 5 : 0,
+            'key_number_3' => in_array(3, $crossedKeyNumbers, true) ? 6 : 0,
+            'key_number_7' => in_array(7, $crossedKeyNumbers, true) ? 3 : 0,
             'near_key_number' => count($nearKeyNumbers) * 2,
             'teaser_corridor' => $teaserCandidate ? match ($numberDiscipline['teaser_corridor_quality'] ?? 'standard') {
                 'premium' => 8,
@@ -200,22 +200,22 @@ class NflProSignalLayer
             'rest_travel_context' => (bool) data_get($metadata, 'contextual_factors.schedule_spot.applied', false) ? 2 : 0,
             'roof_context' => (bool) ($weatherRoof['roof_weather_protected'] ?? false) ? 2 : 0,
             'positive_clv' => (bool) ($marketMovement['positive_clv_profile'] ?? false) ? 5 : 0,
-            'market_overreaction_penalty' => in_array('market_overreaction', $reasonCodes, true) ? -8 : 0,
-            'division_penalty' => in_array('division_dog_key_number', $reasonCodes, true) ? -5 : 0,
-            'key_number_10_penalty' => in_array(10, $crossedKeyNumbers, true) ? -8 : 0,
-            'key_number_5_penalty' => in_array(5, $crossedKeyNumbers, true) ? -2 : 0,
+            'market_overreaction_penalty' => in_array('market_overreaction', $reasonCodes, true) ? -12 : 0,
+            'division_penalty' => in_array('division_dog_key_number', $reasonCodes, true) ? -8 : 0,
+            'key_number_10_penalty' => in_array(10, $crossedKeyNumbers, true) ? -10 : 0,
+            'key_number_5_penalty' => in_array(5, $crossedKeyNumbers, true) ? -4 : 0,
             'low_data_penalty' => in_array('low_data_quality', $reasonCodes, true) ? -6 : 0,
             'negative_clv_penalty' => (bool) ($marketMovement['negative_clv_profile'] ?? false) ? -8 : 0,
             'dead_number_penalty' => (bool) ($numberDiscipline['dead_number_tax'] ?? false) ? -6 : 0,
         ];
 
         $totalComponents = [
-            'base' => 16,
-            'total_edge' => $totalEdge !== null ? (int) min(28, floor(abs($totalEdge) * 6)) : 0,
-            'weather_total_suppression' => (bool) ($weatherRoof['weather_total_suppression'] ?? false) ? 12 : 0,
-            'roof_context' => (bool) ($weatherRoof['roof_weather_protected'] ?? false) ? 6 : 0,
-            'low_data_context' => in_array('low_data_quality', $reasonCodes, true) ? 2 : 0,
-            'pace_pressure_penalty' => in_array('pace_total_pressure', $reasonCodes, true) ? -6 : 0,
+            'base' => 20,
+            'total_edge' => $totalEdge !== null ? (int) min(30, floor(abs($totalEdge) * 6)) : 0,
+            'weather_total_suppression' => (bool) ($weatherRoof['weather_total_suppression'] ?? false) ? 18 : 0,
+            'roof_context' => (bool) ($weatherRoof['roof_weather_protected'] ?? false) ? 8 : 0,
+            'weather_edge_alignment' => $totalEdge !== null && $totalEdge < 0 && (bool) ($weatherRoof['weather_total_suppression'] ?? false) ? 6 : 0,
+            'pace_pressure_penalty' => in_array('pace_total_pressure', $reasonCodes, true) ? -10 : 0,
             'low_total_key_number_penalty' => (bool) ($numberDiscipline['low_total_key_number_boost'] ?? false) ? -6 : 0,
             'negative_clv_penalty' => (bool) ($marketMovement['negative_clv_profile'] ?? false) ? -4 : 0,
             'risk_penalty' => count($riskFlags) * -2,

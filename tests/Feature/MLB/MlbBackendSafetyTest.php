@@ -63,8 +63,9 @@ it('separates raw edge and no-vig edge and blocks stale odds from official bets'
         ->and($recommendation['raw_edge'])->toBe(0.0578)
         ->and($recommendation['no_vig_implied_probability'])->toBe(0.5298)
         ->and($recommendation['no_vig_edge'])->toBe(0.0402)
-        ->and($recommendation['recommendation_type'])->toBe('lean')
+        ->and($recommendation['recommendation_type'])->toBe('no_play')
         ->and($recommendation['is_bet'])->toBeFalse()
+        ->and($recommendation['no_bet_reason'])->toBe('stale_odds')
         ->and($recommendation['risk_flags'])->toContain('stale_odds');
 });
 
@@ -100,8 +101,9 @@ it('marks missing odds timestamps and prevents official bet promotion', function
 
     $recommendation = app(MlbPredictionRecommendationService::class)->forPrediction($prediction);
 
-    expect($recommendation['recommendation_type'])->toBe('lean')
+    expect($recommendation['recommendation_type'])->toBe('no_play')
         ->and($recommendation['is_bet'])->toBeFalse()
+        ->and($recommendation['no_bet_reason'])->toBe('missing_odds_timestamp')
         ->and($recommendation['risk_flags'])->toContain('missing_odds_timestamp');
 });
 

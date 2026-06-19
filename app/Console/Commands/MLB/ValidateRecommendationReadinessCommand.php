@@ -64,6 +64,15 @@ class ValidateRecommendationReadinessCommand extends Command
         $this->info('Candidate Buckets');
         $this->table(['Bucket', 'Rows', 'Winner %'], $report['candidate_buckets']);
 
+        if ($report['candidate_samples'] !== []) {
+            $this->newLine();
+            $this->info('Candidate Samples');
+            $this->table(
+                ['Prediction', 'Game', 'Date', 'Type', 'Model', 'Market', 'Won', 'Score', 'Reasons', 'Risks'],
+                $report['candidate_samples']
+            );
+        }
+
         $this->newLine();
         $this->info('Market Agreement');
         $this->table(['Bucket', 'Rows', 'Model %', 'Market %'], $report['market_agreement']);
@@ -106,6 +115,10 @@ class ValidateRecommendationReadinessCommand extends Command
                 $promotion = (array) ($recommendation['promotion'] ?? []);
 
                 return [
+                    'prediction_id' => (int) $prediction->id,
+                    'game_id' => (int) $game->id,
+                    'game' => (string) ($game->short_name ?: $game->name ?: ''),
+                    'game_date' => $game->game_date?->toDateString(),
                     'home_won' => $homeWon,
                     'winner_correct' => (bool) $prediction->winner_correct,
                     'home_win_probability' => $homeWinProbability,
@@ -117,6 +130,10 @@ class ValidateRecommendationReadinessCommand extends Command
                     'predicted_total' => (float) $prediction->predicted_total,
                     'confidence_score' => (float) $prediction->confidence_score,
                     'candidate_recommendation_type' => (string) ($candidate['recommendation_type'] ?? 'no_play'),
+                    'candidate_score' => $candidate['score'] ?? null,
+                    'candidate_no_bet_reason' => $candidate['no_bet_reason'] ?? null,
+                    'candidate_reason_codes' => array_values((array) ($candidate['reason_codes'] ?? [])),
+                    'candidate_risk_flags' => array_values((array) ($candidate['risk_flags'] ?? [])),
                     'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
                     'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
                 ];
@@ -193,6 +210,7 @@ class ValidateRecommendationReadinessCommand extends Command
             'summary' => $summary,
             'block_reasons' => $blockReasons,
             'candidate_buckets' => $this->bucketTable($rows, 'candidate_recommendation_type'),
+            'candidate_samples' => $this->candidateSamples($candidateRows),
             'public_buckets' => $this->bucketTable($rows, 'public_recommendation_type'),
             'market_agreement' => $this->marketAgreementTable($rows),
             'probability_shrinkage' => $this->probabilityShrinkageTable($rows),
@@ -271,6 +289,30 @@ class ValidateRecommendationReadinessCommand extends Command
                 $bucket,
                 (string) $group->count(),
                 $this->pct($this->accuracy($group->values(), 'winner_correct')),
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $candidateRows
+     * @return array<int, array<int, string>>
+     */
+    private function candidateSamples(Collection $candidateRows): array
+    {
+        return $candidateRows
+            ->take(10)
+            ->map(fn (array $row): array => [
+                (string) $row['prediction_id'],
+                $row['game_id'].' '.$row['game'],
+                (string) ($row['game_date'] ?? ''),
+                (string) $row['candidate_recommendation_type'],
+                (string) $row['model_pick_side'],
+                (string) ($row['market_pick_side'] ?? 'none'),
+                $row['winner_correct'] ? 'yes' : 'no',
+                (string) ($row['candidate_score'] ?? ''),
+                implode(',', array_slice((array) ($row['candidate_reason_codes'] ?? []), 0, 4)),
+                implode(',', array_slice((array) ($row['candidate_risk_flags'] ?? []), 0, 4)),
             ])
             ->values()
             ->all();

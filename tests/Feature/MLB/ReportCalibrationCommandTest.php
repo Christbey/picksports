@@ -375,6 +375,7 @@ it('fails mlb recommendation readiness when promotion evidence is insufficient',
         ->and($report['ready'])->toBeFalse()
         ->and($report['summary']['rows'])->toBe(1)
         ->and($report['summary']['candidate_rows'])->toBe(0)
+        ->and($report['candidate_samples'])->toBe([])
         ->and($report['block_reasons'])->toContain('graded_sample_below_minimum')
         ->and($report['block_reasons'])->toContain('candidate_sample_below_minimum');
 });

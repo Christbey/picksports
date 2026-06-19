@@ -4,6 +4,7 @@ namespace App\Services\Predictions;
 
 use App\Models\PredictionFeatureSnapshot;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class PredictionFeatureSnapshotRecorder
 {
@@ -23,29 +24,26 @@ class PredictionFeatureSnapshotRecorder
         $modelMetadata = $snapshot['model_metadata']
             ?? (is_array($predictionData['model_metadata'] ?? null) ? $predictionData['model_metadata'] : null);
 
-        PredictionFeatureSnapshot::query()->updateOrCreate(
-            [
-                'prediction_table' => $prediction->getTable(),
-                'prediction_id' => (int) $prediction->getKey(),
-                'model_version' => $modelVersion,
-                'feature_version' => $featureVersion,
-                'blend_version' => $blendVersion,
-            ],
-            [
-                'sport' => $sport,
-                'game_id' => (int) ($prediction->game_id ?? $game->getKey()),
+        PredictionFeatureSnapshot::query()->create([
+            'sport' => $sport,
+            'prediction_table' => $prediction->getTable(),
+            'prediction_id' => (int) $prediction->getKey(),
+            'game_id' => (int) ($prediction->game_id ?? $game->getKey()),
+            'snapshot_run_id' => (string) Str::uuid(),
+            'model_version' => $modelVersion,
+            'feature_version' => $featureVersion,
+            'blend_version' => $blendVersion,
+            'features' => $features,
+            'outputs' => $outputs,
+            'market_context' => $marketContext,
+            'model_metadata' => $modelMetadata,
+            'feature_hash' => hash('sha256', json_encode([
                 'features' => $features,
                 'outputs' => $outputs,
                 'market_context' => $marketContext,
-                'model_metadata' => $modelMetadata,
-                'feature_hash' => hash('sha256', json_encode([
-                    'features' => $features,
-                    'outputs' => $outputs,
-                    'market_context' => $marketContext,
-                ])),
-                'generated_at' => now(),
-            ]
-        );
+            ])),
+            'generated_at' => now(),
+        ]);
     }
 
     /**

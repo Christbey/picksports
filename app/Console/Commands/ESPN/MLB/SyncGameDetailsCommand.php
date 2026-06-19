@@ -19,4 +19,9 @@ class SyncGameDetailsCommand extends AbstractSyncMissingPlayerStatsGameDetailsCo
     protected const GAME_MODEL_CLASS = Game::class;
 
     protected const REQUIRES_FINAL_STATUS = true;
+
+    protected function includesMissingFinalScores(): bool
+    {
+        return true;
+    }
 }

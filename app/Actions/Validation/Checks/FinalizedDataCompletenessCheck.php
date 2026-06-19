@@ -27,7 +27,7 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
         $window = $dates->forRange($dates->parseLocalDate()->subDays($lookbackDays), $dates->parseLocalDate());
 
         $games = $gameModel::query()
-            ->with(['prediction'])
+            ->with(['prediction', 'teamStats'])
             ->where('status', 'STATUS_FINAL')
             ->whereDate('game_date', '>=', $window->localStartDate())
             ->whereDate('game_date', '<=', $window->localEndDate())
@@ -38,6 +38,10 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
         $missingTeamStatsCount = 0;
         $missingPlaysCount = 0;
         $missingGradingCount = 0;
+        $missingGameScoreCount = 0;
+        $reconstructableMissingScoreCount = 0;
+        $nonReconstructableMissingScoreCount = 0;
+        $scoreConflictCount = 0;
         $flaggedGameIds = [];
         $sampleGames = [];
 
@@ -61,6 +65,27 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
                 $missingPlaysCount++;
                 $flagged = true;
                 $reasons[] = 'missing_plays';
+            }
+
+            $scoreState = $this->scoreCompletenessState($sport, $game);
+
+            if ($scoreState['missing_game_score']) {
+                $missingGameScoreCount++;
+
+                if ($scoreState['reconstructable_missing_score']) {
+                    $reconstructableMissingScoreCount++;
+                    $flagged = true;
+                    $reasons[] = 'reconstructable_missing_game_score';
+                } else {
+                    $nonReconstructableMissingScoreCount++;
+                    $reasons[] = 'missing_game_score_without_team_stat_runs';
+                }
+            }
+
+            if ($scoreState['score_conflict']) {
+                $scoreConflictCount++;
+                $flagged = true;
+                $reasons[] = 'score_conflict_with_team_stats';
             }
 
             $prediction = $game->prediction;
@@ -94,9 +119,15 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
         $status = 'passing';
         $message = "Finalized data looks complete across {$totalGames} recent final games.";
 
-        if ($problemGames > 0) {
+        if ($reconstructableMissingScoreCount > 0 || $scoreConflictCount > 0) {
+            $status = 'failing';
+            $message = "{$reconstructableMissingScoreCount} reconstructable final score gap(s) and {$scoreConflictCount} final score conflict(s) need reconciliation.";
+        } elseif ($problemGames > 0) {
             $status = $problemPct >= $failPct ? 'failing' : ($problemPct >= $warnPct ? 'warning' : 'passing');
             $message = "{$problemGames}/{$totalGames} recent final games are missing stats, plays, or grading artifacts.";
+        } elseif ($nonReconstructableMissingScoreCount > 0) {
+            $status = 'warning';
+            $message = "{$nonReconstructableMissingScoreCount}/{$totalGames} recent final games have missing score columns but are not reconstructable from team stats yet.";
         }
 
         return [
@@ -113,10 +144,52 @@ class FinalizedDataCompletenessCheck implements ValidationCheck
                 'games_missing_team_stats' => $missingTeamStatsCount,
                 'games_missing_plays' => $missingPlaysCount,
                 'games_missing_grading' => $missingGradingCount,
+                'games_missing_game_scores' => $missingGameScoreCount,
+                'reconstructable_missing_game_scores' => $reconstructableMissingScoreCount,
+                'non_reconstructable_missing_game_scores' => $nonReconstructableMissingScoreCount,
+                'score_conflicts_with_team_stats' => $scoreConflictCount,
                 'sample_game_ids' => array_slice(array_values(array_unique($flaggedGameIds)), 0, 5),
                 'sample_games' => array_slice($sampleGames, 0, 5),
                 'grading_grace_hours' => $gradingGraceHours,
             ],
+        ];
+    }
+
+    /**
+     * @return array{missing_game_score: bool, reconstructable_missing_score: bool, score_conflict: bool}
+     */
+    private function scoreCompletenessState(string $sport, Model $game): array
+    {
+        $missingGameScore = $game->home_score === null || $game->away_score === null;
+
+        if ($sport !== 'mlb') {
+            return [
+                'missing_game_score' => $missingGameScore,
+                'reconstructable_missing_score' => false,
+                'score_conflict' => false,
+            ];
+        }
+
+        $homeStat = $game->teamStats
+            ->first(fn (Model $stat): bool => (string) $stat->team_type === 'home' && (int) $stat->team_id === (int) $game->home_team_id);
+        $awayStat = $game->teamStats
+            ->first(fn (Model $stat): bool => (string) $stat->team_type === 'away' && (int) $stat->team_id === (int) $game->away_team_id);
+
+        $homeRuns = $homeStat?->runs;
+        $awayRuns = $awayStat?->runs;
+        $hasTeamStatRuns = $homeRuns !== null && $awayRuns !== null;
+
+        $homeScoreConflicts = $game->home_score !== null
+            && $homeRuns !== null
+            && (int) $game->home_score !== (int) $homeRuns;
+        $awayScoreConflicts = $game->away_score !== null
+            && $awayRuns !== null
+            && (int) $game->away_score !== (int) $awayRuns;
+
+        return [
+            'missing_game_score' => $missingGameScore,
+            'reconstructable_missing_score' => $missingGameScore && $hasTeamStatRuns && ! $homeScoreConflicts && ! $awayScoreConflicts,
+            'score_conflict' => $homeScoreConflicts || $awayScoreConflicts,
         ];
     }
 }

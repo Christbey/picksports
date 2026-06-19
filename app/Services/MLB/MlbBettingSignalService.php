@@ -9,6 +9,8 @@ use App\Models\MLB\Team;
 use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\MLB\MlbMarketSpread;
+use App\Support\Odds\AmericanOdds;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 
@@ -464,7 +466,6 @@ class MlbBettingSignalService
         );
         $liveStatuses = array_values(array_filter([
             config('mlb.statuses.in_progress'),
-            config('mlb.statuses.delayed'),
         ]));
 
         $query = Prediction::query()
@@ -583,7 +584,7 @@ class MlbBettingSignalService
 
     protected function runLineEdge(Prediction $prediction): float
     {
-        return (float) $prediction->predicted_spread + (float) $prediction->vegas_spread;
+        return MlbMarketSpread::edgeRuns((float) $prediction->predicted_spread, (float) $prediction->vegas_spread);
     }
 
     /**
@@ -796,10 +797,16 @@ class MlbBettingSignalService
         $edgeRuns = abs((float) $prediction->predicted_spread);
         $modelProbability = max($homeWinProbability, 1 - $homeWinProbability);
         $marketPrice = $this->moneylinePrice($prediction, $pickSide);
+        $prices = $this->moneylinePrices($prediction);
         $marketImplied = $marketPrice !== null ? $this->americanToImpliedProbability($marketPrice) : null;
         $probabilityEdge = $marketImplied !== null ? $modelProbability - $marketImplied : null;
+        $noVigProbabilities = AmericanOdds::noVigProbabilities($prices['home'] ?? null, $prices['away'] ?? null);
+        $noVigImplied = $noVigProbabilities[$pickSide] ?? null;
+        $noVigEdge = $noVigImplied !== null ? $modelProbability - $noVigImplied : null;
         $codes = $this->predictionReasonCodes($prediction, 'moneyline_bet_filter');
         [$score, $reasons, $riskFlags] = $this->baseBetScore($prediction, $pickSide, $codes);
+        $riskFlags = array_values(array_unique([...$riskFlags, ...$this->oddsTimestampRiskFlags($prediction)]));
+        $riskFlags = array_values(array_unique([...$riskFlags, ...$this->contextRiskFlags($prediction, $marketPrice)]));
 
         $score += $this->scoreModelSpread($edgeRuns, $reasons);
         $score += $this->scoreWinProbability($modelProbability, $reasons);
@@ -831,7 +838,9 @@ class MlbBettingSignalService
             'model_probability' => round($modelProbability, 4),
             'market_price' => $marketPrice,
             'market_implied_probability' => $marketImplied !== null ? round($marketImplied, 4) : null,
+            'no_vig_implied_probability' => $noVigImplied !== null ? round($noVigImplied, 4) : null,
             'probability_edge' => $probabilityEdge !== null ? round($probabilityEdge, 4) : null,
+            'no_vig_edge' => $noVigEdge !== null ? round($noVigEdge, 4) : null,
             'confidence_score' => (float) $prediction->confidence_score,
             'edge_runs' => round($edgeRuns, 2),
             'model_line' => round((float) $prediction->predicted_spread, 2),
@@ -876,7 +885,7 @@ class MlbBettingSignalService
             'predicted_spread' => (float) $prediction->predicted_spread,
             'vegas_spread' => (float) $prediction->vegas_spread,
             'model_line' => round((float) $prediction->predicted_spread, 2),
-            'market_line' => round(-1 * (float) $prediction->vegas_spread, 2),
+            'market_line' => round(MlbMarketSpread::marketLineFromHomeSpread((float) $prediction->vegas_spread), 2),
             'confidence_score' => (float) $prediction->confidence_score,
             'edge_runs' => round($edgeRuns, 2),
             'reason_codes' => array_values(array_unique([...$codes, ...$reasons])),
@@ -961,6 +970,7 @@ class MlbBettingSignalService
         if (in_array('pitcher_uncertainty_risk', $codes, true)) {
             $score -= 18;
             $riskFlags[] = 'pitcher_uncertainty';
+            $riskFlags[] = 'unconfirmed_pitcher';
         }
 
         if ($pickSide === 'home') {
@@ -1019,10 +1029,12 @@ class MlbBettingSignalService
         $lean = (int) config('mlb.signals.bet_filter.lean_min_score', 55);
         $riskFlags = (array) ($candidate['risk_flags'] ?? []);
         $forcePass = $this->hasDisqualifyingRisk($riskFlags);
+        $blockOfficialBet = $this->hasOfficialBetBlockingRisk($riskFlags);
 
         $candidate['score'] = $score;
         $candidate['classification'] = match (true) {
             $forcePass => 'pass',
+            $blockOfficialBet && $score >= $strong => $score >= $lean ? 'lean' : 'pass',
             $score >= $strong => 'bet',
             $score >= $lean => 'lean',
             default => 'pass',
@@ -1051,9 +1063,23 @@ class MlbBettingSignalService
     /**
      * @param  list<string>  $riskFlags
      */
+    protected function hasOfficialBetBlockingRisk(array $riskFlags): bool
+    {
+        foreach (['stale_odds', 'missing_odds_timestamp'] as $riskFlag) {
+            if (in_array($riskFlag, $riskFlags, true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param  list<string>  $riskFlags
+     */
     protected function noBetReason(array $riskFlags): string
     {
-        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'run_line_edge_below_threshold', 'total_edge_below_threshold'] as $priority) {
+        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'run_line_edge_below_threshold', 'total_edge_below_threshold', 'stale_odds', 'missing_odds_timestamp'] as $priority) {
             if (in_array($priority, $riskFlags, true)) {
                 return $priority;
             }
@@ -1068,25 +1094,72 @@ class MlbBettingSignalService
 
     protected function moneylinePrice(Prediction $prediction, string $pickSide): ?int
     {
+        $prices = $this->moneylinePrices($prediction);
+
+        return $prices[$pickSide] ?? null;
+    }
+
+    /**
+     * @return array{home:?int,away:?int}
+     */
+    protected function moneylinePrices(Prediction $prediction): array
+    {
         $game = $prediction->game;
         $market = $this->extractMarket($game?->odds_data, 'h2h');
         if (! $game || ! $market) {
-            return null;
+            return ['home' => null, 'away' => null];
         }
 
-        $team = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
+        $prices = ['home' => null, 'away' => null];
 
         foreach (($market['outcomes'] ?? []) as $outcome) {
             if (! is_array($outcome) || ! is_numeric($outcome['price'] ?? null)) {
                 continue;
             }
 
-            if ($this->teamMatchesOutcome($team, (string) ($outcome['name'] ?? ''))) {
-                return (int) $outcome['price'];
+            if ($this->teamMatchesOutcome($game->homeTeam, (string) ($outcome['name'] ?? ''))) {
+                $prices['home'] = (int) $outcome['price'];
+            }
+
+            if ($this->teamMatchesOutcome($game->awayTeam, (string) ($outcome['name'] ?? ''))) {
+                $prices['away'] = (int) $outcome['price'];
             }
         }
 
-        return null;
+        return $prices;
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function oddsTimestampRiskFlags(Prediction $prediction): array
+    {
+        $updatedAt = $prediction->game?->odds_updated_at;
+        if ($updatedAt === null) {
+            return ['missing_odds_timestamp'];
+        }
+
+        return Carbon::parse($updatedAt)->lt(now()->subHours((int) config('mlb.signals.odds_stale_hours', 12)))
+            ? ['stale_odds']
+            : [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function contextRiskFlags(Prediction $prediction, ?int $marketPrice): array
+    {
+        $flags = [];
+
+        if ($marketPrice === null) {
+            $flags[] = 'missing_market_context';
+        }
+
+        if ((string) data_get($prediction->model_metadata, 'actual_weather.reason') === 'missing_weather_row') {
+            $flags[] = 'missing_weather';
+        }
+
+        return $flags;
     }
 
     /**
@@ -1135,17 +1208,9 @@ class MlbBettingSignalService
         return strtolower(preg_replace('/[^a-z0-9]+/i', '', $value) ?? '');
     }
 
-    protected function americanToImpliedProbability(int $price): ?float
+    public function americanToImpliedProbability(int $price): ?float
     {
-        if ($price === 0) {
-            return null;
-        }
-
-        if ($price > 0) {
-            return 100 / ($price + 100);
-        }
-
-        return abs($price) / (abs($price) + 100);
+        return AmericanOdds::impliedProbability($price);
     }
 
     /**

@@ -2,7 +2,11 @@
 
 namespace App\Http\Resources\Api\V2;
 
+use App\Models\MLB\Prediction as MlbPrediction;
+use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
+use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Support\MLB\MlbGamePhase;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -39,6 +43,7 @@ class SportPredictionResource extends JsonResource
             'confidence_score' => $this->floatAttribute('confidence_score'),
             'confidence_level' => $this->confidenceLevel(),
             'confidence_context' => $this->confidenceContext(),
+            'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
@@ -62,6 +67,7 @@ class SportPredictionResource extends JsonResource
             'live_updated_at' => $this->serializeDateValue($this->liveAttribute('live_updated_at')),
             'depth_chart_context' => $this->depthChartContext(),
             'market_summary' => $this->marketSummary(),
+            'audit_context' => $this->auditContext(),
             'created_at' => $this->serializeDateValue($this->attribute('created_at')),
             'updated_at' => $this->serializeDateValue($this->attribute('updated_at')),
         ];
@@ -91,6 +97,11 @@ class SportPredictionResource extends JsonResource
             'status' => $game->getAttribute('status'),
             'home_score' => $game->getAttribute('home_score'),
             'away_score' => $game->getAttribute('away_score'),
+            'inning' => $game->getAttribute('inning'),
+            'inning_half' => $game->getAttribute('inning_half') ?? $game->getAttribute('inning_state'),
+            'balls' => $game->getAttribute('balls'),
+            'strikes' => $game->getAttribute('strikes'),
+            'outs' => $game->getAttribute('outs'),
             'home_team_id' => $game->getAttribute('home_team_id'),
             'away_team_id' => $game->getAttribute('away_team_id'),
             'home_team' => $this->team($game, 'homeTeam'),
@@ -137,11 +148,12 @@ class SportPredictionResource extends JsonResource
     private function marketSummary(): array
     {
         $hasSpread = $this->attribute('vegas_spread') !== null;
+        $game = $this->relation('game');
 
         return [
             'has_odds' => $hasSpread,
             'markets' => $hasSpread ? ['spread'] : [],
-            'odds_updated_at' => null,
+            'odds_updated_at' => $this->serializeDateValue($game?->getAttribute('odds_updated_at')),
         ];
     }
 
@@ -332,6 +344,18 @@ class SportPredictionResource extends JsonResource
     }
 
     /**
+     * @return array<string,mixed>|null
+     */
+    private function recommendation(): ?array
+    {
+        if ($this->context->slug !== 'mlb' || ! $this->resource instanceof MlbPrediction) {
+            return null;
+        }
+
+        return app(MlbPredictionRecommendationService::class)->forPrediction($this->resource);
+    }
+
+    /**
      * @param  array<string, mixed>  $metadata
      */
     private function confidenceSampleGames(array $metadata): ?int
@@ -371,7 +395,51 @@ class SportPredictionResource extends JsonResource
     {
         $status = $this->gameAttribute('status');
 
+        if ($this->context->slug === 'mlb') {
+            return MlbGamePhase::isLive(is_string($status) ? $status : null);
+        }
+
         return $status === null || in_array($status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'], true);
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    private function auditContext(): array
+    {
+        $snapshot = $this->latestFeatureSnapshot();
+        $metadata = is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : [];
+        $marketSafety = (array) data_get($metadata, 'market_context.safety', []);
+        $game = $this->relation('game');
+
+        return [
+            'prediction_generated_at' => $this->serializeDateValue($snapshot?->generated_at ?? $this->attribute('created_at')),
+            'prediction_locked_at' => $this->serializeDateValue($snapshot?->generated_at ?? $this->attribute('created_at')),
+            'feature_snapshot_at' => $this->serializeDateValue($snapshot?->generated_at),
+            'snapshot_run_id' => $snapshot?->snapshot_run_id,
+            'odds_collected_at' => $marketSafety['odds_captured_at'] ?? $this->serializeDateValue($game?->getAttribute('odds_updated_at')),
+            'graded_at' => $this->serializeDateValue($this->attribute('graded_at')),
+            'result_finalized_at' => MlbGamePhase::isFinal(is_string($game?->getAttribute('status')) ? $game?->getAttribute('status') : null)
+                ? $this->serializeDateValue($game?->getAttribute('updated_at'))
+                : null,
+            'model_version' => $this->attribute('model_version'),
+            'feature_version' => $this->attribute('feature_version'),
+            'blend_version' => $this->attribute('blend_version'),
+        ];
+    }
+
+    private function latestFeatureSnapshot(): ?PredictionFeatureSnapshot
+    {
+        if (! $this->resource instanceof Model || $this->attribute('id') === null) {
+            return null;
+        }
+
+        return PredictionFeatureSnapshot::query()
+            ->where('prediction_table', $this->resource->getTable())
+            ->where('prediction_id', (int) $this->attribute('id'))
+            ->latest('generated_at')
+            ->latest('id')
+            ->first();
     }
 
     private function liveAttribute(string $key): mixed

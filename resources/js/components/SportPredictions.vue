@@ -15,6 +15,7 @@ import {
     isMlbRegularSeasonType,
     isMlbSpringTrainingType,
 } from '@/lib/mlbSeasonType';
+import { isBetRecommendation } from '@/lib/predictionRecommendation';
 import type {
     ApiV2Prediction,
     ApiV2Query,
@@ -241,6 +242,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
                 : undefined,
         created_at: prediction.created_at,
         updated_at: prediction.updated_at,
+        recommendation: prediction.recommendation ?? null,
         game: {
             id: Number(game?.id ?? prediction.game_id ?? 0),
             game_date: game?.game_date ?? '',
@@ -248,6 +250,14 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
             status: prediction.status ?? game?.status ?? '',
             home_score: numberValue(game?.home_score),
             away_score: numberValue(game?.away_score),
+            inning: numberValue(game?.inning) ?? null,
+            inning_half:
+                typeof game?.inning_half === 'string'
+                    ? game.inning_half
+                    : null,
+            balls: numberValue(game?.balls) ?? null,
+            strikes: numberValue(game?.strikes) ?? null,
+            outs: numberValue(game?.outs) ?? null,
             week: numberValue(game?.week),
             season_type:
                 game?.season_type === null || game?.season_type === undefined
@@ -330,6 +340,10 @@ const normalizedSearchQuery = computed(() =>
 const shouldShowAsRecommendedBet = (
     prediction: PredictionListItem,
 ): boolean => {
+    if (props.config.sport === 'mlb') {
+        return isBetRecommendation(prediction);
+    }
+
     if (prediction.betting_value_summary?.has_playable_value === true) {
         return true;
     }

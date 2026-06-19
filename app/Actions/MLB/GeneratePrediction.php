@@ -3,6 +3,7 @@
 namespace App\Actions\MLB;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Models\GameOddsSnapshot;
 use App\Models\MLB\EloRating;
 use App\Models\MLB\Game;
 use App\Models\MLB\PitcherEloRating;
@@ -13,14 +14,23 @@ use App\Models\MLB\Team;
 use App\Models\MLB\TeamMetric;
 use App\Services\MLB\HistoricalPredictionContextService;
 use App\Services\MLB\SituationalPredictionContextService;
+use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\DepthChartImpactService;
+use App\Support\MLB\MlbGamePhase;
 use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class GeneratePrediction extends AbstractPredictionGenerator
 {
     /** @var array<string, mixed> */
     private array $metadata = [];
+
+    /** @var array<string, mixed> */
+    private array $pointInTimeSafety = [];
+
+    /** @var array<string, mixed> */
+    private array $marketContextSafety = [];
 
     private bool $allowHistoricalGames = false;
 
@@ -49,6 +59,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     protected function makePredictionData(Model $game): ?array
     {
+        $this->metadata = [];
+        $this->pointInTimeSafety = [];
+        $this->marketContextSafety = [];
+
         if (! $this->allowHistoricalGames && $game->status === 'STATUS_FINAL') {
             return null;
         }
@@ -162,8 +176,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
         // Convert the final model spread, not raw Elo points, into win probability.
         $winProbability = $this->calculateWinProbability($predictedSpread);
         $confidenceScore = $this->calculateConfidence($winProbability);
-        $vegasSpread = $this->getVegasSpread($game);
-        $oddsMarketAvailability = $this->oddsMarketAvailability($game);
+        $oddsData = $this->oddsDataForPrediction($game);
+        $vegasSpread = $this->getVegasSpread($game, $oddsData);
+        $marketTotal = $this->getMarketTotal($game, $oddsData);
+        $oddsMarketAvailability = $this->oddsMarketAvailabilityForData($oddsData);
 
         $this->metadata = [
             'home_pitcher_confidence' => $homePitcherResult['confidence'],
@@ -202,8 +218,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'baseline_model_spread' => round($predictedSpread, 2),
             'baseline_model_total' => round($predictedTotal, 2),
             'vegas_spread' => $vegasSpread !== null ? round($vegasSpread, 2) : null,
-            'market_total' => ($marketTotal = $this->getMarketTotal($game)) !== null ? round($marketTotal, 2) : null,
+            'market_total' => $marketTotal !== null ? round($marketTotal, 2) : null,
             'odds_market_availability' => $oddsMarketAvailability,
+            'market_context_safety' => $this->marketContextSafety,
+            'point_in_time_safety' => $this->pointInTimeSafety,
         ];
 
         return $this->buildMlbPredictionData(
@@ -331,6 +349,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     protected function teamMetricsForGame(Model $game, int $homeTeamId, int $awayTeamId): array
     {
+        if ($this->allowHistoricalGames && $game instanceof Game) {
+            return [
+                $this->safeHistoricalTeamMetric($game, $homeTeamId, 'home'),
+                $this->safeHistoricalTeamMetric($game, $awayTeamId, 'away'),
+            ];
+        }
+
         if ($game instanceof Game && ! MlbRegularSeasonWindow::hasCompletedGamesBefore($game)) {
             return [
                 $this->latestPriorSeasonMetric(TeamMetric::class, $homeTeamId, (int) $game->season, $game),
@@ -339,6 +364,92 @@ class GeneratePrediction extends AbstractPredictionGenerator
         }
 
         return parent::teamMetricsForGame($game, $homeTeamId, $awayTeamId);
+    }
+
+    private function safeHistoricalTeamMetric(Game $game, int $teamId, string $side): ?Model
+    {
+        $seasonTypeCandidates = $this->seasonTypeCandidates($game);
+        $asOfDate = Carbon::parse($game->game_date)->toDateString();
+
+        $metric = TeamMetric::query()
+            ->where('team_id', $teamId)
+            ->where('season', (int) $game->season)
+            ->whereIn('season_type', $seasonTypeCandidates)
+            ->where(function ($query) use ($asOfDate): void {
+                $query->whereNull('calculation_date')
+                    ->orWhereDate('calculation_date', '<=', $asOfDate);
+            })
+            ->orderByDesc('calculation_date')
+            ->first();
+
+        if ($metric !== null) {
+            $this->pointInTimeSafety['team_metrics'][$side] = [
+                'source' => 'current_season_metric_as_of',
+                'team_id' => $teamId,
+                'calculation_date' => $metric->calculation_date?->toDateString(),
+                'as_of_date' => $asOfDate,
+                'pregame_safe' => true,
+            ];
+
+            return $metric;
+        }
+
+        $futureMetric = TeamMetric::query()
+            ->where('team_id', $teamId)
+            ->where('season', (int) $game->season)
+            ->whereIn('season_type', $seasonTypeCandidates)
+            ->whereDate('calculation_date', '>', $asOfDate)
+            ->orderBy('calculation_date')
+            ->first();
+
+        $prior = $this->latestPriorSeasonMetric(TeamMetric::class, $teamId, (int) $game->season, $game);
+
+        $this->pointInTimeSafety['team_metrics'][$side] = [
+            'source' => $prior ? 'prior_season_fallback' : 'missing_or_future_metric_excluded',
+            'team_id' => $teamId,
+            'as_of_date' => $asOfDate,
+            'excluded_future_calculation_date' => $futureMetric?->calculation_date?->toDateString(),
+            'pregame_safe' => $prior !== null,
+            'limitation' => $prior ? null : 'mlb_team_metrics stores one mutable row per team season type; no dated current-season snapshot was available before this game.',
+        ];
+
+        return $prior;
+    }
+
+    /**
+     * @return array<int, int|string>
+     */
+    private function seasonTypeCandidates(Game $game): array
+    {
+        $seasonType = $game->season_type ?? config('mlb.season.types.regular', 2);
+        $candidates = [$seasonType, (string) $seasonType];
+        $types = (array) config('mlb.season.types', []);
+        $typeNames = (array) config('mlb.season.type_names', []);
+
+        if (is_numeric($seasonType)) {
+            $matchedKey = array_search((int) $seasonType, $types, true);
+            if ($matchedKey !== false) {
+                $candidates[] = $matchedKey;
+                $candidates[] = (string) $matchedKey;
+                if (isset($typeNames[$matchedKey])) {
+                    $candidates[] = $typeNames[$matchedKey];
+                }
+            }
+        }
+
+        if (is_string($seasonType) && isset($types[$seasonType])) {
+            $candidates[] = $types[$seasonType];
+            $candidates[] = (string) $types[$seasonType];
+        }
+
+        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
+            $candidates[] = $typeNames[$seasonType];
+        }
+
+        return array_values(array_unique(array_filter(
+            $candidates,
+            fn (mixed $value): bool => $value !== null && $value !== ''
+        )));
     }
 
     protected function getTeamElo(Game $game, Team $team): float
@@ -497,15 +608,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'vegas_spread' => $vegasSpread,
                     'market_total' => $this->metadata['market_total'] ?? null,
                     ...($this->metadata['odds_market_availability'] ?? []),
+                    'safety' => $this->metadata['market_context_safety'] ?? [],
                 ],
                 'model_metadata' => $this->buildModelMetadata(),
             ],
         ];
     }
 
-    private function getVegasSpread(Model $game): ?float
+    private function getVegasSpread(Model $game, ?array $oddsData = null): ?float
     {
-        $oddsData = $game->odds_data;
+        $oddsData ??= is_array($game->odds_data ?? null) ? $game->odds_data : null;
 
         if (empty($oddsData) || ! isset($oddsData['bookmakers'])) {
             return null;
@@ -519,7 +631,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             foreach ($bookmaker['markets'] as $market) {
                 if (($market['key'] ?? null) === 'spreads' && isset($market['outcomes'])) {
                     foreach ($market['outcomes'] as $outcome) {
-                        if ($this->isHomeTeamOutcome((string) ($outcome['name'] ?? ''), $game) && is_numeric($outcome['point'] ?? null)) {
+                        if ($this->isHomeTeamOutcome((string) ($outcome['name'] ?? ''), $game, $oddsData) && is_numeric($outcome['point'] ?? null)) {
                             return (float) $outcome['point'];
                         }
                     }
@@ -531,9 +643,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return null;
     }
 
-    private function getMarketTotal(Model $game): ?float
+    private function getMarketTotal(Model $game, ?array $oddsData = null): ?float
     {
-        $oddsData = $game->odds_data;
+        $oddsData ??= is_array($game->odds_data ?? null) ? $game->odds_data : null;
 
         if (empty($oddsData) || ! isset($oddsData['bookmakers'])) {
             return null;
@@ -560,18 +672,81 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return null;
     }
 
-    private function isHomeTeamOutcome(string $outcomeName, Model $game): bool
+    private function isHomeTeamOutcome(string $outcomeName, Model $game, ?array $oddsData = null): bool
     {
         $homeTeam = $game->homeTeam;
         $name = strtolower(trim($outcomeName));
+        $oddsData ??= is_array($game->odds_data ?? null) ? $game->odds_data : [];
 
         return $name !== ''
             && (
                 str_contains($name, strtolower((string) ($homeTeam->location ?? '')))
                 || str_contains($name, strtolower((string) ($homeTeam->name ?? '')))
                 || $name === strtolower(trim(((string) ($homeTeam->location ?? '')).' '.((string) ($homeTeam->name ?? ''))))
-                || $name === strtolower((string) ($game->odds_data['home_team'] ?? ''))
+                || $name === strtolower((string) ($oddsData['home_team'] ?? ''))
             );
+    }
+
+    private function oddsDataForPrediction(Game $game): ?array
+    {
+        if (! $this->allowHistoricalGames) {
+            $this->marketContextSafety = [
+                'source' => 'game_current_odds',
+                'pregame_safe' => $game->odds_updated_at !== null,
+                'odds_updated_at' => $game->odds_updated_at?->toIso8601String(),
+            ];
+
+            return is_array($game->odds_data ?? null) ? $game->odds_data : null;
+        }
+
+        $startAt = MlbGamePhase::scheduledStartAt($game);
+        if ($startAt === null) {
+            $this->marketContextSafety = [
+                'source' => 'unavailable',
+                'pregame_safe' => false,
+                'risk_flags' => ['missing_game_start_timestamp'],
+            ];
+
+            return null;
+        }
+
+        $snapshot = GameOddsSnapshot::query()
+            ->where('sport', 'mlb')
+            ->where('game_table', $game->getTable())
+            ->where('game_id', (int) $game->id)
+            ->whereNotNull('captured_at')
+            ->where('captured_at', '<', $startAt)
+            ->latest('captured_at')
+            ->latest('id')
+            ->first();
+
+        if ($snapshot !== null) {
+            $this->marketContextSafety = [
+                'source' => 'pregame_odds_snapshot',
+                'pregame_safe' => true,
+                'snapshot_id' => (int) $snapshot->id,
+                'odds_captured_at' => $snapshot->captured_at?->toIso8601String(),
+                'commence_time' => $snapshot->commence_time?->toIso8601String(),
+            ];
+
+            return is_array($snapshot->odds_data) ? $snapshot->odds_data : null;
+        }
+
+        $this->marketContextSafety = [
+            'source' => 'missing_pregame_odds_snapshot',
+            'pregame_safe' => false,
+            'risk_flags' => ['missing_pregame_odds_snapshot'],
+        ];
+
+        return null;
+    }
+
+    /**
+     * @return array{bookmaker:?string,available_markets:array<int,string>,has_h2h:bool,has_spreads:bool,has_totals:bool}
+     */
+    private function oddsMarketAvailabilityForData(?array $oddsData): array
+    {
+        return app(OddsApiService::class)->marketAvailability($oddsData);
     }
 
     /**
@@ -636,7 +811,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
                 'market_total' => $this->metadata['market_total'] ?? null,
                 ...($this->metadata['odds_market_availability'] ?? []),
+                'safety' => $this->metadata['market_context_safety'] ?? [],
             ],
+            'point_in_time_safety' => $this->metadata['point_in_time_safety'] ?? [],
             'park_context' => [
                 'venue_name' => $this->metadata['park_venue_name'] ?? null,
                 'total_adjustment' => $this->metadata['park_total_adjustment'] ?? 0.0,

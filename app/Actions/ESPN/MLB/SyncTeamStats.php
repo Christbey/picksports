@@ -4,6 +4,7 @@ namespace App\Actions\ESPN\MLB;
 
 use App\Actions\ESPN\MLB\Concerns\ParsesMlbStatValues;
 use App\Actions\ESPN\MLB\Concerns\ResolvesMlbBoxscoreTeams;
+use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
 use App\Models\MLB\Game;
 use App\Models\MLB\TeamStat;
 
@@ -84,6 +85,10 @@ class SyncTeamStats
             ]);
 
             $synced++;
+        }
+
+        if ($synced > 0) {
+            app(ReconcileGameScoreFromTeamStats::class)->execute($game->fresh());
         }
 
         return $synced;

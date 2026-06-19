@@ -38,6 +38,23 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
                 $query->orWhereDoesntHave($relation);
             }
         }
+
+        if ($this->includesMissingFinalScores()) {
+            $query->orWhere(function ($scoreQuery) {
+                $scoreQuery
+                    ->where('status', 'STATUS_FINAL')
+                    ->where(function ($missingScoreQuery) {
+                        $missingScoreQuery
+                            ->whereNull('home_score')
+                            ->orWhereNull('away_score');
+                    });
+            });
+        }
+    }
+
+    protected function includesMissingFinalScores(): bool
+    {
+        return false;
     }
 
     protected function lookbackDays(): ?int

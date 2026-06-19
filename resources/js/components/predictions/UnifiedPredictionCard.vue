@@ -21,6 +21,13 @@ import {
 } from '@/composables/usePredictionLiveData';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
+import {
+    getPredictionRecommendation,
+    isBetRecommendation,
+    isLeanRecommendation,
+    isLiveMonitor,
+    pregameRecommendation,
+} from '@/lib/predictionRecommendation';
 import type { DashboardPrediction, PredictionListItem } from '@/types';
 
 interface SavePickOption {
@@ -260,10 +267,22 @@ function hasLiveData(): boolean {
     return hasPredictionLiveData(props.prediction);
 }
 
-function winProbPercent(): number {
-    const probability = hasLiveData()
+function isMlbPrediction(): boolean {
+    return (props.sport ?? '').toLowerCase() === 'mlb';
+}
+
+function displayedWinProbability(): number {
+    if (isMlbPrediction()) {
+        return preGameWinProbability();
+    }
+
+    return hasLiveData()
         ? (liveWinProbability() ?? preGameWinProbability())
         : preGameWinProbability();
+}
+
+function winProbPercent(): number {
+    const probability = displayedWinProbability();
 
     return Math.max(0, Math.min(100, probability * 100));
 }
@@ -439,6 +458,60 @@ function bettingValueDebugLabel(): string | null {
     return reason;
 }
 
+function canonicalRecommendation() {
+    return getPredictionRecommendation(props.prediction);
+}
+
+function canonicalPregameRecommendation() {
+    return pregameRecommendation(props.prediction);
+}
+
+function hasCanonicalRecommendation(): boolean {
+    return canonicalRecommendation() !== null;
+}
+
+function canonicalRecommendationLabel(): string | null {
+    if (isBetRecommendation(props.prediction)) {
+        return 'Model Bet';
+    }
+
+    if (isLeanRecommendation(props.prediction)) {
+        return 'Model Lean';
+    }
+
+    if (isLiveMonitor(props.prediction)) {
+        return 'Live Monitor';
+    }
+
+    const recommendation = canonicalRecommendation();
+    if (recommendation?.recommendation_type === 'no_play') {
+        return 'No Play';
+    }
+
+    return null;
+}
+
+function canonicalRecommendationClass(): string {
+    if (isBetRecommendation(props.prediction)) {
+        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100';
+    }
+
+    if (isLeanRecommendation(props.prediction)) {
+        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-100';
+    }
+
+    if (isLiveMonitor(props.prediction)) {
+        return 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100';
+    }
+
+    return 'bg-sidebar-accent text-muted-foreground';
+}
+
+function canonicalPregameEdgeLabel(): string | null {
+    const edge = canonicalPregameRecommendation()?.raw_edge;
+    return typeof edge === 'number' ? `${(edge * 100).toFixed(1)}% raw edge` : null;
+}
+
 function hasValueSignals(): boolean {
     return Boolean(
         (props.prediction.betting_value &&
@@ -449,7 +522,7 @@ function hasValueSignals(): boolean {
 }
 
 function hasDecisionSummary(): boolean {
-    return !isFinal() && (hasAiAnalysis() || hasPredictionAnalysis() || hasValueSignals());
+    return !isFinal() && (hasAiAnalysis() || hasPredictionAnalysis() || hasValueSignals() || hasCanonicalRecommendation());
 }
 
 function livePredictionData() {
@@ -909,7 +982,12 @@ function saveOptions(): SavePickOption[] {
                         <div class="mb-1 flex items-center gap-1.5">
                             <Target class="h-3.5 w-3.5" />
                             <span class="ui-chip text-foreground/80">
-                                Moneyline: {{ moneylineTeamLabel() }}
+                                {{
+                                    isMlbPrediction()
+                                        ? 'Pregame pick'
+                                        : 'Moneyline'
+                                }}:
+                                {{ moneylineTeamLabel() }}
                             </span>
                         </div>
                         <div
@@ -962,6 +1040,19 @@ function saveOptions(): SavePickOption[] {
                         class="rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium"
                     >
                         Model {{ betClassificationLabel() }}
+                    </span>
+                    <span
+                        v-if="canonicalRecommendationLabel()"
+                        class="rounded-full px-2 py-0.5 text-xs font-semibold"
+                        :class="canonicalRecommendationClass()"
+                    >
+                        {{ canonicalRecommendationLabel() }}
+                    </span>
+                    <span
+                        v-if="canonicalPregameEdgeLabel()"
+                        class="text-xs text-muted-foreground"
+                    >
+                        {{ canonicalPregameEdgeLabel() }}
                     </span>
                     <span
                         v-if="trustScoreLabel()"

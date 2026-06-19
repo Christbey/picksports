@@ -3,12 +3,26 @@
 namespace App\Actions\ESPN\MLB;
 
 use App\Actions\ESPN\AbstractSyncGameDetails;
+use App\Actions\MLB\ReconcileGameScoreFromTeamStats;
 use App\Models\MLB\Game;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGameDetails extends AbstractSyncGameDetails
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function execute(string $eventId): array
+    {
+        $result = parent::execute($eventId);
+
+        $game = Game::query()->where('espn_event_id', $eventId)->first();
+
+        if ($game) {
+            $result['score_reconciliation'] = app(ReconcileGameScoreFromTeamStats::class)->execute($game->fresh());
+        }
+
+        return $result;
+    }
 
     protected function includeGameUpdatedFlag(): bool
     {

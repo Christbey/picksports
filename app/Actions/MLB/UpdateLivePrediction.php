@@ -4,6 +4,7 @@ namespace App\Actions\MLB;
 
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
+use App\Support\MLB\MlbGamePhase;
 use Carbon\Carbon;
 
 class UpdateLivePrediction
@@ -83,12 +84,7 @@ class UpdateLivePrediction
 
     protected function isGameInProgress(Game $game): bool
     {
-        $inProgressStatuses = [
-            'STATUS_IN_PROGRESS',
-            'STATUS_DELAYED',
-        ];
-
-        return in_array($game->status, $inProgressStatuses) && $game->inning >= 1;
+        return MlbGamePhase::isLive($game) && $game->inning >= 1;
     }
 
     protected function calculateOutsRemaining(?int $inning, ?string $inningState): int

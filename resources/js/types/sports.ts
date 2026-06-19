@@ -1,4 +1,5 @@
 import type { UrlMethodPair } from '@inertiajs/core';
+import type { PredictionRecommendation } from '@/lib/predictionRecommendation';
 import type { GameDepthChartsData, MatchupContextData } from './models';
 
 export type GamePageHrefLike = string | UrlMethodPair;
@@ -150,6 +151,11 @@ export interface PredictionListGame {
     status: string;
     period?: number;
     clock?: string;
+    inning?: number | null;
+    inning_half?: string | null;
+    balls?: number | null;
+    strikes?: number | null;
+    outs?: number | null;
     week?: number;
     postseason_round?: number;
     season_type?: string;
@@ -191,6 +197,7 @@ export interface PredictionListItem {
     betting_value_summary?: BettingValueSummary;
     prediction_analysis?: PredictionAnalysisSummary | null;
     ai_analysis?: AiPredictionAnalysisSummary | null;
+    recommendation?: PredictionRecommendation | null;
     created_at?: string | null;
     updated_at?: string | null;
     home_elo?: number;

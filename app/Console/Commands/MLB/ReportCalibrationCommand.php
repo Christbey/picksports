@@ -3,6 +3,9 @@
 namespace App\Console\Commands\MLB;
 
 use App\Models\MLB\Prediction;
+use App\Models\PredictionFeatureSnapshot;
+use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Support\MLB\MlbGamePhase;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
@@ -13,6 +16,7 @@ class ReportCalibrationCommand extends Command
         {--season= : Filter by season}
         {--limit=500 : Limit number of most recent graded predictions to inspect}
         {--feature-version=core-v3 : Filter to a single feature_version (use "any" to include all)}
+        {--strict-pregame : Exclude rows without provably pregame-safe timestamps and market context}
         {--output= : Optional JSON report output path}';
 
     protected $description = 'Report MLB prediction accuracy and market calibration metrics';
@@ -32,6 +36,10 @@ class ReportCalibrationCommand extends Command
         $this->info('MLB Prediction Calibration Report');
         $this->line('Scope: '.($this->option('season') ? 'season '.$this->option('season') : 'all seasons'));
         $this->line('Rows: '.(string) $report['summary']['count']);
+        if ($this->option('strict-pregame')) {
+            $this->line('Strict pregame: enabled');
+            $this->line('Rows excluded: '.(string) $report['strict_pregame']['excluded_count']);
+        }
         $this->newLine();
 
         $this->table(
@@ -55,6 +63,22 @@ class ReportCalibrationCommand extends Command
             ['Bucket', 'Games', 'Winner %', 'Spread MAE', 'Total MAE'],
             $report['confidence_buckets']
         );
+
+        $this->newLine();
+        $this->info('Canonical Recommendation Buckets');
+        $this->table(
+            ['Bucket', 'Games', 'Winner %', 'Spread MAE', 'Total MAE'],
+            $report['recommendation_buckets']
+        );
+
+        if ($this->option('strict-pregame')) {
+            $this->newLine();
+            $this->info('Strict Pregame Exclusions');
+            $this->table(
+                ['Reason', 'Rows'],
+                $report['strict_pregame']['exclusion_reasons']
+            );
+        }
 
         if ($output = $this->option('output')) {
             $path = (string) $output;
@@ -92,12 +116,27 @@ class ReportCalibrationCommand extends Command
         $limit = max(1, (int) $this->option('limit'));
         $query->limit($limit);
 
-        return $query->get()
+        $strictExcluded = [];
+
+        $rows = $query->get()
             ->map(function (Prediction $prediction): ?array {
                 $game = $prediction->game;
                 if (! $game || ! is_numeric($game->home_score) || ! is_numeric($game->away_score)) {
                     return null;
                 }
+
+                $snapshot = $this->latestFeatureSnapshot($prediction);
+                $strictExclusions = $this->strictPregameExclusions($prediction, $snapshot);
+
+                if ($this->option('strict-pregame') && $strictExclusions !== []) {
+                    return [
+                        '_excluded' => true,
+                        'exclusion_reasons' => $strictExclusions,
+                    ];
+                }
+
+                $recommendation = app(MlbPredictionRecommendationService::class)->forPrediction($prediction);
+                $pregameRecommendation = $recommendation['pregame_recommendation'] ?? $recommendation;
 
                 $marketSpread = is_numeric($prediction->vegas_spread) ? (float) $prediction->vegas_spread : null;
                 $marketTotal = $this->extractMarketTotal($prediction);
@@ -116,11 +155,31 @@ class ReportCalibrationCommand extends Command
                     'confidence_score' => (float) $prediction->confidence_score,
                     'market_spread' => $marketSpread,
                     'market_total' => $marketTotal,
+                    'recommendation_type' => (string) ($pregameRecommendation['recommendation_type'] ?? 'no_play'),
+                    'risk_flags' => array_values((array) ($pregameRecommendation['risk_flags'] ?? [])),
+                    'signal_score' => $pregameRecommendation['score'] ?? null,
+                    'raw_edge' => $pregameRecommendation['raw_edge'] ?? null,
+                    'no_vig_edge' => $pregameRecommendation['no_vig_edge'] ?? null,
+                    'feature_snapshot_at' => $snapshot?->generated_at?->toIso8601String(),
+                    'snapshot_run_id' => $snapshot?->snapshot_run_id,
                 ];
             })
             ->filter()
             ->values();
+
+        if (! $this->option('strict-pregame')) {
+            return $rows;
+        }
+
+        $strictExcluded = $rows->filter(fn (array $row): bool => (bool) ($row['_excluded'] ?? false))->values();
+        $this->strictPregameExcludedRows = $strictExcluded;
+
+        return $rows
+            ->reject(fn (array $row): bool => (bool) ($row['_excluded'] ?? false))
+            ->values();
     }
+
+    private Collection $strictPregameExcludedRows;
 
     /**
      * @param  Collection<int, array<string, mixed>>  $rows
@@ -162,6 +221,12 @@ class ReportCalibrationCommand extends Command
                 'max_confidence' => round((float) $rows->max('confidence_score'), 2),
             ],
             'confidence_buckets' => $this->confidenceBuckets($rows),
+            'recommendation_buckets' => $this->recommendationBuckets($rows),
+            'strict_pregame' => [
+                'enabled' => (bool) $this->option('strict-pregame'),
+                'excluded_count' => isset($this->strictPregameExcludedRows) ? $this->strictPregameExcludedRows->count() : 0,
+                'exclusion_reasons' => $this->strictExclusionReasonRows(),
+            ],
         ];
     }
 
@@ -224,6 +289,112 @@ class ReportCalibrationCommand extends Command
         }
 
         return null;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array<int, string>>
+     */
+    private function recommendationBuckets(Collection $rows): array
+    {
+        $groups = $rows->groupBy(fn (array $row): string => (string) ($row['recommendation_type'] ?? 'no_play'));
+        $table = [];
+
+        foreach (['bet', 'lean', 'no_play', 'monitor'] as $bucket) {
+            $group = $groups->get($bucket, collect())->values();
+            if ($group->isEmpty()) {
+                continue;
+            }
+
+            $table[] = [
+                $bucket,
+                (string) $group->count(),
+                number_format($group->where('winner_correct', true)->count() / $group->count() * 100, 1).'%',
+                number_format((float) $group->avg('spread_error'), 2),
+                number_format((float) $group->avg('total_error'), 2),
+            ];
+        }
+
+        return $table;
+    }
+
+    /**
+     * @return array<int, array<int, string>>
+     */
+    private function strictExclusionReasonRows(): array
+    {
+        if (! isset($this->strictPregameExcludedRows)) {
+            return [];
+        }
+
+        $counts = [];
+        foreach ($this->strictPregameExcludedRows as $row) {
+            foreach ((array) ($row['exclusion_reasons'] ?? []) as $reason) {
+                $counts[$reason] = ($counts[$reason] ?? 0) + 1;
+            }
+        }
+
+        arsort($counts);
+
+        return array_map(
+            fn (string $reason, int $count): array => [$reason, (string) $count],
+            array_keys($counts),
+            array_values($counts)
+        );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function strictPregameExclusions(Prediction $prediction, ?PredictionFeatureSnapshot $snapshot): array
+    {
+        $reasons = [];
+        $game = $prediction->game;
+
+        if ($prediction->created_at === null) {
+            $reasons[] = 'missing_prediction_timestamp';
+        }
+
+        if ($snapshot === null || $snapshot->generated_at === null) {
+            $reasons[] = 'missing_feature_snapshot_timestamp';
+        }
+
+        if ($game === null || MlbGamePhase::scheduledStartAt($game) === null) {
+            $reasons[] = 'missing_game_start_timestamp';
+        }
+
+        if ($game !== null && ! MlbGamePhase::isBacktestEligiblePregame($game, $snapshot?->generated_at ?? $prediction->created_at)) {
+            $reasons[] = 'prediction_not_before_first_pitch';
+        }
+
+        if ($game !== null && in_array(MlbGamePhase::phase($game), [MlbGamePhase::POSTPONED, MlbGamePhase::SUSPENDED, MlbGamePhase::CANCELLED], true)) {
+            $reasons[] = 'postponed_or_suspended';
+        }
+
+        if ($prediction->live_updated_at !== null || $prediction->live_win_probability !== null) {
+            $reasons[] = 'live_prediction';
+        }
+
+        $marketSafety = (array) data_get($prediction->model_metadata, 'market_context.safety', []);
+        if (($marketSafety['pregame_safe'] ?? false) !== true) {
+            $reasons[] = 'missing_pregame_safe_market_context';
+        }
+
+        if (empty($marketSafety['odds_captured_at'])) {
+            $reasons[] = 'missing_odds_timestamp';
+        }
+
+        return array_values(array_unique($reasons));
+    }
+
+    private function latestFeatureSnapshot(Prediction $prediction): ?PredictionFeatureSnapshot
+    {
+        return PredictionFeatureSnapshot::query()
+            ->where('prediction_table', $prediction->getTable())
+            ->where('prediction_id', (int) $prediction->id)
+            ->latest('generated_at')
+            ->latest('id')
+            ->first();
     }
 
     private function teamName(mixed $team): string

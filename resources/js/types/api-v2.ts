@@ -1,4 +1,5 @@
 import type { QueryParams } from '@/wayfinder';
+import type { PredictionRecommendation } from '@/lib/predictionRecommendation';
 
 export type ApiV2SportSlug =
     | 'nba'
@@ -123,6 +124,11 @@ export type ApiV2Game = ApiV2GameSummary & {
     sport: ApiV2SportSlug;
     home_score?: number | null;
     away_score?: number | null;
+    inning?: number | string | null;
+    inning_half?: string | null;
+    balls?: number | string | null;
+    strikes?: number | string | null;
+    outs?: number | string | null;
     has_prediction?: boolean;
     updated_at?: string | null;
 };
@@ -177,6 +183,7 @@ export type ApiV2Prediction = {
         sample_games?: number | null;
         [key: string]: unknown;
     } | null;
+    recommendation?: PredictionRecommendation | null;
     market_summary?: ApiV2Record;
     created_at?: string | null;
     updated_at?: string | null;

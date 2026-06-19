@@ -11,6 +11,7 @@ class PredictionFeatureSnapshot extends Model
         'prediction_table',
         'prediction_id',
         'game_id',
+        'snapshot_run_id',
         'model_version',
         'feature_version',
         'blend_version',

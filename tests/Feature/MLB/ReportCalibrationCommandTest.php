@@ -144,3 +144,93 @@ it('explains when strict pregame calibration excludes every graded row', functio
         ->and($output)->toContain('Graded candidate rows inspected: 1')
         ->and($output)->toContain('missing_pregame_safe_market_context');
 });
+
+it('emits mlb underperformance diagnostics as json', function () {
+    $homeTeam = Team::factory()->create([
+        'location' => 'New York',
+        'name' => 'Mets',
+        'abbreviation' => 'NYM',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'Atlanta',
+        'name' => 'Braves',
+        'abbreviation' => 'ATL',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-05-10',
+        'game_time' => '19:10:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 6,
+        'away_score' => 4,
+        'odds_data' => [
+            'home_team' => 'New York Mets',
+            'away_team' => 'Atlanta Braves',
+            'bookmakers' => [[
+                'markets' => [
+                    [
+                        'key' => 'h2h',
+                        'outcomes' => [
+                            ['name' => 'New York Mets', 'price' => -120],
+                            ['name' => 'Atlanta Braves', 'price' => 105],
+                        ],
+                    ],
+                    [
+                        'key' => 'totals',
+                        'outcomes' => [
+                            ['name' => 'Over', 'point' => 8.5],
+                            ['name' => 'Under', 'point' => 8.5],
+                        ],
+                    ],
+                ],
+            ]],
+        ],
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 1.5,
+        'predicted_total' => 9.2,
+        'win_probability' => 0.59,
+        'confidence_score' => 59.0,
+        'vegas_spread' => -1.5,
+        'model_version' => 'rules-v1',
+        'feature_version' => 'core-v3',
+        'blend_version' => 'baseline-v1',
+        'model_metadata' => [
+            'market_context' => ['market_total' => 8.5],
+            'pitcher_inputs' => [
+                'home_source' => 'probable_starter',
+                'away_source' => 'team_recent_average',
+            ],
+            'park_context' => ['total_adjustment' => 0.4],
+            'actual_weather' => ['total_adjustment' => 0.1],
+        ],
+        'actual_spread' => 2.0,
+        'actual_total' => 10.0,
+        'spread_error' => 0.5,
+        'total_error' => 0.8,
+        'winner_correct' => true,
+        'graded_at' => '2026-05-11 01:00:00',
+        'created_at' => '2026-05-10 12:00:00',
+    ]);
+
+    Artisan::call('mlb:report-calibration', [
+        '--season' => 2026,
+        '--diagnostics' => true,
+        '--compare-market' => true,
+        '--json' => true,
+    ]);
+
+    $report = json_decode(Artisan::output(), true);
+
+    expect($report['diagnostics'])->toBeArray()
+        ->and($report['diagnostics']['baselines'])->toHaveCount(3)
+        ->and($report['diagnostics']['winner_breakdowns']['by_pick_side'][0]['label'])->toBe('home')
+        ->and($report['diagnostics']['pitcher_source_breakdowns'][0]['label'])->toBe('team_recent_average_fallback')
+        ->and($report['diagnostics']['bug_checks'])->not->toBeEmpty();
+});

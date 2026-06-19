@@ -1789,6 +1789,77 @@ Reasons:
 | Live fields mixed with pregame | Low | Tests show live fields do not alter generation; live monitor is separate. | Would inflate official picks if mixed later. | Keep audit warning and recommendation tests. |
 | Missing calibration by model version | Medium | Calibration command filters feature version and reports versions, but deeper grouping is still pending. | Tuning could blend incompatible model eras. | Add model/blend grouping before threshold tuning. |
 
+## MLB Underperformance Diagnostic Report
+
+### Status
+
+Status: **Diagnostic complete enough to identify issues; not tuning-ready yet**.
+
+This pass intentionally did not change model weights, formulas, recommendation thresholds, confidence thresholds, feature inputs, or betting rules. It added diagnostic reporting around the existing `mlb:report-calibration` command so underperformance can be separated into model accuracy, market comparison, confidence separation, recommendation quality, pitcher source quality, park/weather adjustments, date/month effects, and calculation safety checks.
+
+### Commands
+
+| Command | Purpose |
+|---|---|
+| `php artisan mlb:report-calibration --season=2026 --feature-version=core-v3 --limit=2500 --diagnostics --compare-market` | Human-readable calibration plus underperformance diagnostics. |
+| `php artisan mlb:report-calibration --season=2026 --feature-version=core-v3 --limit=2500 --diagnostics --compare-market --json` | Structured JSON for deeper review or export. |
+| `php artisan mlb:audit-prediction-calculations --season=2026 --strict-pregame --sample=20` | Independent calculation-soundness audit. |
+
+### Local Diagnostic Snapshot
+
+Local database sample: 43 graded `core-v3` predictions.
+
+| Baseline | Rows | Winner % | Spread MAE | Total MAE | Brier | Log Loss |
+|---|---:|---:|---:|---:|---:|---:|
+| Current model | 43 | 44.2% | 4.16 | 2.71 | 0.2484 | 0.6900 |
+| Market favorite/spread/total | 43 | 62.8% | 3.90 | 3.00 | 0.1485 | 0.4526 |
+| Home team | 43 | 55.8% | n/a | n/a | 0.2500 | 0.6931 |
+
+Production latest-500 sample before this diagnostic work showed the same broad concern: model winner accuracy was 49.2%, market spread MAE was better than model spread MAE, and the `lean` bucket underperformed `no_play`.
+
+### Breakdown Findings
+
+| Area | Finding | Interpretation |
+|---|---|---|
+| Model vs market | Market winner baseline beat the model in the local sample. | The model is not adding enough directional winner value yet. Treat market comparison as a diagnostic baseline, not as a model input change. |
+| Model-market disagreement | `model_home_market_away` went 14.3% locally while the market side went 71.4%. | Disagreement buckets are the first place to investigate before thresholds are changed. |
+| Spread buckets | Pick'em bucket went 26.1% locally while market side was 65.2%. | Near-pick'em predictions are not reliably separating sides. |
+| Total buckets | Total MAE was competitive locally, but production showed model total bias around +1.00. | Totals need bias review by month, park, weather, and pitcher source before totals recommendations are expanded. |
+| Recommendation type | Local `bet` and `lean` slices were thin and did not beat `no_play`; production `lean` was also weak. | Do not promote recommendations until recommendation logic is recalibrated on trusted pregame rows. |
+| Confidence | Local confidence range was 50.0 to 58.2; production latest-500 range was 50.0 to 60.8. | Confidence is compressed and should be treated as descriptive, not proof of edge. |
+| Pitcher source | `team_recent_average_fallback` underperformed `probable_starter` locally. | Confirmed starter quality matters. Fallback rows should carry visible risk and may need separate thresholds later. |
+| Park/weather | Diagnostics now bucket by park, weather, and combined adjustment. | Use these buckets to find whether adjustments are helping totals or creating bias. |
+
+### Calculation Bug Checks
+
+| Check | Current Result | Action |
+|---|---|---|
+| Home/away mapping | Passing in local diagnostic run. | Keep covered by audit tests. |
+| Spread sign convention | Passing for market comparisons. | Continue using home-margin convention internally and invert Vegas spread to `market_home_margin`. |
+| Market spread sign | Passing in diagnostic command. | Keep sign conversion centralized. |
+| Total calculation | Passing. | No action. |
+| Duplicate rows | Passing in local diagnostic run. | No action. |
+| Live rows excluded | Passing in local diagnostic run. | Keep live prediction data out of pregame calibration. |
+| Winner/spread side consistency | 3 local rows flagged as inconsistent between model pick side and spread sign. | Investigate these rows before tuning; likely near-pick'em probability/spread rounding or a real sign mismatch. |
+
+### Likely Root Causes
+
+- Directional winner signal is weak relative to market baseline.
+- Recommendation buckets do not separate value yet; `lean` is not trustworthy as a betting label.
+- Confidence is too compressed to support strong labels.
+- Market disagreement buckets are where the model is getting punished hardest.
+- Pitcher fallback rows need separate handling from confirmed probable-starter rows.
+- Strict pregame market proof remains incomplete for many historical rows, so strict calibration may exclude too much until snapshots are complete.
+
+### Recommended Next Steps
+
+1. Investigate the three winner/spread side consistency rows and determine whether they are rounding artifacts or actual sign mismatches.
+2. Run the JSON diagnostic on production and archive the output before changing formulas.
+3. Add small-sample warnings to recommendation output before using `bet` or `lean` labels publicly.
+4. Review model-market disagreement rows one by one with `mlb:explain-prediction`.
+5. Separate confirmed-starter rows from fallback-starter rows in future recommendation thresholds.
+6. Only after the above is stable, begin tuning on trusted pregame rows.
+
 ## Prediction Calculation Soundness Recommendations
 
 ### Must Fix Before Tuning

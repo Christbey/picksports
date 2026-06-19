@@ -1889,6 +1889,212 @@ php artisan mlb:validate-recommendation-readiness --season=2026 --feature-versio
 
 Expected current posture: fail closed. Known blocking themes include model underperformance versus market baseline, weak candidate bucket performance, compressed confidence, total bias versus market, and poor model-market disagreement performance. These should be fixed and revalidated before `MLB_BET_FILTER_PROMOTIONS_VALIDATED=true` is considered.
 
+## MLB Usability Deep Dive And Market-Aware Shadow Model
+
+### Summary
+
+MLB public recommendations remain disabled. The next usability path is not to tune thresholds into production; it is to measure whether a market-aware shadow layer can make the MLB experience more honest and useful while public `bet` and `lean` labels stay fail-closed.
+
+The research command is:
+
+```bash
+php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500
+```
+
+For automation or export:
+
+```bash
+php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500 --json
+```
+
+This command is report-only. It does not update predictions, recommendations, model metadata, promotion flags, or public API behavior.
+
+### Current Recommendation Protection State
+
+Latest production readiness evidence:
+
+| Metric | Current Evidence |
+|---|---:|
+| Public promoted rows | 0 |
+| Candidate rows | 0 |
+| Model winner accuracy | 33.3% |
+| Home baseline | 50.0% |
+| Market baseline | 67.6% |
+| Pure model research winner rate | 37.8% |
+| 25% model / 75% market research winner rate | 64.9% |
+
+Interpretation: MLB model-only recommendations are not product-ready. The market-heavy shadow result is interesting enough to study, but not proof that public picks should be enabled.
+
+### Why Pure Model Recommendations Are Not Usable
+
+- Model directional winner performance is below the home-team baseline and market baseline in the latest readiness sample.
+- Model-market disagreement buckets are especially weak.
+- Confidence is compressed and does not yet separate strong plays from no-plays.
+- Recommendation buckets have not proven better than `no_play`.
+- Stale odds and missing timestamp proof must block promotion.
+
+### Product Definition Of Usable MLB
+
+Mode 1: **Predictions Only**
+
+- Show projected score, win probability, spread, total, and matchup context.
+- Do not show public betting labels.
+- Safe as long as copy does not imply a validated betting edge.
+
+Mode 2: **Market-Aware Tracking**
+
+- Show where the model agrees or disagrees with market direction.
+- Label as tracking/research.
+- Use strict timestamp warnings when odds are not proven pregame-safe.
+
+Mode 3: **Consensus Signal**
+
+- Show non-promotional consensus when model and market agree.
+- Keep disagreement rows as watch/review only.
+- Require confirmed pitchers and fresh odds.
+
+Mode 4: **Protected Shadow Betting Research**
+
+- Run candidate rules in reports and admin screens only.
+- Compare market-heavy blends, total corrections, and confidence recalibration.
+- Keep all public recommendation output disabled.
+
+Mode 5: **Future Public Recommendations**
+
+- Only consider after enough strict-pregame rows prove candidates beat home, market, and no-play baselines.
+- Require stable monthly/walk-forward results, not a single aggregate sample.
+- Keep promotion flags manual and fail-closed.
+
+### Market-Aware Blend Results
+
+The research evaluator tests model weights:
+
+| Model Weight | Market Weight | Purpose |
+|---:|---:|---|
+| 1.00 | 0.00 | Pure model benchmark. |
+| 0.75 | 0.25 | Light market correction. |
+| 0.50 | 0.50 | Equal blend. |
+| 0.25 | 0.75 | Market-heavy shadow candidate. |
+| 0.10 | 0.90 | Near-market tracking. |
+| 0.00 | 1.00 | Pure market benchmark. |
+
+The latest readiness research strongly suggests a market-heavy blend is more plausible than pure model winner selection. It is still research until strict pregame safety, sample size, and walk-forward stability are proven.
+
+### Walk-Forward Results
+
+The command reports `Blend Performance By Month` so we can see whether the blend works across time instead of only in one aggregate bucket. Any month with a small sample should be treated as a stability warning, not proof.
+
+### Model-Market Disagreement Deep Dive
+
+The report separates:
+
+- model and market agree
+- model home / market away
+- model away / market home
+- spread gap buckets
+- probability gap buckets
+
+Current posture: disagreement should remain suppressed from public recommendation logic until it proves it can beat the market baseline.
+
+### Research Candidate Rule Comparison
+
+The report compares:
+
+- pure model
+- market agreement only
+- 25% model / 75% market
+- consensus plus edge
+- disagreement suppressed
+
+These are research candidates, not product labels. Public output should continue to read as predictions/tracking until a candidate rule passes readiness.
+
+### Total Bias Research
+
+The report includes a total correction grid:
+
+- current model
+- model minus 0.50
+- model minus 0.75
+- model minus 1.00
+- model minus 1.25
+- model minus 1.50
+- market total baseline
+
+It also breaks total bias down by month, park adjustment bucket, weather adjustment bucket, predicted total bucket, and market-total gap bucket. Do not activate totals recommendations until these buckets show stable improvement.
+
+### Confidence Recalibration Research
+
+The report compares:
+
+- current model confidence
+- market probability confidence
+- market-aware blended confidence
+- agreement-adjusted confidence
+
+Goal: confidence should become monotonic and meaningful. Until then, high-confidence public language should stay disabled for MLB bets.
+
+### Point-In-Time Safety For Market Blends
+
+The report flags:
+
+- missing market odds
+- missing odds timestamps
+- odds after first pitch
+- stale odds
+- missing game start time
+- missing prediction timestamp
+- live-only rows
+- postponed, suspended, or canceled rows
+
+If odds timestamps are incomplete, the report emits a strict warning. Market-aware results with incomplete timestamp proof may be useful for research, but they are not strict-pregame safe.
+
+### Shadow Model Versioning
+
+Current shadow version: `mlb_market_aware_shadow_v1`.
+
+This version is intentionally not written to prediction rows yet. If it graduates later, it should be persisted separately from `model_version`, `feature_version`, and `blend_version` so production prediction history stays auditable.
+
+### Proposed Protected UX
+
+- Keep cards focused on projected score, win probability, spread, total, pitchers, odds freshness, and model-market agreement.
+- Use `Research`, `Tracking`, or `Consensus Watch` language instead of `Bet`, `Lean`, or `Official`.
+- Show stale/missing odds warnings clearly.
+- Hide public best-bet modules when promotion remains blocked.
+
+### Tests Added
+
+- `tests/Feature/MLB/ResearchMarketBlendsCommandTest.php`
+  - proves the command emits the market-aware shadow research contract
+  - proves the required blend weights are present
+  - proves missing odds timestamps generate strict warnings
+  - proves predictions are not mutated
+  - proves public promoted rows remain zero
+
+### Validation Commands
+
+```bash
+php artisan test tests/Feature/MLB/ResearchMarketBlendsCommandTest.php
+php artisan test tests/Feature/MLB/ResearchMarketBlendsCommandTest.php tests/Feature/MLB/MlbPredictionRecommendationContractTest.php tests/Feature/MLB/ReportCalibrationCommandTest.php
+php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500
+php artisan mlb:validate-recommendation-readiness --season=2026 --feature-version=core-v3 --limit=2500
+```
+
+### Recommended Path To Usability
+
+1. Keep public MLB recommendations disabled.
+2. Run market-aware blend research on production after each final score and grading pass.
+3. Use monthly/walk-forward stability as the first filter.
+4. Suppress model-market disagreement from candidates until proven.
+5. Use consensus and market-heavy tracking as the first possible product layer.
+6. Only discuss public picks after strict-pregame samples are large enough and candidates beat market/no-play baselines.
+
+### What Must Stay Disabled
+
+- Public MLB `bet` labels.
+- Public MLB `lean` labels.
+- Best-bet modules sourced from shadow candidates.
+- Any auto-promotion from stale odds, missing timestamps, live-only rows, or model-market disagreement rows.
+
 ## Prediction Calculation Soundness Recommendations
 
 ### Must Fix Before Tuning

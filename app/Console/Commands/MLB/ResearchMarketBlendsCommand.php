@@ -80,6 +80,18 @@ class ResearchMarketBlendsCommand extends Command
         );
 
         $this->newLine();
+        $this->info('Public Recommendation Buckets');
+        $this->table(['Type', 'Rows'], $report['public_recommendation_buckets']);
+
+        $this->newLine();
+        $this->info('Candidate Recommendation Buckets');
+        $this->table(['Type', 'Rows'], $report['candidate_recommendation_buckets']);
+
+        $this->newLine();
+        $this->info('Promotion Block Reasons');
+        $this->table(['Reason', 'Rows'], $report['promotion_block_reasons']);
+
+        $this->newLine();
         $this->info('Total Bias Correction Grid');
         $this->table(
             ['Total Version', 'Rows', 'MAE', 'Bias', 'Beats Market MAE?', 'Notes'],
@@ -134,7 +146,9 @@ class ResearchMarketBlendsCommand extends Command
                 $marketPickSide = $this->marketPickSide($marketProbabilities, $h2hPrices);
                 $marketTotal = $this->extractMarketTotal($prediction);
                 $recommendation = $recommendations->forPrediction($prediction);
+                $public = (array) ($recommendation['public'] ?? $recommendation);
                 $candidate = (array) ($recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation);
+                $promotion = (array) ($recommendation['promotion'] ?? []);
 
                 return [
                     'prediction_id' => (int) $prediction->id,
@@ -168,7 +182,11 @@ class ResearchMarketBlendsCommand extends Command
                     'park_adjustment' => (float) data_get($prediction->model_metadata, 'park_context.total_adjustment', 0.0),
                     'weather_adjustment' => (float) data_get($prediction->model_metadata, 'actual_weather.total_adjustment', 0.0),
                     'odds_updated_at' => $game->odds_updated_at,
+                    'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
                     'safety_flags' => $this->safetyFlags($prediction),
+                    'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
+                    'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
+                    'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
                 ];
             })
             ->filter()
@@ -241,6 +259,10 @@ class ResearchMarketBlendsCommand extends Command
             'blend_performance_by_month' => $this->blendPerformanceByMonth($analysisRows),
             'model_market_disagreement_deep_dive' => $this->disagreementDeepDive($analysisRows),
             'research_candidate_rule_comparison' => $this->candidateRuleComparison($analysisRows),
+            'public_recommendation_buckets' => $this->bucketCounts($rows, 'public_recommendation_type'),
+            'candidate_recommendation_buckets' => $this->bucketCounts($rows, 'candidate_recommendation_type'),
+            'promotion_block_reasons' => $this->promotionBlockReasonRows($rows),
+            'candidate_samples' => $this->candidateSamples($rows),
             'total_bias_correction_grid' => $this->totalBiasCorrectionGrid($rows),
             'total_bias_breakdowns' => $this->totalBiasBreakdowns($rows),
             'confidence_recalibration_research' => $this->confidenceResearch($analysisRows),
@@ -290,6 +312,64 @@ class ResearchMarketBlendsCommand extends Command
         return $rows
             ->filter(fn (array $row): bool => $row['market_home_probability'] !== null && $row['market_away_probability'] !== null)
             ->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array<int, string|int>>
+     */
+    private function bucketCounts(Collection $rows, string $key): array
+    {
+        return $rows
+            ->countBy(fn (array $row): string => (string) ($row[$key] ?? 'unknown'))
+            ->sortKeys()
+            ->map(fn (int $count, string $bucket): array => [$bucket, $count])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array<int, string|int>>
+     */
+    private function promotionBlockReasonRows(Collection $rows): array
+    {
+        $reasons = $rows
+            ->flatMap(fn (array $row): array => (array) ($row['promotion_block_reasons'] ?? []))
+            ->filter()
+            ->countBy()
+            ->sortKeys()
+            ->map(fn (int $count, string $reason): array => [$reason, $count])
+            ->values();
+
+        return $reasons->isEmpty() ? [['none', 0]] : $reasons->all();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private function candidateSamples(Collection $rows): array
+    {
+        return $rows
+            ->filter(fn (array $row): bool => ($row['candidate_recommendation_type'] ?? 'no_play') !== 'no_play')
+            ->take(10)
+            ->map(fn (array $row): array => [
+                'prediction_id' => $row['prediction_id'],
+                'game_id' => $row['game_id'],
+                'game_date' => $row['game_date'],
+                'public_recommendation_type' => $row['public_recommendation_type'],
+                'candidate_recommendation_type' => $row['candidate_recommendation_type'],
+                'promotion_blocked' => $row['promotion_blocked'],
+                'block_reasons' => $row['promotion_block_reasons'],
+                'raw_edge' => $row['raw_edge'],
+                'no_vig_edge' => $row['no_vig_edge'],
+                'score' => $row['candidate_score'],
+                'risk_flags' => $row['candidate_risk_flags'],
+                'reason_codes' => $row['candidate_reason_codes'],
+            ])
+            ->values()
+            ->all();
     }
 
     /**

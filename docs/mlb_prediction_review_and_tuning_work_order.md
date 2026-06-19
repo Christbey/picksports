@@ -2014,6 +2014,15 @@ The report compares:
 
 These are research candidates, not product labels. Public output should continue to read as predictions/tracking until a candidate rule passes readiness.
 
+The research report also exposes recommendation visibility separately:
+
+- `Public Recommendation Buckets`: product-safe output, expected to remain `no_play` while promotion is blocked.
+- `Candidate Recommendation Buckets`: shadow classifications used for research only.
+- `Promotion Block Reasons`: why a candidate cannot become public.
+- `candidate_samples`: sampled research-only candidates with public type, candidate type, raw edge, no-vig edge, score, risk flags, reason codes, and promotion block reasons.
+
+This is the correct state: public rows can remain `no_play` while candidate rows are still measurable for historical/final diagnostics.
+
 ### Total Bias Research
 
 The report includes a total correction grid:
@@ -2082,6 +2091,9 @@ This version is intentionally not written to prediction rows yet. If it graduate
   - proves the command emits the market-aware shadow research contract
   - proves the required blend weights are present
   - proves missing odds timestamps generate strict warnings
+  - proves public and candidate recommendation buckets are reported separately
+  - proves promotion block reasons are counted
+  - proves candidate samples remain research-only
   - proves predictions are not mutated
   - proves public promoted rows remain zero
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\MLB\ResearchMarketBlendsCommand;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
@@ -7,6 +8,32 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 
 uses()->group('mlb', 'commands', 'recommendations');
+
+it('calculates market blend probabilities and market sides consistently', function () {
+    $command = new ResearchMarketBlendsCommand;
+    $blend = new ReflectionMethod($command, 'blendHomeProbability');
+    $marketPickSide = new ReflectionMethod($command, 'marketPickSide');
+
+    $homeBlend = $blend->invoke($command, [
+        'home_probability' => 0.60,
+        'market_home_probability' => 0.52,
+    ], 0.25);
+    $awayBlend = (0.25 * (1 - 0.60)) + (0.75 * (1 - 0.52));
+
+    expect(round($homeBlend, 4))->toBe(0.54)
+        ->and(round($homeBlend + $awayBlend, 4))->toBe(1.0)
+        ->and($blend->invoke($command, [
+            'home_probability' => 1.20,
+            'market_home_probability' => 1.10,
+        ], 0.25))->toBe(1.0)
+        ->and($blend->invoke($command, [
+            'home_probability' => -0.20,
+            'market_home_probability' => -0.10,
+        ], 0.25))->toBe(0.0)
+        ->and($marketPickSide->invoke($command, ['home' => 0.53, 'away' => 0.47], ['home' => -120, 'away' => 110]))->toBe('home')
+        ->and($marketPickSide->invoke($command, ['home' => 0.46, 'away' => 0.54], ['home' => 120, 'away' => -130]))->toBe('away')
+        ->and($marketPickSide->invoke($command, ['home' => 0.50, 'away' => 0.50], ['home' => -105, 'away' => -105]))->toBeNull();
+});
 
 it('reports mlb market-aware shadow research without promoting or mutating predictions', function () {
     Carbon::setTestNow('2026-06-19 09:00:00');
@@ -47,6 +74,19 @@ it('reports mlb market-aware shadow research without promoting or mutating predi
         marketTotal: 9.0,
         oddsUpdatedAt: null,
     );
+    $blockedCandidate = researchMarketBlendPrediction(
+        date: '2026-06-19',
+        homeScore: 6,
+        awayScore: 3,
+        homeProbability: 0.62,
+        confidence: 60,
+        homePrice: -105,
+        awayPrice: -105,
+        predictedTotal: 8.4,
+        marketTotal: 8.0,
+        oddsUpdatedAt: '2026-06-19 12:00:00',
+        status: 'STATUS_SCHEDULED',
+    );
 
     Artisan::call('mlb:research-market-blends', [
         '--season' => 2026,
@@ -60,27 +100,36 @@ it('reports mlb market-aware shadow research without promoting or mutating predi
     expect($report)->toBeArray()
         ->and($report['report_type'])->toBe('mlb_market_aware_shadow_research')
         ->and($report['shadow_model_version'])->toBe('mlb_market_aware_shadow_v1')
-        ->and($report['summary']['rows'])->toBe(3)
-        ->and($report['summary']['market_rows'])->toBe(3)
-        ->and($report['summary']['strict_market_rows'])->toBe(2)
-        ->and($report['summary']['analysis_rows'])->toBe(3)
+        ->and($report['summary']['rows'])->toBe(4)
+        ->and($report['summary']['market_rows'])->toBe(4)
+        ->and($report['summary']['strict_market_rows'])->toBe(3)
+        ->and($report['summary']['analysis_rows'])->toBe(4)
         ->and($report['summary']['analysis_mode'])->toBe('all_market_rows_flagged')
         ->and($report['summary']['analysis_pregame_safe'])->toBeFalse()
         ->and($report['summary']['public_recommendations_enabled'])->toBeFalse()
         ->and($report['summary']['public_promoted_rows'])->toBe(0)
         ->and($report['summary']['strict_pregame_safe'])->toBeFalse()
         ->and(collect($report['market_aware_blend_grid'])->pluck(0)->all())->toBe(['1.00', '0.75', '0.50', '0.25', '0.10', '0.00'])
-        ->and(collect($report['strict_pregame_market_blend_grid'])->first()[2])->toBe('2')
+        ->and(collect($report['strict_pregame_market_blend_grid'])->first()[2])->toBe('3')
         ->and($report['blend_performance_by_month'])->not->toBeEmpty()
         ->and($report['model_market_disagreement_deep_dive'])->not->toBeEmpty()
         ->and(collect($report['research_candidate_rule_comparison'])->pluck(0))->toContain('25% model / 75% market')
+        ->and(collect($report['public_recommendation_buckets'])->firstWhere(0, 'no_play')[1])->toBe(4)
+        ->and(collect($report['candidate_recommendation_buckets'])->firstWhere(0, 'bet')[1])->toBe(1)
+        ->and(collect($report['promotion_block_reasons'])->firstWhere(0, 'recommendation_calibration_unvalidated')[1])->toBe(1)
+        ->and($report['candidate_samples'][0]['prediction_id'])->toBe($blockedCandidate->id)
+        ->and($report['candidate_samples'][0]['public_recommendation_type'])->toBe('no_play')
+        ->and($report['candidate_samples'][0]['candidate_recommendation_type'])->toBe('bet')
+        ->and($report['candidate_samples'][0]['promotion_blocked'])->toBeTrue()
+        ->and($report['candidate_samples'][0]['block_reasons'])->toContain('recommendation_calibration_unvalidated')
         ->and(collect($report['total_bias_correction_grid'])->pluck(0))->toContain('Current model', 'Model -0.50', 'Model -1.00', 'Model -1.50', 'Market total')
         ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'missing_odds_timestamp')[1])->toBe(1)
         ->and($report['warnings'])->toContain('Strict warning: odds timestamps are incomplete, so market-aware blend rows cannot be treated as proven pregame-safe.');
 
     expect(Prediction::query()->find($first->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
         ->and(Prediction::query()->find($second->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
-        ->and(Prediction::query()->find($timestampUnsafe->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model');
+        ->and(Prediction::query()->find($timestampUnsafe->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
+        ->and(Prediction::query()->find($blockedCandidate->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model');
 
     Carbon::setTestNow();
 });
@@ -145,6 +194,7 @@ function researchMarketBlendPrediction(
     float $predictedTotal,
     float $marketTotal,
     ?string $oddsUpdatedAt,
+    string $status = 'STATUS_FINAL',
 ): Prediction {
     $homeTeam = Team::factory()->create([
         'location' => 'New York',
@@ -160,7 +210,7 @@ function researchMarketBlendPrediction(
     $game = Game::factory()->create([
         'season' => 2026,
         'season_type' => (string) config('mlb.season.types.regular', 2),
-        'status' => 'STATUS_FINAL',
+        'status' => $status,
         'game_date' => $date,
         'game_time' => '19:10:00',
         'home_team_id' => $homeTeam->id,

@@ -1143,7 +1143,7 @@ class MlbBettingSignalService
      */
     protected function hasDisqualifyingRisk(array $riskFlags): bool
     {
-        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'run_line_edge_below_threshold', 'total_edge_below_threshold'] as $riskFlag) {
+        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'model_market_disagreement_unvalidated', 'run_line_edge_below_threshold', 'total_edge_below_threshold'] as $riskFlag) {
             if (in_array($riskFlag, $riskFlags, true)) {
                 return true;
             }
@@ -1171,7 +1171,7 @@ class MlbBettingSignalService
      */
     protected function noBetReason(array $riskFlags): string
     {
-        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'run_line_edge_below_threshold', 'total_edge_below_threshold', 'stale_odds', 'missing_odds_timestamp'] as $priority) {
+        foreach (['moneyline_price_missing', 'no_moneyline_market_value', 'model_market_disagreement_unvalidated', 'run_line_edge_below_threshold', 'total_edge_below_threshold', 'stale_odds', 'missing_odds_timestamp'] as $priority) {
             if (in_array($priority, $riskFlags, true)) {
                 return $priority;
             }

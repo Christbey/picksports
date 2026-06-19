@@ -374,7 +374,7 @@ it('fails mlb recommendation readiness when promotion evidence is insufficient',
     expect($report['status'])->toBe('fail')
         ->and($report['ready'])->toBeFalse()
         ->and($report['summary']['rows'])->toBe(1)
-        ->and($report['summary']['candidate_rows'])->toBe(1)
+        ->and($report['summary']['candidate_rows'])->toBe(0)
         ->and($report['block_reasons'])->toContain('graded_sample_below_minimum')
-        ->and($report['block_reasons'])->toContain('candidate_bucket_underperforms_threshold');
+        ->and($report['block_reasons'])->toContain('candidate_sample_below_minimum');
 });

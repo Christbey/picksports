@@ -70,6 +70,28 @@ it('blocks active mlb recommendation promotion until the filter is calibrated', 
         ->and($recommendation['no_vig_edge'])->toBe(0.07);
 });
 
+it('keeps mlb model market disagreement as a pass candidate', function () {
+    config(['mlb.signals.bet_filter.promotions_validated' => true]);
+
+    $service = app(MlbPredictionRecommendationService::class);
+
+    $prediction = mlbRecommendationContractPrediction([
+        'win_probability' => 0.57,
+        'confidence_score' => 59,
+        'predicted_spread' => 1.8,
+    ], [
+        'St. Louis Cardinals' => -130,
+        'Kansas City Royals' => 120,
+    ]);
+
+    $recommendation = $service->forPrediction($prediction);
+
+    expect($recommendation['recommendation_type'])->toBe('no_play')
+        ->and($recommendation['candidate']['recommendation_type'])->toBe('no_play')
+        ->and($recommendation['candidate']['risk_flags'])->toContain('model_market_disagreement_unvalidated')
+        ->and($recommendation['candidate']['no_bet_reason'])->toBe('model_market_disagreement_unvalidated');
+});
+
 it('exposes the same mlb slate bet as a canonical v2 prediction recommendation', function () {
     Carbon::setTestNow('2026-06-18 09:00:00');
     mlbRecommendationContractActingAsBypassUser();

@@ -62,10 +62,15 @@ it('reports mlb market-aware shadow research without promoting or mutating predi
         ->and($report['shadow_model_version'])->toBe('mlb_market_aware_shadow_v1')
         ->and($report['summary']['rows'])->toBe(3)
         ->and($report['summary']['market_rows'])->toBe(3)
+        ->and($report['summary']['strict_market_rows'])->toBe(2)
+        ->and($report['summary']['analysis_rows'])->toBe(3)
+        ->and($report['summary']['analysis_mode'])->toBe('all_market_rows_flagged')
+        ->and($report['summary']['analysis_pregame_safe'])->toBeFalse()
         ->and($report['summary']['public_recommendations_enabled'])->toBeFalse()
         ->and($report['summary']['public_promoted_rows'])->toBe(0)
         ->and($report['summary']['strict_pregame_safe'])->toBeFalse()
         ->and(collect($report['market_aware_blend_grid'])->pluck(0)->all())->toBe(['1.00', '0.75', '0.50', '0.25', '0.10', '0.00'])
+        ->and(collect($report['strict_pregame_market_blend_grid'])->first()[2])->toBe('2')
         ->and($report['blend_performance_by_month'])->not->toBeEmpty()
         ->and($report['model_market_disagreement_deep_dive'])->not->toBeEmpty()
         ->and(collect($report['research_candidate_rule_comparison'])->pluck(0))->toContain('25% model / 75% market')
@@ -76,6 +81,55 @@ it('reports mlb market-aware shadow research without promoting or mutating predi
     expect(Prediction::query()->find($first->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
         ->and(Prediction::query()->find($second->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
         ->and(Prediction::query()->find($timestampUnsafe->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model');
+
+    Carbon::setTestNow();
+});
+
+it('can restrict mlb market blend research to strict pregame market rows', function () {
+    Carbon::setTestNow('2026-06-19 09:00:00');
+
+    researchMarketBlendPrediction(
+        date: '2026-06-16',
+        homeScore: 6,
+        awayScore: 3,
+        homeProbability: 0.60,
+        confidence: 60,
+        homePrice: -130,
+        awayPrice: 120,
+        predictedTotal: 9.2,
+        marketTotal: 8.5,
+        oddsUpdatedAt: '2026-06-16 12:00:00',
+    );
+    researchMarketBlendPrediction(
+        date: '2026-06-18',
+        homeScore: 4,
+        awayScore: 7,
+        homeProbability: 0.44,
+        confidence: 56,
+        homePrice: 115,
+        awayPrice: -125,
+        predictedTotal: 10.4,
+        marketTotal: 9.0,
+        oddsUpdatedAt: null,
+    );
+
+    Artisan::call('mlb:research-market-blends', [
+        '--season' => 2026,
+        '--feature-version' => 'core-v3',
+        '--strict-pregame' => true,
+        '--json' => true,
+    ]);
+
+    $report = json_decode(Artisan::output(), true);
+
+    expect($report['summary']['market_rows'])->toBe(2)
+        ->and($report['summary']['strict_market_rows'])->toBe(1)
+        ->and($report['summary']['analysis_rows'])->toBe(1)
+        ->and($report['summary']['analysis_mode'])->toBe('strict_pregame_market_rows')
+        ->and($report['summary']['analysis_pregame_safe'])->toBeTrue()
+        ->and(collect($report['market_aware_blend_grid'])->first()[2])->toBe('1')
+        ->and(collect($report['strict_pregame_market_blend_grid'])->first()[2])->toBe('1')
+        ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'missing_odds_timestamp')[1])->toBe(1);
 
     Carbon::setTestNow();
 });

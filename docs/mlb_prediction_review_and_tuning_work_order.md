@@ -1907,6 +1907,12 @@ For automation or export:
 php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500 --json
 ```
 
+For promotion-quality research, require strict pregame market rows:
+
+```bash
+php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500 --strict-pregame
+```
+
 This command is report-only. It does not update predictions, recommendations, model metadata, promotion flags, or public API behavior.
 
 ### Current Recommendation Protection State
@@ -2048,6 +2054,15 @@ The report flags:
 
 If odds timestamps are incomplete, the report emits a strict warning. Market-aware results with incomplete timestamp proof may be useful for research, but they are not strict-pregame safe.
 
+The report also separates:
+
+- `market_rows`: all rows with extractable market prices.
+- `strict_market_rows`: rows with market prices and no point-in-time safety flags.
+- `analysis_rows`: rows used by the performance tables.
+- `analysis_mode`: either all flagged market rows or strict pregame market rows.
+
+Use `--strict-pregame` when deciding whether a market-aware rule is promotion-quality. General market rows can show whether the market was a useful benchmark, but rows updated after first pitch or without timestamp proof are not valid pregame evidence.
+
 ### Shadow Model Versioning
 
 Current shadow version: `mlb_market_aware_shadow_v1`.
@@ -2076,6 +2091,7 @@ This version is intentionally not written to prediction rows yet. If it graduate
 php artisan test tests/Feature/MLB/ResearchMarketBlendsCommandTest.php
 php artisan test tests/Feature/MLB/ResearchMarketBlendsCommandTest.php tests/Feature/MLB/MlbPredictionRecommendationContractTest.php tests/Feature/MLB/ReportCalibrationCommandTest.php
 php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500
+php artisan mlb:research-market-blends --season=2026 --feature-version=core-v3 --limit=2500 --strict-pregame
 php artisan mlb:validate-recommendation-readiness --season=2026 --feature-version=core-v3 --limit=2500
 ```
 

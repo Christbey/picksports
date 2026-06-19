@@ -5,6 +5,7 @@ namespace App\Console\Commands\MLB;
 use App\Models\MLB\Prediction;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Support\Odds\AmericanOdds;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -18,6 +19,7 @@ class ResearchMarketBlendsCommand extends Command
         {--limit=2500 : Limit number of most recent graded predictions to inspect}
         {--from= : Start game date in YYYY-MM-DD}
         {--to= : End game date in YYYY-MM-DD}
+        {--strict-pregame : Run performance tables only on rows with pregame-safe market context}
         {--json : Output structured JSON}';
 
     protected $description = 'Research MLB market-aware shadow probability blends without changing stored predictions.';
@@ -38,14 +40,22 @@ class ResearchMarketBlendsCommand extends Command
 
         $this->info('MLB Market-Aware Shadow Model Research');
         $this->line('Shadow model: mlb_market_aware_shadow_v1');
-        $this->line('Rows: '.$report['summary']['rows'].' | Market rows: '.$report['summary']['market_rows']);
+        $this->line('Rows: '.$report['summary']['rows'].' | Market rows: '.$report['summary']['market_rows'].' | Strict market rows: '.$report['summary']['strict_market_rows']);
         $this->line('Strict pregame safe: '.($report['summary']['strict_pregame_safe'] ? 'yes' : 'no'));
+        $this->line('Analysis rows: '.$report['summary']['analysis_rows'].' | Analysis mode: '.$report['summary']['analysis_mode']);
         $this->newLine();
 
         $this->info('Market-Aware Blend Grid');
         $this->table(
             ['Model Weight', 'Market Weight', 'Rows', 'Accuracy', 'Brier', 'Log Loss', 'Calibration Gap', 'Notes'],
             $report['market_aware_blend_grid']
+        );
+
+        $this->newLine();
+        $this->info('Strict Pregame Market Blend Grid');
+        $this->table(
+            ['Model Weight', 'Market Weight', 'Rows', 'Accuracy', 'Brier', 'Log Loss', 'Calibration Gap', 'Notes'],
+            $report['strict_pregame_market_blend_grid']
         );
 
         $this->newLine();
@@ -201,7 +211,12 @@ class ResearchMarketBlendsCommand extends Command
     private function buildReport(Collection $rows): array
     {
         $marketRows = $this->marketRows($rows);
+        $strictMarketRows = $this->strictMarketRows($marketRows);
+        $analysisRows = $this->option('strict-pregame') ? $strictMarketRows : $marketRows;
         $exclusions = $this->exclusionRows($rows);
+        $analysisMode = $this->option('strict-pregame') ? 'strict_pregame_market_rows' : 'all_market_rows_flagged';
+        $analysisPregameSafe = $analysisRows->isNotEmpty()
+            && $analysisRows->every(fn (array $row): bool => $row['safety_flags'] === []);
 
         return [
             'report_type' => 'mlb_market_aware_shadow_research',
@@ -212,20 +227,25 @@ class ResearchMarketBlendsCommand extends Command
             'summary' => [
                 'rows' => $rows->count(),
                 'market_rows' => $marketRows->count(),
+                'strict_market_rows' => $strictMarketRows->count(),
+                'analysis_rows' => $analysisRows->count(),
+                'analysis_mode' => $analysisMode,
+                'analysis_pregame_safe' => $analysisPregameSafe,
                 'public_recommendations_enabled' => false,
                 'public_promoted_rows' => 0,
                 'strict_pregame_safe' => collect($exclusions)->every(fn (array $row): bool => (int) $row[1] === 0),
                 'notes' => 'Report-only shadow research. Stored MLB predictions and public recommendations are unchanged.',
             ],
-            'market_aware_blend_grid' => $this->blendGrid($marketRows),
-            'blend_performance_by_month' => $this->blendPerformanceByMonth($marketRows),
-            'model_market_disagreement_deep_dive' => $this->disagreementDeepDive($marketRows),
-            'research_candidate_rule_comparison' => $this->candidateRuleComparison($marketRows),
+            'market_aware_blend_grid' => $this->blendGrid($analysisRows),
+            'strict_pregame_market_blend_grid' => $this->blendGrid($strictMarketRows),
+            'blend_performance_by_month' => $this->blendPerformanceByMonth($analysisRows),
+            'model_market_disagreement_deep_dive' => $this->disagreementDeepDive($analysisRows),
+            'research_candidate_rule_comparison' => $this->candidateRuleComparison($analysisRows),
             'total_bias_correction_grid' => $this->totalBiasCorrectionGrid($rows),
             'total_bias_breakdowns' => $this->totalBiasBreakdowns($rows),
-            'confidence_recalibration_research' => $this->confidenceResearch($marketRows),
+            'confidence_recalibration_research' => $this->confidenceResearch($analysisRows),
             'market_blend_exclusions' => $exclusions,
-            'warnings' => $this->warnings($exclusions),
+            'warnings' => $this->warnings($exclusions, $analysisMode, $analysisRows->count(), $strictMarketRows->count()),
         ];
     }
 
@@ -233,17 +253,29 @@ class ResearchMarketBlendsCommand extends Command
      * @param  array<int, array<int, string|int>>  $exclusions
      * @return list<string>
      */
-    private function warnings(array $exclusions): array
+    private function warnings(array $exclusions, string $analysisMode, int $analysisRows, int $strictRows): array
     {
         $counts = collect($exclusions)->mapWithKeys(fn (array $row): array => [(string) $row[0] => (int) $row[1]]);
         $warnings = [];
 
-        if ($counts->some(fn (int $count): bool => $count > 0)) {
-            $warnings[] = 'Market-aware blend results are not strict-pregame safe.';
+        if ($analysisMode === 'all_market_rows_flagged' && $counts->some(fn (int $count): bool => $count > 0)) {
+            $warnings[] = 'Market-aware blend results include rows that are not strict-pregame safe; use --strict-pregame for promotion-quality research.';
         }
 
         if (($counts['missing_odds_timestamp'] ?? 0) > 0) {
             $warnings[] = 'Strict warning: odds timestamps are incomplete, so market-aware blend rows cannot be treated as proven pregame-safe.';
+        }
+
+        if (($counts['odds_after_first_pitch'] ?? 0) > 0) {
+            $warnings[] = 'Strict warning: some odds timestamps are after first pitch, so those rows are market benchmarks only and not valid pregame evidence.';
+        }
+
+        if ($analysisMode === 'strict_pregame_market_rows' && $analysisRows === 0) {
+            $warnings[] = 'No strict-pregame-safe market rows were available for the selected scope.';
+        }
+
+        if ($strictRows === 0) {
+            $warnings[] = 'Strict pregame market sample is empty; do not use this report to validate public MLB recommendations.';
         }
 
         return $warnings;
@@ -257,6 +289,17 @@ class ResearchMarketBlendsCommand extends Command
     {
         return $rows
             ->filter(fn (array $row): bool => $row['market_home_probability'] !== null && $row['market_away_probability'] !== null)
+            ->values();
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function strictMarketRows(Collection $rows): Collection
+    {
+        return $rows
+            ->filter(fn (array $row): bool => $row['safety_flags'] === [])
             ->values();
     }
 
@@ -693,7 +736,7 @@ class ResearchMarketBlendsCommand extends Command
             $flags[] = 'odds_after_first_pitch';
         }
 
-        if ($game?->odds_updated_at !== null && $game->odds_updated_at->lt(now()->subHours((int) config('mlb.signals.odds_stale_hours', 12)))) {
+        if ($game?->odds_updated_at !== null && $this->oddsAreStale($game->odds_updated_at, $start)) {
             $flags[] = 'stale_odds';
         }
 
@@ -710,6 +753,17 @@ class ResearchMarketBlendsCommand extends Command
         }
 
         return array_values(array_unique($flags));
+    }
+
+    private function oddsAreStale(CarbonInterface $oddsUpdatedAt, ?Carbon $start): bool
+    {
+        $staleHours = (int) config('mlb.signals.odds_stale_hours', 12);
+
+        if ($start !== null) {
+            return $oddsUpdatedAt->lt($start->copy()->subHours($staleHours));
+        }
+
+        return $oddsUpdatedAt->lt(now()->subHours($staleHours));
     }
 
     private function gameStartAt(Prediction $prediction): ?Carbon

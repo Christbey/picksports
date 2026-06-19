@@ -124,7 +124,8 @@ it('reports mlb market-aware shadow research without promoting or mutating predi
         ->and($report['candidate_samples'][0]['block_reasons'])->toContain('recommendation_calibration_unvalidated')
         ->and(collect($report['total_bias_correction_grid'])->pluck(0))->toContain('Current model', 'Model -0.50', 'Model -1.00', 'Model -1.50', 'Market total')
         ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'missing_odds_timestamp')[1])->toBe(1)
-        ->and($report['warnings'])->toContain('Strict warning: odds timestamps are incomplete, so market-aware blend rows cannot be treated as proven pregame-safe.');
+        ->and($report['warnings'])->toContain('Strict warning: odds timestamps are incomplete, so market-aware blend rows cannot be treated as proven pregame-safe.')
+        ->and($report['warnings'])->toContain('Strict pregame market sample is too small (3 row(s)); use this only as a smoke check, not validation.');
 
     expect(Prediction::query()->find($first->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
         ->and(Prediction::query()->find($second->id)->model_metadata)->not->toHaveKey('market_aware_shadow_model')
@@ -178,7 +179,8 @@ it('can restrict mlb market blend research to strict pregame market rows', funct
         ->and($report['summary']['analysis_pregame_safe'])->toBeTrue()
         ->and(collect($report['market_aware_blend_grid'])->first()[2])->toBe('1')
         ->and(collect($report['strict_pregame_market_blend_grid'])->first()[2])->toBe('1')
-        ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'missing_odds_timestamp')[1])->toBe(1);
+        ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'missing_odds_timestamp')[1])->toBe(1)
+        ->and($report['warnings'])->toContain('Strict pregame market sample is too small (1 row(s)); use this only as a smoke check, not validation.');
 
     Carbon::setTestNow();
 });

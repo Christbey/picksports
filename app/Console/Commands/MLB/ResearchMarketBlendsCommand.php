@@ -41,8 +41,9 @@ class ResearchMarketBlendsCommand extends Command
         $this->info('MLB Market-Aware Shadow Model Research');
         $this->line('Shadow model: mlb_market_aware_shadow_v1');
         $this->line('Rows: '.$report['summary']['rows'].' | Market rows: '.$report['summary']['market_rows'].' | Strict market rows: '.$report['summary']['strict_market_rows']);
-        $this->line('Strict pregame safe: '.($report['summary']['strict_pregame_safe'] ? 'yes' : 'no'));
+        $this->line('Full scope strict pregame safe: '.($report['summary']['strict_pregame_safe'] ? 'yes' : 'no'));
         $this->line('Analysis rows: '.$report['summary']['analysis_rows'].' | Analysis mode: '.$report['summary']['analysis_mode']);
+        $this->line('Analysis pregame safe: '.($report['summary']['analysis_pregame_safe'] ? 'yes' : 'no'));
         $this->newLine();
 
         $this->info('Market-Aware Blend Grid');
@@ -113,7 +114,7 @@ class ResearchMarketBlendsCommand extends Command
             $this->warn($warning);
         }
 
-        if (! $report['summary']['strict_pregame_safe']) {
+        if (! $report['summary']['strict_pregame_safe'] && ! $report['summary']['analysis_pregame_safe']) {
             $this->newLine();
             $this->warn('Market-aware blend results are not strict-pregame safe.');
         }
@@ -298,6 +299,10 @@ class ResearchMarketBlendsCommand extends Command
 
         if ($strictRows === 0) {
             $warnings[] = 'Strict pregame market sample is empty; do not use this report to validate public MLB recommendations.';
+        }
+
+        if ($strictRows > 0 && $strictRows < 50) {
+            $warnings[] = "Strict pregame market sample is too small ({$strictRows} row(s)); use this only as a smoke check, not validation.";
         }
 
         return $warnings;

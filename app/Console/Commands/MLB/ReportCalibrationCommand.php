@@ -26,6 +26,20 @@ class ReportCalibrationCommand extends Command
         $rows = $this->loadRows();
 
         if ($rows->isEmpty()) {
+            if ($this->option('strict-pregame') && isset($this->strictPregameExcludedRows) && $this->strictPregameExcludedRows->isNotEmpty()) {
+                $this->warn('No strict-pregame eligible MLB predictions found for the selected scope.');
+                $this->line('Graded candidate rows inspected: '.(string) $this->gradedCandidateCount);
+                $this->line('Rows excluded by strict-pregame rules: '.(string) $this->strictPregameExcludedRows->count());
+                $this->newLine();
+                $this->info('Strict Pregame Exclusions');
+                $this->table(
+                    ['Reason', 'Rows'],
+                    $this->strictExclusionReasonRows()
+                );
+
+                return self::SUCCESS;
+            }
+
             $this->warn('No graded MLB predictions found for the selected scope.');
 
             return self::SUCCESS;
@@ -118,7 +132,10 @@ class ReportCalibrationCommand extends Command
 
         $strictExcluded = [];
 
-        $rows = $query->get()
+        $candidateRows = $query->get();
+        $this->gradedCandidateCount = $candidateRows->count();
+
+        $rows = $candidateRows
             ->map(function (Prediction $prediction): ?array {
                 $game = $prediction->game;
                 if (! $game || ! is_numeric($game->home_score) || ! is_numeric($game->away_score)) {
@@ -180,6 +197,8 @@ class ReportCalibrationCommand extends Command
     }
 
     private Collection $strictPregameExcludedRows;
+
+    private int $gradedCandidateCount = 0;
 
     /**
      * @param  Collection<int, array<string, mixed>>  $rows

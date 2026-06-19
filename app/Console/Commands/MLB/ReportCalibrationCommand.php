@@ -181,16 +181,24 @@ class ReportCalibrationCommand extends Command
                 $actualTotal = (float) $game->home_score + (float) $game->away_score;
                 $homeWinProbability = (float) $prediction->win_probability;
                 $homeWon = $actualMargin > 0;
-                $modelPickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
+                $modelPickSide = $this->modelPickSide((float) $prediction->predicted_spread, $homeWinProbability);
                 $marketHomeMargin = $marketSpread !== null ? -1 * $marketSpread : null;
                 $marketPickSide = match (true) {
                     $marketHomeMargin !== null => $marketHomeMargin >= 0 ? 'home' : 'away',
                     $marketProbabilities['home'] !== null && $marketProbabilities['away'] !== null => $marketProbabilities['home'] >= $marketProbabilities['away'] ? 'home' : 'away',
                     default => null,
                 };
-                $modelPickWon = $modelPickSide === 'home' ? $homeWon : ! $homeWon;
+                $modelPickWon = match ($modelPickSide) {
+                    'home' => $homeWon,
+                    'away' => ! $homeWon,
+                    default => null,
+                };
                 $marketPickWon = $marketPickSide === null ? null : ($marketPickSide === 'home' ? $homeWon : ! $homeWon);
-                $modelProbability = $modelPickSide === 'home' ? $homeWinProbability : 1 - $homeWinProbability;
+                $modelProbability = match ($modelPickSide) {
+                    'home' => $homeWinProbability,
+                    'away' => 1 - $homeWinProbability,
+                    default => max($homeWinProbability, 1 - $homeWinProbability),
+                };
                 $marketProbability = $marketPickSide === 'home'
                     ? $marketProbabilities['home']
                     : ($marketPickSide === 'away' ? $marketProbabilities['away'] : null);
@@ -757,8 +765,8 @@ class ReportCalibrationCommand extends Command
      */
     private function bugChecks(Collection $rows): array
     {
-        $winnerSpreadMismatches = $rows->filter(fn (array $row): bool => ((float) $row['predicted_spread'] > 0 && $row['model_pick_side'] !== 'home')
-            || ((float) $row['predicted_spread'] < 0 && $row['model_pick_side'] !== 'away'))->count();
+        $winnerSpreadMismatches = $rows->filter(fn (array $row): bool => ((float) $row['predicted_spread'] > 0 && (float) $row['home_win_probability'] < 0.5)
+            || ((float) $row['predicted_spread'] < 0 && (float) $row['home_win_probability'] > 0.5))->count();
         $actualMarginBadRows = $rows->filter(fn (array $row): bool => ! is_numeric($row['actual_margin']) || ! is_numeric($row['actual_total']))->count();
         $liveRows = $rows->filter(fn (array $row): bool => str_contains((string) $row['risk_flag_key'], 'live'))->count();
         $duplicateGames = $rows->groupBy('game_id')->filter(fn (Collection $group): bool => $group->count() > 1)->count();
@@ -773,7 +781,7 @@ class ReportCalibrationCommand extends Command
             [
                 'check' => 'Winner inversion',
                 'result' => $winnerSpreadMismatches === 0 ? 'pass' : 'fail',
-                'evidence' => "{$winnerSpreadMismatches} row(s) had prediction side inconsistent with spread sign.",
+                'evidence' => "{$winnerSpreadMismatches} row(s) had home win probability on the opposite side of spread sign.",
                 'severity' => $winnerSpreadMismatches === 0 ? 'low' : 'high',
             ],
             [
@@ -933,6 +941,10 @@ class ReportCalibrationCommand extends Command
         }
 
         $modelPick = (string) $row['model_pick_side'];
+        if (! in_array($modelPick, ['home', 'away'], true)) {
+            return 'model_pickem';
+        }
+
         if ($modelPick === $marketPick) {
             return $modelPick === 'home' ? 'home_favorite' : 'away_favorite';
         }
@@ -1043,11 +1055,36 @@ class ReportCalibrationCommand extends Command
             return 'market_unknown';
         }
 
+        if (! in_array($row['model_pick_side'], ['home', 'away'], true)) {
+            return 'model_pickem';
+        }
+
         if ($row['model_pick_side'] === $row['market_pick_side']) {
             return 'agree_on_winner';
         }
 
         return $row['model_pick_side'] === 'home' ? 'model_home_market_away' : 'model_away_market_home';
+    }
+
+    private function modelPickSide(float $predictedSpread, float $homeWinProbability): string
+    {
+        if ($predictedSpread > 0.0) {
+            return 'home';
+        }
+
+        if ($predictedSpread < 0.0) {
+            return 'away';
+        }
+
+        if ($homeWinProbability > 0.5) {
+            return 'home';
+        }
+
+        if ($homeWinProbability < 0.5) {
+            return 'away';
+        }
+
+        return 'pickem';
     }
 
     private function brier(float $homeProbability, bool $homeWon): float

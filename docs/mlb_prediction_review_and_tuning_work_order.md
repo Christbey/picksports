@@ -1840,7 +1840,7 @@ Production latest-500 sample before this diagnostic work showed the same broad c
 | Total calculation | Passing. | No action. |
 | Duplicate rows | Passing in local diagnostic run. | No action. |
 | Live rows excluded | Passing in local diagnostic run. | Keep live prediction data out of pregame calibration. |
-| Winner/spread side consistency | 3 local rows flagged as inconsistent between model pick side and spread sign. | Investigate these rows before tuning; likely near-pick'em probability/spread rounding or a real sign mismatch. |
+| Winner/spread side consistency | Passing after diagnostic correction. | The first diagnostic pass treated rounded `0.500` probabilities as home picks, which made tiny away spreads like `-0.1` look inverted. The report now derives pick side from spread sign and only fails when probability is truly on the opposite side. |
 
 ### Likely Root Causes
 
@@ -1853,12 +1853,11 @@ Production latest-500 sample before this diagnostic work showed the same broad c
 
 ### Recommended Next Steps
 
-1. Investigate the three winner/spread side consistency rows and determine whether they are rounding artifacts or actual sign mismatches.
-2. Run the JSON diagnostic on production and archive the output before changing formulas.
-3. Add small-sample warnings to recommendation output before using `bet` or `lean` labels publicly.
-4. Review model-market disagreement rows one by one with `mlb:explain-prediction`.
-5. Separate confirmed-starter rows from fallback-starter rows in future recommendation thresholds.
-6. Only after the above is stable, begin tuning on trusted pregame rows.
+1. Run the corrected JSON diagnostic on production and archive the output before changing formulas.
+2. Add small-sample warnings to recommendation output before using `bet` or `lean` labels publicly.
+3. Review model-market disagreement rows one by one with `mlb:explain-prediction`.
+4. Separate confirmed-starter rows from fallback-starter rows in future recommendation thresholds.
+5. Only after the above is stable, begin tuning on trusted pregame rows.
 
 ## Prediction Calculation Soundness Recommendations
 

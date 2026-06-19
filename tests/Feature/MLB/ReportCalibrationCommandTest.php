@@ -234,3 +234,61 @@ it('emits mlb underperformance diagnostics as json', function () {
         ->and($report['diagnostics']['pitcher_source_breakdowns'][0]['label'])->toBe('team_recent_average_fallback')
         ->and($report['diagnostics']['bug_checks'])->not->toBeEmpty();
 });
+
+it('does not flag rounded pickem probabilities as winner inversions', function () {
+    $homeTeam = Team::factory()->create([
+        'location' => 'New York',
+        'name' => 'Mets',
+        'abbreviation' => 'NYM',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'Atlanta',
+        'name' => 'Braves',
+        'abbreviation' => 'ATL',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-05-10',
+        'game_time' => '19:10:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 3,
+        'away_score' => 4,
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => -0.1,
+        'predicted_total' => 8.5,
+        'win_probability' => 0.5,
+        'confidence_score' => 50.2,
+        'model_version' => 'rules-v1',
+        'feature_version' => 'core-v3',
+        'blend_version' => 'baseline-v1',
+        'model_metadata' => [],
+        'actual_spread' => -1.0,
+        'actual_total' => 7.0,
+        'spread_error' => 0.9,
+        'total_error' => 1.5,
+        'winner_correct' => true,
+        'graded_at' => '2026-05-11 01:00:00',
+        'created_at' => '2026-05-10 12:00:00',
+    ]);
+
+    Artisan::call('mlb:report-calibration', [
+        '--season' => 2026,
+        '--diagnostics' => true,
+        '--json' => true,
+    ]);
+
+    $report = json_decode(Artisan::output(), true);
+    $winnerInversion = collect($report['diagnostics']['bug_checks'])
+        ->firstWhere('check', 'Winner inversion');
+
+    expect($report['diagnostics']['winner_breakdowns']['by_pick_side'][0]['label'])->toBe('away')
+        ->and($winnerInversion['result'])->toBe('pass')
+        ->and($winnerInversion['evidence'])->toContain('0 row(s)');
+});

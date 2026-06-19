@@ -544,6 +544,8 @@ return [
             'moneyline_enabled' => env('MLB_BET_FILTER_MONEYLINE_ENABLED', true),
             'run_line_enabled' => env('MLB_BET_FILTER_RUN_LINE_ENABLED', false),
             'total_enabled' => env('MLB_BET_FILTER_TOTAL_ENABLED', false),
+            'calibration_guard_enabled' => env('MLB_BET_FILTER_CALIBRATION_GUARD_ENABLED', true),
+            'promotions_validated' => env('MLB_BET_FILTER_PROMOTIONS_VALIDATED', false),
             'strong_min_score' => env('MLB_BET_FILTER_STRONG_MIN_SCORE', 70),
             'lean_min_score' => env('MLB_BET_FILTER_LEAN_MIN_SCORE', 55),
             'min_confidence' => env('MLB_BET_FILTER_MIN_CONFIDENCE', 55),

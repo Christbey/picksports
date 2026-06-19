@@ -1859,6 +1859,12 @@ Production latest-500 sample before this diagnostic work showed the same broad c
 4. Separate confirmed-starter rows from fallback-starter rows in future recommendation thresholds.
 5. Only after the above is stable, begin tuning on trusted pregame rows.
 
+### Active Recommendation Guard
+
+Active MLB pregame `bet` and `lean` promotions are guarded by default through `mlb.signals.bet_filter.calibration_guard_enabled=true` and `mlb.signals.bet_filter.promotions_validated=false`.
+
+This does **not** change historical/final diagnostic reporting. The calibration report can still show what the candidate filter would have classified, which is necessary to measure whether the filter is improving. For upcoming games, however, unvalidated promotions are downgraded to `no_play` with `recommendation_calibration_unvalidated` until the filter proves it can beat `no_play` and market baselines on trusted pregame rows.
+
 ## Prediction Calculation Soundness Recommendations
 
 ### Must Fix Before Tuning

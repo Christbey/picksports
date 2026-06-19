@@ -27,6 +27,8 @@ it('maps mlb game phases from canonical statuses', function () {
 });
 
 it('separates raw edge and no-vig edge and blocks stale odds from official bets', function () {
+    config(['mlb.signals.bet_filter.promotions_validated' => true]);
+
     $home = Team::factory()->create(['location' => 'St. Louis', 'name' => 'Cardinals', 'abbreviation' => 'STL']);
     $away = Team::factory()->create(['location' => 'Kansas City', 'name' => 'Royals', 'abbreviation' => 'KC']);
     $game = Game::factory()->create([
@@ -67,6 +69,8 @@ it('separates raw edge and no-vig edge and blocks stale odds from official bets'
 });
 
 it('marks missing odds timestamps and prevents official bet promotion', function () {
+    config(['mlb.signals.bet_filter.promotions_validated' => true]);
+
     $home = Team::factory()->create(['location' => 'St. Louis', 'name' => 'Cardinals']);
     $away = Team::factory()->create(['location' => 'Kansas City', 'name' => 'Royals']);
     $game = Game::factory()->create([

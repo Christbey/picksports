@@ -105,6 +105,17 @@ class MlbPredictionRecommendationService
 
         $classification = (string) ($candidate['classification'] ?? 'pass');
         $score = is_numeric($candidate['score'] ?? null) ? (int) $candidate['score'] : null;
+        $reasonCodes = array_values((array) ($candidate['reason_codes'] ?? []));
+        $riskFlags = array_values((array) ($candidate['risk_flags'] ?? []));
+        $noBetReason = $candidate['no_bet_reason'] ?? null;
+
+        if ($this->calibrationGuardBlocksPromotion($prediction, $phase, $classification)) {
+            $classification = 'pass';
+            $riskFlags[] = 'recommendation_calibration_unvalidated';
+            $reasonCodes[] = 'recommendation_calibration_guard';
+            $noBetReason = 'recommendation_calibration_unvalidated';
+        }
+
         $recommendationType = match ($classification) {
             'bet' => 'bet',
             'lean' => 'lean',
@@ -128,12 +139,33 @@ class MlbPredictionRecommendationService
             'raw_edge' => $this->floatOrNull($candidate['probability_edge'] ?? null),
             'no_vig_edge' => $this->floatOrNull($candidate['no_vig_edge'] ?? null),
             'score' => $score,
-            'reason_codes' => array_values((array) ($candidate['reason_codes'] ?? [])),
-            'risk_flags' => array_values((array) ($candidate['risk_flags'] ?? [])),
-            'no_bet_reason' => $candidate['no_bet_reason'] ?? null,
+            'reason_codes' => array_values(array_unique($reasonCodes)),
+            'risk_flags' => array_values(array_unique($riskFlags)),
+            'no_bet_reason' => $noBetReason,
             'odds_updated_at' => $this->oddsUpdatedAt($prediction),
             'odds_fresh' => $this->oddsFresh($prediction),
         ];
+    }
+
+    private function calibrationGuardBlocksPromotion(Prediction $prediction, string $phase, string $classification): bool
+    {
+        if (! in_array($classification, ['bet', 'lean'], true)) {
+            return false;
+        }
+
+        if ($phase !== 'pregame') {
+            return false;
+        }
+
+        if (! (bool) config('mlb.signals.bet_filter.calibration_guard_enabled', true)) {
+            return false;
+        }
+
+        if ((bool) config('mlb.signals.bet_filter.promotions_validated', false)) {
+            return false;
+        }
+
+        return $this->predictionPhase((string) ($prediction->game?->status ?? '')) === MlbGamePhase::PREGAME;
     }
 
     /**

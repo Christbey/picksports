@@ -12,6 +12,8 @@ use Laravel\Sanctum\Sanctum;
 uses()->group('mlb', 'api-v2', 'recommendations');
 
 it('keeps raw moneyline odds math testable and separate from no-vig edge', function () {
+    config(['mlb.signals.bet_filter.promotions_validated' => true]);
+
     $service = app(MlbPredictionRecommendationService::class);
 
     expect($service->rawImpliedProbabilityForAmericanOdds(-105))->toBeFloat()
@@ -41,6 +43,29 @@ it('keeps raw moneyline odds math testable and separate from no-vig edge', funct
         ->and($recommendation['no_vig_edge'])->toBe(0.07);
 });
 
+it('blocks active mlb recommendation promotion until the filter is calibrated', function () {
+    $service = app(MlbPredictionRecommendationService::class);
+
+    $prediction = mlbRecommendationContractPrediction([
+        'win_probability' => 0.43,
+        'confidence_score' => 58,
+        'predicted_spread' => -1.6,
+    ], [
+        'St. Louis Cardinals' => -105,
+        'Kansas City Royals' => -105,
+    ]);
+
+    $recommendation = $service->forPrediction($prediction);
+
+    expect($recommendation['recommendation_type'])->toBe('no_play')
+        ->and($recommendation['is_bet'])->toBeFalse()
+        ->and($recommendation['risk_flags'])->toContain('recommendation_calibration_unvalidated')
+        ->and($recommendation['reason_codes'])->toContain('recommendation_calibration_guard')
+        ->and($recommendation['no_bet_reason'])->toBe('recommendation_calibration_unvalidated')
+        ->and($recommendation['raw_edge'])->toBe(0.0578)
+        ->and($recommendation['no_vig_edge'])->toBe(0.07);
+});
+
 it('exposes the same mlb slate bet as a canonical v2 prediction recommendation', function () {
     Carbon::setTestNow('2026-06-18 09:00:00');
     mlbRecommendationContractActingAsBypassUser();
@@ -50,6 +75,7 @@ it('exposes the same mlb slate bet as a canonical v2 prediction recommendation',
         'mlb.signals.bet_filter.moneyline_enabled' => true,
         'mlb.signals.bet_filter.run_line_enabled' => false,
         'mlb.signals.bet_filter.total_enabled' => false,
+        'mlb.signals.bet_filter.promotions_validated' => true,
     ]);
 
     $prediction = mlbRecommendationContractPrediction([
@@ -83,6 +109,7 @@ it('exposes the same mlb slate bet as a canonical v2 prediction recommendation',
 
 it('does not count mlb leans, no-plays, or live monitors as official bets', function () {
     Carbon::setTestNow('2026-06-18 09:00:00');
+    config(['mlb.signals.bet_filter.promotions_validated' => true]);
 
     $service = app(MlbPredictionRecommendationService::class);
     $lean = mlbRecommendationContractPrediction([

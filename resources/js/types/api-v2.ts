@@ -1,5 +1,8 @@
 import type { QueryParams } from '@/wayfinder';
-import type { PredictionRecommendation } from '@/lib/predictionRecommendation';
+import type {
+    MarketAwareProjection,
+    PredictionRecommendation,
+} from '@/lib/predictionRecommendation';
 
 export type ApiV2SportSlug =
     | 'nba'
@@ -184,6 +187,8 @@ export type ApiV2Prediction = {
         [key: string]: unknown;
     } | null;
     recommendation?: PredictionRecommendation | null;
+    public_recommendation?: ApiV2Record | null;
+    market_aware_projection?: MarketAwareProjection | null;
     market_summary?: ApiV2Record;
     created_at?: string | null;
     updated_at?: string | null;

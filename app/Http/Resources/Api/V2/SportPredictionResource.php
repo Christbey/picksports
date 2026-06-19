@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V2;
 use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
+use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Support\MLB\MlbGamePhase;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,11 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class SportPredictionResource extends JsonResource
 {
+    private bool $mlbRecommendationResolved = false;
+
+    /** @var array<string,mixed>|null */
+    private ?array $mlbRecommendation = null;
+
     public function __construct(
         mixed $resource,
         private readonly SportContext $context,
@@ -43,6 +49,8 @@ class SportPredictionResource extends JsonResource
             'confidence_score' => $this->floatAttribute('confidence_score'),
             'confidence_level' => $this->confidenceLevel(),
             'confidence_context' => $this->confidenceContext(),
+            'public_recommendation' => $this->publicRecommendation(),
+            'market_aware_projection' => $this->marketAwareProjection(),
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
             'home_elo' => $this->floatAttribute('home_elo'),
@@ -352,7 +360,59 @@ class SportPredictionResource extends JsonResource
             return null;
         }
 
-        return app(MlbPredictionRecommendationService::class)->forPrediction($this->resource);
+        if (! $this->mlbRecommendationResolved) {
+            $this->mlbRecommendation = app(MlbPredictionRecommendationService::class)->forPrediction($this->resource);
+            $this->mlbRecommendationResolved = true;
+        }
+
+        return $this->mlbRecommendation;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function publicRecommendation(): ?array
+    {
+        $recommendation = $this->recommendation();
+
+        if ($recommendation === null) {
+            return null;
+        }
+
+        $public = (array) ($recommendation['public'] ?? $recommendation);
+        $promotion = (array) ($recommendation['promotion'] ?? []);
+        $type = (string) ($public['recommendation_type'] ?? 'no_play');
+
+        return [
+            'type' => $type,
+            'label' => $type === 'no_play' ? 'No betting recommendation' : $this->recommendationLabel($type),
+            'is_bet' => ($public['is_bet'] ?? false) === true,
+            'is_lean' => $type === 'lean' && ($public['prediction_phase'] ?? null) === 'pregame',
+            'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
+            'block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function marketAwareProjection(): ?array
+    {
+        if ($this->context->slug !== 'mlb' || ! $this->resource instanceof MlbPrediction) {
+            return null;
+        }
+
+        return app(MlbMarketAwareProjectionService::class)->forPrediction($this->resource);
+    }
+
+    private function recommendationLabel(string $type): string
+    {
+        return match ($type) {
+            'bet' => 'Model bet',
+            'lean' => 'Model lean',
+            'monitor' => 'Live monitor',
+            default => str($type)->replace('_', ' ')->title()->toString(),
+        };
     }
 
     /**

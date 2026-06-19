@@ -38,8 +38,62 @@ export interface PredictionRecommendation {
     all_candidates?: PredictionRecommendation[];
 }
 
+export interface MarketAwareProjection {
+    status?: 'tracking_only' | string | null;
+    label?: string | null;
+    is_bet?: false | boolean | null;
+    is_lean?: false | boolean | null;
+    model_probability?: number | null;
+    market_probability?: number | null;
+    blended_probability?: number | null;
+    home_model_probability?: number | null;
+    away_model_probability?: number | null;
+    home_market_probability?: number | null;
+    away_market_probability?: number | null;
+    home_blended_probability?: number | null;
+    away_blended_probability?: number | null;
+    blend?: {
+        model_weight?: number | null;
+        market_weight?: number | null;
+        version?: string | null;
+        [key: string]: unknown;
+    } | null;
+    model_pick?: ProjectionPick | null;
+    market_pick?: ProjectionPick | null;
+    projection_pick?: ProjectionPick | null;
+    agreement_status?:
+        | 'agrees'
+        | 'disagrees'
+        | 'market_missing'
+        | 'model_missing'
+        | 'unknown'
+        | string
+        | null;
+    point_in_time_status?: 'safe' | 'unsafe' | string | null;
+    point_in_time_reasons?: string[];
+    risk_label?: string | null;
+    reason?: string | null;
+    market_odds?: {
+        home_price?: number | null;
+        away_price?: number | null;
+        source?: string | null;
+        snapshot_id?: number | string | null;
+        captured_at?: string | null;
+        [key: string]: unknown;
+    } | null;
+}
+
+interface ProjectionPick {
+    side?: 'home' | 'away' | string | null;
+    team_id?: number | string | null;
+    team_abbreviation?: string | null;
+    label?: string | null;
+}
+
 export interface PredictionWithRecommendation {
     recommendation?: PredictionRecommendation | null;
+    public_recommendation?: Record<string, unknown> | null;
+    market_aware_projection?: MarketAwareProjection | null;
 }
 
 export function getPredictionRecommendation(

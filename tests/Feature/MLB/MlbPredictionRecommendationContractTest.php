@@ -70,6 +70,87 @@ it('blocks active mlb recommendation promotion until the filter is calibrated', 
         ->and($recommendation['no_vig_edge'])->toBe(0.07);
 });
 
+it('exposes market-aware projection as tracking only without promoting mlb recommendations', function () {
+    Carbon::setTestNow('2026-06-18 09:00:00');
+    mlbRecommendationContractActingAsBypassUser();
+
+    config([
+        'mlb.season.default' => 2026,
+        'mlb.signals.bet_filter.promotions_validated' => false,
+    ]);
+
+    $prediction = mlbRecommendationContractPrediction([
+        'win_probability' => 0.60,
+        'confidence_score' => 62,
+        'predicted_spread' => 1.6,
+    ], [
+        'St. Louis Cardinals' => 130,
+        'Kansas City Royals' => -105,
+    ]);
+
+    $response = $this->getJson('/api/v2/sports/mlb/predictions?season=2026&from_date=2026-06-18&to_date=2026-06-18')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $prediction->id)
+        ->assertJsonPath('data.0.public_recommendation.type', 'no_play')
+        ->assertJsonPath('data.0.public_recommendation.label', 'No betting recommendation')
+        ->assertJsonPath('data.0.public_recommendation.is_bet', false)
+        ->assertJsonPath('data.0.public_recommendation.is_lean', false)
+        ->assertJsonPath('data.0.public_recommendation.promotion_blocked', true)
+        ->assertJsonPath('data.0.recommendation.recommendation_type', 'no_play')
+        ->assertJsonPath('data.0.recommendation.is_bet', false)
+        ->assertJsonPath('data.0.market_aware_projection.status', 'tracking_only')
+        ->assertJsonPath('data.0.market_aware_projection.label', 'Market-aware projection')
+        ->assertJsonPath('data.0.market_aware_projection.is_bet', false)
+        ->assertJsonPath('data.0.market_aware_projection.is_lean', false)
+        ->assertJsonPath('data.0.market_aware_projection.blend.model_weight', 0.25)
+        ->assertJsonPath('data.0.market_aware_projection.blend.market_weight', 0.75)
+        ->assertJsonPath('data.0.market_aware_projection.model_pick.side', 'home')
+        ->assertJsonPath('data.0.market_aware_projection.market_pick.side', 'home')
+        ->assertJsonPath('data.0.market_aware_projection.projection_pick.side', 'home')
+        ->assertJsonPath('data.0.market_aware_projection.agreement_status', 'agrees')
+        ->assertJsonPath('data.0.market_aware_projection.point_in_time_status', 'safe')
+        ->assertJsonPath('data.0.market_aware_projection.risk_label', 'calibration_unvalidated');
+
+    $projection = $response->json('data.0.market_aware_projection');
+
+    expect($projection['model_probability'])->toBe(0.6)
+        ->and($projection['market_probability'])->toBeGreaterThan(0.53)
+        ->and($projection['market_probability'])->toBeLessThan(0.55)
+        ->and($projection['blended_probability'])->toBeGreaterThan(0.55)
+        ->and($projection['blended_probability'])->toBeLessThan(0.57);
+
+    Carbon::setTestNow();
+});
+
+it('marks mlb market-aware projection unsafe when market odds are missing', function () {
+    Carbon::setTestNow('2026-06-18 09:00:00');
+    mlbRecommendationContractActingAsBypassUser();
+
+    $prediction = mlbRecommendationContractPrediction([
+        'win_probability' => 0.57,
+        'confidence_score' => 58,
+    ], [], [
+        'odds_data' => null,
+        'odds_updated_at' => null,
+    ]);
+
+    $this->getJson('/api/v2/sports/mlb/predictions?season=2026&from_date=2026-06-18&to_date=2026-06-18')
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $prediction->id)
+        ->assertJsonPath('data.0.public_recommendation.type', 'no_play')
+        ->assertJsonPath('data.0.public_recommendation.is_bet', false)
+        ->assertJsonPath('data.0.market_aware_projection.status', 'tracking_only')
+        ->assertJsonPath('data.0.market_aware_projection.market_probability', null)
+        ->assertJsonPath('data.0.market_aware_projection.blended_probability', null)
+        ->assertJsonPath('data.0.market_aware_projection.market_pick.side', null)
+        ->assertJsonPath('data.0.market_aware_projection.agreement_status', 'market_missing')
+        ->assertJsonPath('data.0.market_aware_projection.point_in_time_status', 'unsafe')
+        ->assertJsonPath('data.0.market_aware_projection.risk_label', 'market_unavailable')
+        ->assertJsonPath('data.0.market_aware_projection.point_in_time_reasons.0', 'missing_market_odds');
+
+    Carbon::setTestNow();
+});
+
 it('keeps mlb model market disagreement as a pass candidate', function () {
     config(['mlb.signals.bet_filter.promotions_validated' => true]);
 

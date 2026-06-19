@@ -1,5 +1,8 @@
 import type { UrlMethodPair } from '@inertiajs/core';
-import type { PredictionRecommendation } from '@/lib/predictionRecommendation';
+import type {
+    MarketAwareProjection,
+    PredictionRecommendation,
+} from '@/lib/predictionRecommendation';
 import type { GameDepthChartsData, MatchupContextData } from './models';
 
 export type GamePageHrefLike = string | UrlMethodPair;
@@ -198,6 +201,7 @@ export interface PredictionListItem {
     prediction_analysis?: PredictionAnalysisSummary | null;
     ai_analysis?: AiPredictionAnalysisSummary | null;
     recommendation?: PredictionRecommendation | null;
+    market_aware_projection?: MarketAwareProjection | null;
     created_at?: string | null;
     updated_at?: string | null;
     home_elo?: number;

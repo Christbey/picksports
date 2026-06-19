@@ -272,6 +272,56 @@ function isMlbPrediction(): boolean {
     return (props.sport ?? '').toLowerCase() === 'mlb';
 }
 
+function marketAwareProjection() {
+    return isMlbPrediction()
+        ? (props.prediction.market_aware_projection ?? null)
+        : null;
+}
+
+function hasMarketAwareProjection(): boolean {
+    return marketAwareProjection() !== null;
+}
+
+function projectionProbabilityLabel(value?: number | null): string {
+    return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : 'n/a';
+}
+
+function marketAwareSignalLabel(): string {
+    const projection = marketAwareProjection();
+
+    if (!projection) return 'Tracking Only';
+
+    if (projection.agreement_status === 'agrees') {
+        return 'Market-Aligned';
+    }
+
+    if (projection.agreement_status === 'disagrees') {
+        return 'Market Disagree';
+    }
+
+    if (projection.agreement_status === 'market_missing') {
+        return 'Market Missing';
+    }
+
+    return 'Tracking Only';
+}
+
+function marketAwarePickLabel(): string | null {
+    return marketAwareProjection()?.projection_pick?.label ?? null;
+}
+
+function marketAwareMetaLabel(): string {
+    const projection = marketAwareProjection();
+    if (!projection) return 'Tracking only';
+
+    const pointInTime =
+        projection.point_in_time_status === 'safe'
+            ? 'pregame-safe'
+            : 'not pregame-safe';
+
+    return `${pointInTime} · ${formatAnalysisToken(projection.risk_label ?? 'tracking_only')}`;
+}
+
 function displayedWinProbability(): number {
     if (isMlbPrediction()) {
         return preGameWinProbability();
@@ -293,8 +343,8 @@ function edgePercent(): number {
 }
 
 function edgeSignalLabel(): string {
-    if (isMlbPrediction() && isPromotionBlocked(props.prediction)) {
-        return 'Research Signal';
+    if (isMlbPrediction()) {
+        return marketAwareSignalLabel();
     }
 
     const absEdge = Math.abs(edgePercent());
@@ -535,7 +585,14 @@ function hasValueSignals(): boolean {
 }
 
 function hasDecisionSummary(): boolean {
-    return !isFinal() && (hasAiAnalysis() || hasPredictionAnalysis() || hasValueSignals() || hasCanonicalRecommendation());
+    return (
+        !isFinal() &&
+        (hasMarketAwareProjection() ||
+            hasAiAnalysis() ||
+            hasPredictionAnalysis() ||
+            hasValueSignals() ||
+            hasCanonicalRecommendation())
+    );
 }
 
 function livePredictionData() {
@@ -997,7 +1054,7 @@ function saveOptions(): SavePickOption[] {
                             <span class="ui-chip text-foreground/80">
                                 {{
                                     isMlbPrediction()
-                                        ? 'Pregame pick'
+                                        ? 'Model pick'
                                         : 'Moneyline'
                                 }}:
                                 {{ moneylineTeamLabel() }}
@@ -1026,6 +1083,12 @@ function saveOptions(): SavePickOption[] {
                                 "
                                 :style="{ width: `${edgeBarWidth()}%` }"
                             />
+                        </div>
+                        <div
+                            v-if="isMlbPrediction() && marketAwarePickLabel()"
+                            class="mt-1 text-xs text-muted-foreground"
+                        >
+                            Projection: {{ marketAwarePickLabel() }}
                         </div>
                     </div>
                 </div>
@@ -1082,6 +1145,76 @@ function saveOptions(): SavePickOption[] {
                 </div>
 
                 <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+                    <div
+                        v-if="hasMarketAwareProjection()"
+                        class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"
+                    >
+                        <div class="mb-2 flex flex-wrap items-center gap-2">
+                            <div
+                                class="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase"
+                            >
+                                <Target class="h-3.5 w-3.5" />
+                                Market-Aware Projection
+                            </div>
+                            <span
+                                class="rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-semibold text-muted-foreground"
+                            >
+                                Tracking only
+                            </span>
+                        </div>
+                        <div
+                            class="grid grid-cols-3 gap-2 text-center text-xs"
+                        >
+                            <div class="rounded-md bg-sidebar-accent/60 p-2">
+                                <div class="text-muted-foreground">Model</div>
+                                <div class="mt-1 font-semibold text-foreground">
+                                    {{
+                                        projectionProbabilityLabel(
+                                            marketAwareProjection()
+                                                ?.model_probability,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div class="rounded-md bg-sidebar-accent/60 p-2">
+                                <div class="text-muted-foreground">Market</div>
+                                <div class="mt-1 font-semibold text-foreground">
+                                    {{
+                                        projectionProbabilityLabel(
+                                            marketAwareProjection()
+                                                ?.market_probability,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div class="rounded-md bg-sidebar-accent/60 p-2">
+                                <div class="text-muted-foreground">Blend</div>
+                                <div class="mt-1 font-semibold text-foreground">
+                                    {{
+                                        projectionProbabilityLabel(
+                                            marketAwareProjection()
+                                                ?.blended_probability,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                        </div>
+                        <div
+                            class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                        >
+                            <span>{{ marketAwareMetaLabel() }}</span>
+                            <span v-if="marketAwarePickLabel()">
+                                {{ marketAwarePickLabel() }}
+                            </span>
+                        </div>
+                        <p
+                            v-if="marketAwareProjection()?.reason"
+                            class="mt-2 text-xs text-muted-foreground"
+                        >
+                            {{ marketAwareProjection()?.reason }}
+                        </p>
+                    </div>
+
                     <div
                         v-if="hasAiAnalysis() || hasPredictionAnalysis()"
                         class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"

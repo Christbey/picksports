@@ -3,6 +3,7 @@ import type {
     BettingRecommendation,
     PredictionAnalysisSummary,
 } from './sports';
+import type { MarketAwareProjection } from '@/lib/predictionRecommendation';
 
 export interface DashboardPrediction {
     id: number;
@@ -24,6 +25,7 @@ export interface DashboardPrediction {
     betting_value_debug?: string | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
     ai_analysis?: AiPredictionAnalysisSummary | null;
+    market_aware_projection?: MarketAwareProjection | null;
     updated_at?: string | null;
     // Live game data
     is_live?: boolean;

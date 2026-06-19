@@ -86,6 +86,14 @@ interface BetFilter {
     primary_market?: string;
     philosophy: string;
     risk_controls: string[];
+    promotion?: {
+        status?: string;
+        public_recommendations_enabled?: boolean;
+        shadow_research_enabled?: boolean;
+        calibration_guard_enabled?: boolean;
+        promotions_validated?: boolean;
+        block_reasons?: string[];
+    };
 }
 
 interface OddsHealth {
@@ -123,8 +131,14 @@ interface MoneylineReadiness {
     bet_count: number;
     lean_count: number;
     pass_count: number;
+    public_bet_count?: number;
+    public_lean_count?: number;
+    shadow_bet_count?: number;
+    shadow_lean_count?: number;
     positive_market_edge_count: number;
     usable_count: number;
+    public_usable_count?: number;
+    shadow_usable_count?: number;
     top_pass_reasons: Array<{
         reason: string;
         count: number;
@@ -141,6 +155,7 @@ interface SignalsPayload {
     moneyline_readiness?: MoneylineReadiness;
     pass_summary?: PassSummary;
     recommended_bets: SignalRow[];
+    shadow_recommended_bets?: SignalRow[];
     world_series: SignalRow[];
     moneyline: SignalRow[];
     run_line: SignalRow[];
@@ -161,6 +176,7 @@ const api = useApiV2Client();
 let refreshTimer: number | undefined;
 
 const bestBets = computed(() => payload.value?.recommended_bets ?? []);
+const shadowBets = computed(() => payload.value?.shadow_recommended_bets ?? []);
 const liveRows = computed(() => payload.value?.live ?? []);
 const moneylineReadiness = computed(
     () => payload.value?.moneyline_readiness ?? null,
@@ -176,6 +192,14 @@ const moneylineReadyLabel = computed(() => {
     if (!payload.value?.odds_health) return 'No slate';
     return payload.value.odds_health.moneyline_ready ? 'Ready' : 'Needs prices';
 });
+
+const promotionProtected = computed(
+    () => payload.value?.bet_filter?.promotion?.status === 'blocked',
+);
+
+const topSignalRows = computed(() =>
+    promotionProtected.value ? shadowBets.value : bestBets.value,
+);
 
 const signalGroups = computed(() => [
     {
@@ -259,9 +283,11 @@ const visibleSignalGroups = computed(() =>
 const bettingSignalMix = computed(() => [
     {
         key: 'recommended',
-        label: 'Best Bets',
-        count: bestBets.value.length,
-        detail: 'passed filter',
+        label: promotionProtected.value ? 'Research' : 'Best Bets',
+        count: promotionProtected.value
+            ? shadowBets.value.length
+            : bestBets.value.length,
+        detail: promotionProtected.value ? 'tracking only' : 'passed filter',
     },
     {
         key: 'moneyline',
@@ -301,7 +327,7 @@ const maxSignalMixCount = computed(() =>
     Math.max(...bettingSignalMix.value.map((item) => item.count), 1),
 );
 
-const topBet = computed(() => bestBets.value[0] ?? null);
+const topBet = computed(() => topSignalRows.value[0] ?? null);
 
 function formatPercent(value?: number | null): string | null {
     if (value == null) return null;
@@ -497,7 +523,13 @@ onUnmounted(() => {
                                 ML {{ moneylineReadyLabel }}
                             </span>
                             <span class="rounded-full border px-2.5 py-1">
-                                {{ bestBets.length }} bets
+                                {{ bestBets.length }} public bets
+                            </span>
+                            <span
+                                v-if="promotionProtected && shadowBets.length > 0"
+                                class="rounded-full border px-2.5 py-1"
+                            >
+                                {{ shadowBets.length }} research
                             </span>
                             <span
                                 v-if="liveRows.length > 0"
@@ -521,7 +553,11 @@ onUnmounted(() => {
                                 <div class="flex items-center gap-2">
                                     <Target class="h-4 w-4 text-emerald-600" />
                                     <div class="text-sm font-semibold">
-                                        Top Betting Signal
+                                        {{
+                                            promotionProtected
+                                                ? 'Research Signal'
+                                                : 'Top Betting Signal'
+                                        }}
                                     </div>
                                 </div>
                                 <span
@@ -533,7 +569,11 @@ onUnmounted(() => {
                                         )
                                     "
                                 >
-                                    {{ topBet.classification }}
+                                    {{
+                                        promotionProtected
+                                            ? 'tracking only'
+                                            : topBet.classification
+                                    }}
                                 </span>
                             </div>
                             <div v-if="topBet" class="space-y-2">
@@ -637,7 +677,7 @@ onUnmounted(() => {
                                 </div>
                             </div>
                             <div v-else class="text-sm text-muted-foreground">
-                                No MLB bets passed the selective filter for the
+                                No public MLB bets are promotion-ready for the
                                 current slate.
                             </div>
                         </div>
@@ -710,6 +750,14 @@ onUnmounted(() => {
                             </div>
                             <div>
                                 {{ moneylineReadiness.usable_count }} bets/leans
+                                <span v-if="promotionProtected">
+                                    tracked,
+                                    {{
+                                        moneylineReadiness.public_usable_count ??
+                                        0
+                                    }}
+                                    public
+                                </span>
                             </div>
                         </div>
                         <div>

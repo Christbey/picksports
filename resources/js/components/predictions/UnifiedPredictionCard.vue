@@ -23,6 +23,7 @@ import { useApiV2Client } from '@/composables/useApiV2Client';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import {
     getPredictionRecommendation,
+    isPromotionBlocked,
     isBetRecommendation,
     isLeanRecommendation,
     isLiveMonitor,
@@ -292,6 +293,10 @@ function edgePercent(): number {
 }
 
 function edgeSignalLabel(): string {
+    if (isMlbPrediction() && isPromotionBlocked(props.prediction)) {
+        return 'Research Signal';
+    }
+
     const absEdge = Math.abs(edgePercent());
     if (absEdge < 2) return 'Toss-Up';
     if (absEdge < 7) return 'Lean Edge';
@@ -471,6 +476,10 @@ function hasCanonicalRecommendation(): boolean {
 }
 
 function canonicalRecommendationLabel(): string | null {
+    if (isMlbPrediction() && isPromotionBlocked(props.prediction)) {
+        return 'Tracking Only';
+    }
+
     if (isBetRecommendation(props.prediction)) {
         return 'Model Bet';
     }
@@ -492,6 +501,10 @@ function canonicalRecommendationLabel(): string | null {
 }
 
 function canonicalRecommendationClass(): string {
+    if (isMlbPrediction() && isPromotionBlocked(props.prediction)) {
+        return 'bg-sidebar-accent text-muted-foreground';
+    }
+
     if (isBetRecommendation(props.prediction)) {
         return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100';
     }

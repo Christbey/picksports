@@ -19,6 +19,7 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         'mlb.signals.bet_filter.moneyline_enabled' => true,
         'mlb.signals.bet_filter.run_line_enabled' => false,
         'mlb.signals.bet_filter.total_enabled' => false,
+        'mlb.signals.bet_filter.promotions_validated' => true,
     ]);
 
     Permission::findOrCreate('view-mlb-predictions', 'web');
@@ -53,8 +54,8 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
                 'markets' => [[
                     'key' => 'h2h',
                     'outcomes' => [
-                        ['name' => 'St. Louis Cardinals', 'price' => 110],
-                        ['name' => 'Chicago Cubs', 'price' => -120],
+                        ['name' => 'St. Louis Cardinals', 'price' => -120],
+                        ['name' => 'Chicago Cubs', 'price' => 110],
                     ],
                 ]],
             ]],
@@ -173,12 +174,14 @@ it('treats mlb as moneyline ready when h2h exists without run line or totals', f
         ->assertJsonPath('data.moneyline_readiness.candidate_count', 1)
         ->assertJsonPath('data.moneyline_readiness.priced_count', 1)
         ->assertJsonPath('data.moneyline_readiness.usable_count', 1)
+        ->assertJsonPath('data.moneyline_readiness.public_usable_count', 1)
         ->assertJsonPath('data.live.0.type', 'live')
         ->assertJsonPath('data.live.0.matchup', 'CHC @ STL')
         ->assertJsonPath('data.live.0.live_win_probability', 0.71)
         ->assertJsonPath('data.live.0.signal', 'live_monitor')
         ->assertJsonPath('data.recommended_bets.0.type', 'moneyline')
         ->assertJsonPath('data.recommended_bets.0.classification', 'bet')
+        ->assertJsonPath('data.shadow_recommended_bets.0.classification', 'bet')
         ->assertJsonPath('data.ballpark.0.venue_name', 'Coors Field')
         ->assertJsonPath('data.ballpark.0.run_environment', 'hitter_friendly')
         ->assertJsonPath('data.ballpark.0.runs_signal', 'park_runs_boost')

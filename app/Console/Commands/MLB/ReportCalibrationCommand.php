@@ -93,11 +93,27 @@ class ReportCalibrationCommand extends Command
         );
 
         $this->newLine();
-        $this->info('Canonical Recommendation Buckets');
+        $this->info('Public Recommendation Buckets');
         $this->table(
             ['Bucket', 'Games', 'Winner %', 'Spread MAE', 'Total MAE'],
-            $report['recommendation_buckets']
+            $report['public_recommendation_buckets']
         );
+
+        $this->newLine();
+        $this->info('Candidate Recommendation Buckets');
+        $this->table(
+            ['Bucket', 'Games', 'Winner %', 'Spread MAE', 'Total MAE'],
+            $report['candidate_recommendation_buckets']
+        );
+
+        if (($report['promotion_block_reasons'] ?? []) !== []) {
+            $this->newLine();
+            $this->info('Promotion Block Reasons');
+            $this->table(
+                ['Reason', 'Rows'],
+                $report['promotion_block_reasons']
+            );
+        }
 
         if ($this->option('strict-pregame')) {
             $this->newLine();
@@ -171,7 +187,9 @@ class ReportCalibrationCommand extends Command
                 }
 
                 $recommendation = app(MlbPredictionRecommendationService::class)->forPrediction($prediction);
-                $pregameRecommendation = $recommendation['pregame_recommendation'] ?? $recommendation;
+                $publicRecommendation = $recommendation['public'] ?? $recommendation;
+                $candidateRecommendation = $recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation;
+                $promotion = (array) ($recommendation['promotion'] ?? []);
 
                 $marketSpread = is_numeric($prediction->vegas_spread) ? (float) $prediction->vegas_spread : null;
                 $marketTotal = $this->extractMarketTotal($prediction);
@@ -206,7 +224,9 @@ class ReportCalibrationCommand extends Command
                 $weatherAdjustment = data_get($prediction->model_metadata, 'actual_weather.total_adjustment');
                 $homePitcherSource = (string) data_get($prediction->model_metadata, 'pitcher_inputs.home_source', 'unknown');
                 $awayPitcherSource = (string) data_get($prediction->model_metadata, 'pitcher_inputs.away_source', 'unknown');
-                $riskFlags = array_values((array) ($pregameRecommendation['risk_flags'] ?? []));
+                $candidateRiskFlags = array_values((array) ($candidateRecommendation['risk_flags'] ?? []));
+                $publicRiskFlags = array_values((array) ($publicRecommendation['risk_flags'] ?? []));
+                $promotionBlockReasons = array_values((array) ($promotion['block_reasons'] ?? []));
 
                 return [
                     'game_id' => (int) $game->id,
@@ -238,12 +258,19 @@ class ReportCalibrationCommand extends Command
                     'home_moneyline' => $h2hPrices['home'],
                     'away_moneyline' => $h2hPrices['away'],
                     'market_total' => $marketTotal,
-                    'recommendation_type' => (string) ($pregameRecommendation['recommendation_type'] ?? 'no_play'),
-                    'risk_flags' => $riskFlags,
-                    'risk_flag_key' => $riskFlags === [] ? 'none' : implode(',', $riskFlags),
-                    'signal_score' => $pregameRecommendation['score'] ?? null,
-                    'raw_edge' => $pregameRecommendation['raw_edge'] ?? null,
-                    'no_vig_edge' => $pregameRecommendation['no_vig_edge'] ?? null,
+                    'recommendation_type' => (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play'),
+                    'candidate_recommendation_type' => (string) ($candidateRecommendation['recommendation_type'] ?? 'no_play'),
+                    'public_recommendation_type' => (string) ($publicRecommendation['recommendation_type'] ?? 'no_play'),
+                    'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
+                    'promotion_block_reasons' => $promotionBlockReasons,
+                    'promotion_block_reason_key' => $promotionBlockReasons === [] ? 'none' : implode(',', $promotionBlockReasons),
+                    'risk_flags' => $candidateRiskFlags,
+                    'risk_flag_key' => $candidateRiskFlags === [] ? 'none' : implode(',', $candidateRiskFlags),
+                    'public_risk_flags' => $publicRiskFlags,
+                    'public_risk_flag_key' => $publicRiskFlags === [] ? 'none' : implode(',', $publicRiskFlags),
+                    'signal_score' => $candidateRecommendation['score'] ?? null,
+                    'raw_edge' => $candidateRecommendation['raw_edge'] ?? null,
+                    'no_vig_edge' => $candidateRecommendation['no_vig_edge'] ?? null,
                     'home_pitcher_source' => $homePitcherSource,
                     'away_pitcher_source' => $awayPitcherSource,
                     'pitcher_source_bucket' => $this->pitcherSourceBucket($homePitcherSource, $awayPitcherSource),
@@ -312,7 +339,10 @@ class ReportCalibrationCommand extends Command
                 'max_confidence' => round((float) $rows->max('confidence_score'), 2),
             ],
             'confidence_buckets' => $this->confidenceBuckets($rows),
-            'recommendation_buckets' => $this->recommendationBuckets($rows),
+            'recommendation_buckets' => $this->recommendationBuckets($rows, 'candidate_recommendation_type'),
+            'public_recommendation_buckets' => $this->recommendationBuckets($rows, 'public_recommendation_type'),
+            'candidate_recommendation_buckets' => $this->recommendationBuckets($rows, 'candidate_recommendation_type'),
+            'promotion_block_reasons' => $this->promotionBlockReasonRows($rows),
             'strict_pregame' => [
                 'enabled' => (bool) $this->option('strict-pregame'),
                 'excluded_count' => isset($this->strictPregameExcludedRows) ? $this->strictPregameExcludedRows->count() : 0,
@@ -470,7 +500,9 @@ class ReportCalibrationCommand extends Command
             ],
             'confidence_distribution' => $this->confidenceDistribution($rows),
             'recommendation_breakdowns' => [
-                'by_type' => $this->groupRows($rows, fn (array $row): string => (string) $row['recommendation_type']),
+                'by_type' => $this->groupRows($rows, fn (array $row): string => (string) $row['candidate_recommendation_type']),
+                'by_public_type' => $this->groupRows($rows, fn (array $row): string => (string) $row['public_recommendation_type']),
+                'by_promotion_block_reason' => $this->groupRows($rows, fn (array $row): string => (string) $row['promotion_block_reason_key']),
                 'by_signal_score' => $this->groupRows($rows, fn (array $row): string => $this->signalScoreBucket($row['signal_score'])),
                 'by_raw_edge' => $this->groupRows($rows, fn (array $row): string => $this->edgeBucket($row['raw_edge'])),
                 'by_no_vig_edge' => $this->groupRows($rows, fn (array $row): string => $this->edgeBucket($row['no_vig_edge'])),
@@ -646,9 +678,9 @@ class ReportCalibrationCommand extends Command
      * @param  Collection<int, array<string, mixed>>  $rows
      * @return array<int, array<int, string>>
      */
-    private function recommendationBuckets(Collection $rows): array
+    private function recommendationBuckets(Collection $rows, string $field): array
     {
-        $groups = $rows->groupBy(fn (array $row): string => (string) ($row['recommendation_type'] ?? 'no_play'));
+        $groups = $rows->groupBy(fn (array $row): string => (string) ($row[$field] ?? 'no_play'));
         $table = [];
 
         foreach (['bet', 'lean', 'no_play', 'monitor'] as $bucket) {
@@ -667,6 +699,34 @@ class ReportCalibrationCommand extends Command
         }
 
         return $table;
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array<int, array<int, string>>
+     */
+    private function promotionBlockReasonRows(Collection $rows): array
+    {
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $reasons = (array) ($row['promotion_block_reasons'] ?? []);
+            if ($reasons === []) {
+                continue;
+            }
+
+            foreach ($reasons as $reason) {
+                $reason = (string) $reason;
+                $counts[$reason] = ($counts[$reason] ?? 0) + 1;
+            }
+        }
+
+        arsort($counts);
+
+        return collect($counts)
+            ->map(fn (int $count, string $reason): array => [$reason, (string) $count])
+            ->values()
+            ->all();
     }
 
     /**

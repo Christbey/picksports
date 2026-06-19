@@ -20,6 +20,20 @@ export interface PredictionRecommendation {
     no_bet_reason?: string | null;
     odds_updated_at?: string | null;
     odds_fresh?: boolean | null;
+    block_reasons?: string[];
+    public?: PredictionRecommendation | null;
+    candidate?: PredictionRecommendation | null;
+    candidate_recommendation?: PredictionRecommendation | null;
+    promotion?: {
+        status?: string | null;
+        public_recommendation_type?: string | null;
+        candidate_recommendation_type?: string | null;
+        promotions_validated?: boolean | null;
+        calibration_guard_enabled?: boolean | null;
+        validated_for_promotion?: boolean | null;
+        block_reasons?: string[];
+        game_phase?: string | null;
+    } | null;
     pregame_recommendation?: PredictionRecommendation | null;
     all_candidates?: PredictionRecommendation[];
 }
@@ -31,15 +45,40 @@ export interface PredictionWithRecommendation {
 export function getPredictionRecommendation(
     prediction: PredictionWithRecommendation,
 ): PredictionRecommendation | null {
-    return prediction.recommendation ?? null;
+    const recommendation = prediction.recommendation ?? null;
+
+    return recommendation?.public ?? recommendation;
 }
 
 export function pregameRecommendation(
     prediction: PredictionWithRecommendation,
 ): PredictionRecommendation | null {
-    const recommendation = getPredictionRecommendation(prediction);
+    const recommendation = prediction.recommendation ?? null;
 
-    return recommendation?.pregame_recommendation ?? recommendation;
+    return recommendation?.public ?? recommendation?.pregame_recommendation ?? recommendation;
+}
+
+export function candidateRecommendation(
+    prediction: PredictionWithRecommendation,
+): PredictionRecommendation | null {
+    const recommendation = prediction.recommendation ?? null;
+
+    return (
+        recommendation?.candidate ??
+        recommendation?.candidate_recommendation ??
+        recommendation?.pregame_recommendation ??
+        null
+    );
+}
+
+export function promotionStatus(prediction: PredictionWithRecommendation) {
+    return prediction.recommendation?.promotion ?? null;
+}
+
+export function isPromotionBlocked(
+    prediction: PredictionWithRecommendation,
+): boolean {
+    return promotionStatus(prediction)?.status === 'blocked';
 }
 
 export function isBetRecommendation(

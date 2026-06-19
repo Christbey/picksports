@@ -1865,6 +1865,30 @@ Active MLB pregame `bet` and `lean` promotions are guarded by default through `m
 
 This does **not** change historical/final diagnostic reporting. The calibration report can still show what the candidate filter would have classified, which is necessary to measure whether the filter is improving. For upcoming games, however, unvalidated promotions are downgraded to `no_play` with `recommendation_calibration_unvalidated` until the filter proves it can beat `no_play` and market baselines on trusted pregame rows.
 
+## MLB Recommendation Protection And Shadow Validation
+
+MLB recommendations are treated as protected research until readiness passes. The API recommendation contract separates:
+
+- `recommendation.public`: what product surfaces may show as public/promotion-safe.
+- `recommendation.candidate`: the shadow candidate produced by the filter for research and backtesting.
+- `recommendation.promotion`: promotion status, validation flags, and block reasons.
+
+Public labels such as `Model Bet`, `Model Lean`, `Best Bets`, and `Top Betting Signal` must not be displayed from candidate/shadow data while promotion is blocked. Candidate classifications remain available for admin review, calibration reports, and readiness checks.
+
+The signals endpoint follows the same rule:
+
+- `recommended_bets` contains only public promoted bets.
+- `shadow_recommended_bets` contains research candidates.
+- `bet_filter.promotion` explains whether public promotion is enabled or blocked.
+
+Run readiness before enabling public promotion:
+
+```bash
+php artisan mlb:validate-recommendation-readiness --season=2026 --feature-version=core-v3 --limit=2500
+```
+
+Expected current posture: fail closed. Known blocking themes include model underperformance versus market baseline, weak candidate bucket performance, compressed confidence, total bias versus market, and poor model-market disagreement performance. These should be fixed and revalidated before `MLB_BET_FILTER_PROMOTIONS_VALIDATED=true` is considered.
+
 ## Prediction Calculation Soundness Recommendations
 
 ### Must Fix Before Tuning

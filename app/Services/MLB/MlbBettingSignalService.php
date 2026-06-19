@@ -32,6 +32,7 @@ class MlbBettingSignalService
         $asOfDate ??= now();
         $slateDate = $this->targetSlateDate($season, $asOfDate);
         $slatePredictions = $slateDate !== null ? $this->slatePredictionRows($season, $slateDate) : [];
+        $candidateBets = $this->candidateRecommendedBets($slatePredictions);
 
         return [
             'season' => $season,
@@ -48,7 +49,8 @@ class MlbBettingSignalService
             'live' => $this->liveSignals($season, $asOfDate),
             'bet_filter' => $this->betFilterSummary(),
             'moneyline_readiness' => $this->moneylineReadiness($slatePredictions),
-            'recommended_bets' => $this->recommendedBets($slatePredictions),
+            'recommended_bets' => $this->publicRecommendedBets($candidateBets),
+            'shadow_recommended_bets' => $candidateBets,
             'pass_summary' => $this->passSummary($slatePredictions),
             'streaks' => $this->streakSignals($season, $asOfDate),
         ];
@@ -627,6 +629,7 @@ class MlbBettingSignalService
                 'run_line' => (bool) config('mlb.signals.bet_filter.run_line_enabled', false),
                 'total' => (bool) config('mlb.signals.bet_filter.total_enabled', false),
             ],
+            'promotion' => $this->recommendationPromotionSummary(),
         ];
     }
 
@@ -652,11 +655,16 @@ class MlbBettingSignalService
         ];
         $priced = 0;
         $positiveMarketEdges = 0;
+        $publicUsable = 0;
         $topPassReasons = [];
 
         foreach ($candidates as $candidate) {
             $classification = (string) ($candidate['classification'] ?? 'pass');
             $counts[$classification] = ($counts[$classification] ?? 0) + 1;
+
+            if (in_array($classification, ['bet', 'lean'], true) && $this->publicBetCandidatePromotable($candidate)) {
+                $publicUsable++;
+            }
 
             if (($candidate['market_price'] ?? null) !== null) {
                 $priced++;
@@ -683,8 +691,14 @@ class MlbBettingSignalService
             'bet_count' => $counts['bet'] ?? 0,
             'lean_count' => $counts['lean'] ?? 0,
             'pass_count' => $counts['pass'] ?? 0,
+            'public_bet_count' => $this->publicRecommendationPromotionEnabled() ? $this->publicClassificationCount($candidates, 'bet') : 0,
+            'public_lean_count' => $this->publicRecommendationPromotionEnabled() ? $this->publicClassificationCount($candidates, 'lean') : 0,
+            'shadow_bet_count' => $counts['bet'] ?? 0,
+            'shadow_lean_count' => $counts['lean'] ?? 0,
             'positive_market_edge_count' => $positiveMarketEdges,
             'usable_count' => ($counts['bet'] ?? 0) + ($counts['lean'] ?? 0),
+            'public_usable_count' => $this->publicRecommendationPromotionEnabled() ? $publicUsable : 0,
+            'shadow_usable_count' => ($counts['bet'] ?? 0) + ($counts['lean'] ?? 0),
             'top_pass_reasons' => array_map(
                 fn (string $reason, int $count): array => ['reason' => $reason, 'count' => $count],
                 array_keys($topPassReasons),
@@ -698,6 +712,28 @@ class MlbBettingSignalService
      * @return array<int,array<string,mixed>>
      */
     protected function recommendedBets(array $predictions): array
+    {
+        return $this->publicRecommendedBets($this->candidateRecommendedBets($predictions));
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $candidateBets
+     * @return array<int,array<string,mixed>>
+     */
+    protected function publicRecommendedBets(array $candidateBets): array
+    {
+        if (! $this->publicRecommendationPromotionEnabled()) {
+            return [];
+        }
+
+        return array_values(array_filter($candidateBets, fn (array $candidate): bool => $this->publicBetCandidatePromotable($candidate)));
+    }
+
+    /**
+     * @param  array<int,Prediction>  $predictions
+     * @return array<int,array<string,mixed>>
+     */
+    protected function candidateRecommendedBets(array $predictions): array
     {
         $recommendations = [];
 
@@ -714,6 +750,55 @@ class MlbBettingSignalService
             ?: ((float) ($right['edge_runs'] ?? 0.0) <=> (float) ($left['edge_runs'] ?? 0.0)));
 
         return array_slice($recommendations, 0, (int) config('mlb.signals.bet_filter.max_recommendations', 8));
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    protected function recommendationPromotionSummary(): array
+    {
+        $guardEnabled = (bool) config('mlb.signals.bet_filter.calibration_guard_enabled', true);
+        $promotionsValidated = (bool) config('mlb.signals.bet_filter.promotions_validated', false);
+        $enabled = $this->publicRecommendationPromotionEnabled();
+
+        return [
+            'status' => $enabled ? 'enabled' : 'blocked',
+            'public_recommendations_enabled' => $enabled,
+            'shadow_research_enabled' => true,
+            'calibration_guard_enabled' => $guardEnabled,
+            'promotions_validated' => $promotionsValidated,
+            'block_reasons' => $enabled ? [] : ['recommendation_calibration_unvalidated'],
+        ];
+    }
+
+    protected function publicRecommendationPromotionEnabled(): bool
+    {
+        return ! (bool) config('mlb.signals.bet_filter.calibration_guard_enabled', true)
+            || (bool) config('mlb.signals.bet_filter.promotions_validated', false);
+    }
+
+    /**
+     * @param  array<int,array<string,mixed>>  $candidates
+     */
+    protected function publicClassificationCount(array $candidates, string $classification): int
+    {
+        return count(array_filter(
+            $candidates,
+            fn (array $candidate): bool => ($candidate['classification'] ?? null) === $classification
+                && $this->publicBetCandidatePromotable($candidate)
+        ));
+    }
+
+    /**
+     * @param  array<string,mixed>  $candidate
+     */
+    protected function publicBetCandidatePromotable(array $candidate): bool
+    {
+        if (! $this->publicRecommendationPromotionEnabled()) {
+            return false;
+        }
+
+        return ! in_array('model_market_disagreement_unvalidated', (array) ($candidate['risk_flags'] ?? []), true);
     }
 
     /**
@@ -803,10 +888,16 @@ class MlbBettingSignalService
         $noVigProbabilities = AmericanOdds::noVigProbabilities($prices['home'] ?? null, $prices['away'] ?? null);
         $noVigImplied = $noVigProbabilities[$pickSide] ?? null;
         $noVigEdge = $noVigImplied !== null ? $modelProbability - $noVigImplied : null;
+        $marketFavoriteSide = $this->moneylineMarketFavoriteSide($prices, $noVigProbabilities);
         $codes = $this->predictionReasonCodes($prediction, 'moneyline_bet_filter');
         [$score, $reasons, $riskFlags] = $this->baseBetScore($prediction, $pickSide, $codes);
         $riskFlags = array_values(array_unique([...$riskFlags, ...$this->oddsTimestampRiskFlags($prediction)]));
         $riskFlags = array_values(array_unique([...$riskFlags, ...$this->contextRiskFlags($prediction, $marketPrice)]));
+
+        if ($marketFavoriteSide !== null && $marketFavoriteSide !== $pickSide) {
+            $riskFlags[] = 'model_market_disagreement_unvalidated';
+            $reasons[] = 'model_market_disagreement_context';
+        }
 
         $score += $this->scoreModelSpread($edgeRuns, $reasons);
         $score += $this->scoreWinProbability($modelProbability, $reasons);
@@ -839,6 +930,7 @@ class MlbBettingSignalService
             'market_price' => $marketPrice,
             'market_implied_probability' => $marketImplied !== null ? round($marketImplied, 4) : null,
             'no_vig_implied_probability' => $noVigImplied !== null ? round($noVigImplied, 4) : null,
+            'market_favorite_side' => $marketFavoriteSide,
             'probability_edge' => $probabilityEdge !== null ? round($probabilityEdge, 4) : null,
             'no_vig_edge' => $noVigEdge !== null ? round($noVigEdge, 4) : null,
             'confidence_score' => (float) $prediction->confidence_score,
@@ -1127,6 +1219,31 @@ class MlbBettingSignalService
         }
 
         return $prices;
+    }
+
+    /**
+     * @param  array{home:?int,away:?int}  $prices
+     * @param  array{home:?float,away:?float}  $noVigProbabilities
+     */
+    protected function moneylineMarketFavoriteSide(array $prices, array $noVigProbabilities): ?string
+    {
+        if ($noVigProbabilities['home'] !== null && $noVigProbabilities['away'] !== null) {
+            if (abs((float) $noVigProbabilities['home'] - (float) $noVigProbabilities['away']) < 0.0001) {
+                return null;
+            }
+
+            return $noVigProbabilities['home'] >= $noVigProbabilities['away'] ? 'home' : 'away';
+        }
+
+        if ($prices['home'] !== null && $prices['away'] !== null) {
+            if ((int) $prices['home'] === (int) $prices['away']) {
+                return null;
+            }
+
+            return $prices['home'] <= $prices['away'] ? 'home' : 'away';
+        }
+
+        return null;
     }
 
     /**

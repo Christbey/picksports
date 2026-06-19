@@ -62,6 +62,10 @@ it('blocks active mlb recommendation promotion until the filter is calibrated', 
         ->and($recommendation['risk_flags'])->toContain('recommendation_calibration_unvalidated')
         ->and($recommendation['reason_codes'])->toContain('recommendation_calibration_guard')
         ->and($recommendation['no_bet_reason'])->toBe('recommendation_calibration_unvalidated')
+        ->and($recommendation['public']['recommendation_type'])->toBe('no_play')
+        ->and($recommendation['candidate']['recommendation_type'])->toBe('bet')
+        ->and($recommendation['promotion']['status'])->toBe('blocked')
+        ->and($recommendation['promotion']['block_reasons'])->toContain('recommendation_calibration_unvalidated')
         ->and($recommendation['raw_edge'])->toBe(0.0578)
         ->and($recommendation['no_vig_edge'])->toBe(0.07);
 });

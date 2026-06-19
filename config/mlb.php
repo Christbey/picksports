@@ -556,6 +556,13 @@ return [
             'min_total_edge' => env('MLB_BET_FILTER_MIN_TOTAL_EDGE', 1.25),
             'max_recommendations' => env('MLB_BET_FILTER_MAX_RECOMMENDATIONS', 8),
         ],
+        'recommendation_readiness' => [
+            'min_rows' => env('MLB_RECOMMENDATION_READINESS_MIN_ROWS', 1000),
+            'min_candidate_rows' => env('MLB_RECOMMENDATION_READINESS_MIN_CANDIDATE_ROWS', 50),
+            'min_candidate_accuracy' => env('MLB_RECOMMENDATION_READINESS_MIN_CANDIDATE_ACCURACY', 52.5),
+            'max_total_bias_vs_market' => env('MLB_RECOMMENDATION_READINESS_MAX_TOTAL_BIAS_VS_MARKET', 0.5),
+            'min_confidence_std_dev' => env('MLB_RECOMMENDATION_READINESS_MIN_CONFIDENCE_STD_DEV', 2.0),
+        ],
     ],
 
 ];

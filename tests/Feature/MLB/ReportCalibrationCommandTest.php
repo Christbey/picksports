@@ -88,7 +88,10 @@ it('writes an mlb calibration report with market metrics', function () {
         ->and((float) $report['summary']['market_total_mae'])->toBe(1.5)
         ->and((float) $report['summary']['spread_bias_vs_market'])->toBe(0.0)
         ->and((float) $report['summary']['total_bias_vs_market'])->toBe(0.7)
-        ->and($report['confidence_buckets'])->toHaveCount(1);
+        ->and($report['confidence_buckets'])->toHaveCount(1)
+        ->and($report['public_recommendation_buckets'])->toBeArray()
+        ->and($report['candidate_recommendation_buckets'])->toBeArray()
+        ->and($report['recommendation_buckets'])->toBe($report['candidate_recommendation_buckets']);
 });
 
 it('explains when strict pregame calibration excludes every graded row', function () {
@@ -291,4 +294,87 @@ it('does not flag rounded pickem probabilities as winner inversions', function (
     expect($report['diagnostics']['winner_breakdowns']['by_pick_side'][0]['label'])->toBe('away')
         ->and($winnerInversion['result'])->toBe('pass')
         ->and($winnerInversion['evidence'])->toContain('0 row(s)');
+});
+
+it('fails mlb recommendation readiness when promotion evidence is insufficient', function () {
+    config([
+        'mlb.signals.recommendation_readiness.min_candidate_rows' => 1,
+        'mlb.signals.recommendation_readiness.min_candidate_accuracy' => 52.5,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'location' => 'New York',
+        'name' => 'Mets',
+        'abbreviation' => 'NYM',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'Atlanta',
+        'name' => 'Braves',
+        'abbreviation' => 'ATL',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-05-10',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => 4,
+        'away_score' => 6,
+        'odds_data' => [
+            'home_team' => 'New York Mets',
+            'away_team' => 'Atlanta Braves',
+            'bookmakers' => [[
+                'markets' => [[
+                    'key' => 'h2h',
+                    'outcomes' => [
+                        ['name' => 'New York Mets', 'price' => 120],
+                        ['name' => 'Atlanta Braves', 'price' => -130],
+                    ],
+                ]],
+            ]],
+        ],
+        'odds_updated_at' => '2026-05-10 12:00:00',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 1.7,
+        'predicted_total' => 9.2,
+        'win_probability' => 0.59,
+        'confidence_score' => 59.0,
+        'model_version' => 'rules-v1',
+        'feature_version' => 'core-v3',
+        'blend_version' => 'baseline-v1',
+        'model_metadata' => [
+            'pitcher_inputs' => [
+                'home_source' => 'probable_starter',
+                'away_source' => 'probable_starter',
+                'home_confidence' => 1.0,
+                'away_confidence' => 1.0,
+            ],
+        ],
+        'actual_spread' => -2.0,
+        'actual_total' => 10.0,
+        'spread_error' => 3.7,
+        'total_error' => 0.8,
+        'winner_correct' => false,
+        'graded_at' => '2026-05-11 01:00:00',
+    ]);
+
+    Artisan::call('mlb:validate-recommendation-readiness', [
+        '--season' => 2026,
+        '--min-rows' => 10,
+        '--json' => true,
+    ]);
+
+    $report = json_decode(Artisan::output(), true);
+
+    expect($report['status'])->toBe('fail')
+        ->and($report['ready'])->toBeFalse()
+        ->and($report['summary']['rows'])->toBe(1)
+        ->and($report['summary']['candidate_rows'])->toBe(1)
+        ->and($report['block_reasons'])->toContain('graded_sample_below_minimum')
+        ->and($report['block_reasons'])->toContain('candidate_bucket_underperforms_threshold');
 });

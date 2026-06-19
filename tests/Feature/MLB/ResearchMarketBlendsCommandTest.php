@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\MLB\ResearchMarketBlendsCommand;
+use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Game;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
@@ -181,6 +182,66 @@ it('can restrict mlb market blend research to strict pregame market rows', funct
         ->and(collect($report['strict_pregame_market_blend_grid'])->first()[2])->toBe('1')
         ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'missing_odds_timestamp')[1])->toBe(1)
         ->and($report['warnings'])->toContain('Strict pregame market sample is too small (1 row(s)); use this only as a smoke check, not validation.');
+
+    Carbon::setTestNow();
+});
+
+it('uses pregame odds snapshots before mutable game odds for strict mlb market research', function () {
+    Carbon::setTestNow('2026-06-19 09:00:00');
+
+    $prediction = researchMarketBlendPrediction(
+        date: '2026-06-16',
+        homeScore: 6,
+        awayScore: 3,
+        homeProbability: 0.60,
+        confidence: 60,
+        homePrice: -250,
+        awayPrice: 220,
+        predictedTotal: 9.2,
+        marketTotal: 8.5,
+        oddsUpdatedAt: '2026-06-16 21:30:00',
+    );
+    $game = $prediction->game;
+
+    GameOddsSnapshot::query()->create([
+        'sport' => 'mlb',
+        'game_table' => 'mlb_games',
+        'game_id' => $game->id,
+        'odds_api_event_id' => 'snapshot-event-'.$game->id,
+        'bookmaker_key' => 'draftkings',
+        'bookmaker_title' => 'DraftKings',
+        'source' => 'odds_api',
+        'commence_time' => '2026-06-16 19:10:00',
+        'captured_at' => '2026-06-16 12:00:00',
+        'payload_hash' => 'snapshot-hash-'.$game->id,
+        'odds_data' => [
+            'bookmakers' => [[
+                'markets' => [[
+                    'key' => 'h2h',
+                    'outcomes' => [
+                        ['name' => 'New York Mets', 'price' => -120],
+                        ['name' => 'Atlanta Braves', 'price' => 110],
+                    ],
+                ]],
+            ]],
+        ],
+        'market_context' => ['has_h2h' => true],
+    ]);
+
+    Artisan::call('mlb:research-market-blends', [
+        '--season' => 2026,
+        '--feature-version' => 'core-v3',
+        '--strict-pregame' => true,
+        '--json' => true,
+    ]);
+
+    $report = json_decode(Artisan::output(), true);
+
+    expect($report['summary']['market_rows'])->toBe(1)
+        ->and($report['summary']['strict_market_rows'])->toBe(1)
+        ->and($report['summary']['analysis_pregame_safe'])->toBeTrue()
+        ->and(collect($report['market_blend_exclusions'])->firstWhere(0, 'odds_after_first_pitch')[1])->toBe(0)
+        ->and(collect($report['market_aware_blend_grid'])->first()[2])->toBe('1');
 
     Carbon::setTestNow();
 });

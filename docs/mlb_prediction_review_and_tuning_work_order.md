@@ -2072,6 +2072,8 @@ The report also separates:
 
 Use `--strict-pregame` when deciding whether a market-aware rule is promotion-quality. General market rows can show whether the market was a useful benchmark, but rows updated after first pitch or without timestamp proof are not valid pregame evidence.
 
+The research command should prefer immutable `game_odds_snapshots` captured before first pitch. It may fall back to the current `mlb_games.odds_data` row only when no pregame snapshot exists, and that fallback must remain subject to timestamp safety flags.
+
 ### Shadow Model Versioning
 
 Current shadow version: `mlb_market_aware_shadow_v1`.

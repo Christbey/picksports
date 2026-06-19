@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\Models\GameOddsSnapshot;
 use App\Models\MLB\Prediction;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Support\Odds\AmericanOdds;
@@ -135,7 +136,8 @@ class ResearchMarketBlendsCommand extends Command
                     return null;
                 }
 
-                $h2hPrices = $this->extractH2hPrices($prediction);
+                $oddsContext = $this->oddsContext($prediction);
+                $h2hPrices = $this->extractH2hPrices($prediction, $oddsContext['odds_data']);
                 $marketProbabilities = AmericanOdds::noVigProbabilities($h2hPrices['home'], $h2hPrices['away']);
                 $marketHomeProbability = $marketProbabilities['home'];
                 $marketAwayProbability = $marketProbabilities['away'];
@@ -145,7 +147,7 @@ class ResearchMarketBlendsCommand extends Command
                 $homeWon = $actualMargin > 0;
                 $modelPickSide = $this->sideFromHomeProbability($homeProbability);
                 $marketPickSide = $this->marketPickSide($marketProbabilities, $h2hPrices);
-                $marketTotal = $this->extractMarketTotal($prediction);
+                $marketTotal = $this->extractMarketTotal($prediction, $oddsContext['odds_data']);
                 $recommendation = $recommendations->forPrediction($prediction);
                 $public = (array) ($recommendation['public'] ?? $recommendation);
                 $candidate = (array) ($recommendation['candidate'] ?? $recommendation['pregame_recommendation'] ?? $recommendation);
@@ -182,9 +184,11 @@ class ResearchMarketBlendsCommand extends Command
                     'away_pitcher_source' => (string) data_get($prediction->model_metadata, 'pitcher_inputs.away_source', 'unknown'),
                     'park_adjustment' => (float) data_get($prediction->model_metadata, 'park_context.total_adjustment', 0.0),
                     'weather_adjustment' => (float) data_get($prediction->model_metadata, 'actual_weather.total_adjustment', 0.0),
-                    'odds_updated_at' => $game->odds_updated_at,
+                    'odds_updated_at' => $oddsContext['captured_at'],
+                    'market_odds_source' => $oddsContext['source'],
+                    'market_odds_snapshot_id' => $oddsContext['snapshot_id'],
                     'public_recommendation_type' => (string) ($public['recommendation_type'] ?? 'no_play'),
-                    'safety_flags' => $this->safetyFlags($prediction),
+                    'safety_flags' => $this->safetyFlags($prediction, $oddsContext),
                     'promotion_status' => (string) ($promotion['status'] ?? 'unknown'),
                     'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
                     'promotion_block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
@@ -798,17 +802,21 @@ class ResearchMarketBlendsCommand extends Command
     /**
      * @return list<string>
      */
-    private function safetyFlags(Prediction $prediction): array
+    /**
+     * @param  array{odds_data:?array<string,mixed>,captured_at:?CarbonInterface,source:string,snapshot_id:?int}  $oddsContext
+     * @return list<string>
+     */
+    private function safetyFlags(Prediction $prediction, array $oddsContext): array
     {
         $game = $prediction->game;
         $flags = [];
-        $prices = $this->extractH2hPrices($prediction);
+        $prices = $this->extractH2hPrices($prediction, $oddsContext['odds_data']);
 
         if ($prices['home'] === null || $prices['away'] === null) {
             $flags[] = 'missing_market_odds';
         }
 
-        if ($game?->odds_updated_at === null) {
+        if ($oddsContext['captured_at'] === null) {
             $flags[] = 'missing_odds_timestamp';
         }
 
@@ -817,11 +825,11 @@ class ResearchMarketBlendsCommand extends Command
             $flags[] = 'missing_game_start_time';
         }
 
-        if ($game?->odds_updated_at !== null && $start !== null && $game->odds_updated_at->gt($start)) {
+        if ($oddsContext['captured_at'] !== null && $start !== null && $oddsContext['captured_at']->gt($start)) {
             $flags[] = 'odds_after_first_pitch';
         }
 
-        if ($game?->odds_updated_at !== null && $this->oddsAreStale($game->odds_updated_at, $start)) {
+        if ($oddsContext['captured_at'] !== null && $this->oddsAreStale($oddsContext['captured_at'], $start)) {
             $flags[] = 'stale_odds';
         }
 
@@ -838,6 +846,43 @@ class ResearchMarketBlendsCommand extends Command
         }
 
         return array_values(array_unique($flags));
+    }
+
+    /**
+     * @return array{odds_data:?array<string,mixed>,captured_at:?CarbonInterface,source:string,snapshot_id:?int}
+     */
+    private function oddsContext(Prediction $prediction): array
+    {
+        $game = $prediction->game;
+        $start = $this->gameStartAt($prediction);
+
+        if ($game !== null && $start !== null) {
+            $snapshot = GameOddsSnapshot::query()
+                ->where('sport', 'mlb')
+                ->where('game_table', $game->getTable())
+                ->where('game_id', (int) $game->id)
+                ->whereNotNull('captured_at')
+                ->where('captured_at', '<', $start)
+                ->latest('captured_at')
+                ->latest('id')
+                ->first();
+
+            if ($snapshot !== null) {
+                return [
+                    'odds_data' => is_array($snapshot->odds_data) ? $snapshot->odds_data : null,
+                    'captured_at' => $snapshot->captured_at,
+                    'source' => 'pregame_odds_snapshot',
+                    'snapshot_id' => (int) $snapshot->id,
+                ];
+            }
+        }
+
+        return [
+            'odds_data' => is_array($game?->odds_data) ? $game->odds_data : null,
+            'captured_at' => $game?->odds_updated_at,
+            'source' => 'game_current_odds',
+            'snapshot_id' => null,
+        ];
     }
 
     private function oddsAreStale(CarbonInterface $oddsUpdatedAt, ?Carbon $start): bool
@@ -864,9 +909,12 @@ class ResearchMarketBlendsCommand extends Command
     /**
      * @return array{home:?int,away:?int}
      */
-    private function extractH2hPrices(Prediction $prediction): array
+    /**
+     * @param  array<string,mixed>|null  $oddsData
+     * @return array{home:?int,away:?int}
+     */
+    private function extractH2hPrices(Prediction $prediction, ?array $oddsData): array
     {
-        $oddsData = $prediction->game?->odds_data;
         if (! is_array($oddsData)) {
             return ['home' => null, 'away' => null];
         }
@@ -900,14 +948,17 @@ class ResearchMarketBlendsCommand extends Command
         return $prices;
     }
 
-    private function extractMarketTotal(Prediction $prediction): ?float
+    /**
+     * @param  array<string,mixed>|null  $oddsData
+     */
+    private function extractMarketTotal(Prediction $prediction, ?array $oddsData): ?float
     {
         $metadataTotal = data_get($prediction->model_metadata, 'market_context.market_total');
         if (is_numeric($metadataTotal)) {
             return (float) $metadataTotal;
         }
 
-        foreach (($prediction->game?->odds_data['bookmakers'] ?? []) as $bookmaker) {
+        foreach (($oddsData['bookmakers'] ?? []) as $bookmaker) {
             foreach (($bookmaker['markets'] ?? []) as $market) {
                 if (($market['key'] ?? null) !== 'totals') {
                     continue;

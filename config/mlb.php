@@ -565,4 +565,40 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | MLB Daily Pick Candidate Engine
+    |--------------------------------------------------------------------------
+    |
+    | Research-first candidate generation. These settings must not enable public
+    | betting language until validation gates prove a candidate bucket is ready.
+    |
+    */
+
+    'picks' => [
+        'public_promotion_enabled' => env('MLB_PICKS_PUBLIC_PROMOTION_ENABLED', false),
+        'total_bias_correction' => env('MLB_PICKS_TOTAL_BIAS_CORRECTION', 1.0),
+        'daily' => [
+            'target_count' => env('MLB_PICKS_DAILY_TARGET_COUNT', 3),
+            'max_per_game' => env('MLB_PICKS_DAILY_MAX_PER_GAME', 1),
+            'max_same_market' => env('MLB_PICKS_DAILY_MAX_SAME_MARKET', 2),
+            'min_score' => env('MLB_PICKS_DAILY_MIN_SCORE', 68),
+            'tracking_min_score' => env('MLB_PICKS_DAILY_TRACKING_MIN_SCORE', 58),
+        ],
+        'validation' => [
+            'min_rows' => env('MLB_PICKS_VALIDATION_MIN_ROWS', 100),
+            'target_hit_rate' => env('MLB_PICKS_VALIDATION_TARGET_HIT_RATE', 0.60),
+            'require_positive_roi' => env('MLB_PICKS_VALIDATION_REQUIRE_POSITIVE_ROI', true),
+            'require_positive_clv' => env('MLB_PICKS_VALIDATION_REQUIRE_POSITIVE_CLV', false),
+        ],
+        'markets' => [
+            'moneyline' => env('MLB_PICKS_MARKET_MONEYLINE_ENABLED', true),
+            'run_line' => env('MLB_PICKS_MARKET_RUN_LINE_ENABLED', true),
+            'total' => env('MLB_PICKS_MARKET_TOTAL_ENABLED', true),
+            'first_3' => env('MLB_PICKS_MARKET_FIRST_3_ENABLED', true),
+            'first_5' => env('MLB_PICKS_MARKET_FIRST_5_ENABLED', true),
+            'props' => env('MLB_PICKS_MARKET_PROPS_ENABLED', true),
+        ],
+    ],
+
 ];

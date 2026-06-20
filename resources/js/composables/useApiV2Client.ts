@@ -588,6 +588,27 @@ export function useApiV2Client() {
                 ),
         },
 
+        dailyPicks: {
+            index: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                options: RequestOptions = {},
+            ) => {
+                const params = new URLSearchParams();
+                Object.entries(options.query ?? {}).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null && value !== '') {
+                        params.set(key, String(value));
+                    }
+                });
+
+                const query = params.toString();
+
+                return get<T>(
+                    `/api/v2/sports/${sport}/daily-picks${query ? `?${query}` : ''}`,
+                    options,
+                );
+            },
+        },
+
         stats: {
             players: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Stat>(

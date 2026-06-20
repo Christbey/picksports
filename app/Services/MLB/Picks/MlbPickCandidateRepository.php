@@ -1,0 +1,39 @@
+<?php
+
+namespace App\Services\MLB\Picks;
+
+use App\Models\MLB\PickCandidate;
+use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
+use Illuminate\Support\Collection;
+
+class MlbPickCandidateRepository
+{
+    /**
+     * @param  Collection<int,array<string,mixed>>  $payloads
+     * @return EloquentCollection<int,PickCandidate>
+     */
+    public function persist(Collection $payloads): EloquentCollection
+    {
+        $rows = $payloads->map(fn (array $payload): PickCandidate => PickCandidate::query()->create($payload));
+
+        return new EloquentCollection($rows->all());
+    }
+
+    /**
+     * @return EloquentCollection<int,PickCandidate>
+     */
+    public function forDate(CarbonInterface|string $date, ?int $season = null): EloquentCollection
+    {
+        $query = PickCandidate::query()
+            ->with(['game.homeTeam', 'game.awayTeam', 'team', 'player'])
+            ->whereHas('game', fn ($query) => $query->whereDate('game_date', $date instanceof CarbonInterface ? $date->toDateString() : $date))
+            ->orderByDesc('score');
+
+        if ($season !== null) {
+            $query->where('season', $season);
+        }
+
+        return $query->get();
+    }
+}

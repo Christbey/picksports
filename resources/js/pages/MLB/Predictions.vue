@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import MlbDailyPicksPanel from '@/components/mlb/MlbDailyPicksPanel.vue';
 import MlbSignalsPanel from '@/components/mlb/MlbSignalsPanel.vue';
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
 import SportPredictions from '@/components/SportPredictions.vue';
@@ -14,6 +15,7 @@ import { mlbPredictions } from '@/routes';
         banner-storage-key="mlb-predictions-banner-dismissed"
         seo-description="MLB predictions and betting edges across moneyline, run line, and totals using PickSports models."
     >
+        <MlbDailyPicksPanel class="mb-6" />
         <MlbSignalsPanel class="mb-6" />
         <SportPredictions :config="mlbPredictionsConfig" />
     </PredictionsPageShell>

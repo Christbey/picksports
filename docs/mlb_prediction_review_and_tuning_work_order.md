@@ -2118,6 +2118,8 @@ php artisan mlb:validate-recommendation-readiness --season=2026 --feature-versio
 5. Use consensus and market-heavy tracking as the first possible product layer.
 6. Only discuss public picks after strict-pregame samples are large enough and candidates beat market/no-play baselines.
 
+The next research layer is documented in `docs/mlb-correlation-research-and-data-enrichment-plan.md`. It defines the report-only correlation work needed to identify model success/failure drivers, total bias drivers, model-market disagreement drivers, missing data, pregame-safe features, and the data enrichment order before any public MLB recommendation promotion is considered.
+
 ### What Must Stay Disabled
 
 - Public MLB `bet` labels.

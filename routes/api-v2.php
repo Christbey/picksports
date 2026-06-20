@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
+use App\Http\Controllers\Api\V2\MlbDailyPickController;
 use App\Http\Controllers\Api\V2\SportController;
 use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
@@ -133,6 +134,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/forecasts', [SportForecastController::class, 'index'])->name('forecasts.index');
             Route::get('/injuries', [SportInjuryController::class, 'index'])->name('injuries.index');
             Route::get('/signals', [SportSignalController::class, 'index'])->name('signals.index');
+            Route::get('/daily-picks', [MlbDailyPickController::class, 'index'])->name('daily-picks.index');
 
             Route::get('/predictions', [SportPredictionController::class, 'index'])->name('predictions.index');
             Route::get('/predictions/available-seasons', [SportPredictionController::class, 'availableSeasons'])->name('predictions.available-seasons');

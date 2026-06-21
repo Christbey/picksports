@@ -1,19 +1,10 @@
 <script setup lang="ts">
-import {
-    CalendarDays,
-    Filter,
-    RefreshCw,
-    Search,
-    ShieldCheck,
-    Sparkles,
-    Target,
-} from 'lucide-vue-next';
+import { CalendarDays, RefreshCw, Search } from 'lucide-vue-next';
 import { computed, onMounted, ref, watch } from 'vue';
 import MlbMatchupCard from '@/components/mlb/MlbMatchupCard.vue';
 import MlbMatchupDetailDrawer from '@/components/mlb/MlbMatchupDetailDrawer.vue';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiV2Client } from '@/composables/useApiV2Client';
-import { labelizeMlbCode } from '@/lib/mlbRecommendationLabels';
 import {
     candidateRecommendation,
     getPredictionRecommendation,
@@ -57,9 +48,36 @@ const selectedPrediction = ref<ApiV2Prediction | null>(null);
 const selectedCandidate = ref<MlbDailyPick | null>(null);
 const detailOpen = ref(false);
 
-const topCandidates = computed(() => dailyPayload.value?.top_picks ?? []);
 const allCandidates = computed(() => dailyPayload.value?.candidates ?? []);
 const summary = computed(() => dailyPayload.value?.summary ?? null);
+
+const boardStats = computed(() => [
+    {
+        label: 'Games',
+        value: summary.value?.slate_games ?? predictions.value.length,
+    },
+    {
+        label: 'Priced',
+        value: summary.value?.priced_games ?? 0,
+    },
+    {
+        label: 'Candidates',
+        value: summary.value?.candidate_count ?? candidateByGameId.value.size,
+    },
+    {
+        label: 'Visible',
+        value: filteredPredictions.value.length,
+    },
+]);
+
+const visibleBoardStats = computed(() =>
+    boardStats.value.filter(
+        (stat) =>
+            stat.label === 'Games' ||
+            stat.label === 'Visible' ||
+            stat.value > 0,
+    ),
+);
 
 const candidateByGameId = computed(() => {
     const map = new Map<number, MlbDailyPick>();
@@ -101,10 +119,17 @@ const marketFilters = computed(() => [
     {
         key: 'tracked' as const,
         label: 'Tracked',
-        count: allCandidates.value.filter((candidate) => candidate.is_tracking_only)
-            .length,
+        count: allCandidates.value.filter(
+            (candidate) => candidate.is_tracking_only,
+        ).length,
     },
 ]);
+
+const visibleMarketFilters = computed(() =>
+    marketFilters.value.filter(
+        (filter) => filter.key === 'all' || filter.count > 0,
+    ),
+);
 
 const normalizedSearch = computed(() => searchQuery.value.trim().toLowerCase());
 
@@ -128,7 +153,9 @@ const filteredPredictions = computed(() => {
 
         if (!normalizedSearch.value) return true;
 
-        return searchHaystack(prediction, candidate).includes(normalizedSearch.value);
+        return searchHaystack(prediction, candidate).includes(
+            normalizedSearch.value,
+        );
     });
 });
 
@@ -161,10 +188,14 @@ function numberValue(value: unknown): number | null {
     return Number.isFinite(numeric) ? numeric : null;
 }
 
-function candidateForPrediction(prediction: ApiV2Prediction): MlbDailyPick | null {
+function candidateForPrediction(
+    prediction: ApiV2Prediction,
+): MlbDailyPick | null {
     const gameId = numberValue(prediction.game_id ?? prediction.game?.id);
 
-    return gameId == null ? null : candidateByGameId.value.get(gameId) ?? null;
+    return gameId == null
+        ? null
+        : (candidateByGameId.value.get(gameId) ?? null);
 }
 
 function predictionMarketType(prediction: ApiV2Prediction): string {
@@ -181,14 +212,18 @@ function marketMatches(
     candidate: MlbDailyPick | null,
     filter: MarketFilter,
 ): boolean {
-    const marketType = (candidate?.market_type ?? predictionMarketType(prediction))
+    const marketType = (
+        candidate?.market_type ?? predictionMarketType(prediction)
+    )
         .toLowerCase()
         .replaceAll('-', '_')
         .replaceAll(' ', '_');
 
     if (filter === 'total') return marketType.includes('total');
-    if (filter === 'first_5') return marketType.includes('first_5') || marketType.includes('f5');
-    if (filter === 'first_3') return marketType.includes('first_3') || marketType.includes('f3');
+    if (filter === 'first_5')
+        return marketType.includes('first_5') || marketType.includes('f5');
+    if (filter === 'first_3')
+        return marketType.includes('first_3') || marketType.includes('f3');
     if (filter === 'player_prop') return marketType.includes('prop');
 
     return marketType.includes(filter);
@@ -253,7 +288,9 @@ function todayKey(): string {
 function gameSortKey(prediction: ApiV2Prediction): string {
     const game = prediction.game;
     const date = String(game?.game_date ?? '');
-    const datePart = date.includes('T') ? date.split('T')[0] : date.split(' ')[0];
+    const datePart = date.includes('T')
+        ? date.split('T')[0]
+        : date.split(' ')[0];
     const timePart = String(game?.game_time ?? '23:59:59');
 
     return `${datePart} ${timePart} ${game?.short_name ?? ''}`;
@@ -304,7 +341,9 @@ async function fetchAvailableDates(): Promise<void> {
 
         selectedDate.value = availableDates.value.includes(today)
             ? today
-            : futureDates[0] ?? pastDates[pastDates.length - 1] ?? availableDates.value[0];
+            : (futureDates[0] ??
+              pastDates[pastDates.length - 1] ??
+              availableDates.value[0]);
     }
 }
 
@@ -328,18 +367,22 @@ async function loadBoard(): Promise<void> {
             api.dailyPicks.index<MlbDailyPicksPayload>('mlb', {
                 query: {
                     date: selectedDate.value,
-                    ...(selectedSeason.value ? { season: selectedSeason.value } : {}),
+                    ...(selectedSeason.value
+                        ? { season: selectedSeason.value }
+                        : {}),
                 },
             }),
         ]);
 
         predictions.value = (
-            (predictionPayload as ApiV2CollectionResponse<ApiV2Prediction> | null)
-                ?.data ?? []
+            (
+                predictionPayload as ApiV2CollectionResponse<ApiV2Prediction> | null
+            )?.data ?? []
         ).sort((a, b) => gameSortKey(a).localeCompare(gameSortKey(b)));
         dailyPayload.value = picksPayload?.data ?? null;
     } catch (e) {
-        error.value = e instanceof Error ? e.message : 'Unable to load MLB board';
+        error.value =
+            e instanceof Error ? e.message : 'Unable to load MLB board';
     } finally {
         refreshing.value = false;
         loading.value = false;
@@ -369,7 +412,8 @@ onMounted(async () => {
         await fetchAvailableFilters();
         await loadBoard();
     } catch (e) {
-        error.value = e instanceof Error ? e.message : 'Unable to load MLB board';
+        error.value =
+            e instanceof Error ? e.message : 'Unable to load MLB board';
         loading.value = false;
     } finally {
         bootstrapping.value = false;
@@ -390,81 +434,88 @@ onMounted(async () => {
 
         <template v-else>
             <section class="rounded-2xl border bg-card/90 p-3 shadow-sm">
-                <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-                    <div class="grid gap-2 sm:grid-cols-[180px_140px] lg:shrink-0">
-                        <label class="relative">
-                            <CalendarDays class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <div class="space-y-3">
+                    <div
+                        class="grid gap-2 lg:grid-cols-[minmax(260px,330px)_minmax(260px,1fr)]"
+                    >
+                        <div class="grid gap-2 sm:grid-cols-[180px_140px]">
+                            <label class="relative">
+                                <CalendarDays
+                                    class="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                                />
+                                <select
+                                    v-model="selectedDate"
+                                    class="h-10 w-full rounded-xl border bg-background pr-3 pl-9 text-sm font-medium"
+                                >
+                                    <option
+                                        v-for="date in availableDates"
+                                        :key="date"
+                                        :value="date"
+                                    >
+                                        {{ formatDateLabel(date) }}
+                                    </option>
+                                </select>
+                            </label>
+
                             <select
-                                v-model="selectedDate"
-                                class="h-10 w-full rounded-xl border bg-background pl-9 pr-3 text-sm font-medium"
+                                v-model="selectedSeason"
+                                class="h-10 rounded-xl border bg-background px-3 text-sm font-medium"
                             >
                                 <option
-                                    v-for="date in availableDates"
-                                    :key="date"
-                                    :value="date"
+                                    v-for="season in availableSeasons"
+                                    :key="season"
+                                    :value="String(season)"
                                 >
-                                    {{ formatDateLabel(date) }}
+                                    {{ season }}
                                 </option>
                             </select>
-                        </label>
+                        </div>
 
-                        <select
-                            v-model="selectedSeason"
-                            class="h-10 rounded-xl border bg-background px-3 text-sm font-medium"
+                        <div
+                            class="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_auto]"
                         >
-                            <option
-                                v-for="season in availableSeasons"
-                                :key="season"
-                                :value="String(season)"
-                            >
-                                {{ season }}
-                            </option>
-                        </select>
-                    </div>
-
-                    <div class="min-w-0 flex-1 overflow-x-auto">
-                        <div class="flex gap-2">
+                            <label class="relative">
+                                <Search
+                                    class="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                                />
+                                <input
+                                    v-model="searchQuery"
+                                    type="search"
+                                    class="h-10 w-full rounded-xl border bg-background pr-3 pl-9 text-sm"
+                                    placeholder="Search matchup"
+                                />
+                            </label>
                             <button
-                                v-for="filter in marketFilters"
-                                :key="filter.key"
                                 type="button"
-                                class="whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold transition"
-                                :class="
-                                    selectedFilter === filter.key
-                                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
-                                        : filter.count === 0
-                                          ? 'bg-background/65 text-muted-foreground/50'
-                                          : 'bg-background/85 text-muted-foreground hover:border-emerald-500/30 hover:bg-muted'
-                                "
-                                :disabled="filter.count === 0 && filter.key !== 'all'"
-                                @click="selectedFilter = filter.key"
+                                class="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-3 text-sm font-semibold transition hover:bg-muted"
+                                @click="refreshBoard"
                             >
-                                {{ filter.label }}
-                                <span class="ml-1 opacity-75">{{ filter.count }}</span>
+                                <RefreshCw
+                                    class="h-4 w-4"
+                                    :class="refreshing ? 'animate-spin' : ''"
+                                />
+                                Refresh
                             </button>
                         </div>
                     </div>
 
-                    <div class="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_auto] lg:w-[340px]">
-                        <label class="relative">
-                            <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                            <input
-                                v-model="searchQuery"
-                                type="search"
-                                class="h-10 w-full rounded-xl border bg-background pl-9 pr-3 text-sm"
-                                placeholder="Search matchup"
-                            />
-                        </label>
+                    <div class="flex flex-wrap gap-2">
                         <button
+                            v-for="filter in visibleMarketFilters"
+                            :key="filter.key"
                             type="button"
-                            class="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-3 text-sm font-semibold transition hover:bg-muted"
-                            @click="refreshBoard"
+                            class="rounded-full border px-3 py-2 text-xs font-semibold whitespace-nowrap transition"
+                            :class="
+                                selectedFilter === filter.key
+                                    ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                    : 'bg-background/85 text-muted-foreground hover:border-emerald-500/30 hover:bg-muted'
+                            "
+                            @click="selectedFilter = filter.key"
                         >
-                            <RefreshCw
-                                class="h-4 w-4"
-                                :class="refreshing ? 'animate-spin' : ''"
-                            />
-                            Refresh
+                            {{ filter.label }}
+                            <span class="ml-1 opacity-75">{{
+                                filter.count
+                            }}</span>
                         </button>
                     </div>
                 </div>
@@ -477,128 +528,26 @@ onMounted(async () => {
                 {{ error }}
             </div>
 
-            <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-                <div class="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                            <div class="flex items-center gap-2 text-xs font-semibold uppercase text-emerald-600 dark:text-emerald-400">
-                                <Target class="h-4 w-4" />
-                                Top Candidates
-                            </div>
-                            <h2 class="mt-1 text-xl font-bold tracking-normal">
-                                Today’s Board Scan
-                            </h2>
-                        </div>
-                        <span class="rounded-full border bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">
-                            {{ topCandidates.length }} shown
-                        </span>
-                    </div>
-
-                    <div
-                        v-if="topCandidates.length === 0"
-                        class="mt-4 rounded-2xl border border-dashed bg-background/70 p-4"
-                    >
-                        <div class="flex gap-3">
-                            <div class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border bg-card text-amber-500">
-                                <Sparkles class="h-5 w-5" />
-                            </div>
-                            <div>
-                                <div class="font-semibold">
-                                    No candidates generated yet.
-                                </div>
-                                <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                                    Candidates will appear after today’s board scan runs across moneyline, run line, totals, F5, F3, and props.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div
-                        v-else
-                        class="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3"
-                    >
-                        <div
-                            v-for="candidate in topCandidates.slice(0, 6)"
-                            :key="candidate.id"
-                            class="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] p-3"
-                        >
-                            <div class="flex items-start justify-between gap-3">
-                                <div class="min-w-0">
-                                    <div class="truncate text-sm font-semibold">
-                                        {{ candidate.label }}
-                                    </div>
-                                    <div class="mt-1 text-xs text-muted-foreground">
-                                        {{ labelizeMlbCode(candidate.market_type) }}
-                                    </div>
-                                </div>
-                                <div class="rounded-xl border bg-background px-2.5 py-1 text-sm font-black text-emerald-500">
-                                    {{ candidate.score }}
-                                </div>
-                            </div>
-                            <div class="mt-3 flex flex-wrap gap-1.5">
-                                <span
-                                    v-for="reason in candidate.reason_codes.slice(0, 2)"
-                                    :key="reason"
-                                    class="rounded-full border bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground"
-                                >
-                                    {{ labelizeMlbCode(reason) }}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <aside class="rounded-2xl border bg-card/85 p-4 shadow-sm">
-                    <div class="mb-3 flex items-center gap-2 font-semibold">
-                        <ShieldCheck class="h-4 w-4 text-emerald-500" />
-                        Board Snapshot
-                    </div>
-                    <div class="grid grid-cols-2 gap-2 text-sm">
-                        <div class="rounded-xl border bg-background/70 p-3">
-                            <div class="text-xs text-muted-foreground">Games</div>
-                            <div class="mt-1 text-xl font-bold">
-                                {{ summary?.slate_games ?? predictions.length }}
-                            </div>
-                        </div>
-                        <div class="rounded-xl border bg-background/70 p-3">
-                            <div class="text-xs text-muted-foreground">Priced</div>
-                            <div class="mt-1 text-xl font-bold">
-                                {{ summary?.priced_games ?? 0 }}
-                            </div>
-                        </div>
-                        <div class="rounded-xl border bg-background/70 p-3">
-                            <div class="text-xs text-muted-foreground">Candidates</div>
-                            <div class="mt-1 text-xl font-bold">
-                                {{ summary?.candidate_count ?? candidateByGameId.size }}
-                            </div>
-                        </div>
-                        <div class="rounded-xl border bg-background/70 p-3">
-                            <div class="text-xs text-muted-foreground">Visible</div>
-                            <div class="mt-1 text-xl font-bold">
-                                {{ filteredPredictions.length }}
-                            </div>
-                        </div>
-                    </div>
-                    <div class="mt-3 flex items-start gap-2 rounded-xl border bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
-                        <Filter class="mt-0.5 h-4 w-4 shrink-0" />
-                        Candidate cards are highlighted. Quiet cards are matchup context only.
-                    </div>
-                </aside>
-            </section>
-
             <section class="space-y-3">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
                         <h2 class="text-xl font-bold tracking-normal">
-                            Matchup Board
+                            Matchups
                         </h2>
                         <p class="text-sm text-muted-foreground">
-                            Model, market, blend, edge, reason, and risk context for the selected slate.
+                            One card per game. Open a matchup for model, market,
+                            reason, and risk detail.
                         </p>
                     </div>
-                    <span class="rounded-full border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
-                        {{ filteredPredictions.length }} matchups
-                    </span>
+                    <div class="flex flex-wrap gap-2">
+                        <span
+                            v-for="stat in visibleBoardStats"
+                            :key="stat.label"
+                            class="rounded-full border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground"
+                        >
+                            {{ stat.label }} {{ stat.value }}
+                        </span>
+                    </div>
                 </div>
 
                 <div

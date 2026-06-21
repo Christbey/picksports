@@ -4,6 +4,7 @@ import { computed } from 'vue';
 import {
     labelizeMlbCode,
     safeMlbPickStatus,
+    tierFromScore,
 } from '@/lib/mlbRecommendationLabels';
 import {
     predictionTiming,
@@ -28,7 +29,6 @@ const projection = computed(() => props.prediction.projection ?? {});
 const marketAware = computed(
     () => props.prediction.market_aware_projection ?? null,
 );
-const hasCandidate = computed(() => Boolean(props.candidate));
 const timing = computed(() => predictionTiming(props.prediction));
 const showTimingBadge = computed(() => timing.value.phase === 'live');
 
@@ -90,16 +90,55 @@ const statusBadge = computed(() => {
 });
 
 const cardTone = computed(() => {
+    if (hasPositiveResult.value) return 'positive';
+    if (hasNegativeResult.value) return 'negative';
     if (!props.candidate) return 'quiet';
-    if (props.candidate.score >= 80) return 'strong';
+    if (props.candidate.is_public && !props.candidate.is_tracking_only) {
+        return 'candidate';
+    }
 
-    return 'candidate';
+    return 'tracking';
 });
 
 const statusLabel = computed(() => {
-    if (props.candidate) return safeMlbPickStatus(props.candidate);
+    if (!props.candidate) return null;
 
-    return null;
+    if (props.candidate.is_tracking_only || !props.candidate.is_public) {
+        return `${tierFromScore(props.candidate.score)} signal`;
+    }
+
+    return safeMlbPickStatus(props.candidate);
+});
+
+const statusLabelClass = computed(() => {
+    if (!props.candidate)
+        return 'border-muted bg-muted/40 text-muted-foreground';
+
+    if (hasPositiveResult.value) {
+        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    }
+
+    if (props.candidate.is_tracking_only || !props.candidate.is_public) {
+        return 'border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300';
+    }
+
+    return 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+});
+
+const scoreTextClass = computed(() => {
+    if (!props.candidate) return 'text-muted-foreground';
+
+    if (hasPositiveResult.value) return 'text-emerald-500';
+    if (hasNegativeResult.value) return 'text-red-500';
+
+    if (props.candidate.is_public && !props.candidate.is_tracking_only) {
+        return 'text-sky-500';
+    }
+
+    if (props.candidate.score >= 80) return 'text-sky-500';
+    if (props.candidate.score >= 68) return 'text-amber-500';
+
+    return 'text-muted-foreground';
 });
 
 const isFinal = computed(() =>
@@ -147,6 +186,30 @@ const totalResultLabel = computed(() => {
     return `${labelizeMlbCode(side)} ${labelizeMlbCode(result)}`;
 });
 
+const totalPickResult = computed(() => {
+    if (!isFinal.value) return null;
+
+    const result = String(props.prediction.total_pick_result ?? '')
+        .trim()
+        .toLowerCase();
+
+    return result || null;
+});
+
+const hasPositiveResult = computed(
+    () =>
+        modelResult.value === 'win' ||
+        totalPickResult.value === 'win' ||
+        props.candidate?.result_status === 'win',
+);
+
+const hasNegativeResult = computed(
+    () =>
+        modelResult.value === 'loss' ||
+        totalPickResult.value === 'loss' ||
+        props.candidate?.result_status === 'loss',
+);
+
 const totalScoreLabel = computed(() => {
     if (!isFinal.value || !totalResultLabel.value) return null;
 
@@ -189,6 +252,18 @@ const footerContextLabel = computed(() => {
     }
 
     return 'Projection only';
+});
+
+const actionTextClass = computed(() => {
+    if (hasPositiveResult.value) {
+        return 'text-emerald-600 dark:text-emerald-400';
+    }
+
+    if (hasNegativeResult.value) {
+        return 'text-red-600 dark:text-red-400';
+    }
+
+    return 'text-sky-600 dark:text-sky-400';
 });
 
 function numberValue(value: unknown): number | null {
@@ -285,13 +360,17 @@ function resultBadgeClass(
 <template>
     <button
         type="button"
-        class="group relative flex min-h-[124px] w-full overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:ring-2 focus:ring-emerald-500/35 focus:outline-none"
+        class="group relative flex min-h-[124px] w-full overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:ring-2 focus:ring-sky-500/35 focus:outline-none"
         :class="
             cardTone === 'quiet'
                 ? 'border-border/70 bg-card/80 hover:border-sky-500/30'
-                : cardTone === 'strong'
+                : cardTone === 'positive'
                   ? 'border-emerald-500/45 bg-emerald-950/[0.04] ring-1 ring-emerald-500/15 dark:bg-emerald-500/[0.06]'
-                  : 'border-sky-500/35 bg-sky-950/[0.03] dark:bg-sky-500/[0.05]'
+                  : cardTone === 'negative'
+                    ? 'border-red-500/35 bg-red-950/[0.03] dark:bg-red-500/[0.05]'
+                    : cardTone === 'candidate'
+                      ? 'border-sky-500/35 bg-sky-950/[0.03] dark:bg-sky-500/[0.05]'
+                      : 'border-border/80 bg-card/85 hover:border-sky-500/30'
         "
         @click="emit('select', prediction, candidate ?? null)"
     >
@@ -300,9 +379,13 @@ function resultBadgeClass(
             :class="
                 cardTone === 'quiet'
                     ? 'bg-slate-500/40'
-                    : cardTone === 'strong'
+                    : cardTone === 'positive'
                       ? 'bg-emerald-500'
-                      : 'bg-sky-500'
+                      : cardTone === 'negative'
+                        ? 'bg-red-500'
+                        : cardTone === 'candidate'
+                          ? 'bg-sky-500'
+                          : 'bg-slate-500/50'
             "
         />
 
@@ -356,11 +439,7 @@ function resultBadgeClass(
                         <span
                             v-if="statusLabel"
                             class="rounded-full border px-2.5 py-1 text-xs font-semibold"
-                            :class="
-                                hasCandidate
-                                    ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                                    : 'border-muted bg-muted/40 text-muted-foreground'
-                            "
+                            :class="statusLabelClass"
                         >
                             {{ statusLabel }}
                         </span>
@@ -388,7 +467,10 @@ function resultBadgeClass(
                     class="grid h-12 w-12 shrink-0 place-items-center rounded-xl border bg-background/80"
                 >
                     <div class="text-center">
-                        <div class="text-base font-black text-emerald-500">
+                        <div
+                            class="text-base font-black"
+                            :class="scoreTextClass"
+                        >
                             {{ candidate.score }}
                         </div>
                         <div
@@ -430,7 +512,8 @@ function resultBadgeClass(
                 </div>
 
                 <span
-                    class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400"
+                    class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold"
+                    :class="actionTextClass"
                 >
                     Open
                     <ChevronRight

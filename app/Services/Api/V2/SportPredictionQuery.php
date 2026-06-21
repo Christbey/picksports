@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -156,8 +157,7 @@ class SportPredictionQuery
             ->when($filters['team_id'] ?? null, fn (Builder $query, int $teamId): Builder => $this->whereTeam($query, $teamId))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $this->whereGameColumn($query, 'status', $status))
             ->when($filters['week'] ?? null, fn (Builder $query, int $week): Builder => $this->whereGameColumn($query, 'week', $week))
-            ->when($filters['from_date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '>=', $date))
-            ->when($filters['to_date'] ?? null, fn (Builder $query, string $date): Builder => $this->whereGameDate($query, '<=', $date))
+            ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
             ->when(array_key_exists('has_value', $filters), fn (Builder $query): Builder => $this->whereHasValue($query, (bool) $filters['has_value']))
             ->orderByDesc($this->hasColumn($table, 'updated_at') ? "{$table}.updated_at" : "{$table}.id");
     }
@@ -231,6 +231,31 @@ class SportPredictionQuery
     private function whereGameDate(Builder $query, string $operator, string $date): Builder
     {
         return $query->whereHas('game', fn (Builder $query): Builder => $query->whereDate('game_date', $operator, $date));
+    }
+
+    /**
+     * @param  array<string,mixed>  $filters
+     */
+    private function whereGameDateFilters(Builder $query, array $filters): Builder
+    {
+        $fromDate = $filters['from_date'] ?? null;
+        $toDate = $filters['to_date'] ?? null;
+
+        if (is_string($fromDate) && is_string($toDate)) {
+            $window = app(SportsDateWindowService::class)->forRange($fromDate, $toDate);
+
+            return $query->whereHas('game', fn (Builder $gameQuery): Builder => app(SportsDateWindowService::class)->applyGameDateWindow($gameQuery, $window));
+        }
+
+        if (is_string($fromDate)) {
+            return $this->whereGameDate($query, '>=', $fromDate);
+        }
+
+        if (is_string($toDate)) {
+            return $this->whereGameDate($query, '<=', $toDate);
+        }
+
+        return $query;
     }
 
     private function whereHasValue(Builder $query, bool $hasValue): Builder

@@ -193,7 +193,7 @@ const topChampion = computed(() => topByTitle.value[0] ?? null);
 
 const statusTag = (row: PlayoffForecast) => {
     const make = row.playoff_make_probability;
-    if (make >= 0.85) return 'Playoff Lock';
+    if (make >= 0.85) return 'High Probability';
     if (make >= 0.55) return 'In Picture';
     if (make >= 0.35) return 'Bubble';
     return 'Longshot';

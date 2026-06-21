@@ -283,7 +283,7 @@ const visibleSignalGroups = computed(() =>
 const bettingSignalMix = computed(() => [
     {
         key: 'recommended',
-        label: promotionProtected.value ? 'Research' : 'Best Bets',
+        label: promotionProtected.value ? 'Research' : 'Validated',
         count: promotionProtected.value
             ? shadowBets.value.length
             : bestBets.value.length,
@@ -523,7 +523,7 @@ onUnmounted(() => {
                                 ML {{ moneylineReadyLabel }}
                             </span>
                             <span class="rounded-full border px-2.5 py-1">
-                                {{ bestBets.length }} public bets
+                                {{ bestBets.length }} public picks
                             </span>
                             <span
                                 v-if="promotionProtected && shadowBets.length > 0"
@@ -556,7 +556,7 @@ onUnmounted(() => {
                                         {{
                                             promotionProtected
                                                 ? 'Research Signal'
-                                                : 'Top Betting Signal'
+                                                : 'Top Validated Signal'
                                         }}
                                     </div>
                                 </div>

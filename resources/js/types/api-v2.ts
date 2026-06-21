@@ -106,6 +106,8 @@ export type ApiV2GameSummary = {
     game_date?: string | null;
     game_time?: string | null;
     status?: string | null;
+    home_score?: number | string | null;
+    away_score?: number | string | null;
     home_team_id?: ApiV2Id | null;
     away_team_id?: ApiV2Id | null;
     home_team?: ApiV2TeamSummary | null;
@@ -190,6 +192,17 @@ export type ApiV2Prediction = {
     public_recommendation?: ApiV2Record | null;
     market_aware_projection?: MarketAwareProjection | null;
     market_summary?: ApiV2Record;
+    actual_spread?: number | string | null;
+    actual_total?: number | string | null;
+    spread_error?: number | string | null;
+    total_error?: number | string | null;
+    winner_correct?: boolean | null;
+    total_pick_side?: 'over' | 'under' | string | null;
+    total_pick_line?: number | string | null;
+    total_pick_result?: 'win' | 'loss' | 'push' | string | null;
+    total_pick_edge?: number | string | null;
+    total_result?: ApiV2Record | null;
+    graded_at?: string | null;
     created_at?: string | null;
     updated_at?: string | null;
     [key: string]: unknown;

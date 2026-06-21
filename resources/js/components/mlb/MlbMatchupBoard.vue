@@ -1,0 +1,632 @@
+<script setup lang="ts">
+import {
+    CalendarDays,
+    Filter,
+    RefreshCw,
+    Search,
+    ShieldCheck,
+    Sparkles,
+    Target,
+} from 'lucide-vue-next';
+import { computed, onMounted, ref, watch } from 'vue';
+import MlbMatchupCard from '@/components/mlb/MlbMatchupCard.vue';
+import MlbMatchupDetailDrawer from '@/components/mlb/MlbMatchupDetailDrawer.vue';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useApiV2Client } from '@/composables/useApiV2Client';
+import { labelizeMlbCode } from '@/lib/mlbRecommendationLabels';
+import {
+    candidateRecommendation,
+    getPredictionRecommendation,
+} from '@/lib/predictionRecommendation';
+import type {
+    ApiV2CollectionResponse,
+    ApiV2Prediction,
+    ApiV2Record,
+} from '@/types';
+import type {
+    MlbDailyPick,
+    MlbDailyPicksPayload,
+} from '@/types/mlb-daily-picks';
+
+type MarketFilter =
+    | 'all'
+    | 'candidates'
+    | 'moneyline'
+    | 'run_line'
+    | 'total'
+    | 'first_5'
+    | 'first_3'
+    | 'player_prop'
+    | 'tracked';
+
+const api = useApiV2Client();
+
+const loading = ref(true);
+const refreshing = ref(false);
+const error = ref<string | null>(null);
+const bootstrapping = ref(true);
+const predictions = ref<ApiV2Prediction[]>([]);
+const dailyPayload = ref<MlbDailyPicksPayload['data'] | null>(null);
+const availableSeasons = ref<number[]>([]);
+const availableDates = ref<string[]>([]);
+const selectedSeason = ref('');
+const selectedDate = ref('');
+const searchQuery = ref('');
+const selectedFilter = ref<MarketFilter>('all');
+const selectedPrediction = ref<ApiV2Prediction | null>(null);
+const selectedCandidate = ref<MlbDailyPick | null>(null);
+const detailOpen = ref(false);
+
+const topCandidates = computed(() => dailyPayload.value?.top_picks ?? []);
+const allCandidates = computed(() => dailyPayload.value?.candidates ?? []);
+const summary = computed(() => dailyPayload.value?.summary ?? null);
+
+const candidateByGameId = computed(() => {
+    const map = new Map<number, MlbDailyPick>();
+
+    for (const candidate of allCandidates.value) {
+        if (!map.has(candidate.game_id)) {
+            map.set(candidate.game_id, candidate);
+        }
+    }
+
+    return map;
+});
+
+const marketFilters = computed(() => [
+    { key: 'all' as const, label: 'All', count: predictions.value.length },
+    {
+        key: 'candidates' as const,
+        label: 'Candidates',
+        count: candidateByGameId.value.size,
+    },
+    {
+        key: 'moneyline' as const,
+        label: 'Moneyline',
+        count: countMarket('moneyline'),
+    },
+    {
+        key: 'run_line' as const,
+        label: 'Run Line',
+        count: countMarket('run_line'),
+    },
+    { key: 'total' as const, label: 'Totals', count: countMarket('total') },
+    { key: 'first_5' as const, label: 'F5', count: countMarket('first_5') },
+    { key: 'first_3' as const, label: 'F3', count: countMarket('first_3') },
+    {
+        key: 'player_prop' as const,
+        label: 'Props',
+        count: countMarket('player_prop'),
+    },
+    {
+        key: 'tracked' as const,
+        label: 'Tracked',
+        count: allCandidates.value.filter((candidate) => candidate.is_tracking_only)
+            .length,
+    },
+]);
+
+const normalizedSearch = computed(() => searchQuery.value.trim().toLowerCase());
+
+const filteredPredictions = computed(() => {
+    return predictions.value.filter((prediction) => {
+        const candidate = candidateForPrediction(prediction);
+
+        if (selectedFilter.value === 'candidates' && !candidate) {
+            return false;
+        }
+
+        if (selectedFilter.value === 'tracked') {
+            if (!candidate?.is_tracking_only) return false;
+        } else if (
+            !['all', 'candidates', 'tracked'].includes(selectedFilter.value)
+        ) {
+            if (!marketMatches(prediction, candidate, selectedFilter.value)) {
+                return false;
+            }
+        }
+
+        if (!normalizedSearch.value) return true;
+
+        return searchHaystack(prediction, candidate).includes(normalizedSearch.value);
+    });
+});
+
+const quietEmptyState = computed(() => {
+    if (predictions.value.length === 0) {
+        return {
+            title: 'No matchup board found for this date.',
+            body: 'Choose another date or rerun the MLB sync and prediction pipeline.',
+        };
+    }
+
+    if (selectedFilter.value !== 'all') {
+        return {
+            title: 'No matchups match this market filter.',
+            body: 'Use All to review the full slate while the candidate engine keeps scoring markets.',
+        };
+    }
+
+    return {
+        title: 'No matchups match this search.',
+        body: 'Try a team abbreviation, city, or matchup code.',
+    };
+});
+
+function numberValue(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+
+    const numeric = Number(value);
+
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function candidateForPrediction(prediction: ApiV2Prediction): MlbDailyPick | null {
+    const gameId = numberValue(prediction.game_id ?? prediction.game?.id);
+
+    return gameId == null ? null : candidateByGameId.value.get(gameId) ?? null;
+}
+
+function predictionMarketType(prediction: ApiV2Prediction): string {
+    return String(
+        candidateRecommendation(prediction)?.market_type ??
+            getPredictionRecommendation(prediction)?.market_type ??
+            prediction.market_aware_projection?.label ??
+            '',
+    ).toLowerCase();
+}
+
+function marketMatches(
+    prediction: ApiV2Prediction,
+    candidate: MlbDailyPick | null,
+    filter: MarketFilter,
+): boolean {
+    const marketType = (candidate?.market_type ?? predictionMarketType(prediction))
+        .toLowerCase()
+        .replaceAll('-', '_')
+        .replaceAll(' ', '_');
+
+    if (filter === 'total') return marketType.includes('total');
+    if (filter === 'first_5') return marketType.includes('first_5') || marketType.includes('f5');
+    if (filter === 'first_3') return marketType.includes('first_3') || marketType.includes('f3');
+    if (filter === 'player_prop') return marketType.includes('prop');
+
+    return marketType.includes(filter);
+}
+
+function countMarket(filter: MarketFilter): number {
+    return predictions.value.filter((prediction) =>
+        marketMatches(prediction, candidateForPrediction(prediction), filter),
+    ).length;
+}
+
+function teamText(team: unknown): string {
+    const payload = (team ?? {}) as ApiV2Record;
+
+    return [
+        payload.abbreviation,
+        payload.short_display_name,
+        payload.display_name,
+        payload.location,
+        payload.name,
+    ]
+        .filter((value) => typeof value === 'string' && value.length > 0)
+        .join(' ');
+}
+
+function searchHaystack(
+    prediction: ApiV2Prediction,
+    candidate: MlbDailyPick | null,
+): string {
+    return [
+        prediction.game?.short_name,
+        teamText(prediction.game?.away_team),
+        teamText(prediction.game?.home_team),
+        candidate?.label,
+        candidate?.side,
+        candidate?.market_type,
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+}
+
+function formatDateLabel(date: string): string {
+    if (!date) return 'Select date';
+
+    const [year, month, day] = date.split('-').map(Number);
+    const displayDate = new Date(year, month - 1, day);
+
+    return displayDate.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+    });
+}
+
+function todayKey(): string {
+    const now = new Date();
+
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function gameSortKey(prediction: ApiV2Prediction): string {
+    const game = prediction.game;
+    const date = String(game?.game_date ?? '');
+    const datePart = date.includes('T') ? date.split('T')[0] : date.split(' ')[0];
+    const timePart = String(game?.game_time ?? '23:59:59');
+
+    return `${datePart} ${timePart} ${game?.short_name ?? ''}`;
+}
+
+function selectMatchup(
+    prediction: ApiV2Prediction,
+    candidate: MlbDailyPick | null,
+): void {
+    selectedPrediction.value = prediction;
+    selectedCandidate.value = candidate;
+    detailOpen.value = true;
+}
+
+async function fetchAvailableFilters(): Promise<void> {
+    const seasonsPayload = await api.predictions.availableSeasons('mlb');
+    availableSeasons.value = Array.isArray(seasonsPayload?.data)
+        ? seasonsPayload.data
+              .map((season) => Number(season))
+              .filter((season) => Number.isFinite(season))
+        : [];
+
+    if (!selectedSeason.value && availableSeasons.value.length > 0) {
+        const currentYear = new Date().getFullYear();
+        selectedSeason.value = String(
+            availableSeasons.value.includes(currentYear)
+                ? currentYear
+                : Math.max(...availableSeasons.value),
+        );
+    }
+
+    await fetchAvailableDates();
+}
+
+async function fetchAvailableDates(): Promise<void> {
+    const datesPayload = await api.predictions.availableDates('mlb', {
+        query: selectedSeason.value ? { season: selectedSeason.value } : {},
+    });
+
+    availableDates.value = Array.isArray(datesPayload?.data)
+        ? datesPayload.data
+        : [];
+
+    if (!selectedDate.value && availableDates.value.length > 0) {
+        const today = todayKey();
+        const futureDates = availableDates.value.filter((date) => date > today);
+        const pastDates = availableDates.value.filter((date) => date < today);
+
+        selectedDate.value = availableDates.value.includes(today)
+            ? today
+            : futureDates[0] ?? pastDates[pastDates.length - 1] ?? availableDates.value[0];
+    }
+}
+
+async function loadBoard(): Promise<void> {
+    if (!selectedDate.value) return;
+
+    refreshing.value = true;
+    error.value = null;
+
+    try {
+        const query = {
+            from_date: selectedDate.value,
+            to_date: selectedDate.value,
+            page: 1,
+            per_page: 100,
+            ...(selectedSeason.value ? { season: selectedSeason.value } : {}),
+        };
+
+        const [predictionPayload, picksPayload] = await Promise.all([
+            api.predictions.index('mlb', { query }),
+            api.dailyPicks.index<MlbDailyPicksPayload>('mlb', {
+                query: {
+                    date: selectedDate.value,
+                    ...(selectedSeason.value ? { season: selectedSeason.value } : {}),
+                },
+            }),
+        ]);
+
+        predictions.value = (
+            (predictionPayload as ApiV2CollectionResponse<ApiV2Prediction> | null)
+                ?.data ?? []
+        ).sort((a, b) => gameSortKey(a).localeCompare(gameSortKey(b)));
+        dailyPayload.value = picksPayload?.data ?? null;
+    } catch (e) {
+        error.value = e instanceof Error ? e.message : 'Unable to load MLB board';
+    } finally {
+        refreshing.value = false;
+        loading.value = false;
+    }
+}
+
+async function refreshBoard(): Promise<void> {
+    await loadBoard();
+}
+
+watch(selectedSeason, async () => {
+    if (bootstrapping.value) return;
+
+    selectedDate.value = '';
+    await fetchAvailableDates();
+    await loadBoard();
+});
+
+watch(selectedDate, async () => {
+    if (bootstrapping.value) return;
+
+    await loadBoard();
+});
+
+onMounted(async () => {
+    try {
+        await fetchAvailableFilters();
+        await loadBoard();
+    } catch (e) {
+        error.value = e instanceof Error ? e.message : 'Unable to load MLB board';
+        loading.value = false;
+    } finally {
+        bootstrapping.value = false;
+    }
+});
+</script>
+
+<template>
+    <section class="space-y-5">
+        <div v-if="loading" class="space-y-4">
+            <Skeleton class="h-20 w-full rounded-2xl" />
+            <Skeleton class="h-28 w-full rounded-2xl" />
+            <div class="grid gap-3 xl:grid-cols-2">
+                <Skeleton class="h-44 rounded-2xl" />
+                <Skeleton class="h-44 rounded-2xl" />
+            </div>
+        </div>
+
+        <template v-else>
+            <section class="rounded-2xl border bg-card/90 p-3 shadow-sm">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+                    <div class="grid gap-2 sm:grid-cols-[180px_140px] lg:shrink-0">
+                        <label class="relative">
+                            <CalendarDays class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <select
+                                v-model="selectedDate"
+                                class="h-10 w-full rounded-xl border bg-background pl-9 pr-3 text-sm font-medium"
+                            >
+                                <option
+                                    v-for="date in availableDates"
+                                    :key="date"
+                                    :value="date"
+                                >
+                                    {{ formatDateLabel(date) }}
+                                </option>
+                            </select>
+                        </label>
+
+                        <select
+                            v-model="selectedSeason"
+                            class="h-10 rounded-xl border bg-background px-3 text-sm font-medium"
+                        >
+                            <option
+                                v-for="season in availableSeasons"
+                                :key="season"
+                                :value="String(season)"
+                            >
+                                {{ season }}
+                            </option>
+                        </select>
+                    </div>
+
+                    <div class="min-w-0 flex-1 overflow-x-auto">
+                        <div class="flex gap-2">
+                            <button
+                                v-for="filter in marketFilters"
+                                :key="filter.key"
+                                type="button"
+                                class="whitespace-nowrap rounded-full border px-3 py-2 text-xs font-semibold transition"
+                                :class="
+                                    selectedFilter === filter.key
+                                        ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                        : filter.count === 0
+                                          ? 'bg-background/65 text-muted-foreground/50'
+                                          : 'bg-background/85 text-muted-foreground hover:border-emerald-500/30 hover:bg-muted'
+                                "
+                                :disabled="filter.count === 0 && filter.key !== 'all'"
+                                @click="selectedFilter = filter.key"
+                            >
+                                {{ filter.label }}
+                                <span class="ml-1 opacity-75">{{ filter.count }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid gap-2 sm:grid-cols-[minmax(180px,1fr)_auto] lg:w-[340px]">
+                        <label class="relative">
+                            <Search class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                                v-model="searchQuery"
+                                type="search"
+                                class="h-10 w-full rounded-xl border bg-background pl-9 pr-3 text-sm"
+                                placeholder="Search matchup"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            class="inline-flex h-10 items-center justify-center gap-2 rounded-xl border bg-background px-3 text-sm font-semibold transition hover:bg-muted"
+                            @click="refreshBoard"
+                        >
+                            <RefreshCw
+                                class="h-4 w-4"
+                                :class="refreshing ? 'animate-spin' : ''"
+                            />
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <div
+                v-if="error"
+                class="rounded-2xl border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive"
+            >
+                {{ error }}
+            </div>
+
+            <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <div class="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                            <div class="flex items-center gap-2 text-xs font-semibold uppercase text-emerald-600 dark:text-emerald-400">
+                                <Target class="h-4 w-4" />
+                                Top Candidates
+                            </div>
+                            <h2 class="mt-1 text-xl font-bold tracking-normal">
+                                Today’s Board Scan
+                            </h2>
+                        </div>
+                        <span class="rounded-full border bg-background px-3 py-1 text-xs font-semibold text-muted-foreground">
+                            {{ topCandidates.length }} shown
+                        </span>
+                    </div>
+
+                    <div
+                        v-if="topCandidates.length === 0"
+                        class="mt-4 rounded-2xl border border-dashed bg-background/70 p-4"
+                    >
+                        <div class="flex gap-3">
+                            <div class="grid h-11 w-11 shrink-0 place-items-center rounded-xl border bg-card text-amber-500">
+                                <Sparkles class="h-5 w-5" />
+                            </div>
+                            <div>
+                                <div class="font-semibold">
+                                    No candidates generated yet.
+                                </div>
+                                <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                                    Candidates will appear after today’s board scan runs across moneyline, run line, totals, F5, F3, and props.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div
+                        v-else
+                        class="mt-4 grid gap-3 md:grid-cols-2 2xl:grid-cols-3"
+                    >
+                        <div
+                            v-for="candidate in topCandidates.slice(0, 6)"
+                            :key="candidate.id"
+                            class="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.04] p-3"
+                        >
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <div class="truncate text-sm font-semibold">
+                                        {{ candidate.label }}
+                                    </div>
+                                    <div class="mt-1 text-xs text-muted-foreground">
+                                        {{ labelizeMlbCode(candidate.market_type) }}
+                                    </div>
+                                </div>
+                                <div class="rounded-xl border bg-background px-2.5 py-1 text-sm font-black text-emerald-500">
+                                    {{ candidate.score }}
+                                </div>
+                            </div>
+                            <div class="mt-3 flex flex-wrap gap-1.5">
+                                <span
+                                    v-for="reason in candidate.reason_codes.slice(0, 2)"
+                                    :key="reason"
+                                    class="rounded-full border bg-background/80 px-2 py-0.5 text-[11px] text-muted-foreground"
+                                >
+                                    {{ labelizeMlbCode(reason) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="rounded-2xl border bg-card/85 p-4 shadow-sm">
+                    <div class="mb-3 flex items-center gap-2 font-semibold">
+                        <ShieldCheck class="h-4 w-4 text-emerald-500" />
+                        Board Snapshot
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div class="rounded-xl border bg-background/70 p-3">
+                            <div class="text-xs text-muted-foreground">Games</div>
+                            <div class="mt-1 text-xl font-bold">
+                                {{ summary?.slate_games ?? predictions.length }}
+                            </div>
+                        </div>
+                        <div class="rounded-xl border bg-background/70 p-3">
+                            <div class="text-xs text-muted-foreground">Priced</div>
+                            <div class="mt-1 text-xl font-bold">
+                                {{ summary?.priced_games ?? 0 }}
+                            </div>
+                        </div>
+                        <div class="rounded-xl border bg-background/70 p-3">
+                            <div class="text-xs text-muted-foreground">Candidates</div>
+                            <div class="mt-1 text-xl font-bold">
+                                {{ summary?.candidate_count ?? candidateByGameId.size }}
+                            </div>
+                        </div>
+                        <div class="rounded-xl border bg-background/70 p-3">
+                            <div class="text-xs text-muted-foreground">Visible</div>
+                            <div class="mt-1 text-xl font-bold">
+                                {{ filteredPredictions.length }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 flex items-start gap-2 rounded-xl border bg-background/70 p-3 text-xs leading-5 text-muted-foreground">
+                        <Filter class="mt-0.5 h-4 w-4 shrink-0" />
+                        Candidate cards are highlighted. Quiet cards are matchup context only.
+                    </div>
+                </aside>
+            </section>
+
+            <section class="space-y-3">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h2 class="text-xl font-bold tracking-normal">
+                            Matchup Board
+                        </h2>
+                        <p class="text-sm text-muted-foreground">
+                            Model, market, blend, edge, reason, and risk context for the selected slate.
+                        </p>
+                    </div>
+                    <span class="rounded-full border bg-card px-3 py-1 text-xs font-semibold text-muted-foreground">
+                        {{ filteredPredictions.length }} matchups
+                    </span>
+                </div>
+
+                <div
+                    v-if="filteredPredictions.length === 0"
+                    class="rounded-2xl border border-dashed bg-card/70 p-6"
+                >
+                    <div class="font-semibold">{{ quietEmptyState.title }}</div>
+                    <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                        {{ quietEmptyState.body }}
+                    </p>
+                </div>
+
+                <div v-else class="grid gap-3 xl:grid-cols-2">
+                    <MlbMatchupCard
+                        v-for="prediction in filteredPredictions"
+                        :key="prediction.id"
+                        :prediction="prediction"
+                        :candidate="candidateForPrediction(prediction)"
+                        @select="selectMatchup"
+                    />
+                </div>
+            </section>
+
+            <MlbMatchupDetailDrawer
+                v-model:open="detailOpen"
+                :prediction="selectedPrediction"
+                :candidate="selectedCandidate"
+            />
+        </template>
+    </section>
+</template>

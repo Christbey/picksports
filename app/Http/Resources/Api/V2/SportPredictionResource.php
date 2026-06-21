@@ -66,6 +66,11 @@ class SportPredictionResource extends JsonResource
             'spread_error' => $this->floatAttribute('spread_error'),
             'total_error' => $this->floatAttribute('total_error'),
             'winner_correct' => $this->attribute('winner_correct'),
+            'total_pick_side' => $this->attribute('total_pick_side'),
+            'total_pick_line' => $this->floatAttribute('total_pick_line'),
+            'total_pick_result' => $this->attribute('total_pick_result'),
+            'total_pick_edge' => $this->floatAttribute('total_pick_edge'),
+            'total_result' => $this->totalResult(),
             'graded_at' => $this->serializeDateValue($this->attribute('graded_at')),
             'live_predicted_spread' => $this->liveFloatAttribute('live_predicted_spread'),
             'live_predicted_total' => $this->liveFloatAttribute('live_predicted_total'),
@@ -485,6 +490,31 @@ class SportPredictionResource extends JsonResource
             'model_version' => $this->attribute('model_version'),
             'feature_version' => $this->attribute('feature_version'),
             'blend_version' => $this->attribute('blend_version'),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function totalResult(): ?array
+    {
+        $side = $this->attribute('total_pick_side');
+        $line = $this->floatAttribute('total_pick_line');
+        $result = $this->attribute('total_pick_result');
+        $edge = $this->floatAttribute('total_pick_edge');
+
+        if ($side === null && $line === null && $result === null && $edge === null) {
+            return null;
+        }
+
+        return [
+            'side' => $side,
+            'line' => $line,
+            'result' => $result,
+            'edge' => $edge,
+            'actual_total' => $this->floatAttribute('actual_total'),
+            'predicted_total' => $this->floatAttribute('predicted_total'),
+            'total_error' => $this->floatAttribute('total_error'),
         ];
     }
 

@@ -1,44 +1,31 @@
 <script setup lang="ts">
-import { AlertTriangle, BarChart3, Target } from 'lucide-vue-next';
+import {
+    Activity,
+    AlertTriangle,
+    BarChart3,
+    CalendarDays,
+    CheckCircle2,
+    CircleDot,
+    Clock,
+    Gauge,
+    RefreshCw,
+    ShieldCheck,
+    Sparkles,
+    Target,
+    Trophy,
+    Zap,
+} from 'lucide-vue-next';
 import { computed, onMounted, ref } from 'vue';
-import { Card, CardContent, CardTitle } from '@/components/ui/card';
+import MlbPickCard from '@/components/mlb/MlbPickCard.vue';
+import MlbPickDetailDrawer from '@/components/mlb/MlbPickDetailDrawer.vue';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiV2Client } from '@/composables/useApiV2Client';
-
-type DailyPick = {
-    id: number;
-    market_type: string;
-    label: string;
-    side: string;
-    line?: number | null;
-    price?: number | null;
-    score: number;
-    status: string;
-    internal_candidate_label?: string | null;
-    model_probability?: number | null;
-    market_probability?: number | null;
-    blend_probability?: number | null;
-    edge_no_vig?: number | null;
-    reason_codes: string[];
-    risk_flags: string[];
-    explanation: string;
-    game?: {
-        short_name?: string | null;
-        game_date?: string | null;
-    } | null;
-};
-
-type DailyPicksPayload = {
-    data: {
-        date: string;
-        mode: string;
-        target_count: number;
-        public_promoted_count: number;
-        candidate_count: number;
-        top_picks: DailyPick[];
-        blocked_reasons: string[];
-    };
-};
+import { safeMlbBoardMode } from '@/lib/mlbRecommendationLabels';
+import type {
+    MlbDailyPerformanceRecord,
+    MlbDailyPick,
+    MlbDailyPicksPayload,
+} from '@/types/mlb-daily-picks';
 
 const props = defineProps<{
     season?: string | number | null;
@@ -47,30 +34,211 @@ const props = defineProps<{
 const api = useApiV2Client();
 const loading = ref(true);
 const error = ref<string | null>(null);
-const payload = ref<DailyPicksPayload['data'] | null>(null);
+const payload = ref<MlbDailyPicksPayload['data'] | null>(null);
+const selectedDate = ref('');
+const selectedTab = ref('all');
+const selectedPick = ref<MlbDailyPick | null>(null);
+const detailOpen = ref(false);
 
-const picks = computed(() => payload.value?.top_picks ?? []);
+const topPicks = computed(() => payload.value?.top_picks ?? []);
+const allCandidates = computed(() => payload.value?.candidates ?? []);
+const summary = computed(() => payload.value?.summary ?? null);
+const boardHealth = computed(() => payload.value?.board_health ?? null);
+const marketCounts = computed(() => payload.value?.market_counts ?? {});
 
-function formatOdds(value?: number | null): string {
-    if (value == null) return '-';
-    return value > 0 ? `+${value}` : `${value}`;
+const marketTabs = computed(() => [
+    { key: 'all', label: 'All', count: marketCounts.value.all ?? 0 },
+    { key: 'moneyline', label: 'Moneyline', count: marketCounts.value.moneyline ?? 0 },
+    { key: 'run_line', label: 'Run Line', count: marketCounts.value.run_line ?? 0 },
+    { key: 'total', label: 'Totals', count: marketCounts.value.total ?? 0 },
+    { key: 'first_5', label: 'F5', count: marketCounts.value.first_5 ?? 0 },
+    { key: 'first_3', label: 'F3', count: marketCounts.value.first_3 ?? 0 },
+    { key: 'player_prop', label: 'Props', count: marketCounts.value.player_prop ?? 0 },
+    { key: 'tracking', label: 'Watchlist', count: marketCounts.value.tracking ?? 0 },
+]);
+
+const filteredCandidates = computed(() => {
+    const tab = selectedTab.value;
+    if (tab === 'all') return allCandidates.value;
+    if (tab === 'tracking') {
+        return allCandidates.value.filter((pick) => pick.is_tracking_only);
+    }
+    if (tab === 'first_5') {
+        return allCandidates.value.filter((pick) => pick.market_type.startsWith('first_5'));
+    }
+    if (tab === 'first_3') {
+        return allCandidates.value.filter((pick) => pick.market_type.startsWith('first_3'));
+    }
+
+    return allCandidates.value.filter((pick) => pick.market_type === tab);
+});
+
+const statusStrip = computed(() => [
+    {
+        label: 'Games',
+        value: summary.value?.slate_games ?? 0,
+        tone: 'text-sky-400',
+    },
+    {
+        label: 'Priced',
+        value: summary.value?.priced_games ?? 0,
+        tone: (summary.value?.priced_games ?? 0) > 0 ? 'text-emerald-400' : 'text-amber-400',
+    },
+    {
+        label: 'Candidates',
+        value: summary.value?.candidate_count ?? 0,
+        tone: (summary.value?.candidate_count ?? 0) > 0 ? 'text-emerald-400' : 'text-muted-foreground',
+    },
+    {
+        label: 'Top Picks',
+        value: summary.value?.top_candidate_count ?? 0,
+        tone: (summary.value?.top_candidate_count ?? 0) > 0 ? 'text-emerald-400' : 'text-muted-foreground',
+    },
+]);
+
+const healthRows = computed(() => [
+    {
+        icon: BarChart3,
+        label: 'Slate Coverage',
+        value: coverageDisplay.value,
+        detail: coverageDetail.value,
+        percent: boardHealth.value?.slate_coverage ?? null,
+        tone: (boardHealth.value?.slate_coverage ?? 0) > 0 ? 'emerald' : 'amber',
+    },
+    {
+        icon: ShieldCheck,
+        label: 'Pregame Safety',
+        value: formatPercent(boardHealth.value?.pregame_safe_rate),
+        detail: boardHealth.value?.pregame_safe_rate == null ? 'Waiting for scan' : 'Safety checks',
+        percent: boardHealth.value?.pregame_safe_rate ?? null,
+        tone: 'emerald',
+    },
+    {
+        icon: Target,
+        label: 'Market Agreement',
+        value: formatPercent(boardHealth.value?.market_agreement_rate),
+        detail: boardHealth.value?.market_agreement_rate == null ? 'No candidates yet' : 'Model-market context',
+        percent: boardHealth.value?.market_agreement_rate ?? null,
+        tone: 'sky',
+    },
+    {
+        icon: Gauge,
+        label: 'Board Score',
+        value: boardHealth.value?.score != null ? String(boardHealth.value.score) : 'Pending',
+        detail: boardHealth.value?.score == null ? 'Run pick engine' : 'Average top score',
+        percent: boardHealth.value?.score != null ? boardHealth.value.score / 100 : null,
+        tone: 'emerald',
+    },
+]);
+
+const coverageDisplay = computed(() => {
+    const slateGames = summary.value?.slate_games ?? 0;
+    const pricedGames = summary.value?.priced_games ?? 0;
+    if (slateGames === 0) return 'No slate';
+
+    return `${pricedGames}/${slateGames} priced`;
+});
+
+const coverageDetail = computed(() => {
+    const pricedGames = summary.value?.priced_games ?? 0;
+    if (pricedGames === 0) return 'Needs odds';
+
+    return 'Pricing available';
+});
+
+const emptyState = computed(() => {
+    const slateGames = summary.value?.slate_games ?? 0;
+    const pricedGames = summary.value?.priced_games ?? 0;
+    const candidateCount = summary.value?.candidate_count ?? 0;
+
+    if (slateGames === 0) {
+        return {
+            title: 'No MLB slate found.',
+            body: 'Select another date to review the daily board.',
+            icon: CalendarDays,
+        };
+    }
+
+    if (pricedGames === 0) {
+        return {
+            title: 'Market odds are not available yet.',
+            body: 'Candidates will populate once pricing is synced for moneyline, totals, run line, F5, F3, and props.',
+            icon: AlertTriangle,
+        };
+    }
+
+    if (candidateCount === 0) {
+        return {
+            title: 'Daily board has not been scanned yet.',
+            body: 'Run today\'s pick engine to generate tracking candidates across sides, totals, F5/F3, and props.',
+            icon: Zap,
+        };
+    }
+
+    return {
+        title: 'No candidates cleared today\'s threshold.',
+        body: 'The system did not force weak picks into the board.',
+        icon: ShieldCheck,
+    };
+});
+
+function formatDate(value?: string | null): string {
+    if (!value) return 'Today';
+
+    return new Intl.DateTimeFormat(undefined, {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+    }).format(new Date(`${value}T12:00:00`));
 }
 
 function formatPercent(value?: number | null): string {
-    if (value == null) return '-';
-    return `${(value * 100).toFixed(1)}%`;
+    if (value == null) return 'Pending';
+
+    return `${Math.round(value * 100)}%`;
 }
 
-function labelize(value?: string | null): string {
+function formatRecord(record?: MlbDailyPerformanceRecord | null): string {
+    if (!record) return 'Collecting';
+
+    return `${record.wins}-${record.losses}-${record.pushes}`;
+}
+
+function formatHitRate(record?: MlbDailyPerformanceRecord | null): string {
+    if (!record?.hit_rate) return 'Unlocking';
+
+    return `${(record.hit_rate * 100).toFixed(1)}%`;
+}
+
+function achievementIcon(key: string) {
+    if (key === 'clean_slate') return ShieldCheck;
+    if (key === 'consensus_board') return CheckCircle2;
+    if (key === 'high_signal_day') return Trophy;
+    if (key === 'no_force_picks') return Gauge;
+
+    return Sparkles;
+}
+
+function safeTrackingCopy(value?: string | null): string {
     if (!value) return '';
-    return value.replaceAll('_', ' ');
+
+    return value
+        .replace(/\bpublic betting validation\b/gi, 'public validation')
+        .replace(/\bbetting validation\b/gi, 'validation')
+        .replace(/\bbetting\b/gi, 'pick tracking')
+        .replace(/\bbet\b/gi, 'pick');
 }
 
-function scoreClass(score: number): string {
-    if (score >= 80) return 'bg-emerald-500';
-    if (score >= 68) return 'bg-sky-500';
-    if (score >= 58) return 'bg-amber-500';
-    return 'bg-muted-foreground';
+function healthBarClass(tone: string): string {
+    if (tone === 'sky') return 'bg-sky-500';
+    if (tone === 'amber') return 'bg-amber-500';
+
+    return 'bg-emerald-500';
+}
+
+function selectPick(candidate: MlbDailyPick): void {
+    selectedPick.value = candidate;
+    detailOpen.value = true;
 }
 
 async function loadPicks(): Promise<void> {
@@ -78,18 +246,22 @@ async function loadPicks(): Promise<void> {
     error.value = null;
 
     try {
-        const response = await api.dailyPicks.index<DailyPicksPayload>('mlb', {
-            query: props.season ? { season: props.season } : undefined,
-        });
+        const query: Record<string, string | number> = {};
+        if (props.season) query.season = props.season;
+        if (selectedDate.value) query.date = selectedDate.value;
+
+        const response = await api.dailyPicks.index<MlbDailyPicksPayload>('mlb', { query });
 
         if (!response?.data) {
-            throw new Error('Failed to load MLB daily picks');
+            throw new Error('Failed to load MLB daily board');
         }
 
         payload.value = response.data;
+        if (!selectedDate.value) {
+            selectedDate.value = response.data.date;
+        }
     } catch (e) {
-        error.value =
-            e instanceof Error ? e.message : 'Unable to load MLB daily picks';
+        error.value = e instanceof Error ? e.message : 'Unable to load MLB daily board';
     } finally {
         loading.value = false;
     }
@@ -101,146 +273,316 @@ onMounted(() => {
 </script>
 
 <template>
-    <section class="space-y-3">
-        <div v-if="loading" class="rounded-lg border bg-card p-4">
-            <div class="mb-4 flex items-center justify-between">
-                <Skeleton class="h-5 w-48" />
-                <Skeleton class="h-8 w-28" />
-            </div>
-            <div class="grid gap-3 lg:grid-cols-3">
-                <Skeleton v-for="i in 3" :key="i" class="h-40 w-full" />
+    <section class="space-y-5">
+        <div v-if="loading" class="space-y-4">
+            <Skeleton class="h-28 w-full rounded-lg" />
+            <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+                <Skeleton class="h-80 w-full rounded-lg" />
+                <Skeleton class="h-80 w-full rounded-lg" />
             </div>
         </div>
 
-        <Card v-else-if="error" class="border-destructive/40">
-            <CardContent class="py-4 text-sm text-destructive">
-                {{ error }}
-            </CardContent>
-        </Card>
+        <div v-else-if="error" class="rounded-lg border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+            {{ error }}
+        </div>
 
-        <Card v-else class="overflow-hidden">
-            <CardContent class="space-y-4 p-4 md:p-5">
-                <div
-                    class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
-                >
-                    <div>
-                        <CardTitle class="flex items-center gap-2 text-base">
-                            <Target class="h-4 w-4" />
-                            Top MLB Tracking Picks
-                        </CardTitle>
-                        <div class="mt-1 text-sm text-muted-foreground">
-                            {{ payload?.date }} ·
-                            {{ payload?.candidate_count ?? 0 }} candidates ·
-                            {{ payload?.public_promoted_count ?? 0 }} public
+        <template v-else>
+            <header class="relative overflow-hidden rounded-lg border bg-card/95 p-4 shadow-sm md:p-5">
+                <div class="pointer-events-none absolute inset-y-0 right-0 hidden w-64 opacity-20 md:block">
+                    <div class="absolute right-10 top-1/2 h-52 w-52 -translate-y-1/2 rotate-45 rounded-[2rem] border border-emerald-500/50" />
+                    <div class="absolute right-24 top-1/2 h-px w-56 -translate-y-1/2 bg-emerald-500/40" />
+                </div>
+
+                <div class="relative flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                <ShieldCheck class="h-3.5 w-3.5" />
+                                {{ safeMlbBoardMode(payload?.mode) }}
+                            </span>
+                            <span class="rounded-full border border-sky-500/20 bg-sky-500/10 px-2.5 py-1 text-xs font-medium text-sky-700 dark:text-sky-300">
+                                Market-Aware
+                            </span>
+                            <span class="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300">
+                                Needs Validation
+                            </span>
                         </div>
+
+                        <div class="mt-3 flex flex-wrap items-end gap-x-4 gap-y-1">
+                            <h1 class="text-3xl font-bold tracking-normal md:text-4xl">
+                                MLB Daily Board
+                            </h1>
+                            <div class="pb-1 text-sm font-medium text-muted-foreground">
+                                {{ formatDate(payload?.date) }}
+                            </div>
+                        </div>
+                        <p class="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+                            Market-aware MLB candidates, model context, and tracking performance.
+                        </p>
                     </div>
-                    <span
-                        class="inline-flex w-fit items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase text-muted-foreground"
-                    >
-                        <BarChart3 class="h-3.5 w-3.5" />
-                        tracking only
-                    </span>
-                </div>
 
-                <div
-                    v-if="picks.length === 0"
-                    class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
-                >
-                    No stored tracking picks for this date yet. Run
-                    <span class="font-mono">mlb:generate-daily-picks</span>
-                    when the slate is ready.
-                </div>
-
-                <div v-else class="grid gap-3 lg:grid-cols-3">
-                    <article
-                        v-for="pick in picks"
-                        :key="pick.id"
-                        class="rounded-lg border bg-background p-4"
-                    >
-                        <div class="flex items-start justify-between gap-3">
-                            <div class="min-w-0">
-                                <div
-                                    class="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-                                >
-                                    {{ labelize(pick.market_type) }}
-                                </div>
-                                <h3 class="mt-1 text-base font-semibold">
-                                    {{ pick.label }}
-                                </h3>
-                                <div class="mt-1 text-sm text-muted-foreground">
-                                    {{ pick.game?.short_name }}
-                                </div>
-                            </div>
-                            <div class="shrink-0 text-right">
-                                <div class="text-lg font-bold">
-                                    {{ pick.score }}
-                                </div>
-                                <div class="text-xs text-muted-foreground">
-                                    score
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mt-3 h-2 rounded-full bg-muted">
-                            <div
-                                class="h-full rounded-full"
-                                :class="scoreClass(pick.score)"
-                                :style="{ width: `${pick.score}%` }"
+                    <div class="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
+                        <div class="relative min-w-0 flex-1 lg:w-48 lg:flex-none">
+                            <CalendarDays class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                            <input
+                                v-model="selectedDate"
+                                type="date"
+                                class="h-10 w-full rounded-lg border bg-background pl-9 pr-3 text-sm"
                             />
                         </div>
+                        <button
+                            type="button"
+                            class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border bg-background px-4 text-sm font-semibold transition hover:bg-muted"
+                            @click="loadPicks"
+                        >
+                            <RefreshCw class="h-4 w-4" />
+                            Load
+                        </button>
+                    </div>
+                </div>
 
-                        <div class="mt-3 grid grid-cols-3 gap-2 text-xs">
-                            <div>
-                                <div class="text-muted-foreground">Price</div>
-                                <div class="font-semibold">
-                                    {{ formatOdds(pick.price) }}
-                                </div>
-                            </div>
-                            <div>
-                                <div class="text-muted-foreground">Blend</div>
-                                <div class="font-semibold">
-                                    {{ formatPercent(pick.blend_probability) }}
-                                </div>
-                            </div>
-                            <div>
-                                <div class="text-muted-foreground">Edge</div>
-                                <div class="font-semibold">
-                                    {{ formatPercent(pick.edge_no_vig) }}
-                                </div>
-                            </div>
+                <div class="relative mt-4 grid gap-2 sm:grid-cols-4">
+                    <div
+                        v-for="item in statusStrip"
+                        :key="item.label"
+                        class="rounded-lg border bg-background/70 px-3 py-2"
+                    >
+                        <div class="text-[11px] font-semibold uppercase text-muted-foreground">
+                            {{ item.label }}
                         </div>
+                        <div class="mt-0.5 text-2xl font-bold" :class="item.tone">
+                            {{ item.value }}
+                        </div>
+                    </div>
+                </div>
+            </header>
 
-                        <div class="mt-3 flex flex-wrap gap-1.5">
-                            <span
-                                v-for="reason in pick.reason_codes.slice(0, 3)"
-                                :key="reason"
-                                class="rounded-full border px-2 py-0.5 text-xs"
-                            >
-                                {{ labelize(reason) }}
-                            </span>
+            <section class="grid gap-5 md:grid-cols-[minmax(0,1fr)_300px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
+                <div class="space-y-5">
+                    <section class="rounded-lg border bg-card p-4 shadow-sm md:p-5">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <div class="flex items-center gap-2 text-sm font-semibold uppercase text-emerald-600 dark:text-emerald-400">
+                                    <Target class="h-4 w-4" />
+                                    Today's Opportunities
+                                </div>
+                                <h2 class="mt-1 text-2xl font-bold tracking-normal">
+                                    Top Tracking Candidates
+                                </h2>
+                            </div>
+                            <div class="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                                {{ summary?.top_candidate_count ?? 0 }} qualified
+                            </div>
                         </div>
 
                         <div
-                            v-if="pick.risk_flags.length > 0"
-                            class="mt-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300"
+                            v-if="topPicks.length === 0"
+                            class="mt-4 rounded-lg border border-dashed bg-background/70 p-5"
                         >
-                            <AlertTriangle class="mt-0.5 h-3.5 w-3.5" />
-                            <span>
-                                {{
-                                    pick.risk_flags
-                                        .slice(0, 2)
-                                        .map(labelize)
-                                        .join(' · ')
-                                }}
+                            <div class="flex min-w-0 gap-4">
+                                <div class="grid h-12 w-12 shrink-0 place-items-center rounded-lg border bg-card text-amber-500">
+                                    <component :is="emptyState.icon" class="h-5 w-5" />
+                                </div>
+                                <div class="min-w-0">
+                                    <h3 class="text-lg font-semibold">
+                                        {{ emptyState.title }}
+                                    </h3>
+                                    <p class="mt-1 max-w-2xl text-sm leading-6 text-muted-foreground">
+                                        {{ emptyState.body }}
+                                    </p>
+                                    <div class="mt-3 inline-flex items-center gap-2 rounded-full border border-amber-500/25 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-700 dark:text-amber-300">
+                                        <Clock class="h-3.5 w-3.5" />
+                                        Tracking mode is active
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            v-else
+                            class="mt-4 flex snap-x gap-3 overflow-x-auto pb-1 lg:grid lg:grid-cols-3 lg:overflow-visible"
+                        >
+                            <div
+                                v-for="pick in topPicks"
+                                :key="pick.id"
+                                class="min-w-[86vw] snap-start sm:min-w-[420px] lg:min-w-0"
+                            >
+                                <MlbPickCard
+                                    :candidate="pick"
+                                    variant="hero"
+                                    @select="selectPick"
+                                />
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="space-y-4">
+                        <div class="sticky top-0 z-10 -mx-1 overflow-x-auto bg-background/95 px-1 py-2 backdrop-blur">
+                            <div class="flex gap-2">
+                                <button
+                                    v-for="tab in marketTabs"
+                                    :key="tab.key"
+                                    type="button"
+                                    class="whitespace-nowrap rounded-full border px-3.5 py-2 text-sm font-semibold transition"
+                                    :class="
+                                        selectedTab === tab.key
+                                            ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                                            : tab.count === 0
+                                              ? 'bg-card text-muted-foreground/60'
+                                              : 'bg-card text-muted-foreground hover:border-emerald-500/30 hover:bg-muted'
+                                    "
+                                    @click="selectedTab = tab.key"
+                                >
+                                    {{ tab.label }}
+                                    <span class="ml-1 opacity-75">{{ tab.count }}</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="filteredCandidates.length === 0"
+                            class="rounded-lg border border-dashed bg-card/60 p-5 text-sm text-muted-foreground"
+                        >
+                            No candidates are available for this market filter yet.
+                        </div>
+
+                        <div v-else class="grid gap-3 lg:grid-cols-2">
+                            <MlbPickCard
+                                v-for="candidate in filteredCandidates"
+                                :key="candidate.id"
+                                :candidate="candidate"
+                                variant="compact"
+                                @select="selectPick"
+                            />
+                        </div>
+                    </section>
+                </div>
+
+                <aside class="space-y-4">
+                    <section class="rounded-lg border bg-card p-4 shadow-sm">
+                        <div class="mb-3 flex items-center justify-between gap-3">
+                            <div class="flex items-center gap-2 font-semibold">
+                                <Gauge class="h-4 w-4 text-emerald-500" />
+                                Board Health
+                            </div>
+                            <span class="rounded-full border px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                                {{ boardHealth?.status?.replaceAll('_', ' ') ?? 'pending' }}
                             </span>
                         </div>
 
+                        <div class="space-y-3">
+                            <div
+                                v-for="item in healthRows"
+                                :key="item.label"
+                                class="rounded-lg border bg-background/70 p-3"
+                            >
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="flex gap-2">
+                                        <component :is="item.icon" class="mt-0.5 h-4 w-4 text-muted-foreground" />
+                                        <div>
+                                            <div class="text-sm font-semibold">{{ item.label }}</div>
+                                            <div class="text-xs text-muted-foreground">{{ item.detail }}</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-right text-sm font-bold">
+                                        {{ item.value }}
+                                    </div>
+                                </div>
+                                <div v-if="item.percent && item.percent > 0" class="mt-3 h-1.5 rounded-full bg-muted">
+                                    <div
+                                        class="h-full rounded-full"
+                                        :class="healthBarClass(item.tone)"
+                                        :style="{ width: `${Math.min(item.percent * 100, 100)}%` }"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         <p class="mt-3 text-xs leading-5 text-muted-foreground">
-                            {{ pick.explanation }}
+                            {{ boardHealth?.message ?? 'Board health will populate after the daily pick scan runs.' }}
                         </p>
-                    </article>
-                </div>
-            </CardContent>
-        </Card>
+                    </section>
+
+                    <section class="rounded-lg border bg-card p-4 shadow-sm">
+                        <div class="mb-3 flex items-center gap-2 font-semibold">
+                            <Activity class="h-4 w-4 text-sky-500" />
+                            Tracking Performance
+                        </div>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex items-center justify-between gap-3">
+                                <span class="text-muted-foreground">Top Picks</span>
+                                <span class="rounded-full border px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+                                    Tracking
+                                </span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-muted-foreground">Last 7 days</span>
+                                <span class="font-semibold">{{ formatRecord(payload?.performance_summary.last_7_days) }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-muted-foreground">Last 30 days</span>
+                                <span class="font-semibold">{{ formatRecord(payload?.performance_summary.last_30_days) }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-muted-foreground">Hit rate</span>
+                                <span class="font-semibold">{{ formatHitRate(payload?.performance_summary.last_30_days) }}</span>
+                            </div>
+                        </div>
+                        <div
+                            v-if="payload?.performance_summary.sample_warning"
+                            class="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-5 text-amber-700 dark:text-amber-300"
+                        >
+                            Small sample. {{ safeTrackingCopy(payload.performance_summary.sample_warning) }}
+                        </div>
+                        <p class="mt-3 text-xs leading-5 text-muted-foreground">
+                            {{ safeTrackingCopy(payload?.performance_summary.mode_note) }}
+                        </p>
+                    </section>
+
+                    <section class="rounded-lg border bg-card p-4 shadow-sm">
+                        <div class="mb-3 flex items-center gap-2 font-semibold">
+                            <Sparkles class="h-4 w-4 text-emerald-500" />
+                            Board Signals
+                        </div>
+                        <div v-if="(payload?.achievements ?? []).length > 0" class="space-y-2">
+                            <div
+                                v-for="achievement in payload?.achievements ?? []"
+                                :key="achievement.key"
+                                class="flex gap-3 rounded-lg border bg-background/70 p-3"
+                            >
+                                <component
+                                    :is="achievementIcon(achievement.key)"
+                                    class="mt-0.5 h-4 w-4 shrink-0 text-emerald-500"
+                                />
+                                <div>
+                                    <div class="text-sm font-semibold">{{ achievement.label }}</div>
+                                    <div class="text-xs leading-5 text-muted-foreground">
+                                        {{ achievement.description }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-else class="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                            Achievements unlock as the board scans and candidates qualify.
+                        </div>
+                    </section>
+
+                    <section class="rounded-lg border bg-card p-4 shadow-sm">
+                        <div class="mb-2 flex items-center gap-2 font-semibold">
+                            <CircleDot class="h-4 w-4 text-amber-500" />
+                            Mode
+                        </div>
+                        <p class="text-sm leading-6 text-muted-foreground">
+                            Tracking mode is active. Candidates are evaluated before public pick labels are enabled.
+                        </p>
+                    </section>
+                </aside>
+            </section>
+
+            <MlbPickDetailDrawer
+                v-model:open="detailOpen"
+                :candidate="selectedPick"
+            />
+        </template>
     </section>
 </template>

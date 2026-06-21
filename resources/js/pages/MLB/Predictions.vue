@@ -1,22 +1,19 @@
 <script setup lang="ts">
 import MlbDailyPicksPanel from '@/components/mlb/MlbDailyPicksPanel.vue';
-import MlbSignalsPanel from '@/components/mlb/MlbSignalsPanel.vue';
+import MlbMatchupBoard from '@/components/mlb/MlbMatchupBoard.vue';
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
-import SportPredictions from '@/components/SportPredictions.vue';
-import { mlbPredictionsConfig } from '@/config/predictions-configs';
 import { mlbPredictions } from '@/routes';
 </script>
 
 <template>
     <PredictionsPageShell
-        title="MLB Predictions"
-        breadcrumb-title="MLB Predictions"
+        title="MLB Daily Board"
+        breadcrumb-title="MLB Daily Board"
         :breadcrumb-href="mlbPredictions().url"
         banner-storage-key="mlb-predictions-banner-dismissed"
-        seo-description="MLB predictions and betting edges across moneyline, run line, and totals using PickSports models."
+        seo-description="Market-aware MLB daily board with tracking candidates, model context, and slate intelligence."
     >
         <MlbDailyPicksPanel class="mb-6" />
-        <MlbSignalsPanel class="mb-6" />
-        <SportPredictions :config="mlbPredictionsConfig" />
+        <MlbMatchupBoard />
     </PredictionsPageShell>
 </template>

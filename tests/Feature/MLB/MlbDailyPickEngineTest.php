@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\MLB\GradePredictions;
 use App\Models\MLB\Game;
 use App\Models\MLB\PickCandidate;
 use App\Models\MLB\PlayerProp;
@@ -154,6 +155,61 @@ it('applies MLB total bias correction to total candidates', function (): void {
         ->and((float) $over->projected_value)->toBeGreaterThan(0);
 });
 
+it('stores MLB over under results when predictions are graded', function (): void {
+    [$game, $prediction] = mlbPricedSlate([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 6,
+        'away_score' => 5,
+    ]);
+
+    $prediction->forceFill([
+        'model_metadata' => [
+            'market_context' => [
+                'market_total' => 8.5,
+            ],
+        ],
+    ])->save();
+
+    app(GradePredictions::class)->executeForGame($game->id);
+
+    $prediction->refresh();
+
+    expect($prediction->total_pick_side)->toBe('over')
+        ->and((float) $prediction->total_pick_line)->toBe(8.5)
+        ->and($prediction->total_pick_result)->toBe('win')
+        ->and((float) $prediction->total_pick_edge)->toBe(1.7);
+});
+
+it('returns MLB over under results from the v2 prediction API', function (): void {
+    [$game, $prediction] = mlbPricedSlate([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 3,
+        'away_score' => 2,
+    ]);
+
+    $prediction->forceFill([
+        'model_metadata' => [
+            'market_context' => [
+                'market_total' => 8.5,
+            ],
+        ],
+    ])->save();
+
+    app(GradePredictions::class)->executeForGame($game->id);
+
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->getJson('/api/v2/sports/mlb/predictions?from_date=2026-06-20&to_date=2026-06-20&season=2026&per_page=100')
+        ->assertOk()
+        ->assertJsonPath('data.0.total_pick_side', 'over')
+        ->assertJsonPath('data.0.total_pick_line', 8.5)
+        ->assertJsonPath('data.0.total_pick_result', 'loss')
+        ->assertJsonPath('data.0.total_result.side', 'over')
+        ->assertJsonPath('data.0.total_result.line', 8.5)
+        ->assertJsonPath('data.0.total_result.result', 'loss')
+        ->assertJsonPath('data.0.total_result.actual_total', 5);
+});
+
 it('returns MLB daily picks from the v2 API as tracking only', function (): void {
     mlbPricedSlate();
     $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
@@ -165,8 +221,105 @@ it('returns MLB daily picks from the v2 API as tracking only', function (): void
         ->assertOk()
         ->assertJsonPath('data.mode', 'tracking_only')
         ->assertJsonPath('data.public_promoted_count', 0)
+        ->assertJsonPath('data.summary.public_promoted_count', 0)
+        ->assertJsonPath('data.board_health.status', 'tracking_ready')
+        ->assertJsonPath('data.market_counts.all', 5)
+        ->assertJsonPath('data.achievements.0.key', 'clean_slate')
+        ->assertJsonPath('data.performance_summary.sample_warning', 'Sample too small for public betting validation.')
         ->assertJsonPath('data.top_picks.0.is_bet', false);
 
     expect($response->json('data.candidate_count'))->toBeGreaterThan(0)
         ->and($response->json('data.top_picks'))->not->toBeEmpty();
+});
+
+it('returns slate counts even when no MLB daily pick candidates exist', function (): void {
+    mlbPricedSlate([
+        'odds_data' => null,
+        'odds_updated_at' => null,
+    ]);
+
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->getJson('/api/v2/sports/mlb/daily-picks?date=2026-06-20&season=2026')
+        ->assertOk()
+        ->assertJsonPath('data.candidate_count', 0)
+        ->assertJsonPath('data.summary.slate_games', 1)
+        ->assertJsonPath('data.summary.priced_games', 0)
+        ->assertJsonPath('data.board_health.status', 'needs_odds')
+        ->assertJsonPath('data.market_counts.all', 0)
+        ->assertJsonPath('data.achievements.0.key', 'no_force_picks');
+});
+
+it('does not leak next local date games into the MLB daily pick slate', function (): void {
+    [, , $home, $away] = mlbPricedSlate([
+        'odds_data' => null,
+        'odds_updated_at' => null,
+        'game_date' => '2026-06-20 00:00:00',
+        'game_time' => '16:10:00',
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'game_date' => '2026-06-21 00:00:00',
+        'game_time' => '13:10:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $away->id,
+        'away_team_id' => $home->id,
+        'short_name' => 'KC @ STL',
+    ]);
+
+    Sanctum::actingAs(User::factory()->create());
+
+    $this->getJson('/api/v2/sports/mlb/daily-picks?date=2026-06-20&season=2026')
+        ->assertOk()
+        ->assertJsonPath('data.summary.slate_games', 1)
+        ->assertJsonPath('data.summary.priced_games', 0);
+});
+
+it('uses the same local date window for MLB v2 prediction queries', function (): void {
+    [$game, , $home, $away] = mlbPricedSlate([
+        'game_date' => '2026-06-20 00:00:00',
+        'game_time' => '16:10:00',
+    ]);
+
+    $nextDayGame = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'game_date' => '2026-06-21 00:00:00',
+        'game_time' => '13:10:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $away->id,
+        'away_team_id' => $home->id,
+        'short_name' => 'KC @ STL',
+    ]);
+
+    Prediction::query()->create([
+        'game_id' => $nextDayGame->id,
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'home_team_elo' => 1500,
+        'away_team_elo' => 1500,
+        'home_pitcher_elo' => 1500,
+        'away_pitcher_elo' => 1500,
+        'home_combined_elo' => 1500,
+        'away_combined_elo' => 1500,
+        'predicted_spread' => 0.1,
+        'predicted_total' => 8.4,
+        'win_probability' => 0.51,
+        'confidence_score' => 50,
+        'model_version' => 'test',
+        'feature_version' => 'core-v3',
+        'blend_version' => 'test',
+        'model_metadata' => [],
+    ]);
+
+    Sanctum::actingAs(User::factory()->create());
+
+    $response = $this->getJson('/api/v2/sports/mlb/predictions?from_date=2026-06-20&to_date=2026-06-20&season=2026&per_page=100')
+        ->assertOk()
+        ->assertJsonCount(1, 'data');
+
+    expect($response->json('data.0.game.id'))->toBe($game->id)
+        ->and($response->json('data.0.game.game_time'))->toBe('16:10:00');
 });

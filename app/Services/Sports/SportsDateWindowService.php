@@ -67,7 +67,11 @@ class SportsDateWindowService
     {
         return $query->where(function (Builder $query) use ($column, $window): void {
             $query
-                ->whereBetween($column, [$window->utcStartDateTime(), $window->utcEndDateTime()])
+                ->where(function (Builder $utcDateTimeQuery) use ($column, $window): void {
+                    $utcDateTimeQuery
+                        ->whereBetween($column, [$window->utcStartDateTime(), $window->utcEndDateTime()])
+                        ->whereRaw("TIME({$column}) <> ?", ['00:00:00']);
+                })
                 ->orWhere(function (Builder $localDateQuery) use ($column, $window): void {
                     $localDateQuery
                         ->whereDate($column, '>=', $window->localStartDate())

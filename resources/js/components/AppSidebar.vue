@@ -164,7 +164,7 @@ const sportNavItems: NavItem[] = [
         iconProps: baseballIconProps,
         items: [
             {
-                title: 'Predictions',
+                title: 'Daily Board',
                 href: mlbPredictions(),
             },
             {

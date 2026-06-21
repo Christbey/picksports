@@ -141,6 +141,20 @@ it('persists tracking-only MLB candidates with scores reasons and risks', functi
         ->and(data_get($candidate->feature_snapshot, 'internal_candidate_label'))->not->toBeNull();
 });
 
+it('refreshes MLB daily pick candidates idempotently for the same slate', function (): void {
+    mlbPricedSlate();
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
+        ->assertExitCode(0);
+
+    $firstCount = PickCandidate::query()->count();
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
+        ->assertExitCode(0);
+
+    expect(PickCandidate::query()->count())->toBe($firstCount);
+});
+
 it('applies MLB total bias correction to total candidates', function (): void {
     config(['mlb.picks.total_bias_correction' => 1.0]);
     mlbPricedSlate();

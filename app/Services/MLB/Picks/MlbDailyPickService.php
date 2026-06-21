@@ -75,6 +75,13 @@ class MlbDailyPickService
             }
         }
 
+        if (! $dryRun) {
+            PickCandidate::query()
+                ->whereIn('game_id', $games->pluck('id')->all())
+                ->where('season', $season)
+                ->delete();
+        }
+
         $candidates = $dryRun
             ? new EloquentCollection($payloads->map(fn (array $payload): PickCandidate => new PickCandidate($payload))->all())
             : $this->repository->persist($payloads);

@@ -315,6 +315,10 @@ class SportsPipelineRegistry
                 $this->step('Calculate team metrics', 'mlb:calculate-team-metrics', ['--season' => $season]),
                 $this->step('Generate predictions', 'mlb:generate-predictions', ['--season' => $season]),
                 $this->step('Generate playoff forecast', 'mlb:generate-playoff-forecast', ['--season' => $season]),
+                $this->step('Generate daily picks', 'mlb:generate-daily-picks', [
+                    '--date' => $context['reference_date']->format('Y-m-d'),
+                    '--season' => $season,
+                ]),
             ],
             'cbb' => [
                 $this->step('Grade predictions', 'cbb:grade-predictions', ['--season' => $season]),

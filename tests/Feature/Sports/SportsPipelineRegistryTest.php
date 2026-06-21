@@ -31,3 +31,22 @@ it('keeps wcbb regular odds enabled without unsupported futures odds', function 
         ->toContain('wcbb:sync-odds')
         ->not->toContain('sports:sync-futures-odds');
 });
+
+it('generates MLB daily picks after the canonical prediction pipeline', function () {
+    $registry = app(SportsPipelineRegistry::class);
+    $context = $registry->context(date: '2026-06-20', season: 2026);
+
+    $steps = collect($registry->pipelineSteps('mlb', 'predict', $context));
+    $dailyPicks = $steps->firstWhere('command', 'mlb:generate-daily-picks');
+
+    expect($steps->pluck('command')->all())
+        ->toContain('mlb:generate-predictions')
+        ->toContain('mlb:generate-daily-picks')
+        ->and($steps->search(fn (array $step): bool => $step['command'] === 'mlb:generate-daily-picks'))
+        ->toBeGreaterThan($steps->search(fn (array $step): bool => $step['command'] === 'mlb:generate-predictions'))
+        ->and($dailyPicks['arguments'])
+        ->toMatchArray([
+            '--date' => '2026-06-20',
+            '--season' => 2026,
+        ]);
+});

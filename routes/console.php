@@ -590,6 +590,17 @@ $scheduleDailySeasonJob(
     $mlbInSeason,
     'MLB: Snapshot Bet Filter'
 );
+
+$mlbDailyPicksCommand = "mlb:generate-daily-picks --today --season={$currentYear}";
+$mlbDailyPicksEvent = Schedule::command($mlbDailyPicksCommand)
+    ->hourlyAt(20)
+    ->between('08:00', '23:30')
+    ->when($mlbInSeason)
+    ->name('MLB: Generate Daily Picks')
+    ->withoutOverlapping()
+    ->runInBackground();
+$attachCommandHeartbeat($mlbDailyPicksEvent, $mlbDailyPicksCommand, 'MLB: Generate Daily Picks');
+
 $operationsSentinelSchedules = [
     ['sport' => 'wnba', 'label' => 'WNBA', 'season' => $currentYear, 'time' => '02:25', 'in_season' => $wnbaInSeason],
     ['sport' => 'cfb', 'label' => 'CFB', 'season' => $fallSeasonYear, 'time' => '04:50', 'in_season' => $cfbInSeason],

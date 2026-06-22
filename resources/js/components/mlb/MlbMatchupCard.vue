@@ -164,16 +164,14 @@ const modelResultLabel = computed(() => {
     return null;
 });
 
-const finalScoreLabel = computed(() => {
-    if (!isFinal.value) return null;
-
-    const awayScore = numberValue(game.value?.away_score);
-    const homeScore = numberValue(game.value?.home_score);
-
-    if (awayScore == null || homeScore == null) return 'Final';
-
-    return `${teamAbbreviation(awayTeam.value)} ${awayScore} - ${teamAbbreviation(homeTeam.value)} ${homeScore}`;
-});
+const awayScore = computed(() => numberValue(game.value?.away_score));
+const homeScore = computed(() => numberValue(game.value?.home_score));
+const showGameScore = computed(
+    () =>
+        (isFinal.value || statusBadge.value === 'Live') &&
+        awayScore.value != null &&
+        homeScore.value != null,
+);
 
 const totalResultLabel = computed(() => {
     if (!isFinal.value) return null;
@@ -307,6 +305,24 @@ function teamShortName(team: unknown): string {
     );
 }
 
+function teamScoreClass(team: 'away' | 'home'): string {
+    if (
+        !showGameScore.value ||
+        awayScore.value == null ||
+        homeScore.value == null
+    ) {
+        return 'text-foreground';
+    }
+
+    const teamScore = team === 'away' ? awayScore.value : homeScore.value;
+    const opponentScore = team === 'away' ? homeScore.value : awayScore.value;
+
+    if (teamScore > opponentScore) return 'text-foreground';
+    if (teamScore < opponentScore) return 'text-muted-foreground';
+
+    return 'text-foreground';
+}
+
 function formatTime(value?: string | null, time?: string | null): string {
     if (!value) return 'Time pending';
 
@@ -400,7 +416,15 @@ function resultBadgeClass(
                                 :alt="teamName(awayTeam)"
                                 class="h-6 w-6 rounded-full object-contain"
                             />
-                            <span>{{ teamAbbreviation(awayTeam) }}</span>
+                            <span
+                                class="inline-flex items-center gap-1.5"
+                                :class="teamScoreClass('away')"
+                            >
+                                <span>{{ teamAbbreviation(awayTeam) }}</span>
+                                <span v-if="showGameScore" class="font-bold">
+                                    {{ awayScore }}
+                                </span>
+                            </span>
                             <span class="text-muted-foreground">@</span>
                             <img
                                 v-if="homeTeam?.logo_url"
@@ -408,7 +432,15 @@ function resultBadgeClass(
                                 :alt="teamName(homeTeam)"
                                 class="h-6 w-6 rounded-full object-contain"
                             />
-                            <span>{{ teamAbbreviation(homeTeam) }}</span>
+                            <span
+                                class="inline-flex items-center gap-1.5"
+                                :class="teamScoreClass('home')"
+                            >
+                                <span>{{ teamAbbreviation(homeTeam) }}</span>
+                                <span v-if="showGameScore" class="font-bold">
+                                    {{ homeScore }}
+                                </span>
+                            </span>
                         </div>
                         <span
                             class="inline-flex items-center gap-1 rounded-full border bg-background/75 px-2.5 py-1 text-xs text-muted-foreground"
@@ -486,20 +518,6 @@ function resultBadgeClass(
                 class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
             >
                 <div class="min-w-0 text-xs text-muted-foreground">
-                    <span
-                        v-if="finalScoreLabel"
-                        class="font-semibold text-foreground"
-                    >
-                        {{ finalScoreLabel }}
-                    </span>
-                    <span
-                        v-if="
-                            finalScoreLabel &&
-                            (totalScoreLabel || candidateMarketLabel)
-                        "
-                    >
-                        ·
-                    </span>
                     <span v-if="totalScoreLabel">
                         {{ totalScoreLabel }}
                     </span>

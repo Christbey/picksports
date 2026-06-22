@@ -6,6 +6,8 @@ Last updated: 2026-06-18
 
 This document is the single source of truth for reviewing and tuning the MLB prediction system. The first goal is measurement and audit, not changing production prediction logic. MLB should eventually show fewer picks, with stronger trust requirements around clean timestamps, fresh odds, no-vig edge, historical calibration, and consistent bet/lean/live labels.
 
+Implementation companion: [MLB Signal Driver System Implementation Plan](mlb-signal-driver-system-plan.md).
+
 ## Executive Summary
 
 The MLB page currently has two separate decision systems on the same screen:

@@ -9,6 +9,40 @@ export type MlbDailyPickPlayer = {
     display_name?: string | null;
 } | null;
 
+export type MlbSignalDriver = {
+    key: string;
+    label: string;
+    value?: string | number | null;
+    impact: 'positive' | 'warning' | 'risk' | 'neutral' | string;
+    source?: string | null;
+    source_timestamp?: string | null;
+    captured_at?: string | null;
+    game_start_at?: string | null;
+    is_pregame_safe: boolean;
+    pregame_safety_reasons: string[];
+};
+
+export type MlbSignalGroup = {
+    key: string;
+    label: string;
+    status: 'positive' | 'warning' | 'risk' | 'neutral' | string;
+    summary: string;
+    score_delta?: number | null;
+    reason_codes?: string[];
+    risk_flags?: string[];
+    drivers: MlbSignalDriver[];
+};
+
+export type MlbSignalLayer = {
+    version: string;
+    pregame_safe: boolean;
+    recommended_angle?: string | null;
+    score_delta?: number | null;
+    reason_codes: string[];
+    risk_flags: string[];
+    signal_groups: MlbSignalGroup[];
+};
+
 export type MlbDailyPick = {
     id: number;
     season: number;
@@ -48,6 +82,8 @@ export type MlbDailyPick = {
     is_bet: boolean;
     reason_codes: string[];
     risk_flags: string[];
+    signal_layer?: MlbSignalLayer | null;
+    recommended_market_angle?: string | null;
     feature_snapshot: Record<string, unknown>;
     market_snapshot: Record<string, unknown>;
     explanation: string;
@@ -81,7 +117,13 @@ export type MlbDailyPerformanceRecord = {
 };
 
 export type MlbDailyBoardHealth = {
-    status: 'no_slate' | 'needs_odds' | 'pending_scan' | 'no_force_picks' | 'tracking_ready' | string;
+    status:
+        | 'no_slate'
+        | 'needs_odds'
+        | 'pending_scan'
+        | 'no_force_picks'
+        | 'tracking_ready'
+        | string;
     score?: number | null;
     slate_coverage?: number | null;
     pregame_safe_rate?: number | null;

@@ -2,16 +2,23 @@
 
 namespace App\Services\MLB\Picks;
 
+use App\Services\MLB\Signals\MlbSignalDriverService;
+
 class MlbPickCandidateScorer
 {
+    public function __construct(
+        private readonly MlbSignalDriverService $signals,
+    ) {}
+
     /**
      * @return array{score:int,confidence:float,internal_label:string,reason_codes:list<string>,risk_flags:list<string>,feature_snapshot:array<string,mixed>}
      */
     public function score(MlbPickCandidateData $candidate): array
     {
         $score = 50;
-        $reasonCodes = array_values(array_unique($candidate->reasonCodes));
-        $riskFlags = array_values(array_unique($candidate->riskFlags));
+        $signalLayer = $this->signals->forCandidate($candidate);
+        $reasonCodes = array_values(array_unique((array) ($signalLayer['reason_codes'] ?? $candidate->reasonCodes)));
+        $riskFlags = array_values(array_unique((array) ($signalLayer['risk_flags'] ?? $candidate->riskFlags)));
 
         if (in_array('model_market_agrees', $reasonCodes, true)) {
             $score += 12;
@@ -75,6 +82,13 @@ class MlbPickCandidateScorer
             };
         }
 
+        $score += (int) ($signalLayer['score_delta'] ?? 0);
+
+        if (! (bool) ($signalLayer['pregame_safe'] ?? true)) {
+            $score = min($score, 57);
+            $riskFlags[] = 'pregame_signal_safety_block';
+        }
+
         $score = max(0, min(100, $score));
         $label = match (true) {
             $score >= 80 => 'bet_candidate',
@@ -85,6 +99,7 @@ class MlbPickCandidateScorer
 
         $featureSnapshot = $candidate->featureSnapshot;
         $featureSnapshot['internal_candidate_label'] = $label;
+        $featureSnapshot['signal_layer'] = $signalLayer;
 
         return [
             'score' => $score,

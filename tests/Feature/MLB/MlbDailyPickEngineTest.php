@@ -138,7 +138,9 @@ it('persists tracking-only MLB candidates with scores reasons and risks', functi
         ->and($candidate->recommendation_label)->toBe('tracking_only')
         ->and($candidate->score)->toBeGreaterThan(0)
         ->and($candidate->reason_codes)->toContain('model_market_agrees')
-        ->and(data_get($candidate->feature_snapshot, 'internal_candidate_label'))->not->toBeNull();
+        ->and(data_get($candidate->feature_snapshot, 'internal_candidate_label'))->not->toBeNull()
+        ->and(data_get($candidate->feature_snapshot, 'signal_layer.version'))->toBe('mlb_signal_driver_v1')
+        ->and(data_get($candidate->feature_snapshot, 'signal_layer.signal_groups'))->not->toBeEmpty();
 });
 
 it('refreshes MLB daily pick candidates idempotently for the same slate', function (): void {
@@ -240,7 +242,8 @@ it('returns MLB daily picks from the v2 API as tracking only', function (): void
         ->assertJsonPath('data.market_counts.all', 5)
         ->assertJsonPath('data.achievements.0.key', 'clean_slate')
         ->assertJsonPath('data.performance_summary.sample_warning', 'Sample too small for public betting validation.')
-        ->assertJsonPath('data.top_picks.0.is_bet', false);
+        ->assertJsonPath('data.top_picks.0.is_bet', false)
+        ->assertJsonPath('data.top_picks.0.signal_layer.version', 'mlb_signal_driver_v1');
 
     expect($response->json('data.candidate_count'))->toBeGreaterThan(0)
         ->and($response->json('data.top_picks'))->not->toBeEmpty();

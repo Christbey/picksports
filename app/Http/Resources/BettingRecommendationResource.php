@@ -14,23 +14,29 @@ class BettingRecommendationResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $prop = $this->resource['prop'];
+        $player = $this->resource['player'] ?? null;
+        $game = $this->resource['game'];
         $sportPrefix = $this->resolveSportPrefix();
         $playerRoute = "{$sportPrefix}.player.show";
-        $playerUrl = app('router')->has($playerRoute)
-            ? route($playerRoute, $this->resource['player']->id)
+        $playerId = data_get($player, 'id') ?? $prop->player_id;
+        $playerUrl = $playerId !== null && app('router')->has($playerRoute)
+            ? route($playerRoute, $playerId)
             : null;
-        $playerName = $this->resource['player']->full_name
-            ?? $this->resource['player']->display_name
-            ?? $this->resource['player']->name;
+        $playerName = data_get($player, 'full_name')
+            ?? data_get($player, 'display_name')
+            ?? data_get($player, 'name')
+            ?? $prop->player_name
+            ?? 'Unknown Player';
 
         return [
-            'id' => $this->resource['prop']->id,
+            'id' => $prop->id,
             'player' => [
-                'id' => $this->resource['player']->id,
+                'id' => $playerId,
                 'name' => $playerName,
-                'position' => $this->resource['player']->position,
-                'team' => $this->resource['player']->team?->abbreviation ?? $this->resource['player']->team?->name,
-                'headshot' => $this->resource['player']->headshot_url ?? $this->resource['player']->headshot ?? null,
+                'position' => data_get($player, 'position'),
+                'team' => data_get($player, 'team.abbreviation') ?? data_get($player, 'team.name'),
+                'headshot' => data_get($player, 'headshot_url') ?? data_get($player, 'headshot'),
                 'url' => $playerUrl,
             ],
             'market' => $this->resource['market'],
@@ -61,17 +67,17 @@ class BettingRecommendationResource extends JsonResource
             'confidence_decomposition' => $this->resource['confidence_decomposition'] ?? null,
             'reasoning' => $this->resource['reasoning'],
             'narrative' => $this->resource['narrative'] ?? null,
-            'actual_value' => $this->resource['prop']->actual_value !== null ? (float) $this->resource['prop']->actual_value : null,
-            'hit_over' => $this->resource['prop']->hit_over,
-            'graded_at' => $this->resource['prop']->graded_at?->toIso8601String(),
+            'actual_value' => $prop->actual_value !== null ? (float) $prop->actual_value : null,
+            'hit_over' => $prop->hit_over,
+            'graded_at' => $prop->graded_at?->toIso8601String(),
             'game' => [
-                'id' => $this->resource['game']->id,
-                'home_team' => $this->resource['game']->homeTeam?->name,
-                'away_team' => $this->resource['game']->awayTeam?->name,
-                'date' => $this->resource['game']->game_date,
-                'time' => $this->resource['game']->game_time,
+                'id' => $game->id,
+                'home_team' => $game->homeTeam?->name,
+                'away_team' => $game->awayTeam?->name,
+                'date' => $game->game_date,
+                'time' => $game->game_time,
             ],
-            'bookmaker' => $this->resource['prop']->bookmaker,
+            'bookmaker' => $prop->bookmaker,
         ];
     }
 

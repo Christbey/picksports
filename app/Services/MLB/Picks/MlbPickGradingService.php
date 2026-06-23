@@ -10,6 +10,14 @@ class MlbPickGradingService
 {
     public function grade(?int $season = null): int
     {
+        return $this->gradeWithReport($season)['graded'];
+    }
+
+    /**
+     * @return array{graded:int, excluded:int, exclusion_reasons:array<string,int>}
+     */
+    public function gradeWithReport(?int $season = null): array
+    {
         $query = PickCandidate::query()
             ->with('game')
             ->whereNull('graded_at')
@@ -23,9 +31,22 @@ class MlbPickGradingService
         }
 
         $graded = 0;
-        $query->chunkById(250, function (Collection $rows) use (&$graded): void {
+        $excluded = 0;
+        $exclusionReasons = [];
+
+        $query->chunkById(250, function (Collection $rows) use (&$graded, &$excluded, &$exclusionReasons): void {
             foreach ($rows as $candidate) {
                 if (! $candidate instanceof PickCandidate || ! $candidate->game) {
+                    continue;
+                }
+
+                $reasons = $candidate->performanceExclusionReasons();
+                if ($reasons !== []) {
+                    $excluded++;
+                    foreach ($reasons as $reason) {
+                        $exclusionReasons[$reason] = ($exclusionReasons[$reason] ?? 0) + 1;
+                    }
+
                     continue;
                 }
 
@@ -45,7 +66,13 @@ class MlbPickGradingService
             }
         });
 
-        return $graded;
+        ksort($exclusionReasons);
+
+        return [
+            'graded' => $graded,
+            'excluded' => $excluded,
+            'exclusion_reasons' => $exclusionReasons,
+        ];
     }
 
     /**

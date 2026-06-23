@@ -68,6 +68,16 @@ it('returns the v2 player prop recommendation board envelope from the analyzer',
         ->with('NBA', '2026-06-10', 99, 'player_points', 75)
         ->andReturn(collect());
     $analyzer
+        ->shouldReceive('precomputedRecommendationDiagnostics')
+        ->once()
+        ->with('NBA', '2026-06-10', 99, 'player_points')
+        ->andReturn([
+            'raw_prop_count' => 0,
+            'analyzed_prop_count' => 0,
+            'recommendation_candidate_count' => 0,
+            'missing_player_link_count' => 0,
+        ]);
+    $analyzer
         ->shouldReceive('getAvailableDatesForSport')
         ->once()
         ->with('NBA')
@@ -107,6 +117,74 @@ it('returns the v2 player prop recommendation board envelope from the analyzer',
         ->assertJsonPath('meta.source', 'precomputed');
 });
 
+it('renders v2 player prop board recommendations when provider player names are not linked to internal players', function () {
+    actAsV2PlayerPropContractUser();
+
+    $homeTeam = MlbTeam::factory()->create(['name' => 'Los Angeles Dodgers', 'abbreviation' => 'LAD']);
+    $awayTeam = MlbTeam::factory()->create(['name' => 'Baltimore Orioles', 'abbreviation' => 'BAL']);
+    $game = MlbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-06-21',
+    ]);
+
+    MlbPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => null,
+        'player_name' => 'Provider Only Batter',
+        'market' => 'batter_hits',
+        'bookmaker' => 'draftkings',
+        'line' => 1.5,
+        'over_price' => 110,
+        'under_price' => -130,
+        'recommended_side' => 'Over',
+        'confidence_score' => 72,
+        'predicted_over_probability' => 64.2,
+        'market_over_probability' => 47.5,
+        'edge_probability' => 16.7,
+        'data_quality_score' => 82,
+        'match_quality_score' => 70,
+        'confidence_decomposition' => [
+            'schema_version' => 'player-prop-signal-v2',
+            'stat_summary' => [
+                'season_avg' => 1.7,
+                'recent_avg' => 1.9,
+                'last5_avg' => 2.0,
+                'consistency' => ['level' => 'stable'],
+            ],
+            'cover_record' => [
+                'season' => [
+                    'games' => 24,
+                    'recommendation' => 'Over',
+                    'recommendation_record' => '14-10',
+                    'win_rate' => 58.3,
+                ],
+                'last_10' => null,
+                'last_5' => null,
+                'home_away' => null,
+                'vs_opponent' => null,
+            ],
+            'signal_quality' => [
+                'label' => 'Lean',
+                'tier' => 'lean',
+                'reason_codes' => [],
+            ],
+        ],
+    ]);
+
+    $this->getJson('/api/v2/sports/mlb/player-props/board?date=2026-06-21')
+        ->assertOk()
+        ->assertJsonPath('data.0.player.id', null)
+        ->assertJsonPath('data.0.player.name', 'Provider Only Batter')
+        ->assertJsonPath('data.0.player.url', null)
+        ->assertJsonPath('data.0.recommendation', 'Over')
+        ->assertJsonPath('meta.diagnostics.raw_prop_count', 1)
+        ->assertJsonPath('meta.diagnostics.recommendation_candidate_count', 1)
+        ->assertJsonPath('meta.diagnostics.missing_player_link_count', 1);
+});
+
 it('defaults the player prop board date to today or the next available slate for every sport', function () {
     Carbon::setTestNow('2026-06-13 10:00:00');
     actAsV2PlayerPropContractUser();
@@ -125,6 +203,16 @@ it('defaults the player prop board date to today or the next available slate for
         ->once()
         ->with('MLB', '2026-06-14', null, null, 75)
         ->andReturn(collect());
+    $analyzer
+        ->shouldReceive('precomputedRecommendationDiagnostics')
+        ->once()
+        ->with('MLB', '2026-06-14', null, null)
+        ->andReturn([
+            'raw_prop_count' => 0,
+            'analyzed_prop_count' => 0,
+            'recommendation_candidate_count' => 0,
+            'missing_player_link_count' => 0,
+        ]);
     $analyzer
         ->shouldReceive('getAvailableGamesForSport')
         ->once()

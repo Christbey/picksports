@@ -7,6 +7,8 @@ use App\Models\MLB\PlayerProp;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\User;
+use App\Services\MLB\Picks\MlbPickGradingService;
+use Illuminate\Support\Facades\Artisan;
 use Laravel\Sanctum\Sanctum;
 
 function mlbPricedSlate(array $overrides = []): array
@@ -169,6 +171,275 @@ it('applies MLB total bias correction to total candidates', function (): void {
     expect((float) data_get($over->feature_snapshot, 'corrected_projected_total'))->toBe(9.2)
         ->and((float) $over->line)->toBe(8.5)
         ->and((float) $over->projected_value)->toBeGreaterThan(0);
+});
+
+it('does not grade live or post-start MLB pick candidates as official performance', function (): void {
+    [$game] = mlbPricedSlate([
+        'game_date' => '2026-06-20 19:10:00',
+    ]);
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline')
+        ->assertExitCode(0);
+
+    $candidate = PickCandidate::query()->firstOrFail();
+    $candidate->forceFill([
+        'generated_at' => '2026-06-20 20:10:00',
+        'game_start_at' => '2026-06-20 19:10:00',
+    ])->save();
+
+    $game->forceFill([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 5,
+        'away_score' => 3,
+    ])->save();
+
+    $graded = app(MlbPickGradingService::class)->grade(2026);
+
+    expect($graded)->toBe(0)
+        ->and($candidate->refresh()->graded_at)->toBeNull()
+        ->and($candidate->result_status)->toBeNull();
+});
+
+it('grades valid pregame-safe MLB pick candidates normally', function (): void {
+    [$game] = mlbPricedSlate([
+        'game_date' => '2026-06-20 19:10:00',
+    ]);
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline')
+        ->assertExitCode(0);
+
+    $candidate = PickCandidate::query()->firstOrFail();
+    PickCandidate::query()->whereKeyNot($candidate->id)->delete();
+    $candidate->forceFill([
+        'generated_at' => '2026-06-20 18:10:00',
+        'game_start_at' => '2026-06-20 19:10:00',
+        'feature_snapshot' => [
+            ...(array) $candidate->feature_snapshot,
+            'signal_layer' => [
+                ...(array) data_get($candidate->feature_snapshot, 'signal_layer', []),
+                'pregame_safe' => true,
+            ],
+        ],
+    ])->save();
+
+    $game->forceFill([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 5,
+        'away_score' => 3,
+    ])->save();
+
+    $report = app(MlbPickGradingService::class)->gradeWithReport(2026);
+
+    expect($report['graded'])->toBe(1)
+        ->and($report['excluded'])->toBe(0)
+        ->and($candidate->refresh()->graded_at)->not->toBeNull()
+        ->and($candidate->result_status)->toBeIn(['win', 'loss', 'push']);
+});
+
+it('reports post-first-pitch MLB pick candidate exclusion reason', function (): void {
+    [$game] = mlbPricedSlate([
+        'game_date' => '2026-06-20 19:10:00',
+    ]);
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline')
+        ->assertExitCode(0);
+
+    $candidate = PickCandidate::query()->firstOrFail();
+    PickCandidate::query()->whereKeyNot($candidate->id)->delete();
+    $candidate->forceFill([
+        'generated_at' => '2026-06-20 19:10:00',
+        'game_start_at' => '2026-06-20 19:10:00',
+    ])->save();
+
+    $game->forceFill([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 5,
+        'away_score' => 3,
+    ])->save();
+
+    $report = app(MlbPickGradingService::class)->gradeWithReport(2026);
+
+    expect($report['graded'])->toBe(0)
+        ->and($report['excluded'])->toBe(1)
+        ->and($report['exclusion_reasons'])->toHaveKey('generated_after_game_start', 1)
+        ->and($candidate->refresh()->graded_at)->toBeNull();
+});
+
+it('excludes unsafe live and non-playable MLB pick candidates from performance eligibility', function (): void {
+    [$game] = mlbPricedSlate([
+        'game_date' => '2026-06-20 19:10:00',
+    ]);
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline')
+        ->assertExitCode(0);
+
+    $template = PickCandidate::query()->firstOrFail();
+    PickCandidate::query()->delete();
+
+    $base = [
+        ...$template->replicate()->getAttributes(),
+        'generated_at' => '2026-06-20 18:10:00',
+        'game_start_at' => '2026-06-20 19:10:00',
+        'graded_at' => null,
+        'result_status' => null,
+        'result_value' => null,
+        'result_profit_units' => null,
+    ];
+
+    PickCandidate::query()->create([
+        ...$base,
+        'risk_flags' => ['live_only_or_postgame_unsafe'],
+    ]);
+    PickCandidate::query()->create([
+        ...$base,
+        'risk_flags' => ['point_in_time_unsafe'],
+        'feature_snapshot' => [
+            ...(array) $template->feature_snapshot,
+            'signal_layer' => [
+                ...(array) data_get($template->feature_snapshot, 'signal_layer', []),
+                'pregame_safe' => false,
+            ],
+        ],
+    ]);
+
+    $game->forceFill([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 5,
+        'away_score' => 3,
+    ])->save();
+
+    $report = app(MlbPickGradingService::class)->gradeWithReport(2026);
+
+    expect($report['graded'])->toBe(0)
+        ->and($report['excluded'])->toBe(2)
+        ->and($report['exclusion_reasons'])->toHaveKey('live_only_or_postgame_unsafe', 1)
+        ->and($report['exclusion_reasons'])->toHaveKey('point_in_time_unsafe', 1)
+        ->and(PickCandidate::query()->whereNotNull('graded_at')->count())->toBe(0);
+});
+
+it('returns explicit MLB pick candidate eligibility reasons for missing start time and non-playable games', function (): void {
+    [$game] = mlbPricedSlate([
+        'game_date' => '2026-06-20 19:10:00',
+    ]);
+
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline')
+        ->assertExitCode(0);
+
+    $candidate = PickCandidate::query()->firstOrFail();
+    $candidate->forceFill([
+        'generated_at' => '2026-06-20 18:10:00',
+        'game_start_at' => null,
+    ])->save();
+
+    expect($candidate->performanceExclusionReasons())->toContain('missing_game_start_at')
+        ->and($candidate->isPregamePerformanceEligible())->toBeFalse();
+
+    foreach ([
+        config('mlb.statuses.postponed'),
+        config('mlb.statuses.suspended'),
+        config('mlb.statuses.canceled'),
+    ] as $status) {
+        $candidate->forceFill([
+            'game_start_at' => '2026-06-20 19:10:00',
+        ])->save();
+        $game->forceFill(['status' => $status])->save();
+
+        expect($candidate->fresh('game')->performanceExclusionReasons())->toContain('postponed_suspended_cancelled')
+            ->and($candidate->fresh('game')->isPregamePerformanceEligible())->toBeFalse();
+    }
+});
+
+it('excludes unsafe MLB pick candidates from backtest hit rate roi and clv reporting', function (): void {
+    [$game] = mlbPricedSlate([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 5,
+        'away_score' => 3,
+        'game_date' => '2026-06-20 19:10:00',
+    ]);
+
+    $safe = PickCandidate::query()->create([
+        'season' => 2026,
+        'game_id' => $game->id,
+        'market_type' => 'moneyline',
+        'market_key' => 'h2h',
+        'side' => 'home',
+        'price' => -110,
+        'score' => 82,
+        'confidence' => 0.82,
+        'status' => 'graded_win',
+        'recommendation_label' => 'tracking_only',
+        'is_public' => false,
+        'is_tracking_only' => true,
+        'is_bet' => false,
+        'risk_flags' => [],
+        'reason_codes' => ['model_market_agrees'],
+        'feature_snapshot' => ['signal_layer' => ['pregame_safe' => true]],
+        'market_snapshot' => [],
+        'generated_at' => '2026-06-20 18:10:00',
+        'game_start_at' => '2026-06-20 19:10:00',
+        'result_status' => 'win',
+        'result_value' => 2,
+        'result_profit_units' => 0.909,
+        'clv' => 1.25,
+        'graded_at' => '2026-06-21 01:00:00',
+    ]);
+
+    PickCandidate::query()->create([
+        ...$safe->replicate()->getAttributes(),
+        'status' => 'graded_loss',
+        'risk_flags' => ['live_only_or_postgame_unsafe'],
+        'generated_at' => '2026-06-20 20:10:00',
+        'result_status' => 'loss',
+        'result_profit_units' => -1,
+        'clv' => -10,
+    ]);
+
+    Artisan::call('mlb:backtest-pick-candidates', [
+        '--season' => 2026,
+        '--json' => true,
+    ]);
+    $payload = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['rows'])->toBe(1)
+        ->and($payload['excluded_from_report'])->toBe(1)
+        ->and($payload['report_exclusion_reasons'])->toHaveKey('generated_after_game_start', 1)
+        ->and($payload['report_exclusion_reasons'])->toHaveKey('live_only_or_postgame_unsafe', 1)
+        ->and($payload['by_market'][0][0])->toBe('moneyline')
+        ->and($payload['by_market'][0][1])->toBe(1)
+        ->and($payload['by_market'][0][2])->toBe(1)
+        ->and($payload['by_market'][0][3])->toBe(0)
+        ->and($payload['by_market'][0][6])->toBe(0.909)
+        ->and($payload['by_market'][0][9])->toBe('1.250');
+});
+
+it('grades core MLB predictions from stored pregame projection fields, not live fields', function (): void {
+    [$game, $prediction] = mlbPricedSlate([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 6,
+        'away_score' => 4,
+    ]);
+
+    $prediction->forceFill([
+        'predicted_spread' => 2,
+        'predicted_total' => 10,
+        'live_predicted_spread' => -99,
+        'live_predicted_total' => 99,
+        'live_win_probability' => 0.01,
+        'live_updated_at' => now(),
+        'model_metadata' => [
+            'market_context' => [
+                'market_total' => 8.5,
+            ],
+        ],
+    ])->save();
+
+    app(GradePredictions::class)->executeForGame($game->id);
+
+    $prediction->refresh();
+
+    expect((float) $prediction->spread_error)->toBe(0.0)
+        ->and((float) $prediction->total_error)->toBe(0.0)
+        ->and($prediction->winner_correct)->toBeTrue();
 });
 
 it('stores MLB over under results when predictions are graded', function (): void {

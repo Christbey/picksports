@@ -33,11 +33,11 @@ type CoverRecord = {
 type Recommendation = {
     id: number;
     player: {
-        id: number;
+        id: number | null;
         name: string;
-        position: string;
-        team: string;
-        headshot: string;
+        position: string | null;
+        team: string | null;
+        headshot: string | null;
         url: string | null;
     };
     market: string;
@@ -128,6 +128,16 @@ type PlayerPropsFilters = {
     market: string | null;
 };
 
+type PlayerPropsMeta = {
+    diagnostics?: {
+        raw_prop_count?: number;
+        analyzed_prop_count?: number;
+        recommendation_candidate_count?: number;
+        missing_player_link_count?: number;
+    };
+    warnings?: string[];
+};
+
 type PlayerPropsResponse = {
     sport: string;
     data: Recommendation[];
@@ -135,6 +145,7 @@ type PlayerPropsResponse = {
     games: GameOption[];
     markets: MarketOption[];
     filters: PlayerPropsFilters;
+    meta?: PlayerPropsMeta;
 };
 
 const props = defineProps<{
@@ -154,6 +165,7 @@ const recommendations = ref<Recommendation[]>([]);
 const dates = ref<DateOption[]>([]);
 const games = ref<GameOption[]>([]);
 const markets = ref<MarketOption[]>([]);
+const boardMeta = ref<PlayerPropsMeta | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const api = useApiV2Client();
@@ -172,6 +184,41 @@ const hasActiveFilters = computed(
         selectedGame.value !== '' ||
         selectedMarket.value !== '',
 );
+
+const emptyStateTitle = computed(() => {
+    const diagnostics = boardMeta.value?.diagnostics;
+    if (!diagnostics) return 'No Recommendations Available';
+
+    if ((diagnostics.raw_prop_count ?? 0) === 0) {
+        return 'No Props Synced For This Filter';
+    }
+
+    if ((diagnostics.analyzed_prop_count ?? 0) === 0) {
+        return 'Props Need Analysis';
+    }
+
+    return 'No Recommendation-Ready Props';
+});
+
+const emptyStateMessage = computed(() => {
+    const diagnostics = boardMeta.value?.diagnostics;
+    const warning = boardMeta.value?.warnings?.[0];
+    if (warning) return warning;
+
+    if (!diagnostics) {
+        return 'Check back later or sync player props to see betting recommendations.';
+    }
+
+    if ((diagnostics.raw_prop_count ?? 0) === 0) {
+        return 'No player props were found for the selected date, game, or market.';
+    }
+
+    if ((diagnostics.analyzed_prop_count ?? 0) === 0) {
+        return 'Player props are synced, but the recommendation analysis has not run for this slate yet.';
+    }
+
+    return 'Props were analyzed, but none currently clear the recommendation threshold for this filter.';
+});
 
 const onDateChange = () => {
     selectedGame.value = '';
@@ -239,6 +286,7 @@ const loadBoard = async () => {
         dates.value = payload.dates || [];
         games.value = payload.games || [];
         markets.value = payload.markets || [];
+        boardMeta.value = payload.meta || null;
 
         selectedDate.value = payload.filters.date || '';
         selectedGame.value =
@@ -249,6 +297,7 @@ const loadBoard = async () => {
         error.value =
             err instanceof Error ? err.message : 'Unable to load player props.';
         recommendations.value = [];
+        boardMeta.value = null;
     } finally {
         loading.value = false;
     }
@@ -480,11 +529,10 @@ onMounted(() => {
                     class="mx-auto mb-4 h-16 w-16 text-muted-foreground"
                 />
                 <h3 class="mb-2 text-xl font-semibold tracking-tight">
-                    No Recommendations Available
+                    {{ emptyStateTitle }}
                 </h3>
                 <p class="text-muted-foreground">
-                    Check back later or sync player props to see betting
-                    recommendations.
+                    {{ emptyStateMessage }}
                 </p>
             </div>
 

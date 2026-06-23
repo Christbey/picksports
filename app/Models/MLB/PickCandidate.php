@@ -7,6 +7,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PickCandidate extends Model
 {
+    private const PERFORMANCE_BLOCKING_RISKS = [
+        'point_in_time_unsafe',
+        'live_only_or_postgame_unsafe',
+        'odds_after_first_pitch',
+        'postponed_suspended_cancelled',
+    ];
+
     protected $table = 'mlb_pick_candidates';
 
     protected $fillable = [
@@ -101,5 +108,52 @@ class PickCandidate extends Model
     public function player(): BelongsTo
     {
         return $this->belongsTo(Player::class);
+    }
+
+    public function isPregamePerformanceEligible(): bool
+    {
+        return $this->performanceExclusionReasons() === [];
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function performanceExclusionReasons(): array
+    {
+        $reasons = [];
+        $status = (string) ($this->game?->status ?? '');
+
+        if (in_array($status, [
+            (string) config('mlb.statuses.postponed', 'STATUS_POSTPONED'),
+            (string) config('mlb.statuses.suspended', 'STATUS_SUSPENDED'),
+            (string) config('mlb.statuses.canceled', 'STATUS_CANCELED'),
+            'STATUS_CANCELLED',
+        ], true)) {
+            $reasons[] = 'postponed_suspended_cancelled';
+        }
+
+        if (data_get($this->feature_snapshot, 'signal_layer.pregame_safe') === false) {
+            $reasons[] = 'point_in_time_unsafe';
+        }
+
+        foreach ($this->risk_flags ?? [] as $risk) {
+            if (in_array((string) $risk, self::PERFORMANCE_BLOCKING_RISKS, true)) {
+                $reasons[] = (string) $risk;
+            }
+        }
+
+        if ($this->game_start_at === null) {
+            $reasons[] = 'missing_game_start_at';
+        }
+
+        if ($this->generated_at === null) {
+            $reasons[] = 'missing_generated_at';
+        }
+
+        if ($this->generated_at !== null && $this->game_start_at !== null && $this->generated_at->gte($this->game_start_at)) {
+            $reasons[] = 'generated_after_game_start';
+        }
+
+        return array_values(array_unique($reasons));
     }
 }

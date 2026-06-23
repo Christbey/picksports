@@ -22,12 +22,23 @@ class BacktestPickCandidatesCommand extends Command
     public function handle(MlbPickGradingService $grading): int
     {
         $season = $this->option('season') ? (int) $this->option('season') : null;
-        $graded = $grading->grade($season);
-        $rows = $this->rows($season);
+        $gradingReport = $grading->gradeWithReport($season);
+        $allRows = $this->allRows($season);
+        $rows = $allRows
+            ->filter(fn (PickCandidate $candidate): bool => $candidate->isPregamePerformanceEligible())
+            ->values();
+        $excludedRows = $allRows
+            ->reject(fn (PickCandidate $candidate): bool => $candidate->isPregamePerformanceEligible())
+            ->values();
+        $reportExclusions = $this->exclusionReport($excludedRows);
 
         $summary = [
-            'graded_now' => $graded,
+            'graded_now' => $gradingReport['graded'],
+            'excluded_from_grading_now' => $gradingReport['excluded'],
+            'grading_exclusion_reasons' => $gradingReport['exclusion_reasons'],
             'rows' => $rows->count(),
+            'excluded_from_report' => $excludedRows->count(),
+            'report_exclusion_reasons' => $reportExclusions,
             'by_market' => $this->groupReport($rows, fn (PickCandidate $row): string => $row->market_type),
             'by_score_bucket' => $this->groupReport($rows, fn (PickCandidate $row): string => $this->scoreBucket((int) $row->score)),
             'by_risk_flag' => $this->riskReport($rows),
@@ -43,14 +54,23 @@ class BacktestPickCandidatesCommand extends Command
         $this->info('MLB Pick Candidate Backtest');
         $this->line('Rows: '.$summary['rows']);
         $this->line('Graded this run: '.$summary['graded_now']);
+        $this->line('Excluded from grading this run: '.$summary['excluded_from_grading_now']);
+        $this->line('Excluded from report: '.$summary['excluded_from_report']);
+        if ($summary['grading_exclusion_reasons'] !== [] || $summary['report_exclusion_reasons'] !== []) {
+            $this->newLine();
+            $this->table(['Scope', 'Reason', 'Rows'], [
+                ...$this->exclusionRows('grading', $summary['grading_exclusion_reasons']),
+                ...$this->exclusionRows('report', $summary['report_exclusion_reasons']),
+            ]);
+        }
         $this->newLine();
-        $this->table(['Market', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score'], $summary['by_market']);
+        $this->table(['Market', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score', 'Avg CLV'], $summary['by_market']);
         $this->newLine();
-        $this->table(['Score Bucket', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score'], $summary['by_score_bucket']);
+        $this->table(['Score Bucket', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score', 'Avg CLV'], $summary['by_score_bucket']);
         $this->newLine();
-        $this->table(['Risk Flag', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score'], array_slice($summary['by_risk_flag'], 0, 20));
+        $this->table(['Risk Flag', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score', 'Avg CLV'], array_slice($summary['by_risk_flag'], 0, 20));
         $this->newLine();
-        $this->table(['Reason Code', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score'], array_slice($summary['by_reason_code'], 0, 20));
+        $this->table(['Reason Code', 'Rows', 'Wins', 'Losses', 'Pushes', 'Hit %', 'Units', 'ROI', 'Avg Score', 'Avg CLV'], array_slice($summary['by_reason_code'], 0, 20));
 
         return self::SUCCESS;
     }
@@ -58,7 +78,7 @@ class BacktestPickCandidatesCommand extends Command
     /**
      * @return Collection<int,PickCandidate>
      */
-    private function rows(?int $season): Collection
+    private function allRows(?int $season): Collection
     {
         $query = PickCandidate::query()->whereNotNull('graded_at');
 
@@ -78,7 +98,7 @@ class BacktestPickCandidatesCommand extends Command
             $query->where('score', '>=', (int) $this->option('min-score'));
         }
 
-        return $query->get()->toBase();
+        return $query->with('game')->get()->toBase();
     }
 
     /**
@@ -147,7 +167,41 @@ class BacktestPickCandidatesCommand extends Command
             $units,
             $group->count() > 0 ? number_format($units / $group->count() * 100, 1).'%' : 'n/a',
             number_format((float) $group->avg('score'), 1),
+            $group->whereNotNull('clv')->isNotEmpty() ? number_format((float) $group->whereNotNull('clv')->avg('clv'), 3) : 'n/a',
         ];
+    }
+
+    /**
+     * @return array<string,int>
+     */
+    private function exclusionReport(Collection $rows): array
+    {
+        $report = [];
+        foreach ($rows as $row) {
+            if (! $row instanceof PickCandidate) {
+                continue;
+            }
+
+            foreach ($row->performanceExclusionReasons() as $reason) {
+                $report[$reason] = ($report[$reason] ?? 0) + 1;
+            }
+        }
+
+        ksort($report);
+
+        return $report;
+    }
+
+    /**
+     * @param  array<string,int>  $reasons
+     * @return list<list<string|int>>
+     */
+    private function exclusionRows(string $scope, array $reasons): array
+    {
+        return collect($reasons)
+            ->map(fn (int $count, string $reason): array => [$scope, $reason, $count])
+            ->values()
+            ->all();
     }
 
     private function scoreBucket(int $score): string

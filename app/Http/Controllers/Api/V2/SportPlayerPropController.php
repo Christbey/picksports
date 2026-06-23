@@ -43,6 +43,12 @@ class SportPlayerPropController extends Controller
             marketFilter: $marketFilter,
             limit: $limit,
         );
+        $diagnostics = $analyzer->precomputedRecommendationDiagnostics(
+            sport: $sportCode,
+            dateFilter: $resolvedDate,
+            gameFilter: $gameFilter,
+            marketFilter: $marketFilter,
+        );
 
         return response()->json([
             'sport' => $sportCode,
@@ -65,8 +71,9 @@ class SportPlayerPropController extends Controller
                     'withheld_field_groups' => ['raw_data'],
                 ],
                 'freshness' => [],
+                'diagnostics' => $diagnostics,
                 'warnings' => $recommendations->isEmpty()
-                    ? ['No precomputed player prop recommendations found for the selected filters. Run sports:analyze-player-props if this slate should have recommendations.']
+                    ? [$this->emptyBoardWarning($diagnostics)]
                     : [],
                 'limit' => $limit,
                 'source' => 'precomputed',
@@ -201,5 +208,25 @@ class SportPlayerPropController extends Controller
         }
 
         return $dateValues->isNotEmpty() ? (string) $dateValues->last() : null;
+    }
+
+    /**
+     * @param  array<string, int>  $diagnostics
+     */
+    private function emptyBoardWarning(array $diagnostics): string
+    {
+        if (($diagnostics['raw_prop_count'] ?? 0) === 0) {
+            return 'No synced player props were found for the selected filters. Run the sport player-prop sync before analysis.';
+        }
+
+        if (($diagnostics['analyzed_prop_count'] ?? 0) === 0) {
+            return 'Player props are synced for the selected filters, but no analyzed recommendation snapshots were found. Run sports:analyze-player-props for this sport.';
+        }
+
+        if (($diagnostics['recommendation_candidate_count'] ?? 0) === 0) {
+            return 'Player props are analyzed for the selected filters, but none currently meet the recommendation threshold.';
+        }
+
+        return 'Recommendation candidates exist for the selected filters, but none could be rendered by the board contract.';
     }
 }

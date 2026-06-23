@@ -326,6 +326,42 @@ class PlayerPropAnalyzer
     }
 
     /**
+     * @return array<string, int>
+     */
+    public function precomputedRecommendationDiagnostics(
+        string $sport = 'NBA',
+        ?string $dateFilter = null,
+        ?int $gameFilter = null,
+        ?string $marketFilter = null
+    ): array {
+        $sportConfig = $this->getSportConfig($sport);
+        $playerPropModel = $sportConfig['player_prop_model'];
+
+        $baseQuery = $playerPropModel::query()
+            ->whereHas('game', function ($query) use ($dateFilter, $gameFilter): void {
+                if ($dateFilter) {
+                    $query->whereDate('game_date', $dateFilter);
+                }
+
+                if ($gameFilter) {
+                    $query->where('id', $gameFilter);
+                }
+            })
+            ->when($marketFilter !== null && $marketFilter !== '', fn ($query) => $query->where('market', $marketFilter));
+
+        $candidateQuery = fn (): Builder => (clone $baseQuery)
+            ->whereNotNull('recommended_side')
+            ->where('confidence_score', '>=', 60);
+
+        return [
+            'raw_prop_count' => (clone $baseQuery)->count(),
+            'analyzed_prop_count' => (clone $baseQuery)->whereNotNull('recommended_side')->count(),
+            'recommendation_candidate_count' => $candidateQuery()->count(),
+            'missing_player_link_count' => $candidateQuery()->whereNull('player_id')->count(),
+        ];
+    }
+
+    /**
      * Analyze a single prop and generate recommendation
      */
     protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport): ?array
@@ -1243,9 +1279,11 @@ class PlayerPropAnalyzer
     {
         $player = $prop->player ?? null;
         $game = $prop->game ?? null;
-        $side = $prop->recommended_side;
+        $side = is_string($prop->recommended_side)
+            ? ucfirst(strtolower($prop->recommended_side))
+            : $prop->recommended_side;
 
-        if (! $player instanceof Model || ! $game instanceof Model || ! in_array($side, ['Over', 'Under'], true)) {
+        if (! $game instanceof Model || ! in_array($side, ['Over', 'Under'], true)) {
             return null;
         }
 
@@ -1268,7 +1306,16 @@ class PlayerPropAnalyzer
 
         return [
             'prop' => $prop,
-            'player' => $player,
+            'player' => $player instanceof Model ? $player : [
+                'id' => $prop->player_id,
+                'name' => $prop->player_name,
+                'display_name' => $prop->player_name,
+                'full_name' => $prop->player_name,
+                'position' => null,
+                'team' => null,
+                'headshot_url' => null,
+                'headshot' => null,
+            ],
             'game' => $game,
             'market' => $this->formatMarketName((string) $prop->market),
             'line' => $prop->line,

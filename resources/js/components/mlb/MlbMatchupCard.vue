@@ -125,22 +125,6 @@ const statusLabelClass = computed(() => {
     return 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300';
 });
 
-const scoreTextClass = computed(() => {
-    if (!props.candidate) return 'text-muted-foreground';
-
-    if (hasPositiveResult.value) return 'text-emerald-500';
-    if (hasNegativeResult.value) return 'text-red-500';
-
-    if (props.candidate.is_public && !props.candidate.is_tracking_only) {
-        return 'text-sky-500';
-    }
-
-    if (props.candidate.score >= 80) return 'text-sky-500';
-    if (props.candidate.score >= 68) return 'text-amber-500';
-
-    return 'text-muted-foreground';
-});
-
 const isFinal = computed(() =>
     String(props.prediction.status ?? game.value?.status ?? '')
         .toLowerCase()
@@ -494,24 +478,11 @@ function resultBadgeClass(
                     </div>
                 </div>
 
-                <div
-                    v-if="candidate"
-                    class="grid h-12 w-12 shrink-0 place-items-center rounded-xl border bg-background/80"
+                <span
+                    class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
                 >
-                    <div class="text-center">
-                        <div
-                            class="text-base font-black"
-                            :class="scoreTextClass"
-                        >
-                            {{ candidate.score }}
-                        </div>
-                        <div
-                            class="text-[9px] font-semibold text-muted-foreground uppercase"
-                        >
-                            Score
-                        </div>
-                    </div>
-                </div>
+                    {{ candidate ? labelizeMlbCode(candidate.market_type) : 'No market' }}
+                </span>
             </div>
 
             <div

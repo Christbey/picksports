@@ -509,7 +509,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 <div
                                     class="text-[10px] font-semibold text-muted-foreground uppercase"
                                 >
-                                    Score
+                                    Signal Grade
                                 </div>
                             </div>
                         </div>

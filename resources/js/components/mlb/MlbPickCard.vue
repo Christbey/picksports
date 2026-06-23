@@ -151,7 +151,7 @@ function marketTone(marketType: string): string {
                     <div
                         class="text-[9px] font-semibold text-muted-foreground uppercase"
                     >
-                        Score
+                        Signal
                     </div>
                 </div>
             </div>

@@ -171,7 +171,7 @@ const healthRows = computed(() => [
     },
     {
         icon: Gauge,
-        label: 'Board Score',
+        label: 'Board Signal',
         value:
             boardHealth.value?.score != null
                 ? String(boardHealth.value.score)

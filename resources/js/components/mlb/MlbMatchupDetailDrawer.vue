@@ -173,23 +173,82 @@ function finalScoreLabel(prediction: ApiV2Prediction | null): string {
     return `${teamAbbreviation(prediction?.game?.away_team)} ${awayScore} - ${teamAbbreviation(prediction?.game?.home_team)} ${homeScore}`;
 }
 
-function totalResultLabel(prediction: ApiV2Prediction | null): string {
-    const side = String(prediction?.total_pick_side ?? '');
-    const result = String(prediction?.total_pick_result ?? '');
+type TotalPickContext = {
+    side: string | null;
+    line: number | null;
+    result: string | null;
+    actualTotal: number | null;
+};
 
-    if (!side || !result) return 'Not Available';
-
-    return `${labelizeMlbCode(side)} ${labelizeMlbCode(result)}`;
-}
-
-function totalPickResult(prediction: ApiV2Prediction | null): string | null {
-    if (!isFinal(prediction)) return null;
-
-    const result = String(prediction?.total_pick_result ?? '')
+function totalPickContext(
+    prediction: ApiV2Prediction | null,
+    candidate?: MlbDailyPick | null,
+): TotalPickContext {
+    const nested = (prediction?.total_result ?? {}) as ApiV2Record;
+    const isTotalCandidate = candidate?.market_type === 'total';
+    const side = String(
+        prediction?.total_pick_side ??
+            nested.side ??
+            (isTotalCandidate ? candidate?.side : '') ??
+            '',
+    )
+        .trim()
+        .toLowerCase();
+    const line =
+        numberValue(prediction?.total_pick_line) ??
+        numberValue(nested.line) ??
+        (isTotalCandidate ? numberValue(candidate?.line) : null);
+    const actualTotal =
+        numberValue(prediction?.actual_total) ??
+        numberValue(nested.actual_total);
+    let result = String(prediction?.total_pick_result ?? nested.result ?? '')
         .trim()
         .toLowerCase();
 
-    return result || null;
+    if (
+        !result &&
+        isFinal(prediction) &&
+        isTotalCandidate &&
+        side &&
+        line !== null &&
+        actualTotal !== null
+    ) {
+        const margin = actualTotal - line;
+        if (Math.abs(margin) < 0.0001) {
+            result = 'push';
+        } else if (side === 'over') {
+            result = margin > 0 ? 'win' : 'loss';
+        } else if (side === 'under') {
+            result = margin < 0 ? 'win' : 'loss';
+        }
+    }
+
+    return {
+        side: side || null,
+        line,
+        result: result || null,
+        actualTotal,
+    };
+}
+
+function totalResultLabel(
+    prediction: ApiV2Prediction | null,
+    candidate?: MlbDailyPick | null,
+): string {
+    const total = totalPickContext(prediction, candidate);
+
+    if (!total.side || !total.result) return 'Not Available';
+
+    return `${labelizeMlbCode(total.side)} ${labelizeMlbCode(total.result)}`;
+}
+
+function totalPickResult(
+    prediction: ApiV2Prediction | null,
+    candidate?: MlbDailyPick | null,
+): string | null {
+    if (!isFinal(prediction)) return null;
+
+    return totalPickContext(prediction, candidate).result;
 }
 
 function hasPositiveResult(
@@ -198,7 +257,7 @@ function hasPositiveResult(
 ): boolean {
     return (
         modelResult(prediction) === 'win' ||
-        totalPickResult(prediction) === 'win' ||
+        totalPickResult(prediction, candidate) === 'win' ||
         candidate?.result_status === 'win'
     );
 }
@@ -209,7 +268,7 @@ function hasNegativeResult(
 ): boolean {
     return (
         modelResult(prediction) === 'loss' ||
-        totalPickResult(prediction) === 'loss' ||
+        totalPickResult(prediction, candidate) === 'loss' ||
         candidate?.result_status === 'loss'
     );
 }
@@ -218,7 +277,7 @@ function candidateStatusLabel(candidate?: MlbDailyPick | null): string {
     if (!candidate) return 'No public pick';
 
     if (candidate.is_tracking_only || !candidate.is_public) {
-        return `${tierFromScore(candidate.score)} signal`;
+        return `${tierFromScore(candidate.score)} tracking signal`;
     }
 
     return safeMlbPickStatus(candidate);
@@ -239,14 +298,20 @@ function candidatePanelClass(
     return 'border-border bg-card';
 }
 
-function candidateScoreClass(
-    prediction: ApiV2Prediction | null,
-    candidate?: MlbDailyPick | null,
-): string {
-    if (hasPositiveResult(prediction, candidate)) return 'text-emerald-500';
-    if (hasNegativeResult(prediction, candidate)) return 'text-red-500';
+function candidateModeLabel(candidate?: MlbDailyPick | null): string {
+    if (!candidate) return 'No pick';
 
-    return 'text-sky-500';
+    return candidate.is_tracking_only || !candidate.is_public
+        ? 'Tracking only'
+        : 'Official pick';
+}
+
+function candidateModeDescription(candidate?: MlbDailyPick | null): string {
+    if (!candidate) return 'No candidate was selected for this matchup.';
+
+    return candidate.is_tracking_only || !candidate.is_public
+        ? 'Use this for model review only. It is not an official betting recommendation.'
+        : 'This pick passed the current public recommendation checks.';
 }
 
 function summaryBadgeClass(
@@ -264,13 +329,32 @@ function summaryBadgeClass(
     return 'border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300';
 }
 
-function totalPickLabel(prediction: ApiV2Prediction | null): string {
-    const side = String(prediction?.total_pick_side ?? '');
-    const line = numberValue(prediction?.total_pick_line);
+function totalPickLabel(
+    prediction: ApiV2Prediction | null,
+    candidate?: MlbDailyPick | null,
+): string {
+    const total = totalPickContext(prediction, candidate);
 
-    if (!side || line === null) return '-';
+    if (!total.side || total.line === null) return '-';
 
-    return `${labelizeMlbCode(side)} ${line.toFixed(1)}`;
+    return `${labelizeMlbCode(total.side)} ${total.line.toFixed(1)}`;
+}
+
+function candidateSummary(
+    prediction: ApiV2Prediction | null,
+    candidate?: MlbDailyPick | null,
+): string {
+    if (!candidate) {
+        return 'No tracked pick is attached to this matchup yet.';
+    }
+
+    const watchouts = watchoutLabels(prediction, candidate);
+    const caution =
+        watchouts.length > 0
+            ? ` Main caution: ${watchouts[0].toLowerCase()}.`
+            : ' No major caution flags were returned.';
+
+    return `${candidateModeDescription(candidate)} Our read is ${candidate.label}.${caution}`;
 }
 
 function formatDateTime(value?: string | null): string {
@@ -488,29 +572,19 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                             <p
                                 class="mt-2 max-w-xl text-sm leading-6 text-muted-foreground"
                             >
-                                {{ candidate.explanation }}
+                                {{ candidateSummary(prediction, candidate) }}
                             </p>
                         </div>
                         <div
-                            class="grid h-14 w-14 shrink-0 place-items-center rounded-2xl border bg-background"
+                            class="hidden max-w-36 shrink-0 rounded-2xl border bg-background p-3 text-right sm:block"
                         >
-                            <div class="text-center">
-                                <div
-                                    class="text-lg font-black"
-                                    :class="
-                                        candidateScoreClass(
-                                            prediction,
-                                            candidate,
-                                        )
-                                    "
-                                >
-                                    {{ candidate.score }}
-                                </div>
-                                <div
-                                    class="text-[10px] font-semibold text-muted-foreground uppercase"
-                                >
-                                    Signal Grade
-                                </div>
+                            <div class="text-xs font-semibold">
+                                {{ candidateModeLabel(candidate) }}
+                            </div>
+                            <div
+                                class="mt-1 text-[11px] leading-4 text-muted-foreground"
+                            >
+                                Model review
                             </div>
                         </div>
                     </div>
@@ -541,15 +615,15 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 {{ modelResultLabel(prediction) }}
                             </span>
                             <span
-                                v-if="prediction.total_pick_result"
+                                v-if="totalPickResult(prediction, candidate)"
                                 class="rounded-full border px-3 py-1 text-xs font-semibold"
                                 :class="
                                     resultBadgeClass(
-                                        prediction.total_pick_result,
+                                        totalPickResult(prediction, candidate),
                                     )
                                 "
                             >
-                                {{ totalResultLabel(prediction) }}
+                                {{ totalResultLabel(prediction, candidate) }}
                             </span>
                         </div>
                     </div>
@@ -557,7 +631,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                     <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                         <div class="rounded-xl bg-muted/45 p-3">
                             <div class="text-xs text-muted-foreground">
-                                Actual Spread
+                                Final margin
                             </div>
                             <div class="mt-1 font-semibold">
                                 {{
@@ -569,7 +643,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
                             <div class="text-xs text-muted-foreground">
-                                Actual Total
+                                Game total
                             </div>
                             <div class="mt-1 font-semibold">
                                 {{
@@ -584,7 +658,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 Total Pick
                             </div>
                             <div class="mt-1 font-semibold">
-                                {{ totalPickLabel(prediction) }}
+                                {{ totalPickLabel(prediction, candidate) }}
                             </div>
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
@@ -592,12 +666,12 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 Total Result
                             </div>
                             <div class="mt-1 font-semibold">
-                                {{ totalResultLabel(prediction) }}
+                                {{ totalResultLabel(prediction, candidate) }}
                             </div>
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
                             <div class="text-xs text-muted-foreground">
-                                Spread Error
+                                Model margin miss
                             </div>
                             <div class="mt-1 font-semibold">
                                 {{
@@ -622,9 +696,9 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                     <div class="mb-4">
                         <div class="text-sm font-semibold">Model vs Market</div>
                         <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                            This compares our projection to the current betting
-                            market. The blend is a conservative middle ground;
-                            edge is the gap we are trying to validate.
+                            This compares our model to sportsbook odds. The
+                            blended read leans the model back toward the market,
+                            and edge is the possible value gap we are tracking.
                         </p>
                     </div>
                     <div class="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -646,7 +720,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 }}
                             </div>
                             <div class="mt-1 text-[11px] text-muted-foreground">
-                                Our projected probability.
+                                Our estimate for this pick.
                             </div>
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
@@ -665,7 +739,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 }}
                             </div>
                             <div class="mt-1 text-[11px] text-muted-foreground">
-                                Odds-implied probability.
+                                What the odds imply.
                             </div>
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
@@ -682,7 +756,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 }}
                             </div>
                             <div class="mt-1 text-[11px] text-muted-foreground">
-                                Model adjusted toward market.
+                                Model plus market caution.
                             </div>
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
@@ -702,7 +776,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 }}
                             </div>
                             <div class="mt-1 text-[11px] text-muted-foreground">
-                                Positive means possible value.
+                                Positive means possible value, not a guarantee.
                             </div>
                         </div>
                     </div>
@@ -712,7 +786,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                     >
                         <div>
                             <div class="text-muted-foreground">
-                                Projected spread
+                                Model margin
                             </div>
                             <div class="font-semibold">
                                 {{
@@ -727,7 +801,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                         </div>
                         <div>
                             <div class="text-muted-foreground">
-                                Projected total
+                                Model total
                             </div>
                             <div class="font-semibold">
                                 {{
@@ -741,13 +815,13 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                             </div>
                         </div>
                         <div>
-                            <div class="text-muted-foreground">Price</div>
+                            <div class="text-muted-foreground">Odds price</div>
                             <div class="font-semibold">
                                 {{ formatOdds(candidate?.price) }}
                             </div>
                         </div>
                         <div>
-                            <div class="text-muted-foreground">Line</div>
+                            <div class="text-muted-foreground">Market line</div>
                             <div class="font-semibold">
                                 {{ formatNumber(candidate?.line) }}
                             </div>
@@ -761,16 +835,17 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                 >
                     <div>
                         <div class="text-sm font-semibold">
-                            Signal Breakdown
+                            Why It Shows
                         </div>
                         <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                            These are the grouped drivers behind the candidate,
-                            separated from raw diagnostics.
+                            Plain-English drivers behind the pick and the main
+                            reasons to be careful.
                         </p>
                     </div>
                     <MlbSignalGroups
                         :groups="signalGroups(candidate)"
                         :show-drivers="true"
+                        :show-score-delta="false"
                     />
                 </section>
 
@@ -817,37 +892,11 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 </span>
                             </div>
                             <div v-else class="text-sm text-muted-foreground">
-                                No card-level risk flags were returned.
+                                No major watchouts were returned.
                             </div>
                         </div>
                     </div>
                 </section>
-
-                <details class="rounded-2xl border p-4">
-                    <summary
-                        class="cursor-pointer text-sm font-semibold text-muted-foreground"
-                    >
-                        Developer Context
-                    </summary>
-                    <pre
-                        class="mt-3 max-h-80 overflow-auto rounded-xl bg-muted p-3 text-xs leading-5"
-                        >{{
-                            JSON.stringify(
-                                {
-                                    market_aware_projection:
-                                        prediction.market_aware_projection,
-                                    recommendation: prediction.recommendation,
-                                    candidate_feature_snapshot:
-                                        candidate?.feature_snapshot,
-                                    candidate_market_snapshot:
-                                        candidate?.market_snapshot,
-                                },
-                                null,
-                                2,
-                            )
-                        }}</pre
-                    >
-                </details>
             </div>
         </SheetContent>
     </Sheet>

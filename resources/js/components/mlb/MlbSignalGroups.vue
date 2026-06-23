@@ -6,11 +6,13 @@ const props = withDefaults(
         groups?: MlbSignalGroup[] | null;
         maxGroups?: number | null;
         showDrivers?: boolean;
+        showScoreDelta?: boolean;
     }>(),
     {
         groups: () => [],
         maxGroups: null,
         showDrivers: true,
+        showScoreDelta: true,
     },
 );
 
@@ -79,6 +81,35 @@ function driverClass(impact: string): string {
 
     return 'border-border bg-background text-muted-foreground';
 }
+
+function groupLabel(group: MlbSignalGroup): string {
+    if (group.key === 'risk') return 'Caution';
+
+    return group.label;
+}
+
+function groupSummary(group: MlbSignalGroup): string {
+    const summary = String(group.summary ?? '');
+
+    if (summary === 'One or more guardrails require caution.') {
+        return 'This angle has warning flags, so it should stay tracking-only.';
+    }
+
+    if (summary === 'Totals context needs caution.') {
+        return 'Totals are sensitive to park, weather, and model calibration here.';
+    }
+
+    return summary;
+}
+
+function driverLabel(label: string): string {
+    return label
+        .replace('Total Model Over Bias', 'Totals model caution')
+        .replace(
+            'Run environment or totals calibration adds risk',
+            'Totals calibration adds caution',
+        );
+}
 </script>
 
 <template>
@@ -99,10 +130,10 @@ function driverClass(impact: string): string {
                         class="flex flex-wrap items-center justify-between gap-2"
                     >
                         <h4 class="text-sm font-semibold">
-                            {{ group.label }}
+                            {{ groupLabel(group) }}
                         </h4>
                         <span
-                            v-if="group.score_delta"
+                            v-if="showScoreDelta && group.score_delta"
                             class="text-xs font-medium text-muted-foreground"
                         >
                             {{ group.score_delta > 0 ? '+' : ''
@@ -110,7 +141,7 @@ function driverClass(impact: string): string {
                         </span>
                     </div>
                     <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                        {{ group.summary }}
+                        {{ groupSummary(group) }}
                     </p>
 
                     <div
@@ -123,7 +154,7 @@ function driverClass(impact: string): string {
                             class="rounded-full border px-2.5 py-1 text-xs"
                             :class="driverClass(driver.impact)"
                         >
-                            {{ driver.label }}
+                            {{ driverLabel(driver.label) }}
                         </span>
                     </div>
                 </div>

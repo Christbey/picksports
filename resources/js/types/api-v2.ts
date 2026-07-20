@@ -3,6 +3,7 @@ import type {
     MarketAwareProjection,
     PredictionRecommendation,
 } from '@/lib/predictionRecommendation';
+import type { PredictionAnalysisSummary } from './sports';
 
 export type ApiV2SportSlug =
     | 'nba'
@@ -192,6 +193,8 @@ export type ApiV2Prediction = {
     public_recommendation?: ApiV2Record | null;
     market_aware_projection?: MarketAwareProjection | null;
     market_summary?: ApiV2Record;
+    pro_signal_layer?: ApiV2Record | null;
+    prediction_analysis?: PredictionAnalysisSummary | null;
     actual_spread?: number | string | null;
     actual_total?: number | string | null;
     spread_error?: number | string | null;

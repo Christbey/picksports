@@ -53,6 +53,7 @@ class SportPredictionResource extends JsonResource
             'market_aware_projection' => $this->marketAwareProjection(),
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
+            'prediction_analysis' => $this->predictionAnalysis(),
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
             'home_team_elo' => $this->floatAttribute('home_team_elo'),
@@ -354,6 +355,36 @@ class SportPredictionResource extends JsonResource
         $layer = data_get($metadata, 'analysis_layer.pro_signal_layer');
 
         return is_array($layer) ? $layer : null;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function predictionAnalysis(): ?array
+    {
+        if ($this->context->slug !== 'nfl') {
+            return null;
+        }
+
+        $metadata = is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : [];
+        $analysis = data_get($metadata, 'analysis_layer');
+
+        if (! is_array($analysis)) {
+            return null;
+        }
+
+        return [
+            'trust_score' => isset($analysis['trust_score']) ? (float) $analysis['trust_score'] : null,
+            'bet_classification' => $analysis['bet_classification'] ?? null,
+            'model_signal_classification' => $analysis['model_signal_classification'] ?? null,
+            'risk_flags' => array_values((array) ($analysis['risk_flags'] ?? [])),
+            'reason_codes' => array_values((array) ($analysis['reason_codes'] ?? [])),
+            'validated_signals' => array_values((array) ($analysis['validated_signals'] ?? [])),
+            'best_validated_signal' => $analysis['best_validated_signal'] ?? null,
+            'bet_rule_evaluation' => $analysis['bet_rule_evaluation'] ?? null,
+            'calculated_edge' => $analysis['calculated_edge'] ?? null,
+            'analysis_confidence' => $analysis['analysis_confidence'] ?? null,
+        ];
     }
 
     /**

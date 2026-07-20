@@ -1,8 +1,7 @@
 <script setup lang="ts">
+import NflMatchupBoard from '@/components/nfl/NflMatchupBoard.vue';
 import NflSignalsPanel from '@/components/nfl/NflSignalsPanel.vue';
 import PredictionsPageShell from '@/components/predictions/PredictionsPageShell.vue';
-import SportPredictions from '@/components/SportPredictions.vue';
-import { nflPredictionsConfig } from '@/config/predictions-configs';
 import { nflPredictions } from '@/routes';
 </script>
 
@@ -15,6 +14,6 @@ import { nflPredictions } from '@/routes';
         seo-description="NFL predictions, spreads, totals, and confidence picks powered by PickSports analytics."
     >
         <NflSignalsPanel class="mb-6" />
-        <SportPredictions :config="nflPredictionsConfig" />
+        <NflMatchupBoard />
     </PredictionsPageShell>
 </template>

@@ -104,6 +104,51 @@ class BaseEspnService
         return null;
     }
 
+    public function getSeasonCoachesPage(int $season, int $page = 1): ?array
+    {
+        if (! isset($this->config['core']['season_coaches'])) {
+            return null;
+        }
+
+        return $this->get($this->buildUrl('core', 'season_coaches', [
+            'year' => (string) $season,
+            'page' => (string) $page,
+        ]));
+    }
+
+    public function getSeasonCoach(int $season, string $coachId): ?array
+    {
+        if (! isset($this->config['core']['season_coach'])) {
+            return null;
+        }
+
+        return $this->get($this->buildUrl('core', 'season_coach', [
+            'year' => (string) $season,
+            'coachId' => $coachId,
+        ]));
+    }
+
+    public function getCoach(string $coachId): ?array
+    {
+        if (! isset($this->config['core']['coach'])) {
+            return null;
+        }
+
+        return $this->get($this->buildUrl('core', 'coach', ['coachId' => $coachId]));
+    }
+
+    public function getTeamCoaches(string $teamId, int $season): ?array
+    {
+        if (! isset($this->config['core']['team_coaches'])) {
+            return null;
+        }
+
+        return $this->get($this->buildUrl('core', 'team_coaches', [
+            'year' => (string) $season,
+            'teamId' => $teamId,
+        ]));
+    }
+
     public function getRoster(string $teamId): ?array
     {
         return $this->get($this->buildUrl('site', 'roster', ['teamId' => $teamId]));

@@ -96,6 +96,11 @@ class Team extends Model
         return $this->hasMany(DepthChartEntry::class, 'team_id');
     }
 
+    public function coachSeasons(): HasMany
+    {
+        return $this->hasMany(TeamCoachSeason::class, 'team_id');
+    }
+
     protected static function newFactory(): NflTeamFactory
     {
         return NflTeamFactory::new();

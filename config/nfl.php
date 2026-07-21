@@ -249,6 +249,33 @@ return [
 
         /*
         |--------------------------------------------------------------------------
+        | nflverse Context Fallbacks
+        |--------------------------------------------------------------------------
+        |
+        | These fill preseason/upcoming-board gaps when first-party team metrics,
+        | ESPN QB context, or active injury rows are not available yet.
+        |
+        */
+        'nflverse' => [
+            'true_epa_fallback' => [
+                'enabled' => env('NFL_NFLVERSE_TRUE_EPA_FALLBACK_ENABLED', true),
+                'min_games' => env('NFL_NFLVERSE_TRUE_EPA_FALLBACK_MIN_GAMES', 4),
+                'min_plays' => env('NFL_NFLVERSE_TRUE_EPA_FALLBACK_MIN_PLAYS', 200),
+                'blend_weight' => env('NFL_NFLVERSE_TRUE_EPA_FALLBACK_BLEND_WEIGHT', env('NFL_TRUE_EPA_BLEND_WEIGHT', 0.35)),
+            ],
+            'qb_depth_fallback' => [
+                'enabled' => env('NFL_NFLVERSE_QB_DEPTH_FALLBACK_ENABLED', true),
+            ],
+            'qb_weekly_stats_fallback' => [
+                'enabled' => env('NFL_NFLVERSE_QB_WEEKLY_STATS_FALLBACK_ENABLED', true),
+            ],
+            'injury_fallback' => [
+                'enabled' => env('NFL_NFLVERSE_INJURY_FALLBACK_ENABLED', true),
+            ],
+        ],
+
+        /*
+        |--------------------------------------------------------------------------
         | Preseason Signal Blend
         |--------------------------------------------------------------------------
         |
@@ -386,6 +413,10 @@ return [
             'matchup_record_h2h_weight' => env('NFL_CONTEXT_MATCHUP_RECORD_H2H_WEIGHT', 0.40),
             'matchup_record_division_weight' => env('NFL_CONTEXT_MATCHUP_RECORD_DIVISION_WEIGHT', 0.30),
             'matchup_record_conference_weight' => env('NFL_CONTEXT_MATCHUP_RECORD_CONFERENCE_WEIGHT', 0.20),
+            'same_week_record_lookback_seasons' => env('NFL_CONTEXT_SAME_WEEK_RECORD_LOOKBACK_SEASONS', 10),
+            'same_week_record_h2h_weight' => env('NFL_CONTEXT_SAME_WEEK_RECORD_H2H_WEIGHT', 0.25),
+            'same_week_record_division_weight' => env('NFL_CONTEXT_SAME_WEEK_RECORD_DIVISION_WEIGHT', 0.18),
+            'same_week_record_conference_weight' => env('NFL_CONTEXT_SAME_WEEK_RECORD_CONFERENCE_WEIGHT', 0.12),
             'cold_weather_total_adjustment' => env('NFL_CONTEXT_COLD_WEATHER_TOTAL_ADJUSTMENT', -0.6),
             'hot_weather_total_adjustment' => env('NFL_CONTEXT_HOT_WEATHER_TOTAL_ADJUSTMENT', -0.2),
             'rest_diff_weight' => env('NFL_CONTEXT_REST_DIFF_WEIGHT', 0.09),
@@ -393,9 +424,12 @@ return [
             'short_rest_total_penalty' => env('NFL_CONTEXT_SHORT_REST_TOTAL_PENALTY', -0.2),
             'consecutive_road_penalty' => env('NFL_CONTEXT_CONSECUTIVE_ROAD_PENALTY', -0.2),
             'coaching_weight' => env('NFL_CONTEXT_COACHING_WEIGHT', 0.12),
+            'new_head_coach_weight' => env('NFL_CONTEXT_NEW_HEAD_COACH_WEIGHT', 0.20),
+            'new_head_coach_uncertainty_weeks' => env('NFL_CONTEXT_NEW_HEAD_COACH_UNCERTAINTY_WEEKS', 4),
             'max_spread_adjustment' => env('NFL_CONTEXT_MAX_SPREAD_ADJUSTMENT', 2.0),
             'max_total_adjustment' => env('NFL_CONTEXT_MAX_TOTAL_ADJUSTMENT', 2.5),
             'coaching_priors' => [],
+            'new_head_coaches' => [],
             'cold_weather_states' => ['NY', 'NJ', 'PA', 'OH', 'MI', 'WI', 'IL', 'MA', 'MD', 'CO', 'WA', 'MO', 'MN'],
             'hot_weather_states' => ['AZ', 'FL', 'TX', 'CA', 'NV'],
             'indoor_venue_keywords' => [
@@ -574,6 +608,22 @@ return [
                     'avoid' => ['conflicting_signals'],
                 ],
                 [
+                    'name' => 'same_week_record_supports_model',
+                    'action' => 'lean',
+                    'min_trust' => 58,
+                    'require' => ['same_week_record_context'],
+                    'require_any' => ['same_week_h2h_record_home_edge', 'same_week_h2h_record_away_edge', 'same_week_opponent_division_record_home_edge', 'same_week_opponent_division_record_away_edge', 'same_week_opponent_conference_record_home_edge', 'same_week_opponent_conference_record_away_edge'],
+                    'avoid' => ['low_data_quality', 'conflicting_signals'],
+                ],
+                [
+                    'name' => 'new_head_coach_context_watch',
+                    'action' => 'lean',
+                    'min_trust' => 58,
+                    'require' => ['new_head_coach_context'],
+                    'require_any' => ['new_head_coach_home_edge', 'new_head_coach_away_edge'],
+                    'avoid' => ['low_data_quality', 'conflicting_signals', 'new_head_coach_uncertainty'],
+                ],
+                [
                     'name' => 'weather_total_under',
                     'action' => 'lean',
                     'min_trust' => 55,
@@ -654,6 +704,11 @@ return [
                     'action' => 'pass',
                     'require_any' => ['resting_starters_risk', 'late_season_motivation_risk'],
                     'require' => ['low_favorite_confidence'],
+                ],
+                [
+                    'name' => 'pass_early_new_coach_low_confidence',
+                    'action' => 'pass',
+                    'require' => ['new_head_coach_uncertainty', 'low_favorite_confidence'],
                 ],
             ],
         ],

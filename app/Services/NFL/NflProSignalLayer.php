@@ -135,6 +135,8 @@ class NflProSignalLayer
                     ?? $this->number(data_get($metadata, 'actual_weather.total_adjustment')),
                 'division_game' => (bool) data_get($metadata, 'contextual_factors.division_rivalry.is_division_game', false),
                 'rest_travel_applied' => (bool) data_get($metadata, 'contextual_factors.schedule_spot.applied', false),
+                'same_week_records' => data_get($metadata, 'contextual_factors.same_week_records'),
+                'new_head_coaches' => data_get($metadata, 'contextual_factors.coaching_prior.new_head_coaches'),
             ],
             'injury_replacement' => $injuryReplacement,
             'weather_roof' => $weatherRoof,

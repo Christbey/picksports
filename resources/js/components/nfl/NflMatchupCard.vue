@@ -118,6 +118,9 @@ const totalTier = computed(() =>
         )?.tier ?? '',
     ),
 );
+const normalizedTotalTier = computed(() =>
+    totalTier.value.trim().toLowerCase(),
+);
 
 const betClassification = computed(() =>
     String(
@@ -159,6 +162,25 @@ const marketSpread = computed(() =>
 const marketTotal = computed(() =>
     numberValue(marketContext.value.market_total),
 );
+const totalPillLabel = computed(() => {
+    if (
+        marketTotal.value == null ||
+        totalEdge.value == null ||
+        Math.abs(totalEdge.value) < 0.05
+    ) {
+        return null;
+    }
+
+    return `${totalEdge.value > 0 ? 'Over' : 'Under'} ${marketTotal.value.toFixed(1)}`;
+});
+const totalPillStrong = computed(() => {
+    const tier = normalizedTotalTier.value;
+
+    return (
+        ['bet', 'official_candidate', 'playable', 'watchlist'].includes(tier) ||
+        hasPlayableTotalRule()
+    );
+});
 const trustScore = computed(
     () =>
         numberValue(predictionAnalysis.value.trust_score) ??
@@ -287,6 +309,24 @@ function labelize(value: string): string {
     return value
         .replaceAll('_', ' ')
         .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function hasPlayableTotalRule(): boolean {
+    const rules = (predictionAnalysis.value.bet_rule_evaluation as ApiV2Record)
+        ?.matched_rules;
+
+    if (!Array.isArray(rules)) return false;
+
+    return rules.some((rule) => {
+        const payload = (rule ?? {}) as ApiV2Record;
+        const market = String(payload.market ?? '').toLowerCase();
+        const action = String(payload.action ?? '').toLowerCase();
+
+        return (
+            market === 'total' &&
+            ['bet', 'play', 'playable', 'official_candidate'].includes(action)
+        );
+    });
 }
 
 function resultBadgeClass(
@@ -424,6 +464,17 @@ function resultBadgeClass(
                             "
                         >
                             {{ classificationLabel }}
+                        </span>
+                        <span
+                            v-if="totalPillLabel"
+                            class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                            :class="
+                                totalPillStrong
+                                    ? 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                    : 'border-muted bg-muted/40 text-muted-foreground'
+                            "
+                        >
+                            {{ totalPillLabel }}
                         </span>
                         <span
                             v-if="modelResultLabel"

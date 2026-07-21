@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
+use App\Models\NFL\Coach;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
@@ -10,10 +11,12 @@ use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
+use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamStat;
 use App\Support\NflBetRuleEngine;
 use App\Support\NflValidatedSignalCombos;
+use Illuminate\Support\Facades\DB;
 
 uses()->group('nfl', 'predictions');
 
@@ -141,6 +144,87 @@ it('uses stored nfl weather to adjust game totals', function () {
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_code_metadata.wind_under_signal.source'))->toBe('actual_weather')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_code_metadata.wind_under_signal.market_type'))->toBe('total')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_code_metadata.wind_under_signal.is_actionable'))->toBeTrue();
+});
+
+it('uses nflverse play by play epa when team metrics are missing', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => true,
+        'nfl.predictions.nflverse.true_epa_fallback.enabled' => true,
+        'nfl.predictions.nflverse.true_epa_fallback.min_games' => 1,
+        'nfl.predictions.nflverse.true_epa_fallback.min_plays' => 2,
+        'nfl.predictions.nflverse.true_epa_fallback.blend_weight' => 1.0,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $home = $game->homeTeam->abbreviation;
+    $away = $game->awayTeam->abbreviation;
+    $game->update([
+        'season' => 2026,
+        'week' => 1,
+        'game_date' => '2026-09-13',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $priorGame = Game::query()->create([
+        'espn_event_id' => 'nflverse-epa-prior-'.$game->id,
+        'espn_uid' => 'nflverse-epa-prior-uid-'.$game->id,
+        'nflverse_game_id' => '2025_18_'.$away.'_'.$home.'_EPA',
+        'season' => 2025,
+        'week' => 18,
+        'season_type' => '2',
+        'game_date' => '2026-01-04',
+        'game_time' => '12:00:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $game->away_team_id,
+        'home_score' => 31,
+        'away_score' => 17,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => false,
+    ]);
+
+    foreach ([
+        [$home, $away, 0.30],
+        [$home, $away, 0.20],
+        [$away, $home, -0.20],
+        [$away, $home, -0.30],
+    ] as $index => [$possession, $defense, $epa]) {
+        DB::table('nflverse_pbp_plays')->insert([
+            'nflverse_play_key' => hash('sha256', 'epa-'.$game->id.'-'.$index),
+            'nfl_game_id' => $priorGame->id,
+            'nflverse_game_id' => $priorGame->nflverse_game_id,
+            'play_id' => (string) ($index + 1),
+            'season' => 2025,
+            'week' => 18,
+            'season_type' => 'REG',
+            'home_team' => $home,
+            'away_team' => $away,
+            'possession_team' => $possession,
+            'defense_team' => $defense,
+            'play_type' => $index % 2 === 0 ? 'pass' : 'run',
+            'epa' => $epa,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'true_epa.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'true_epa.source'))->toBe('nflverse_pbp_plays')
+        ->and((float) data_get($prediction->model_metadata, 'true_epa.epa_diff'))->toBeGreaterThan(0.0)
+        ->and((float) data_get($prediction->model_metadata, 'epa_component.spread'))->toBeGreaterThan(0.0);
 });
 
 it('adds opponent-adjusted efficiency metadata to nfl predictions', function () {
@@ -790,6 +874,238 @@ it('uses synced nfl depth chart starter as upcoming qb identity', function () {
         ->and(data_get($prediction->model_metadata, 'qb_form.away.projected_from_depth_chart'))->toBeTrue();
 });
 
+it('uses nflverse depth charts and weekly stats as qb form fallback', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => true,
+        'nfl.predictions.qb_form.min_prior_attempts' => 1,
+        'nfl.predictions.qb_form.blend_weight' => 1.0,
+        'nfl.predictions.qb_form.max_qb_score' => 2.0,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $home = $game->homeTeam->abbreviation;
+    $away = $game->awayTeam->abbreviation;
+    $game->update([
+        'season' => 2026,
+        'week' => 1,
+        'game_date' => '2026-09-13',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $priorGame = Game::query()->create([
+        'espn_event_id' => 'nflverse-qb-prior-'.$game->id,
+        'espn_uid' => 'nflverse-qb-prior-uid-'.$game->id,
+        'nflverse_game_id' => '2025_18_'.$away.'_'.$home,
+        'season' => 2025,
+        'week' => 18,
+        'season_type' => '2',
+        'game_date' => '2026-01-04',
+        'game_time' => '12:00:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $game->away_team_id,
+        'home_score' => 31,
+        'away_score' => 17,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => false,
+    ]);
+
+    DB::table('nflverse_rosters')->insert([
+        [
+            'nflverse_roster_key' => hash('sha256', 'home-qb-roster'),
+            'season' => 2026,
+            'team_id' => $game->home_team_id,
+            'team' => $home,
+            'gsis_id' => '00-HOMEQB',
+            'full_name' => 'NFLVerse Home QB',
+            'position' => 'QB',
+            'years_exp' => 5,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'nflverse_roster_key' => hash('sha256', 'away-qb-roster'),
+            'season' => 2026,
+            'team_id' => $game->away_team_id,
+            'team' => $away,
+            'gsis_id' => '00-AWAYQB',
+            'full_name' => 'NFLVerse Away QB',
+            'position' => 'QB',
+            'years_exp' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    DB::table('nflverse_depth_charts')->insert([
+        [
+            'nflverse_depth_chart_key' => hash('sha256', 'home-qb-depth'),
+            'season' => 2026,
+            'team_id' => $game->home_team_id,
+            'team' => $home,
+            'gsis_id' => '00-HOMEQB',
+            'full_name' => 'NFLVerse Home QB',
+            'position' => 'QB',
+            'depth_position' => 'QB',
+            'formation' => 'Offense',
+            'depth_rank' => 1,
+            'source_updated_at' => '2026-07-20 12:00:00',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'nflverse_depth_chart_key' => hash('sha256', 'away-qb-depth'),
+            'season' => 2026,
+            'team_id' => $game->away_team_id,
+            'team' => $away,
+            'gsis_id' => '00-AWAYQB',
+            'full_name' => 'NFLVerse Away QB',
+            'position' => 'QB',
+            'depth_position' => 'QB',
+            'formation' => 'Offense',
+            'depth_rank' => 1,
+            'source_updated_at' => '2026-07-20 12:00:00',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    DB::table('nflverse_weekly_player_stats')->insert([
+        [
+            'nflverse_weekly_stat_key' => hash('sha256', 'home-qb-weekly'),
+            'nfl_game_id' => $priorGame->id,
+            'nflverse_game_id' => $priorGame->nflverse_game_id,
+            'season' => 2025,
+            'week' => 18,
+            'season_type' => 'REG',
+            'team_id' => $game->home_team_id,
+            'team' => $home,
+            'opponent_team_id' => $game->away_team_id,
+            'opponent_team' => $away,
+            'player_id' => '00-HOMEQB',
+            'player_display_name' => 'NFLVerse Home QB',
+            'position' => 'QB',
+            'passing_attempts' => 30,
+            'passing_yards' => 300,
+            'passing_touchdowns' => 3,
+            'interceptions_thrown' => 0,
+            'rushing_yards' => 24,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+        [
+            'nflverse_weekly_stat_key' => hash('sha256', 'away-qb-weekly'),
+            'nfl_game_id' => $priorGame->id,
+            'nflverse_game_id' => $priorGame->nflverse_game_id,
+            'season' => 2025,
+            'week' => 18,
+            'season_type' => 'REG',
+            'team_id' => $game->away_team_id,
+            'team' => $away,
+            'opponent_team_id' => $game->home_team_id,
+            'opponent_team' => $home,
+            'player_id' => '00-AWAYQB',
+            'player_display_name' => 'NFLVerse Away QB',
+            'position' => 'QB',
+            'passing_attempts' => 30,
+            'passing_yards' => 150,
+            'passing_touchdowns' => 0,
+            'interceptions_thrown' => 2,
+            'rushing_yards' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ],
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'qb_form.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'qb_form.home.qb_id'))->toBe('00-HOMEQB')
+        ->and(data_get($prediction->model_metadata, 'qb_form.home.projected_from_nflverse_depth_chart'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'qb_form.home.prior_source'))->toBe('nflverse_weekly_player_stats')
+        ->and((float) data_get($prediction->model_metadata, 'qb_form.home.prior_yards_per_attempt'))->toBe(10.0)
+        ->and((float) data_get($prediction->model_metadata, 'qb_form.away.prior_yards_per_attempt'))->toBe(5.0);
+});
+
+it('uses nflverse injury reports with depth rank weighting when active injuries are missing', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => true,
+        'nfl.predictions.depth_chart.qb_multiplier' => 3.0,
+        'nfl.predictions.depth_chart.starter_multiplier' => 1.5,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $home = $game->homeTeam->abbreviation;
+    $game->update([
+        'season' => 2025,
+        'week' => 2,
+        'game_date' => '2025-09-14',
+    ]);
+
+    DB::table('nflverse_depth_charts')->insert([
+        'nflverse_depth_chart_key' => hash('sha256', 'injury-qb-depth'),
+        'season' => 2025,
+        'team_id' => $game->home_team_id,
+        'team' => $home,
+        'gsis_id' => '00-INJQB',
+        'full_name' => 'Injured Starter',
+        'position' => 'QB',
+        'depth_position' => 'QB',
+        'formation' => 'Offense',
+        'depth_rank' => 1,
+        'source_updated_at' => '2025-09-10 12:00:00',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('nflverse_injuries')->insert([
+        'nflverse_injury_key' => hash('sha256', 'injury-qb-out'),
+        'season' => 2025,
+        'week' => 2,
+        'season_type' => 'REG',
+        'team_id' => $game->home_team_id,
+        'team' => $home,
+        'gsis_id' => '00-INJQB',
+        'full_name' => 'Injured Starter',
+        'position' => 'QB',
+        'report_primary_injury' => 'Shoulder',
+        'report_status' => 'Out',
+        'practice_status' => 'Did Not Participate In Practice',
+        'source_updated_at' => '2025-09-12 18:00:00',
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'depth_chart_injuries.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'depth_chart_injuries.home_nflverse_rows'))->toBe(1)
+        ->and(data_get($prediction->model_metadata, 'depth_chart_injuries.nflverse_source'))->toBe('nflverse_injuries')
+        ->and((float) data_get($prediction->model_metadata, 'depth_chart_injuries.home_out_weighted'))->toBeGreaterThan(1.0)
+        ->and((float) data_get($prediction->model_metadata, 'depth_chart_injuries.spread_adjustment'))->toBeLessThan(0.0);
+});
+
 it('blends ol versus dl matchup using only prior team line stats', function () {
     config([
         'nfl.predictions.true_epa.enabled' => false,
@@ -1067,6 +1383,16 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         'nfl.predictions.contextual_factors.enabled' => true,
         'nfl.predictions.contextual_factors.home_away_min_games' => 1,
         'nfl.predictions.contextual_factors.coaching_priors' => ['HCTX' => 1.0, 'ACTX' => -1.0],
+        'nfl.predictions.contextual_factors.same_week_record_lookback_seasons' => 3,
+        'nfl.predictions.contextual_factors.new_head_coaches' => [
+            2025 => [
+                'HCTX' => [
+                    'coach' => 'Test Coach',
+                    'type' => 'first_time_head_coach',
+                    'prior' => 1.0,
+                ],
+            ],
+        ],
     ]);
 
     $game = createNflPredictionTestGame();
@@ -1120,6 +1446,21 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         'status' => 'STATUS_FINAL',
         'neutral_site' => false,
     ]);
+    Game::query()->create([
+        'espn_event_id' => 'context-same-week-prior-'.$game->id,
+        'espn_uid' => 'context-same-week-prior-uid-'.$game->id,
+        'season' => 2024,
+        'week' => 10,
+        'season_type' => 'regular',
+        'game_date' => '2024-11-10',
+        'game_time' => '12:00:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $game->away_team_id,
+        'home_score' => 31,
+        'away_score' => 14,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => false,
+    ]);
 
     app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 
@@ -1129,16 +1470,28 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         ->and(data_get($prediction->model_metadata, 'contextual_factors.home_away_strength.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.division_rivalry.is_division_game'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.applied'))->toBeTrue()
-        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.home.h2h.wins'))->toBe(2)
-        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.away.h2h.losses'))->toBe(2)
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.home.h2h.wins'))->toBe(3)
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.away.h2h.losses'))->toBe(3)
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.week'))->toBe(10)
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.home.team.wins'))->toBe(1)
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.away.team.losses'))->toBe(1)
         ->and(data_get($prediction->model_metadata, 'contextual_factors.weather_total.reason'))->toBe('cold_outdoor_proxy')
         ->and(data_get($prediction->model_metadata, 'contextual_factors.schedule_spot.home.previous_game_date'))->toBe('2025-11-09')
         ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.coach'))->toBe('Test Coach')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.trust_score'))->toBeNumeric()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_h2h_record_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_division_record_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_conference_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_record_context')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_h2h_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_opponent_division_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_opponent_conference_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('new_head_coach_context')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('home_new_head_coach')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('new_head_coach_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('cold_outdoor_total_proxy')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('snow_under_signal')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('wind_under_signal')
@@ -1146,5 +1499,57 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         ->and(data_get($prediction->model_metadata, 'analysis_layer.bet_classification'))->not->toBeNull()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.calculated_edge.spread_points'))->not->toBeNull()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.version'))->toBe('nfl-pro-signal-layer-v1')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.football_context.same_week_records.week'))->toBe(10)
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.football_context.new_head_coaches.home.coach'))->toBe('Test Coach')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.market_context.key_numbers'))->toContain(5);
+});
+
+it('detects new nfl head coaches from synced coach season history', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => true,
+        'nfl.predictions.contextual_factors.new_head_coaches' => [],
+    ]);
+
+    $game = createNflPredictionTestGame();
+
+    $oldCoach = Coach::query()->create([
+        'espn_id' => 'old-coach-'.$game->id,
+        'display_name' => 'Old Coach',
+    ]);
+    $newCoach = Coach::query()->create([
+        'espn_id' => 'new-coach-'.$game->id,
+        'display_name' => 'New Coach',
+    ]);
+
+    TeamCoachSeason::query()->create([
+        'coach_id' => $oldCoach->id,
+        'team_id' => $game->home_team_id,
+        'season' => 2024,
+        'role' => 'head_coach',
+    ]);
+    TeamCoachSeason::query()->create([
+        'coach_id' => $newCoach->id,
+        'team_id' => $game->home_team_id,
+        'season' => 2025,
+        'role' => 'head_coach',
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.source'))->toBe('espn_coach_history')
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.coach'))->toBe('New Coach')
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.previous_coach'))->toBe('Old Coach')
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.type'))->toBe('head_coach_change')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('new_head_coach_context')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('home_new_head_coach');
 });

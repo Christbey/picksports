@@ -17,10 +17,12 @@ class NflReasonCodeCatalog
             'high_trust_no_market_edge',
             'home_away_split_signal',
             'multi_factor_confluence',
+            'new_head_coach_context',
             'ol_dl_matchup_signal',
             'recent_matchup_record_context',
             'rolling_efficiency_mature_sample',
             'rolling_efficiency_signal',
+            'same_week_record_context',
             'slow_pace_under_signal',
             'total_weather_suppression',
             'weather_total_context',
@@ -111,7 +113,11 @@ class NflReasonCodeCatalog
             return 'injury';
         }
 
-        if (str_contains($code, 'rest') || str_contains($code, 'travel') || str_contains($code, 'division') || str_contains($code, 'conference') || str_contains($code, 'primetime') || str_contains($code, 'matchup_record')) {
+        if (str_contains($code, 'coach')) {
+            return 'coaching';
+        }
+
+        if (str_contains($code, 'rest') || str_contains($code, 'travel') || str_contains($code, 'division') || str_contains($code, 'conference') || str_contains($code, 'primetime') || str_contains($code, 'matchup_record') || str_contains($code, 'same_week') || str_contains($code, 'h2h_record')) {
             return 'schedule_context';
         }
 
@@ -192,7 +198,7 @@ class NflReasonCodeCatalog
             return false;
         }
 
-        if (in_array($source, ['market', 'quarterback', 'trenches', 'injury', 'actual_weather', 'schedule_context'], true)) {
+        if (in_array($source, ['market', 'quarterback', 'trenches', 'injury', 'actual_weather', 'schedule_context', 'coaching'], true)) {
             return true;
         }
 

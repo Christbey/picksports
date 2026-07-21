@@ -495,6 +495,26 @@ Verified usable depth-chart endpoints:
   - direct core depth chart endpoint works:
     - `https://sports.core.api.espn.com/v2/sports/baseball/leagues/mlb/seasons/{season}/teams/{teamId}/depthcharts`
 
+Verified usable coach endpoints:
+- `NFL`
+  - season coach list endpoint works and returns one coach ref per team-season snapshot:
+    - `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/coaches?limit=50`
+  - resolved season coach payloads include:
+    - coach id / uid / firstName / lastName / displayName when available
+    - `team.$ref` pointing to the ESPN season team
+    - `experience`
+    - `records[].record.$ref` for season-type records, including regular season `types/2`
+  - team season payloads expose a `coaches.$ref`:
+    - `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/teams/{teamId}`
+  - team coach list endpoint works but should be treated as secondary:
+    - `https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season}/teams/{teamId}/coaches`
+
+Important coach-ingest rule:
+- use the season coach list as the primary league snapshot
+- resolve each coach ref and map the assignment from the resolved `team.$ref`
+- use stored `nfl_team_coach_seasons` rows for year-over-year new-head-coach detection
+- keep config overrides available for manual priors, but do not rely on config as the source of truth once ESPN coach history is synced
+
 Not currently reliable from the tested public/core endpoints:
 - `WNBA`
   - tested direct depth chart endpoint returned `500`

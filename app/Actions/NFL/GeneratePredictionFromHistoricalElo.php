@@ -9,6 +9,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Prediction;
+use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
 use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\PlayerPositionGradeService;
@@ -18,6 +19,7 @@ use App\Support\NflReasonCodeCatalog;
 use App\Support\NflValidatedSignalCombos;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class GeneratePredictionFromHistoricalElo
 {
@@ -71,6 +73,11 @@ class GeneratePredictionFromHistoricalElo
      * @var array<string,array<string,mixed>>
      */
     protected array $playerPositionGradeCache = [];
+
+    /**
+     * @var array<string,array<string,mixed>>
+     */
+    protected array $nflverseEpaProfileCache = [];
 
     public function __construct(
         protected ?DepthChartImpactService $depthChartImpactService = null,
@@ -246,6 +253,11 @@ class GeneratePredictionFromHistoricalElo
             ->first();
 
         if (! $homeMetric || ! $awayMetric) {
+            $fallback = $this->nflverseTrueEpaFallback($game, $legacySpread, $legacyWinProbability, $legacyTotal);
+            if ($fallback !== null) {
+                return $fallback;
+            }
+
             $this->lastModelMetadata = [
                 'model' => 'nfl_historical_elo',
                 'true_epa' => [
@@ -271,6 +283,11 @@ class GeneratePredictionFromHistoricalElo
         $homeNetEpa = $homeMetric->net_true_epa_per_play;
         $awayNetEpa = $awayMetric->net_true_epa_per_play;
         if ($homeNetEpa === null || $awayNetEpa === null) {
+            $fallback = $this->nflverseTrueEpaFallback($game, $legacySpread, $legacyWinProbability, $legacyTotal);
+            if ($fallback !== null) {
+                return $fallback;
+            }
+
             $this->lastModelMetadata = [
                 'model' => 'nfl_historical_elo',
                 'true_epa' => [
@@ -358,6 +375,121 @@ class GeneratePredictionFromHistoricalElo
                 'applied' => true,
                 'weight' => round($weight, 4),
                 'epa_diff' => round($epaDiff, 6),
+            ],
+            'legacy' => [
+                'spread' => round($legacySpread, 4),
+                'win_probability' => round($legacyWinProbability, 6),
+                'total' => round($legacyTotal, 4),
+            ],
+            'epa_component' => [
+                'spread' => round($epaSpread, 4),
+                'win_probability' => round($epaWinProbability, 6),
+                'total' => round($epaTotal, 4),
+            ],
+            'blended' => [
+                'spread' => round($blendedSpread, 4),
+                'win_probability' => round($blendedWinProbability, 6),
+                'total' => round($blendedTotal, 4),
+            ],
+        ];
+
+        return [$blendedSpread, $blendedWinProbability, $blendedTotal];
+    }
+
+    /**
+     * @return array{0:float,1:float,2:float}|null
+     */
+    protected function nflverseTrueEpaFallback(
+        Game $game,
+        float $legacySpread,
+        float $legacyWinProbability,
+        float $legacyTotal
+    ): ?array {
+        if (! (bool) config('nfl.predictions.nflverse.true_epa_fallback.enabled', true)) {
+            return null;
+        }
+
+        $home = $this->nflverseTeamEpaProfile($game, (int) $game->home_team_id);
+        $away = $this->nflverseTeamEpaProfile($game, (int) $game->away_team_id);
+        $minGames = max(1, (int) config('nfl.predictions.nflverse.true_epa_fallback.min_games', 4));
+        $minPlays = max(1, (int) config('nfl.predictions.nflverse.true_epa_fallback.min_plays', 200));
+
+        if (($home['games'] ?? 0) < $minGames
+            || ($away['games'] ?? 0) < $minGames
+            || ($home['offensive_plays'] ?? 0) < $minPlays
+            || ($away['offensive_plays'] ?? 0) < $minPlays
+        ) {
+            $this->lastModelMetadata = [
+                'model' => 'nfl_historical_elo',
+                'true_epa' => [
+                    'enabled' => true,
+                    'applied' => false,
+                    'reason' => 'missing_team_metrics',
+                    'nflverse_fallback' => [
+                        'applied' => false,
+                        'reason' => 'insufficient_nflverse_pbp_sample',
+                        'min_games' => $minGames,
+                        'min_plays' => $minPlays,
+                        'home' => $home,
+                        'away' => $away,
+                    ],
+                ],
+                'legacy' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+                'blended' => [
+                    'spread' => round($legacySpread, 4),
+                    'win_probability' => round($legacyWinProbability, 6),
+                    'total' => round($legacyTotal, 4),
+                ],
+            ];
+
+            return null;
+        }
+
+        $weight = $this->clamp(
+            (float) config('nfl.predictions.nflverse.true_epa_fallback.blend_weight', config('nfl.predictions.true_epa.blend_weight', 0.35)),
+            0.0,
+            1.0
+        );
+        $homeNetEpa = (float) $home['net_true_epa_per_play'];
+        $awayNetEpa = (float) $away['net_true_epa_per_play'];
+        $epaDiff = $homeNetEpa - $awayNetEpa;
+        $epaSpread = $epaDiff * (float) config('nfl.predictions.true_epa.spread_points_per_epa', 14.0);
+        $blendedSpread = $this->clamp(
+            $this->blend($legacySpread, $epaSpread, $weight),
+            (float) config('nfl.predictions.min_spread'),
+            (float) config('nfl.predictions.max_spread')
+        );
+
+        $maxAdjust = (float) config('nfl.predictions.true_epa.win_prob_max_adjustment', 0.12);
+        $sensitivity = (float) config('nfl.predictions.true_epa.win_prob_sensitivity', 8.0);
+        $epaWinAdjustment = tanh($epaDiff * $sensitivity) * $maxAdjust;
+        $epaWinProbability = $this->clamp($legacyWinProbability + $epaWinAdjustment, 0.01, 0.99);
+        $blendedWinProbability = $this->clamp($this->blend($legacyWinProbability, $epaWinProbability, $weight), 0.01, 0.99);
+
+        $totalScale = (float) config('nfl.predictions.true_epa.total_points_per_epa_component', 20.0);
+        $homeExpectedDelta = ((float) $home['offensive_true_epa_per_play'] - (float) $away['defensive_true_epa_per_play']) * $totalScale;
+        $awayExpectedDelta = ((float) $away['offensive_true_epa_per_play'] - (float) $home['defensive_true_epa_per_play']) * $totalScale;
+        $epaTotal = $legacyTotal + $homeExpectedDelta + $awayExpectedDelta;
+        $blendedTotal = $this->clamp(
+            $this->blend($legacyTotal, $epaTotal, $weight),
+            (float) config('nfl.predictions.true_epa.min_predicted_total', 28.0),
+            (float) config('nfl.predictions.true_epa.max_predicted_total', 66.0)
+        );
+
+        $this->lastModelMetadata = [
+            'model' => 'nfl_historical_elo',
+            'true_epa' => [
+                'enabled' => true,
+                'applied' => true,
+                'source' => 'nflverse_pbp_plays',
+                'weight' => round($weight, 4),
+                'epa_diff' => round($epaDiff, 6),
+                'home' => $home,
+                'away' => $away,
             ],
             'legacy' => [
                 'spread' => round($legacySpread, 4),
@@ -848,6 +980,7 @@ class GeneratePredictionFromHistoricalElo
         $homeAway = $this->homeAwayStrengthContext($game);
         $division = $this->divisionRivalryContext($game);
         $matchupRecords = $this->matchupRecordContext($game);
+        $sameWeekRecords = $this->sameWeekRecordContext($game);
         $weather = $this->weatherTotalContext($game);
         $schedule = $this->scheduleSpotContext($game);
         $coaching = $this->coachingContext($game);
@@ -855,6 +988,7 @@ class GeneratePredictionFromHistoricalElo
         $spreadAdjustment = $homeAway['spread_adjustment']
             + $division['spread_adjustment']
             + $matchupRecords['spread_adjustment']
+            + $sameWeekRecords['spread_adjustment']
             + $schedule['spread_adjustment']
             + $coaching['spread_adjustment'];
         $totalAdjustment = $division['total_adjustment']
@@ -886,6 +1020,7 @@ class GeneratePredictionFromHistoricalElo
             'home_away_strength' => $homeAway,
             'division_rivalry' => $division,
             'matchup_records' => $matchupRecords,
+            'same_week_records' => $sameWeekRecords,
             'weather_total' => $weather,
             'schedule_spot' => $schedule,
             'coaching_prior' => $coaching,
@@ -1077,6 +1212,67 @@ class GeneratePredictionFromHistoricalElo
     }
 
     /**
+     * Same-week history answers questions like "How has this team performed in
+     * Week 1 against this opponent/conference/division?" without blending in
+     * late-season form from unrelated schedule spots.
+     *
+     * @return array<string,mixed>
+     */
+    protected function sameWeekRecordContext(Game $game): array
+    {
+        $week = (int) ($game->week ?? 0);
+        if ($week <= 0) {
+            return [
+                'applied' => false,
+                'reason' => 'missing_week',
+                'spread_adjustment' => 0.0,
+            ];
+        }
+
+        $lookbackSeasons = max(1, (int) config('nfl.predictions.contextual_factors.same_week_record_lookback_seasons', 10));
+        $homeOpponentDivision = $this->divisionKey($game->awayTeam);
+        $awayOpponentDivision = $this->divisionKey($game->homeTeam);
+        $homeOpponentConference = $this->conferenceKey($game->awayTeam);
+        $awayOpponentConference = $this->conferenceKey($game->homeTeam);
+
+        $home = [
+            'team' => $this->teamSameWeekRecordProfile($game, (int) $game->home_team_id, $lookbackSeasons, 'team', (int) $game->away_team_id),
+            'division' => $this->teamSameWeekRecordProfile($game, (int) $game->home_team_id, $lookbackSeasons, 'division', null, $homeOpponentDivision),
+            'conference' => $this->teamSameWeekRecordProfile($game, (int) $game->home_team_id, $lookbackSeasons, 'conference', null, null, $homeOpponentConference),
+        ];
+        $away = [
+            'team' => $this->teamSameWeekRecordProfile($game, (int) $game->away_team_id, $lookbackSeasons, 'team', (int) $game->home_team_id),
+            'division' => $this->teamSameWeekRecordProfile($game, (int) $game->away_team_id, $lookbackSeasons, 'division', null, $awayOpponentDivision),
+            'conference' => $this->teamSameWeekRecordProfile($game, (int) $game->away_team_id, $lookbackSeasons, 'conference', null, null, $awayOpponentConference),
+        ];
+
+        $h2hWeight = (float) config('nfl.predictions.contextual_factors.same_week_record_h2h_weight', 0.25);
+        $divisionWeight = (float) config('nfl.predictions.contextual_factors.same_week_record_division_weight', 0.18);
+        $conferenceWeight = (float) config('nfl.predictions.contextual_factors.same_week_record_conference_weight', 0.12);
+        $spreadAdjustment = $this->recordSpreadSignal($home['team'], $away['team'], $h2hWeight)
+            + $this->recordSpreadSignal($home['division'], $away['division'], $divisionWeight)
+            + $this->recordSpreadSignal($home['conference'], $away['conference'], $conferenceWeight);
+
+        return [
+            'applied' => $this->recordHasGames($home['team'], $away['team'])
+                || $this->recordHasGames($home['division'], $away['division'])
+                || $this->recordHasGames($home['conference'], $away['conference']),
+            'week' => $week,
+            'season_type' => $game->season_type,
+            'lookback_seasons' => $lookbackSeasons,
+            'home_team' => $game->homeTeam?->abbreviation,
+            'away_team' => $game->awayTeam?->abbreviation,
+            'home_opponent_division' => $homeOpponentDivision,
+            'away_opponent_division' => $awayOpponentDivision,
+            'home_opponent_conference' => $homeOpponentConference,
+            'away_opponent_conference' => $awayOpponentConference,
+            'home' => $home,
+            'away' => $away,
+            'spread_adjustment' => round($spreadAdjustment, 3),
+        ];
+    }
+
+    /**
      * @return array<string,mixed>
      */
     protected function weatherTotalContext(Game $game): array
@@ -1162,20 +1358,140 @@ class GeneratePredictionFromHistoricalElo
     {
         $priors = (array) config('nfl.predictions.contextual_factors.coaching_priors', []);
         $weight = (float) config('nfl.predictions.contextual_factors.coaching_weight', 0.25);
+        $newCoachWeight = (float) config('nfl.predictions.contextual_factors.new_head_coach_weight', 0.20);
         $homeAbbr = strtoupper((string) ($game->homeTeam?->abbreviation ?? ''));
         $awayAbbr = strtoupper((string) ($game->awayTeam?->abbreviation ?? ''));
         $homeRating = is_numeric($priors[$homeAbbr] ?? null) ? (float) $priors[$homeAbbr] : 0.0;
         $awayRating = is_numeric($priors[$awayAbbr] ?? null) ? (float) $priors[$awayAbbr] : 0.0;
-        $adjustment = ($homeRating - $awayRating) * $weight;
+        $homeNewCoach = $this->newHeadCoachProfile($game, $homeAbbr, (int) $game->home_team_id);
+        $awayNewCoach = $this->newHeadCoachProfile($game, $awayAbbr, (int) $game->away_team_id);
+        $homeNewCoachPrior = is_numeric($homeNewCoach['prior'] ?? null) ? (float) $homeNewCoach['prior'] : 0.0;
+        $awayNewCoachPrior = is_numeric($awayNewCoach['prior'] ?? null) ? (float) $awayNewCoach['prior'] : 0.0;
+        $priorAdjustment = ($homeRating - $awayRating) * $weight;
+        $newCoachAdjustment = ($homeNewCoachPrior - $awayNewCoachPrior) * $newCoachWeight;
+        $adjustment = $priorAdjustment + $newCoachAdjustment;
 
         return [
-            'applied' => round($adjustment, 3) !== 0.0,
+            'applied' => round($adjustment, 3) !== 0.0 || $homeNewCoach !== null || $awayNewCoach !== null,
             'home_rating' => round($homeRating, 3),
             'away_rating' => round($awayRating, 3),
             'weight' => round($weight, 4),
+            'new_head_coach_weight' => round($newCoachWeight, 4),
+            'new_head_coaches' => [
+                'home' => $homeNewCoach,
+                'away' => $awayNewCoach,
+            ],
+            'prior_spread_adjustment' => round($priorAdjustment, 3),
+            'new_head_coach_spread_adjustment' => round($newCoachAdjustment, 3),
             'spread_adjustment' => round($adjustment, 3),
-            'reason' => $priors === [] ? 'no_coaching_priors_configured' : 'configured_prior',
+            'reason' => $homeNewCoach !== null || $awayNewCoach !== null
+                ? 'configured_new_head_coach_context'
+                : ($priors === [] ? 'no_coaching_priors_configured' : 'configured_prior'),
         ];
+    }
+
+    /**
+     * @return array{coach:?string,previous_coach?:?string,type:string,prior:float|null,source:string}|null
+     */
+    protected function newHeadCoachProfile(Game $game, string $teamAbbreviation, int $teamId): ?array
+    {
+        if ($teamAbbreviation === '') {
+            return null;
+        }
+
+        $configured = (array) config('nfl.predictions.contextual_factors.new_head_coaches', []);
+        $seasonPayload = $configured[(int) $game->season] ?? $configured[(string) $game->season] ?? [];
+        $payload = is_array($seasonPayload)
+            ? ($seasonPayload[$teamAbbreviation] ?? $seasonPayload[strtolower($teamAbbreviation)] ?? null)
+            : null;
+
+        if (is_string($payload)) {
+            return [
+                'coach' => $payload,
+                'type' => 'new_head_coach',
+                'prior' => null,
+                'source' => 'config',
+            ];
+        }
+
+        if ($payload === null) {
+            return $this->newHeadCoachProfileFromHistory($game, $teamId);
+        }
+
+        if (! is_array($payload)) {
+            return null;
+        }
+
+        $prior = $payload['prior'] ?? $payload['rating'] ?? null;
+
+        return [
+            'coach' => isset($payload['coach']) ? (string) $payload['coach'] : null,
+            'type' => (string) ($payload['type'] ?? 'new_head_coach'),
+            'prior' => is_numeric($prior) ? round((float) $prior, 3) : null,
+            'source' => (string) ($payload['source'] ?? 'config'),
+        ];
+    }
+
+    /**
+     * @return array{coach:?string,previous_coach:?string,type:string,prior:null,source:string}|null
+     */
+    protected function newHeadCoachProfileFromHistory(Game $game, int $teamId): ?array
+    {
+        $season = (int) ($game->season ?? 0);
+        if ($season <= 0) {
+            return null;
+        }
+
+        $current = TeamCoachSeason::query()
+            ->with('coach')
+            ->where('team_id', $teamId)
+            ->where('season', $season)
+            ->where('role', 'head_coach')
+            ->first();
+
+        if (! $current) {
+            return null;
+        }
+
+        $previous = TeamCoachSeason::query()
+            ->with('coach')
+            ->where('team_id', $teamId)
+            ->where('season', $season - 1)
+            ->where('role', 'head_coach')
+            ->first();
+
+        if ($previous && $this->sameHeadCoach($previous, $current)) {
+            return null;
+        }
+
+        return [
+            'coach' => $current->coach?->display_name,
+            'previous_coach' => $previous?->coach?->display_name,
+            'type' => $previous ? 'head_coach_change' : 'new_head_coach_no_prior_team_season',
+            'prior' => null,
+            'source' => 'espn_coach_history',
+        ];
+    }
+
+    protected function sameHeadCoach(TeamCoachSeason $previous, TeamCoachSeason $current): bool
+    {
+        if ((int) $previous->coach_id === (int) $current->coach_id) {
+            return true;
+        }
+
+        $previousName = $this->normalizedCoachName($previous->coach?->display_name);
+        $currentName = $this->normalizedCoachName($current->coach?->display_name);
+
+        return $previousName !== null && $previousName === $currentName;
+    }
+
+    protected function normalizedCoachName(?string $name): ?string
+    {
+        $normalized = strtolower(trim((string) $name));
+        $normalized = preg_replace('/[^a-z0-9]+/', ' ', $normalized);
+        $normalized = trim((string) $normalized);
+
+        return $normalized !== '' ? $normalized : null;
     }
 
     /**
@@ -1751,6 +2067,11 @@ class GeneratePredictionFromHistoricalElo
             'home_unknown_return_skipped' => $homeCounts['unknown_return_skipped'],
             'away_unknown_return_skipped' => $awayCounts['unknown_return_skipped'],
             'unknown_return_days' => $homeCounts['unknown_return_days'],
+            'home_nflverse_rows' => $homeCounts['nflverse_rows'] ?? 0,
+            'away_nflverse_rows' => $awayCounts['nflverse_rows'] ?? 0,
+            'nflverse_source' => ($homeCounts['nflverse_source'] ?? null) || ($awayCounts['nflverse_source'] ?? null)
+                ? 'nflverse_injuries'
+                : null,
             'has_unscoped_injury_uncertainty' => ($homeCounts['unknown_return_skipped'] + $awayCounts['unknown_return_skipped']) > 0,
             'spread_adjustment' => round($spreadAdj, 2),
             'total_adjustment' => round($totalAdj, 2),
@@ -1801,10 +2122,155 @@ class GeneratePredictionFromHistoricalElo
             );
         }
 
+        $nflverseCounts = $this->nflverseInjuryCountsForTeam($teamId, $season, $game);
+        if ($nflverseCounts['rows'] > 0 && ($counts['out'] + $counts['questionable']) <= 0.0) {
+            $counts['out'] += $nflverseCounts['out'];
+            $counts['questionable'] += $nflverseCounts['questionable'];
+            $counts['nflverse_rows'] = $nflverseCounts['rows'];
+            $counts['nflverse_source'] = 'nflverse_injuries';
+        }
+
         $counts['out'] = round($counts['out'], 2);
         $counts['questionable'] = round($counts['questionable'], 2);
 
         return $counts;
+    }
+
+    /**
+     * @return array{out:float,questionable:float,rows:int,positions:list<string>}
+     */
+    protected function nflverseInjuryCountsForTeam(int $teamId, int $season, Game $game): array
+    {
+        $empty = [
+            'out' => 0.0,
+            'questionable' => 0.0,
+            'rows' => 0,
+            'positions' => [],
+        ];
+
+        if (! (bool) config('nfl.predictions.nflverse.injury_fallback.enabled', true)) {
+            return $empty;
+        }
+
+        $team = $this->teamAbbreviationForId($game, $teamId);
+        if ($team === null) {
+            return $empty;
+        }
+
+        $gameDate = $this->asDate($game->game_date);
+        $rows = DB::table('nflverse_injuries')
+            ->where('season', $season)
+            ->where('week', (int) $game->week)
+            ->where('team', $team)
+            ->where(function ($query) use ($gameDate): void {
+                if (! $gameDate) {
+                    return;
+                }
+
+                $query->whereNull('source_updated_at')
+                    ->orWhere('source_updated_at', '<=', $gameDate->copy()->endOfDay()->toDateTimeString());
+            })
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return $empty;
+        }
+
+        $counts = $empty;
+        $counts['rows'] = $rows->count();
+
+        foreach ($rows as $row) {
+            $bucket = $this->nflverseInjuryStatusBucket($row);
+            if ($bucket === null) {
+                continue;
+            }
+
+            $position = strtoupper((string) ($row->position ?? ''));
+            $multiplier = $this->nflverseDepthInjuryMultiplier($team, (string) ($row->gsis_id ?? ''), $position, $game);
+            $counts[$bucket] += $multiplier;
+            if ($position !== '') {
+                $counts['positions'][] = $position;
+            }
+        }
+
+        $counts['out'] = round($counts['out'], 2);
+        $counts['questionable'] = round($counts['questionable'], 2);
+        $counts['positions'] = array_values(array_unique($counts['positions']));
+
+        return $counts;
+    }
+
+    protected function nflverseInjuryStatusBucket(object $row): ?string
+    {
+        $status = strtolower(trim((string) ($row->report_status ?? '')));
+        if ($status !== '') {
+            return match (true) {
+                str_contains($status, 'out'),
+                str_contains($status, 'injured reserve') => 'out',
+                str_contains($status, 'doubtful'),
+                str_contains($status, 'questionable'),
+                str_contains($status, 'probable') => 'questionable',
+                default => null,
+            };
+        }
+
+        $practice = strtolower(trim((string) ($row->practice_status ?? '')));
+
+        return match (true) {
+            str_contains($practice, 'did not participate') => 'questionable',
+            str_contains($practice, 'limited') => 'questionable',
+            default => null,
+        };
+    }
+
+    protected function nflverseDepthInjuryMultiplier(string $team, string $gsisId, string $position, Game $game): float
+    {
+        $base = 1.0;
+        if ($position === 'QB') {
+            $base *= (float) config('nfl.predictions.depth_chart.qb_multiplier', 2.40);
+        } elseif (in_array($position, ['WR', 'RB', 'TE'], true)) {
+            $base *= (float) config('nfl.predictions.depth_chart.skill_multiplier', 1.45);
+        }
+
+        if ($gsisId === '') {
+            return round($base, 2);
+        }
+
+        $gameDate = $this->asDate($game->game_date);
+        $entry = DB::table('nflverse_depth_charts')
+            ->where('season', (int) $game->season)
+            ->where('team', $team)
+            ->where('gsis_id', $gsisId)
+            ->where(function ($query) use ($gameDate): void {
+                if (! $gameDate) {
+                    return;
+                }
+
+                $query->whereNull('source_updated_at')
+                    ->orWhere('source_updated_at', '<=', $gameDate->copy()->endOfDay()->toDateTimeString());
+            })
+            ->orderByDesc('source_updated_at')
+            ->orderBy('depth_rank')
+            ->first();
+
+        if (! $entry) {
+            return round($base, 2);
+        }
+
+        $rank = is_numeric($entry->depth_rank ?? null) ? (int) $entry->depth_rank : null;
+        if ($rank === 1) {
+            $base *= (float) config('nfl.predictions.depth_chart.starter_multiplier', 1.35);
+        } elseif ($rank !== null && $rank <= 3) {
+            $base *= (float) config('nfl.predictions.depth_chart.rotation_multiplier', 1.10);
+        }
+
+        $role = strtoupper((string) ($entry->depth_position ?? $position));
+        $roleMultipliers = (array) config('nfl.predictions.depth_chart.role_multipliers', []);
+        if (isset($roleMultipliers[$role]) && is_numeric($roleMultipliers[$role])) {
+            $base *= (float) $roleMultipliers[$role];
+        }
+
+        return round($base, 2);
     }
 
     /**
@@ -2140,6 +2606,99 @@ class GeneratePredictionFromHistoricalElo
             + (float) ($stat->sacks_allowed ?? 0));
     }
 
+    /**
+     * @return array{games:int,season:int|null,offensive_plays:int,defensive_plays:int,offensive_true_epa_per_play:float,defensive_true_epa_per_play:float,net_true_epa_per_play:float,source:string}
+     */
+    protected function nflverseTeamEpaProfile(Game $game, int $teamId): array
+    {
+        $team = $this->teamAbbreviationForId($game, $teamId);
+        $season = (int) ($game->season ?? 0);
+        $date = $this->asDate($game->game_date);
+
+        if ($team === null || $season <= 0) {
+            return $this->emptyNflverseEpaProfile(null);
+        }
+
+        $cacheKey = implode(':', [$team, $season, $date?->toDateString() ?? 'no-date']);
+        if (isset($this->nflverseEpaProfileCache[$cacheKey])) {
+            return $this->nflverseEpaProfileCache[$cacheKey];
+        }
+
+        $profile = $this->nflverseTeamEpaProfileForSeason($team, $season, $date);
+        $minGames = max(1, (int) config('nfl.predictions.nflverse.true_epa_fallback.min_games', 4));
+        $minPlays = max(1, (int) config('nfl.predictions.nflverse.true_epa_fallback.min_plays', 200));
+
+        if ((int) $profile['games'] < $minGames || (int) $profile['offensive_plays'] < $minPlays) {
+            $previous = $this->nflverseTeamEpaProfileForSeason($team, $season - 1, null);
+            if ((int) $previous['games'] > (int) $profile['games']) {
+                $profile = $previous;
+            }
+        }
+
+        return $this->nflverseEpaProfileCache[$cacheKey] = $profile;
+    }
+
+    /**
+     * @return array{games:int,season:int|null,offensive_plays:int,defensive_plays:int,offensive_true_epa_per_play:float,defensive_true_epa_per_play:float,net_true_epa_per_play:float,source:string}
+     */
+    protected function nflverseTeamEpaProfileForSeason(string $team, int $season, ?CarbonInterface $beforeDate): array
+    {
+        if ($season <= 0) {
+            return $this->emptyNflverseEpaProfile(null);
+        }
+
+        $base = DB::table('nflverse_pbp_plays')
+            ->join('nfl_games', 'nfl_games.id', '=', 'nflverse_pbp_plays.nfl_game_id')
+            ->where('nflverse_pbp_plays.season', $season)
+            ->where('nfl_games.status', 'STATUS_FINAL')
+            ->whereNotNull('nflverse_pbp_plays.epa')
+            ->whereIn('nflverse_pbp_plays.play_type', ['pass', 'run'])
+            ->when($beforeDate, fn ($query) => $query->whereDate('nfl_games.game_date', '<', $beforeDate->toDateString()));
+
+        $offense = (clone $base)
+            ->where('nflverse_pbp_plays.possession_team', $team)
+            ->selectRaw('COUNT(*) as plays, COUNT(DISTINCT nflverse_pbp_plays.nfl_game_id) as games, AVG(nflverse_pbp_plays.epa) as epa')
+            ->first();
+
+        $defense = (clone $base)
+            ->where('nflverse_pbp_plays.defense_team', $team)
+            ->selectRaw('COUNT(*) as plays, COUNT(DISTINCT nflverse_pbp_plays.nfl_game_id) as games, AVG(nflverse_pbp_plays.epa) as epa')
+            ->first();
+
+        $offensivePlays = (int) ($offense->plays ?? 0);
+        $defensivePlays = (int) ($defense->plays ?? 0);
+        $offensiveEpa = (float) ($offense->epa ?? 0.0);
+        $defensiveEpaAllowed = (float) ($defense->epa ?? 0.0);
+
+        return [
+            'games' => max((int) ($offense->games ?? 0), (int) ($defense->games ?? 0)),
+            'season' => $season,
+            'offensive_plays' => $offensivePlays,
+            'defensive_plays' => $defensivePlays,
+            'offensive_true_epa_per_play' => round($offensiveEpa, 5),
+            'defensive_true_epa_per_play' => round($defensiveEpaAllowed, 5),
+            'net_true_epa_per_play' => round($offensiveEpa - $defensiveEpaAllowed, 5),
+            'source' => 'nflverse_pbp_plays',
+        ];
+    }
+
+    /**
+     * @return array{games:int,season:int|null,offensive_plays:int,defensive_plays:int,offensive_true_epa_per_play:float,defensive_true_epa_per_play:float,net_true_epa_per_play:float,source:string}
+     */
+    protected function emptyNflverseEpaProfile(?int $season): array
+    {
+        return [
+            'games' => 0,
+            'season' => $season,
+            'offensive_plays' => 0,
+            'defensive_plays' => 0,
+            'offensive_true_epa_per_play' => 0.0,
+            'defensive_true_epa_per_play' => 0.0,
+            'net_true_epa_per_play' => 0.0,
+            'source' => 'nflverse_pbp_plays',
+        ];
+    }
+
     protected function rate(int $numerator, int $denominator): float
     {
         return $denominator > 0 ? $numerator / $denominator : 0.0;
@@ -2300,6 +2859,95 @@ class GeneratePredictionFromHistoricalElo
     }
 
     /**
+     * @return array{games:int,wins:int,losses:int,ties:int,win_pct:float,avg_margin:float}
+     */
+    protected function teamSameWeekRecordProfile(
+        Game $game,
+        int $teamId,
+        int $lookbackSeasons,
+        string $scope,
+        ?int $opponentTeamId = null,
+        ?string $targetDivision = null,
+        ?string $targetConference = null
+    ): array {
+        $date = $this->asDate($game->game_date);
+        $week = (int) ($game->week ?? 0);
+
+        if ($week <= 0) {
+            return [
+                'games' => 0,
+                'wins' => 0,
+                'losses' => 0,
+                'ties' => 0,
+                'win_pct' => 0.0,
+                'avg_margin' => 0.0,
+            ];
+        }
+
+        $seasonFloor = max(0, (int) $game->season - $lookbackSeasons);
+        $seasonType = (string) ($game->season_type ?? '');
+
+        $games = Game::query()
+            ->with(['homeTeam', 'awayTeam'])
+            ->where('status', 'STATUS_FINAL')
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
+            ->where('week', $week)
+            ->whereBetween('season', [$seasonFloor, max($seasonFloor, (int) $game->season - 1)])
+            ->when($seasonType !== '', fn ($query) => $query->where('season_type', $seasonType))
+            ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
+            ->where(function ($query) use ($teamId): void {
+                $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
+            })
+            ->orderByDesc('season')
+            ->orderByDesc('game_date')
+            ->orderByDesc('id')
+            ->get()
+            ->filter(function (Game $priorGame) use ($scope, $teamId, $opponentTeamId, $targetDivision, $targetConference): bool {
+                $opponent = (int) $priorGame->home_team_id === $teamId ? $priorGame->awayTeam : $priorGame->homeTeam;
+
+                return match ($scope) {
+                    'team' => $opponentTeamId !== null && (int) $opponent?->id === $opponentTeamId,
+                    'division' => $targetDivision !== null && $this->divisionKey($opponent) === $targetDivision,
+                    'conference' => $targetConference !== null && $this->conferenceKey($opponent) === $targetConference,
+                    default => false,
+                };
+            })
+            ->values();
+
+        $wins = 0;
+        $losses = 0;
+        $ties = 0;
+        $margins = [];
+
+        foreach ($games as $priorGame) {
+            $isHome = (int) $priorGame->home_team_id === $teamId;
+            $teamScore = $isHome ? (float) $priorGame->home_score : (float) $priorGame->away_score;
+            $opponentScore = $isHome ? (float) $priorGame->away_score : (float) $priorGame->home_score;
+            $margins[] = $teamScore - $opponentScore;
+
+            if ($teamScore > $opponentScore) {
+                $wins++;
+            } elseif ($teamScore < $opponentScore) {
+                $losses++;
+            } else {
+                $ties++;
+            }
+        }
+
+        $gameCount = $games->count();
+
+        return [
+            'games' => $gameCount,
+            'wins' => $wins,
+            'losses' => $losses,
+            'ties' => $ties,
+            'win_pct' => $gameCount > 0 ? round(($wins + ($ties * 0.5)) / $gameCount, 3) : 0.0,
+            'avg_margin' => round($this->average($margins), 3),
+        ];
+    }
+
+    /**
      * @param  array<string,mixed>  $home
      * @param  array<string,mixed>  $away
      */
@@ -2398,6 +3046,61 @@ class GeneratePredictionFromHistoricalElo
         }
 
         return self::NFL_DIVISION_MAP[strtoupper((string) ($team->abbreviation ?? ''))]['conference'] ?? null;
+    }
+
+    protected function teamAbbreviationForId(Game $game, int $teamId): ?string
+    {
+        $team = match ($teamId) {
+            (int) $game->home_team_id => $game->homeTeam,
+            (int) $game->away_team_id => $game->awayTeam,
+            default => null,
+        };
+
+        $abbreviation = strtoupper(trim((string) ($team?->abbreviation ?? '')));
+        if ($abbreviation === '') {
+            $abbreviation = DB::table('nfl_teams')
+                ->where('id', $teamId)
+                ->value('abbreviation');
+            $abbreviation = strtoupper(trim((string) $abbreviation));
+        }
+
+        return $abbreviation !== '' ? $this->normalizeNflverseTeam($abbreviation) : null;
+    }
+
+    protected function normalizeNflverseTeam(string $team): string
+    {
+        $team = strtoupper(trim($team));
+
+        return [
+            'ARZ' => 'ARI',
+            'JAC' => 'JAX',
+            'LA' => 'LAR',
+            'STL' => 'LAR',
+            'SD' => 'LAC',
+            'OAK' => 'LV',
+            'WAS' => 'WSH',
+        ][$team] ?? $team;
+    }
+
+    protected function nflverseRosterRow(string $gsisId, int $season, ?string $team = null): ?object
+    {
+        $query = DB::table('nflverse_rosters')
+            ->where('gsis_id', $gsisId)
+            ->where('season', $season);
+
+        if ($team !== null) {
+            $query->where('team', $team);
+        }
+
+        $row = $query->first();
+        if ($row) {
+            return $row;
+        }
+
+        return DB::table('nflverse_rosters')
+            ->where('gsis_id', $gsisId)
+            ->orderByDesc('season')
+            ->first();
     }
 
     protected function isIndoorVenue(Game $game): bool
@@ -2515,6 +3218,11 @@ class GeneratePredictionFromHistoricalElo
             ->first();
 
         if (! $qbStat) {
+            $nflverseGameQb = $this->nflverseQbContextFromGameStat($game, $teamId);
+            if ($nflverseGameQb !== null) {
+                return $nflverseGameQb;
+            }
+
             $depthChartQb = $this->projectedQbContextFromDepthChart($game, $teamId);
             if ($depthChartQb !== null) {
                 return $depthChartQb;
@@ -2568,7 +3276,7 @@ class GeneratePredictionFromHistoricalElo
             ->first();
 
         if (! $entry || ! $entry->player_id) {
-            return null;
+            return $this->projectedQbContextFromNflverseDepthChart($game, $teamId);
         }
 
         $prior = $this->priorQbStats((int) $entry->player_id, $teamId, $game);
@@ -2617,7 +3325,7 @@ class GeneratePredictionFromHistoricalElo
             ]);
 
         if (! $qbStat) {
-            return null;
+            return $this->projectedQbContextFromNflversePriorGames($game, $teamId);
         }
 
         $prior = $this->priorQbStats((int) $qbStat->player_id, $teamId, $game);
@@ -2639,6 +3347,219 @@ class GeneratePredictionFromHistoricalElo
             'prior_sack_rate' => round((float) $prior['sack_rate'], 4),
             'prior_rush_yards_per_game' => round((float) $prior['rush_yards_per_game'], 3),
             'score' => round($score, 3),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    protected function nflverseQbContextFromGameStat(Game $game, int $teamId): ?array
+    {
+        $team = $this->teamAbbreviationForId($game, $teamId);
+        if ($team === null) {
+            return null;
+        }
+
+        $row = DB::table('nflverse_weekly_player_stats')
+            ->where('nfl_game_id', (int) $game->id)
+            ->where('team', $team)
+            ->where('passing_attempts', '>', 0)
+            ->orderByDesc('passing_attempts')
+            ->orderByDesc('passing_yards')
+            ->first();
+
+        if (! $row || ! $row->player_id) {
+            return null;
+        }
+
+        return $this->nflverseQbContextFromWeeklyRow($row, $game, $team, [
+            'game_attempts' => (int) ($row->passing_attempts ?? 0),
+            'identified_from_nflverse_game_stat' => true,
+        ]);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    protected function projectedQbContextFromNflverseDepthChart(Game $game, int $teamId): ?array
+    {
+        if (! (bool) config('nfl.predictions.nflverse.qb_depth_fallback.enabled', true)) {
+            return null;
+        }
+
+        $team = $this->teamAbbreviationForId($game, $teamId);
+        if ($team === null) {
+            return null;
+        }
+
+        $gameDate = $this->asDate($game->game_date);
+        $entry = DB::table('nflverse_depth_charts')
+            ->where('season', (int) $game->season)
+            ->where('team', $team)
+            ->where(function ($query): void {
+                $query->where('position', 'QB')
+                    ->orWhere('depth_position', 'QB');
+            })
+            ->where(function ($query) use ($gameDate): void {
+                if (! $gameDate) {
+                    return;
+                }
+
+                $query->whereNull('source_updated_at')
+                    ->orWhere('source_updated_at', '<=', $gameDate->copy()->endOfDay()->toDateTimeString());
+            })
+            ->orderByDesc('source_updated_at')
+            ->orderByDesc('week')
+            ->orderBy('depth_rank')
+            ->first();
+
+        if (! $entry || ! $entry->gsis_id) {
+            return null;
+        }
+
+        return $this->nflverseQbContextFromPlayer(
+            (string) $entry->gsis_id,
+            $game,
+            $team,
+            [
+                'qb_name' => $entry->full_name,
+                'game_attempts' => 0,
+                'projected_from_nflverse_depth_chart' => true,
+                'depth_chart_name' => $entry->formation ?? $entry->depth_team,
+                'depth_chart_updated_at' => $entry->source_updated_at,
+                'depth_rank' => $entry->depth_rank !== null ? (int) $entry->depth_rank : null,
+            ]
+        );
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    protected function projectedQbContextFromNflversePriorGames(Game $game, int $teamId): ?array
+    {
+        if (! (bool) config('nfl.predictions.nflverse.qb_weekly_stats_fallback.enabled', true)) {
+            return null;
+        }
+
+        $team = $this->teamAbbreviationForId($game, $teamId);
+        $date = $this->asDate($game->game_date);
+        if ($team === null) {
+            return null;
+        }
+
+        $row = DB::table('nflverse_weekly_player_stats')
+            ->join('nfl_games', 'nfl_games.id', '=', 'nflverse_weekly_player_stats.nfl_game_id')
+            ->where('nflverse_weekly_player_stats.team', $team)
+            ->where('nflverse_weekly_player_stats.passing_attempts', '>', 0)
+            ->where('nfl_games.status', 'STATUS_FINAL')
+            ->when($date, fn ($query) => $query->whereDate('nfl_games.game_date', '<', $date->toDateString()))
+            ->orderByDesc('nfl_games.game_date')
+            ->orderByDesc('nflverse_weekly_player_stats.passing_attempts')
+            ->orderByDesc('nflverse_weekly_player_stats.passing_yards')
+            ->first([
+                'nflverse_weekly_player_stats.*',
+            ]);
+
+        if (! $row || ! $row->player_id) {
+            return null;
+        }
+
+        return $this->nflverseQbContextFromWeeklyRow($row, $game, $team, [
+            'game_attempts' => 0,
+            'projected_from_nflverse_prior_game' => true,
+        ]);
+    }
+
+    /**
+     * @param  array<string,mixed>  $extra
+     * @return array<string,mixed>|null
+     */
+    protected function nflverseQbContextFromWeeklyRow(object $row, Game $game, string $team, array $extra = []): ?array
+    {
+        if (! $row->player_id) {
+            return null;
+        }
+
+        return $this->nflverseQbContextFromPlayer((string) $row->player_id, $game, $team, [
+            'qb_name' => $row->player_display_name ?? $row->player_name ?? null,
+            ...$extra,
+        ]);
+    }
+
+    /**
+     * @param  array<string,mixed>  $extra
+     * @return array<string,mixed>|null
+     */
+    protected function nflverseQbContextFromPlayer(string $playerId, Game $game, string $team, array $extra = []): ?array
+    {
+        $prior = $this->priorNflverseQbStats($playerId, $game);
+        $score = $this->qbScore($prior);
+        $roster = $this->nflverseRosterRow($playerId, (int) $game->season, $team);
+        $experience = is_numeric($roster?->years_exp ?? null) ? (int) $roster->years_exp : null;
+
+        return [
+            'qb_id' => $playerId,
+            'qb_name' => $extra['qb_name'] ?? $roster?->full_name,
+            'experience' => $experience,
+            'experience_bucket' => $this->qbExperienceBucket($experience, (int) $prior['games']),
+            'source' => 'nflverse_weekly_player_stats',
+            'prior_source' => 'nflverse_weekly_player_stats',
+            'prior_games' => (int) $prior['games'],
+            'prior_attempts' => (int) $prior['attempts'],
+            'prior_yards_per_attempt' => round((float) $prior['yards_per_attempt'], 3),
+            'prior_td_rate' => round((float) $prior['td_rate'], 4),
+            'prior_int_rate' => round((float) $prior['int_rate'], 4),
+            'prior_sack_rate' => round((float) $prior['sack_rate'], 4),
+            'prior_rush_yards_per_game' => round((float) $prior['rush_yards_per_game'], 3),
+            'score' => round($score, 3),
+            ...$extra,
+        ];
+    }
+
+    /**
+     * @return array{games:int,attempts:int,yards:int,touchdowns:int,interceptions:int,sacks:int,rush_yards:int,yards_per_attempt:float,td_rate:float,int_rate:float,sack_rate:float,rush_yards_per_game:float}
+     */
+    protected function priorNflverseQbStats(string $playerId, Game $game): array
+    {
+        $date = $this->asDate($game->game_date);
+
+        $rows = DB::table('nflverse_weekly_player_stats')
+            ->join('nfl_games', 'nfl_games.id', '=', 'nflverse_weekly_player_stats.nfl_game_id')
+            ->where('nflverse_weekly_player_stats.player_id', $playerId)
+            ->where('nflverse_weekly_player_stats.passing_attempts', '>', 0)
+            ->where('nfl_games.status', 'STATUS_FINAL')
+            ->when($date, fn ($query) => $query->whereDate('nfl_games.game_date', '<', $date->toDateString()))
+            ->get([
+                'nflverse_weekly_player_stats.passing_attempts',
+                'nflverse_weekly_player_stats.passing_yards',
+                'nflverse_weekly_player_stats.passing_touchdowns',
+                'nflverse_weekly_player_stats.interceptions_thrown',
+                'nflverse_weekly_player_stats.rushing_yards',
+                DB::raw('0 as sacks_taken'),
+            ]);
+
+        $games = $rows->count();
+        $attempts = (int) $rows->sum(fn ($row) => (int) ($row->passing_attempts ?? 0));
+        $yards = (int) $rows->sum(fn ($row) => (int) ($row->passing_yards ?? 0));
+        $touchdowns = (int) $rows->sum(fn ($row) => (int) ($row->passing_touchdowns ?? 0));
+        $interceptions = (int) $rows->sum(fn ($row) => (int) ($row->interceptions_thrown ?? 0));
+        $sacks = (int) $rows->sum(fn ($row) => (int) ($row->sacks_taken ?? 0));
+        $rushYards = (int) $rows->sum(fn ($row) => (int) ($row->rushing_yards ?? 0));
+        $dropbacks = $attempts + $sacks;
+
+        return [
+            'games' => $games,
+            'attempts' => $attempts,
+            'yards' => $yards,
+            'touchdowns' => $touchdowns,
+            'interceptions' => $interceptions,
+            'sacks' => $sacks,
+            'rush_yards' => $rushYards,
+            'yards_per_attempt' => $attempts > 0 ? $yards / $attempts : 0.0,
+            'td_rate' => $attempts > 0 ? $touchdowns / $attempts : 0.0,
+            'int_rate' => $attempts > 0 ? $interceptions / $attempts : 0.0,
+            'sack_rate' => $dropbacks > 0 ? $sacks / $dropbacks : 0.0,
+            'rush_yards_per_game' => $games > 0 ? $rushYards / $games : 0.0,
         ];
     }
 
@@ -2962,6 +3883,16 @@ class GeneratePredictionFromHistoricalElo
             $flags[] = 'division_rivalry';
         }
 
+        if (
+            (int) ($game->week ?? 0) <= (int) config('nfl.predictions.contextual_factors.new_head_coach_uncertainty_weeks', 4)
+            && (
+                data_get($this->lastModelMetadata, 'contextual_factors.coaching_prior.new_head_coaches.home') !== null
+                || data_get($this->lastModelMetadata, 'contextual_factors.coaching_prior.new_head_coaches.away') !== null
+            )
+        ) {
+            $flags[] = 'new_head_coach_uncertainty';
+        }
+
         foreach (['home', 'away'] as $side) {
             $bucket = $this->lastModelMetadata['qb_form'][$side]['experience_bucket'] ?? null;
             if (in_array($bucket, ['rookie', 'first_year_starter', 'unknown_limited_starter'], true)) {
@@ -3113,6 +4044,11 @@ class GeneratePredictionFromHistoricalElo
                 $matchupRecordSignal = (float) ($this->lastModelMetadata['contextual_factors']['matchup_records']['spread_adjustment'] ?? 0.0);
                 $this->appendDirectionalReason($codes, 'recent_matchup_record', $matchupRecordSignal, 0.35);
             }
+            if (($this->lastModelMetadata['contextual_factors']['same_week_records']['applied'] ?? false) === true) {
+                $codes[] = 'same_week_record_context';
+                $sameWeekSignal = (float) ($this->lastModelMetadata['contextual_factors']['same_week_records']['spread_adjustment'] ?? 0.0);
+                $this->appendDirectionalReason($codes, 'same_week_record', $sameWeekSignal, 0.25);
+            }
             if (($this->lastModelMetadata['contextual_factors']['weather_total']['applied'] ?? false) === true) {
                 $codes[] = 'weather_total_context';
             }
@@ -3122,6 +4058,24 @@ class GeneratePredictionFromHistoricalElo
             if (($this->lastModelMetadata['contextual_factors']['coaching_prior']['applied'] ?? false) === true) {
                 $codes[] = 'coaching_prior_context';
             }
+        }
+
+        if (($this->lastModelMetadata['contextual_factors']['same_week_records']['applied'] ?? false) === true) {
+            $this->appendSameWeekRecordReasonCodes($codes, (array) $this->lastModelMetadata['contextual_factors']['same_week_records']);
+        }
+
+        $coaching = (array) ($this->lastModelMetadata['contextual_factors']['coaching_prior'] ?? []);
+        if (($coaching['new_head_coaches']['home'] ?? null) !== null || ($coaching['new_head_coaches']['away'] ?? null) !== null) {
+            $codes[] = 'new_head_coach_context';
+            if (($coaching['new_head_coaches']['home'] ?? null) !== null) {
+                $codes[] = 'home_new_head_coach';
+            }
+            if (($coaching['new_head_coaches']['away'] ?? null) !== null) {
+                $codes[] = 'away_new_head_coach';
+            }
+
+            $newCoachSignal = (float) ($coaching['new_head_coach_spread_adjustment'] ?? 0.0);
+            $this->appendDirectionalReason($codes, 'new_head_coach', $newCoachSignal, 0.15);
         }
 
         $actualWeather = (array) ($this->lastModelMetadata['actual_weather'] ?? []);
@@ -3513,6 +4467,41 @@ class GeneratePredictionFromHistoricalElo
 
     /**
      * @param  list<string>  $codes
+     * @param  array<string,mixed>  $sameWeekRecords
+     */
+    protected function appendSameWeekRecordReasonCodes(array &$codes, array $sameWeekRecords): void
+    {
+        $prefixes = [
+            'team' => 'same_week_h2h_record',
+            'division' => 'same_week_opponent_division_record',
+            'conference' => 'same_week_opponent_conference_record',
+        ];
+
+        foreach ($prefixes as $scope => $prefix) {
+            $home = (array) data_get($sameWeekRecords, 'home.'.$scope, []);
+            $away = (array) data_get($sameWeekRecords, 'away.'.$scope, []);
+
+            if (! $this->recordHasGames($home, $away)) {
+                continue;
+            }
+
+            $homeWinPct = (float) ($home['win_pct'] ?? 0.0);
+            $awayWinPct = (float) ($away['win_pct'] ?? 0.0);
+            $homeMargin = (float) ($home['avg_margin'] ?? 0.0);
+            $awayMargin = (float) ($away['avg_margin'] ?? 0.0);
+
+            if ($homeWinPct - $awayWinPct >= 0.20 || $homeMargin - $awayMargin >= 4.0) {
+                $codes[] = $prefix.'_home_edge';
+            } elseif ($awayWinPct - $homeWinPct >= 0.20 || $awayMargin - $homeMargin >= 4.0) {
+                $codes[] = $prefix.'_away_edge';
+            } else {
+                $codes[] = $prefix.'_neutral';
+            }
+        }
+    }
+
+    /**
+     * @param  list<string>  $codes
      */
     protected function appendMarketReasonCodes(array &$codes, Game $game, float $trustScore, ?float $spreadEdge, ?float $totalEdge): void
     {
@@ -3655,7 +4644,7 @@ class GeneratePredictionFromHistoricalElo
             'unknown_return_days' => (int) config('nfl.predictions.injury_scope.unknown_return_days', 21),
         ];
 
-        return PlayerInjury::query()
+        $positions = PlayerInjury::query()
             ->with('player')
             ->where('team_id', $teamId)
             ->where('is_active', true)
@@ -3668,6 +4657,12 @@ class GeneratePredictionFromHistoricalElo
             ->filter()
             ->values()
             ->all();
+
+        if ($positions === []) {
+            $positions = $this->nflverseInjuryCountsForTeam($teamId, (int) $game->season, $game)['positions'] ?? [];
+        }
+
+        return array_values(array_unique($positions));
     }
 
     /**

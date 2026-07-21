@@ -374,6 +374,46 @@ it('evaluates expanded nfl bet rule combinations', function () {
         -4.0
     );
 
+    $totalMarketEdge = $engine->evaluate(
+        ['total_market_edge', 'market_total_edge_under', 'slow_pace_under_signal'],
+        [],
+        64,
+        null,
+        -3.2
+    );
+
+    $totalWrongSide = $engine->evaluate(
+        ['total_market_edge', 'market_total_edge_under', 'slow_pace_under_signal', 'total_key_number_wrong_side'],
+        [],
+        64,
+        null,
+        -3.2
+    );
+
+    $weekOneHighTotal = $engine->evaluate(
+        ['week_1', 'week_1_total_uncertainty', 'high_market_total', 'market_total_edge_under', 'slow_pace_under_signal'],
+        [],
+        60,
+        null,
+        -2.4
+    );
+
+    $compoundWeather = $engine->evaluate(
+        ['compound_weather_under', 'market_total_edge_under'],
+        [],
+        60,
+        null,
+        -2.2
+    );
+
+    $domeOver = $engine->evaluate(
+        ['dome_scoring_boost', 'market_total_edge_over', 'fast_pace_over_signal', 'explosive_offense_edge'],
+        [],
+        60,
+        null,
+        2.0
+    );
+
     $divisionKeyNumber = $engine->evaluate(
         ['division_game_variance', 'key_number_edge_3'],
         [],
@@ -402,6 +442,15 @@ it('evaluates expanded nfl bet rule combinations', function () {
         ->and(collect($eliteQb['matched_rules'])->pluck('name'))->toContain('elite_qb_clean_pocket_mismatch')
         ->and($weatherUnder['action'])->toBe('play')
         ->and(collect($weatherUnder['matched_rules'])->pluck('name'))->toContain('weather_pace_under_confluence')
+        ->and($totalMarketEdge['action'])->toBe('play')
+        ->and(collect($totalMarketEdge['matched_rules'])->pluck('name'))->toContain('total_market_edge_play')
+        ->and($totalWrongSide['action'])->toBe('none')
+        ->and($weekOneHighTotal['action'])->toBe('lean')
+        ->and(collect($weekOneHighTotal['matched_rules'])->pluck('name'))->toContain('week1_high_total_under')
+        ->and($compoundWeather['action'])->toBe('play')
+        ->and(collect($compoundWeather['matched_rules'])->pluck('name'))->toContain('compound_weather_under')
+        ->and($domeOver['action'])->toBe('lean')
+        ->and(collect($domeOver['matched_rules'])->pluck('name'))->toContain('dome_fast_track_over')
         ->and($divisionKeyNumber['action'])->toBe('lean')
         ->and(collect($divisionKeyNumber['matched_rules'])->pluck('name'))->toContain('division_dog_key_number')
         ->and($marketDisagreement['action'])->toBe('play')

@@ -4087,19 +4087,35 @@ class GeneratePredictionFromHistoricalElo
             $codes[] = 'actual_weather_available';
             if (($actualWeather['applied'] ?? false) === true) {
                 $codes[] = 'actual_weather_total_adjustment';
-                if ((float) ($actualWeather['wind_speed_mph'] ?? 0) >= (float) config('nfl.predictions.actual_weather.wind_under_threshold_mph', 15)) {
+                $weatherUnderFactors = 0;
+                $wind = (float) ($actualWeather['wind_speed_mph'] ?? 0);
+                $gust = (float) ($actualWeather['wind_gust_mph'] ?? 0);
+                $precip = (float) ($actualWeather['precipitation_inches'] ?? 0);
+                $temperature = (float) ($actualWeather['temperature_f'] ?? 99);
+
+                if ($wind >= (float) config('nfl.predictions.actual_weather.wind_under_threshold_mph', 15)) {
                     $codes[] = 'wind_under_signal';
+                    $weatherUnderFactors++;
                 }
-                if ((float) ($actualWeather['precipitation_inches'] ?? 0) >= (float) config('nfl.predictions.actual_weather.precip_under_threshold_inches', 0.03)) {
-                    if ((float) ($actualWeather['temperature_f'] ?? 99) <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
+                if ($gust >= (float) config('nfl.predictions.actual_weather.gust_under_threshold_mph', 24)) {
+                    $codes[] = 'gust_under_signal';
+                    $weatherUnderFactors++;
+                }
+                if ($precip >= (float) config('nfl.predictions.actual_weather.precip_under_threshold_inches', 0.03)) {
+                    if ($temperature <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
                         $codes[] = 'snow_under_signal';
                     } else {
                         $codes[] = 'rain_under_signal';
                     }
                     $codes[] = 'weather_increases_turnover_risk';
+                    $weatherUnderFactors++;
                 }
-                if ((float) ($actualWeather['temperature_f'] ?? 99) <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
+                if ($temperature <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
                     $codes[] = 'cold_weather_under_signal';
+                    $weatherUnderFactors++;
+                }
+                if ($weatherUnderFactors >= 2) {
+                    $codes[] = 'compound_weather_under';
                 }
                 $codes[] = 'total_weather_suppression';
             }
@@ -4417,6 +4433,10 @@ class GeneratePredictionFromHistoricalElo
         if ((int) ($game->week ?? 0) <= 4) {
             $codes[] = 'early_season_uncertainty';
         }
+        if ((int) ($game->week ?? 0) === 1) {
+            $codes[] = 'week_1';
+            $codes[] = 'week_1_total_uncertainty';
+        }
         if ($underdogSide === 'away' && $this->looksLikeWestToEastEarlyKick($game)) {
             $codes[] = 'west_to_east_early_kickoff';
         }
@@ -4433,6 +4453,10 @@ class GeneratePredictionFromHistoricalElo
             $codes[] = 'cold_outdoor_total_proxy';
         } elseif ($weatherReason === 'hot_outdoor_proxy') {
             $codes[] = 'hot_outdoor_total_proxy';
+        }
+
+        if ($this->isPrimetime($game)) {
+            $codes[] = 'primetime_total_watch';
         }
     }
 
@@ -4551,6 +4575,81 @@ class GeneratePredictionFromHistoricalElo
         if ($marketTotal !== null && $totalEdge !== null && abs($totalEdge) >= 3.0) {
             $codes[] = $totalEdge > 0 ? 'fast_pace_over_signal' : 'slow_pace_under_signal';
         }
+
+        if ($marketTotal !== null) {
+            $highTotalThreshold = (float) config('nfl.betting.high_total_threshold', 47.5);
+            $lowTotalThreshold = (float) config('nfl.betting.low_total_threshold', 41.5);
+
+            if ($marketTotal >= $highTotalThreshold) {
+                $codes[] = 'high_market_total';
+            } elseif ($marketTotal <= $lowTotalThreshold) {
+                $codes[] = 'low_market_total';
+            }
+        }
+
+        if ($marketTotal !== null && $totalEdge !== null && abs($totalEdge) >= 1.0) {
+            $modelTotal = $marketTotal + $totalEdge;
+            $keyContext = $this->totalKeyNumberContext($marketTotal, $modelTotal, $totalEdge);
+
+            if ($keyContext['near_key'] !== null) {
+                $codes[] = 'total_key_number_'.$keyContext['near_key'];
+                $codes[] = 'total_key_number_context';
+            }
+            if ($keyContext['value_side']) {
+                $codes[] = 'total_key_number_value';
+            }
+            if ($keyContext['wrong_side']) {
+                $codes[] = 'total_key_number_wrong_side';
+            }
+            if ($keyContext['crossed_keys'] !== []) {
+                $codes[] = 'total_crosses_key_number';
+                foreach ($keyContext['crossed_keys'] as $key) {
+                    $codes[] = 'total_crosses_key_number_'.$key;
+                }
+            }
+        }
+    }
+
+    /**
+     * @return array{near_key:int|null,value_side:bool,wrong_side:bool,crossed_keys:list<int>}
+     */
+    protected function totalKeyNumberContext(float $marketTotal, float $modelTotal, float $totalEdge): array
+    {
+        $window = (float) config('nfl.betting.total_key_number_window', 0.5);
+        $direction = $totalEdge > 0 ? 'over' : 'under';
+        $nearKey = null;
+        $nearestDistance = null;
+        $valueSide = false;
+        $wrongSide = false;
+        $crossedKeys = [];
+
+        foreach ((array) config('nfl.betting.total_key_numbers', [37, 41, 43, 44, 47, 51]) as $keyNumber) {
+            if (! is_numeric($keyNumber)) {
+                continue;
+            }
+
+            $key = (int) $keyNumber;
+            $distance = abs($marketTotal - (float) $key);
+            if ($distance <= $window && ($nearestDistance === null || $distance < $nearestDistance)) {
+                $nearKey = $key;
+                $nearestDistance = $distance;
+                $valueSide = ($direction === 'over' && $marketTotal < $key)
+                    || ($direction === 'under' && $marketTotal > $key);
+                $wrongSide = ($direction === 'over' && $marketTotal > $key)
+                    || ($direction === 'under' && $marketTotal < $key);
+            }
+
+            if ($this->lineCrossesKeyNumber($marketTotal, $modelTotal, (float) $key)) {
+                $crossedKeys[] = $key;
+            }
+        }
+
+        return [
+            'near_key' => $nearKey,
+            'value_side' => $valueSide,
+            'wrong_side' => $wrongSide,
+            'crossed_keys' => array_values(array_unique($crossedKeys)),
+        ];
     }
 
     /**

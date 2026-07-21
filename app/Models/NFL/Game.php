@@ -19,6 +19,7 @@ class Game extends Model
     protected $fillable = [
         'espn_event_id',
         'espn_uid',
+        'nflverse_game_id',
         'home_team_id',
         'away_team_id',
         'season',
@@ -40,10 +41,22 @@ class Game extends Model
         'game_clock',
         'home_score',
         'away_score',
+        'home_qb_id',
+        'home_qb_name',
+        'away_qb_id',
+        'away_qb_name',
+        'home_coach',
+        'away_coach',
         'home_linescores',
         'away_linescores',
         'broadcast_networks',
         'completed_at',
+        'stadium_id',
+        'roof',
+        'surface',
+        'home_rest',
+        'away_rest',
+        'division_game',
     ];
 
     protected function casts(): array
@@ -56,6 +69,7 @@ class Game extends Model
             'away_linescores' => 'array',
             'broadcast_networks' => 'array',
             'odds_data' => 'array',
+            'division_game' => 'boolean',
         ];
     }
 

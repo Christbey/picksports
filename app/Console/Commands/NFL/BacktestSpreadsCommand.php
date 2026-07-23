@@ -5,6 +5,7 @@ namespace App\Console\Commands\NFL;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Services\NFL\NflSpreadBacktestEvaluator;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -47,12 +48,18 @@ class BacktestSpreadsCommand extends Command
                 ['CLV sample', (string) $summary['clv_sample']],
                 ['Avg CLV', $summary['avg_clv'] !== null ? $this->signed($summary['avg_clv'], 2).' pts' : 'n/a'],
                 ['Positive CLV rate', $summary['positive_clv_rate'] !== null ? number_format($summary['positive_clv_rate'], 1).'%' : 'n/a'],
-                ['ATS record', "{$summary['wins']}-{$summary['losses']}-{$summary['pushes']}"],
-                ['ATS win rate', number_format($summary['win_rate'], 1).'%'],
+                ['Zero CLV rate', $summary['zero_clv_rate'] !== null ? number_format($summary['zero_clv_rate'], 1).'%' : 'n/a'],
+                ['ATS trust status', $summary['ats_trusted'] ? 'trusted' : 'untrusted - audit market line quality before ROI claims'],
+                ['ATS record (raw)', "{$summary['wins']}-{$summary['losses']}-{$summary['pushes']}"],
+                ['ATS win rate (raw)', number_format($summary['win_rate'], 1).'%'],
                 ['Home-side bets', "{$summary['home_side_bets']} (".number_format($summary['home_side_rate'], 1).'%)'],
                 ['Away-side bets', "{$summary['away_side_bets']} (".number_format($summary['away_side_rate'], 1).'%)'],
             ]
         );
+
+        foreach ($summary['market_quality_warnings'] as $warning) {
+            $this->warn('Market data warning: '.$warning);
+        }
 
         $this->newLine();
         $this->info('ATS By Edge Bucket');
@@ -108,44 +115,27 @@ class BacktestSpreadsCommand extends Command
                     return null;
                 }
 
-                $marketSpread = -$homeMarketSpread;
                 $actualMargin = (float) $game->home_score - (float) $game->away_score;
                 $modelSpread = (float) $prediction->predicted_spread;
-                $edge = abs($modelSpread - $marketSpread);
-                $pick = $modelSpread > $marketSpread ? 'home' : 'away';
-                $coverMargin = $pick === 'home'
-                    ? ($actualMargin - $marketSpread)
-                    : ((-$actualMargin) + $marketSpread);
-                $result = abs($coverMargin) < 0.0001
-                    ? 'push'
-                    : ($coverMargin > 0 ? 'win' : 'loss');
+                $evaluation = app(NflSpreadBacktestEvaluator::class)->evaluate(
+                    $modelSpread,
+                    (float) $homeMarketSpread,
+                    $actualMargin,
+                    $lineSet['closing_home_spread']
+                );
                 $winnerCorrect = ($actualMargin > 0 && $modelSpread > 0)
                     || ($actualMargin < 0 && $modelSpread < 0);
-                $closingMarketSpread = $lineSet['closing_home_spread'] !== null ? -$lineSet['closing_home_spread'] : null;
-                $clv = $this->spreadClv($pick, $marketSpread, $closingMarketSpread);
 
-                return [
+                return array_merge($evaluation, [
                     'game' => $this->teamName($game->awayTeam).' @ '.$this->teamName($game->homeTeam),
                     'home_team' => $this->teamName($game->homeTeam),
                     'away_team' => $this->teamName($game->awayTeam),
-                    'model_spread' => $modelSpread,
-                    'market_spread' => $marketSpread,
-                    'market_home_line' => $homeMarketSpread,
-                    'closing_spread' => $closingMarketSpread,
-                    'closing_home_line' => $lineSet['closing_home_spread'],
-                    'clv' => $clv,
                     'entry_source' => $lineSet['entry_source'],
                     'closing_source' => $lineSet['closing_source'],
-                    'actual_margin' => $actualMargin,
-                    'pick' => $pick,
-                    'result' => $result,
-                    'won' => $result === 'win',
-                    'push' => $result === 'push',
-                    'edge' => $edge,
                     'winner_correct' => $winnerCorrect,
                     'confidence_score' => (float) $prediction->confidence_score,
                     'model_error' => abs($actualMargin - $modelSpread),
-                ];
+                ]);
             })
             ->filter()
             ->values();
@@ -165,6 +155,20 @@ class BacktestSpreadsCommand extends Command
         $homeSideBets = $recommended->where('pick', 'home')->count();
         $awaySideBets = $recommended->where('pick', 'away')->count();
         $clvRows = $recommended->filter(fn (array $row): bool => $row['clv'] !== null)->values();
+        $flaggedRows = $recommended
+            ->filter(fn (array $row): bool => ((array) ($row['data_quality_flags'] ?? [])) !== [])
+            ->values();
+        $zeroClvRows = $clvRows->filter(fn (array $row): bool => abs((float) $row['clv']) < 0.0001)->count();
+        $zeroClvRate = $clvRows->isNotEmpty() ? ($zeroClvRows / $clvRows->count()) * 100 : null;
+        $qualityWarnings = [];
+
+        if ($flaggedRows->isNotEmpty()) {
+            $qualityWarnings[] = $flaggedRows->count().' recommended rows have implausible market spreads';
+        }
+
+        if ($clvRows->count() >= 25 && $zeroClvRate !== null && $zeroClvRate >= 95.0) {
+            $qualityWarnings[] = 'CLV is effectively flat, so closing-line timing/source is not validated';
+        }
 
         return [
             'count' => $rows->count(),
@@ -186,6 +190,9 @@ class BacktestSpreadsCommand extends Command
             'positive_clv_rate' => $clvRows->isNotEmpty()
                 ? ($clvRows->filter(fn (array $row): bool => (float) $row['clv'] > 0)->count() / $clvRows->count()) * 100
                 : null,
+            'zero_clv_rate' => $zeroClvRate,
+            'market_quality_warnings' => $qualityWarnings,
+            'ats_trusted' => $qualityWarnings === [],
             'edge_buckets' => $this->edgeBuckets($recommended),
             'confidence_buckets' => $this->confidenceBuckets($rows),
             'biggest_disagreements' => $recommended
@@ -284,13 +291,30 @@ class BacktestSpreadsCommand extends Command
 
                 foreach ($market['outcomes'] ?? [] as $outcome) {
                     if (($outcome['name'] ?? null) === $homeTeamName && isset($outcome['point'])) {
-                        return (float) $outcome['point'];
+                        $point = (float) $outcome['point'];
+
+                        return $this->usesFavoritePositiveSpreadConvention($bookmaker)
+                            ? -$point
+                            : $point;
                     }
                 }
             }
         }
 
         return null;
+    }
+
+    /**
+     * nflverse archive spreads are stored as favorite-positive points, while
+     * sportsbook/Odds API spreads are favorite-negative.
+     *
+     * @param  array<string, mixed>  $bookmaker
+     */
+    private function usesFavoritePositiveSpreadConvention(array $bookmaker): bool
+    {
+        $source = strtolower((string) ($bookmaker['key'] ?? $bookmaker['title'] ?? ''));
+
+        return str_contains($source, 'nflverse');
     }
 
     /**
@@ -331,19 +355,6 @@ class BacktestSpreadsCommand extends Command
             'entry_source' => $entrySource,
             'closing_source' => $closingSource,
         ];
-    }
-
-    private function spreadClv(string $pick, float $entryMarketSpread, ?float $closingMarketSpread): ?float
-    {
-        if ($closingMarketSpread === null) {
-            return null;
-        }
-
-        return match ($pick) {
-            'home' => round($closingMarketSpread - $entryMarketSpread, 3),
-            'away' => round($entryMarketSpread - $closingMarketSpread, 3),
-            default => null,
-        };
     }
 
     private function teamName(mixed $team): string

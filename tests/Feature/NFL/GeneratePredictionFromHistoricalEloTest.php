@@ -430,6 +430,38 @@ it('evaluates expanded nfl bet rule combinations', function () {
         null
     );
 
+    $highTrustKeySeven = $engine->evaluate(
+        ['strong_model_signal', 'key_number_edge_7', 'model_market_disagreement'],
+        [],
+        76,
+        2.5,
+        null
+    );
+
+    $keySevenLowEdge = $engine->evaluate(
+        ['strong_model_signal', 'key_number_edge_7', 'model_market_disagreement'],
+        [],
+        76,
+        1.5,
+        null
+    );
+
+    $newCoachQbFade = $engine->evaluate(
+        ['strong_model_signal', 'new_head_coach_qb_transition_against_model', 'prior_playoff_team_supports_pick'],
+        [],
+        78,
+        2.5,
+        null
+    );
+
+    $coldWeatherTotal = $engine->evaluate(
+        ['cold_weather_under_signal', 'market_total_edge_under'],
+        [],
+        66,
+        null,
+        -2.2
+    );
+
     $passOverride = $engine->evaluate(
         ['strong_model_signal', 'qb_form_home_edge', 'trench_matchup_home_edge', 'conflicting_signals'],
         [],
@@ -455,6 +487,13 @@ it('evaluates expanded nfl bet rule combinations', function () {
         ->and(collect($divisionKeyNumber['matched_rules'])->pluck('name'))->toContain('division_dog_key_number')
         ->and($marketDisagreement['action'])->toBe('play')
         ->and(collect($marketDisagreement['matched_rules'])->pluck('name'))->toContain('market_disagreement_with_model_quality')
+        ->and($highTrustKeySeven['action'])->toBe('play')
+        ->and(collect($highTrustKeySeven['matched_rules'])->pluck('name'))->toContain('high_trust_key_7_model_edge')
+        ->and(collect($keySevenLowEdge['matched_rules'])->pluck('name'))->not->toContain('high_trust_key_7_model_edge')
+        ->and($newCoachQbFade['action'])->toBe('play')
+        ->and(collect($newCoachQbFade['matched_rules'])->pluck('name'))->toContain('new_coach_new_qb_against_model_fade')
+        ->and($coldWeatherTotal['action'])->toBe('lean')
+        ->and(collect($coldWeatherTotal['matched_rules'])->pluck('name'))->toContain('cold_weather_total_under_watch')
         ->and($passOverride['action'])->toBe('pass')
         ->and($passOverride['pass_rules'])->toContain('pass_conflicting_or_low_quality');
 });
@@ -1601,4 +1640,196 @@ it('detects new nfl head coaches from synced coach season history', function () 
         ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.type'))->toBe('head_coach_change')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('new_head_coach_context')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('home_new_head_coach');
+});
+
+it('adds early season prior playoff and defending champion pedigree context', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => false,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => true,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $game->homeTeam->update(['abbreviation' => 'CHP', 'conference' => 'NFC', 'division' => 'East']);
+    $game->awayTeam->update(['abbreviation' => 'NON', 'conference' => 'AFC', 'division' => 'West']);
+    $game->update([
+        'season' => 2025,
+        'week' => 1,
+        'game_date' => '2025-09-07',
+        'season_type' => 'regular',
+    ]);
+
+    $runnerUp = Team::query()->create([
+        'espn_id' => 'RUNNER_UP_'.$game->id,
+        'abbreviation' => 'RUP',
+        'location' => 'Runner',
+        'name' => 'Up',
+        'conference' => 'AFC',
+        'division' => 'East',
+    ]);
+
+    foreach ([[24, 17], [28, 21]] as $index => [$homeScore, $awayScore]) {
+        Game::query()->create([
+            'espn_event_id' => 'prior-champ-win-'.$game->id.'-'.$index,
+            'espn_uid' => 'prior-champ-win-uid-'.$game->id.'-'.$index,
+            'season' => 2024,
+            'week' => $index + 1,
+            'season_type' => 'regular',
+            'game_date' => '2024-09-0'.($index + 1),
+            'game_time' => '12:00:00',
+            'home_team_id' => $game->home_team_id,
+            'away_team_id' => $game->away_team_id,
+            'home_score' => $homeScore,
+            'away_score' => $awayScore,
+            'status' => 'STATUS_FINAL',
+            'neutral_site' => false,
+        ]);
+    }
+
+    Game::query()->create([
+        'espn_event_id' => 'prior-super-bowl-'.$game->id,
+        'espn_uid' => 'prior-super-bowl-uid-'.$game->id,
+        'season' => 2024,
+        'week' => 5,
+        'season_type' => 'postseason',
+        'game_date' => '2025-02-09',
+        'game_time' => '17:30:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $runnerUp->id,
+        'home_score' => 31,
+        'away_score' => 20,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => true,
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $reasonCodes = data_get($prediction->model_metadata, 'analysis_layer.reason_codes');
+
+    expect(data_get($prediction->model_metadata, 'contextual_factors.prior_season_pedigree.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.prior_season_pedigree.is_week_1'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.prior_season_pedigree.home.super_bowl_champion'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.prior_season_pedigree.home.playoff_team'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.prior_season_pedigree.away.playoff_team'))->toBeFalse()
+        ->and($reasonCodes)->toContain('prior_season_pedigree_context')
+        ->and($reasonCodes)->toContain('week_1_prior_pedigree_context')
+        ->and($reasonCodes)->toContain('home_defending_super_bowl_champion')
+        ->and($reasonCodes)->toContain('home_prior_season_playoff_team')
+        ->and($reasonCodes)->toContain('defending_super_bowl_champion_supports_pick')
+        ->and($reasonCodes)->toContain('prior_playoff_team_supports_pick')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.pro_signal_layer.football_context.prior_season_pedigree.home.super_bowl_champion'))->toBeTrue();
+});
+
+it('adds rookie qb coach transition division rematch and kickoff travel trend codes', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.preseason_signal.enabled' => false,
+        'nfl.predictions.market_blend.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => false,
+        'nfl.predictions.rolling_efficiency.enabled' => false,
+        'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
+        'nfl.predictions.qb_form.enabled' => true,
+        'nfl.predictions.qb_form.min_prior_attempts' => 1,
+        'nfl.predictions.qb_form.full_weight_attempts' => 1,
+        'nfl.predictions.qb_form.full_weight_games' => 1,
+        'nfl.predictions.line_matchup.enabled' => false,
+        'nfl.predictions.actual_weather.enabled' => false,
+        'nfl.predictions.adaptive_win_probability_calibration.enabled' => false,
+        'nfl.predictions.contextual_factors.enabled' => true,
+        'nfl.predictions.contextual_factors.new_head_coaches' => [
+            2025 => [
+                'ARQ' => [
+                    'coach' => 'Transition Coach',
+                    'type' => 'new_head_coach',
+                ],
+            ],
+        ],
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $game->homeTeam->update(['abbreviation' => 'HRQ', 'conference' => 'NFC', 'division' => 'West']);
+    $game->awayTeam->update([
+        'abbreviation' => 'ARQ',
+        'location' => 'Las Vegas',
+        'conference' => 'NFC',
+        'division' => 'West',
+    ]);
+    $game->update([
+        'season' => 2025,
+        'week' => 2,
+        'game_date' => '2025-09-11',
+        'game_time' => '12:00:00',
+        'venue_state' => 'NY',
+        'season_type' => 'regular',
+    ]);
+
+    $homeQb = Player::factory()->create([
+        'position' => 'QB',
+        'experience' => 8,
+        'full_name' => 'Veteran Home QB',
+    ]);
+    $awayQb = Player::factory()->create([
+        'position' => 'QB',
+        'experience' => 0,
+        'full_name' => 'Rookie Away QB',
+    ]);
+
+    $priorGame = Game::query()->create([
+        'espn_event_id' => 'rookie-trend-prior-'.$game->id,
+        'espn_uid' => 'rookie-trend-prior-uid-'.$game->id,
+        'season' => 2025,
+        'week' => 1,
+        'season_type' => 'regular',
+        'game_date' => '2025-09-07',
+        'game_time' => '12:00:00',
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $game->away_team_id,
+        'home_score' => 17,
+        'away_score' => 13,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => false,
+    ]);
+
+    PlayerStat::factory()->create([
+        'game_id' => $priorGame->id,
+        'team_id' => $game->home_team_id,
+        'player_id' => $homeQb->id,
+        'passing_attempts' => 28,
+        'passing_yards' => 230,
+    ]);
+    PlayerStat::factory()->create([
+        'game_id' => $priorGame->id,
+        'team_id' => $game->away_team_id,
+        'player_id' => $awayQb->id,
+        'passing_attempts' => 24,
+        'passing_yards' => 165,
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $reasonCodes = data_get($prediction->model_metadata, 'analysis_layer.reason_codes');
+
+    expect(data_get($prediction->model_metadata, 'qb_form.away.experience_bucket'))->toBe('rookie')
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.away.coach'))->toBe('Transition Coach')
+        ->and($reasonCodes)->toContain('away_rookie_qb_start')
+        ->and($reasonCodes)->toContain('rookie_qb_early_season_split')
+        ->and($reasonCodes)->toContain('rookie_qb_division_split')
+        ->and($reasonCodes)->toContain('rookie_qb_road_start')
+        ->and($reasonCodes)->toContain('away_new_head_coach_new_qb')
+        ->and($reasonCodes)->toContain('new_head_coach_qb_transition_context')
+        ->and($reasonCodes)->toContain('division_rematch_total_context')
+        ->and($reasonCodes)->toContain('division_rematch_under_watch')
+        ->and($reasonCodes)->toContain('early_kickoff_window')
+        ->and($reasonCodes)->toContain('road_short_rest_early_kickoff')
+        ->and($reasonCodes)->toContain('rest_travel_kickoff_stress')
+        ->and($reasonCodes)->toContain('west_to_east_early_kickoff');
 });

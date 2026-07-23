@@ -35,6 +35,7 @@ class NflBetRuleEngine
             } else {
                 $matched[] = [
                     'name' => $name,
+                    'label' => $rule['label'] ?? null,
                     'action' => (string) ($rule['action'] ?? 'lean'),
                     'market' => $rule['market'] ?? null,
                 ];
@@ -63,6 +64,14 @@ class NflBetRuleEngine
     protected function ruleMatches(array $rule, array $tokens, float $trustScore, ?float $spreadEdge, ?float $totalEdge): bool
     {
         if (isset($rule['min_trust']) && $trustScore < (float) $rule['min_trust']) {
+            return false;
+        }
+
+        if (isset($rule['min_abs_spread_edge']) && ($spreadEdge === null || abs($spreadEdge) < (float) $rule['min_abs_spread_edge'])) {
+            return false;
+        }
+
+        if (isset($rule['min_abs_total_edge']) && ($totalEdge === null || abs($totalEdge) < (float) $rule['min_abs_total_edge'])) {
             return false;
         }
 

@@ -981,6 +981,7 @@ class GeneratePredictionFromHistoricalElo
         $division = $this->divisionRivalryContext($game);
         $matchupRecords = $this->matchupRecordContext($game);
         $sameWeekRecords = $this->sameWeekRecordContext($game);
+        $priorSeasonPedigree = $this->priorSeasonPedigreeContext($game);
         $weather = $this->weatherTotalContext($game);
         $schedule = $this->scheduleSpotContext($game);
         $coaching = $this->coachingContext($game);
@@ -1021,6 +1022,7 @@ class GeneratePredictionFromHistoricalElo
             'division_rivalry' => $division,
             'matchup_records' => $matchupRecords,
             'same_week_records' => $sameWeekRecords,
+            'prior_season_pedigree' => $priorSeasonPedigree,
             'weather_total' => $weather,
             'schedule_spot' => $schedule,
             'coaching_prior' => $coaching,
@@ -1270,6 +1272,176 @@ class GeneratePredictionFromHistoricalElo
             'away' => $away,
             'spread_adjustment' => round($spreadAdjustment, 3),
         ];
+    }
+
+    /**
+     * Prior-season pedigree is intentionally contextual. Elo already captures
+     * team strength, so this layer flags Week 1/early-season identity rather
+     * than pushing the projection directly.
+     *
+     * @return array<string,mixed>
+     */
+    protected function priorSeasonPedigreeContext(Game $game): array
+    {
+        $priorSeason = (int) ($game->season ?? 0) - 1;
+        if ($priorSeason <= 0) {
+            return [
+                'applied' => false,
+                'reason' => 'missing_prior_season',
+                'spread_adjustment' => 0.0,
+            ];
+        }
+
+        $home = $this->priorSeasonTeamPedigree($game, (int) $game->home_team_id, $priorSeason);
+        $away = $this->priorSeasonTeamPedigree($game, (int) $game->away_team_id, $priorSeason);
+        $week = (int) ($game->week ?? 0);
+        $earlySeasonWeeks = max(1, (int) config('nfl.predictions.contextual_factors.prior_pedigree_early_season_weeks', 4));
+        $applied = (int) ($home['regular_season']['games'] ?? 0) > 0
+            || (int) ($away['regular_season']['games'] ?? 0) > 0
+            || (bool) ($home['playoff_team'] ?? false)
+            || (bool) ($away['playoff_team'] ?? false);
+
+        return [
+            'applied' => $applied,
+            'prior_season' => $priorSeason,
+            'week' => $week,
+            'early_season_weeks' => $earlySeasonWeeks,
+            'is_week_1' => $week === 1,
+            'is_early_season' => $week > 0 && $week <= $earlySeasonWeeks,
+            'home_team' => $game->homeTeam?->abbreviation,
+            'away_team' => $game->awayTeam?->abbreviation,
+            'home' => $home,
+            'away' => $away,
+            'spread_adjustment' => 0.0,
+            'reason' => $applied ? 'prior_season_context' : 'no_prior_season_context',
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    protected function priorSeasonTeamPedigree(Game $game, int $teamId, int $priorSeason): array
+    {
+        $record = $this->teamSeasonRecordProfile($teamId, $priorSeason, $this->regularSeasonTypeValues());
+        $superBowl = $this->priorSeasonSuperBowlResult($priorSeason);
+        $playoffTeam = Game::query()
+            ->where('season', $priorSeason)
+            ->whereIn('season_type', $this->postseasonTypeValues())
+            ->where(function ($query) use ($teamId): void {
+                $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
+            })
+            ->exists();
+
+        return [
+            'regular_season' => $record,
+            'playoff_team' => $playoffTeam,
+            'super_bowl_champion' => (int) ($superBowl['champion_team_id'] ?? 0) === $teamId,
+            'super_bowl_runner_up' => (int) ($superBowl['runner_up_team_id'] ?? 0) === $teamId,
+            'super_bowl_game_id' => $superBowl['game_id'] ?? null,
+            'super_bowl_week' => $superBowl['week'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $seasonTypes
+     * @return array{games:int,wins:int,losses:int,ties:int,win_pct:float,avg_margin:float}
+     */
+    protected function teamSeasonRecordProfile(int $teamId, int $season, array $seasonTypes): array
+    {
+        $games = Game::query()
+            ->where('season', $season)
+            ->whereIn('season_type', $seasonTypes)
+            ->where('status', 'STATUS_FINAL')
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
+            ->where(function ($query) use ($teamId): void {
+                $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
+            })
+            ->orderBy('game_date')
+            ->orderBy('id')
+            ->get();
+
+        $wins = 0;
+        $losses = 0;
+        $ties = 0;
+        $margins = [];
+
+        foreach ($games as $priorGame) {
+            $isHome = (int) $priorGame->home_team_id === $teamId;
+            $teamScore = $isHome ? (float) $priorGame->home_score : (float) $priorGame->away_score;
+            $opponentScore = $isHome ? (float) $priorGame->away_score : (float) $priorGame->home_score;
+            $margins[] = $teamScore - $opponentScore;
+
+            if ($teamScore > $opponentScore) {
+                $wins++;
+            } elseif ($teamScore < $opponentScore) {
+                $losses++;
+            } else {
+                $ties++;
+            }
+        }
+
+        $gameCount = $games->count();
+
+        return [
+            'games' => $gameCount,
+            'wins' => $wins,
+            'losses' => $losses,
+            'ties' => $ties,
+            'win_pct' => $gameCount > 0 ? round(($wins + ($ties * 0.5)) / $gameCount, 3) : 0.0,
+            'avg_margin' => round($this->average($margins), 3),
+        ];
+    }
+
+    /**
+     * @return array{game_id:int|null,week:int|null,champion_team_id:int|null,runner_up_team_id:int|null}
+     */
+    protected function priorSeasonSuperBowlResult(int $priorSeason): array
+    {
+        $game = Game::query()
+            ->where('season', $priorSeason)
+            ->whereIn('season_type', $this->postseasonTypeValues())
+            ->where('status', 'STATUS_FINAL')
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score')
+            ->orderByDesc('game_date')
+            ->orderByDesc('week')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $game || (float) $game->home_score === (float) $game->away_score) {
+            return [
+                'game_id' => null,
+                'week' => null,
+                'champion_team_id' => null,
+                'runner_up_team_id' => null,
+            ];
+        }
+
+        $homeWon = (float) $game->home_score > (float) $game->away_score;
+
+        return [
+            'game_id' => (int) $game->id,
+            'week' => $game->week !== null ? (int) $game->week : null,
+            'champion_team_id' => $homeWon ? (int) $game->home_team_id : (int) $game->away_team_id,
+            'runner_up_team_id' => $homeWon ? (int) $game->away_team_id : (int) $game->home_team_id,
+        ];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function regularSeasonTypeValues(): array
+    {
+        return ['regular', '2', 'REG', 'Regular Season'];
+    }
+
+    /**
+     * @return list<string>
+     */
+    protected function postseasonTypeValues(): array
+    {
+        return ['postseason', '3', 'POST', 'Postseason'];
     }
 
     /**
@@ -3810,10 +3982,16 @@ class GeneratePredictionFromHistoricalElo
         $validatedSignals = app(NflValidatedSignalCombos::class)->match($reasonCodes);
         if (($betRuleEvaluation['action'] ?? 'none') === 'pass') {
             $betClassification = 'no_bet_rule_pass';
-        } elseif (($betRuleEvaluation['action'] ?? 'none') === 'play' && $betClassification === 'no_bet_no_edge') {
+        } elseif (($betRuleEvaluation['action'] ?? 'none') === 'play' && $this->rulePlayQualifiesAsBet($trustScore, $spreadEdge, $totalEdge)) {
+            $betClassification = 'bet';
+        } elseif (($betRuleEvaluation['action'] ?? 'none') === 'play') {
             $betClassification = 'model_rule_watchlist';
+        } elseif (($betRuleEvaluation['action'] ?? 'none') === 'lean') {
+            $betClassification = 'lean';
         } elseif ($validatedSignals !== [] && $betClassification === 'no_bet_no_edge') {
             $betClassification = 'validated_winner_watchlist';
+        } elseif ($modelSignalClassification === 'strong_model_side' && $this->hasAnalysisEdge($spreadEdge, $totalEdge)) {
+            $betClassification = 'model_rule_watchlist';
         }
 
         $analysis = [
@@ -4064,6 +4242,14 @@ class GeneratePredictionFromHistoricalElo
             $this->appendSameWeekRecordReasonCodes($codes, (array) $this->lastModelMetadata['contextual_factors']['same_week_records']);
         }
 
+        if (($this->lastModelMetadata['contextual_factors']['prior_season_pedigree']['applied'] ?? false) === true) {
+            $this->appendPriorSeasonPedigreeReasonCodes(
+                $codes,
+                (array) $this->lastModelMetadata['contextual_factors']['prior_season_pedigree'],
+                $favoriteSide
+            );
+        }
+
         $coaching = (array) ($this->lastModelMetadata['contextual_factors']['coaching_prior'] ?? []);
         if (($coaching['new_head_coaches']['home'] ?? null) !== null || ($coaching['new_head_coaches']['away'] ?? null) !== null) {
             $codes[] = 'new_head_coach_context';
@@ -4076,6 +4262,7 @@ class GeneratePredictionFromHistoricalElo
 
             $newCoachSignal = (float) ($coaching['new_head_coach_spread_adjustment'] ?? 0.0);
             $this->appendDirectionalReason($codes, 'new_head_coach', $newCoachSignal, 0.15);
+            $this->appendNewCoachQbTransitionReasonCodes($codes, $favoriteSide);
         }
 
         $actualWeather = (array) ($this->lastModelMetadata['actual_weather'] ?? []);
@@ -4166,7 +4353,7 @@ class GeneratePredictionFromHistoricalElo
         $favoriteSide = $winProbability >= 0.5 ? 'home' : 'away';
         $underdogSide = $favoriteSide === 'home' ? 'away' : 'home';
 
-        $this->appendQuarterbackReasonCodes($codes, $favoriteSide);
+        $this->appendQuarterbackReasonCodes($codes, $game, $favoriteSide);
         $this->appendLineAndStyleReasonCodes($codes, $favoriteSide);
         $this->appendInjuryReasonCodes($codes, $game);
         $this->appendContextReasonCodes($codes, $game, $favoriteSide, $underdogSide);
@@ -4177,7 +4364,7 @@ class GeneratePredictionFromHistoricalElo
     /**
      * @param  list<string>  $codes
      */
-    protected function appendQuarterbackReasonCodes(array &$codes, string $favoriteSide): void
+    protected function appendQuarterbackReasonCodes(array &$codes, Game $game, string $favoriteSide): void
     {
         if (($this->lastModelMetadata['qb_form']['applied'] ?? false) !== true) {
             return;
@@ -4207,6 +4394,12 @@ class GeneratePredictionFromHistoricalElo
 
             if (in_array($bucket, ['unknown_limited_starter', 'first_year_starter'], true)) {
                 $codes[] = 'backup_qb_starting';
+            }
+            if (in_array($bucket, ['rookie', 'first_year_starter', 'unknown_limited_starter'], true)) {
+                $codes[] = $side.'_new_qb_starter_context';
+            }
+            if ($bucket === 'rookie') {
+                $this->appendRookieQbSplitReasonCodes($codes, $game, $side, $favoriteSide);
             }
             if ($side === 'away' && $bucket === 'rookie') {
                 $codes[] = 'rookie_qb_road_start';
@@ -4239,6 +4432,39 @@ class GeneratePredictionFromHistoricalElo
         }
         if ($favoriteBucket === 'elite_veteran' && ! in_array($dogBucket, ['elite_veteran', 'veteran'], true)) {
             $codes[] = 'qb_experience_edge';
+        }
+    }
+
+    /**
+     * @param  list<string>  $codes
+     */
+    protected function appendRookieQbSplitReasonCodes(array &$codes, Game $game, string $side, string $favoriteSide): void
+    {
+        $week = (int) ($game->week ?? 0);
+        $schedule = (array) data_get($this->lastModelMetadata, 'contextual_factors.schedule_spot.'.$side, []);
+
+        $codes[] = $side.'_rookie_qb_start';
+        $codes[] = $side === $favoriteSide ? 'rookie_qb_model_side' : 'rookie_qb_against_model';
+
+        if ($week > 0 && $week <= 4) {
+            $codes[] = $side.'_rookie_qb_early_season_start';
+            $codes[] = 'rookie_qb_early_season_split';
+        }
+        if ((bool) data_get($this->lastModelMetadata, 'contextual_factors.division_rivalry.is_division_game', false)) {
+            $codes[] = $side.'_rookie_qb_division_start';
+            $codes[] = 'rookie_qb_division_split';
+        }
+        if ($this->isPrimetime($game)) {
+            $codes[] = $side.'_rookie_qb_primetime_start';
+            $codes[] = 'rookie_qb_primetime_split';
+        }
+        if (($schedule['rest_days'] ?? null) !== null && (int) $schedule['rest_days'] <= 4) {
+            $codes[] = $side.'_rookie_qb_short_rest';
+            $codes[] = 'rookie_qb_short_rest_split';
+        }
+        if (($schedule['rest_days'] ?? null) !== null && (int) $schedule['rest_days'] >= 10) {
+            $codes[] = $side.'_rookie_qb_extra_rest';
+            $codes[] = 'rookie_qb_extra_rest_split';
         }
     }
 
@@ -4397,6 +4623,13 @@ class GeneratePredictionFromHistoricalElo
         if ((int) data_get($division, 'h2h.games', 0) > 0) {
             $codes[] = 'recent_h2h_matchup_edge';
             $codes[] = 'coach_vs_opponent_history_edge';
+            $codes[] = 'division_rematch_total_context';
+            $avgTotal = (float) data_get($division, 'h2h.avg_total', 0.0);
+            if ($avgTotal > 0 && $avgTotal <= (float) config('nfl.betting.low_total_threshold', 41.5)) {
+                $codes[] = 'division_rematch_under_watch';
+            } elseif ($avgTotal >= (float) config('nfl.betting.high_total_threshold', 47.5)) {
+                $codes[] = 'division_rematch_over_watch';
+            }
         }
         if (($matchupRecords['applied'] ?? false) === true) {
             $this->appendMatchupRecordReasonCodes($codes, $matchupRecords);
@@ -4415,6 +4648,21 @@ class GeneratePredictionFromHistoricalElo
         }
         if ((int) data_get($schedule, 'away.consecutive_road_games', 0) >= 2) {
             $codes[] = 'road_team_travel_risk';
+        }
+        $kickoffWindow = $this->kickoffWindow($game);
+        if ($kickoffWindow !== null) {
+            $codes[] = $kickoffWindow.'_kickoff_window';
+        }
+        if ($awayRest !== null && (int) $awayRest <= 4 && $kickoffWindow === 'early') {
+            $codes[] = 'road_short_rest_early_kickoff';
+            $codes[] = 'rest_travel_kickoff_stress';
+        }
+        if ((int) data_get($schedule, 'away.consecutive_road_games', 0) >= 2 && $kickoffWindow === 'early') {
+            $codes[] = 'road_trip_early_kickoff';
+            $codes[] = 'rest_travel_kickoff_stress';
+        }
+        if ($homeRest !== null && $awayRest !== null && (int) $homeRest - (int) $awayRest >= 3 && $kickoffWindow !== null) {
+            $codes[] = 'rest_kickoff_window_home_edge';
         }
         if ((int) ($game->week ?? 0) >= 15 && $favoriteSide === 'home') {
             $codes[] = 'primetime_home_edge';
@@ -4526,6 +4774,102 @@ class GeneratePredictionFromHistoricalElo
 
     /**
      * @param  list<string>  $codes
+     * @param  array<string,mixed>  $pedigree
+     */
+    protected function appendPriorSeasonPedigreeReasonCodes(array &$codes, array $pedigree, string $favoriteSide): void
+    {
+        $codes[] = 'prior_season_pedigree_context';
+
+        if (($pedigree['is_early_season'] ?? false) === true) {
+            $codes[] = 'early_season_prior_pedigree_context';
+        }
+        if (($pedigree['is_week_1'] ?? false) === true) {
+            $codes[] = 'week_1_prior_pedigree_context';
+        }
+
+        foreach (['home', 'away'] as $side) {
+            $team = (array) ($pedigree[$side] ?? []);
+            $record = (array) ($team['regular_season'] ?? []);
+            $winPct = (float) ($record['win_pct'] ?? 0.0);
+
+            if (($team['super_bowl_champion'] ?? false) === true) {
+                $codes[] = $side.'_defending_super_bowl_champion';
+            }
+            if (($team['super_bowl_runner_up'] ?? false) === true) {
+                $codes[] = $side.'_defending_super_bowl_runner_up';
+            }
+            if (($team['playoff_team'] ?? false) === true) {
+                $codes[] = $side.'_prior_season_playoff_team';
+            }
+            if ((int) ($record['games'] ?? 0) > 0 && $winPct >= 0.565) {
+                $codes[] = $side.'_prior_season_winning_record';
+            }
+        }
+
+        $underdogSide = $favoriteSide === 'home' ? 'away' : 'home';
+        $favorite = (array) ($pedigree[$favoriteSide] ?? []);
+        $underdog = (array) ($pedigree[$underdogSide] ?? []);
+        $favoriteRecord = (array) ($favorite['regular_season'] ?? []);
+        $underdogRecord = (array) ($underdog['regular_season'] ?? []);
+        $favoriteWinPct = (float) ($favoriteRecord['win_pct'] ?? 0.0);
+        $underdogWinPct = (float) ($underdogRecord['win_pct'] ?? 0.0);
+
+        if (($favorite['super_bowl_champion'] ?? false) === true) {
+            $codes[] = 'defending_super_bowl_champion_supports_pick';
+        } elseif (($underdog['super_bowl_champion'] ?? false) === true) {
+            $codes[] = 'defending_super_bowl_champion_fade_spot';
+        }
+
+        if (($favorite['playoff_team'] ?? false) === true && ($underdog['playoff_team'] ?? false) !== true) {
+            $codes[] = 'prior_playoff_team_supports_pick';
+        } elseif (($underdog['playoff_team'] ?? false) === true && ($favorite['playoff_team'] ?? false) !== true) {
+            $codes[] = 'prior_playoff_team_against_model';
+        } elseif (($favorite['playoff_team'] ?? false) === true && ($underdog['playoff_team'] ?? false) === true) {
+            $codes[] = 'prior_playoff_teams_both';
+        }
+
+        if ((int) ($favoriteRecord['games'] ?? 0) > 0 && (int) ($underdogRecord['games'] ?? 0) > 0) {
+            if ($favoriteWinPct - $underdogWinPct >= 0.125) {
+                $codes[] = 'prior_season_record_supports_pick';
+            } elseif ($underdogWinPct - $favoriteWinPct >= 0.125) {
+                $codes[] = 'prior_season_record_conflicts_pick';
+            } else {
+                $codes[] = 'prior_season_record_neutral';
+            }
+        }
+
+        if (($pedigree['is_week_1'] ?? false) === true
+            && (($favorite['super_bowl_champion'] ?? false) === true || ($underdog['super_bowl_champion'] ?? false) === true)
+        ) {
+            $codes[] = 'week_1_defending_super_bowl_champion_context';
+        }
+    }
+
+    /**
+     * @param  list<string>  $codes
+     */
+    protected function appendNewCoachQbTransitionReasonCodes(array &$codes, string $favoriteSide): void
+    {
+        foreach (['home', 'away'] as $side) {
+            if (data_get($this->lastModelMetadata, 'contextual_factors.coaching_prior.new_head_coaches.'.$side) === null) {
+                continue;
+            }
+
+            $bucket = (string) data_get($this->lastModelMetadata, 'qb_form.'.$side.'.experience_bucket', 'unknown');
+            if (! in_array($bucket, ['rookie', 'first_year_starter', 'unknown_limited_starter'], true)) {
+                continue;
+            }
+
+            $codes[] = 'new_head_coach_qb_transition_context';
+            $codes[] = $side.'_new_head_coach_new_qb';
+            $codes[] = $side === $favoriteSide
+                ? 'new_head_coach_qb_transition_model_side'
+                : 'new_head_coach_qb_transition_against_model';
+        }
+    }
+
+    /**
+     * @param  list<string>  $codes
      */
     protected function appendMarketReasonCodes(array &$codes, Game $game, float $trustScore, ?float $spreadEdge, ?float $totalEdge): void
     {
@@ -4560,7 +4904,7 @@ class GeneratePredictionFromHistoricalElo
         if (($spreadEdge !== null && abs($spreadEdge) >= 2.0 || $totalEdge !== null && abs($totalEdge) >= 3.0) && $trustScore >= 65) {
             $codes[] = 'bettable_confluence';
         }
-        if ($game->odds_updated_at && $this->asDate($game->odds_updated_at)?->lt(now()->subHours(24))) {
+        if ($this->lineLooksStaleForGame($game)) {
             $codes[] = 'stale_line_edge';
         }
 
@@ -4787,6 +5131,22 @@ class GeneratePredictionFromHistoricalElo
         return $hour >= 19;
     }
 
+    protected function kickoffWindow(Game $game): ?string
+    {
+        $time = (string) ($game->game_time ?? '');
+        if ($time === '') {
+            return null;
+        }
+
+        $hour = (int) substr($time, 0, 2);
+
+        return match (true) {
+            $hour <= 13 => 'early',
+            $hour < 19 => 'late_afternoon',
+            default => 'primetime',
+        };
+    }
+
     protected function looksLikeWestToEastEarlyKick(Game $game): bool
     {
         $venueState = strtoupper((string) ($game->venue_state ?? ''));
@@ -4809,6 +5169,38 @@ class GeneratePredictionFromHistoricalElo
 
         return ($market < $keyNumber && $model >= $keyNumber)
             || ($market > $keyNumber && $model <= $keyNumber);
+    }
+
+    protected function lineLooksStaleForGame(Game $game): bool
+    {
+        $updatedAt = $this->asDate($game->odds_updated_at);
+        if ($updatedAt === null) {
+            return false;
+        }
+
+        $staleHours = (int) config('nfl.betting.stale_line_hours', 24);
+        $kickoffAt = $this->gameKickoffAt($game);
+
+        if ($kickoffAt !== null) {
+            return $updatedAt->lt($kickoffAt->subHours($staleHours));
+        }
+
+        return $updatedAt->lt(now()->subHours($staleHours));
+    }
+
+    protected function gameKickoffAt(Game $game): ?CarbonInterface
+    {
+        $date = $this->asDate($game->game_date);
+        if ($date === null) {
+            return null;
+        }
+
+        $time = (string) ($game->game_time ?? '');
+        if ($time === '') {
+            return $date;
+        }
+
+        return Carbon::parse($date->toDateString().' '.$time);
     }
 
     protected function historicalLineMovement(Game $game): ?float
@@ -4857,15 +5249,29 @@ class GeneratePredictionFromHistoricalElo
 
     protected function betClassification(float $trustScore, ?float $spreadEdge, ?float $totalEdge): string
     {
-        $hasEdge = ($spreadEdge !== null && abs($spreadEdge) >= (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0))
-            || ($totalEdge !== null && abs($totalEdge) >= (float) config('nfl.predictions.analysis_layer.min_total_edge', 3.0));
+        $hasEdge = $this->hasAnalysisEdge($spreadEdge, $totalEdge);
 
         return match (true) {
             ! $hasEdge => 'no_bet_no_edge',
-            $trustScore >= 78 => 'bet',
             $trustScore >= 66 => 'lean',
             default => 'no_bet_risk',
         };
+    }
+
+    protected function hasAnalysisEdge(?float $spreadEdge, ?float $totalEdge): bool
+    {
+        return ($spreadEdge !== null && abs($spreadEdge) >= (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0))
+            || ($totalEdge !== null && abs($totalEdge) >= (float) config('nfl.predictions.analysis_layer.min_total_edge', 3.0));
+    }
+
+    protected function rulePlayQualifiesAsBet(float $trustScore, ?float $spreadEdge, ?float $totalEdge): bool
+    {
+        if ($trustScore < (float) config('nfl.predictions.bet_rules.play_min_trust', 75.0)) {
+            return false;
+        }
+
+        return ($spreadEdge !== null && abs($spreadEdge) >= (float) config('nfl.predictions.bet_rules.play_min_abs_spread_edge', 2.0))
+            || ($totalEdge !== null && abs($totalEdge) >= (float) config('nfl.predictions.bet_rules.play_min_abs_total_edge', 3.0));
     }
 
     protected function modelSignalClassification(float $trustScore): string

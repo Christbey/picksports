@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\Commands\NFL\BacktestSpreadsCommand;
 use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
@@ -80,10 +81,22 @@ it('reports spread closing line value from nfl odds snapshots', function () {
         ->assertSuccessful();
 });
 
+it('normalizes nflverse favorite positive spreads before spread backtests', function () {
+    $command = app(BacktestSpreadsCommand::class);
+    $method = new ReflectionMethod($command, 'homeMarketSpread');
+    $method->setAccessible(true);
+
+    $oddsApiPayload = nflBacktestOddsPayload(-7.0);
+    $nflversePayload = nflBacktestOddsPayload(7.0, 'nflverse_closing', 'nflverse closing');
+
+    expect($method->invoke($command, $oddsApiPayload, 'Home Team'))->toBe(-7.0)
+        ->and($method->invoke($command, $nflversePayload, 'Home Team'))->toBe(-7.0);
+});
+
 /**
  * @return array<string,mixed>
  */
-function nflBacktestOddsPayload(float $homeSpread): array
+function nflBacktestOddsPayload(float $homeSpread, string $bookmakerKey = 'draftkings', string $bookmakerTitle = 'DraftKings'): array
 {
     return [
         'event_id' => 'odds-clv-game',
@@ -91,8 +104,8 @@ function nflBacktestOddsPayload(float $homeSpread): array
         'home_team' => 'Home Team',
         'away_team' => 'Away Team',
         'bookmakers' => [[
-            'key' => 'draftkings',
-            'title' => 'DraftKings',
+            'key' => $bookmakerKey,
+            'title' => $bookmakerTitle,
             'markets' => [[
                 'key' => 'spreads',
                 'outcomes' => [

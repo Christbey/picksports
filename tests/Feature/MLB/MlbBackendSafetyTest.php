@@ -140,7 +140,11 @@ it('excludes future team metrics during historical prediction generation', funct
         ->and(data_get($prediction->model_metadata, 'point_in_time_safety.team_metrics.home.source'))
         ->toBe('missing_or_future_metric_excluded')
         ->and(data_get($prediction->model_metadata, 'point_in_time_safety.team_metrics.home.excluded_future_calculation_date'))
-        ->toBe('2026-06-18');
+        ->toBe('2026-06-18')
+        ->and(data_get($prediction->model_metadata, 'situational_context.handedness.applied'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'situational_context.handedness.pregame_safe'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'situational_context.handedness.safety_reason'))
+        ->toBe('current_roster_membership_disabled_for_historical_reconstruction');
 });
 
 it('uses pregame odds snapshots instead of post-start odds for historical predictions', function () {

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class GameOddsSnapshot extends Model
 {
@@ -29,5 +30,10 @@ class GameOddsSnapshot extends Model
             'odds_data' => 'array',
             'market_context' => 'array',
         ];
+    }
+
+    public function marketQuotes(): HasMany
+    {
+        return $this->hasMany(MarketQuote::class);
     }
 }

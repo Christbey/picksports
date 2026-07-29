@@ -8,6 +8,10 @@ use Illuminate\Support\Collection;
 
 class MlbPickGradingService
 {
+    public function __construct(
+        private readonly BetDecisionRecorder $decisionRecorder,
+    ) {}
+
     public function grade(?int $season = null): int
     {
         return $this->gradeWithReport($season)['graded'];
@@ -62,6 +66,7 @@ class MlbPickGradingService
                     'result_profit_units' => $result['profit'],
                     'graded_at' => now(),
                 ])->save();
+                $this->decisionRecorder->settle($candidate);
                 $graded++;
             }
         });

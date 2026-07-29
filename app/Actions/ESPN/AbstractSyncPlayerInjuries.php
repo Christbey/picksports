@@ -4,6 +4,7 @@ namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,8 @@ abstract class AbstractSyncPlayerInjuries
     protected const TEAM_MODEL_CLASS = '';
 
     protected const INJURY_TABLE = '';
+
+    protected bool $injuryPayloadObserved = false;
 
     /**
      * @var array<string, array<string, mixed>|null>
@@ -38,32 +41,35 @@ abstract class AbstractSyncPlayerInjuries
             return 0;
         }
 
+        $observedAt = now();
         $injuries = $this->extractTeamInjuries($teamEspnId);
         $teamId = (int) $team->getKey();
-
-        DB::table($this->injuryTable())
-            ->where('team_id', $teamId)
-            ->where('is_active', true)
-            ->update([
-                'is_active' => false,
-                'updated_at' => now(),
-            ]);
-
-        if ($injuries === []) {
-            return 0;
-        }
-
         $playerMap = $this->playerIdMapByEspnId($teamId);
         $rows = [];
-        $now = now();
+        $snapshotRows = [];
 
         foreach ($injuries as $injury) {
             $playerEspnId = $this->extractAthleteEspnId($injury);
+            $normalized = $this->normalizeInjury($injury);
+            $snapshotRows[] = [
+                'player_id' => $playerEspnId !== null ? ($playerMap[$playerEspnId] ?? null) : null,
+                'espn_athlete_id' => $playerEspnId,
+                'injury_key' => $this->injuryKey($normalized),
+                'espn_injury_id' => $normalized['espn_injury_id'],
+                'status' => $normalized['status'],
+                'detail' => $normalized['detail'],
+                'type' => $normalized['type'],
+                'injury_date' => $normalized['injury_date'],
+                'return_date' => $normalized['return_date'],
+                'observed_at' => $observedAt,
+                'source_updated_at' => $this->snapshotSourceUpdatedAt($injury),
+                'raw_payload' => $injury,
+            ];
+
             if ($playerEspnId === null || ! isset($playerMap[$playerEspnId])) {
                 continue;
             }
 
-            $normalized = $this->normalizeInjury($injury);
             $rows[] = [
                 'player_id' => $playerMap[$playerEspnId],
                 'team_id' => $teamId,
@@ -77,10 +83,28 @@ abstract class AbstractSyncPlayerInjuries
                 'source_updated_at' => $normalized['source_updated_at'],
                 'is_active' => true,
                 'raw_payload' => json_encode($injury, JSON_UNESCAPED_SLASHES),
-                'created_at' => $now,
-                'updated_at' => $now,
+                'created_at' => $observedAt,
+                'updated_at' => $observedAt,
             ];
         }
+
+        if ($this->injuryPayloadObserved) {
+            $this->persistHistoricalSnapshot(
+                $team,
+                $teamEspnId,
+                $injuries,
+                $snapshotRows,
+                $observedAt
+            );
+        }
+
+        DB::table($this->injuryTable())
+            ->where('team_id', $teamId)
+            ->where('is_active', true)
+            ->update([
+                'is_active' => false,
+                'updated_at' => $observedAt,
+            ]);
 
         if ($rows === []) {
             return 0;
@@ -106,6 +130,18 @@ abstract class AbstractSyncPlayerInjuries
 
         return count($rows);
     }
+
+    /**
+     * @param  list<array<string, mixed>>  $injuries
+     * @param  list<array<string, mixed>>  $snapshotRows
+     */
+    protected function persistHistoricalSnapshot(
+        Model $team,
+        string $teamEspnId,
+        array $injuries,
+        array $snapshotRows,
+        CarbonInterface $observedAt
+    ): void {}
 
     public function syncAllTeams(): int
     {
@@ -146,7 +182,9 @@ abstract class AbstractSyncPlayerInjuries
      */
     protected function extractTeamInjuries(string $teamEspnId): array
     {
+        $this->injuryPayloadObserved = false;
         $teamInjuriesResponse = $this->espnService->getTeamInjuries($teamEspnId);
+        $this->injuryPayloadObserved = is_array($teamInjuriesResponse);
         $teamInjuries = $this->extractInjuriesFromTeamInjuriesResponse($teamInjuriesResponse);
 
         if ($teamInjuries !== []) {
@@ -154,6 +192,7 @@ abstract class AbstractSyncPlayerInjuries
         }
 
         $rosterResponse = $this->espnService->getRoster($teamEspnId);
+        $this->injuryPayloadObserved = $this->injuryPayloadObserved || is_array($rosterResponse);
 
         return $this->extractInjuriesFromRosterResponse($rosterResponse);
     }
@@ -436,6 +475,26 @@ abstract class AbstractSyncPlayerInjuries
 
         try {
             return Carbon::parse($value)->toDateTimeString();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $injury
+     */
+    protected function snapshotSourceUpdatedAt(array $injury): ?CarbonInterface
+    {
+        $value = $injury['lastUpdated']
+            ?? $injury['date']
+            ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value)->setTimezone(config('app.timezone'));
         } catch (\Throwable) {
             return null;
         }

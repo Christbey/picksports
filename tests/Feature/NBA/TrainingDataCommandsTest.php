@@ -5,6 +5,7 @@ use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Facades\Artisan;
 
 it('exports nba training data from snapshots and evaluations', function () {
@@ -30,12 +31,19 @@ it('exports nba training data from snapshots and evaluations', function () {
         'feature_version' => 'core-v1',
         'blend_version' => 'baseline-v1',
     ]);
+    $modelRun = app(ModelRunRecorder::class)->forPrediction(
+        sport: 'nba',
+        modelVersion: 'rules-v1',
+        featureVersion: 'core-v1',
+        blendVersion: 'baseline-v1',
+    );
 
     PredictionFeatureSnapshot::query()->create([
         'sport' => 'nba',
         'prediction_table' => 'nba_predictions',
         'prediction_id' => $prediction->id,
         'game_id' => $game->id,
+        'model_run_id' => $modelRun->id,
         'model_version' => 'rules-v1',
         'feature_version' => 'core-v1',
         'blend_version' => 'baseline-v1',
@@ -56,6 +64,10 @@ it('exports nba training data from snapshots and evaluations', function () {
         ],
         'feature_hash' => 'test-hash',
         'generated_at' => now(),
+        'game_start_at' => now()->addDay(),
+        'features_available_at' => now(),
+        'pregame_safe' => true,
+        'availability_status' => 'observed_pregame',
     ]);
 
     PredictionEvaluation::query()->create([
@@ -95,10 +107,10 @@ it('exports nba training data from snapshots and evaluations', function () {
     $contents = file_get_contents($path);
 
     expect($contents)->toContain('feature_home_recent_form')
-        ->toContain('output_predicted_spread')
-        ->toContain('actual_actual_spread')
-        ->toContain('error_brier_score')
-        ->toContain('market_model_beats_market_spread');
+        ->toContain('feature_model_predicted_spread')
+        ->toContain('target_home_margin')
+        ->toContain('target_hash')
+        ->toContain('availability_status');
 });
 
 it('reports nba training readiness from snapshots and evaluations', function () {
@@ -124,18 +136,29 @@ it('reports nba training readiness from snapshots and evaluations', function () 
         'feature_version' => 'core-v1',
         'blend_version' => 'baseline-v1',
     ]);
+    $modelRun = app(ModelRunRecorder::class)->forPrediction(
+        sport: 'nba',
+        modelVersion: 'rules-v1',
+        featureVersion: 'core-v1',
+        blendVersion: 'baseline-v1',
+    );
 
     PredictionFeatureSnapshot::query()->create([
         'sport' => 'nba',
         'prediction_table' => 'nba_predictions',
         'prediction_id' => $prediction->id,
         'game_id' => $game->id,
+        'model_run_id' => $modelRun->id,
         'model_version' => 'rules-v1',
         'feature_version' => 'core-v1',
         'blend_version' => 'baseline-v1',
         'features' => ['home_recent_form' => 3.1],
         'outputs' => ['confidence_score' => 68],
         'generated_at' => now(),
+        'game_start_at' => now()->addDay(),
+        'features_available_at' => now(),
+        'pregame_safe' => true,
+        'availability_status' => 'observed_pregame',
     ]);
 
     PredictionEvaluation::query()->create([
@@ -168,5 +191,5 @@ it('reports nba training readiness from snapshots and evaluations', function () 
     expect($output)->toContain('NBA Training Readiness')
         ->toContain('By Model Version')
         ->toContain('rules-v1')
-        ->toContain('By Confidence Bucket');
+        ->toContain('Point-In-Time Status');
 });

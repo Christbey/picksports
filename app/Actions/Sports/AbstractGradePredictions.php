@@ -74,6 +74,7 @@ abstract class AbstractGradePredictions
 
         $graded = 0;
         $winnerCorrect = 0;
+        $winnerDecisions = 0;
         $spreadErrors = [];
         $totalErrors = [];
 
@@ -84,8 +85,10 @@ abstract class AbstractGradePredictions
             $spreadError = abs($actualSpread - $prediction->predicted_spread);
             $totalError = abs($actualTotal - $prediction->predicted_total);
 
-            $isWinnerCorrect = ($actualSpread > 0 && $prediction->predicted_spread > 0)
-                || ($actualSpread < 0 && $prediction->predicted_spread < 0);
+            $isWinnerCorrect = $actualSpread === 0
+                ? null
+                : (($actualSpread > 0 && $prediction->predicted_spread > 0)
+                    || ($actualSpread < 0 && $prediction->predicted_spread < 0));
 
             $updates = [
                 'actual_spread' => round($actualSpread, 1),
@@ -109,8 +112,11 @@ abstract class AbstractGradePredictions
                 (float) $actualTotal
             );
 
-            if ($isWinnerCorrect) {
-                $winnerCorrect++;
+            if ($isWinnerCorrect !== null) {
+                $winnerDecisions++;
+                if ($isWinnerCorrect) {
+                    $winnerCorrect++;
+                }
             }
 
             $spreadErrors[] = $spreadError;
@@ -121,7 +127,9 @@ abstract class AbstractGradePredictions
         return [
             'graded' => $graded,
             'total_games' => $graded,
-            'winner_accuracy' => round(($winnerCorrect / $graded) * 100, 1),
+            'winner_accuracy' => $winnerDecisions > 0
+                ? round(($winnerCorrect / $winnerDecisions) * 100, 1)
+                : 0,
             'avg_spread_error' => round(array_sum($spreadErrors) / count($spreadErrors), 2),
             'avg_total_error' => round(array_sum($totalErrors) / count($totalErrors), 2),
         ];
@@ -139,6 +147,7 @@ abstract class AbstractGradePredictions
 
         return $query->get()->groupBy('confidence_score')->map(function ($predictions, $confidence) {
             $total = $predictions->count();
+            $winnerDecisions = $predictions->whereNotNull('winner_correct')->count();
             $winnerCorrect = $predictions->where('winner_correct', true)->count();
             $avgSpreadError = $predictions->avg('spread_error');
             $avgTotalError = $predictions->avg('total_error');
@@ -146,7 +155,9 @@ abstract class AbstractGradePredictions
             return [
                 'confidence' => $confidence,
                 'total_games' => $total,
-                'winner_accuracy' => $total > 0 ? round(($winnerCorrect / $total) * 100, 1) : 0,
+                'winner_accuracy' => $winnerDecisions > 0
+                    ? round(($winnerCorrect / $winnerDecisions) * 100, 1)
+                    : 0,
                 'avg_spread_error' => round($avgSpreadError, 2),
                 'avg_total_error' => round($avgTotalError, 2),
             ];

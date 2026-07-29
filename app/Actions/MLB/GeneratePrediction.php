@@ -18,6 +18,7 @@ use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\DepthChartImpactService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\MlbRegularSeasonWindow;
+use App\Support\Odds\MarketSpread;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -595,7 +596,10 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'outputs' => [
                     'baseline_predicted_spread' => $this->metadata['baseline_model_spread'] ?? $predictedSpread,
                     'baseline_predicted_total' => $this->metadata['baseline_model_total'] ?? $predictedTotal,
-                    'market_spread' => $vegasSpread,
+                    'bookmaker_home_spread' => $vegasSpread,
+                    'market_spread' => $vegasSpread === null
+                        ? null
+                        : MarketSpread::bookmakerHomeLineToHomeMargin($vegasSpread),
                     'market_total' => $this->metadata['market_total'] ?? null,
                     'blended_predicted_spread' => $predictedSpread,
                     'blended_predicted_total' => $predictedTotal,

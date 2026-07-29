@@ -55,7 +55,11 @@ class InjuryFreshnessCheck implements ValidationCheck
             ->latest('ran_at')
             ->first();
 
-        $freshAt = $lastSync?->ran_at ?? ($lastDataUpdate ? now()->parse($lastDataUpdate) : null);
+        $lastDataUpdateAt = $lastDataUpdate ? now()->parse($lastDataUpdate) : null;
+        $freshAt = collect([$lastSync?->ran_at, $lastDataUpdateAt])
+            ->filter()
+            ->sort()
+            ->last();
 
         if (! $freshAt) {
             return [

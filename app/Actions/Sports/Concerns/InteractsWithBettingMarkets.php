@@ -26,6 +26,49 @@ trait InteractsWithBettingMarkets
         return abs($odds) / (abs($odds) + 100);
     }
 
+    /**
+     * @return array{home:float,away:float,raw_home:float,raw_away:float,hold:float}|null
+     */
+    protected function noVigMoneylineProbabilities(int|float $homeOdds, int|float $awayOdds): ?array
+    {
+        $rawHome = $this->americanToImplied($homeOdds);
+        $rawAway = $this->americanToImplied($awayOdds);
+        $total = $rawHome + $rawAway;
+
+        if ($total <= 0) {
+            return null;
+        }
+
+        return [
+            'home' => $rawHome / $total,
+            'away' => $rawAway / $total,
+            'raw_home' => $rawHome,
+            'raw_away' => $rawAway,
+            'hold' => max(0.0, $total - 1.0),
+        ];
+    }
+
+    protected function americanPayoutPerUnit(int|float $odds): float
+    {
+        return $odds > 0 ? ((float) $odds / 100) : (100 / abs((float) $odds));
+    }
+
+    protected function expectedValuePerUnit(float $probability, int|float $odds): float
+    {
+        return ($probability * $this->americanPayoutPerUnit($odds)) - (1 - $probability);
+    }
+
+    protected function probabilityToAmericanOdds(float $probability): int
+    {
+        $probability = max(0.001, min(0.999, $probability));
+
+        if ($probability >= 0.5) {
+            return (int) round(-100 * $probability / (1 - $probability));
+        }
+
+        return (int) round((100 * (1 - $probability)) / $probability);
+    }
+
     protected function kellyBet(float $probability, int|float $odds, float $fraction = 0.25): float
     {
         $decimalOdds = $odds > 0

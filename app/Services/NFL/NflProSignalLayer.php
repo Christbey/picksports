@@ -136,6 +136,7 @@ class NflProSignalLayer
                 'division_game' => (bool) data_get($metadata, 'contextual_factors.division_rivalry.is_division_game', false),
                 'rest_travel_applied' => (bool) data_get($metadata, 'contextual_factors.schedule_spot.applied', false),
                 'same_week_records' => data_get($metadata, 'contextual_factors.same_week_records'),
+                'prior_season_pedigree' => data_get($metadata, 'contextual_factors.prior_season_pedigree'),
                 'new_head_coaches' => data_get($metadata, 'contextual_factors.coaching_prior.new_head_coaches'),
             ],
             'injury_replacement' => $injuryReplacement,
@@ -341,9 +342,23 @@ class NflProSignalLayer
             $codes[] = 'buyback_resistance';
         }
 
+        $lineMovementBucket = (string) ($marketMovement['line_movement_bucket'] ?? '');
+        if (in_array($lineMovementBucket, ['one_plus', 'two_plus'], true)) {
+            $codes[] = 'line_move_bucket_'.$lineMovementBucket;
+        }
+        if (($marketMovement['line_move_toward_pick'] ?? null) === true) {
+            $codes[] = 'line_move_toward_model_pick';
+        } elseif (($marketMovement['line_move_against_pick'] ?? null) === true) {
+            $codes[] = 'line_move_against_model_pick';
+        }
+
         $clv = $this->number($marketMovement['closing_line_value_points'] ?? null);
         if ($clv !== null && abs($clv) >= 0.25) {
             $codes[] = $clv >= 0 ? 'positive_clv_profile' : 'negative_clv_profile';
+        }
+        $clvBucket = (string) ($marketMovement['closing_line_value_bucket'] ?? '');
+        if (in_array($clvBucket, ['positive_half_plus', 'positive_one_plus', 'positive_two_plus', 'negative_half_plus', 'negative_one_plus', 'negative_two_plus'], true)) {
+            $codes[] = 'clv_bucket_'.$clvBucket;
         }
 
         if ($totalEdge !== null && abs($totalEdge) >= 3.0) {
@@ -511,6 +526,9 @@ class NflProSignalLayer
         $closingLineValue = $pickSide !== null && $marketSpread !== null && $lastSnapshotSpread !== null && $this->isFinal($game)
             ? $this->spreadClv($pickSide, $marketSpread, $lastSnapshotSpread)
             : null;
+        $lineMovedTowardPick = $pickSide !== null && $lineMovement !== null
+            ? ($pickSide === 'home' ? $lineMovement > 0 : $lineMovement < 0)
+            : null;
         $bookRange = $this->spreadBookRange($game);
         $spanMinutes = null;
 
@@ -537,7 +555,11 @@ class NflProSignalLayer
             'current_spread' => $currentSpread !== null ? round($currentSpread, 3) : null,
             'last_snapshot_spread' => $lastSnapshotSpread !== null ? round($lastSnapshotSpread, 3) : null,
             'line_movement_points' => $lineMovement !== null ? round($lineMovement, 3) : null,
+            'line_movement_bucket' => $this->lineMovementBucket($lineMovement),
+            'line_move_toward_pick' => $lineMovedTowardPick,
+            'line_move_against_pick' => $lineMovedTowardPick !== null ? ! $lineMovedTowardPick : null,
             'closing_line_value_points' => $closingLineValue !== null ? round($closingLineValue, 3) : null,
+            'closing_line_value_bucket' => $this->closingLineValueBucket($closingLineValue),
             'positive_clv_profile' => $closingLineValue !== null && $closingLineValue >= 0.25,
             'negative_clv_profile' => $closingLineValue !== null && $closingLineValue <= -0.25,
             'steam_freshness' => $lineMovement !== null && abs($lineMovement) >= 1.0 && ($spanMinutes === null || $spanMinutes <= 360),
@@ -919,6 +941,40 @@ class NflProSignalLayer
     private function validTeaserPrice(?int $spreadPrice): bool
     {
         return $spreadPrice !== null && abs($spreadPrice) <= 120;
+    }
+
+    private function lineMovementBucket(?float $lineMovement): ?string
+    {
+        if ($lineMovement === null) {
+            return null;
+        }
+
+        $movement = abs($lineMovement);
+
+        return match (true) {
+            $movement >= 2.0 => 'two_plus',
+            $movement >= 1.0 => 'one_plus',
+            $movement >= 0.5 => 'half_point',
+            default => 'flat',
+        };
+    }
+
+    private function closingLineValueBucket(?float $closingLineValue): ?string
+    {
+        if ($closingLineValue === null) {
+            return null;
+        }
+
+        $prefix = $closingLineValue >= 0 ? 'positive' : 'negative';
+        $value = abs($closingLineValue);
+
+        return match (true) {
+            $value >= 2.0 => $prefix.'_two_plus',
+            $value >= 1.0 => $prefix.'_one_plus',
+            $value >= 0.5 => $prefix.'_half_plus',
+            $value >= 0.25 => $prefix.'_quarter_plus',
+            default => 'flat',
+        };
     }
 
     private function homeMarginSpread(array $oddsData): ?float

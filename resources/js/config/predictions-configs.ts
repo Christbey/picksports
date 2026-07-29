@@ -43,7 +43,7 @@ export const wcbbPredictionsConfig: SportPredictionsConfig = {
 export const wnbaPredictionsConfig: SportPredictionsConfig = {
     sport: 'wnba',
     title: 'WNBA Predictions',
-    subtitle: 'Predictions based on Elo ratings and team efficiency metrics',
+    subtitle: 'WNBA model sides, projected totals, and market-value checks',
     useEasternTime: false,
     showGameTime: true,
     confidenceIsDecimal: false,

@@ -2,7 +2,7 @@
 
 namespace App\Http\Resources\WNBA;
 
-use App\Actions\Sports\CalculateBettingValue;
+use App\Actions\WNBA\CalculateBettingValue;
 use App\Http\Resources\Sports\AbstractPredictionResource;
 use Illuminate\Http\Request;
 
@@ -51,7 +51,7 @@ class PredictionResource extends AbstractPredictionResource
 
         // Betting Value
         if ($this->hasTierPermission($request, 'betting_value') && $this->relationLoaded('game')) {
-            $data['betting_value'] = $this->betting_value ?? app(CalculateBettingValue::class)->execute($this->game, 'wnba');
+            $data['betting_value'] = $this->betting_value ?? app(CalculateBettingValue::class)->execute($this->game);
         }
 
         $data = $this->appendNarrativeFields($data, $request, 'wnba');

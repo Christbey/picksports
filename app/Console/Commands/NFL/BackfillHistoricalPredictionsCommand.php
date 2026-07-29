@@ -6,6 +6,8 @@ use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Actions\NFL\GradePredictions;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
+use App\Models\PredictionFeatureSnapshot;
+use App\Services\NFL\NflPredictionProfileConfigurator;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,18 +24,21 @@ class BackfillHistoricalPredictionsCommand extends Command
         {--season-type=2 : Filter by season type, default regular season}
         {--limit=0 : Limit the number of games processed}
         {--only-missing : Only generate predictions for games without an existing prediction}
-        {--profile=elo-only : Historical model profile: elo-only, rolling-efficiency, qb-form, full-historical, or configured}
+        {--only-unversioned : Only rebuild games whose prediction has no model version}
+        {--only-missing-profile : Only rebuild games without a snapshot for the selected profile}
+        {--profile=elo-only : Historical model profile: elo-only, rolling-efficiency, qb-form, line-matchup, contextual, full-historical, or configured}
         {--regrade : Clear existing grades for selected games before grading}';
 
     protected $description = 'Generate and grade historical NFL predictions for completed games without requiring betting odds';
 
     public function handle(
         GeneratePredictionFromHistoricalElo $generatePrediction,
-        GradePredictions $gradePredictions
+        GradePredictions $gradePredictions,
+        NflPredictionProfileConfigurator $profiles,
     ): int {
         try {
             [$startDate, $endDate] = $this->resolveDateRange();
-            $this->applyHistoricalProfile();
+            $profiles->apply((string) $this->option('profile'));
         } catch (\InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
@@ -102,37 +107,6 @@ class BackfillHistoricalPredictionsCommand extends Command
         return self::SUCCESS;
     }
 
-    private function applyHistoricalProfile(): void
-    {
-        $profile = (string) $this->option('profile');
-
-        if (! in_array($profile, ['elo-only', 'rolling-efficiency', 'qb-form', 'line-matchup', 'contextual', 'full-historical', 'configured'], true)) {
-            throw new \InvalidArgumentException('The --profile option must be elo-only, rolling-efficiency, qb-form, line-matchup, contextual, full-historical, or configured.');
-        }
-
-        if ($profile === 'configured') {
-            return;
-        }
-
-        $rollingEfficiencyEnabled = in_array($profile, ['rolling-efficiency', 'full-historical'], true);
-        $qbFormEnabled = in_array($profile, ['qb-form', 'full-historical'], true);
-        $lineMatchupEnabled = in_array($profile, ['line-matchup', 'full-historical'], true);
-        $contextualFactorsEnabled = in_array($profile, ['contextual', 'full-historical'], true);
-
-        config([
-            'nfl.predictions.true_epa.enabled' => false,
-            'nfl.predictions.preseason_signal.enabled' => false,
-            'nfl.predictions.market_blend.enabled' => false,
-            'nfl.predictions.depth_chart_injuries.enabled' => false,
-            'nfl.predictions.rolling_efficiency.enabled' => $rollingEfficiencyEnabled,
-            'nfl.predictions.opponent_adjusted_efficiency.enabled' => false,
-            'nfl.predictions.adaptive_point_calibration.enabled' => $profile === 'full-historical',
-            'nfl.predictions.qb_form.enabled' => $qbFormEnabled,
-            'nfl.predictions.line_matchup.enabled' => $lineMatchupEnabled,
-            'nfl.predictions.contextual_factors.enabled' => $contextualFactorsEnabled,
-        ]);
-    }
-
     private function gamesQuery(?Carbon $startDate, ?Carbon $endDate): Builder
     {
         $seasonType = $this->option('season-type');
@@ -175,6 +149,20 @@ class BackfillHistoricalPredictionsCommand extends Command
 
         if ((bool) $this->option('only-missing')) {
             $query->whereDoesntHave('prediction');
+        }
+
+        if ((bool) $this->option('only-unversioned')) {
+            $query->whereHas('prediction', fn (Builder $query): Builder => $query->whereNull('model_version'));
+        }
+
+        if ((bool) $this->option('only-missing-profile')) {
+            $profile = (string) $this->option('profile');
+            $gameIdsWithProfile = PredictionFeatureSnapshot::query()
+                ->where('sport', 'nfl')
+                ->where('lineage_metadata->historical_profile', $profile)
+                ->select('game_id');
+
+            $query->whereNotIn('id', $gameIdsWithProfile);
         }
 
         if ($limit > 0) {

@@ -2,180 +2,100 @@
 
 namespace App\Console\Commands\NBA;
 
+use App\Models\NBA\Game;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\ML\TrustedSnapshotDataset;
 use Illuminate\Console\Command;
-use Illuminate\Support\Collection;
 
 class ReportTrainingReadinessCommand extends Command
 {
     protected $signature = 'nba:report-training-readiness
-        {--season= : Filter rows by season}';
+        {--season= : Filter rows by season}
+        {--minimum-rows=120 : Minimum strict rows required for a pilot}';
 
-    protected $description = 'Report baseline NBA model readiness from feature snapshot and evaluation tables';
+    protected $description = 'Report target stability and point-in-time readiness for NBA model training';
 
-    public function handle(): int
+    public function handle(TrustedSnapshotDataset $dataset): int
     {
-        $rows = $this->loadRows();
+        $season = $this->option('season') !== null ? (int) $this->option('season') : null;
+        $minimumRows = max(1, (int) $this->option('minimum-rows'));
+        $allRows = $dataset->rows('nba', $season, false);
+        $strictRows = $dataset->rows('nba', $season, true);
 
-        if ($rows->isEmpty()) {
-            $this->warn('No NBA training rows found for the selected scope.');
+        if ($allRows->isEmpty()) {
+            $this->warn('No completed NBA snapshot targets found for the selected scope.');
 
             return self::SUCCESS;
         }
 
+        $snapshotQuery = PredictionFeatureSnapshot::query()
+            ->where('sport', 'nba')
+            ->when($season, function ($query) use ($season): void {
+                $query->whereIn('game_id', Game::query()->where('season', $season)->select('id'));
+            });
+        $missingRunCount = (clone $snapshotQuery)->whereNull('model_run_id')->count();
+        $unstableTargets = $strictRows->groupBy('game_id')
+            ->filter(fn ($rows): bool => $rows->pluck('target_hash')->unique()->count() !== 1)
+            ->count();
+        $missingTargets = $strictRows->filter(fn (array $row): bool => $row['target_home_margin'] === null
+            || $row['target_total_points'] === null
+            || $row['target_hash'] === null)->count();
+        $ready = $strictRows->count() >= $minimumRows
+            && $missingTargets === 0
+            && $unstableTargets === 0
+            && $missingRunCount === 0;
+
         $this->info('NBA Training Readiness');
-        $this->line('Scope: '.($this->option('season') ? 'season '.$this->option('season') : 'all seasons'));
-        $this->line('Rows: '.$rows->count());
-        $this->newLine();
-
-        $winnerAccuracy = $rows->avg(fn (array $row): float => $row['winner_correct'] ? 1.0 : 0.0) * 100;
-        $modelBeatMarketRate = $rows
-            ->filter(fn (array $row): bool => $row['model_beats_market_spread'] !== null)
-            ->avg(fn (array $row): float => $row['model_beats_market_spread'] ? 1.0 : 0.0);
-
+        $this->line('Scope: '.($season ? "season {$season}" : 'all seasons'));
         $this->table(
-            ['Metric', 'Value'],
+            ['Gate', 'Value', 'Status'],
             [
-                ['Avg spread error', number_format((float) $rows->avg('spread_error'), 2)],
-                ['Avg total error', number_format((float) $rows->avg('total_error'), 2)],
-                ['Avg Brier score', number_format((float) $rows->avg('brier_score'), 4)],
-                ['Winner accuracy', number_format((float) $winnerAccuracy, 1).'%'],
-                ['Model beats market spread', $modelBeatMarketRate !== null ? number_format($modelBeatMarketRate * 100, 1).'%' : 'N/A'],
-            ]
+                ['Completed target rows', (string) $allRows->count(), 'info'],
+                ['Verified pregame rows', (string) $strictRows->count(), $strictRows->count() >= $minimumRows ? 'pass' : 'blocked'],
+                ['Rows missing stable targets', (string) $missingTargets, $missingTargets === 0 ? 'pass' : 'blocked'],
+                ['Games with conflicting target hashes', (string) $unstableTargets, $unstableTargets === 0 ? 'pass' : 'blocked'],
+                ['Snapshots missing model run lineage', (string) $missingRunCount, $missingRunCount === 0 ? 'pass' : 'blocked'],
+                ['Pilot training gate', $ready ? 'READY' : 'BLOCKED', $ready ? 'pass' : 'blocked'],
+            ],
+        );
+
+        $this->newLine();
+        $this->info('Point-In-Time Status');
+        $this->table(
+            ['Status', 'Rows'],
+            $allRows
+                ->groupBy('availability_status')
+                ->map(fn ($rows, string $status): array => [$status, (string) $rows->count()])
+                ->values()
+                ->all(),
         );
 
         $this->newLine();
         $this->info('By Model Version');
         $this->table(
-            ['Model', 'Feature', 'Blend', 'Rows', 'Spread MAE', 'Total MAE', 'Brier'],
-            $rows
-                ->groupBy(fn (array $row) => implode('|', [
+            ['Model', 'Feature', 'Blend', 'Rows', 'Spread MAE', 'Total MAE'],
+            $strictRows
+                ->groupBy(fn (array $row): string => implode('|', [
                     $row['model_version'],
                     $row['feature_version'],
                     $row['blend_version'],
                 ]))
-                ->map(function (Collection $group, string $key): array {
+                ->map(function ($rows, string $key): array {
                     [$model, $feature, $blend] = explode('|', $key);
 
                     return [
                         $model,
                         $feature,
                         $blend,
-                        (string) $group->count(),
-                        number_format((float) $group->avg('spread_error'), 2),
-                        number_format((float) $group->avg('total_error'), 2),
-                        number_format((float) $group->avg('brier_score'), 4),
+                        (string) $rows->count(),
+                        number_format((float) $rows->avg('target_model_spread_error'), 2),
+                        number_format((float) $rows->avg('target_model_total_error'), 2),
                     ];
                 })
                 ->values()
-                ->all()
-        );
-
-        $this->newLine();
-        $this->info('By Confidence Bucket');
-        $this->table(
-            ['Bucket', 'Rows', 'Winner Accuracy', 'Spread MAE'],
-            $this->confidenceBuckets($rows)
+                ->all(),
         );
 
         return self::SUCCESS;
-    }
-
-    /**
-     * @return Collection<int, array<string, mixed>>
-     */
-    private function loadRows(): Collection
-    {
-        $query = PredictionFeatureSnapshot::query()
-            ->where('prediction_feature_snapshots.sport', 'nba')
-            ->where('prediction_feature_snapshots.prediction_table', 'nba_predictions')
-            ->join('prediction_evaluations as pe', function ($join): void {
-                $join->on('prediction_feature_snapshots.prediction_table', '=', 'pe.prediction_table')
-                    ->on('prediction_feature_snapshots.prediction_id', '=', 'pe.prediction_id')
-                    ->on('prediction_feature_snapshots.model_version', '=', 'pe.model_version')
-                    ->on('prediction_feature_snapshots.feature_version', '=', 'pe.feature_version')
-                    ->on('prediction_feature_snapshots.blend_version', '=', 'pe.blend_version');
-            })
-            ->join('nba_games as g', 'prediction_feature_snapshots.game_id', '=', 'g.id')
-            ->select(
-                'prediction_feature_snapshots.model_version',
-                'prediction_feature_snapshots.feature_version',
-                'prediction_feature_snapshots.blend_version',
-                'prediction_feature_snapshots.outputs',
-                'pe.errors',
-                'pe.market_comparison',
-                'g.season'
-            );
-
-        if ($this->option('season')) {
-            $query->where('g.season', (int) $this->option('season'));
-        }
-
-        return $query->get()->map(function (PredictionFeatureSnapshot $snapshot): array {
-            $outputs = $this->arrayValue($snapshot->outputs);
-            $errors = $this->arrayValue($snapshot->errors);
-            $marketComparison = $this->arrayValue($snapshot->market_comparison);
-
-            return [
-                'model_version' => $snapshot->model_version,
-                'feature_version' => $snapshot->feature_version,
-                'blend_version' => $snapshot->blend_version,
-                'confidence_score' => (float) ($outputs['confidence_score'] ?? 0),
-                'spread_error' => (float) ($errors['spread_error'] ?? 0),
-                'total_error' => (float) ($errors['total_error'] ?? 0),
-                'brier_score' => (float) ($errors['brier_score'] ?? 0),
-                'winner_correct' => (bool) ($errors['winner_correct'] ?? false),
-                'model_beats_market_spread' => $marketComparison['model_beats_market_spread'] ?? null,
-            ];
-        });
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    private function arrayValue(mixed $value): array
-    {
-        if (is_array($value)) {
-            return $value;
-        }
-
-        if (is_string($value) && $value !== '') {
-            $decoded = json_decode($value, true);
-
-            return is_array($decoded) ? $decoded : [];
-        }
-
-        return [];
-    }
-
-    /**
-     * @param  Collection<int, array<string, mixed>>  $rows
-     * @return array<int, array<int, string>>
-     */
-    private function confidenceBuckets(Collection $rows): array
-    {
-        $buckets = [
-            '50-59.9' => fn (float $confidence): bool => $confidence >= 50 && $confidence < 60,
-            '60-69.9' => fn (float $confidence): bool => $confidence >= 60 && $confidence < 70,
-            '70-79.9' => fn (float $confidence): bool => $confidence >= 70 && $confidence < 80,
-            '80+' => fn (float $confidence): bool => $confidence >= 80,
-        ];
-
-        $table = [];
-        foreach ($buckets as $label => $filter) {
-            $group = $rows->filter(fn (array $row): bool => $filter((float) $row['confidence_score']))->values();
-            if ($group->isEmpty()) {
-                continue;
-            }
-
-            $table[] = [
-                $label,
-                (string) $group->count(),
-                number_format($group->avg(fn (array $row): float => $row['winner_correct'] ? 1.0 : 0.0) * 100, 1).'%',
-                number_format((float) $group->avg('spread_error'), 2),
-            ];
-        }
-
-        return $table;
     }
 }

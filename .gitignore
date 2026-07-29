@@ -43,3 +43,8 @@ yarn-error.log
 /database/mysql_data_no_migrations.sql
 /database/sqlite_dump.sql
 /storage/app/backups/
+
+# Python build and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/

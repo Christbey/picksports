@@ -2,6 +2,9 @@
 
 namespace App\Console\Commands\NBA;
 
+use App\Models\ModelArtifact;
+use App\Services\ML\CsvDataset;
+use App\Services\ML\ModelArtifactRegistry;
 use App\Services\NBA\WinProbabilityCalibrationTrainer;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
@@ -15,12 +18,16 @@ class EvaluateWinProbabilityCalibrationRollingCommand extends Command
         {--test-window-size=24 : Number of rows per evaluation window}
         {--step-size=24 : Number of rows to advance between windows}
         {--learning-rate=0.01 : Gradient descent learning rate}
-        {--iterations=3000 : Training iterations}';
+        {--iterations=3000 : Training iterations}
+        {--artifact-id= : Attach this report to a registered challenger artifact}';
 
     protected $description = 'Run expanding-window evaluation for the NBA win-probability calibration challenger model';
 
-    public function handle(WinProbabilityCalibrationTrainer $trainer): int
-    {
+    public function handle(
+        WinProbabilityCalibrationTrainer $trainer,
+        CsvDataset $csv,
+        ModelArtifactRegistry $artifacts,
+    ): int {
         $inputPath = $this->absolutePath((string) $this->option('input'));
         $outputPath = $this->absolutePath((string) $this->option('output'));
         $minTrainSize = max(1, (int) $this->option('min-train-size'));
@@ -29,7 +36,7 @@ class EvaluateWinProbabilityCalibrationRollingCommand extends Command
         $learningRate = max(0.000001, (float) $this->option('learning-rate'));
         $iterations = max(1, (int) $this->option('iterations'));
 
-        $rows = $this->readCsv($inputPath);
+        $rows = $csv->read($inputPath);
         if ($rows === []) {
             $this->error('No dataset rows found. Run nba:export-snapshot-dataset first.');
 
@@ -99,9 +106,16 @@ class EvaluateWinProbabilityCalibrationRollingCommand extends Command
             'summary' => $summary,
             'windows' => $windows,
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $reportHash = hash_file('sha256', $outputPath);
+
+        if ($this->option('artifact-id')) {
+            $artifact = ModelArtifact::query()->findOrFail((string) $this->option('artifact-id'));
+            $artifacts->attachEvaluationReport($artifact, $outputPath);
+        }
 
         $this->info('NBA rolling calibration evaluation completed.');
         $this->line('Report: '.$outputPath);
+        $this->line('Report SHA-256: '.$reportHash);
         $this->newLine();
         $this->table(
             ['Metric', 'Value'],
@@ -125,41 +139,6 @@ class EvaluateWinProbabilityCalibrationRollingCommand extends Command
         return str_starts_with($path, '/')
             ? $path
             : base_path($path);
-    }
-
-    /**
-     * @return list<array<string, string>>
-     */
-    private function readCsv(string $path): array
-    {
-        if (! File::exists($path)) {
-            return [];
-        }
-
-        $handle = fopen($path, 'rb');
-        if ($handle === false) {
-            return [];
-        }
-
-        $header = fgetcsv($handle);
-        if (! is_array($header)) {
-            fclose($handle);
-
-            return [];
-        }
-
-        $rows = [];
-        while (($row = fgetcsv($handle)) !== false) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $rows[] = array_combine($header, array_pad($row, count($header), '')) ?: [];
-        }
-
-        fclose($handle);
-
-        return $rows;
     }
 
     /**

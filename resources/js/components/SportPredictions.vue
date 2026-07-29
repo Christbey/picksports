@@ -242,6 +242,11 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
                 : undefined,
         created_at: prediction.created_at,
         updated_at: prediction.updated_at,
+        value_signal:
+            prediction.value_signal &&
+            typeof prediction.value_signal === 'object'
+                ? (prediction.value_signal as PredictionListItem['value_signal'])
+                : null,
         recommendation: prediction.recommendation ?? null,
         game: {
             id: Number(game?.id ?? prediction.game_id ?? 0),
@@ -252,9 +257,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
             away_score: numberValue(game?.away_score),
             inning: numberValue(game?.inning) ?? null,
             inning_half:
-                typeof game?.inning_half === 'string'
-                    ? game.inning_half
-                    : null,
+                typeof game?.inning_half === 'string' ? game.inning_half : null,
             balls: numberValue(game?.balls) ?? null,
             strikes: numberValue(game?.strikes) ?? null,
             outs: numberValue(game?.outs) ?? null,
@@ -348,7 +351,12 @@ const shouldShowAsRecommendedBet = (
         return true;
     }
 
+    if (prediction.value_signal?.has_playable_value === true) {
+        return true;
+    }
+
     if (
+        props.config.sport !== 'nfl' &&
         prediction.betting_value?.some(
             (recommendation) => Number(recommendation.edge) > 0,
         )

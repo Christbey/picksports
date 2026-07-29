@@ -27,6 +27,8 @@ use App\Models\NFL\Team as NflTeam;
 use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
+use App\Models\WNBA\Player as WnbaPlayer;
+use App\Models\WNBA\Team as WnbaTeam;
 use App\Notifications\ValidationRegressionAlert;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -189,6 +191,46 @@ test('injury freshness warns on future refresh timestamps instead of reporting n
         ->and($finding['message'])->not->toContain('hour(s) ago')
         ->and(data_get($finding, 'metadata.age_hours'))->toBe(0)
         ->and(data_get($finding, 'metadata.fresh_at_is_future'))->toBeTrue();
+});
+
+test('injury freshness uses fresh injury rows when command heartbeat is stale', function () {
+    $team = WnbaTeam::factory()->create();
+    $player = WnbaPlayer::factory()->create([
+        'team_id' => $team->id,
+        'espn_id' => 'fresh-injury-player',
+        'full_name' => 'Fresh Injury Player',
+        'first_name' => 'Fresh',
+        'last_name' => 'Injury Player',
+    ]);
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'wnba',
+        'command' => 'espn:sync-wnba-injuries',
+        'status' => 'success',
+        'source' => 'test',
+        'ran_at' => now()->subDays(3),
+    ]);
+
+    DB::table('wnba_player_injuries')->insert([
+        'player_id' => $player->id,
+        'team_id' => $team->id,
+        'injury_key' => 'test-fresh-row',
+        'status' => 'Out',
+        'detail' => 'Fresh provider row',
+        'type' => 'injury',
+        'source_updated_at' => now(),
+        'is_active' => true,
+        'raw_payload' => json_encode(['source' => 'test']),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $finding = app(InjuryFreshnessCheck::class)->run('wnba', config('validation.sports.wnba'));
+
+    expect($finding)->not->toBeNull()
+        ->and($finding['status'])->toBe('passing')
+        ->and(data_get($finding, 'metadata.age_hours'))->toBe(0)
+        ->and(data_get($finding, 'metadata.last_sync_at'))->not->toBe(data_get($finding, 'metadata.fresh_at'));
 });
 
 test('healthcheck validate data flags upcoming game page readiness gaps', function () {

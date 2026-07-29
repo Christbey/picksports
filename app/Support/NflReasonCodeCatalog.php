@@ -14,14 +14,27 @@ class NflReasonCodeCatalog
             'adaptive_point_calibration_signal',
             'bend_dont_break_defense',
             'contextual_adjustments',
+            'division_rematch_total_context',
+            'division_rematch_under_watch',
+            'division_rematch_over_watch',
             'high_trust_no_market_edge',
             'home_away_split_signal',
             'high_market_total',
+            'early_kickoff_window',
+            'late_afternoon_kickoff_window',
             'low_market_total',
             'multi_factor_confluence',
             'new_head_coach_context',
+            'new_head_coach_qb_transition_context',
             'ol_dl_matchup_signal',
             'primetime_total_watch',
+            'primetime_kickoff_window',
+            'rookie_qb_early_season_split',
+            'rookie_qb_division_split',
+            'rookie_qb_primetime_split',
+            'rookie_qb_short_rest_split',
+            'rookie_qb_extra_rest_split',
+            'early_season_prior_pedigree_context',
             'recent_matchup_record_context',
             'rolling_efficiency_mature_sample',
             'rolling_efficiency_signal',
@@ -30,6 +43,11 @@ class NflReasonCodeCatalog
             'total_key_number_context',
             'total_weather_suppression',
             'week_1_total_uncertainty',
+            'prior_playoff_teams_both',
+            'prior_season_pedigree_context',
+            'prior_season_record_neutral',
+            'week_1_prior_pedigree_context',
+            'week_1_defending_super_bowl_champion_context',
             'weather_total_context',
         ];
     }
@@ -122,7 +140,7 @@ class NflReasonCodeCatalog
             return 'coaching';
         }
 
-        if (str_contains($code, 'rest') || str_contains($code, 'travel') || str_contains($code, 'division') || str_contains($code, 'conference') || str_contains($code, 'primetime') || str_contains($code, 'matchup_record') || str_contains($code, 'same_week') || str_contains($code, 'h2h_record')) {
+        if (str_contains($code, 'rest') || str_contains($code, 'travel') || str_contains($code, 'division') || str_contains($code, 'conference') || str_contains($code, 'primetime') || str_contains($code, 'kickoff') || str_contains($code, 'matchup_record') || str_contains($code, 'same_week') || str_contains($code, 'h2h_record') || str_contains($code, 'prior_season') || str_contains($code, 'prior_playoff') || str_contains($code, 'pedigree')) {
             return 'schedule_context';
         }
 

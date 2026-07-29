@@ -2,7 +2,10 @@
 
 namespace App\Console\Commands\NBA;
 
+use App\Services\ML\CsvDataset;
+use App\Services\ML\ModelArtifactRegistry;
 use App\Services\NBA\SpreadResidualModelTrainer;
+use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
@@ -28,15 +31,24 @@ class TrainSpreadResidualModelCommand extends Command
         'feature_confidence_score',
     ];
 
-    public function handle(SpreadResidualModelTrainer $trainer): int
-    {
+    public function handle(
+        SpreadResidualModelTrainer $trainer,
+        CsvDataset $csv,
+        ModelRunRecorder $runRecorder,
+        ModelArtifactRegistry $artifacts,
+    ): int {
         $inputDir = $this->absolutePath((string) $this->option('input-dir'));
         $outputPath = $this->absolutePath((string) $this->option('output'));
         $ridge = max(0.0, (float) $this->option('ridge'));
 
-        $trainRows = $this->readCsv($inputDir.'/nba_snapshot_train.csv');
-        $validationRows = $this->readCsv($inputDir.'/nba_snapshot_validation.csv');
-        $testRows = $this->readCsv($inputDir.'/nba_snapshot_test.csv');
+        $paths = [
+            $inputDir.'/nba_snapshot_train.csv',
+            $inputDir.'/nba_snapshot_validation.csv',
+            $inputDir.'/nba_snapshot_test.csv',
+        ];
+        $trainRows = $csv->read($paths[0]);
+        $validationRows = $csv->read($paths[1]);
+        $testRows = $csv->read($paths[2]);
 
         if ($trainRows === []) {
             $this->error('No train rows found. Run nba:split-snapshot-dataset first.');
@@ -47,10 +59,30 @@ class TrainSpreadResidualModelCommand extends Command
         $model = $trainer->train($trainRows, $this->featureColumns, $ridge);
         $validationMetrics = $trainer->evaluate($validationRows, $model);
         $testMetrics = $trainer->evaluate($testRows, $model);
+        $datasetHash = $csv->hashFiles($paths);
+        $artifactId = $artifacts->newId();
+        $trainingRun = $runRecorder->create(
+            sport: 'nba',
+            runType: 'training',
+            modelVersion: 'nba-spread-residual-ridge-v1',
+            featureVersion: 'trusted-snapshot-v1',
+            blendVersion: 'challenger-shadow-v1',
+            parameters: [
+                'ridge_lambda' => $ridge,
+                'feature_columns' => $this->featureColumns,
+                'dataset_hash' => $datasetHash,
+            ],
+            metadata: ['market_type' => 'spread'],
+        );
 
         File::ensureDirectoryExists(dirname($outputPath));
 
         File::put($outputPath, json_encode([
+            'artifact_id' => $artifactId,
+            'training_run_id' => $trainingRun->id,
+            'config_hash' => $trainingRun->config_hash,
+            'code_version' => $trainingRun->code_version,
+            'dataset_hash' => $datasetHash,
             'model_type' => 'nba_spread_residual_ridge',
             'trained_at' => now()->toIso8601String(),
             'ridge_lambda' => $ridge,
@@ -68,8 +100,25 @@ class TrainSpreadResidualModelCommand extends Command
                 'test_file' => 'nba_snapshot_test.csv',
             ],
         ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        $artifact = $artifacts->register(
+            id: $artifactId,
+            trainingRun: $trainingRun,
+            marketType: 'spread',
+            modelType: 'nba_spread_residual_ridge',
+            modelVersion: 'nba-spread-residual-ridge-v1',
+            featureVersion: 'trusted-snapshot-v1',
+            datasetHash: $datasetHash,
+            artifactPath: $outputPath,
+            metrics: [
+                'validation' => $validationMetrics,
+                'test' => $testMetrics,
+            ],
+        );
 
         $this->info('NBA spread residual challenger model trained.');
+        $this->line('Model run: '.$trainingRun->id);
+        $this->line('Artifact id: '.$artifact->id);
+        $this->line('Config hash: '.$trainingRun->config_hash);
         $this->line('Artifact: '.$outputPath);
         $this->newLine();
         $this->table(
@@ -100,40 +149,5 @@ class TrainSpreadResidualModelCommand extends Command
         return str_starts_with($path, '/')
             ? $path
             : base_path($path);
-    }
-
-    /**
-     * @return list<array<string, string>>
-     */
-    private function readCsv(string $path): array
-    {
-        if (! File::exists($path)) {
-            return [];
-        }
-
-        $handle = fopen($path, 'rb');
-        if ($handle === false) {
-            return [];
-        }
-
-        $header = fgetcsv($handle);
-        if (! is_array($header)) {
-            fclose($handle);
-
-            return [];
-        }
-
-        $rows = [];
-        while (($row = fgetcsv($handle)) !== false) {
-            if (! is_array($row)) {
-                continue;
-            }
-
-            $rows[] = array_combine($header, array_pad($row, count($header), '')) ?: [];
-        }
-
-        fclose($handle);
-
-        return $rows;
     }
 }

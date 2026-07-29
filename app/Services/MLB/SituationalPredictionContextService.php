@@ -20,14 +20,19 @@ class SituationalPredictionContextService
      */
     public function forGame(Game $game, int $homeTeamId, int $awayTeamId): array
     {
+        $historicalReconstruction = (string) $game->status === (string) config('mlb.statuses.final', 'STATUS_FINAL');
         $homeBullpenFatigue = $this->bullpenFatigueScore($game, $homeTeamId);
         $awayBullpenFatigue = $this->bullpenFatigueScore($game, $awayTeamId);
         $bullpenQuality = app(BullpenRatingService::class)->contextForGame($game, $homeTeamId, $awayTeamId);
 
         $homeOpponentPitcherHand = $this->probablePitcherThrowingHand($game->probable_away_pitcher_espn_id, $awayTeamId);
         $awayOpponentPitcherHand = $this->probablePitcherThrowingHand($game->probable_home_pitcher_espn_id, $homeTeamId);
-        $homeHandednessEdge = $this->lineupHandednessEdge($homeTeamId, $homeOpponentPitcherHand);
-        $awayHandednessEdge = $this->lineupHandednessEdge($awayTeamId, $awayOpponentPitcherHand);
+        $homeHandednessEdge = $historicalReconstruction
+            ? 0.0
+            : $this->lineupHandednessEdge($homeTeamId, $homeOpponentPitcherHand);
+        $awayHandednessEdge = $historicalReconstruction
+            ? 0.0
+            : $this->lineupHandednessEdge($awayTeamId, $awayOpponentPitcherHand);
         $advancedRatings = $this->advancedRatingsContext($game, $homeTeamId, $awayTeamId);
         $starterForm = $this->starterFormContext($game, $homeTeamId, $awayTeamId);
 
@@ -62,6 +67,11 @@ class SituationalPredictionContextService
             ],
             'bullpen_quality' => $bullpenQuality,
             'handedness' => [
+                'applied' => ! $historicalReconstruction,
+                'pregame_safe' => ! $historicalReconstruction,
+                'safety_reason' => $historicalReconstruction
+                    ? 'current_roster_membership_disabled_for_historical_reconstruction'
+                    : 'current_pregame_roster',
                 'home_edge' => round($homeHandednessEdge, 3),
                 'away_edge' => round($awayHandednessEdge, 3),
                 'home_opponent_pitcher_hand' => $homeOpponentPitcherHand,
@@ -136,6 +146,8 @@ class SituationalPredictionContextService
             'away_offense_score' => round($awayOffense, 3),
             'home_prevention_score' => round($homePrevention, 3),
             'away_prevention_score' => round($awayPrevention, 3),
+            'home_calculation_date' => $homeMetric?->calculation_date?->toDateString(),
+            'away_calculation_date' => $awayMetric?->calculation_date?->toDateString(),
             'spread_adjustment' => round($spreadAdjustment, 2),
             'total_adjustment' => round($totalAdjustment, 2),
         ];
@@ -267,6 +279,9 @@ class SituationalPredictionContextService
             ->where('team_id', $teamId)
             ->where('season', (int) $game->season)
             ->where('season_type', (string) $game->season_type)
+            ->whereDate('calculation_date', '<=', $game->game_date)
+            ->orderByDesc('calculation_date')
+            ->orderByDesc('id')
             ->first();
     }
 

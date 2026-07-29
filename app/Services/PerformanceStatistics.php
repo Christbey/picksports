@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\BetDecision;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -101,38 +102,48 @@ class PerformanceStatistics
     }
 
     /**
-     * Calculate ROI if user followed all predictions with $100 bets.
-     * Assumes standard -110 betting odds.
+     * Calculate verified ROI from immutable, pregame-safe decisions and settlements.
      */
     public function calculateROI(?string $fromDate = null, ?string $toDate = null): array
     {
-        $totalBets = 0;
-        $totalWins = 0;
+        $query = BetDecision::query()
+            ->with('settlement')
+            ->where('is_bet', true)
+            ->where('pregame_safe', true)
+            ->whereHas('settlement');
 
-        foreach (self::SPORTS as $sport) {
-            $stats = $this->getSportStats($sport, $fromDate, $toDate);
-            $totalBets += $stats['total_graded'];
-            $totalWins += $stats['winner_correct'];
+        if ($fromDate) {
+            $query->whereDate('decided_at', '>=', $fromDate);
         }
 
-        // Standard bet: $100 at -110 odds
-        // Win pays: $90.91 profit ($100 stake + $90.91 = $190.91 total)
-        // Loss: -$100
-        $betAmount = 100;
-        $winProfit = 90.91; // -110 odds
+        if ($toDate) {
+            $query->whereDate('decided_at', '<=', $toDate);
+        }
 
-        $totalWagered = $totalBets * $betAmount;
-        $totalProfit = ($totalWins * ($betAmount + $winProfit)) - $totalWagered;
+        $decisions = $query->get();
+        $totalBets = $decisions->count();
+        $totalWins = $decisions->filter(
+            fn (BetDecision $decision): bool => $decision->settlement?->result_status === 'win'
+        )->count();
+        $totalLosses = $decisions->filter(
+            fn (BetDecision $decision): bool => $decision->settlement?->result_status === 'loss'
+        )->count();
+        $totalWagered = $totalBets * 100;
+        $totalProfit = round((float) $decisions->sum(
+            fn (BetDecision $decision): float => ((float) ($decision->settlement?->profit_units ?? 0.0)) * 100
+        ), 2);
         $roi = $totalWagered > 0 ? round(($totalProfit / $totalWagered) * 100, 2) : 0;
 
         return [
             'total_bets' => $totalBets,
             'total_wins' => $totalWins,
-            'total_losses' => $totalBets - $totalWins,
+            'total_losses' => $totalLosses,
             'total_wagered' => $totalWagered,
-            'total_profit' => round($totalProfit, 2),
+            'total_profit' => $totalProfit,
             'roi_percentage' => $roi,
             'win_percentage' => $totalBets > 0 ? round(($totalWins / $totalBets) * 100, 1) : 0,
+            'verified' => true,
+            'methodology' => 'settled_pregame_bet_decisions',
         ];
     }
 

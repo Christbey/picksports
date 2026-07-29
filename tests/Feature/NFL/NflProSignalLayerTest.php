@@ -438,3 +438,51 @@ it('does not create a positive clv profile from a flat closing line', function (
         ->and(data_get($layer, 'market_movement.positive_clv_profile'))->toBeFalse()
         ->and(data_get($layer, 'reason_codes'))->not->toContain('positive_clv_profile');
 });
+
+it('buckets line movement and closing line value for market validation', function () {
+    $game = nflProSignalGame([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 27,
+        'away_score' => 17,
+        'odds_data' => nflProSignalOddsPayload(-2.5),
+    ]);
+
+    foreach ([[-0.5, 180, 'bucket-open'], [-1.5, 90, 'bucket-mid'], [-1.0, 0, 'bucket-close']] as [$homePoint, $minutesAgo, $hash]) {
+        GameOddsSnapshot::query()->create([
+            'sport' => 'nfl',
+            'game_table' => $game->getTable(),
+            'game_id' => $game->id,
+            'source' => 'test',
+            'captured_at' => now()->subMinutes($minutesAgo),
+            'payload_hash' => $hash,
+            'odds_data' => nflProSignalOddsPayload($homePoint),
+        ]);
+    }
+
+    $layer = app(NflProSignalLayer::class)->build(
+        $game->fresh(['homeTeam', 'awayTeam']),
+        [],
+        [
+            'reason_codes' => ['strong_model_signal'],
+            'risk_flags' => [],
+            'calculated_edge' => [
+                'market_spread' => 2.5,
+                'market_total' => 43.5,
+                'spread_points' => 3.5,
+                'total_points' => null,
+            ],
+        ],
+        6.0,
+        44.0,
+        0.68
+    );
+
+    expect(data_get($layer, 'market_movement.line_movement_points'))->toBe(2.0)
+        ->and(data_get($layer, 'market_movement.line_movement_bucket'))->toBe('two_plus')
+        ->and(data_get($layer, 'market_movement.line_move_toward_pick'))->toBeTrue()
+        ->and(data_get($layer, 'market_movement.closing_line_value_points'))->toBe(1.5)
+        ->and(data_get($layer, 'market_movement.closing_line_value_bucket'))->toBe('positive_one_plus')
+        ->and(data_get($layer, 'reason_codes'))->toContain('line_move_bucket_two_plus')
+        ->and(data_get($layer, 'reason_codes'))->toContain('line_move_toward_model_pick')
+        ->and(data_get($layer, 'reason_codes'))->toContain('clv_bucket_positive_one_plus');
+});

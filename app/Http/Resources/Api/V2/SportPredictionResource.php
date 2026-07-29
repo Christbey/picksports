@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\Api\V2;
 
+use App\Actions\WNBA\CalculateBettingValue as WnbaCalculateBettingValue;
 use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
@@ -50,6 +51,7 @@ class SportPredictionResource extends JsonResource
             'confidence_level' => $this->confidenceLevel(),
             'confidence_context' => $this->confidenceContext(),
             'public_recommendation' => $this->publicRecommendation(),
+            'value_signal' => $this->valueSignal(),
             'market_aware_projection' => $this->marketAwareProjection(),
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
@@ -161,12 +163,17 @@ class SportPredictionResource extends JsonResource
      */
     private function marketSummary(): array
     {
-        $hasSpread = $this->attribute('vegas_spread') !== null;
         $game = $this->relation('game');
+        $markets = $this->marketKeys($game);
+        $hasSpread = $this->attribute('vegas_spread') !== null;
+
+        if ($hasSpread && ! in_array('spread', $markets, true)) {
+            $markets[] = 'spread';
+        }
 
         return [
-            'has_odds' => $hasSpread,
-            'markets' => $hasSpread ? ['spread'] : [],
+            'has_odds' => $markets !== [],
+            'markets' => $markets,
             'odds_updated_at' => $this->serializeDateValue($game?->getAttribute('odds_updated_at')),
         ];
     }
@@ -200,6 +207,44 @@ class SportPredictionResource extends JsonResource
         $team = $game->getRelation($relation);
 
         return $team instanceof Model ? $team : null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function marketKeys(?Model $game): array
+    {
+        $oddsData = $game?->getAttribute('odds_data');
+        if (! is_array($oddsData)) {
+            return [];
+        }
+
+        $markets = [];
+
+        foreach (($oddsData['bookmakers'] ?? []) as $bookmaker) {
+            if (! is_array($bookmaker)) {
+                continue;
+            }
+
+            foreach (($bookmaker['markets'] ?? []) as $market) {
+                if (! is_array($market)) {
+                    continue;
+                }
+
+                $key = match ((string) ($market['key'] ?? '')) {
+                    'spreads' => 'spread',
+                    'totals' => 'total',
+                    'h2h' => 'moneyline',
+                    default => null,
+                };
+
+                if ($key !== null) {
+                    $markets[] = $key;
+                }
+            }
+        }
+
+        return array_values(array_unique($markets));
     }
 
     private function relation(string $relation): ?Model
@@ -374,6 +419,8 @@ class SportPredictionResource extends JsonResource
         }
 
         return [
+            'enabled' => (bool) ($analysis['enabled'] ?? true),
+            'applied' => (bool) ($analysis['applied'] ?? false),
             'trust_score' => isset($analysis['trust_score']) ? (float) $analysis['trust_score'] : null,
             'bet_classification' => $analysis['bet_classification'] ?? null,
             'model_signal_classification' => $analysis['model_signal_classification'] ?? null,
@@ -426,6 +473,58 @@ class SportPredictionResource extends JsonResource
             'is_lean' => $type === 'lean' && ($public['prediction_phase'] ?? null) === 'pregame',
             'promotion_blocked' => ($promotion['status'] ?? null) === 'blocked',
             'block_reasons' => array_values((array) ($promotion['block_reasons'] ?? [])),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function valueSignal(): ?array
+    {
+        if ($this->context->slug !== 'wnba') {
+            return null;
+        }
+
+        $game = $this->relation('game');
+        if (! $game) {
+            return null;
+        }
+
+        $recommendations = app(WnbaCalculateBettingValue::class)->execute($game);
+        if (! is_array($recommendations) || $recommendations === []) {
+            return [
+                'has_playable_value' => false,
+                'play_count' => 0,
+                'best' => null,
+            ];
+        }
+
+        $playable = collect($recommendations)
+            ->filter(fn (array $recommendation): bool => ($recommendation['is_playable'] ?? false) === true)
+            ->sortByDesc(fn (array $recommendation): float => (float) ($recommendation['bet_units'] ?? 0))
+            ->values();
+
+        $best = $playable->first() ?? collect($recommendations)
+            ->sortByDesc(fn (array $recommendation): float => (float) ($recommendation['confidence'] ?? 0))
+            ->first();
+
+        return [
+            'has_playable_value' => $playable->isNotEmpty(),
+            'play_count' => $playable->count(),
+            'best' => is_array($best) ? [
+                'type' => $best['type'] ?? null,
+                'label' => $best['recommendation'] ?? null,
+                'edge' => isset($best['edge']) ? (float) $best['edge'] : null,
+                'odds' => $best['odds'] ?? null,
+                'market_line' => isset($best['market_line']) ? (float) $best['market_line'] : null,
+                'model_line' => isset($best['model_line']) ? (float) $best['model_line'] : null,
+                'model_probability' => isset($best['model_probability']) ? (float) $best['model_probability'] : null,
+                'implied_probability' => isset($best['implied_probability']) ? (float) $best['implied_probability'] : null,
+                'grade' => $best['grade'] ?? null,
+                'risk_level' => $best['risk_level'] ?? null,
+                'units' => isset($best['bet_units']) ? (float) $best['bet_units'] : null,
+                'reason' => $best['reasoning'] ?? null,
+            ] : null,
         ];
     }
 

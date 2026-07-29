@@ -139,9 +139,18 @@ const classificationLabel = computed(() => {
             proLayer.value.bet_classification ??
             '',
     );
+    const classification = layerClassification || betClassification.value;
 
-    if (layerClassification) return labelize(layerClassification);
-    if (betClassification.value) return labelize(betClassification.value);
+    const labels: Record<string, string> = {
+        validated_winner_watchlist: 'Moneyline Watchlist',
+        model_rule_watchlist: 'Rule Watchlist',
+        no_bet_rule_pass: 'Pass',
+        no_bet_no_edge: 'Pass',
+    };
+
+    if (classification) {
+        return labels[classification] ?? labelize(classification);
+    }
 
     return null;
 });
@@ -447,7 +456,7 @@ function resultBadgeClass(
                         <span
                             class="rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300"
                         >
-                            Pick: {{ projectedPickLabel }}
+                            Moneyline: {{ projectedPickLabel }}
                             {{
                                 formatPercent(
                                     prediction.win_probability as number | null,
@@ -495,7 +504,11 @@ function resultBadgeClass(
                 <span
                     class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
                 >
-                    {{ winnerTier ? labelize(winnerTier) : 'No signal' }}
+                    {{
+                        winnerTier
+                            ? `ML ${labelize(winnerTier)}`
+                            : 'No ML signal'
+                    }}
                 </span>
             </div>
 

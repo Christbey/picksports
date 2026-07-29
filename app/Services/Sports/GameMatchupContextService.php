@@ -176,7 +176,9 @@ class GameMatchupContextService
     {
         $query = $game::query()
             ->with(['homeTeam', 'awayTeam'])
-            ->where('status', 'STATUS_FINAL');
+            ->where('status', 'STATUS_FINAL')
+            ->whereNotNull('home_score')
+            ->whereNotNull('away_score');
 
         $this->applyMatchupContextSeasonTypeFilter($query, $game);
 
@@ -215,7 +217,7 @@ class GameMatchupContextService
                 $wins++;
             } elseif ($result === 'loss') {
                 $losses++;
-            } else {
+            } elseif ($result === 'tie') {
                 $ties++;
             }
         }
@@ -231,11 +233,18 @@ class GameMatchupContextService
         return $this->recordFromGames($games, $teamId);
     }
 
-    protected function teamResult(Model $game, int $teamId): string
+    protected function teamResult(Model $game, int $teamId): ?string
     {
         $isHome = (int) $game->home_team_id === $teamId;
-        $teamScore = $isHome ? (int) $game->home_score : (int) $game->away_score;
-        $opponentScore = $isHome ? (int) $game->away_score : (int) $game->home_score;
+        $rawTeamScore = $isHome ? $game->home_score : $game->away_score;
+        $rawOpponentScore = $isHome ? $game->away_score : $game->home_score;
+
+        if ($rawTeamScore === null || $rawOpponentScore === null) {
+            return null;
+        }
+
+        $teamScore = (int) $rawTeamScore;
+        $opponentScore = (int) $rawOpponentScore;
 
         if ($teamScore === $opponentScore) {
             return 'tie';

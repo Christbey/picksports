@@ -253,7 +253,8 @@ class PlayerPropAnalyzer
         ?int $minGames = 3,
         ?string $dateFilter = null,
         ?int $gameFilter = null,
-        ?string $marketFilter = null
+        ?string $marketFilter = null,
+        bool $attachNarratives = true
     ): Collection {
         $sportConfig = $this->getSportConfig($sport);
 
@@ -277,7 +278,7 @@ class PlayerPropAnalyzer
         $recommendations = collect();
 
         foreach ($props as $prop) {
-            $recommendation = $this->analyzeProp($prop, $minGames, $sportConfig, $sport);
+            $recommendation = $this->analyzeProp($prop, $minGames, $sportConfig, $sport, $attachNarratives);
 
             if ($recommendation && $recommendation['confidence'] >= 60) {
                 $recommendations->push($recommendation);
@@ -364,7 +365,7 @@ class PlayerPropAnalyzer
     /**
      * Analyze a single prop and generate recommendation
      */
-    protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport): ?array
+    protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport, bool $attachNarratives = true): ?array
     {
         // Try to find player by name fuzzy matching
         $playerMatch = $this->findPlayerByName(
@@ -483,7 +484,7 @@ class PlayerPropAnalyzer
 
         $this->persistPredictionSnapshot($prop, $analysis, $dataQualityScore, $matchQualityScore, $context['combined_factor']);
 
-        return $this->playerPropNarrativeService->attachNarrative([
+        $recommendation = [
             'prop' => $prop,
             'player' => $player,
             'game' => $prop->game,
@@ -512,7 +513,15 @@ class PlayerPropAnalyzer
             'data_quality_score' => $dataQualityScore,
             'match_quality_score' => $matchQualityScore,
             'confidence_decomposition' => $analysis['confidence_decomposition'] ?? null,
-        ], $sport);
+        ];
+
+        if (! $attachNarratives) {
+            $recommendation['narrative'] = is_array($prop->narrative_json ?? null) ? $prop->narrative_json : null;
+
+            return $recommendation;
+        }
+
+        return $this->playerPropNarrativeService->attachNarrative($recommendation, $sport);
     }
 
     /**

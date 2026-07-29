@@ -451,6 +451,12 @@ const adminAreas = [
         href: '/admin/healthchecks',
     },
     {
+        title: 'NFL Model Monitor',
+        description:
+            'Review model lineage, shadow decisions, and settlement performance.',
+        href: '/admin/nfl-model-monitoring',
+    },
+    {
         title: 'Payload Inspector',
         description: 'Validate API v2 payload contracts for migrated surfaces.',
         href: payloadInspector.urlFor({

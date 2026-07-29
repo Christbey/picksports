@@ -12,6 +12,7 @@ class MlbPickCandidateRepository
 {
     public function __construct(
         private readonly SportsDateWindowService $dateWindows,
+        private readonly BetDecisionRecorder $decisionRecorder,
     ) {}
 
     /**
@@ -20,7 +21,12 @@ class MlbPickCandidateRepository
      */
     public function persist(Collection $payloads): EloquentCollection
     {
-        $rows = $payloads->map(fn (array $payload): PickCandidate => PickCandidate::query()->create($payload));
+        $rows = $payloads->map(function (array $payload): PickCandidate {
+            $candidate = PickCandidate::query()->create($payload);
+            $this->decisionRecorder->record($candidate);
+
+            return $candidate;
+        });
 
         return new EloquentCollection($rows->all());
     }
@@ -33,6 +39,7 @@ class MlbPickCandidateRepository
         $window = $this->dateWindows->forDate($date);
         $query = PickCandidate::query()
             ->with(['game.homeTeam', 'game.awayTeam', 'team', 'player'])
+            ->whereNull('superseded_at')
             ->whereHas('game', fn ($query) => $this->dateWindows->applyGameDateWindow($query, $window))
             ->orderByDesc('score');
 

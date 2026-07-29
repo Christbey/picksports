@@ -17,6 +17,8 @@ class PickCandidate extends Model
     protected $table = 'mlb_pick_candidates';
 
     protected $fillable = [
+        'generation_run_id',
+        'decision_hash',
         'season',
         'game_id',
         'prediction_id',
@@ -47,6 +49,7 @@ class PickCandidate extends Model
         'feature_snapshot',
         'market_snapshot',
         'generated_at',
+        'superseded_at',
         'locked_at',
         'game_start_at',
         'result_status',
@@ -80,6 +83,7 @@ class PickCandidate extends Model
             'feature_snapshot' => 'array',
             'market_snapshot' => 'array',
             'generated_at' => 'datetime',
+            'superseded_at' => 'datetime',
             'locked_at' => 'datetime',
             'game_start_at' => 'datetime',
             'result_value' => 'decimal:3',

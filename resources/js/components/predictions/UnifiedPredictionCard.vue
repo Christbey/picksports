@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ChevronDown, ShieldCheck, Sparkles, Target } from 'lucide-vue-next';
+import { ChevronDown, ChevronRight, Clock } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
-import BettingAnalysisCard from '@/components/BettingAnalysisCard.vue';
 import SavePickDialog from '@/components/predictions/SavePickDialog.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +13,6 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-    buildPredictionLiveData,
     hasPredictionLiveData,
     isPredictionListItem,
     normalizePredictionLiveState,
@@ -147,6 +145,37 @@ function homeScore(): number | null {
     return normalizedLiveState.value.homeScore;
 }
 
+function showGameScore(): boolean {
+    return (
+        (isLive() || isFinal()) && awayScore() !== null && homeScore() !== null
+    );
+}
+
+function teamScoreClass(team: 'away' | 'home'): string {
+    if (!showGameScore()) {
+        return '';
+    }
+
+    const away = awayScore();
+    const home = homeScore();
+    if (away === null || home === null || away === home) {
+        return 'text-foreground';
+    }
+
+    const isWinning =
+        (team === 'away' && away > home) || (team === 'home' && home > away);
+
+    if (isFinal()) {
+        return isWinning
+            ? 'text-emerald-700 dark:text-emerald-300'
+            : 'text-muted-foreground';
+    }
+
+    return isWinning
+        ? 'text-sky-700 dark:text-sky-300'
+        : 'text-muted-foreground';
+}
+
 function showAwayLogo(): boolean {
     return !!awayLogo() && !awayLogoErrored.value;
 }
@@ -256,6 +285,16 @@ function predictionFreshnessLabel(): string | null {
     })}`;
 }
 
+function statusBadgeLabel(): string {
+    const status = String(props.prediction.status ?? '').toLowerCase();
+
+    if (isFinal()) return 'Final';
+    if (isLive()) return 'Live';
+    if (status.includes('postponed')) return 'Postponed';
+
+    return 'Pregame';
+}
+
 function preGameWinProbability(): number {
     return props.prediction.win_probability ?? 0;
 }
@@ -272,18 +311,14 @@ function isMlbPrediction(): boolean {
     return (props.sport ?? '').toLowerCase() === 'mlb';
 }
 
+function isNflPrediction(): boolean {
+    return (props.sport ?? '').toLowerCase() === 'nfl';
+}
+
 function marketAwareProjection() {
     return isMlbPrediction()
         ? (props.prediction.market_aware_projection ?? null)
         : null;
-}
-
-function hasMarketAwareProjection(): boolean {
-    return marketAwareProjection() !== null;
-}
-
-function projectionProbabilityLabel(value?: number | null): string {
-    return typeof value === 'number' ? `${(value * 100).toFixed(1)}%` : 'n/a';
 }
 
 function marketAwareSignalLabel(): string {
@@ -304,22 +339,6 @@ function marketAwareSignalLabel(): string {
     }
 
     return 'Tracking Only';
-}
-
-function marketAwarePickLabel(): string | null {
-    return marketAwareProjection()?.projection_pick?.label ?? null;
-}
-
-function marketAwareMetaLabel(): string {
-    const projection = marketAwareProjection();
-    if (!projection) return 'Tracking only';
-
-    const pointInTime =
-        projection.point_in_time_status === 'safe'
-            ? 'pregame-safe'
-            : 'not pregame-safe';
-
-    return `${pointInTime} · ${formatAnalysisToken(projection.risk_label ?? 'tracking_only')}`;
 }
 
 function displayedWinProbability(): number {
@@ -348,10 +367,10 @@ function edgeSignalLabel(): string {
     }
 
     const absEdge = Math.abs(edgePercent());
-    if (absEdge < 2) return 'Toss-Up';
-    if (absEdge < 7) return 'Lean Edge';
-    if (absEdge < 14) return 'Moderate Edge';
-    return 'Strong Edge';
+    if (absEdge < 2) return 'Toss-up';
+    if (absEdge < 7) return 'Lean model edge';
+    if (absEdge < 14) return 'Playable model edge';
+    return 'Strong model edge';
 }
 
 function moneylineTeamLabel(): string {
@@ -361,24 +380,12 @@ function moneylineTeamLabel(): string {
     return winProbPercent() >= 50 ? home : away;
 }
 
-function edgeBarWidth(): number {
-    return Math.min(100, Math.abs(edgePercent()) * 2);
-}
-
 function predictionAnalysis() {
     return props.prediction.prediction_analysis ?? null;
 }
 
-function hasPredictionAnalysis(): boolean {
-    return predictionAnalysis() !== null;
-}
-
 function aiAnalysis() {
     return props.prediction.ai_analysis ?? null;
-}
-
-function hasAiAnalysis(): boolean {
-    return aiAnalysis() !== null;
 }
 
 function aiBetClassificationLabel(): string | null {
@@ -395,42 +402,9 @@ function aiBetClassificationLabel(): string | null {
     return labels[classification] ?? formatAnalysisToken(classification);
 }
 
-function aiRecommendationLabel(): string | null {
-    const recommendation = aiAnalysis()?.recommendation;
-    return recommendation ? formatAnalysisToken(recommendation) : null;
-}
-
-function aiConfidenceLabel(): string | null {
-    const analysis = aiAnalysis();
-    if (!analysis) return null;
-
-    return `${analysis.analysis_confidence}% Confidence`;
-}
-
-function topAiKeyFactors(): string[] {
-    return (aiAnalysis()?.key_factors ?? []).slice(0, 3);
-}
-
-function topAiRiskFlags(): string[] {
-    return (aiAnalysis()?.risk_flags ?? []).slice(0, 3);
-}
-
 function trustScoreLabel(): string | null {
     const trust = predictionAnalysis()?.trust_score;
     return typeof trust === 'number' ? `${Math.round(trust)} Trust` : null;
-}
-
-function modelSignalLabel(): string | null {
-    const signal = predictionAnalysis()?.model_signal_classification;
-    if (!signal) return null;
-
-    const labels: Record<string, string> = {
-        strong_model_side: 'Strong Model Side',
-        lean_model_side: 'Lean Model Side',
-        pass_model_side: 'Pass Model Side',
-    };
-
-    return labels[signal] ?? signal.replaceAll('_', ' ');
 }
 
 function betClassificationLabel(): string | null {
@@ -443,47 +417,15 @@ function betClassificationLabel(): string | null {
         lean: 'Lean Edge',
         lean_edge: 'Lean Edge',
         model_rule_watchlist: 'Rule Watchlist',
-        validated_winner_watchlist: 'Winner Watchlist',
+        validated_winner_watchlist: isNflPrediction()
+            ? 'Moneyline Watchlist'
+            : 'Winner Watchlist',
         no_bet_no_edge: 'No Bet',
         no_bet_risk: 'No Bet',
         no_bet_rule_pass: 'No Bet',
     };
 
     return labels[classification] ?? classification.replaceAll('_', ' ');
-}
-
-function bestValidatedSignal() {
-    return predictionAnalysis()?.best_validated_signal ?? null;
-}
-
-function validatedSignalRateLabel(): string | null {
-    const signal = bestValidatedSignal();
-    const rate = signal?.winner_hit_rate;
-
-    return typeof rate === 'number' ? `${rate.toFixed(1)}% winner` : null;
-}
-
-function validatedSignalMetaLabel(): string | null {
-    const signal = bestValidatedSignal();
-    if (!signal) return null;
-
-    const parts = [];
-    if (typeof signal.sample_size === 'number' && signal.sample_size > 0) {
-        parts.push(`${signal.sample_size} games`);
-    }
-    if (typeof signal.spread_mae === 'number') {
-        parts.push(`${signal.spread_mae.toFixed(2)} spread MAE`);
-    }
-
-    return parts.length ? parts.join(' · ') : null;
-}
-
-function topReasonCodes(): string[] {
-    return (predictionAnalysis()?.reason_codes ?? []).slice(0, 4);
-}
-
-function topRiskFlags(): string[] {
-    return (predictionAnalysis()?.risk_flags ?? []).slice(0, 3);
 }
 
 function formatAnalysisToken(token: string): string {
@@ -513,16 +455,54 @@ function bettingValueDebugLabel(): string | null {
     return reason;
 }
 
+function valueSignal() {
+    return props.prediction.value_signal ?? null;
+}
+
+function hasValueSignal(): boolean {
+    return valueSignal()?.best !== null && valueSignal()?.best !== undefined;
+}
+
+function valueSignalBest() {
+    return valueSignal()?.best ?? null;
+}
+
+function valueSignalTitle(): string {
+    const best = valueSignalBest();
+    if (!best?.label) {
+        return 'No qualifying market edge';
+    }
+
+    return best.label.replace(/^Bet\s+/i, '');
+}
+
+function valueSignalMeta(): string | null {
+    const best = valueSignalBest();
+    if (!best) return null;
+
+    const parts = [];
+    if (best.type) {
+        parts.push(formatAnalysisToken(String(best.type)));
+    }
+    if (typeof best.edge === 'number') {
+        const suffix = best.type === 'moneyline' ? '%' : ' pts';
+        parts.push(
+            `Edge ${best.edge > 0 ? '+' : ''}${best.edge.toFixed(1)}${suffix}`,
+        );
+    }
+    if (best.grade) {
+        parts.push(`Grade ${best.grade}`);
+    }
+
+    return parts.length ? parts.join(' · ') : null;
+}
+
 function canonicalRecommendation() {
     return getPredictionRecommendation(props.prediction);
 }
 
 function canonicalPregameRecommendation() {
     return pregameRecommendation(props.prediction);
-}
-
-function hasCanonicalRecommendation(): boolean {
-    return canonicalRecommendation() !== null;
 }
 
 function canonicalRecommendationLabel(): string | null {
@@ -550,75 +530,16 @@ function canonicalRecommendationLabel(): string | null {
     return null;
 }
 
-function canonicalRecommendationClass(): string {
-    if (isMlbPrediction() && isPromotionBlocked(props.prediction)) {
-        return 'bg-sidebar-accent text-muted-foreground';
-    }
-
-    if (isBetRecommendation(props.prediction)) {
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-100';
-    }
-
-    if (isLeanRecommendation(props.prediction)) {
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-100';
-    }
-
-    if (isLiveMonitor(props.prediction)) {
-        return 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-100';
-    }
-
-    return 'bg-sidebar-accent text-muted-foreground';
-}
-
 function canonicalPregameEdgeLabel(): string | null {
     const edge = canonicalPregameRecommendation()?.raw_edge;
-    return typeof edge === 'number' ? `${(edge * 100).toFixed(1)}% raw edge` : null;
-}
-
-function hasValueSignals(): boolean {
-    return Boolean(
-        (props.prediction.betting_value &&
-            props.prediction.betting_value.length > 0) ||
-            hasLiveData() ||
-            bettingValueDebug(),
-    );
-}
-
-function hasDecisionSummary(): boolean {
-    return (
-        !isFinal() &&
-        (hasMarketAwareProjection() ||
-            hasAiAnalysis() ||
-            hasPredictionAnalysis() ||
-            hasValueSignals() ||
-            hasCanonicalRecommendation())
-    );
-}
-
-function livePredictionData() {
-    return buildPredictionLiveData(props.prediction);
+    return typeof edge === 'number'
+        ? `${(edge * 100).toFixed(1)}% raw edge`
+        : null;
 }
 
 function winnerCorrect(): boolean | null {
     const value = props.prediction.winner_correct;
     return typeof value === 'boolean' ? value : null;
-}
-
-function finalResultClass(): string {
-    if (!isFinal()) {
-        return '';
-    }
-
-    const correct = winnerCorrect();
-    if (correct === true) {
-        return 'text-green-600 dark:text-green-400';
-    }
-
-    if (correct === false) {
-        return 'text-red-600 dark:text-red-400';
-    }
-
-    return '';
 }
 
 function finalResultBadgeClass(): string {
@@ -641,14 +562,161 @@ function finalResultLabel(): string | null {
     return null;
 }
 
-function finalCardClass(): string {
-    if (!isFinal()) return '';
+function dashboardCardTone(): 'quiet' | 'positive' | 'negative' | 'candidate' {
+    if (isFinal()) {
+        const correct = winnerCorrect();
+        if (correct === true) return 'positive';
+        if (correct === false) return 'negative';
+    }
 
-    const correct = winnerCorrect();
-    if (correct === true) return 'border-green-300/80 dark:border-green-700/60';
-    if (correct === false) return 'border-red-300/80 dark:border-red-700/60';
+    if (
+        isBetRecommendation(props.prediction) ||
+        valueSignal()?.has_playable_value
+    ) {
+        return 'positive';
+    }
 
-    return '';
+    if (
+        isLeanRecommendation(props.prediction) ||
+        isLiveMonitor(props.prediction) ||
+        aiBetClassificationLabel() === 'Bet' ||
+        aiBetClassificationLabel() === 'Lean'
+    ) {
+        return 'candidate';
+    }
+
+    return 'quiet';
+}
+
+function dashboardCardClass(): string {
+    const tone = dashboardCardTone();
+
+    if (tone === 'positive') {
+        return 'border-emerald-500/45 bg-emerald-950/[0.04] ring-1 ring-emerald-500/15 dark:bg-emerald-500/[0.06]';
+    }
+
+    if (tone === 'negative') {
+        return 'border-red-500/35 bg-red-950/[0.03] dark:bg-red-500/[0.05]';
+    }
+
+    if (tone === 'candidate') {
+        return 'border-sky-500/35 bg-sky-950/[0.03] dark:bg-sky-500/[0.05]';
+    }
+
+    return 'border-border/70 bg-card/80 hover:border-sky-500/30';
+}
+
+function dashboardRailClass(): string {
+    const tone = dashboardCardTone();
+
+    if (tone === 'positive') return 'bg-emerald-500';
+    if (tone === 'negative') return 'bg-red-500';
+    if (tone === 'candidate') return 'bg-sky-500';
+
+    return 'bg-slate-500/40';
+}
+
+function dashboardChipClass(): string {
+    return 'rounded-full border bg-background/75 px-2.5 py-1 text-xs font-semibold text-muted-foreground';
+}
+
+function dashboardPrimaryPickLabel(): string {
+    const prefix = isNflPrediction() ? 'Moneyline' : 'Pick';
+
+    return `${prefix}: ${moneylineTeamLabel()} ${winProbPercent().toFixed(1)}%`;
+}
+
+function dashboardSignalLabel(): string {
+    return (
+        canonicalRecommendationLabel() ??
+        betClassificationLabel() ??
+        aiBetClassificationLabel() ??
+        (isFavorite() ? 'Favorite' : 'No signal')
+    );
+}
+
+function dashboardSignalClass(): string {
+    const tone = dashboardCardTone();
+
+    if (tone === 'positive') {
+        return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    }
+
+    if (tone === 'candidate') {
+        return 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+    }
+
+    if (tone === 'negative') {
+        return 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300';
+    }
+
+    return 'border-muted bg-muted/40 text-muted-foreground';
+}
+
+function dashboardActionTextClass(): string {
+    const tone = dashboardCardTone();
+
+    if (tone === 'positive') return 'text-emerald-600 dark:text-emerald-400';
+    if (tone === 'negative') return 'text-red-600 dark:text-red-400';
+    if (tone === 'candidate') return 'text-sky-600 dark:text-sky-400';
+
+    return 'text-muted-foreground';
+}
+
+function formatSignedNumber(value: number, decimals = 1): string {
+    return `${value > 0 ? '+' : ''}${value.toFixed(decimals)}`;
+}
+
+function dashboardFooterContextLabel(): string {
+    if (isFinal() && totalResultLabel()) {
+        return `O/U ${totalResultLabel()}`;
+    }
+
+    if (hasValueSignal()) {
+        return valueSignalMeta()
+            ? `${valueSignalTitle()} · ${valueSignalMeta()}`
+            : valueSignalTitle();
+    }
+
+    if (bettingValueDebugLabel()) {
+        return bettingValueDebugLabel()!;
+    }
+
+    return edgeSignalLabel();
+}
+
+function totalPickPillLabel(): string | null {
+    const best = valueSignalBest();
+    const bestType = String(best?.type ?? '').toLowerCase();
+    if (best?.label && bestType === 'total') {
+        return best.label.replace(/^Bet\s+/i, '');
+    }
+
+    const totalBet = props.prediction.betting_value?.find(
+        (bet) => bet.type === 'total',
+    );
+    if (!totalBet) return null;
+
+    const direction = parseTotalPickDirection(totalBet.recommendation);
+    const line = totalBet.market_line;
+    if (!direction || typeof line !== 'number') return null;
+
+    return `${direction === 'over' ? 'Over' : 'Under'} ${line.toFixed(1)}`;
+}
+
+function totalPickPillStrong(): boolean {
+    const best = valueSignalBest();
+    const bestType = String(best?.type ?? '').toLowerCase();
+
+    if (bestType === 'total' && valueSignal()?.has_playable_value) {
+        return true;
+    }
+
+    return Boolean(
+        props.prediction.betting_value?.some(
+            (bet) => bet.type === 'total' && bet.is_playable === true,
+        ),
+    );
 }
 
 function parseTotalPickDirection(
@@ -707,7 +775,10 @@ function totalResultBadgeClass(): string {
 }
 
 const canSavePick = computed(
-    () => predictionId() !== null && predictionModelClass() !== null,
+    () =>
+        predictionType !== null &&
+        predictionId() !== null &&
+        predictionModelClass() !== null,
 );
 
 watch(
@@ -919,519 +990,238 @@ function saveOptions(): SavePickOption[] {
 
 <template>
     <div
-        class="ui-surface-subtle relative block p-3 transition-all duration-200 hover:-translate-y-0.5 hover:border-sidebar-border hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none md:p-4"
-        :class="finalCardClass()"
+        class="group relative flex min-h-[132px] w-full overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-500/35 focus-visible:outline-none"
+        :class="dashboardCardClass()"
     >
-        <Link :href="href" class="block">
-            <span
-                v-if="isFavorite()"
-                class="absolute top-3 left-3 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-green-700 uppercase dark:bg-green-900 dark:text-green-200"
-            >
-                Favorite
-            </span>
-            <div
-                class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
-                :class="isFavorite() ? 'pt-5' : ''"
-            >
-                <div class="flex flex-col gap-2">
-                    <div
-                        v-if="isLive()"
-                        class="flex items-center gap-1.5 self-start rounded-full bg-red-100 px-2 py-0.5 dark:bg-red-900/50"
-                    >
-                        <span
-                            class="h-2 w-2 animate-pulse rounded-full bg-red-500"
-                        ></span>
-                        <span
-                            class="text-xs font-semibold text-red-600 dark:text-red-400"
-                            >LIVE</span
-                        >
-                    </div>
-                    <div
-                        v-else-if="isFinal()"
-                        class="flex items-center gap-1.5 self-start rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800"
-                    >
-                        <span
-                            class="text-xs font-semibold text-gray-600 dark:text-gray-400"
-                            >FINAL</span
-                        >
-                        <span
-                            v-if="finalResultLabel()"
-                            class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                            :class="finalResultBadgeClass()"
-                        >
-                            {{ finalResultLabel() }}
-                        </span>
-                    </div>
-
-                    <div
-                        class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4"
-                    >
-                        <div class="flex items-center gap-2">
-                            <img
-                                v-if="showAwayLogo()"
-                                :src="awayLogo()!"
-                                :alt="awayTeamLabel()"
-                                class="h-8 w-8 object-contain md:h-10 md:w-10"
-                                @error="handleAwayLogoError"
-                            />
-                            <span class="text-sm font-semibold md:text-base">{{
-                                awayTeamLabel()
-                            }}</span>
+        <div
+            class="absolute inset-y-0 left-0 w-1"
+            :class="dashboardRailClass()"
+        />
+        <div class="flex min-w-0 flex-1 flex-col gap-3 pl-1">
+            <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
+                <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2 text-sm">
+                            <div class="flex items-center gap-2 font-semibold">
+                                <img
+                                    v-if="showAwayLogo()"
+                                    :src="awayLogo()!"
+                                    :alt="awayTeamLabel()"
+                                    class="h-6 w-6 rounded-full object-contain"
+                                    @error="handleAwayLogoError"
+                                />
+                                <span
+                                    class="inline-flex items-center gap-1.5"
+                                    :class="teamScoreClass('away')"
+                                >
+                                    <span>{{ awayTeamLabel() }}</span>
+                                    <span
+                                        v-if="showGameScore()"
+                                        class="font-bold"
+                                    >
+                                        {{ awayScore() }}
+                                    </span>
+                                </span>
+                                <span class="text-muted-foreground">@</span>
+                                <img
+                                    v-if="showHomeLogo()"
+                                    :src="homeLogo()!"
+                                    :alt="homeTeamLabel()"
+                                    class="h-6 w-6 rounded-full object-contain"
+                                    @error="handleHomeLogoError"
+                                />
+                                <span
+                                    class="inline-flex items-center gap-1.5"
+                                    :class="teamScoreClass('home')"
+                                >
+                                    <span>{{ homeTeamLabel() }}</span>
+                                    <span
+                                        v-if="showGameScore()"
+                                        class="font-bold"
+                                    >
+                                        {{ homeScore() }}
+                                    </span>
+                                </span>
+                            </div>
                             <span
-                                v-if="isLive() || isFinal()"
-                                class="ml-auto text-base font-bold md:text-lg"
+                                v-if="gameDateTimeLabel()"
+                                class="inline-flex items-center gap-1 rounded-full border bg-background/75 px-2.5 py-1 text-xs text-muted-foreground"
                             >
-                                {{ awayScore() ?? '-' }}
+                                <Clock class="h-3.5 w-3.5" />
+                                {{ gameDateTimeLabel() }}
+                            </span>
+                            <span
+                                v-if="weekLabel()"
+                                :class="dashboardChipClass()"
+                            >
+                                {{ weekLabel() }}
+                            </span>
+                            <span :class="dashboardChipClass()">
+                                {{ statusBadgeLabel() }}
+                            </span>
+                            <span
+                                v-if="predictionFreshnessLabel()"
+                                :class="dashboardChipClass()"
+                            >
+                                {{ predictionFreshnessLabel() }}
                             </span>
                         </div>
-                        <span class="hidden text-muted-foreground sm:inline"
-                            >@</span
-                        >
-                        <div class="flex items-center gap-2">
-                            <img
-                                v-if="showHomeLogo()"
-                                :src="homeLogo()!"
-                                :alt="homeTeamLabel()"
-                                class="h-8 w-8 object-contain md:h-10 md:w-10"
-                                @error="handleHomeLogoError"
-                            />
-                            <span class="text-sm font-semibold md:text-base">{{
-                                homeTeamLabel()
-                            }}</span>
+
+                        <div class="mt-3 flex flex-wrap items-center gap-2">
                             <span
-                                v-if="isLive() || isFinal()"
-                                class="ml-auto text-base font-bold md:text-lg"
+                                class="rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300"
                             >
-                                {{ homeScore() ?? '-' }}
+                                {{ dashboardPrimaryPickLabel() }}
+                            </span>
+                            <span
+                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                :class="dashboardSignalClass()"
+                            >
+                                {{ dashboardSignalLabel() }}
+                            </span>
+                            <span
+                                v-if="totalPickPillLabel()"
+                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                :class="
+                                    totalPickPillStrong()
+                                        ? 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                        : 'border-muted bg-muted/40 text-muted-foreground'
+                                "
+                            >
+                                {{ totalPickPillLabel() }}
+                            </span>
+                            <span
+                                v-if="isFinal() && finalResultLabel()"
+                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                :class="finalResultBadgeClass()"
+                            >
+                                Projection {{ finalResultLabel() }}
+                            </span>
+                            <span
+                                v-if="isFinal() && totalResultLabel()"
+                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                :class="totalResultBadgeClass()"
+                            >
+                                O/U {{ totalResultLabel() }}
+                            </span>
+                            <span
+                                v-if="trustScoreLabel()"
+                                :class="dashboardChipClass()"
+                            >
+                                {{ trustScoreLabel() }}
                             </span>
                         </div>
                     </div>
 
-                    <div class="flex flex-wrap items-center gap-2 text-xs">
-                        <span
-                            v-if="weekLabel()"
-                            class="ui-chip text-sidebar-foreground"
-                        >
-                            {{ weekLabel() }}
-                        </span>
-                        <span
-                            v-if="gameDateTimeLabel()"
-                            class="ui-chip text-muted-foreground"
-                        >
-                            {{ gameDateTimeLabel() }}
-                        </span>
-                        <span
-                            v-if="predictionFreshnessLabel()"
-                            class="ui-chip text-muted-foreground"
-                        >
-                            {{ predictionFreshnessLabel() }}
-                        </span>
-                        <span
-                            v-if="isFinal() && winnerCorrect() !== null"
-                            class="rounded px-2 py-0.5 text-xs font-semibold"
-                            :class="finalResultBadgeClass()"
-                        >
-                            Winner Pick:
-                            {{ winnerCorrect() ? 'Correct' : 'Incorrect' }}
-                        </span>
-                        <span
-                            v-if="isFinal() && totalResultLabel()"
-                            class="rounded px-2 py-0.5 text-xs font-semibold"
-                            :class="totalResultBadgeClass()"
-                        >
-                            O/U: {{ totalResultLabel() }}
-                        </span>
-                    </div>
+                    <span
+                        class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
+                    >
+                        {{ dashboardSignalLabel() }}
+                    </span>
                 </div>
 
                 <div
-                    v-if="!isFinal()"
-                    class="grid grid-cols-1 gap-2 sm:grid-cols-1 md:min-w-[180px]"
+                    class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
                 >
-                    <div class="ui-surface-subtle p-2">
-                        <div class="mb-1 flex items-center gap-1.5">
-                            <Target class="h-3.5 w-3.5" />
-                            <span class="ui-chip text-foreground/80">
-                                {{
-                                    isMlbPrediction()
-                                        ? 'Model pick'
-                                        : 'Moneyline'
-                                }}:
-                                {{ moneylineTeamLabel() }}
-                            </span>
-                        </div>
-                        <div
-                            class="text-base font-bold"
-                            :class="[
-                                edgePercent() >= 0
-                                    ? 'text-emerald-600 dark:text-emerald-400'
-                                    : 'text-red-600 dark:text-red-400',
-                                finalResultClass(),
-                            ]"
-                        >
-                            {{ edgeSignalLabel() }}
-                        </div>
-                        <div
-                            class="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-sidebar-accent"
-                        >
-                            <div
-                                class="h-full rounded-full transition-all"
-                                :class="
-                                    edgePercent() >= 0
-                                        ? 'bg-emerald-500'
-                                        : 'bg-red-500'
-                                "
-                                :style="{ width: `${edgeBarWidth()}%` }"
-                            />
-                        </div>
-                        <div
-                            v-if="isMlbPrediction() && marketAwarePickLabel()"
-                            class="mt-1 text-xs text-muted-foreground"
-                        >
-                            Projection: {{ marketAwarePickLabel() }}
-                        </div>
+                    <div class="min-w-0 text-xs text-muted-foreground">
+                        {{ dashboardFooterContextLabel() }}
+                        <span v-if="predictedSpreadValue() !== null">
+                            · Spread
+                            {{ formatSignedNumber(predictedSpreadValue()!) }}
+                        </span>
+                        <span v-if="predictedTotalValue() !== null">
+                            · Total {{ predictedTotalValue()!.toFixed(1) }}
+                        </span>
+                        <span v-if="canonicalPregameEdgeLabel()">
+                            · {{ canonicalPregameEdgeLabel() }}
+                        </span>
                     </div>
+
+                    <span
+                        class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold"
+                        :class="dashboardActionTextClass()"
+                    >
+                        Open
+                        <ChevronRight
+                            class="h-3.5 w-3.5 transition group-hover:translate-x-0.5"
+                        />
+                    </span>
                 </div>
-            </div>
+            </Link>
 
             <div
-                v-if="hasDecisionSummary()"
-                class="mt-4 border-t border-sidebar-border/70 pt-4"
+                v-if="canSavePick && !isFinal()"
+                class="mt-4 border-t border-border/70 pt-4"
             >
-                <div class="mb-3 flex flex-wrap items-center gap-2">
-                    <div
-                        class="inline-flex items-center gap-1.5 rounded-full bg-sidebar-accent/70 px-2.5 py-1 text-xs font-semibold tracking-wide uppercase"
-                    >
-                        <ShieldCheck class="h-3.5 w-3.5" />
-                        Decision Summary
-                    </div>
-                    <span
-                        v-if="aiBetClassificationLabel()"
-                        class="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
-                    >
-                        AI {{ aiBetClassificationLabel() }}
-                    </span>
-                    <span
-                        v-if="betClassificationLabel()"
-                        class="rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium"
-                    >
-                        Model {{ betClassificationLabel() }}
-                    </span>
-                    <span
-                        v-if="canonicalRecommendationLabel()"
-                        class="rounded-full px-2 py-0.5 text-xs font-semibold"
-                        :class="canonicalRecommendationClass()"
-                    >
-                        {{ canonicalRecommendationLabel() }}
-                    </span>
-                    <span
-                        v-if="canonicalPregameEdgeLabel()"
-                        class="text-xs text-muted-foreground"
-                    >
-                        {{ canonicalPregameEdgeLabel() }}
-                    </span>
-                    <span
-                        v-if="trustScoreLabel()"
-                        class="rounded-full bg-emerald-100/80 px-2 py-0.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                    >
-                        {{ trustScoreLabel() }}
-                    </span>
-                    <span
-                        v-if="aiConfidenceLabel()"
-                        class="text-xs text-muted-foreground"
-                    >
-                        {{ aiConfidenceLabel() }}
-                    </span>
-                </div>
-
-                <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-                    <div
-                        v-if="hasMarketAwareProjection()"
-                        class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"
-                    >
-                        <div class="mb-2 flex flex-wrap items-center gap-2">
-                            <div
-                                class="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase"
-                            >
-                                <Target class="h-3.5 w-3.5" />
-                                Market-Aware Projection
-                            </div>
-                            <span
-                                class="rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-semibold text-muted-foreground"
-                            >
-                                Tracking only
-                            </span>
+                <div class="flex items-center justify-between gap-2">
+                    <div>
+                        <div
+                            class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                        >
+                            Track This Pick
                         </div>
                         <div
-                            class="grid grid-cols-3 gap-2 text-center text-xs"
+                            v-if="isLoadingTracking"
+                            class="mt-1 text-xs text-muted-foreground"
                         >
-                            <div class="rounded-md bg-sidebar-accent/60 p-2">
-                                <div class="text-muted-foreground">Model</div>
-                                <div class="mt-1 font-semibold text-foreground">
-                                    {{
-                                        projectionProbabilityLabel(
-                                            marketAwareProjection()
-                                                ?.model_probability,
-                                        )
-                                    }}
-                                </div>
-                            </div>
-                            <div class="rounded-md bg-sidebar-accent/60 p-2">
-                                <div class="text-muted-foreground">Market</div>
-                                <div class="mt-1 font-semibold text-foreground">
-                                    {{
-                                        projectionProbabilityLabel(
-                                            marketAwareProjection()
-                                                ?.market_probability,
-                                        )
-                                    }}
-                                </div>
-                            </div>
-                            <div class="rounded-md bg-sidebar-accent/60 p-2">
-                                <div class="text-muted-foreground">Blend</div>
-                                <div class="mt-1 font-semibold text-foreground">
-                                    {{
-                                        projectionProbabilityLabel(
-                                            marketAwareProjection()
-                                                ?.blended_probability,
-                                        )
-                                    }}
-                                </div>
-                            </div>
-                        </div>
-                        <div
-                            class="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
-                        >
-                            <span>{{ marketAwareMetaLabel() }}</span>
-                            <span v-if="marketAwarePickLabel()">
-                                {{ marketAwarePickLabel() }}
-                            </span>
-                        </div>
-                        <p
-                            v-if="marketAwareProjection()?.reason"
-                            class="mt-2 text-xs text-muted-foreground"
-                        >
-                            {{ marketAwareProjection()?.reason }}
-                        </p>
-                    </div>
-
-                    <div
-                        v-if="hasAiAnalysis() || hasPredictionAnalysis()"
-                        class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"
-                    >
-                        <div
-                            v-if="hasAiAnalysis()"
-                            class="text-sm text-foreground"
-                        >
-                            <div
-                                class="mb-1 flex flex-wrap items-center gap-2 text-xs"
-                            >
-                                <Sparkles class="h-3.5 w-3.5" />
-                                <span class="font-semibold">AI context</span>
-                                <span
-                                    v-if="aiRecommendationLabel()"
-                                    class="rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-100"
-                                >
-                                    {{ aiRecommendationLabel() }}
-                                </span>
-                                <span class="text-muted-foreground">
-                                    {{ aiAnalysis()?.as_of_date }}
-                                </span>
-                            </div>
-                            <p class="text-sm text-muted-foreground">
-                                {{ aiAnalysis()?.summary }}
-                            </p>
-                        </div>
-
-                        <div
-                            v-if="bestValidatedSignal()"
-                            class="mt-3 rounded-md border border-emerald-200/70 bg-emerald-50/70 px-3 py-2 text-xs text-emerald-950 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-100"
-                        >
-                            <div class="flex flex-wrap items-center gap-2">
-                                <span
-                                    class="inline-flex items-center gap-1 font-semibold"
-                                >
-                                    <Target class="h-3.5 w-3.5" />
-                                    {{ bestValidatedSignal()?.label }}
-                                </span>
-                                <span
-                                    v-if="validatedSignalRateLabel()"
-                                    class="rounded-full bg-emerald-600 px-2 py-0.5 font-semibold text-white dark:bg-emerald-500 dark:text-emerald-950"
-                                >
-                                    {{ validatedSignalRateLabel() }}
-                                </span>
-                                <span
-                                    v-if="validatedSignalMetaLabel()"
-                                    class="text-emerald-800 dark:text-emerald-200"
-                                >
-                                    {{ validatedSignalMetaLabel() }}
-                                </span>
-                            </div>
-                            <p
-                                v-if="bestValidatedSignal()?.note"
-                                class="mt-1 text-emerald-800 dark:text-emerald-200"
-                            >
-                                {{ bestValidatedSignal()?.note }}
-                            </p>
-                        </div>
-
-                        <div class="mt-3 flex flex-wrap gap-1.5 text-xs">
-                            <span
-                                v-if="modelSignalLabel()"
-                                class="rounded-full bg-sidebar-accent px-2 py-1 font-medium"
-                            >
-                                {{ modelSignalLabel() }}
-                            </span>
-                            <span
-                                v-for="code in topReasonCodes()"
-                                :key="`reason-${code}`"
-                                class="rounded-full border border-sidebar-border/80 px-2 py-1 text-muted-foreground"
-                            >
-                                {{ formatAnalysisToken(code) }}
-                            </span>
-                            <span
-                                v-for="factor in topAiKeyFactors()"
-                                :key="`ai-factor-${factor}`"
-                                class="rounded-full border border-sky-200/70 px-2 py-1 text-sky-800 dark:border-sky-900/50 dark:text-sky-100"
-                            >
-                                {{ factor }}
-                            </span>
-                            <span
-                                v-for="(flag, index) in [
-                                    ...topRiskFlags(),
-                                    ...topAiRiskFlags(),
-                                ]"
-                                :key="`risk-${index}-${flag}`"
-                                class="rounded-full bg-amber-100/80 px-2 py-1 font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200"
-                            >
-                                {{ formatAnalysisToken(flag) }}
-                            </span>
+                            Loading tracked picks...
                         </div>
                     </div>
-
-                    <div
-                        v-if="hasValueSignals()"
-                        class="rounded-md border border-sidebar-border/80 bg-sidebar/30 p-3"
-                    >
-                        <div class="mb-2 flex items-center gap-2">
-                            <div
-                                class="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase"
+                    <DropdownMenu>
+                        <DropdownMenuTrigger :as-child="true">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                class="gap-2"
+                                @click.stop
                             >
-                                <Sparkles class="h-3.5 w-3.5" />
-                                {{
-                                    hasLiveData()
-                                        ? 'Live Signals'
-                                        : 'Market Value'
-                                }}
-                            </div>
-                            <div
-                                v-if="
-                                    !hasLiveData() &&
-                                    prediction.betting_value?.length
-                                "
-                                class="text-xs text-muted-foreground"
-                            >
-                                Vegas
-                            </div>
-                        </div>
-                        <div
-                            v-if="
-                                !hasLiveData() &&
-                                (!prediction.betting_value ||
-                                    prediction.betting_value.length === 0)
-                            "
-                            class="rounded-md border border-dashed border-sidebar-border/80 bg-sidebar/30 p-3 text-sm text-muted-foreground"
-                        >
-                            No qualifying value signal
-                            <span
-                                v-if="bettingValueDebug()"
-                                class="ml-2 inline-flex rounded-full bg-sidebar-accent px-2 py-0.5 text-xs font-medium text-foreground/80"
-                            >
-                                {{ bettingValueDebugLabel() }}
-                            </span>
-                        </div>
-                        <BettingAnalysisCard
-                            v-else
-                            :betting-value="prediction.betting_value"
-                            :live-prediction="livePredictionData()"
-                            :winner-correct="isFinal() ? winnerCorrect() : null"
-                            :actual-total="
-                                isFinal() ? (prediction.actual_total ?? null) : null
-                            "
-                            :compact="true"
-                        />
-                    </div>
-                </div>
-            </div>
-        </Link>
-
-        <div
-            v-if="canSavePick && !isFinal()"
-            class="mt-4 border-t border-sidebar-border/70 pt-4"
-        >
-            <div class="flex items-center justify-between gap-2">
-                <div>
-                    <div
-                        class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                    >
-                        Track This Pick
-                    </div>
-                    <div
-                        v-if="isLoadingTracking"
-                        class="mt-1 text-xs text-muted-foreground"
-                    >
-                        Loading tracked picks...
-                    </div>
-                </div>
-                <DropdownMenu>
-                    <DropdownMenuTrigger :as-child="true">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            class="gap-2"
+                                Save Pick
+                                <ChevronDown class="h-4 w-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent
+                            align="end"
+                            class="w-56"
                             @click.stop
                         >
-                            Save Pick
-                            <ChevronDown class="h-4 w-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" class="w-56" @click.stop>
-                        <DropdownMenuLabel>Choose a side</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                            v-for="option in saveOptions()"
-                            :key="`${option.betType}-${option.selectionSide}`"
-                            @select.prevent="openSaveDialog(option)"
-                        >
-                            <div
-                                class="flex w-full items-start justify-between gap-3"
+                            <DropdownMenuLabel>Choose a side</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                v-for="option in saveOptions()"
+                                :key="`${option.betType}-${option.selectionSide}`"
+                                @select.prevent="openSaveDialog(option)"
                             >
-                                <div class="min-w-0">
-                                    <div
-                                        class="truncate font-medium text-foreground"
-                                    >
-                                        {{ option.title }}
-                                    </div>
-                                    <div
-                                        v-if="consensusForOption(option)"
-                                        class="truncate text-xs text-muted-foreground"
-                                    >
-                                        {{
-                                            consensusForOption(option)?.summary
-                                        }}
-                                    </div>
-                                </div>
-                                <span
-                                    v-if="trackedBetForOption(option)"
-                                    class="shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                <div
+                                    class="flex w-full items-start justify-between gap-3"
                                 >
-                                    Tracked
-                                </span>
-                            </div>
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                                    <div class="min-w-0">
+                                        <div
+                                            class="truncate font-medium text-foreground"
+                                        >
+                                            {{ option.title }}
+                                        </div>
+                                        <div
+                                            v-if="consensusForOption(option)"
+                                            class="truncate text-xs text-muted-foreground"
+                                        >
+                                            {{
+                                                consensusForOption(option)
+                                                    ?.summary
+                                            }}
+                                        </div>
+                                    </div>
+                                    <span
+                                        v-if="trackedBetForOption(option)"
+                                        class="shrink-0 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                    >
+                                        Tracked
+                                    </span>
+                                </div>
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </div>
             </div>
         </div>
 

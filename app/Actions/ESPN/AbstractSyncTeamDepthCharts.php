@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -24,8 +25,20 @@ abstract class AbstractSyncTeamDepthCharts
             return 0;
         }
 
+        $observedAt = now();
         $payload = $this->espnService->getTeamDepthCharts($teamEspnId, $season);
-        $entries = $this->normalizeEntries($payload, (int) $team->getKey(), $season);
+        $entries = $this->normalizeEntries($payload, (int) $team->getKey(), $season, $observedAt);
+
+        if (is_array($payload)) {
+            $this->persistHistoricalSnapshot(
+                $team,
+                $teamEspnId,
+                $season,
+                $payload,
+                $entries,
+                $observedAt
+            );
+        }
 
         $table = $this->depthChartTable();
         DB::table($table)
@@ -55,8 +68,12 @@ abstract class AbstractSyncTeamDepthCharts
         return $total;
     }
 
-    protected function normalizeEntries(?array $payload, int $teamId, int $season): array
-    {
+    protected function normalizeEntries(
+        ?array $payload,
+        int $teamId,
+        int $season,
+        ?CarbonInterface $observedAt = null
+    ): array {
         $charts = is_array($payload['items'] ?? null) ? $payload['items'] : [];
         if ($charts === []) {
             return [];
@@ -64,7 +81,7 @@ abstract class AbstractSyncTeamDepthCharts
 
         $playerMap = $this->playerIdMapByEspnId($teamId);
         $rows = [];
-        $now = now();
+        $now = $observedAt ?? now();
 
         foreach ($charts as $chart) {
             if (! is_array($chart)) {
@@ -126,6 +143,18 @@ abstract class AbstractSyncTeamDepthCharts
 
         return $rows;
     }
+
+    /**
+     * @param  list<array<string, mixed>>  $entries
+     */
+    protected function persistHistoricalSnapshot(
+        Model $team,
+        string $teamEspnId,
+        int $season,
+        ?array $payload,
+        array $entries,
+        CarbonInterface $observedAt
+    ): void {}
 
     protected function extractAthleteEspnId(array $athleteEntry): ?string
     {

@@ -1,0 +1,120 @@
+schema_version: nfl-pregame-ml-v1
+
+dataset:
+  time_column: game_start_at
+  season_column: season
+  id_column: game_id
+  reject_undeclared_feature_columns: true
+  ignored_feature_columns:
+    - feature_bookmaker_home_line
+    - feature_game_date
+    - feature_season
+    - feature_version
+  required_provenance_columns:
+    - snapshot_run_id
+    - model_run_id
+    - config_hash
+    - code_version
+    - game_id
+    - season
+    - game_start_at
+    - features_available_at
+    - pregame_safe
+    - availability_status
+    - feature_hash
+    - target_hash
+
+features:
+  feature_home_elo:
+    type: float
+    nullable: false
+  feature_away_elo:
+    type: float
+    nullable: false
+  feature_elo_diff:
+    type: float
+    nullable: false
+  feature_adjusted_home_elo:
+    type: float
+    nullable: false
+  feature_home_field_advantage:
+    type: float
+    nullable: false
+  feature_week:
+    type: float
+    nullable: false
+  feature_season_type:
+    type: float
+    nullable: false
+  feature_neutral_site:
+    type: float
+    nullable: false
+  feature_model_predicted_spread:
+    type: float
+    nullable: true
+  feature_model_predicted_total:
+    type: float
+    nullable: true
+  feature_model_win_probability:
+    type: float
+    nullable: true
+  feature_confidence_score:
+    type: float
+    nullable: true
+  feature_market_home_spread:
+    type: float
+    nullable: true
+  feature_market_total:
+    type: float
+    nullable: true
+
+targets:
+  home_win: target_home_win
+  home_margin: target_home_margin
+  total_points: target_total_points
+
+training:
+  seed: 20260726
+  minimum_training_seasons: 5
+  training_seasons_window: 4
+  calibration_fit_fraction: 0.60
+  final_test_seasons: 1
+  logistic_regression:
+    C: 1.0
+    max_iter: 2000
+  blend:
+    max_challenger_weight: 0.50
+  xgboost_classifier:
+    n_estimators: 300
+    max_depth: 3
+    learning_rate: 0.035
+    subsample: 0.85
+    colsample_bytree: 0.85
+    reg_lambda: 2.0
+    min_child_weight: 4.0
+  xgboost_regressor:
+    n_estimators: 350
+    max_depth: 3
+    learning_rate: 0.035
+    subsample: 0.85
+    colsample_bytree: 0.85
+    reg_lambda: 2.0
+    min_child_weight: 4.0
+  tuning:
+    enabled: true
+    trials_per_model: 12
+    timeout_seconds_per_model: 600
+    validation_seasons: 1
+    n_jobs: 1
+    search_space:
+      n_estimators: [150, 450]
+      max_depth: [2, 5]
+      learning_rate: [0.02, 0.10]
+      subsample: [0.70, 1.0]
+      colsample_bytree: [0.70, 1.0]
+      min_child_weight: [1.0, 10.0]
+      reg_lambda: [0.5, 8.0]
+      reg_alpha: [0.0001, 1.0]
+  explanations:
+    enabled: true
+    max_rows: 256

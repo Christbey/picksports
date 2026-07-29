@@ -6,17 +6,26 @@ use App\Models\MLB\DepthChartEntry as MlbDepthChartEntry;
 use App\Models\MLB\Player as MlbPlayer;
 use App\Models\NBA\DepthChartEntry as NbaDepthChartEntry;
 use App\Models\NFL\DepthChartEntry as NflDepthChartEntry;
+use App\Models\NFL\DepthChartSnapshot as NflDepthChartSnapshot;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class DepthChartImpactService
 {
-    public function injuryMultiplier(string $sport, int $teamId, int $playerId, ?int $season = null): float
+    public function injuryMultiplier(
+        string $sport,
+        int $teamId,
+        int $playerId,
+        ?int $season = null,
+        CarbonInterface|string|null $asOf = null,
+    ): float
     {
         if ($teamId <= 0 || $playerId <= 0) {
             return 1.0;
         }
 
-        $entry = $this->findEntryForPlayer($sport, $teamId, $playerId, $season);
+        $entry = $this->findEntryForPlayer($sport, $teamId, $playerId, $season, $asOf);
         if (! $entry) {
             return 1.0;
         }
@@ -56,8 +65,39 @@ class DepthChartImpactService
             ->value('id');
     }
 
-    protected function findEntryForPlayer(string $sport, int $teamId, int $playerId, ?int $season = null): ?Model
+    protected function findEntryForPlayer(
+        string $sport,
+        int $teamId,
+        int $playerId,
+        ?int $season = null,
+        CarbonInterface|string|null $asOf = null,
+    ): ?Model
     {
+        $asOfTimestamp = is_string($asOf) ? Carbon::parse($asOf) : $asOf;
+
+        if ($sport === 'nfl' && $asOfTimestamp !== null) {
+            $snapshot = NflDepthChartSnapshot::query()
+                ->with(['entries' => fn ($query) => $query->where('player_id', $playerId)])
+                ->where('team_id', $teamId)
+                ->when($season !== null, fn ($query) => $query->where('season', '<=', $season))
+                ->where('observed_at', '<=', $asOfTimestamp)
+                ->where(function ($query) use ($asOfTimestamp): void {
+                    $query->whereNull('source_updated_at')
+                        ->orWhere('source_updated_at', '<=', $asOfTimestamp);
+                })
+                ->latest('observed_at')
+                ->latest('id')
+                ->first();
+
+            if ($snapshot !== null) {
+                return $snapshot->entries
+                    ->sortByDesc('is_starter')
+                    ->sortBy('depth_rank')
+                    ->sortBy('slot_order')
+                    ->first();
+            }
+        }
+
         $modelClass = $this->depthChartModelClass($sport);
         if ($modelClass === null) {
             return null;
@@ -67,6 +107,9 @@ class DepthChartImpactService
             ->where('team_id', $teamId)
             ->where('player_id', $playerId)
             ->when($season !== null, fn ($builder) => $builder->where('season', '<=', $season))
+            ->when($sport === 'nfl' && $asOfTimestamp !== null, fn ($builder) => $builder
+                ->whereNotNull('source_updated_at')
+                ->where('source_updated_at', '<=', $asOfTimestamp))
             ->orderByDesc('season')
             ->orderByDesc('is_starter')
             ->orderBy('depth_rank')

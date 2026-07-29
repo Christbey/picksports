@@ -68,7 +68,11 @@ const boardFilters = computed(() => [
         count: countFilter('spread'),
     },
     { key: 'total' as const, label: 'Totals', count: countFilter('total') },
-    { key: 'winner' as const, label: 'Winner', count: countFilter('winner') },
+    {
+        key: 'winner' as const,
+        label: 'Moneyline',
+        count: countFilter('winner'),
+    },
     { key: 'finals' as const, label: 'Finals', count: countFilter('finals') },
 ]);
 

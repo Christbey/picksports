@@ -12,6 +12,7 @@ use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
 use App\Services\NBA\WinProbabilityCalibrationInferenceService;
+use App\Support\Odds\MarketSpread;
 use Illuminate\Database\Eloquent\Model;
 
 class GeneratePrediction extends AbstractPredictionGenerator
@@ -383,11 +384,23 @@ class GeneratePrediction extends AbstractPredictionGenerator
                     'model_version' => $this->modelVersion(),
                     'feature_version' => $this->featureVersion(),
                     'blend_version' => $this->blendVersion(),
-                    'features' => $this->metadata,
+                    'run_type' => 'pregame_prediction',
+                    'features' => [
+                        'home_elo' => $homeElo,
+                        'away_elo' => $awayElo,
+                        'home_off_eff' => $homeMetrics?->offensive_efficiency,
+                        'home_def_eff' => $homeMetrics?->defensive_efficiency,
+                        'away_off_eff' => $awayMetrics?->offensive_efficiency,
+                        'away_def_eff' => $awayMetrics?->defensive_efficiency,
+                        ...$this->metadata,
+                    ],
                     'outputs' => [
                         'baseline_predicted_spread' => round($this->metadata['baseline_model_spread'] ?? $predictedSpread, 3),
                         'baseline_predicted_total' => round($this->totalMetadata['legacy_total'] ?? $predictedTotal, 3),
-                        'market_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'bookmaker_home_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'market_spread' => is_numeric($this->metadata['vegas_spread'] ?? null)
+                            ? MarketSpread::bookmakerHomeLineToHomeMargin((float) $this->metadata['vegas_spread'])
+                            : null,
                         'market_total' => $this->metadata['market_total'] ?? null,
                         'blended_predicted_spread' => $predictedSpread,
                         'blended_predicted_total' => $predictedTotal,
@@ -400,10 +413,19 @@ class GeneratePrediction extends AbstractPredictionGenerator
                         'active_win_probability_source' => $calibration['active_source'] ?? 'baseline',
                     ],
                     'market_context' => [
-                        'vegas_spread' => $this->metadata['vegas_spread'] ?? null,
+                        'bookmaker_home_line' => $this->metadata['vegas_spread'] ?? null,
+                        'market_home_margin' => is_numeric($this->metadata['vegas_spread'] ?? null)
+                            ? MarketSpread::bookmakerHomeLineToHomeMargin((float) $this->metadata['vegas_spread'])
+                            : null,
+                        'bookmaker_spread_convention' => MarketSpread::BOOKMAKER_HOME_LINE_CONVENTION,
+                        'spread_convention' => MarketSpread::HOME_MARGIN_CONVENTION,
                         'market_total' => $this->metadata['market_total'] ?? null,
                         ...($this->metadata['odds_market_availability'] ?? []),
                     ],
+                    'source_timestamps' => array_filter([
+                        'home_metrics_calculated_at' => $homeMetrics?->calculation_date?->toDateString(),
+                        'away_metrics_calculated_at' => $awayMetrics?->calculation_date?->toDateString(),
+                    ]),
                     'model_metadata' => [
                         'model' => 'nba_ensemble',
                         'true_epa' => $this->trueEpaMetadata,

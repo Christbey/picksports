@@ -3,9 +3,9 @@
 namespace App\Services\OddsApi;
 
 use App\Models\GameOddsSnapshot;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
-use Carbon\CarbonInterface;
 
 class GameOddsSnapshotRecorder
 {
@@ -20,8 +20,7 @@ class GameOddsSnapshotRecorder
         array $oddsData,
         ?Carbon $capturedAt = null,
         string $source = 'odds_api'
-    ): ?GameOddsSnapshot
-    {
+    ): ?GameOddsSnapshot {
         $capturedAt ??= now();
         $payloadHash = hash('sha256', json_encode($oddsData));
 
@@ -35,7 +34,7 @@ class GameOddsSnapshotRecorder
             return null;
         }
 
-        return GameOddsSnapshot::query()->create([
+        $snapshot = GameOddsSnapshot::query()->create([
             'sport' => $sport,
             'game_table' => $game->getTable(),
             'game_id' => (int) $game->getKey(),
@@ -49,6 +48,10 @@ class GameOddsSnapshotRecorder
             'odds_data' => $oddsData,
             'market_context' => is_array($oddsData['market_context'] ?? null) ? $oddsData['market_context'] : null,
         ]);
+
+        app(MarketQuoteRecorder::class)->record($snapshot, $oddsData);
+
+        return $snapshot;
     }
 
     private function commenceTime(mixed $value): ?Carbon

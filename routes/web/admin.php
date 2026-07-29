@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Admin\HealthcheckController as AdminHealthcheckController;
 use App\Http\Controllers\Admin\ImpersonationController as AdminImpersonationController;
+use App\Http\Controllers\Admin\NflModelMonitoringController as AdminNflModelMonitoringController;
 use App\Http\Controllers\Admin\PermissionController as AdminPermissionController;
 use App\Http\Controllers\Admin\PlayerPropCardExportController as AdminPlayerPropCardExportController;
 use App\Http\Controllers\Admin\SubscriptionController as AdminSubscriptionController;
@@ -25,6 +26,7 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
         ['get', '/permissions', [AdminPermissionController::class, 'index'], 'permissions'],
         ['patch', '/permissions/tiers/{tier}', [AdminPermissionController::class, 'updateTierPermissions'], 'permissions.tiers.update'],
         ['get', '/healthchecks', [AdminHealthcheckController::class, 'index'], 'healthchecks'],
+        ['get', '/nfl-model-monitoring', AdminNflModelMonitoringController::class, 'nfl-model-monitoring'],
         ['post', '/healthchecks/run', [AdminHealthcheckController::class, 'run'], 'healthchecks.run'],
         ['post', '/healthchecks/sync', [AdminHealthcheckController::class, 'sync'], 'healthchecks.sync'],
     ] as [$method, $uri, $action, $name]) {

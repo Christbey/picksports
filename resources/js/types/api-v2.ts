@@ -191,6 +191,7 @@ export type ApiV2Prediction = {
     } | null;
     recommendation?: PredictionRecommendation | null;
     public_recommendation?: ApiV2Record | null;
+    value_signal?: ApiV2Record | null;
     market_aware_projection?: MarketAwareProjection | null;
     market_summary?: ApiV2Record;
     pro_signal_layer?: ApiV2Record | null;

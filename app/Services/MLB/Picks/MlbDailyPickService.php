@@ -9,6 +9,7 @@ use App\Services\Sports\SportsDateWindowService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class MlbDailyPickService
 {
@@ -35,6 +36,8 @@ class MlbDailyPickService
         $window = $this->dateWindows->forDate($date);
         $marketSet = $this->marketSet($markets);
         $season ??= (int) config('mlb.season.default');
+        $generationRunId = (string) Str::uuid();
+        $generatedAt = now();
         $games = Game::query()
             ->with(['homeTeam', 'awayTeam', 'prediction', 'playerProps'])
             ->where('season', $season)
@@ -71,7 +74,7 @@ class MlbDailyPickService
             }
 
             foreach ($candidateData as $candidate) {
-                $payloads->push($this->payload($candidate));
+                $payloads->push($this->payload($candidate, $generationRunId, $generatedAt));
             }
         }
 
@@ -79,7 +82,8 @@ class MlbDailyPickService
             PickCandidate::query()
                 ->whereIn('game_id', $games->pluck('id')->all())
                 ->where('season', $season)
-                ->delete();
+                ->whereNull('superseded_at')
+                ->update(['superseded_at' => $generatedAt]);
         }
 
         $candidates = $dryRun
@@ -104,14 +108,29 @@ class MlbDailyPickService
     /**
      * @return array<string,mixed>
      */
-    private function payload(MlbPickCandidateData $candidate): array
-    {
+    private function payload(
+        MlbPickCandidateData $candidate,
+        string $generationRunId,
+        CarbonInterface $generatedAt,
+    ): array {
         $scored = $this->scorer->score($candidate);
         $promotion = $this->promotionGate->apply($scored['internal_label']);
         $payload = $candidate->toPayload();
 
         return [
             ...$payload,
+            'generation_run_id' => $generationRunId,
+            'decision_hash' => hash('sha256', json_encode([
+                $generationRunId,
+                $payload['game_id'] ?? null,
+                $payload['market_type'] ?? null,
+                $payload['market_key'] ?? null,
+                $payload['side'] ?? null,
+                $payload['line'] ?? null,
+                $payload['price'] ?? null,
+                $payload['book'] ?? null,
+                $payload['player_id'] ?? null,
+            ])),
             'score' => $scored['score'],
             'confidence' => $scored['confidence'],
             'status' => $promotion['status'],
@@ -125,7 +144,7 @@ class MlbDailyPickService
                 ...$scored['feature_snapshot'],
                 'promotion_blocked_reasons' => $promotion['blocked_reasons'],
             ],
-            'generated_at' => now(),
+            'generated_at' => $generatedAt,
         ];
     }
 

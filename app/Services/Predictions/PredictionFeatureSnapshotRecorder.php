@@ -3,6 +3,8 @@
 namespace App\Services\Predictions;
 
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\ML\ShadowModelOutputRecorder;
+use App\Support\Odds\MarketSpread;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
@@ -12,7 +14,7 @@ class PredictionFeatureSnapshotRecorder
      * @param  array<string, mixed>  $predictionData
      * @param  array<string, mixed>  $snapshot
      */
-    public function record(Model $prediction, Model $game, string $sport, array $predictionData, array $snapshot = []): void
+    public function record(Model $prediction, Model $game, string $sport, array $predictionData, array $snapshot = []): PredictionFeatureSnapshot
     {
         $modelVersion = (string) ($snapshot['model_version'] ?? $predictionData['model_version'] ?? 'rules-v1');
         $featureVersion = (string) ($snapshot['feature_version'] ?? $predictionData['feature_version'] ?? 'core-v1');
@@ -23,13 +25,26 @@ class PredictionFeatureSnapshotRecorder
         $marketContext = $snapshot['market_context'] ?? $this->extractMarketContext($predictionData);
         $modelMetadata = $snapshot['model_metadata']
             ?? (is_array($predictionData['model_metadata'] ?? null) ? $predictionData['model_metadata'] : null);
+        $generatedAt = $snapshot['generated_at'] ?? now();
+        $modelRun = app(ModelRunRecorder::class)->forPrediction(
+            $sport,
+            $modelVersion,
+            $featureVersion,
+            $blendVersion,
+            [
+                'run_type' => (string) ($snapshot['run_type'] ?? 'prediction'),
+                'parameters' => $snapshot['run_parameters'] ?? null,
+            ],
+        );
+        $provenance = app(SnapshotProvenanceResolver::class)->resolve($game, $snapshot, $generatedAt);
 
-        PredictionFeatureSnapshot::query()->create([
+        $featureSnapshot = PredictionFeatureSnapshot::query()->create([
             'sport' => $sport,
             'prediction_table' => $prediction->getTable(),
             'prediction_id' => (int) $prediction->getKey(),
             'game_id' => (int) ($prediction->game_id ?? $game->getKey()),
             'snapshot_run_id' => (string) Str::uuid(),
+            'model_run_id' => $modelRun->id,
             'model_version' => $modelVersion,
             'feature_version' => $featureVersion,
             'blend_version' => $blendVersion,
@@ -42,8 +57,13 @@ class PredictionFeatureSnapshotRecorder
                 'outputs' => $outputs,
                 'market_context' => $marketContext,
             ])),
-            'generated_at' => now(),
+            'generated_at' => $generatedAt,
+            ...$provenance,
         ]);
+
+        app(ShadowModelOutputRecorder::class)->record($featureSnapshot);
+
+        return $featureSnapshot;
     }
 
     /**
@@ -84,11 +104,18 @@ class PredictionFeatureSnapshotRecorder
     {
         $predictedSpread = $this->nullableFloat($predictionData['predicted_spread'] ?? null);
         $predictedTotal = $this->nullableFloat($predictionData['predicted_total'] ?? null);
+        $bookmakerHomeSpread = $this->nullableFloat($predictionData['vegas_spread'] ?? null);
+        $marketSpread = $this->nullableFloat($predictionData['market_spread'] ?? null);
+
+        if ($marketSpread === null && $bookmakerHomeSpread !== null) {
+            $marketSpread = MarketSpread::bookmakerHomeLineToHomeMargin($bookmakerHomeSpread);
+        }
 
         return [
             'baseline_predicted_spread' => $this->nullableFloat($predictionData['baseline_predicted_spread'] ?? $predictedSpread),
             'baseline_predicted_total' => $this->nullableFloat($predictionData['baseline_predicted_total'] ?? $predictedTotal),
-            'market_spread' => $this->nullableFloat($predictionData['market_spread'] ?? $predictionData['vegas_spread'] ?? null),
+            'bookmaker_home_spread' => $bookmakerHomeSpread,
+            'market_spread' => $marketSpread,
             'market_total' => $this->nullableFloat($predictionData['market_total'] ?? null),
             'blended_predicted_spread' => $this->nullableFloat($predictionData['blended_predicted_spread'] ?? $predictedSpread),
             'blended_predicted_total' => $this->nullableFloat($predictionData['blended_predicted_total'] ?? $predictedTotal),

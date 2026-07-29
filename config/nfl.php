@@ -175,6 +175,18 @@ return [
     */
 
     'predictions' => [
+        'model_version' => env('NFL_MODEL_VERSION', 'nfl-historical-elo-v2'),
+        'feature_version' => env('NFL_FEATURE_VERSION', 'nfl-pregame-ml-v3'),
+        'blend_version' => env('NFL_BLEND_VERSION', 'nfl-multi-signal-v1'),
+        'full_historical_shadow' => [
+            'enabled' => env('NFL_FULL_HISTORICAL_SHADOW_ENABLED', true),
+            'profile' => env('NFL_FULL_HISTORICAL_SHADOW_PROFILE', 'full-historical'),
+            'artifact_path' => env(
+                'NFL_FULL_HISTORICAL_SHADOW_ARTIFACT_PATH',
+                'storage/app/ml/models/nfl_full_historical_profile.json'
+            ),
+        ],
+
         /**
          * ELO points per predicted point spread
          * Calibrated to minimize spread prediction error
@@ -388,6 +400,9 @@ return [
             'enabled' => env('NFL_PLAYER_POSITION_GRADES_ENABLED', true),
             'min_coverage_rate' => env('NFL_PLAYER_POSITION_GRADES_MIN_COVERAGE', 0.25),
             'edge_threshold' => env('NFL_PLAYER_POSITION_GRADES_EDGE_THRESHOLD', 3.0),
+            'doubtful_availability' => env('NFL_PLAYER_POSITION_GRADES_DOUBTFUL_AVAILABILITY', 0.25),
+            'questionable_availability' => env('NFL_PLAYER_POSITION_GRADES_QUESTIONABLE_AVAILABILITY', 0.60),
+            'probable_availability' => env('NFL_PLAYER_POSITION_GRADES_PROBABLE_AVAILABILITY', 0.90),
         ],
 
         'line_matchup' => [
@@ -980,6 +995,45 @@ return [
             'max_spread_adjustment' => env('NFL_ADAPTIVE_POINT_CALIBRATION_MAX_SPREAD_ADJUSTMENT', 2.0),
             'max_total_adjustment' => env('NFL_ADAPTIVE_POINT_CALIBRATION_MAX_TOTAL_ADJUSTMENT', 2.5),
         ],
+
+        'automated_calibration_tweaks' => [
+            'enabled' => env('NFL_AUTOMATED_CALIBRATION_TWEAKS_ENABLED', true),
+            'early_season' => [
+                'enabled' => env('NFL_EARLY_SEASON_CALIBRATION_ENABLED', true),
+                'through_week' => env('NFL_EARLY_SEASON_CALIBRATION_THROUGH_WEEK', 4),
+                'probability_shrink' => env('NFL_EARLY_SEASON_PROBABILITY_SHRINK', 0.07),
+                'trust_penalty' => env('NFL_EARLY_SEASON_TRUST_PENALTY', 5.0),
+            ],
+            'tight_spread' => [
+                'enabled' => env('NFL_TIGHT_SPREAD_TIER_CAP_ENABLED', true),
+                'threshold' => env('NFL_TIGHT_SPREAD_THRESHOLD', 3.0),
+                'trust_cap' => env('NFL_TIGHT_SPREAD_TRUST_CAP', 74.9),
+                'trust_exception' => env('NFL_TIGHT_SPREAD_TRUST_EXCEPTION', 85.0),
+            ],
+            'big_spread' => [
+                'enabled' => env('NFL_BIG_SPREAD_TRUST_BOOST_ENABLED', true),
+                'threshold' => env('NFL_BIG_SPREAD_THRESHOLD', 7.0),
+                'trust_boost' => env('NFL_BIG_SPREAD_TRUST_BOOST', 4.0),
+            ],
+            'key_number' => [
+                'edge_7_trust_boost' => env('NFL_KEY_NUMBER_7_TRUST_BOOST', 3.0),
+                'edge_10_trust_boost' => env('NFL_KEY_NUMBER_10_TRUST_BOOST', 6.0),
+            ],
+            'high_total' => [
+                'enabled' => env('NFL_HIGH_TOTAL_BUCKET_ADJUSTMENT_ENABLED', true),
+                'threshold' => env('NFL_TOTAL_HIGH_BUCKET_THRESHOLD', 47.0),
+                'adjustment' => env('NFL_HIGH_TOTAL_BUCKET_ADJUSTMENT', 1.25),
+            ],
+            'regime_dampener' => [
+                'enabled' => env('NFL_REGIME_DAMPENER_ENABLED', true),
+                'lookback_games' => env('NFL_REGIME_DAMPENER_LOOKBACK_GAMES', 272),
+                'min_games' => env('NFL_REGIME_DAMPENER_MIN_GAMES', 40),
+                'trust_threshold' => env('NFL_REGIME_DAMPENER_TRUST_THRESHOLD', 85.0),
+                'accuracy_floor' => env('NFL_REGIME_DAMPENER_ACCURACY_FLOOR', 0.68),
+                'probability_shrink' => env('NFL_REGIME_DAMPENER_PROBABILITY_SHRINK', 0.06),
+                'trust_penalty' => env('NFL_REGIME_DAMPENER_TRUST_PENALTY', 5.0),
+            ],
+        ],
     ],
 
     /*
@@ -1003,6 +1057,21 @@ return [
         'kelly' => [
             'fraction' => 0.25,   // Quarter Kelly (conservative)
             'max_percent' => 5.0, // Maximum recommended bet size
+        ],
+
+        'moneyline' => [
+            'play_enabled' => env('NFL_MONEYLINE_PLAY_ENABLED', false),
+            'min_trust' => env('NFL_MONEYLINE_MIN_TRUST', 75.0),
+            'play_min_trust' => env('NFL_MONEYLINE_PLAY_MIN_TRUST', 85.0),
+            'play_min_edge' => env('NFL_MONEYLINE_PLAY_MIN_EDGE', 10.0),
+        ],
+
+        'totals' => [
+            'play_min_edge' => env('NFL_TOTAL_PLAY_MIN_EDGE', 4.0),
+            'play_max_edge' => env('NFL_TOTAL_PLAY_MAX_EDGE', 6.0),
+            'watchlist_only_rules' => [
+                'weather_total_under',
+            ],
         ],
 
         'max_units' => 2.0,

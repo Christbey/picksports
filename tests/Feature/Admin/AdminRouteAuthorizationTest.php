@@ -12,6 +12,7 @@ it('requires authentication for representative admin pages', function (string $p
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
+    '/admin/nfl-model-monitoring',
     '/admin/tiers',
     '/admin/tiers/create',
 ]);
@@ -28,6 +29,7 @@ it('forbids non-admin users from representative admin pages', function (string $
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
+    '/admin/nfl-model-monitoring',
     '/admin/tiers',
     '/admin/tiers/create',
 ]);
@@ -46,6 +48,7 @@ it('allows admin users to access representative admin pages', function (string $
     '/admin/subscriptions',
     '/admin/permissions',
     '/admin/healthchecks',
+    '/admin/nfl-model-monitoring',
     '/admin/tiers',
     '/admin/tiers/create',
 ]);

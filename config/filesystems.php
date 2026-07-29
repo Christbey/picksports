@@ -73,6 +73,56 @@ return [
             'report' => false,
         ],
 
+        'ml-local' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/ml'),
+            'visibility' => 'private',
+            'permissions' => [
+                'file' => [
+                    'public' => 0644,
+                    'private' => 0600,
+                ],
+                'dir' => [
+                    'public' => 0755,
+                    'private' => 0700,
+                ],
+            ],
+            'throw' => true,
+            'report' => true,
+        ],
+
+        'ml-spaces' => [
+            'driver' => 's3',
+            'key' => env('ML_SPACES_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
+            'secret' => env('ML_SPACES_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
+            'region' => env('ML_SPACES_REGION', env('AWS_DEFAULT_REGION')),
+            'bucket' => env('ML_SPACES_BUCKET', env('AWS_BUCKET')),
+            'url' => env('ML_SPACES_URL'),
+            'endpoint' => env('ML_SPACES_ENDPOINT', env('AWS_ENDPOINT')),
+            'use_path_style_endpoint' => env('ML_SPACES_USE_PATH_STYLE_ENDPOINT', false),
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => true,
+        ],
+
+        'ml-cache' => [
+            'driver' => 'local',
+            'root' => storage_path('app/ml/cache'),
+            'visibility' => 'private',
+            'permissions' => [
+                'file' => [
+                    'public' => 0644,
+                    'private' => 0600,
+                ],
+                'dir' => [
+                    'public' => 0755,
+                    'private' => 0700,
+                ],
+            ],
+            'throw' => true,
+            'report' => true,
+        ],
+
     ],
 
     /*

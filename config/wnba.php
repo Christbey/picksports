@@ -99,12 +99,12 @@ return [
     */
 
     'teams' => [
-        'count' => 12,
+        'count' => env('WNBA_TEAM_COUNT', 15),
         'conferences' => [
             'eastern' => 'Eastern',
             'western' => 'Western',
         ],
-        'teams_per_conference' => 6,
+        'teams_per_conference' => 8,
     ],
 
     /*
@@ -166,6 +166,10 @@ return [
         // Elo points per point of spread
         // Calibrated so 28 Elo = 1 point spread
         'elo_to_spread_divisor' => 28,
+        'metric_spread_weight' => env('WNBA_METRIC_SPREAD_WEIGHT', 0.25),
+        'metric_spread_min_games' => env('WNBA_METRIC_SPREAD_MIN_GAMES', 10),
+        'spread_output_regression_weight' => env('WNBA_SPREAD_OUTPUT_REGRESSION_WEIGHT', 0.08),
+        'max_predicted_spread' => env('WNBA_MAX_PREDICTED_SPREAD', 12.0),
 
         // Average WNBA pace (possessions per game)
         'average_pace' => 88.0,
@@ -173,11 +177,15 @@ return [
         // League average efficiency (points per 100 possessions)
         // WNBA typically has lower scoring than NBA
         'default_efficiency' => 98.0,
-        'total_tempo_regression_weight' => 0.35,
+        'average_total' => env('WNBA_AVERAGE_TOTAL', 166.5),
+        'total_tempo_regression_weight' => env('WNBA_TOTAL_TEMPO_REGRESSION_WEIGHT', 0.50),
+        'total_output_regression_weight' => env('WNBA_TOTAL_OUTPUT_REGRESSION_WEIGHT', 0.25),
+        'min_predicted_total' => env('WNBA_MIN_PREDICTED_TOTAL', 150.0),
+        'max_predicted_total' => env('WNBA_MAX_PREDICTED_TOTAL', 180.0),
         'use_previous_season_metrics_fallback' => env('WNBA_USE_PREVIOUS_SEASON_METRICS_FALLBACK', true),
 
         // Logistic function coefficient for win probability
-        'spread_to_probability_coefficient' => 4,
+        'spread_to_probability_coefficient' => env('WNBA_SPREAD_TO_PROBABILITY_COEFFICIENT', 6.5),
 
         // Confidence score components (sum to 100 max)
         'confidence' => [

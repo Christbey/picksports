@@ -19,6 +19,21 @@ export interface BettingRecommendation {
     away_team?: string;
     model_probability?: number;
     implied_probability?: number;
+    raw_implied_probability?: number;
+    no_vig_implied_probability?: number;
+    market_hold?: number;
+    fair_odds?: number;
+    expected_value_percent?: number;
+    trust_score?: number;
+    grade?: string;
+    risk_level?: string;
+    recommendation_strength?: string;
+    is_playable?: boolean;
+    bet_units?: number;
+    total_signal_action?: 'play' | 'lean' | string;
+    total_signal_direction?: 'over' | 'under' | string;
+    total_signal_label?: string;
+    moneyline_signal_action?: 'play' | 'lean' | string;
     edge: number;
     odds: number;
     kelly_bet_size_percent?: number;
@@ -37,7 +52,28 @@ export interface BettingValueSummary {
     risk_flags: string[];
 }
 
+export interface ValueSignalSummary {
+    has_playable_value: boolean;
+    play_count: number;
+    best?: {
+        type?: 'spread' | 'total' | 'moneyline' | string | null;
+        label?: string | null;
+        edge?: number | null;
+        odds?: number | string | null;
+        market_line?: number | null;
+        model_line?: number | null;
+        model_probability?: number | null;
+        implied_probability?: number | null;
+        grade?: string | null;
+        risk_level?: string | null;
+        units?: number | null;
+        reason?: string | null;
+    } | null;
+}
+
 export interface PredictionAnalysisSummary {
+    enabled?: boolean | null;
+    applied?: boolean | null;
     trust_score?: number | null;
     bet_classification?: string | null;
     model_signal_classification?: string | null;
@@ -198,6 +234,7 @@ export interface PredictionListItem {
     graded_at?: string;
     betting_value?: BettingRecommendation[];
     betting_value_summary?: BettingValueSummary;
+    value_signal?: ValueSignalSummary | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
     ai_analysis?: AiPredictionAnalysisSummary | null;
     recommendation?: PredictionRecommendation | null;

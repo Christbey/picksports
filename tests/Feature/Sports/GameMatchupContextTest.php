@@ -75,6 +75,18 @@ it('returns matchup context rows for mlb game detail', function () {
         'probable_away_pitcher_espn_id' => $awayPitcher->espn_id,
     ]);
 
+    MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2026-03-24',
+        'game_time' => '19:10:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
     $currentGame = MlbGame::factory()->regularSeason()->create([
         'season' => 2026,
         'season_type' => '2',
@@ -102,6 +114,12 @@ it('returns matchup context rows for mlb game detail', function () {
     $headToHead = $rows->firstWhere('key', 'head_to_head');
     expect($headToHead['away']['display'])->toBe('1-0')
         ->and($headToHead['home']['display'])->toBe('0-1');
+
+    $overall = $rows->firstWhere('key', 'overall');
+    expect($overall['away']['display'])->toBe('2-0')
+        ->and($overall['away']['ties'])->toBe(0)
+        ->and($overall['home']['display'])->toBe('0-2')
+        ->and($overall['home']['ties'])->toBe(0);
 
     $starterRow = $rows->firstWhere('key', 'starter_matchup');
     expect($starterRow['away']['display'])->toBe('1-0')

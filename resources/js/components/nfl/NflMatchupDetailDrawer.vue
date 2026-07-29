@@ -94,13 +94,46 @@ function scoreTier(
     return labelize(record(marketScores(prediction)[market]).tier);
 }
 
+function analysisActive(prediction: ApiV2Prediction | null): boolean {
+    const analysis = record(prediction?.prediction_analysis);
+
+    return analysis.enabled !== false && analysis.applied === true;
+}
+
+function exactSpreadLine(
+    prediction: ApiV2Prediction | null,
+    line: number,
+): boolean {
+    const spread = numberValue(marketContext(prediction).market_spread);
+
+    return spread !== null && Math.abs(Math.abs(spread) - line) < 0.05;
+}
+
+function shouldShowReasonCode(
+    prediction: ApiV2Prediction | null,
+    code: string,
+): boolean {
+    const keyMatch = code.match(/^key_number_edge_(5|7)$/);
+    if (!keyMatch) return true;
+
+    return exactSpreadLine(prediction, Number(keyMatch[1]));
+}
+
 function reasonCodes(prediction: ApiV2Prediction | null): string[] {
+    if (!analysisActive(prediction)) return [];
+
     const codes = proLayer(prediction).reason_codes;
 
-    return Array.isArray(codes) ? codes.map((code) => String(code)) : [];
+    return Array.isArray(codes)
+        ? codes
+              .map((code) => String(code))
+              .filter((code) => shouldShowReasonCode(prediction, code))
+        : [];
 }
 
 function riskFlags(prediction: ApiV2Prediction | null): string[] {
+    if (!analysisActive(prediction)) return [];
+
     const direct = proLayer(prediction).risk_flags;
     if (Array.isArray(direct)) return direct.map((flag) => String(flag));
 
@@ -151,13 +184,14 @@ function modelResultLabel(prediction: ApiV2Prediction | null): string {
                         <div
                             class="text-xs font-semibold text-muted-foreground"
                         >
-                            Model Pick
+                            Moneyline Pick
                         </div>
                         <div class="mt-1 text-lg font-bold">
                             {{ prediction.pick?.label ?? '-' }}
                         </div>
                         <div class="text-sm text-muted-foreground">
-                            Home {{ formatPercent(prediction.win_probability) }}
+                            Home win
+                            {{ formatPercent(prediction.win_probability) }}
                         </div>
                     </div>
                     <div class="rounded-xl border bg-card p-3">
@@ -261,12 +295,15 @@ function modelResultLabel(prediction: ApiV2Prediction | null): string {
                     </div>
                 </section>
 
-                <section class="rounded-xl border bg-card p-4">
+                <section
+                    v-if="analysisActive(prediction)"
+                    class="rounded-xl border bg-card p-4"
+                >
                     <h3 class="text-sm font-semibold">Signal Tiers</h3>
                     <div class="mt-3 grid gap-3 sm:grid-cols-3">
                         <div>
                             <div class="text-xs text-muted-foreground">
-                                Winner
+                                Moneyline
                             </div>
                             <div class="font-semibold">
                                 {{ scoreTier(prediction, 'winner') }}
@@ -291,7 +328,10 @@ function modelResultLabel(prediction: ApiV2Prediction | null): string {
                     </div>
                 </section>
 
-                <section class="rounded-xl border bg-card p-4">
+                <section
+                    v-if="analysisActive(prediction)"
+                    class="rounded-xl border bg-card p-4"
+                >
                     <h3 class="text-sm font-semibold">Reason Codes</h3>
                     <div class="mt-3 flex flex-wrap gap-2">
                         <span
@@ -310,7 +350,10 @@ function modelResultLabel(prediction: ApiV2Prediction | null): string {
                     </div>
                 </section>
 
-                <section class="rounded-xl border bg-card p-4">
+                <section
+                    v-if="analysisActive(prediction)"
+                    class="rounded-xl border bg-card p-4"
+                >
                     <h3 class="text-sm font-semibold">Risk Flags</h3>
                     <div class="mt-3 flex flex-wrap gap-2">
                         <span

@@ -14,6 +14,7 @@ class GameBettingRecommendationService
         'nfl' => CalculateBettingValue::class,
         'nba' => \App\Actions\NBA\CalculateBettingValue::class,
         'cbb' => \App\Actions\CBB\CalculateBettingValue::class,
+        'wnba' => \App\Actions\WNBA\CalculateBettingValue::class,
     ];
 
     /**

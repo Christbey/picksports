@@ -270,6 +270,7 @@ return [
 
         'win_probability_calibration' => [
             'enabled' => env('NBA_WIN_PROBABILITY_CALIBRATION_ENABLED', false),
+            'shadow_enabled' => env('NBA_WIN_PROBABILITY_CALIBRATION_SHADOW_ENABLED', true),
             'apply_to_live_output' => env('NBA_WIN_PROBABILITY_CALIBRATION_APPLY_TO_LIVE_OUTPUT', false),
             'artifact_path' => env('NBA_WIN_PROBABILITY_CALIBRATION_ARTIFACT', storage_path('app/ml/models/nba_win_probability_calibration_model.json')),
         ],

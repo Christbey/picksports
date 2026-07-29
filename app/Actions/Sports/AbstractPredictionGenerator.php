@@ -185,6 +185,14 @@ abstract class AbstractPredictionGenerator
             );
         }
 
+        [$predictedSpread, $predictedTotal] = $this->finalizePredictedOutputs(
+            $predictedSpread,
+            $predictedTotal,
+            $homeMetrics,
+            $awayMetrics,
+            $game
+        );
+
         // Calculate win probability from spread
         $winProbability = $this->calculateWinProbability($predictedSpread);
         // Calculate confidence score based on win probability
@@ -385,6 +393,19 @@ abstract class AbstractPredictionGenerator
         $weight = max(0.0, min(1.0, $weight));
 
         return ($rawPace * (1 - $weight)) + ($baselinePace * $weight);
+    }
+
+    /**
+     * @return array{0:float,1:float}
+     */
+    protected function finalizePredictedOutputs(
+        float $predictedSpread,
+        float $predictedTotal,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): array {
+        return [round($predictedSpread, 1), round($predictedTotal, 1)];
     }
 
     protected function extractMarketTotal(Model $game): ?float

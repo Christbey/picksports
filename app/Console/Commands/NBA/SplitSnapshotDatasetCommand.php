@@ -39,7 +39,13 @@ class SplitSnapshotDatasetCommand extends Command
             return self::SUCCESS;
         }
 
-        usort($rows['rows'], fn (array $left, array $right): int => [$left['game_date'] ?? '', $left['prediction_id'] ?? ''] <=> [$right['game_date'] ?? '', $right['prediction_id'] ?? '']);
+        usort($rows['rows'], fn (array $left, array $right): int => [
+            $left['game_start_at'] ?? $left['game_date'] ?? '',
+            $left['game_id'] ?? '',
+        ] <=> [
+            $right['game_start_at'] ?? $right['game_date'] ?? '',
+            $right['game_id'] ?? '',
+        ]);
 
         $splits = $this->splitRows($rows['rows'], $ratios['train'], $ratios['validation']);
 

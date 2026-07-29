@@ -1,6 +1,8 @@
 <?php
 
 use App\Actions\MLB\GradePredictions;
+use App\Models\BetDecision;
+use App\Models\BetSettlement;
 use App\Models\MLB\Game;
 use App\Models\MLB\PickCandidate;
 use App\Models\MLB\PlayerProp;
@@ -142,10 +144,12 @@ it('persists tracking-only MLB candidates with scores reasons and risks', functi
         ->and($candidate->reason_codes)->toContain('model_market_agrees')
         ->and(data_get($candidate->feature_snapshot, 'internal_candidate_label'))->not->toBeNull()
         ->and(data_get($candidate->feature_snapshot, 'signal_layer.version'))->toBe('mlb_signal_driver_v1')
-        ->and(data_get($candidate->feature_snapshot, 'signal_layer.signal_groups'))->not->toBeEmpty();
+        ->and(data_get($candidate->feature_snapshot, 'signal_layer.signal_groups'))->not->toBeEmpty()
+        ->and(BetDecision::query()->count())->toBe(PickCandidate::query()->count())
+        ->and(BetDecision::query()->where('source_id', $candidate->id)->exists())->toBeTrue();
 });
 
-it('refreshes MLB daily pick candidates idempotently for the same slate', function (): void {
+it('preserves prior MLB candidate generations while exposing only the latest slate', function (): void {
     mlbPricedSlate();
 
     $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
@@ -156,7 +160,9 @@ it('refreshes MLB daily pick candidates idempotently for the same slate', functi
     $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
         ->assertExitCode(0);
 
-    expect(PickCandidate::query()->count())->toBe($firstCount);
+    expect(PickCandidate::query()->count())->toBe($firstCount * 2)
+        ->and(PickCandidate::query()->whereNull('superseded_at')->count())->toBe($firstCount)
+        ->and(PickCandidate::query()->whereNotNull('superseded_at')->count())->toBe($firstCount);
 });
 
 it('applies MLB total bias correction to total candidates', function (): void {
@@ -233,7 +239,11 @@ it('grades valid pregame-safe MLB pick candidates normally', function (): void {
     expect($report['graded'])->toBe(1)
         ->and($report['excluded'])->toBe(0)
         ->and($candidate->refresh()->graded_at)->not->toBeNull()
-        ->and($candidate->result_status)->toBeIn(['win', 'loss', 'push']);
+        ->and($candidate->result_status)->toBeIn(['win', 'loss', 'push'])
+        ->and(BetSettlement::query()->whereHas(
+            'decision',
+            fn ($query) => $query->where('source_id', $candidate->id)
+        )->exists())->toBeTrue();
 });
 
 it('reports post-first-pitch MLB pick candidate exclusion reason', function (): void {

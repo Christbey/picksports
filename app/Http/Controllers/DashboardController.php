@@ -6,6 +6,7 @@ use App\Actions\CBB\CalculateBettingValue as CBBCalculateBettingValue;
 use App\Actions\NBA\CalculateBettingValue as NBACalculateBettingValue;
 use App\Actions\NFL\CalculateBettingValue as NFLCalculateBettingValue;
 use App\Actions\Sports\CalculateBettingValue as GenericCalculateBettingValue;
+use App\Actions\WNBA\CalculateBettingValue as WNBACalculateBettingValue;
 use App\Http\Resources\DashboardPredictionResource;
 use App\Models\CBB\Game as CBBGame;
 use App\Models\CBB\Prediction as CBBPrediction;
@@ -166,7 +167,7 @@ class DashboardController extends Controller
                 color: 'purple',
                 predictionModel: WNBAPrediction::class,
                 gameModel: WNBAGame::class,
-                bettingCalculator: GenericCalculateBettingValue::class
+                bettingCalculator: WNBACalculateBettingValue::class
             ),
         ];
     }

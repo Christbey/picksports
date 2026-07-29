@@ -3,6 +3,7 @@
 namespace App\Console\Commands\MLB;
 
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\Predictions\SnapshotEvaluationProjector;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
@@ -41,7 +42,11 @@ class ExportTrainingDataCommand extends Command
             return self::FAILURE;
         }
 
-        $headers = array_keys($rows->first());
+        $headers = $rows
+            ->flatMap(fn (array $row): array => array_keys($row))
+            ->unique()
+            ->values()
+            ->all();
         fputcsv($handle, $headers);
 
         foreach ($rows as $row) {
@@ -49,7 +54,7 @@ class ExportTrainingDataCommand extends Command
                 fn (mixed $value): string => is_bool($value)
                     ? ($value ? '1' : '0')
                     : (is_array($value) ? json_encode($value, JSON_UNESCAPED_SLASHES) ?: '' : (string) $value),
-                $row
+                array_map(fn (string $header): mixed => $row[$header] ?? null, $headers)
             ));
         }
 
@@ -81,8 +86,6 @@ class ExportTrainingDataCommand extends Command
             ->select(
                 'prediction_feature_snapshots.*',
                 'pe.actuals as evaluation_actuals',
-                'pe.errors as evaluation_errors',
-                'pe.market_comparison as evaluation_market_comparison',
                 'g.season'
             )
             ->orderBy('prediction_feature_snapshots.generated_at');
@@ -105,10 +108,17 @@ class ExportTrainingDataCommand extends Command
             $features = $this->arrayValue($snapshot->features);
             $outputs = $this->arrayValue($snapshot->outputs);
             $actuals = $this->arrayValue($snapshot->evaluation_actuals);
-            $errors = $this->arrayValue($snapshot->evaluation_errors);
-            $marketComparison = $this->arrayValue($snapshot->evaluation_market_comparison);
+            $projection = app(SnapshotEvaluationProjector::class)->project(
+                $outputs,
+                $actuals,
+                $this->arrayValue($snapshot->market_context),
+            );
+            $errors = $projection['errors'];
+            $marketComparison = $projection['market_comparison'];
 
             $row = [
+                'snapshot_run_id' => $snapshot->snapshot_run_id,
+                'model_run_id' => $snapshot->model_run_id,
                 'game_id' => $snapshot->game_id,
                 'season' => $snapshot->season,
                 'prediction_id' => $snapshot->prediction_id,

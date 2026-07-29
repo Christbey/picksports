@@ -16,7 +16,7 @@ class SyncHistoricalOddsForGames extends AbstractSyncHistoricalOddsForGames
 
     protected const GAME_MODEL_CLASS = Game::class;
 
-    protected const HISTORICAL_MARKETS = 'spreads,totals';
+    protected const HISTORICAL_MARKETS = 'h2h,spreads,totals';
 
     public function executeHistorical(
         int $hoursBefore = 24,

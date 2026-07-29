@@ -8,6 +8,7 @@ use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
 use App\Services\CommandHeartbeatService;
 use App\Services\ESPN\NBA\EspnService;
+use App\Services\Predictions\ModelRunRecorder;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -27,6 +28,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(ModelRunRecorder::class);
         $this->registerEspnScoreboardSyncActions();
         $this->registerEspnPlayerInjurySyncActions();
     }

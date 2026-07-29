@@ -17,7 +17,8 @@ class AnalyzePlayerPropsCommand extends Command
         {--season= : Optional season filter}
         {--min-games=3 : Minimum player game sample}
         {--window-days= : Active game window length}
-        {--only-missing : Only analyze active games with props but without recommendation-ready outputs}';
+        {--only-missing : Only analyze active games with props but without recommendation-ready outputs}
+        {--with-narratives : Generate and persist player prop narratives during analysis}';
 
     protected $description = 'Analyze active player props and persist recommendation fields for validation and API payloads';
 
@@ -53,6 +54,7 @@ class AnalyzePlayerPropsCommand extends Command
         $minGames = max(1, (int) $this->option('min-games'));
         $totalRecommendations = 0;
         $gameIds = $context->marketReadyGameIds;
+        $attachNarratives = (bool) $this->option('with-narratives');
 
         if ((bool) $this->option('only-missing')) {
             $originalGameCount = count($gameIds);
@@ -72,8 +74,17 @@ class AnalyzePlayerPropsCommand extends Command
             $context->stage,
         ));
 
+        if (! $attachNarratives) {
+            $this->line('Narrative generation skipped for faster operational analysis. Use --with-narratives when copy is needed.');
+        }
+
         foreach ($gameIds as $gameId) {
-            $recommendations = $analyzer->analyzeProps($this->sportLabels[$sport], $minGames, gameFilter: $gameId);
+            $recommendations = $analyzer->analyzeProps(
+                sport: $this->sportLabels[$sport],
+                minGames: $minGames,
+                gameFilter: $gameId,
+                attachNarratives: $attachNarratives,
+            );
             $totalRecommendations += $recommendations->count();
             $this->line("Game {$gameId}: {$recommendations->count()} recommendation(s).");
         }

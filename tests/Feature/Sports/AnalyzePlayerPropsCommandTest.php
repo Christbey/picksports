@@ -31,7 +31,7 @@ it('analyzes player props for active stage games', function () {
     $analyzer = m::mock(PlayerPropAnalyzer::class);
     $analyzer->shouldReceive('analyzeProps')
         ->once()
-        ->with('NBA', 3, null, $game->id)
+        ->with('NBA', 3, null, $game->id, null, false)
         ->andReturn(new Collection([['recommendation' => 'Over']]));
 
     $this->app->instance(PlayerPropAnalyzer::class, $analyzer);
@@ -41,6 +41,7 @@ it('analyzes player props for active stage games', function () {
         '--season' => 2026,
     ])
         ->expectsOutput('Analyzing NBA player props for 1 active game(s) in finals stage.')
+        ->expectsOutput('Narrative generation skipped for faster operational analysis. Use --with-narratives when copy is needed.')
         ->expectsOutput("Game {$game->id}: 1 recommendation(s).")
         ->expectsOutput('Player prop analysis complete. 1 recommendation(s) persisted.')
         ->assertExitCode(0);
@@ -111,7 +112,7 @@ it('can analyze only active games missing recommendation-ready prop outputs', fu
     $analyzer = m::mock(PlayerPropAnalyzer::class);
     $analyzer->shouldReceive('analyzeProps')
         ->once()
-        ->with('NBA', 3, null, $missingGame->id)
+        ->with('NBA', 3, null, $missingGame->id, null, false)
         ->andReturn(new Collection([['recommendation' => 'Under']]));
 
     $this->app->instance(PlayerPropAnalyzer::class, $analyzer);
@@ -123,7 +124,43 @@ it('can analyze only active games missing recommendation-ready prop outputs', fu
     ])
         ->expectsOutput('Only-missing mode: 1/2 active game(s) need recommendation analysis.')
         ->expectsOutput('Analyzing NBA player props for 1 active game(s) in finals stage.')
+        ->expectsOutput('Narrative generation skipped for faster operational analysis. Use --with-narratives when copy is needed.')
         ->expectsOutput("Game {$missingGame->id}: 1 recommendation(s).")
+        ->expectsOutput('Player prop analysis complete. 1 recommendation(s) persisted.')
+        ->assertExitCode(0);
+});
+
+it('can opt into player prop narratives during analysis', function () {
+    $this->travelTo('2026-06-06 12:00:00');
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '3',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'game_date' => '2026-06-08',
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $analyzer = m::mock(PlayerPropAnalyzer::class);
+    $analyzer->shouldReceive('analyzeProps')
+        ->once()
+        ->with('NBA', 3, null, $game->id, null, true)
+        ->andReturn(new Collection([['recommendation' => 'Over']]));
+
+    $this->app->instance(PlayerPropAnalyzer::class, $analyzer);
+
+    $this->artisan('sports:analyze-player-props', [
+        '--sport' => 'nba',
+        '--season' => 2026,
+        '--with-narratives' => true,
+    ])
+        ->expectsOutput('Analyzing NBA player props for 1 active game(s) in finals stage.')
+        ->doesntExpectOutput('Narrative generation skipped for faster operational analysis. Use --with-narratives when copy is needed.')
+        ->expectsOutput("Game {$game->id}: 1 recommendation(s).")
         ->expectsOutput('Player prop analysis complete. 1 recommendation(s) persisted.')
         ->assertExitCode(0);
 });

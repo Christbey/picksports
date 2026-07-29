@@ -2,6 +2,7 @@
 
 use App\Actions\NBA\CalculateBettingValue;
 use App\Actions\NBA\GeneratePrediction;
+use App\Models\ModelArtifact;
 use App\Models\NBA\DepthChartEntry;
 use App\Models\NBA\Game;
 use App\Models\NBA\Player;
@@ -11,6 +12,9 @@ use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
 use App\Models\NBA\TeamStat;
 use App\Models\PredictionFeatureSnapshot;
+use App\Models\ShadowModelOutput;
+use App\Services\Predictions\ModelRunRecorder;
+use Illuminate\Support\Str;
 
 uses()->group('nba', 'predictions');
 
@@ -102,6 +106,29 @@ it('can promote calibrated win probability to the live output behind config', fu
         'alpha' => 1.0,
         'beta' => -0.5,
     ], JSON_PRETTY_PRINT));
+    $trainingRun = app(ModelRunRecorder::class)->create(
+        sport: 'nba',
+        runType: 'training',
+        modelVersion: 'nba-win-probability-platt-v1',
+        featureVersion: 'trusted-snapshot-v1',
+        blendVersion: 'challenger-shadow-v1',
+        status: 'completed',
+        completedAt: now(),
+    );
+    ModelArtifact::query()->create([
+        'id' => (string) Str::uuid(),
+        'training_run_id' => $trainingRun->id,
+        'sport' => 'nba',
+        'market_type' => 'win_probability',
+        'model_type' => 'nba_win_probability_platt_calibration',
+        'model_version' => 'nba-win-probability-platt-v1',
+        'feature_version' => 'trusted-snapshot-v1',
+        'dataset_hash' => str_repeat('a', 64),
+        'artifact_path' => $artifactPath,
+        'artifact_hash' => hash_file('sha256', $artifactPath),
+        'status' => 'promoted',
+        'promoted_at' => now(),
+    ]);
 
     config()->set('nba.prediction.win_probability_calibration.enabled', true);
     config()->set('nba.prediction.win_probability_calibration.apply_to_live_output', true);
@@ -119,7 +146,8 @@ it('can promote calibrated win probability to the live output behind config', fu
     expect($prediction)->not->toBeNull()
         ->and(data_get($prediction->model_metadata, 'win_probability_calibration.active_source'))->toBe('calibrated')
         ->and(round((float) data_get($prediction->model_metadata, 'win_probability_calibration.calibrated_win_probability'), 3))->toBe((float) $prediction->win_probability)
-        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.baseline_win_probability'))->not->toBe((float) $prediction->win_probability);
+        ->and((float) data_get($prediction->model_metadata, 'win_probability_calibration.baseline_win_probability'))->not->toBe((float) $prediction->win_probability)
+        ->and(ShadowModelOutput::query()->where('model_artifact_id', $trainingRun->artifacts()->first()->id)->count())->toBe(1);
 });
 
 it('does not generate prediction for completed game', function () {

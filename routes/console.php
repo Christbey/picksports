@@ -310,6 +310,15 @@ $scheduleSportPipeline = function (
         );
     }
 
+    foreach ($predictionTimes as $stage => $time) {
+        $scheduleDailySeasonJob(
+            "{$sportCommandPrefix}:{$stage} --season={$season}",
+            $time,
+            $inSeason,
+            "{$sportLabel}: ".Str::headline($stage)
+        );
+    }
+
     $schedulePreModelJobs($inSeason, $preMetricJobs);
 
     $scheduleOddsSyncWindow($oddsCommand, $inSeason, $oddsName);
@@ -392,6 +401,18 @@ $scheduleHalfHourlyWindowJob(
     'NBA: Sync Injuries'
 );
 $scheduleEpaLifecycle('nba', 'NBA', fn () => $fallSeasonYear, $nbaInSeason);
+$scheduleDailySeasonJob(
+    'sports:settle-bet-decisions --sport=nba',
+    '03:45',
+    $nbaInSeason,
+    'NBA: Settle Model Decisions'
+);
+$scheduleDailySeasonJob(
+    'sports:record-shadow-bet-decisions --sport=nba',
+    '05:15',
+    $nbaInSeason,
+    'NBA: Record Shadow Bet Decisions'
+);
 
 // CBB
 $scheduleWeeklySeasonJob(
@@ -745,6 +766,44 @@ $scheduleOddsSyncWindow(
     'NFL: Sync Futures Odds'
 );
 $scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
+$scheduleDailySeasonJob(
+    'sports:settle-bet-decisions --sport=nfl',
+    '08:45',
+    $nflInSeason,
+    'NFL: Settle Model Decisions'
+);
+$scheduleDailySeasonJob(
+    "nfl:grade-signal-observations --season={$fallSeasonYear}",
+    '09:05',
+    $nflInSeason,
+    'NFL: Grade Signal Observations'
+);
+$scheduleDailySeasonJob(
+    'sports:record-shadow-bet-decisions --sport=nfl',
+    '10:15',
+    $nflInSeason,
+    'NFL: Record Shadow Bet Decisions'
+);
+$scheduleDailySeasonJob(
+    "nfl:materialize-signal-observations --season={$fallSeasonYear}",
+    '10:25',
+    $nflInSeason,
+    'NFL: Materialize Signal Observations'
+);
+$scheduleWeeklySeasonJob(
+    "nfl:report-signal-grades --from-season=2009 --to-season={$fallSeasonYear} --limit=100",
+    2,
+    '11:25',
+    $nflInSeason,
+    'NFL: Weekly Signal Grade Report'
+);
+$scheduleWeeklySeasonJob(
+    "nfl:readiness-pass --from-season=2009 --to-season={$fallSeasonYear} --current-season={$fallSeasonYear} --skip-backfill --reason-code-max-size=1 --spread-backtest-limit=0",
+    2,
+    '11:35',
+    $nflInSeason,
+    'NFL: Weekly Readiness Pass'
+);
 
 // CFB
 $scheduleSportPipeline(

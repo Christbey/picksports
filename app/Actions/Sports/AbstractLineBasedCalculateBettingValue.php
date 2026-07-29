@@ -195,14 +195,20 @@ abstract class AbstractLineBasedCalculateBettingValue
             return null;
         }
 
-        $homeModelProb = (float) $prediction->win_probability;
+        $noVig = $this->noVigMoneylineProbabilities((float) $homePrice, (float) $awayPrice);
+        if ($noVig === null) {
+            return null;
+        }
+
+        $homeModelProb = max(0.0, min(1.0, (float) $prediction->win_probability));
         $awayModelProb = 1 - $homeModelProb;
-        $betHome = $homeModelProb >= $awayModelProb;
+        $homeEdge = $homeModelProb - $noVig['home'];
+        $awayEdge = $awayModelProb - $noVig['away'];
+        $betHome = $homeEdge >= $awayEdge;
         $modelProb = $betHome ? $homeModelProb : $awayModelProb;
-        $impliedProb = $betHome
-            ? $this->americanToImplied((float) $homePrice)
-            : $this->americanToImplied((float) $awayPrice);
-        $edge = $modelProb - $impliedProb;
+        $rawImpliedProb = $betHome ? $noVig['raw_home'] : $noVig['raw_away'];
+        $noVigImpliedProb = $betHome ? $noVig['home'] : $noVig['away'];
+        $edge = $modelProb - $noVigImpliedProb;
 
         if ($edge < $this->moneylineThreshold()) {
             return null;
@@ -219,16 +225,21 @@ abstract class AbstractLineBasedCalculateBettingValue
             'recommendation' => $betHome ? "Bet {$homeTeam} ML" : "Bet {$awayTeam} ML",
             'bet_team' => $betHome ? $homeTeam : $awayTeam,
             'model_probability' => round($modelProb * 100, 1),
-            'implied_probability' => round($impliedProb * 100, 1),
+            'implied_probability' => round($noVigImpliedProb * 100, 1),
+            'raw_implied_probability' => round($rawImpliedProb * 100, 1),
+            'no_vig_implied_probability' => round($noVigImpliedProb * 100, 1),
+            'market_hold' => round($noVig['hold'] * 100, 2),
             'edge' => round($edge * 100, 1),
             'odds' => $price,
+            'fair_odds' => $this->probabilityToAmericanOdds($modelProb),
+            'expected_value_percent' => round($this->expectedValuePerUnit($modelProb, $price) * 100, 1),
             'kelly_bet_size_percent' => max(0, min($maxKelly, round($kellySizePercent, 1))),
             'confidence' => $this->moneylineConfidenceScore($edge),
             'side_confidence' => round((float) ($prediction->confidence_score ?? 0), 2),
             'reasoning' => sprintf(
-                'Safe side: model gives %d%% chance vs market implied %d%% (%+d%% edge)',
+                'Model gives %d%% chance vs no-vig market %d%% (%+d%% edge)',
                 round($modelProb * 100),
-                round($impliedProb * 100),
+                round($noVigImpliedProb * 100),
                 round($edge * 100)
             ),
         ];

@@ -846,6 +846,73 @@ test('persists template player prop narrative when ai provider is template', fun
         ->and($prop->narrative_generated_at)->not->toBeNull();
 });
 
+test('can skip player prop narratives for fast operational analysis', function () {
+    config()->set('ai.features.player_prop_narratives.provider', 'openai');
+    config()->set('services.openai.api_key', 'test-openai-key');
+    config()->set('ai.providers.openai.key', 'test-openai-key');
+
+    PlayerPropNarrativeAgent::fake([])->preventStrayPrompts();
+
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Fast Analysis Player',
+        'first_name' => 'Fast',
+        'last_name' => 'Analysis Player',
+    ]);
+
+    for ($i = 0; $i < 6; $i++) {
+        $historicalGame = Game::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 3)->toDateString(),
+            'season' => 2026,
+        ]);
+
+        PlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'points' => 31,
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-02-25',
+        'season' => 2026,
+    ]);
+
+    $prop = PlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => 'Fast Analysis Player',
+        'market' => 'player_points',
+        'line' => 24.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+
+    $recommendations = app(PlayerPropAnalyzer::class)->analyzeProps(
+        sport: 'NBA',
+        minGames: 3,
+        dateFilter: '2026-02-25',
+        attachNarratives: false,
+    );
+
+    $prop->refresh();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($recommendations->first()['narrative'])->toBeNull()
+        ->and($prop->recommended_side)->toBe('Over')
+        ->and($prop->narrative_json)->toBeNull();
+});
+
 test('uses ai structured agent for player prop narratives when openai provider is enabled', function () {
     config()->set('ai.features.player_prop_narratives.provider', 'openai');
     config()->set('ai.features.player_prop_narratives.model', 'gpt-4o-mini');

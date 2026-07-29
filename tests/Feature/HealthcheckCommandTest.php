@@ -28,6 +28,15 @@ it('records failing heartbeat checks when no command heartbeats exist', function
 it('records passing heartbeat checks when pipelines are fresh', function () {
     Carbon::setTestNow(Carbon::create(2026, 2, 15, 20, 0, 0));
 
+    Healthcheck::query()->create([
+        'sport' => 'nba',
+        'check_type' => 'heartbeat_sync',
+        'status' => 'failing',
+        'message' => 'Failure from an earlier healthcheck invocation.',
+        'metadata' => [],
+        'checked_at' => now(),
+    ]);
+
     CommandHeartbeat::query()->create([
         'sport' => 'nba',
         'command' => 'espn:sync-nba-current',

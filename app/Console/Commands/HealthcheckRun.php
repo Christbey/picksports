@@ -11,6 +11,11 @@ use Illuminate\Support\Facades\DB;
 
 class HealthcheckRun extends Command
 {
+    /**
+     * @var list<int>
+     */
+    protected array $recordedCheckIds = [];
+
     protected $signature = 'healthcheck:run
         {--sport= : Specific sport to check (mlb, nba, nfl, cbb, cfb, wcbb, wnba)}
         {--include-validation : Reserved for future deep data validation checks}';
@@ -335,7 +340,7 @@ class HealthcheckRun extends Command
 
     protected function recordCheck(string $sport, string $checkType, string $status, string $message, array $metadata = []): void
     {
-        Healthcheck::create([
+        $healthcheck = Healthcheck::create([
             'sport' => $sport,
             'check_type' => $checkType,
             'status' => $status,
@@ -343,6 +348,7 @@ class HealthcheckRun extends Command
             'metadata' => $metadata,
             'checked_at' => now(),
         ]);
+        $this->recordedCheckIds[] = (int) $healthcheck->id;
 
         $color = match ($status) {
             'passing' => 'green',
@@ -360,7 +366,7 @@ class HealthcheckRun extends Command
         $this->info('Healthcheck Summary:');
 
         $results = Healthcheck::query()
-            ->where('checked_at', '>=', now()->subMinutes(5))
+            ->whereKey($this->recordedCheckIds)
             ->select('status', DB::raw('count(*) as count'))
             ->groupBy('status')
             ->get();
@@ -377,7 +383,7 @@ class HealthcheckRun extends Command
         }
 
         $failing = Healthcheck::query()
-            ->where('checked_at', '>=', now()->subMinutes(5))
+            ->whereKey($this->recordedCheckIds)
             ->where('status', 'failing')
             ->count();
 

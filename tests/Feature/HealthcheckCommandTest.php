@@ -100,3 +100,29 @@ it('records passing heartbeat checks when pipelines are fresh', function () {
 
     Carbon::setTestNow();
 });
+
+it('treats july nfl heartbeats as in-season and reports positive stale ages', function () {
+    Carbon::setTestNow(Carbon::create(2026, 7, 29, 18, 0, 0));
+
+    CommandHeartbeat::query()->create([
+        'sport' => 'nfl',
+        'command' => 'espn:sync-nfl-current',
+        'status' => 'success',
+        'source' => 'schedule',
+        'ran_at' => now()->subMinutes(400),
+    ]);
+
+    artisan('healthcheck:run --sport=nfl')->assertFailed();
+
+    $syncCheck = Healthcheck::query()
+        ->where('sport', 'nfl')
+        ->where('check_type', 'heartbeat_sync')
+        ->latest('id')
+        ->first();
+
+    expect($syncCheck)->not->toBeNull()
+        ->status->toBe('failing')
+        ->and(data_get($syncCheck->metadata, 'age_minutes'))->toBe(400);
+
+    Carbon::setTestNow();
+});

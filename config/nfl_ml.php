@@ -4,9 +4,9 @@ return [
     'shadow' => [
         'enabled' => (bool) env('NFL_ML_SHADOW_ENABLED', false),
         'artifact_id' => env('NFL_ML_SHADOW_ARTIFACT_ID'),
-        'max_uncertainty' => env('NFL_ML_SHADOW_MAX_UNCERTAINTY') === null
-            ? null
-            : (float) env('NFL_ML_SHADOW_MAX_UNCERTAINTY'),
+        'max_uncertainty' => is_numeric(env('NFL_ML_SHADOW_MAX_UNCERTAINTY'))
+            ? (float) env('NFL_ML_SHADOW_MAX_UNCERTAINTY')
+            : null,
     ],
 
     'process' => [

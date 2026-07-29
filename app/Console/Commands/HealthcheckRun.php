@@ -251,7 +251,7 @@ class HealthcheckRun extends Command
             return;
         }
 
-        $ageMinutes = now()->diffInMinutes($latestSuccess->ran_at);
+        $ageMinutes = (int) abs(now()->diffInMinutes($latestSuccess->ran_at));
 
         $status = 'passing';
         if ($ageMinutes > $failingAfterMinutes) {
@@ -310,7 +310,7 @@ class HealthcheckRun extends Command
         return match ($sport) {
             'mlb' => now()->month >= 3 && now()->month <= 10,
             'nba' => now()->month >= 10 || now()->month <= 6,
-            'nfl' => now()->month >= 9 || now()->month <= 2,
+            'nfl' => now()->month >= 7 || now()->month <= 2,
             'cbb', 'wcbb' => now()->month >= 11 || now()->month <= 4,
             'cfb' => now()->month >= 8 || now()->month <= 1,
             'wnba' => now()->month >= 5 && now()->month <= 9,

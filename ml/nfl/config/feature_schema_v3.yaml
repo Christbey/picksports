@@ -45,24 +45,24 @@ features:
   feature_market_total: {type: float, nullable: true}
 
   feature_qb_form__applied: {type: float, nullable: false}
-  feature_qb_form__home__score: {type: float, nullable: false}
-  feature_qb_form__away__score: {type: float, nullable: false}
-  feature_qb_form__home__experience: {type: float, nullable: false}
-  feature_qb_form__away__experience: {type: float, nullable: false}
-  feature_qb_form__home__prior_games: {type: float, nullable: false}
-  feature_qb_form__away__prior_games: {type: float, nullable: false}
-  feature_qb_form__home__prior_attempts: {type: float, nullable: false}
-  feature_qb_form__away__prior_attempts: {type: float, nullable: false}
-  feature_qb_form__home__prior_td_rate: {type: float, nullable: false}
-  feature_qb_form__away__prior_td_rate: {type: float, nullable: false}
-  feature_qb_form__home__prior_int_rate: {type: float, nullable: false}
-  feature_qb_form__away__prior_int_rate: {type: float, nullable: false}
-  feature_qb_form__home__prior_sack_rate: {type: float, nullable: false}
-  feature_qb_form__away__prior_sack_rate: {type: float, nullable: false}
-  feature_qb_form__home__prior_yards_per_attempt: {type: float, nullable: false}
-  feature_qb_form__away__prior_yards_per_attempt: {type: float, nullable: false}
-  feature_qb_form__home__prior_rush_yards_per_game: {type: float, nullable: false}
-  feature_qb_form__away__prior_rush_yards_per_game: {type: float, nullable: false}
+  feature_qb_form__home__score: {type: float, nullable: true}
+  feature_qb_form__away__score: {type: float, nullable: true}
+  feature_qb_form__home__experience: {type: float, nullable: true}
+  feature_qb_form__away__experience: {type: float, nullable: true}
+  feature_qb_form__home__prior_games: {type: float, nullable: true}
+  feature_qb_form__away__prior_games: {type: float, nullable: true}
+  feature_qb_form__home__prior_attempts: {type: float, nullable: true}
+  feature_qb_form__away__prior_attempts: {type: float, nullable: true}
+  feature_qb_form__home__prior_td_rate: {type: float, nullable: true}
+  feature_qb_form__away__prior_td_rate: {type: float, nullable: true}
+  feature_qb_form__home__prior_int_rate: {type: float, nullable: true}
+  feature_qb_form__away__prior_int_rate: {type: float, nullable: true}
+  feature_qb_form__home__prior_sack_rate: {type: float, nullable: true}
+  feature_qb_form__away__prior_sack_rate: {type: float, nullable: true}
+  feature_qb_form__home__prior_yards_per_attempt: {type: float, nullable: true}
+  feature_qb_form__away__prior_yards_per_attempt: {type: float, nullable: true}
+  feature_qb_form__home__prior_rush_yards_per_game: {type: float, nullable: true}
+  feature_qb_form__away__prior_rush_yards_per_game: {type: float, nullable: true}
   feature_qb_form__raw_signal_spread: {type: float, nullable: true}
 
   feature_rolling_efficiency__applied: {type: float, nullable: false}

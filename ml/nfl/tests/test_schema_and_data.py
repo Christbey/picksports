@@ -74,3 +74,22 @@ def test_inference_rejects_omitted_required_feature(
         schema.validate_inference_frame(
             synthetic_frame.tail(1).drop(columns=["feature_home_elo"])
         )
+
+
+def test_v3_schema_models_historical_qb_detail_missingness() -> None:
+    schema = FeatureSchema.load(
+        Path(__file__).parents[1] / "config" / "feature_schema_v3.yaml"
+    )
+    qb_details = [
+        name
+        for name in schema.feature_names
+        if name.startswith("feature_qb_form__")
+        and name not in {
+            "feature_qb_form__applied",
+            "feature_qb_form__raw_signal_spread",
+        }
+    ]
+
+    assert qb_details
+    assert all(schema.raw["features"][name]["nullable"] for name in qb_details)
+    assert schema.raw["features"]["feature_qb_form__applied"]["nullable"] is False

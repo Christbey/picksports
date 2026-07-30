@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier, XGBRegressor
 
 from picksports_nfl_ml.schema import FeatureSchema
+from picksports_nfl_ml.totals import total_residual_targets
 
 
 @dataclass
@@ -21,6 +22,7 @@ class ModelSet:
     xgboost_classifier: XGBClassifier
     margin_regressor: XGBRegressor
     total_regressor: XGBRegressor
+    total_baseline_fallback: float
 
 
 def fit_model_set(
@@ -71,9 +73,12 @@ def fit_model_set(
     )
     margin_regressor.fit(transformed, train[targets["home_margin"]].astype(float))
 
+    total_baseline_fallback = float(
+        train[targets["total_points"]].astype(float).median()
+    )
     total_regressor = XGBRegressor(
         objective="reg:squarederror",
-        eval_metric="rmse",
+        eval_metric="mae",
         tree_method="hist",
         random_state=seed + 1,
         n_jobs=1,
@@ -82,7 +87,14 @@ def fit_model_set(
             **tuned_parameters.get("xgboost_total_points", {}),
         },
     )
-    total_regressor.fit(transformed, train[targets["total_points"]].astype(float))
+    total_regressor.fit(
+        transformed,
+        total_residual_targets(
+            train,
+            schema,
+            total_baseline_fallback,
+        ),
+    )
 
     return ModelSet(
         preprocessor=preprocessor,
@@ -90,6 +102,7 @@ def fit_model_set(
         xgboost_classifier=classifier,
         margin_regressor=margin_regressor,
         total_regressor=total_regressor,
+        total_baseline_fallback=total_baseline_fallback,
     )
 
 

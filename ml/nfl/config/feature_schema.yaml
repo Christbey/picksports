@@ -84,6 +84,13 @@ training:
     max_iter: 2000
   blend:
     max_challenger_weight: 0.50
+  total_model:
+    strategy: baseline_residual_blend
+    baseline_feature: feature_model_predicted_total
+    max_residual_weight: 0.35
+    weight_step: 0.05
+    max_abs_adjustment: 4.0
+    minimum_selection_mae_improvement: 0.10
   xgboost_classifier:
     n_estimators: 300
     max_depth: 3

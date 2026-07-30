@@ -85,6 +85,7 @@ class MlbTabularModelInferenceService
                 '--input',
                 $inputPath,
             ]);
+            $process->setEnv(['PYTHONPATH' => $this->pythonPath()]);
             $process->setTimeout((float) config('mlb_ml.process.timeout_seconds', 30));
             $process->run();
 
@@ -213,5 +214,18 @@ class MlbTabularModelInferenceService
         }
 
         return array_replace(array_flip(self::OUTPUT_FIELDS), $output);
+    }
+
+    private function pythonPath(): string
+    {
+        $source = rtrim((string) config(
+            'mlb_ml.process.package_directory',
+            base_path('ml/mlb'),
+        ), '/').'/src';
+        $existing = getenv('PYTHONPATH');
+
+        return $existing === false || trim($existing) === ''
+            ? $source
+            : $source.PATH_SEPARATOR.$existing;
     }
 }

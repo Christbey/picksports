@@ -15,6 +15,7 @@ from picksports_nfl_ml.blending import weighted_probabilities
 from picksports_nfl_ml.calibration import ProbabilityCalibrator
 from picksports_nfl_ml.hashing import sha256_json
 from picksports_nfl_ml.schema import FeatureSchema
+from picksports_nfl_ml.totals import blended_total_predictions
 
 
 @dataclass
@@ -100,7 +101,19 @@ class InferenceBundle:
         else:
             win_probabilities = calibrated[champion]
         margins = self.margin_regressor.predict(transformed)
-        totals = self.total_regressor.predict(transformed)
+        raw_totals = self.total_regressor.predict(transformed)
+        total_model = self.manifest.get("total_model")
+        totals = (
+            blended_total_predictions(
+                validated,
+                raw_totals,
+                self.schema,
+                total_model,
+            )
+            if isinstance(total_model, dict)
+            and total_model.get("strategy") == "baseline_residual_blend"
+            else raw_totals
+        )
         outputs: list[dict[str, Any]] = []
         for index, (_, row) in enumerate(validated.iterrows()):
             feature_payload = {

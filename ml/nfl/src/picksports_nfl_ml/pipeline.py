@@ -45,6 +45,10 @@ from picksports_nfl_ml.splits import (
     walk_forward_folds,
 )
 from picksports_nfl_ml.tuning import tune_xgboost_models
+from picksports_nfl_ml.totals import (
+    blended_total_predictions,
+    select_total_residual_blend,
+)
 
 
 CLASSIFIERS = ("logistic_regression", "xgboost")
@@ -135,15 +139,24 @@ def train(
         schema,
         calibration_fraction,
     )
+    total_model = _select_total_model(
+        models,
+        final_fold.calibration,
+        schema,
+    )
     final_metrics = _evaluate_saved_model(
         models,
         final_calibration,
         final_fold,
         schema,
         classifier_blend,
+        total_model,
     )
     residuals = _calibration_residual_standard_deviations(
-        models, final_fold.calibration, schema
+        models,
+        final_fold.calibration,
+        schema,
+        total_model,
     )
     deployment_models = fit_model_set(
         frame,
@@ -159,6 +172,7 @@ def train(
         final_calibration=final_calibration,
         classifier_blend=classifier_blend,
         champion=champion,
+        total_model=total_model,
     )
     explanation_summary, explanation_values, native_importance = (
         explain_xgboost_models(
@@ -187,8 +201,8 @@ def train(
     manifest: dict[str, Any] = {
         "manifest_version": 1,
         "model_type": "nfl_tabular_bundle",
-        "model_version": "nfl-tabular-v2",
-        "blend_version": "baseline-anchored-v1",
+        "model_version": "nfl-tabular-v3",
+        "blend_version": "baseline-anchored-v2",
         "model_run_id": model_run_id,
         "artifact_id": artifact_id,
         "generated_at": generated_at,
@@ -201,6 +215,7 @@ def train(
         "seed": effective_seed,
         "champion_classifier": champion,
         "classifier_blend": classifier_blend,
+        "total_model": total_model,
         "selected_calibrators": {
             model_name: final_calibration[model_name]["selected_method"]
             for model_name in CLASSIFIERS
@@ -254,6 +269,13 @@ def train(
                 "cannot assign more than the configured weight to challengers. "
                 "Held-out test metrics never affect selection."
             ),
+            "total_points": (
+                "Fit XGBoost to residuals from the Picksports total, then "
+                "select a capped correction weight on the chronological "
+                "calibration season. A zero weight retains the existing "
+                "Picksports total when residual learning does not clear the "
+                "configured MAE improvement threshold."
+            ),
         },
         "final_holdout": {
             "train_seasons": list(final_fold.train_seasons),
@@ -261,6 +283,7 @@ def train(
             "test_season": final_fold.test_season,
             "test_season_status": "complete",
             "champion_classifier": champion,
+            "total_model": total_model,
             **final_metrics,
         },
         "walk_forward": {
@@ -355,12 +378,14 @@ def _evaluate_fold(
         schema,
         calibration_fraction,
     )
+    total_model = _select_total_model(models, fold.calibration, schema)
     metrics = _evaluate_saved_model(
         models,
         calibration,
         fold,
         schema,
         classifier_blend,
+        total_model,
     )
     return {
         "train_seasons": list(fold.train_seasons),
@@ -368,6 +393,7 @@ def _evaluate_fold(
         "test_season": fold.test_season,
         "champion_classifier": champion,
         "classifier_blend": classifier_blend,
+        "total_model": total_model,
         **metrics,
     }
 
@@ -479,6 +505,7 @@ def _evaluate_saved_model(
     fold: ChronologicalFold,
     schema: FeatureSchema,
     classifier_blend: dict[str, Any],
+    total_model: dict[str, Any],
 ) -> dict[str, Any]:
     transformed = transformed_features(models, fold.test, schema)
     home_win_targets = fold.test[schema.target_columns["home_win"]].to_numpy(
@@ -522,7 +549,12 @@ def _evaluate_saved_model(
     }
 
     margin_predictions = models.margin_regressor.predict(transformed)
-    total_predictions = models.total_regressor.predict(transformed)
+    total_predictions = blended_total_predictions(
+        fold.test,
+        models.total_regressor.predict(transformed),
+        schema,
+        total_model,
+    )
     return {
         "classifiers": classifier_results,
         "regressors": {
@@ -630,6 +662,7 @@ def _calibration_residual_standard_deviations(
     models: ModelSet,
     calibration_frame: pd.DataFrame,
     schema: FeatureSchema,
+    total_model: dict[str, Any],
 ) -> dict[str, float]:
     transformed = transformed_features(models, calibration_frame, schema)
     margin_metrics = regression_metrics(
@@ -638,7 +671,12 @@ def _calibration_residual_standard_deviations(
     )
     total_metrics = regression_metrics(
         calibration_frame[schema.target_columns["total_points"]].to_numpy(dtype=float),
-        models.total_regressor.predict(transformed),
+        blended_total_predictions(
+            calibration_frame,
+            models.total_regressor.predict(transformed),
+            schema,
+            total_model,
+        ),
     )
     return {
         "home_margin": max(1e-6, float(margin_metrics["residual_std"])),
@@ -654,6 +692,7 @@ def _deployment_refit_provenance(
     final_calibration: dict[str, dict[str, Any]],
     classifier_blend: dict[str, Any],
     champion: str,
+    total_model: dict[str, Any],
 ) -> dict[str, Any]:
     seasons = sorted(int(value) for value in frame[schema.season_column].unique())
     rows_by_season = {
@@ -685,13 +724,14 @@ def _deployment_refit_provenance(
             "logistic_regression",
             "xgboost_classifier",
             "xgboost_home_margin",
-            "xgboost_total_points",
+            "xgboost_total_points_residual",
             "preprocessor",
         ],
         "selection_frozen_before_refit": {
             "champion_classifier": champion,
             "selected_calibrators": selected_calibrators,
             "classifier_blend": classifier_blend,
+            "total_model": total_model,
             "source_calibration_season": final_fold.calibration_season,
             "source_held_out_test_season": final_fold.test_season,
         },
@@ -714,6 +754,20 @@ def _deployment_refit_provenance(
             "post-refit held-out metrics."
         ),
     }
+
+
+def _select_total_model(
+    models: ModelSet,
+    calibration_frame: pd.DataFrame,
+    schema: FeatureSchema,
+) -> dict[str, Any]:
+    transformed = transformed_features(models, calibration_frame, schema)
+    return select_total_residual_blend(
+        calibration_frame,
+        models.total_regressor.predict(transformed),
+        schema,
+        models.total_baseline_fallback,
+    )
 
 
 def _summarize_walk_forward(windows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -748,6 +802,15 @@ def _summarize_walk_forward(windows: list[dict[str, Any]]) -> dict[str, Any]:
             current_log_losses, champion_log_losses, strict=True
         )
     ]
+    total_point_maes = [
+        window["regressors"]["total_points"]["mae"] for window in windows
+    ]
+    baseline_total_point_maes = [
+        window["baselines"]["regressors"][
+            "current_picksports_total_points"
+        ]["mae"]
+        for window in windows
+    ]
     return {
         "window_count": len(windows),
         "challenger_better_window_count": sum(delta > 0 for delta in brier_deltas),
@@ -763,8 +826,27 @@ def _summarize_walk_forward(windows: list[dict[str, Any]]) -> dict[str, Any]:
             np.mean([window["regressors"]["home_margin"]["mae"] for window in windows])
         ),
         "average_total_points_mae": float(
-            np.mean([window["regressors"]["total_points"]["mae"] for window in windows])
+            np.mean(total_point_maes)
         ),
+        "average_picksports_total_points_mae": float(
+            np.mean(baseline_total_point_maes)
+        ),
+        "avg_total_mae_delta": float(
+            np.mean(
+                [
+                    baseline - challenger
+                    for baseline, challenger in zip(
+                        baseline_total_point_maes,
+                        total_point_maes,
+                        strict=True,
+                    )
+                ]
+            )
+        ),
+        "total_residual_weights": [
+            float(window["total_model"]["selected_residual_weight"])
+            for window in windows
+        ],
     }
 
 
@@ -891,7 +973,7 @@ def _package_version() -> str:
     try:
         return importlib.metadata.version("picksports-nfl-ml")
     except importlib.metadata.PackageNotFoundError:
-        return "0.1.0"
+        return "0.2.0"
 
 
 def _dependency_versions() -> dict[str, str]:

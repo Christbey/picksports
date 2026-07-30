@@ -98,6 +98,17 @@ picksports-nfl-ml predict \
 pytest
 ```
 
+Composer automatically runs `scripts/install-ml-packages.sh --if-available`
+during production installs. The installer refreshes both sports packages,
+verifies imports, and runs `pip check`; machines without the shared ML runtime
+skip it cleanly. Runtime inference also prepends the active release's package
+source directory to `PYTHONPATH`.
+
+NFL totals use a separate baseline-residual policy. XGBoost predicts a
+correction to `feature_model_predicted_total`; chronological calibration picks
+a correction weight, including zero, and the deployed adjustment is capped.
+This policy does not change the win-probability or margin estimators.
+
 For a provenance-locked training job, pass the hash printed by the Laravel
 export:
 
@@ -111,12 +122,12 @@ picksports-nfl-ml train \
 ## Docker
 
 ```bash
-docker build --tag picksports-nfl-ml:0.1.0 ml/nfl
+docker build --tag picksports-nfl-ml:0.2.0 ml/nfl
 
 docker run --rm \
   --volume "$PWD/storage/app/ml:/data:ro" \
   --volume "$PWD/ml/nfl/artifacts:/artifacts" \
-  picksports-nfl-ml:0.1.0 \
+  picksports-nfl-ml:0.2.0 \
   train \
   --input /data/nfl_full_historical_training_data.csv \
   --output-dir /artifacts

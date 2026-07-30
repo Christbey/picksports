@@ -49,13 +49,31 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
 
     with (run_dir / "evaluation.json").open("r", encoding="utf-8") as handle:
         evaluation = json.load(handle)
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    assert manifest["model_version"] == "nfl-tabular-v3"
+    assert manifest["blend_version"] == "baseline-anchored-v2"
+    assert manifest["total_model"]["strategy"] == "baseline_residual_blend"
     assert evaluation["walk_forward"]["summary"]["window_count"] == 3
     assert evaluation["walk_forward"]["summary"][
         "challenger_better_window_count"
     ] <= 3
     assert "avg_brier_delta" in evaluation["walk_forward"]["summary"]
     assert "avg_log_loss_delta" in evaluation["walk_forward"]["summary"]
+    assert "avg_total_mae_delta" in evaluation["walk_forward"]["summary"]
+    assert len(
+        evaluation["walk_forward"]["summary"]["total_residual_weights"]
+    ) == 3
     assert evaluation["final_holdout"]["test_season"] == 2024
+    assert evaluation["final_holdout"]["total_model"]["strategy"] == (
+        "baseline_residual_blend"
+    )
+    assert (
+        0
+        <= evaluation["final_holdout"]["total_model"][
+            "selected_residual_weight"
+        ]
+        <= 0.35
+    )
     assert "baselines" in evaluation["final_holdout"]
     assert evaluation["promotion_summary"]["public_promotion_allowed"] is False
     assert "avg_brier_delta" in evaluation["promotion_summary"][
@@ -94,6 +112,10 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
     assert 0 <= output["home_cover_probability"] <= 1
     assert 0 <= output["over_probability"] <= 1
     assert output["model_run_id"] == "synthetic-run"
+    assert abs(
+        output["expected_total"]
+        - float(synthetic_frame.tail(1)["feature_model_predicted_total"].iloc[0])
+    ) <= 4.0
 
     nullable_input = synthetic_frame.tail(1).drop(
         columns=["feature_market_home_spread", "feature_market_total"]
@@ -117,6 +139,7 @@ def test_held_out_targets_cannot_change_model_selection(
         1 - changed.loc[test_rows, "target_home_win"]
     )
     changed.loc[test_rows, "target_home_margin"] *= -1
+    changed.loc[test_rows, "target_total_points"] += 40
     changed.loc[test_rows, "target_hash"] = changed.loc[
         test_rows, "target_hash"
     ].map(lambda value: f"changed-{value}")
@@ -147,6 +170,7 @@ def test_held_out_targets_cannot_change_model_selection(
     assert first_manifest["classifier_blend"] == second_manifest[
         "classifier_blend"
     ]
+    assert first_manifest["total_model"] == second_manifest["total_model"]
 
 
 def test_deployment_refit_includes_partial_current_season_without_metric_leakage(
@@ -205,6 +229,7 @@ def test_deployment_refit_includes_partial_current_season_without_metric_leakage
     assert first_manifest["classifier_blend"] == second_manifest[
         "classifier_blend"
     ]
+    assert first_manifest["total_model"] == second_manifest["total_model"]
     assert first_evaluation["final_holdout"]["test_season"] == 2024
     assert first_evaluation["final_holdout"]["test_season_status"] == "complete"
     assert first_evaluation["dataset"]["season_completeness"][-1]["complete"] is False

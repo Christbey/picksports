@@ -11,6 +11,11 @@ from xgboost import XGBClassifier, XGBRegressor
 
 from picksports_nfl_ml.models import build_preprocessor
 from picksports_nfl_ml.schema import FeatureSchema
+from picksports_nfl_ml.totals import (
+    blended_total_predictions,
+    total_model_config,
+    total_residual_targets,
+)
 
 
 MODEL_NAMES = (
@@ -63,6 +68,9 @@ def tune_xgboost_models(
     timeout_seconds = None if timeout is None else int(timeout)
     search_space = dict(config.get("search_space", {}))
     targets = schema.target_columns
+    total_baseline_fallback = float(
+        fit_frame[targets["total_points"]].astype(float).median()
+    )
     objectives: dict[str, tuple[Callable[..., Any], np.ndarray, str]] = {
         "xgboost_classifier": (
             XGBClassifier,
@@ -76,7 +84,11 @@ def tune_xgboost_models(
         ),
         "xgboost_total_points": (
             XGBRegressor,
-            fit_frame[targets["total_points"]].to_numpy(dtype=float),
+            total_residual_targets(
+                fit_frame,
+                schema,
+                total_baseline_fallback,
+            ),
             "mae",
         ),
     }
@@ -127,6 +139,22 @@ def tune_xgboost_models(
             )
             estimator.fit(fit_features, fit_target)
             predictions = estimator.predict(validation_features)
+            if model_name == "xgboost_total_points":
+                total_config = total_model_config(schema)
+                predictions = blended_total_predictions(
+                    validation_frame,
+                    predictions,
+                    schema,
+                    {
+                        "baseline_fallback": total_baseline_fallback,
+                        "selected_residual_weight": total_config[
+                            "max_residual_weight"
+                        ],
+                        "max_abs_adjustment": total_config[
+                            "max_abs_adjustment"
+                        ],
+                    },
+                )
             return float(
                 mean_absolute_error(validation_targets[model_name], predictions)
             )

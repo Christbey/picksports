@@ -27,6 +27,10 @@ from picksports_nfl_ml.splits import (
     calibration_selection_split,
     walk_forward_folds,
 )
+from picksports_nfl_ml.totals import (
+    blended_total_predictions,
+    select_total_residual_blend,
+)
 
 
 DELTA_CONVENTION = "baseline_minus_challenger"
@@ -248,7 +252,18 @@ def _evaluate_fold_with_blend(
     blend_metrics = classification_metrics(test_targets, blend_test)
 
     margin_predictions = models.margin_regressor.predict(test_transformed)
-    total_predictions = models.total_regressor.predict(test_transformed)
+    total_model = select_total_residual_blend(
+        fold.calibration,
+        models.total_regressor.predict(calibration_transformed),
+        schema,
+        models.total_baseline_fallback,
+    )
+    total_predictions = blended_total_predictions(
+        fold.test,
+        models.total_regressor.predict(test_transformed),
+        schema,
+        total_model,
+    )
     margin_baseline = pd.to_numeric(
         fold.test["feature_model_predicted_spread"],
         errors="coerce",
@@ -320,6 +335,7 @@ def _evaluate_fold_with_blend(
         "total_points": {
             "current_picksports": total_baseline_metrics,
             "xgboost": total_metrics,
+            "selection": total_model,
         },
         "market_deltas": {
             "win_probability": {

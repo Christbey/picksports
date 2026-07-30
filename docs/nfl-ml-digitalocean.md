@@ -62,9 +62,18 @@ cd /home/forge/picksports-ml/ml/nfl
 python3 -m venv /home/forge/picksports-ml/.venv
 source /home/forge/picksports-ml/.venv/bin/activate
 pip install --requirement requirements.lock.txt
-pip install --no-deps --editable .
+ML_PYTHON_BINARY=/home/forge/picksports-ml/.venv/bin/python \
+  /home/forge/picksports.app/current/scripts/install-ml-packages.sh
 picksports-nfl-ml --help
 ```
+
+The Composer `post-autoload-dump` hook runs this installer automatically during
+normal Forge deployments when the shared virtual environment exists. The
+command remains available for manual recovery. It installs both the MLB and NFL
+packages from that exact release, verifies both imports, and runs `pip check`.
+Laravel also prepends the active release's package source directory to
+`PYTHONPATH` during inference, so a stale site-packages copy cannot silently
+serve older code.
 
 If Ubuntu does not provide `ensurepip` and the deploy user cannot install
 `python3.12-venv`, create the same user-owned environment without sudo:
@@ -77,11 +86,11 @@ python3 -m virtualenv /home/forge/picksports-ml/.venv
 Docker is also supported:
 
 ```bash
-docker build --tag picksports-nfl-ml:0.1.0 ml/nfl
+docker build --tag picksports-nfl-ml:0.2.0 ml/nfl
 docker run --rm --cpus=1.5 --memory=1g \
   --volume /home/forge/picksports-ml/data:/data:ro \
   --volume /home/forge/picksports-ml/artifacts:/artifacts \
-  picksports-nfl-ml:0.1.0 \
+  picksports-nfl-ml:0.2.0 \
   validate --input /data/nfl_training.csv
 ```
 
@@ -241,8 +250,14 @@ The challenger wins two of three seasons. Average improvement is now positive:
 `0.00562` Brier and `0.01367` log loss, safely below the explicit worst-window
 ceilings.
 
-Win probability and spread are offline eligible. Totals remain blocked because
-the total regressor did not beat Picksports consistently. The artifact is
+Win probability and spread are offline eligible. The v2 totals model remained
+blocked because its direct total-points regressor did not beat Picksports
+consistently. NFL tabular v3 replaces only that branch with a baseline-residual
+model: XGBoost learns corrections to the existing Picksports total, a
+chronological calibration season selects a correction weight from zero through
+`0.35`, and each correction is capped at four points. The model keeps the
+Picksports total unchanged unless calibration MAE improves by at least `0.10`.
+Win-probability and spread behavior are unchanged. The artifact is
 `promotion_eligible`, not promoted: production promotion still requires at
 least 25 live pregame-safe observations and 10 settled shadow decisions for
 each requested market.

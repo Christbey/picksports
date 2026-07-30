@@ -549,7 +549,7 @@ class WeeklyChallengerTrainingService
             'enabled' => (bool) ($config['enabled'] ?? false),
             'auto_promote' => (bool) ($config['auto_promote'] ?? false),
             'model_type' => "{$sport}_tabular_bundle",
-            'model_version' => $sport === 'nfl' ? 'nfl-tabular-v2' : 'mlb-tabular-v1',
+            'model_version' => $sport === 'nfl' ? 'nfl-tabular-v3' : 'mlb-tabular-v1',
             'feature_version' => (string) ($config['feature_version'] ?? ($sport === 'nfl'
                 ? 'nfl-pregame-ml-v3'
                 : 'mlb-pregame-ml-v1')),

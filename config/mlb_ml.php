@@ -20,6 +20,7 @@ return [
     ],
 
     'process' => [
+        'package_directory' => base_path('ml/mlb'),
         'command' => [
             env('MLB_ML_PYTHON_BINARY', 'python3'),
             '-m',

@@ -83,6 +83,7 @@ class NflTabularModelInferenceService
                 '--input',
                 $inputPath,
             ]);
+            $process->setEnv(['PYTHONPATH' => $this->pythonPath()]);
             $process->setTimeout((float) config('nfl_ml.process.timeout_seconds', 30));
             $process->run();
 
@@ -216,5 +217,18 @@ class NflTabularModelInferenceService
         }
 
         $value = (float) $value;
+    }
+
+    private function pythonPath(): string
+    {
+        $source = rtrim((string) config(
+            'nfl_ml.process.package_directory',
+            base_path('ml/nfl'),
+        ), '/').'/src';
+        $existing = getenv('PYTHONPATH');
+
+        return $existing === false || trim($existing) === ''
+            ? $source
+            : $source.PATH_SEPARATOR.$existing;
     }
 }

@@ -11,6 +11,7 @@ return [
     ],
 
     'process' => [
+        'package_directory' => base_path('ml/nfl'),
         'command' => [
             env('NFL_ML_PYTHON_BINARY', 'python3'),
             '-m',

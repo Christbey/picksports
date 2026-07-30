@@ -187,13 +187,14 @@ def train(
     model_run_id = run_id or str(uuid.uuid4())
     artifact_id = str(uuid.uuid4())
     source_hash = _source_hash()
+    package_version = _package_version()
     config_hash = sha256_json(
         {
             "schema": schema.raw,
             "effective_seed": effective_seed,
             "tuning": tuning_config,
             "explanations": explanation_config,
-            "package_version": _package_version(),
+            "package_version": package_version,
             "source_hash": source_hash,
         }
     )
@@ -212,6 +213,10 @@ def train(
         "config_hash": config_hash,
         "code_version": _code_version(),
         "source_hash": source_hash,
+        "package": {
+            "name": "picksports-nfl-ml",
+            "version": package_version,
+        },
         "seed": effective_seed,
         "champion_classifier": champion,
         "classifier_blend": classifier_blend,
@@ -249,6 +254,10 @@ def train(
             "version": schema.version,
             "sha256": schema.hash,
             "features": schema.feature_names,
+        },
+        "package": {
+            "name": "picksports-nfl-ml",
+            "version": package_version,
         },
         "selection_policy": {
             "tuning": (

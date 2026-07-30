@@ -52,7 +52,12 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
     manifest = json.loads((run_dir / "manifest.json").read_text())
     assert manifest["model_version"] == "nfl-tabular-v3"
     assert manifest["blend_version"] == "baseline-anchored-v2"
+    assert manifest["package"] == {
+        "name": "picksports-nfl-ml",
+        "version": "0.2.0",
+    }
     assert manifest["total_model"]["strategy"] == "baseline_residual_blend"
+    assert evaluation["package"] == manifest["package"]
     assert evaluation["walk_forward"]["summary"]["window_count"] == 3
     assert evaluation["walk_forward"]["summary"][
         "challenger_better_window_count"

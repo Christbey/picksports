@@ -137,6 +137,7 @@ def test_held_out_targets_cannot_change_model_selection(
     first_manifest = json.loads(Path(first["manifest_path"]).read_text())
     second_manifest = json.loads(Path(second["manifest_path"]).read_text())
 
+    assert first_manifest["model_type"] == "nfl_tabular_bundle"
     assert first_manifest["champion_classifier"] == second_manifest[
         "champion_classifier"
     ]
@@ -146,3 +147,115 @@ def test_held_out_targets_cannot_change_model_selection(
     assert first_manifest["classifier_blend"] == second_manifest[
         "classifier_blend"
     ]
+
+
+def test_deployment_refit_includes_partial_current_season_without_metric_leakage(
+    synthetic_frame: pd.DataFrame,
+    schema_path: Path,
+    tmp_path: Path,
+) -> None:
+    partial = _partial_current_season(synthetic_frame)
+    original = pd.concat([synthetic_frame, partial], ignore_index=True)
+    changed = original.copy()
+    current_rows = changed["season"] == 2025
+    changed.loc[current_rows, "target_home_win"] = (
+        1 - changed.loc[current_rows, "target_home_win"]
+    )
+    changed.loc[current_rows, "target_home_margin"] += 35
+    changed.loc[current_rows, "target_total_points"] += 25
+    changed.loc[current_rows, "feature_elo_diff"] += 900
+    changed.loc[current_rows, "target_hash"] = changed.loc[
+        current_rows, "target_hash"
+    ].map(lambda value: f"changed-{value}")
+    changed.loc[current_rows, "feature_hash"] = changed.loc[
+        current_rows, "feature_hash"
+    ].map(lambda value: f"changed-{value}")
+
+    original_path = tmp_path / "partial-current.csv"
+    changed_path = tmp_path / "changed-partial-current.csv"
+    original.to_csv(original_path, index=False)
+    changed.to_csv(changed_path, index=False)
+    first = train(
+        input_path=original_path,
+        schema_path=schema_path,
+        output_dir=tmp_path / "first-refit",
+        run_id="first-refit",
+    )
+    second = train(
+        input_path=changed_path,
+        schema_path=schema_path,
+        output_dir=tmp_path / "second-refit",
+        run_id="second-refit",
+    )
+
+    first_manifest = json.loads(Path(first["manifest_path"]).read_text())
+    second_manifest = json.loads(Path(second["manifest_path"]).read_text())
+    first_evaluation = json.loads(Path(first["evaluation_path"]).read_text())
+    second_evaluation = json.loads(Path(second["evaluation_path"]).read_text())
+    refit = first_manifest["deployment_refit"]
+
+    assert first_evaluation["final_holdout"] == second_evaluation["final_holdout"]
+    assert first_evaluation["walk_forward"] == second_evaluation["walk_forward"]
+    assert first_manifest["champion_classifier"] == second_manifest[
+        "champion_classifier"
+    ]
+    assert first_manifest["selected_calibrators"] == second_manifest[
+        "selected_calibrators"
+    ]
+    assert first_manifest["classifier_blend"] == second_manifest[
+        "classifier_blend"
+    ]
+    assert first_evaluation["final_holdout"]["test_season"] == 2024
+    assert first_evaluation["final_holdout"]["test_season_status"] == "complete"
+    assert first_evaluation["dataset"]["season_completeness"][-1]["complete"] is False
+
+    assert refit["row_count"] == len(original)
+    assert refit["seasons"][-1] == 2025
+    assert first_manifest["evaluation_training_seasons"][-1] == 2022
+    assert first_manifest["artifact_training_seasons"][-1] == 2025
+    assert first_manifest["artifact_training_cutoff"] == refit["training_cutoff"]
+    assert refit["partial_seasons_included"] == [2025]
+    assert refit["rows_by_season"]["2025"] == len(partial)
+    assert refit["selection_frozen_before_refit"]["source_held_out_test_season"] == 2024
+    assert (
+        refit["calibration_strategy"]["name"]
+        == "reuse_pre_refit_chronological_calibrators"
+    )
+    assert "computed before deployment refit" in refit["pre_refit_metric_statement"]
+
+    bundle = InferenceBundle.load(first["run_dir"])
+    fitted_rows = bundle.preprocessor.named_steps["scaler"].n_samples_seen_
+    assert int(fitted_rows) == len(original)
+    assert first_manifest["artifacts"]["preprocessor.joblib"]["sha256"] != (
+        second_manifest["artifacts"]["preprocessor.joblib"]["sha256"]
+    )
+    assert first_manifest["artifacts"]["models/xgboost_classifier.ubj"][
+        "sha256"
+    ] != second_manifest["artifacts"]["models/xgboost_classifier.ubj"]["sha256"]
+
+
+def _partial_current_season(frame: pd.DataFrame) -> pd.DataFrame:
+    partial = frame[frame["season"] == frame["season"].max()].head(4).copy()
+    first_game_id = int(frame["game_id"].max()) + 1
+    partial["season"] = 2025
+    partial["game_id"] = range(first_game_id, first_game_id + len(partial))
+    partial["snapshot_run_id"] = partial["game_id"].map(
+        lambda game_id: f"snapshot-{game_id}"
+    )
+    starts = pd.date_range(
+        "2025-09-01T18:00:00Z",
+        periods=len(partial),
+        freq="7D",
+    )
+    partial["game_start_at"] = [value.isoformat() for value in starts]
+    partial["features_available_at"] = [
+        (value - pd.Timedelta(hours=4)).isoformat() for value in starts
+    ]
+    partial["feature_week"] = range(1, len(partial) + 1)
+    partial["feature_hash"] = partial["game_id"].map(
+        lambda game_id: f"feature-hash-{game_id}"
+    )
+    partial["target_hash"] = partial["game_id"].map(
+        lambda game_id: f"target-hash-{game_id}"
+    )
+    return partial

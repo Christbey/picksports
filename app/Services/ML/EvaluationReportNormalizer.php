@@ -23,14 +23,25 @@ class EvaluationReportNormalizer
     {
         $walkForwardSummary = data_get($report, 'walk_forward.summary');
         $walkForwardWindows = data_get($report, 'walk_forward.windows');
+        $rollingWeeklySummary = data_get($report, 'rolling_weekly.summary');
+        $rollingWeeklyWindows = data_get($report, 'rolling_weekly.windows');
         $usesWalkForwardLayout = is_array($walkForwardSummary) || is_array($walkForwardWindows);
-        $convention = $this->deltaConvention($report, $usesWalkForwardLayout);
+        $usesRollingWeeklyLayout = is_array($rollingWeeklySummary) || is_array($rollingWeeklyWindows);
+        $convention = $this->deltaConvention(
+            $report,
+            $usesWalkForwardLayout,
+            $usesRollingWeeklyLayout,
+        );
         $rawWindows = array_values(is_array($walkForwardWindows)
             ? $walkForwardWindows
-            : (array) ($report['windows'] ?? []));
+            : (is_array($rollingWeeklyWindows)
+                ? $rollingWeeklyWindows
+                : (array) ($report['windows'] ?? [])));
         $rawSummary = is_array($walkForwardSummary)
             ? $walkForwardSummary
-            : (array) ($report['summary'] ?? []);
+            : (is_array($rollingWeeklySummary)
+                ? $rollingWeeklySummary
+                : (array) ($report['summary'] ?? []));
 
         return [
             'summary' => $this->normalizeSummary($rawSummary, $convention['convention']),
@@ -179,8 +190,11 @@ class EvaluationReportNormalizer
      * @param  array<string, mixed>  $report
      * @return array{convention:string,source:string}
      */
-    private function deltaConvention(array $report, bool $usesWalkForwardLayout): array
-    {
+    private function deltaConvention(
+        array $report,
+        bool $usesWalkForwardLayout,
+        bool $usesRollingWeeklyLayout,
+    ): array {
         $declared = data_get($report, 'delta_convention')
             ?? data_get($report, 'summary.delta_convention')
             ?? data_get($report, 'walk_forward.summary.delta_convention');
@@ -202,6 +216,13 @@ class EvaluationReportNormalizer
             return [
                 'convention' => self::BASELINE_MINUS_CHALLENGER,
                 'source' => 'walk_forward_layout',
+            ];
+        }
+
+        if ($usesRollingWeeklyLayout) {
+            return [
+                'convention' => self::BASELINE_MINUS_CHALLENGER,
+                'source' => 'rolling_weekly_layout',
             ];
         }
 

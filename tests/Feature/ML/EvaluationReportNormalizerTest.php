@@ -103,3 +103,49 @@ it('normalizes legacy Laravel deltas to positive-is-better dashboard values', fu
         ->and($normalized['windows'][0]['log_loss_delta'])->toBe(0.03)
         ->and($normalized['windows'][0]['spread_mae_delta'])->toBe(0.4);
 });
+
+it('flattens MLB rolling weekly windows with baseline-minus-challenger deltas', function () {
+    $normalized = app(EvaluationReportNormalizer::class)->normalize([
+        'report_type' => 'mlb_tabular_walk_forward_evaluation',
+        'rolling_weekly' => [
+            'summary' => ['window_count' => 1],
+            'windows' => [[
+                'champion_classifier' => 'blend',
+                'classifiers' => [
+                    'blend' => [
+                        'test_calibrated' => [
+                            'count' => 45,
+                            'brier' => 0.21,
+                            'log_loss' => 0.61,
+                        ],
+                    ],
+                ],
+                'baselines' => [
+                    'classifiers' => [
+                        'current_picksports' => [
+                            'brier' => 0.23,
+                            'log_loss' => 0.65,
+                        ],
+                    ],
+                    'regressors' => [
+                        'current_picksports_home_margin' => ['mae' => 3.4],
+                        'current_picksports_total_points' => ['mae' => 3.8],
+                    ],
+                ],
+                'regressors' => [
+                    'home_margin' => ['mae' => 3.1],
+                    'total_points' => ['mae' => 3.6],
+                ],
+            ]],
+        ],
+    ]);
+
+    expect($normalized['raw_summary']['window_count'])->toBe(1)
+        ->and($normalized['raw_windows'])->toHaveCount(1)
+        ->and($normalized['delta_convention']['reported'])->toBe('baseline_minus_challenger')
+        ->and($normalized['delta_convention']['source'])->toBe('rolling_weekly_layout')
+        ->and($normalized['windows'][0]['brier_delta'])->toBe(0.02)
+        ->and($normalized['windows'][0]['log_loss_delta'])->toBe(0.04)
+        ->and($normalized['windows'][0]['spread_mae_delta'])->toBe(0.3)
+        ->and($normalized['windows'][0]['total_mae_delta'])->toBe(0.2);
+});

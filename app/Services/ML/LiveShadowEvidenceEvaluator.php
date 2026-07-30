@@ -30,7 +30,8 @@ class LiveShadowEvidenceEvaluator
                     ->where('pregame_safe', true)
                     ->where('availability_status', 'observed_pregame')
                     ->whereColumn('features_available_at', '<=', 'game_start_at'))
-                ->count();
+                ->distinct()
+                ->count('game_id');
             $settledDecisions = BetDecision::query()
                 ->where('model_artifact_id', $artifact->id)
                 ->whereNotNull('shadow_model_output_id')
@@ -41,7 +42,8 @@ class LiveShadowEvidenceEvaluator
                     ->where('availability_status', 'observed_pregame')
                     ->whereColumn('features_available_at', '<=', 'game_start_at'))
                 ->whereHas('settlement')
-                ->count();
+                ->distinct()
+                ->count('game_id');
 
             $checks = [
                 'minimum_live_observations' => $observations >= $minimumObservations,

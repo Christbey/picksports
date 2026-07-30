@@ -611,6 +611,74 @@ $scheduleDailySeasonJob(
     $mlbInSeason,
     'MLB: Snapshot Bet Filter'
 );
+$scheduleDailySeasonJob(
+    "mlb:backtest-pick-candidates --season={$currentYear}",
+    '04:40',
+    $mlbInSeason,
+    'MLB: Grade Pick Candidates'
+);
+$scheduleDailySeasonJob(
+    'sports:settle-bet-decisions --sport=mlb',
+    '04:50',
+    $mlbInSeason,
+    'MLB: Settle Model Decisions'
+);
+$scheduleDailySeasonJob(
+    'mlb:run-tabular-shadow --skip-decisions',
+    '06:10',
+    $mlbInSeason,
+    'MLB: Run Tabular Shadow'
+);
+$scheduleDailySeasonJob(
+    'sports:record-shadow-bet-decisions --sport=mlb',
+    '06:15',
+    $mlbInSeason,
+    'MLB: Record Shadow Bet Decisions'
+);
+$mlbWeeklyTrainingCommand = 'sports:train-weekly-model-challenger mlb';
+$mlbWeeklyTraining = Schedule::command($mlbWeeklyTrainingCommand)
+    ->weeklyOn(1, '06:40')
+    ->timezone(config('app.timezone'))
+    ->when($mlbInSeason)
+    ->name('MLB: Weekly Model Challenger Training')
+    ->withoutOverlapping(360)
+    ->onOneServer()
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $mlbWeeklyTraining,
+    $mlbWeeklyTrainingCommand,
+    'MLB: Weekly Model Challenger Training',
+);
+
+$mlbPostOddsRefreshHours = '8,12,16,20';
+$mlbPostOddsRefreshJobs = [
+    [
+        'command' => "mlb:generate-predictions --season={$currentYear}",
+        'minute' => 30,
+        'name' => 'MLB: Refresh Predictions After Odds Sync',
+    ],
+    [
+        'command' => 'mlb:run-tabular-shadow --skip-decisions',
+        'minute' => 50,
+        'name' => 'MLB: Refresh Tabular Shadow After Odds Sync',
+    ],
+    [
+        'command' => 'sports:record-shadow-bet-decisions --sport=mlb',
+        'minute' => 58,
+        'name' => 'MLB: Record Refreshed Shadow Decisions',
+    ],
+];
+
+foreach ($mlbPostOddsRefreshJobs as $job) {
+    $event = Schedule::command($job['command'])
+        ->cron("{$job['minute']} {$mlbPostOddsRefreshHours} * * *")
+        ->when($mlbInSeason)
+        ->name($job['name'])
+        ->withoutOverlapping()
+        ->runInBackground();
+
+    $attachCommandHeartbeat($event, $job['command'], $job['name']);
+}
 
 $mlbDailyPicksCommand = "mlb:generate-daily-picks --today --season={$currentYear}";
 $mlbDailyPicksEvent = Schedule::command($mlbDailyPicksCommand)
@@ -803,6 +871,20 @@ $scheduleWeeklySeasonJob(
     '11:35',
     $nflInSeason,
     'NFL: Weekly Readiness Pass'
+);
+$nflWeeklyTrainingCommand = 'sports:train-weekly-model-challenger nfl';
+$nflWeeklyTraining = Schedule::command($nflWeeklyTrainingCommand)
+    ->weeklyOn(2, '12:40')
+    ->timezone(config('app.timezone'))
+    ->when($nflInSeason)
+    ->name('NFL: Weekly Model Challenger Training')
+    ->withoutOverlapping(360)
+    ->onOneServer()
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $nflWeeklyTraining,
+    $nflWeeklyTrainingCommand,
+    'NFL: Weekly Model Challenger Training',
 );
 
 // CFB

@@ -457,6 +457,12 @@ const adminAreas = [
         href: '/admin/nfl-model-monitoring',
     },
     {
+        title: 'MLB Model Monitor',
+        description:
+            'Track MLB artifacts, live shadow results, data coverage, and inference health.',
+        href: '/admin/mlb-model-monitoring',
+    },
+    {
         title: 'Payload Inspector',
         description: 'Validate API v2 payload contracts for migrated surfaces.',
         href: payloadInspector.urlFor({

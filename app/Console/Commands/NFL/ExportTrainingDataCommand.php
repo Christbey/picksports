@@ -5,6 +5,8 @@ namespace App\Console\Commands\NFL;
 use App\Services\ML\CsvDataset;
 use App\Services\ML\TrustedSnapshotDataset;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
+use Throwable;
 
 class ExportTrainingDataCommand extends Command
 {
@@ -38,6 +40,9 @@ class ExportTrainingDataCommand extends Command
             return self::INVALID;
         }
 
+        $path = str_starts_with((string) $this->option('path'), '/')
+            ? (string) $this->option('path')
+            : base_path((string) $this->option('path'));
         $rows = $dataset->rows(
             sport: 'nfl',
             season: $season,
@@ -52,15 +57,22 @@ class ExportTrainingDataCommand extends Command
         );
 
         if ($rows->isEmpty()) {
+            if (! $this->removeStaleDestination($path)) {
+                return self::FAILURE;
+            }
+
             $this->warn('No NFL rows met the requested profile, provenance, and target requirements.');
 
-            return self::SUCCESS;
+            return self::FAILURE;
         }
 
-        $path = str_starts_with((string) $this->option('path'), '/')
-            ? (string) $this->option('path')
-            : base_path((string) $this->option('path'));
-        $count = $csv->write($path, $rows);
+        try {
+            $count = $csv->write($path, $rows);
+        } catch (Throwable $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
 
         $this->info('NFL trusted training data exported.');
         $this->line("Rows: {$count}");
@@ -71,6 +83,23 @@ class ExportTrainingDataCommand extends Command
         $this->line("Path: {$path}");
 
         return self::SUCCESS;
+    }
+
+    private function removeStaleDestination(string $path): bool
+    {
+        try {
+            if (! File::exists($path) || File::delete($path)) {
+                return true;
+            }
+        } catch (Throwable $exception) {
+            $this->error($exception->getMessage());
+
+            return false;
+        }
+
+        $this->error("Unable to remove stale export path: {$path}");
+
+        return false;
     }
 
     private function nullableIntegerOption(string $name): ?int

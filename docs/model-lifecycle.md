@@ -25,7 +25,7 @@ Every registered model has:
 
 Use `sports:report-model-lineage {artifact}` to print the full chain.
 Admins can review the same lineage and live feedback at
-`/admin/nfl-model-monitoring`.
+`/admin/nfl-model-monitoring` and `/admin/mlb-model-monitoring`.
 
 ## NBA Workflow
 
@@ -140,6 +140,105 @@ php artisan sports:settle-bet-decisions --sport=nfl
 php artisan sports:report-model-feedback <profile-artifact-uuid>
 ```
 
+## MLB Workflow
+
+MLB uses game-week chronological windows so the current season can supply
+training and live-shadow evidence without waiting for several complete seasons.
+
+```bash
+php artisan sports:backfill-market-quotes --sport=mlb --season=2026 --dry-run
+php artisan sports:backfill-market-quotes --sport=mlb --season=2026
+php artisan mlb:backfill-historical-predictions \
+  --season=2025 \
+  --profile=trusted-core-v1 \
+  --only-missing-profile
+php artisan mlb:export-training-data \
+  --season=2025 \
+  --season=2026 \
+  --path=storage/app/ml/mlb_trusted_training_data.csv
+
+cd ml/mlb
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install --requirement requirements.lock.txt
+pip install --no-deps --editable .
+picksports-mlb-ml validate \
+  --input ../../storage/app/ml/mlb_trusted_training_data.csv
+picksports-mlb-ml evaluate-rolling \
+  --input ../../storage/app/ml/mlb_trusted_training_data.csv \
+  --output ../../storage/app/ml/mlb_rolling_evaluation.json
+picksports-mlb-ml train \
+  --input ../../storage/app/ml/mlb_trusted_training_data.csv \
+  --output-dir /artifacts
+```
+
+Register the completed immutable run, then leave it in private shadow mode:
+
+```bash
+php artisan mlb:register-tabular-model-run /artifacts/<model-run-id> \
+  --dataset=storage/app/ml/mlb_trusted_training_data.csv
+php artisan mlb:run-tabular-shadow --artifact=<artifact-uuid>
+php artisan sports:evaluate-model-promotion <artifact-uuid>
+```
+
+`MLB_ML_SHADOW_ENABLED=true` enables scheduled inference. Leave
+`MLB_ML_SHADOW_ARTIFACT_ID` empty when `MLB_ML_SHADOW_AUTO_SELECT=true` so the
+database-backed shadow cohort can advance automatically. The initial pass runs
+after the morning baseline.
+Additional passes run after each in-season odds cycle so the model probability,
+exact market line, quote, and decision share a reproducible pregame horizon.
+All resulting decisions remain private and tracking-only.
+
+## Weekly MLB And NFL Automation
+
+The in-season scheduler runs the complete challenger lifecycle:
+
+- MLB: Monday at `06:40` Central Time
+- NFL: Tuesday at `12:40` Central Time, after Monday games and readiness jobs
+
+The scheduled command runs on the DigitalOcean application host using the
+sport's configured ML Python binary. Training is isolated in a child process
+with a bounded timeout and thread count; it never receives database
+credentials because the Python package reads only the immutable export.
+
+Each `sports:train-weekly-model-challenger` cycle:
+
+1. settles the prior active challenger's promotion evaluation;
+2. reconstructs missing trusted current-season NFL rows when applicable;
+3. exports to a new atomic dataset and fails when no rows qualify;
+4. hashes the dataset, schema, package source, and training configuration;
+5. skips an exact duplicate fingerprint;
+6. trains with bounded CPU threads and a four-hour timeout;
+7. verifies the returned run ID, artifact type, and dataset hash;
+8. registers the immutable artifact, dataset, and evaluation report;
+9. evaluates the new artifact without bypassing any promotion gate; and
+10. assigns an offline-eligible challenger to the private shadow cohort.
+
+The Python training stage keeps chronological evaluation untouched, then
+performs a separate deployment refit through the latest settled training row.
+This allows the deployed challenger to learn from the current season without
+leaking those rows into its reported held-out metrics.
+
+Every automation cycle is recorded as a `weekly_training_cycle` model run with
+its current stage, dataset hash, fingerprint, artifact ID, timestamps, and
+terminal status. Failed cycles retain a private `failure.json` in
+`storage/app/ml/automated-training/<sport>/<cycle-id>`.
+
+`MLB_ML_AUTO_PROMOTE_ENABLED` and `NFL_ML_AUTO_PROMOTE_ENABLED` control whether
+the previously selected challenger may be promoted after every offline and live
+gate passes. Promotion still cannot publish a pick directly: model outputs flow
+through private `bet_decisions`, price, edge, uncertainty, risk, and bankroll
+rules. Set either flag to `false` to keep automated training and shadowing while
+requiring manual promotion.
+
+Use these commands for an immediate run or a safe test:
+
+```bash
+php artisan sports:train-weekly-model-challenger mlb
+php artisan sports:train-weekly-model-challenger nfl
+php artisan sports:train-weekly-model-challenger nfl --no-promote --retain-workdir
+```
+
 ## Promotion Policy
 
 The default policy requires:
@@ -153,13 +252,18 @@ The default policy requires:
 - at least 25 live pregame-safe observations and 10 settled shadow decisions
   before actual promotion
 
+Live requirements count distinct games per artifact and market. Repeated
+pregame snapshots for one matchup cannot inflate promotion evidence.
+
 All normalized reports use `baseline - challenger`, so a positive delta means
 the challenger is better. Legacy Laravel reports are converted at the boundary.
 
-Promotion is never automatic. `sports:evaluate-model-promotion` marks a passing
-artifact `promotion_eligible`; only `--promote` makes it eligible for
-decision-time use. Whether a promoted artifact can change a live public output
-is controlled separately by the sport-specific inference configuration.
+`sports:evaluate-model-promotion` marks a passing artifact
+`promotion_eligible`; only an explicit `--promote` evaluation makes it eligible
+for decision-time use. The weekly coordinator may issue that explicit
+evaluation for the selected challenger when the sport's auto-promotion flag is
+enabled. Whether a promoted artifact can change a live public output remains
+controlled separately, and MLB/NFL automated outputs stay private.
 
 ## Decisions And Settlement
 
@@ -170,6 +274,8 @@ php artisan sports:record-shadow-bet-decisions --sport=nba
 php artisan sports:settle-bet-decisions --sport=nba
 php artisan sports:record-shadow-bet-decisions --sport=nfl
 php artisan sports:settle-bet-decisions --sport=nfl
+php artisan sports:record-shadow-bet-decisions --sport=mlb
+php artisan sports:settle-bet-decisions --sport=mlb
 php artisan sports:report-model-feedback <artifact-uuid>
 php artisan nfl:materialize-signal-observations --season=2026
 php artisan nfl:grade-signal-observations --season=2026

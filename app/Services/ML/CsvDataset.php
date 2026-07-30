@@ -17,28 +17,73 @@ class CsvDataset
         }
 
         File::ensureDirectoryExists(dirname($path));
-        $handle = fopen($path, 'wb');
-        if ($handle === false) {
-            throw new \RuntimeException("Unable to write CSV file: {$path}");
+        $temporaryPath = null;
+        $handle = null;
+
+        try {
+            $temporaryPath = dirname($path)
+                .'/.'.basename($path)
+                .'.'.bin2hex(random_bytes(16))
+                .'.tmp';
+            $handle = fopen($temporaryPath, 'xb');
+            if ($handle === false) {
+                throw new \RuntimeException("Unable to write temporary CSV file for: {$path}");
+            }
+
+            $headers = $rows
+                ->flatMap(fn (array $row): array => array_keys($row))
+                ->unique()
+                ->values()
+                ->all();
+
+            if (fputcsv($handle, $headers) === false) {
+                throw new \RuntimeException("Unable to write CSV headers for: {$path}");
+            }
+
+            foreach ($rows as $row) {
+                $written = fputcsv($handle, array_map(
+                    fn (string $header): string => $this->stringValue($row[$header] ?? null),
+                    $headers,
+                ));
+
+                if ($written === false) {
+                    throw new \RuntimeException("Unable to write CSV row for: {$path}");
+                }
+            }
+
+            if (! fflush($handle)) {
+                throw new \RuntimeException("Unable to flush CSV file for: {$path}");
+            }
+
+            $closed = fclose($handle);
+            $handle = null;
+
+            if (! $closed) {
+                throw new \RuntimeException("Unable to close CSV file for: {$path}");
+            }
+
+            clearstatcache(true, $temporaryPath);
+            $size = filesize($temporaryPath);
+            if ($size === false || $size === 0) {
+                throw new \RuntimeException("CSV file is empty for: {$path}");
+            }
+
+            if (! @rename($temporaryPath, $path)) {
+                throw new \RuntimeException("Unable to publish CSV file atomically: {$path}");
+            }
+
+            $temporaryPath = null;
+
+            return $rows->count();
+        } finally {
+            if (is_resource($handle)) {
+                fclose($handle);
+            }
+
+            if ($temporaryPath !== null && is_file($temporaryPath)) {
+                @unlink($temporaryPath);
+            }
         }
-
-        $headers = $rows
-            ->flatMap(fn (array $row): array => array_keys($row))
-            ->unique()
-            ->values()
-            ->all();
-
-        fputcsv($handle, $headers);
-        foreach ($rows as $row) {
-            fputcsv($handle, array_map(
-                fn (string $header): string => $this->stringValue($row[$header] ?? null),
-                $headers,
-            ));
-        }
-
-        fclose($handle);
-
-        return $rows->count();
     }
 
     /**

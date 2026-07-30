@@ -7,6 +7,7 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 
 it('exports, splits, trains, and rolling-evaluates trusted nfl snapshots', function () {
     $modelRun = app(ModelRunRecorder::class)->forPrediction(
@@ -74,20 +75,24 @@ it('exports, splits, trains, and rolling-evaluates trusted nfl snapshots', funct
     $splitPath = storage_path('app/ml/tests/nfl-splits');
     $artifactPath = storage_path('app/ml/tests/nfl_calibration.json');
     $reportPath = storage_path('app/ml/tests/nfl_rolling.json');
+    File::ensureDirectoryExists(dirname($datasetPath));
+    file_put_contents($datasetPath, 'stale export');
 
-    Artisan::call('nfl:export-training-data', [
+    $exportExitCode = Artisan::call('nfl:export-training-data', [
         '--profile' => 'full-historical',
         '--from-season' => 2018,
         '--to-season' => 2025,
         '--feature-version' => 'historical-core-v1',
         '--path' => $datasetPath,
     ]);
-    expect(Artisan::output())->toContain('Rows: 8')
+    expect($exportExitCode)->toBe(0)
+        ->and(Artisan::output())->toContain('Rows: 8')
         ->toContain('Seasons: 2018 through 2025')
         ->toContain('Feature version: historical-core-v1')
         ->and(file_get_contents($datasetPath))->toContain('target_hash')
         ->toContain('config_hash')
-        ->toContain('full-historical');
+        ->toContain('full-historical')
+        ->and(nflExportTemporaryFiles($datasetPath))->toBe([]);
 
     Artisan::call('nfl:split-snapshot-dataset', [
         '--input' => $datasetPath,
@@ -133,3 +138,28 @@ it('exports, splits, trains, and rolling-evaluates trusted nfl snapshots', funct
         ->toContain('Matched games')
         ->toContain('Held-out seasons');
 });
+
+it('fails an empty nfl export and removes a stale destination', function () {
+    $path = storage_path('app/ml/tests/nfl_empty_export.csv');
+    File::ensureDirectoryExists(dirname($path));
+    file_put_contents($path, 'stale export');
+
+    $exitCode = Artisan::call('nfl:export-training-data', [
+        '--season' => 1900,
+        '--profile' => 'full-historical',
+        '--path' => $path,
+    ]);
+
+    expect($exitCode)->toBe(1)
+        ->and(file_exists($path))->toBeFalse()
+        ->and(nflExportTemporaryFiles($path))->toBe([])
+        ->and(Artisan::output())->toContain('No NFL rows met');
+});
+
+/**
+ * @return list<string>
+ */
+function nflExportTemporaryFiles(string $path): array
+{
+    return glob(dirname($path).'/.'.basename($path).'.*.tmp') ?: [];
+}

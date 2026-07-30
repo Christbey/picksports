@@ -30,7 +30,6 @@ class SettleBetDecisionsCommand extends Command
     {
         $query = BetDecision::query()
             ->whereDoesntHave('settlement')
-            ->where('market_type', 'moneyline')
             ->when($this->option('sport'), fn ($builder) => $builder->where('sport', strtolower((string) $this->option('sport'))))
             ->orderBy('id');
 
@@ -40,63 +39,282 @@ class SettleBetDecisionsCommand extends Command
 
         $settled = 0;
         foreach ($query->get() as $decision) {
+            $marketType = $this->marketType($decision);
             $gameModel = $this->gameModels[$decision->sport] ?? null;
             $game = $gameModel === null ? null : $gameModel::query()->find($decision->game_id);
             $finalStatus = (string) config("{$decision->sport}.statuses.final", 'STATUS_FINAL');
-            if (! $game
+            if ($marketType === null
+                || ! $game
                 || (string) $game->status !== $finalStatus
                 || $game->home_score === null
                 || $game->away_score === null) {
                 continue;
             }
 
-            $homeMargin = (int) $game->home_score - (int) $game->away_score;
-            $won = match ($decision->side) {
-                'home' => $homeMargin > 0,
-                'away' => $homeMargin < 0,
-                default => false,
-            };
-            $push = $homeMargin === 0;
-            $shadowProfit = $push ? 0.0 : ($won ? $this->winProfit($decision->price) : -1.0);
-            $closingQuote = MarketQuote::query()
-                ->where('sport', $decision->sport)
-                ->where('game_id', $decision->game_id)
-                ->where('market_key', $decision->market_key)
-                ->where('side', $decision->side)
-                ->where('is_pregame', true)
-                ->when($decision->game_start_at, fn ($builder) => $builder->where('captured_at', '<=', $decision->game_start_at))
-                ->latest('captured_at')
-                ->first();
-            $entryProbability = is_numeric($decision->no_vig_probability) ? (float) $decision->no_vig_probability : null;
-            $closingProbability = is_numeric($closingQuote?->no_vig_probability) ? (float) $closingQuote->no_vig_probability : null;
-            $clv = $entryProbability !== null && $closingProbability !== null
-                ? $closingProbability - $entryProbability
-                : null;
+            $homeScore = (int) $game->home_score;
+            $awayScore = (int) $game->away_score;
+            $homeMargin = $homeScore - $awayScore;
+            $totalScore = $homeScore + $awayScore;
+            $grade = $this->grade($decision, $marketType, $homeMargin, $totalScore);
+            if ($grade === null) {
+                continue;
+            }
 
-            BetSettlement::query()->create([
-                'bet_decision_id' => $decision->id,
-                'result_status' => $push ? 'push' : ($won ? 'win' : 'loss'),
-                'result_value' => $homeMargin,
-                'profit_units' => $decision->is_bet ? $shadowProfit : 0.0,
-                'closing_price' => $closingQuote?->price,
-                'closing_line' => $closingQuote?->line,
-                'clv' => $clv,
-                'graded_at' => now(),
-                'settled_at' => now(),
-                'metadata' => [
-                    'shadow_profit_units' => $shadowProfit,
-                    'actual_bet_placed' => (bool) $decision->is_bet,
-                    'home_score' => (int) $game->home_score,
-                    'away_score' => (int) $game->away_score,
-                    'closing_quote_id' => $closingQuote?->id,
+            $shadowProfit = $grade['push']
+                ? 0.0
+                : ($grade['won'] ? $this->winProfit($decision->price) : -1.0);
+            $closingQuoteSelection = $this->closingQuote($decision, $marketType);
+            $closingQuote = $closingQuoteSelection['quote'];
+            $clv = $this->closingLineValue($decision, $closingQuote, $marketType);
+
+            $settlement = BetSettlement::query()->firstOrCreate(
+                ['bet_decision_id' => $decision->id],
+                [
+                    'result_status' => $grade['push'] ? 'push' : ($grade['won'] ? 'win' : 'loss'),
+                    'result_value' => $grade['result_value'],
+                    'profit_units' => $decision->is_bet ? $shadowProfit : 0.0,
+                    'closing_price' => $closingQuote?->price,
+                    'closing_line' => $closingQuote?->line,
+                    'clv' => $clv['value'],
+                    'graded_at' => now(),
+                    'settled_at' => now(),
+                    'metadata' => [
+                        'market_type' => $marketType,
+                        'side' => $decision->side,
+                        'entry_line' => is_numeric($decision->line) ? (float) $decision->line : null,
+                        'selected_result_value' => $grade['selected_result_value'],
+                        'shadow_profit_units' => $shadowProfit,
+                        'actual_bet_placed' => (bool) $decision->is_bet,
+                        'home_score' => $homeScore,
+                        'away_score' => $awayScore,
+                        'home_margin' => $homeMargin,
+                        'total_score' => $totalScore,
+                        'closing_quote_id' => $closingQuote?->id,
+                        'closing_quote_captured_at' => $closingQuote?->captured_at?->toIso8601String(),
+                        'closing_quote_selection' => $closingQuoteSelection['selection'],
+                        'entry_bookmaker' => $decision->bookmaker,
+                        'closing_bookmaker' => $closingQuote?->bookmaker_key
+                            ?? $closingQuote?->bookmaker_title,
+                        'consensus_bookmaker_count' => $closingQuoteSelection['bookmaker_count'],
+                        'clv_type' => $clv['type'],
+                    ],
                 ],
-            ]);
-            $settled++;
+            );
+            $settled += $settlement->wasRecentlyCreated ? 1 : 0;
         }
 
         $this->info("Settled {$settled} decision(s).");
 
         return self::SUCCESS;
+    }
+
+    private function marketType(BetDecision $decision): ?string
+    {
+        $marketType = strtolower(trim((string) $decision->market_type));
+        $marketKey = strtolower(trim((string) $decision->market_key));
+
+        return match (true) {
+            in_array($marketType, ['moneyline', 'winner', 'win_probability'], true)
+                || $marketKey === 'h2h' => 'moneyline',
+            in_array($marketType, ['spread', 'run_line'], true)
+                || in_array($marketKey, ['spread', 'spreads', 'run_line'], true) => 'spread',
+            in_array($marketType, ['total', 'totals'], true)
+                || in_array($marketKey, ['total', 'totals'], true) => 'total',
+            default => null,
+        };
+    }
+
+    /**
+     * @return array{
+     *     won: bool,
+     *     push: bool,
+     *     result_value: float,
+     *     selected_result_value: float
+     * }|null
+     */
+    private function grade(
+        BetDecision $decision,
+        string $marketType,
+        int $homeMargin,
+        int $totalScore,
+    ): ?array {
+        if ($marketType === 'moneyline') {
+            $selectedResult = match ($decision->side) {
+                'home' => (float) $homeMargin,
+                'away' => (float) -$homeMargin,
+                default => null,
+            };
+
+            if ($selectedResult === null) {
+                return null;
+            }
+
+            return [
+                'won' => $selectedResult > 0,
+                'push' => $selectedResult === 0.0,
+                'result_value' => (float) $homeMargin,
+                'selected_result_value' => $selectedResult,
+            ];
+        }
+
+        if (! is_numeric($decision->line)) {
+            return null;
+        }
+
+        $line = (float) $decision->line;
+        if ($marketType === 'spread') {
+            $selectedResult = match ($decision->side) {
+                'home' => $homeMargin + $line,
+                'away' => -$homeMargin + $line,
+                default => null,
+            };
+            $resultValue = (float) $homeMargin;
+        } else {
+            $selectedResult = match ($decision->side) {
+                'over' => $totalScore - $line,
+                'under' => $line - $totalScore,
+                default => null,
+            };
+            $resultValue = (float) $totalScore;
+        }
+
+        if ($selectedResult === null) {
+            return null;
+        }
+
+        return [
+            'won' => $selectedResult > 0.0,
+            'push' => abs($selectedResult) < 0.000001,
+            'result_value' => $resultValue,
+            'selected_result_value' => $selectedResult,
+        ];
+    }
+
+    /**
+     * @return array{quote: ?MarketQuote, selection: ?string, bookmaker_count: int}
+     */
+    private function closingQuote(BetDecision $decision, string $marketType): array
+    {
+        $marketKey = match ($marketType) {
+            'moneyline' => 'h2h',
+            'spread' => 'spreads',
+            'total' => 'totals',
+        };
+
+        $query = MarketQuote::query()
+            ->where('sport', $decision->sport)
+            ->where('game_id', $decision->game_id)
+            ->where('market_key', $marketKey)
+            ->where('side', $decision->side)
+            ->where('is_pregame', true)
+            ->when($decision->decided_at, fn ($builder) => $builder->where('captured_at', '>=', $decision->decided_at))
+            ->when($decision->game_start_at, fn ($builder) => $builder->where('captured_at', '<=', $decision->game_start_at));
+
+        $bookmaker = trim((string) $decision->bookmaker);
+        if ($bookmaker !== '') {
+            $exactQuote = (clone $query)
+                ->where(function ($builder) use ($bookmaker): void {
+                    $builder->where('bookmaker_key', $bookmaker)
+                        ->orWhere('bookmaker_title', $bookmaker);
+                })
+                ->latest('captured_at')
+                ->latest('id')
+                ->first();
+
+            if ($exactQuote !== null) {
+                return [
+                    'quote' => $exactQuote,
+                    'selection' => 'exact_bookmaker',
+                    'bookmaker_count' => 1,
+                ];
+            }
+        }
+
+        $latestByBookmaker = (clone $query)
+            ->latest('captured_at')
+            ->latest('id')
+            ->get()
+            ->unique(fn (MarketQuote $quote): string => (string) (
+                $quote->bookmaker_key
+                    ?? $quote->bookmaker_title
+                    ?? "unknown:{$quote->id}"
+            ))
+            ->values();
+
+        if ($latestByBookmaker->isEmpty()) {
+            return [
+                'quote' => null,
+                'selection' => null,
+                'bookmaker_count' => 0,
+            ];
+        }
+
+        $metric = $marketType === 'moneyline' ? 'no_vig_probability' : 'line';
+        $consensusQuotes = $latestByBookmaker
+            ->filter(fn (MarketQuote $quote): bool => is_numeric($quote->{$metric}))
+            ->sortBy([
+                [fn (MarketQuote $quote): float => (float) $quote->{$metric}, 'asc'],
+                [fn (MarketQuote $quote): int => (int) $quote->id, 'asc'],
+            ])
+            ->values();
+
+        if ($consensusQuotes->isEmpty()) {
+            return [
+                'quote' => null,
+                'selection' => null,
+                'bookmaker_count' => $latestByBookmaker->count(),
+            ];
+        }
+
+        return [
+            'quote' => $consensusQuotes->get(intdiv($consensusQuotes->count(), 2)),
+            'selection' => 'consensus_fallback',
+            'bookmaker_count' => $latestByBookmaker->count(),
+        ];
+    }
+
+    /**
+     * @return array{value: ?float, type: ?string}
+     */
+    private function closingLineValue(
+        BetDecision $decision,
+        ?MarketQuote $closingQuote,
+        string $marketType,
+    ): array {
+        if ($closingQuote === null) {
+            return ['value' => null, 'type' => null];
+        }
+
+        if ($marketType === 'moneyline') {
+            $entryProbability = is_numeric($decision->no_vig_probability)
+                ? (float) $decision->no_vig_probability
+                : null;
+            $closingProbability = is_numeric($closingQuote->no_vig_probability)
+                ? (float) $closingQuote->no_vig_probability
+                : null;
+
+            return [
+                'value' => $entryProbability !== null && $closingProbability !== null
+                    ? $closingProbability - $entryProbability
+                    : null,
+                'type' => 'probability',
+            ];
+        }
+
+        $entryLine = is_numeric($decision->line) ? (float) $decision->line : null;
+        $closingLine = is_numeric($closingQuote->line) ? (float) $closingQuote->line : null;
+        if ($entryLine === null || $closingLine === null) {
+            return ['value' => null, 'type' => 'line'];
+        }
+
+        $value = match ($marketType) {
+            'spread' => $entryLine - $closingLine,
+            'total' => $decision->side === 'over'
+                ? $closingLine - $entryLine
+                : $entryLine - $closingLine,
+        };
+
+        return ['value' => $value, 'type' => 'line'];
     }
 
     private function winProfit(?int $price): float

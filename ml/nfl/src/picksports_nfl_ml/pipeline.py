@@ -39,7 +39,9 @@ from picksports_nfl_ml.schema import FeatureSchema
 from picksports_nfl_ml.splits import (
     ChronologicalFold,
     calibration_selection_split,
+    complete_season_frame,
     final_holdout_fold,
+    season_completeness,
     walk_forward_folds,
 )
 from picksports_nfl_ml.tuning import tune_xgboost_models
@@ -77,8 +79,10 @@ def train(
         training_seasons_window = int(training_seasons_window)
     calibration_fraction = float(schema.training["calibration_fit_fraction"])
     final_test_seasons = int(schema.training["final_test_seasons"])
+    season_profiles = season_completeness(frame, schema)
+    evaluation_frame = complete_season_frame(frame, schema, season_profiles)
     folds = walk_forward_folds(
-        frame,
+        evaluation_frame,
         schema,
         minimum_seasons,
         training_seasons_window,
@@ -89,7 +93,7 @@ def train(
         for fold in folds
     ]
     final_fold = final_holdout_fold(
-        frame,
+        evaluation_frame,
         schema,
         minimum_seasons,
         final_test_seasons,
@@ -141,10 +145,25 @@ def train(
     residuals = _calibration_residual_standard_deviations(
         models, final_fold.calibration, schema
     )
+    deployment_models = fit_model_set(
+        frame,
+        schema,
+        effective_seed,
+        tuned_parameters=tuned_parameters,
+    )
+    deployment_refit = _deployment_refit_provenance(
+        frame=frame,
+        schema=schema,
+        season_profiles=season_profiles,
+        final_fold=final_fold,
+        final_calibration=final_calibration,
+        classifier_blend=classifier_blend,
+        champion=champion,
+    )
     explanation_summary, explanation_values, native_importance = (
         explain_xgboost_models(
-            models,
-            final_fold.train,
+            deployment_models,
+            frame,
             schema,
             effective_seed,
             explanation_config,
@@ -167,6 +186,7 @@ def train(
     generated_at = datetime.now(timezone.utc).isoformat()
     manifest: dict[str, Any] = {
         "manifest_version": 1,
+        "model_type": "nfl_tabular_bundle",
         "model_version": "nfl-tabular-v2",
         "blend_version": "baseline-anchored-v1",
         "model_run_id": model_run_id,
@@ -187,9 +207,14 @@ def train(
         },
         "residual_standard_deviation": residuals,
         "training_seasons": list(final_fold.train_seasons),
+        "evaluation_training_seasons": list(final_fold.train_seasons),
+        "artifact_training_seasons": deployment_refit["seasons"],
+        "artifact_training_cutoff": deployment_refit["training_cutoff"],
         "training_seasons_window": training_seasons_window,
         "calibration_season": final_fold.calibration_season,
         "held_out_test_season": final_fold.test_season,
+        "held_out_test_season_status": "complete",
+        "deployment_refit": deployment_refit,
         "dependencies": _dependency_versions(),
         "tuned_parameters": tuned_parameters,
     }
@@ -203,6 +228,7 @@ def train(
             "sha256": dataset_hash,
             "rows": int(len(frame)),
             "seasons": sorted(int(value) for value in frame[schema.season_column].unique()),
+            "season_completeness": season_profiles,
         },
         "feature_schema": {
             "version": schema.version,
@@ -212,7 +238,7 @@ def train(
         "selection_policy": {
             "tuning": (
                 "Optuna, when enabled, tunes each XGBoost estimator on an inner "
-                "chronological split made only from final artifact training "
+                "chronological split made only from pre-refit evaluation training "
                 "seasons. Calibration and held-out test seasons are inaccessible."
             ),
             "calibration": (
@@ -233,6 +259,7 @@ def train(
             "train_seasons": list(final_fold.train_seasons),
             "calibration_season": final_fold.calibration_season,
             "test_season": final_fold.test_season,
+            "test_season_status": "complete",
             "champion_classifier": champion,
             **final_metrics,
         },
@@ -258,6 +285,7 @@ def train(
                 for name, study in tuning_provenance.get("studies", {}).items()
             },
         },
+        "deployment_refit": deployment_refit,
     }
     evaluation["promotion_summary"] = _promotion_summary(walk_forward_results)
 
@@ -271,7 +299,7 @@ def train(
         manifest=manifest,
         evaluation=evaluation,
         example_output={},
-        models=models,
+        models=deployment_models,
         calibrators=calibrator_objects,
         schema=schema,
         tuning_provenance=tuning_provenance,
@@ -304,6 +332,7 @@ def train(
         "config_hash": config_hash,
         "champion_classifier": champion,
         "held_out_test_season": final_fold.test_season,
+        "artifact_training_cutoff": deployment_refit["training_cutoff"],
         "evaluation_path": str(run_dir / "evaluation.json"),
         "manifest_path": str(run_dir / "manifest.json"),
         "prediction_example_path": str(run_dir / "prediction_example.json"),
@@ -614,6 +643,76 @@ def _calibration_residual_standard_deviations(
     return {
         "home_margin": max(1e-6, float(margin_metrics["residual_std"])),
         "total_points": max(1e-6, float(total_metrics["residual_std"])),
+    }
+
+
+def _deployment_refit_provenance(
+    frame: pd.DataFrame,
+    schema: FeatureSchema,
+    season_profiles: list[dict[str, Any]],
+    final_fold: ChronologicalFold,
+    final_calibration: dict[str, dict[str, Any]],
+    classifier_blend: dict[str, Any],
+    champion: str,
+) -> dict[str, Any]:
+    seasons = sorted(int(value) for value in frame[schema.season_column].unique())
+    rows_by_season = {
+        str(season): int((frame[schema.season_column] == season).sum())
+        for season in seasons
+    }
+    partial_seasons = [
+        int(profile["season"])
+        for profile in season_profiles
+        if not bool(profile["complete"])
+    ]
+    cutoff = pd.Timestamp(frame[schema.time_column].max()).isoformat()
+    feature_cutoff = pd.Timestamp(frame["features_available_at"].max()).isoformat()
+    selected_calibrators = {
+        model_name: final_calibration[model_name]["selected_method"]
+        for model_name in CLASSIFIERS
+    }
+    return {
+        "status": "completed",
+        "strategy": "fit_all_eligible_settled_rows_after_frozen_evaluation",
+        "training_cutoff": cutoff,
+        "features_available_cutoff": feature_cutoff,
+        "row_count": int(len(frame)),
+        "seasons": seasons,
+        "rows_by_season": rows_by_season,
+        "partial_seasons_included": partial_seasons,
+        "targets_required": list(schema.target_columns.values()),
+        "models_refit": [
+            "logistic_regression",
+            "xgboost_classifier",
+            "xgboost_home_margin",
+            "xgboost_total_points",
+            "preprocessor",
+        ],
+        "selection_frozen_before_refit": {
+            "champion_classifier": champion,
+            "selected_calibrators": selected_calibrators,
+            "classifier_blend": classifier_blend,
+            "source_calibration_season": final_fold.calibration_season,
+            "source_held_out_test_season": final_fold.test_season,
+        },
+        "calibration_strategy": {
+            "name": "reuse_pre_refit_chronological_calibrators",
+            "selected_methods": selected_calibrators,
+            "fit_row_count": int(len(final_fold.calibration)),
+            "fit_season": final_fold.calibration_season,
+            "statement": (
+                "Saved calibrators were fit before deployment refit from "
+                "chronologically out-of-sample calibration probabilities. "
+                "They were not refit on in-sample predictions from the "
+                "deployment models."
+            ),
+        },
+        "pre_refit_metric_statement": (
+            "All final-holdout and walk-forward metrics were computed before "
+            "deployment refit. The refit artifact includes later eligible "
+            "settled rows, including partial-season rows, and has no reported "
+            "post-refit held-out metrics."
+        ),
     }
 
 

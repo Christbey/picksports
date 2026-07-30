@@ -6,6 +6,10 @@ use App\Actions\MLB\GeneratePrediction;
 use App\Actions\MLB\GradePredictions;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\MLB\Game;
+use App\Models\PredictionEvaluation;
+use App\Models\PredictionFeatureSnapshot;
+use App\Services\MLB\TrustedHistoricalFeatureBuilder;
+use App\Services\MLB\TrustedHistoricalPredictionReconstructor;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -20,12 +24,24 @@ class BackfillHistoricalPredictionsCommand extends Command
         {--season-type=2 : Filter by season type (defaults to regular season)}
         {--limit=0 : Limit the number of games processed}
         {--only-missing : Only generate predictions for games without an existing prediction}
+        {--only-missing-profile : Only generate games without a snapshot for the selected profile}
+        {--profile=research-default : Reconstruction profile: research-default or trusted-core-v1}
         {--with-narratives : Dispatch prediction narratives while backfilling}';
 
     protected $description = 'Generate and grade historical MLB prediction snapshots for completed games';
 
-    public function handle(GeneratePrediction $generatePrediction, GradePredictions $gradePredictions): int
-    {
+    public function handle(
+        GeneratePrediction $generatePrediction,
+        GradePredictions $gradePredictions,
+        TrustedHistoricalPredictionReconstructor $trustedReconstructor,
+    ): int {
+        $profile = (string) $this->option('profile');
+        if (! in_array($profile, ['research-default', TrustedHistoricalFeatureBuilder::PROFILE], true)) {
+            $this->error("Unknown MLB historical reconstruction profile: {$profile}.");
+
+            return self::FAILURE;
+        }
+
         try {
             [$startDate, $endDate] = $this->resolveDateRange();
         } catch (\InvalidArgumentException $exception) {
@@ -34,7 +50,7 @@ class BackfillHistoricalPredictionsCommand extends Command
             return self::FAILURE;
         }
 
-        $games = $this->gamesQuery($startDate, $endDate)->get();
+        $games = $this->gamesQuery($startDate, $endDate, $profile)->get();
 
         if ($games->isEmpty()) {
             $this->warn('No completed MLB games matched the selected historical scope.');
@@ -43,10 +59,11 @@ class BackfillHistoricalPredictionsCommand extends Command
         }
 
         $this->info(sprintf(
-            'Backfilling MLB historical predictions for %d game(s) from %s to %s.',
+            'Backfilling MLB historical predictions for %d game(s) from %s to %s using %s.',
             $games->count(),
             $startDate?->toDateString() ?? $games->first()->game_date?->toDateString() ?? 'unknown',
-            $endDate?->toDateString() ?? $games->last()->game_date?->toDateString() ?? 'unknown'
+            $endDate?->toDateString() ?? $games->last()->game_date?->toDateString() ?? 'unknown',
+            $profile,
         ));
 
         $withNarratives = (bool) $this->option('with-narratives');
@@ -55,7 +72,11 @@ class BackfillHistoricalPredictionsCommand extends Command
         $bar->start();
 
         foreach ($games as $game) {
-            if ($generatePrediction->executeHistorical($game, $withNarratives) !== null) {
+            $prediction = $profile === TrustedHistoricalFeatureBuilder::PROFILE
+                ? $trustedReconstructor->reconstruct($game)
+                : $generatePrediction->executeHistorical($game, $withNarratives);
+
+            if ($prediction !== null) {
                 $generated++;
             }
 
@@ -65,9 +86,11 @@ class BackfillHistoricalPredictionsCommand extends Command
         $bar->finish();
         $this->newLine(2);
 
-        $grading = $gradePredictions->executeForGameIds(
-            $games->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()
-        );
+        $grading = $profile === TrustedHistoricalFeatureBuilder::PROFILE
+            ? $this->trustedGradingSummary($games->pluck('id')->map(fn (mixed $id): int => (int) $id)->all())
+            : $gradePredictions->executeForGameIds(
+                $games->pluck('id')->map(fn (mixed $id): int => (int) $id)->all()
+            );
 
         app(SportsViewCache::class)->bustSegments([
             SportsViewCache::SEGMENT_DASHBOARD,
@@ -89,7 +112,7 @@ class BackfillHistoricalPredictionsCommand extends Command
         return self::SUCCESS;
     }
 
-    private function gamesQuery(?Carbon $startDate, ?Carbon $endDate): Builder
+    private function gamesQuery(?Carbon $startDate, ?Carbon $endDate, string $profile): Builder
     {
         $seasonType = $this->option('season-type');
         $limit = max(0, (int) ($this->option('limit') ?? 0));
@@ -125,11 +148,76 @@ class BackfillHistoricalPredictionsCommand extends Command
             $query->whereDoesntHave('prediction');
         }
 
+        if ((bool) $this->option('only-missing-profile')) {
+            $gameIdsWithProfile = PredictionFeatureSnapshot::query()
+                ->where('sport', 'mlb')
+                ->where('prediction_table', 'mlb_predictions')
+                ->where('lineage_metadata->historical_profile', $profile)
+                ->pluck('game_id')
+                ->map(fn (mixed $gameId): int => (int) $gameId)
+                ->all();
+
+            if ($gameIdsWithProfile !== []) {
+                $query->whereNotIn('id', $gameIdsWithProfile);
+            }
+        }
+
         if ($limit > 0) {
             $query->limit($limit);
         }
 
         return $query;
+    }
+
+    /**
+     * @param  list<int>  $gameIds
+     * @return array{graded:int,winner_accuracy:float,avg_spread_error:float,avg_total_error:float}
+     */
+    private function trustedGradingSummary(array $gameIds): array
+    {
+        $snapshotAnchors = PredictionFeatureSnapshot::query()
+            ->where('sport', 'mlb')
+            ->where('prediction_table', 'mlb_predictions')
+            ->whereIn('game_id', $gameIds)
+            ->where('model_version', TrustedHistoricalPredictionReconstructor::MODEL_VERSION)
+            ->where('feature_version', TrustedHistoricalFeatureBuilder::FEATURE_VERSION)
+            ->where('blend_version', TrustedHistoricalPredictionReconstructor::BLEND_VERSION)
+            ->where('lineage_metadata->historical_profile', TrustedHistoricalFeatureBuilder::PROFILE)
+            ->get(['prediction_id', 'game_id'])
+            ->mapWithKeys(fn (PredictionFeatureSnapshot $snapshot): array => [
+                $snapshot->prediction_id.':'.$snapshot->game_id => true,
+            ]);
+        $evaluations = PredictionEvaluation::query()
+            ->where('sport', 'mlb')
+            ->where('prediction_table', 'mlb_predictions')
+            ->whereIn('game_id', $gameIds)
+            ->where('model_version', TrustedHistoricalPredictionReconstructor::MODEL_VERSION)
+            ->where('feature_version', TrustedHistoricalFeatureBuilder::FEATURE_VERSION)
+            ->where('blend_version', TrustedHistoricalPredictionReconstructor::BLEND_VERSION)
+            ->get()
+            ->filter(fn (PredictionEvaluation $evaluation): bool => $snapshotAnchors->has(
+                $evaluation->prediction_id.':'.$evaluation->game_id
+            ));
+        $errors = $evaluations->map(
+            fn (PredictionEvaluation $evaluation): array => (array) $evaluation->errors
+        );
+        $winnerDecisions = $errors->filter(
+            fn (array $error): bool => array_key_exists('winner_correct', $error)
+                && $error['winner_correct'] !== null
+        );
+
+        return [
+            'graded' => $evaluations->count(),
+            'winner_accuracy' => $winnerDecisions->isEmpty()
+                ? 0.0
+                : round($winnerDecisions->where('winner_correct', true)->count() / $winnerDecisions->count() * 100, 1),
+            'avg_spread_error' => round((float) ($errors->pluck('spread_error')->filter(
+                fn (mixed $value): bool => is_numeric($value)
+            )->avg() ?? 0.0), 2),
+            'avg_total_error' => round((float) ($errors->pluck('total_error')->filter(
+                fn (mixed $value): bool => is_numeric($value)
+            )->avg() ?? 0.0), 2),
+        ];
     }
 
     /**

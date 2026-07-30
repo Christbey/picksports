@@ -6,6 +6,7 @@ use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Models\ModelArtifact;
 use App\Models\NFL\Game;
 use App\Services\ML\ModelArtifactRegistry;
+use App\Services\ML\ShadowArtifactSelector;
 use Illuminate\Support\Facades\Log;
 
 class NflFullHistoricalShadowInferenceService
@@ -14,6 +15,7 @@ class NflFullHistoricalShadowInferenceService
         private readonly ModelArtifactRegistry $artifacts,
         private readonly NflPredictionProfileConfigurator $profiles,
         private readonly NflTabularModelInferenceService $tabularInference,
+        private readonly ShadowArtifactSelector $shadowArtifacts,
     ) {}
 
     /**
@@ -115,33 +117,54 @@ class NflFullHistoricalShadowInferenceService
         }
 
         $artifactId = trim((string) config('nfl_ml.shadow.artifact_id', ''));
-        $artifact = ModelArtifact::query()
-            ->with('trainingRun')
-            ->where('sport', 'nfl')
-            ->where('model_type', 'nfl_tabular_bundle')
-            ->whereIn('status', ['challenger', 'promotion_eligible', 'promoted'])
-            ->when($artifactId !== '', fn ($query) => $query->whereKey($artifactId))
-            ->latest('promoted_at')
-            ->latest('created_at')
-            ->get()
-            ->first(fn (ModelArtifact $candidate): bool => $candidate->status !== 'promoted'
-                || $candidate->isPromotedForMarket('win_probability'));
-
-        if (! $artifact) {
+        $databaseSelectionActive = (bool) config('nfl_ml.shadow.auto_select', true)
+            && $this->shadowArtifacts->activeChallenger('nfl', 'nfl_tabular_bundle') !== null;
+        $artifacts = $this->shadowArtifacts->inferenceCohort(
+            'nfl',
+            'nfl_tabular_bundle',
+            $artifactId !== '' && ! $databaseSelectionActive ? $artifactId : null,
+        );
+        if ($artifacts->isEmpty()) {
             return null;
         }
 
-        try {
-            $output = $this->tabularInference->predict($artifact, $features);
-        } catch (\Throwable $exception) {
-            Log::warning('NFL tabular shadow inference failed.', [
-                'artifact_id' => $artifact->id,
-                'exception' => $exception->getMessage(),
-            ]);
+        $cohort = [];
+        foreach ($artifacts as $artifact) {
+            try {
+                $output = $this->tabularInference->predict($artifact, $features);
+            } catch (\Throwable $exception) {
+                Log::warning('NFL tabular shadow inference failed.', [
+                    'artifact_id' => $artifact->id,
+                    'exception' => $exception->getMessage(),
+                ]);
 
+                continue;
+            }
+
+            $cohort[] = $this->tabularContext($artifact, $baselineOutputs, $output);
+        }
+
+        if ($cohort === []) {
             return null;
         }
 
+        return [
+            ...$cohort[0],
+            'cohort' => $cohort,
+        ];
+    }
+
+    /**
+     * @param  array<string, float|int|null>  $baselineOutputs
+     * @param  array<string, mixed>  $output
+     * @return array<string, mixed>
+     */
+    private function tabularContext(
+        ModelArtifact $artifact,
+        array $baselineOutputs,
+        array $output,
+    ): array {
+        $baselineProbability = (float) $baselineOutputs['win_probability'];
         $winProbabilityPromoted = $artifact->isPromotedForMarket('win_probability');
 
         return [
@@ -159,9 +182,9 @@ class NflFullHistoricalShadowInferenceService
             'model_version' => $artifact->model_version,
             'feature_version' => $artifact->feature_version,
             'profile' => 'python-tabular',
-            'baseline_output' => round((float) $baselineProbability, 6),
+            'baseline_output' => round($baselineProbability, 6),
             'challenger_output' => $output['home_win_probability'],
-            'output_delta' => round($output['home_win_probability'] - (float) $baselineProbability, 6),
+            'output_delta' => round($output['home_win_probability'] - $baselineProbability, 6),
             'baseline_outputs' => $baselineOutputs,
             'challenger_outputs' => [
                 'win_probability' => $output['home_win_probability'],

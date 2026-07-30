@@ -29,6 +29,22 @@ it can generalize.
 
 The held-out season never influences classifier or calibrator selection.
 
+After evaluation freezes the tuned parameters, classifier, calibrators, and
+blend, the package performs a deployment refit. The saved preprocessor,
+classifiers, and regressors are fit on every eligible settled row through the
+dataset cutoff. The selected calibrators remain the chronology-fitted
+pre-refit objects, avoiding in-sample calibration leakage. No metric in
+`final_holdout` or `walk_forward` is recomputed from the deployment-refit
+models.
+
+The latest season is included in evaluation only when an optional
+`season_complete`/`is_season_complete` column marks it complete, or when its
+row and week coverage meets or exceeds recent completed seasons. A partial
+current season is excluded from held-out metrics but included in the
+deployment refit. Both `manifest.json` and `evaluation.json` record the refit
+cutoff, rows, seasons, partial seasons, calibration strategy, and the
+pre-refit metric statement.
+
 ## Input Contract
 
 The default schema is
@@ -134,9 +150,10 @@ artifacts/<model-run-id>/
 
 The manifest records the model run, artifact ID, code/config/dataset/schema
 hashes, a package-source hash, dependency versions, seed, selected classifier,
-blend weights, calibrators, training window, held-out season, and a SHA-256 for
-every artifact file. A dirty working tree is marked in `code_version`; the
-source hash remains the exact identity of the Python training code.
+blend weights, calibrators, evaluation training window, complete held-out
+season, deployment-refit provenance, and a SHA-256 for every artifact file. A
+dirty working tree is marked in `code_version`; the source hash remains the
+exact identity of the Python training code.
 
 ## Prediction Contract
 

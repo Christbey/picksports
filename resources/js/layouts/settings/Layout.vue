@@ -78,6 +78,10 @@ const adminNavItems = computed(() => {
             href: '/admin/nfl-model-monitoring',
         },
         {
+            title: 'MLB Model Monitor',
+            href: '/admin/mlb-model-monitoring',
+        },
+        {
             title: 'Admin Settings',
             href: '/settings/admin',
         },

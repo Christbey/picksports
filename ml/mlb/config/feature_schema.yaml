@@ -1,0 +1,161 @@
+schema_version: mlb-pregame-ml-v1
+
+dataset:
+  time_column: game_start_at
+  season_column: season
+  id_column: game_id
+  reject_undeclared_feature_columns: false
+  allowed_availability_statuses:
+    - observed_pregame
+    - verified_reconstruction
+  required_provenance_columns:
+    - snapshot_run_id
+    - model_run_id
+    - config_hash
+    - code_version
+    - game_id
+    - season
+    - game_start_at
+    - features_available_at
+    - pregame_safe
+    - availability_status
+    - feature_version
+    - feature_hash
+    - target_hash
+
+features:
+  feature_home_field_indicator: {type: float, nullable: true}
+  feature_home_prior_games: {type: float, nullable: true}
+  feature_home_rolling_win_pct_20: {type: float, nullable: true}
+  feature_home_rolling_runs_scored_20: {type: float, nullable: true}
+  feature_home_rolling_runs_allowed_20: {type: float, nullable: true}
+  feature_home_rolling_run_differential_20: {type: float, nullable: true}
+  feature_home_recent_games: {type: float, nullable: true}
+  feature_home_recent_win_pct_5: {type: float, nullable: true}
+  feature_home_recent_run_differential_5: {type: float, nullable: true}
+  feature_home_rest_days: {type: float, nullable: true}
+  feature_home_rest_known: {type: float, nullable: true}
+  feature_away_prior_games: {type: float, nullable: true}
+  feature_away_rolling_win_pct_20: {type: float, nullable: true}
+  feature_away_rolling_runs_scored_20: {type: float, nullable: true}
+  feature_away_rolling_runs_allowed_20: {type: float, nullable: true}
+  feature_away_rolling_run_differential_20: {type: float, nullable: true}
+  feature_away_recent_games: {type: float, nullable: true}
+  feature_away_recent_win_pct_5: {type: float, nullable: true}
+  feature_away_recent_run_differential_5: {type: float, nullable: true}
+  feature_away_rest_days: {type: float, nullable: true}
+  feature_away_rest_known: {type: float, nullable: true}
+  feature_home_team_elo: {type: float, nullable: false}
+  feature_away_team_elo: {type: float, nullable: false}
+  feature_team_elo_diff: {type: float, nullable: true}
+  feature_home_team_elo_known: {type: float, nullable: true}
+  feature_away_team_elo_known: {type: float, nullable: true}
+  feature_home_pitcher_elo: {type: float, nullable: false}
+  feature_away_pitcher_elo: {type: float, nullable: false}
+  feature_pitcher_elo_diff: {type: float, nullable: true}
+  feature_home_pitcher_known: {type: float, nullable: true}
+  feature_away_pitcher_known: {type: float, nullable: true}
+  feature_home_combined_elo:
+    type: float
+    nullable: true
+    aliases: [output_home_combined_elo]
+  feature_away_combined_elo:
+    type: float
+    nullable: true
+    aliases: [output_away_combined_elo]
+  feature_home_pitcher_confidence: {type: float, nullable: true}
+  feature_away_pitcher_confidence: {type: float, nullable: true}
+  feature_season_sample_games: {type: float, nullable: true}
+  feature_season_progress_scale: {type: float, nullable: true}
+  feature_team_weight: {type: float, nullable: true}
+  feature_pitcher_weight: {type: float, nullable: true}
+  feature_context_weight_scale: {type: float, nullable: true}
+  feature_context_spread_adjustment: {type: float, nullable: true}
+  feature_context_total_adjustment: {type: float, nullable: true}
+  feature_historical_context_weight: {type: float, nullable: true}
+  feature_historical_context_spread_adjustment: {type: float, nullable: true}
+  feature_historical_context_total_adjustment: {type: float, nullable: true}
+  feature_situational_context_spread_adjustment: {type: float, nullable: true}
+  feature_situational_context_total_adjustment: {type: float, nullable: true}
+  feature_injury_total_adjustment: {type: float, nullable: true}
+  feature_probable_pitcher_spread_adjustment: {type: float, nullable: true}
+  feature_probable_pitcher_total_adjustment: {type: float, nullable: true}
+  feature_park_total_adjustment: {type: float, nullable: true}
+  feature_weather_total_adjustment: {type: float, nullable: true}
+  feature_model_win_probability:
+    type: float
+    nullable: true
+    aliases: [output_win_probability]
+  feature_model_predicted_margin:
+    type: float
+    nullable: true
+    aliases: [output_predicted_spread, output_blended_predicted_spread]
+  feature_model_predicted_total:
+    type: float
+    nullable: true
+    aliases: [output_predicted_total, output_blended_predicted_total]
+  feature_market_home_win_probability:
+    type: float
+    nullable: true
+    aliases:
+      - feature_market_home_no_vig_probability
+      - market_home_win_probability
+      - market_home_no_vig_probability
+  feature_pregame_market_available: {type: float, nullable: true}
+  feature_market_home_moneyline: {type: float, nullable: true}
+  feature_market_away_moneyline: {type: float, nullable: true}
+  feature_market_home_spread:
+    type: float
+    nullable: true
+    aliases:
+      - feature_market_home_margin
+      - output_market_spread
+      - market_market_spread
+  feature_market_total:
+    type: float
+    nullable: true
+    aliases: [output_market_total]
+
+targets:
+  home_win: target_home_win
+  home_margin: target_home_margin
+  total_points: target_total_points
+
+training:
+  seed: 20260729
+  calibration_fit_fraction: 0.60
+  splits:
+    minimum_training_rows: 300
+    final_calibration_weeks: 3
+    final_test_weeks: 3
+    rolling_initial_training_weeks: 10
+    rolling_calibration_weeks: 2
+    rolling_test_weeks: 1
+    rolling_training_weeks: 52
+    maximum_rolling_windows: 12
+  logistic_regression:
+    C: 0.5
+    max_iter: 3000
+  blend:
+    enabled: true
+    anchor_columns:
+      - feature_model_win_probability
+      - feature_market_home_win_probability
+    minimum_anchor_coverage: 0.50
+    maximum_anchor_weight: 0.70
+  xgboost_classifier:
+    n_estimators: 250
+    max_depth: 3
+    learning_rate: 0.035
+    subsample: 0.85
+    colsample_bytree: 0.80
+    reg_lambda: 3.0
+    min_child_weight: 5.0
+  xgboost_regressor:
+    n_estimators: 300
+    max_depth: 3
+    learning_rate: 0.035
+    subsample: 0.85
+    colsample_bytree: 0.80
+    reg_lambda: 3.0
+    min_child_weight: 5.0

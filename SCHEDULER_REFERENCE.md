@@ -97,8 +97,15 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Calculate Elo at `05:00`
 - Calculate team metrics at `05:30`
 - Generate predictions at `06:00`
-- Generate playoff forecast at `06:15`
+- Run the initial private tabular shadow pass at `06:10`
+- Record initial private shadow decisions at `06:15`
+- Train and register a weekly challenger Monday at `06:40` Central Time
+- Grade pick candidates at `04:40` and settle model decisions at `04:50`
+- Generate playoff forecast at `08:35`
 - Sync odds every 4 hours between `08:00` and `23:00`
+- After the `08:00`, `12:00`, `16:00`, and `20:00` odds cycles, refresh
+  baseline predictions at `:30`, tabular shadow outputs at `:50`, and immutable
+  decisions at `:58`
 - Sync player props twice daily at `11:00` and `16:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
 - Sync futures odds every 4 hours between `08:00` and `23:00`
@@ -124,6 +131,10 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Calculate Elo at `09:00`
 - Calculate team metrics at `09:30`
 - Generate predictions at `10:00`
+- Settle model decisions at `08:45`
+- Record private shadow decisions at `10:15`
+- Train and register a weekly challenger Tuesday at `12:40` Central Time,
+  after the `11:35` readiness pass
 - Sync odds every 4 hours between `08:00` and `23:00`
 - Sync player props twice daily at `10:00` and `15:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`

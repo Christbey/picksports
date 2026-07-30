@@ -4,10 +4,15 @@ use App\Models\ModelArtifact;
 use App\Models\ModelRun;
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use App\Models\PredictionFeatureSnapshot;
+use App\Models\ShadowModelOutput;
 use App\Services\ML\ModelArtifactRegistry;
+use App\Services\ML\ShadowArtifactSelector;
+use App\Services\ML\ShadowModelOutputRecorder;
 use App\Services\NFL\NflFullHistoricalShadowInferenceService;
 use App\Services\NFL\NflTabularModelInferenceService;
 use App\Services\NFL\NflTabularModelRunRegistrar;
+use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -185,7 +190,106 @@ it('maps a registered tabular model into tracking-only NFL shadow outputs', func
         ->and(data_get($shadow, 'challenger_outputs.predicted_total'))->toBe(44.7)
         ->and($shadow['active_source'])->toBe('baseline')
         ->and($shadow['apply_to_live_output'])->toBeFalse()
-        ->and($shadow['public_output_changed'])->toBeFalse();
+        ->and($shadow['public_output_changed'])->toBeFalse()
+        ->and($shadow['cohort'])->toHaveCount(1);
+});
+
+it('evaluates the active NFL challenger and promoted champion as one private cohort', function () {
+    $challengerFixture = nflTabularRunFixture($this->nflMlTestRoot.'/cohort-challenger');
+    $challenger = app(NflTabularModelRunRegistrar::class)->register(
+        $challengerFixture['run_directory'],
+    );
+    $championFixture = nflTabularRunFixture($this->nflMlTestRoot.'/cohort-champion');
+    $champion = app(NflTabularModelRunRegistrar::class)->register(
+        $championFixture['run_directory'],
+    );
+    $champion->update([
+        'status' => 'promoted',
+        'promotion_decision' => [
+            'promoted_markets' => ['win_probability', 'spread', 'total'],
+        ],
+        'promoted_at' => now()->subHour(),
+    ]);
+    app(ShadowArtifactSelector::class)->activateChallenger($challenger, [
+        'source' => 'weekly_training',
+    ]);
+
+    config()->set('nfl_ml.process.command', [
+        PHP_BINARY,
+        nflTabularFakeCli($this->nflMlTestRoot.'/cohort-cli.php'),
+    ]);
+    config()->set('nfl_ml.shadow.enabled', true);
+    config()->set('nfl_ml.shadow.artifact_id', '');
+    $game = Game::factory()->create([
+        'home_team_id' => Team::factory()->create()->id,
+        'away_team_id' => Team::factory()->create()->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $shadow = app(NflFullHistoricalShadowInferenceService::class)->evaluate(
+        $game,
+        [
+            'predicted_spread' => 2.1,
+            'predicted_total' => 43.9,
+            'win_probability' => 0.55,
+            'confidence_score' => 55.0,
+        ],
+        [
+            'feature_home_elo' => 1532,
+            'feature_market_home_spread' => -2.5,
+            'feature_market_total' => 44.5,
+        ],
+    );
+    $snapshotRun = app(ModelRunRecorder::class)->create(
+        sport: 'nfl',
+        runType: 'pregame_prediction',
+        modelVersion: 'rules-v1',
+        featureVersion: 'nfl-pregame-ml-v3',
+        blendVersion: 'baseline-v1',
+        status: 'completed',
+        completedAt: now(),
+    );
+    $snapshot = PredictionFeatureSnapshot::query()->create([
+        'sport' => 'nfl',
+        'prediction_table' => 'nfl_predictions',
+        'prediction_id' => $game->id,
+        'game_id' => $game->id,
+        'snapshot_run_id' => (string) Str::uuid(),
+        'model_run_id' => $snapshotRun->id,
+        'model_version' => 'rules-v1',
+        'feature_version' => 'nfl-pregame-ml-v3',
+        'blend_version' => 'baseline-v1',
+        'features' => ['home_elo' => 1532],
+        'outputs' => ['active_source' => 'baseline'],
+        'model_metadata' => ['shadow_inference' => $shadow],
+        'feature_hash' => hash('sha256', 'nfl-cohort-snapshot'),
+        'generated_at' => now(),
+        'game_start_at' => now()->addDay(),
+        'features_available_at' => now(),
+        'pregame_safe' => true,
+        'availability_status' => 'observed_pregame',
+    ]);
+    app(ShadowModelOutputRecorder::class)->record($snapshot);
+
+    expect($shadow)->not->toBeNull()
+        ->and(collect($shadow['cohort'])->pluck('artifact_id')->all())
+        ->toBe([$challenger->id, $champion->id])
+        ->and(collect($shadow['cohort'])->every(
+            fn (array $context): bool => $context['active_source'] === 'baseline'
+                && $context['apply_to_live_output'] === false
+                && $context['public_output_changed'] === false,
+        ))->toBeTrue()
+        ->and($shadow['artifact_id'])->toBe($challenger->id)
+        ->and(ShadowModelOutput::query()
+            ->where('prediction_feature_snapshot_id', $snapshot->id)
+            ->count())->toBe(6)
+        ->and(ShadowModelOutput::query()
+            ->where('prediction_feature_snapshot_id', $snapshot->id)
+            ->get()
+            ->every(fn (ShadowModelOutput $output): bool => data_get(
+                $output->explanation,
+                'public_output_changed',
+            ) === false))->toBeTrue();
 });
 
 /**

@@ -42,6 +42,14 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             + ($wepaNetDiff * $this->predictionWeight('wepa_spread_weight', 4.5))
             + ($efficiencyDiff * $this->predictionWeight('efficiency_spread_weight', 0.04));
 
+        $spread = $this->applyQualityMarginCalibration(
+            $spread,
+            $baseSpread,
+            $fpiDiff,
+            $wepaNetDiff,
+            $efficiencyDiff
+        );
+
         $maxSpread = (float) config('cfb.predictions.max_spread', 40);
         $minSpread = (float) config('cfb.predictions.min_spread', -40);
 
@@ -118,6 +126,109 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         $value = config("cfb.predictions.{$key}");
 
         return is_numeric($value) ? (float) $value : $default;
+    }
+
+    protected function applyQualityMarginCalibration(
+        float $spread,
+        float $eloSpread,
+        float $fpiDiff,
+        float $wepaNetDiff,
+        float $efficiencyDiff
+    ): float {
+        if (! (bool) config('cfb.predictions.margin_calibration.enabled', true)) {
+            return $spread;
+        }
+
+        $absoluteSpread = abs($spread);
+        $minSpread = (float) config('cfb.predictions.margin_calibration.min_abs_spread', 3.0);
+        $maxSpread = (float) config('cfb.predictions.margin_calibration.max_abs_spread', 21.0);
+
+        if ($absoluteSpread < $minSpread || $absoluteSpread >= $maxSpread) {
+            return $spread;
+        }
+
+        $direction = $this->signalDirection($spread, 0.1);
+
+        if ($direction === 0 || $this->signalDirection($eloSpread, $minSpread) !== $direction) {
+            return $spread;
+        }
+
+        $agreement = $this->qualitySignalAgreement($direction, $fpiDiff, $wepaNetDiff, $efficiencyDiff);
+
+        if ($agreement['opposing'] > 0) {
+            return $spread;
+        }
+
+        $minSignals = (int) config('cfb.predictions.margin_calibration.min_non_elo_signals', 2);
+        if ($agreement['aligned'] < $minSignals) {
+            return $spread;
+        }
+
+        $factor = $this->marginCalibrationFactor($absoluteSpread);
+        $targetAbsoluteSpread = $absoluteSpread * $factor;
+        $maxBonus = (float) config('cfb.predictions.margin_calibration.max_bonus_points', 6.0);
+        $bonus = min($maxBonus, max(0.0, $targetAbsoluteSpread - $absoluteSpread));
+
+        return $spread + ($direction * $bonus);
+    }
+
+    /**
+     * @return array{aligned:int,opposing:int}
+     */
+    protected function qualitySignalAgreement(
+        int $direction,
+        float $fpiDiff,
+        float $wepaNetDiff,
+        float $efficiencyDiff
+    ): array {
+        $signals = [
+            $this->signalDirection(
+                $fpiDiff,
+                (float) config('cfb.predictions.margin_calibration.fpi_threshold', 2.0)
+            ),
+            $this->signalDirection(
+                $wepaNetDiff,
+                (float) config('cfb.predictions.margin_calibration.wepa_net_threshold', 0.35)
+            ),
+            $this->signalDirection(
+                $efficiencyDiff,
+                (float) config('cfb.predictions.margin_calibration.net_rating_threshold', 3.0)
+            ),
+        ];
+
+        return [
+            'aligned' => collect($signals)->filter(fn (int $signal): bool => $signal === $direction)->count(),
+            'opposing' => collect($signals)->filter(fn (int $signal): bool => $signal === -$direction)->count(),
+        ];
+    }
+
+    protected function marginCalibrationFactor(float $absoluteSpread): float
+    {
+        $lowMax = (float) config('cfb.predictions.margin_calibration.low_band_max', 7.0);
+        $midMax = (float) config('cfb.predictions.margin_calibration.mid_band_max', 14.0);
+
+        if ($absoluteSpread < $lowMax) {
+            return (float) config('cfb.predictions.margin_calibration.low_band_factor', 1.80);
+        }
+
+        if ($absoluteSpread < $midMax) {
+            return (float) config('cfb.predictions.margin_calibration.mid_band_factor', 1.45);
+        }
+
+        return (float) config('cfb.predictions.margin_calibration.upper_band_factor', 1.20);
+    }
+
+    protected function signalDirection(float $value, float $threshold): int
+    {
+        if ($value >= $threshold) {
+            return 1;
+        }
+
+        if ($value <= -$threshold) {
+            return -1;
+        }
+
+        return 0;
     }
 
     /**

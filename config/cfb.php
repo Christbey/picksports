@@ -245,6 +245,26 @@ return [
         'fpi_total_weight' => 0.08,
 
         /**
+         * CFB margins often separate more than the raw projection implies.
+         * Expand low/mid spreads only when independent quality signals agree.
+         */
+        'margin_calibration' => [
+            'enabled' => env('CFB_MARGIN_CALIBRATION_ENABLED', true),
+            'min_abs_spread' => env('CFB_MARGIN_CALIBRATION_MIN_ABS_SPREAD', 3.0),
+            'max_abs_spread' => env('CFB_MARGIN_CALIBRATION_MAX_ABS_SPREAD', 21.0),
+            'min_non_elo_signals' => env('CFB_MARGIN_CALIBRATION_MIN_NON_ELO_SIGNALS', 2),
+            'max_bonus_points' => env('CFB_MARGIN_CALIBRATION_MAX_BONUS_POINTS', 6.0),
+            'low_band_max' => env('CFB_MARGIN_CALIBRATION_LOW_BAND_MAX', 7.0),
+            'mid_band_max' => env('CFB_MARGIN_CALIBRATION_MID_BAND_MAX', 14.0),
+            'low_band_factor' => env('CFB_MARGIN_CALIBRATION_LOW_BAND_FACTOR', 1.80),
+            'mid_band_factor' => env('CFB_MARGIN_CALIBRATION_MID_BAND_FACTOR', 1.45),
+            'upper_band_factor' => env('CFB_MARGIN_CALIBRATION_UPPER_BAND_FACTOR', 1.20),
+            'fpi_threshold' => env('CFB_MARGIN_CALIBRATION_FPI_THRESHOLD', 2.0),
+            'wepa_net_threshold' => env('CFB_MARGIN_CALIBRATION_WEPA_NET_THRESHOLD', 0.35),
+            'net_rating_threshold' => env('CFB_MARGIN_CALIBRATION_NET_RATING_THRESHOLD', 3.0),
+        ],
+
+        /**
          * When current-season team metrics do not exist yet, reuse the latest
          * prior-season metrics for preseason / early schedule predictions.
          */

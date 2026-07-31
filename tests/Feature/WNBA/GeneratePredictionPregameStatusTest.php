@@ -85,13 +85,12 @@ test('wnba generate predictions command skips in-progress games', function () {
         ->and(Prediction::query()->where('game_id', $inProgressGame->id)->exists())->toBeFalse();
 });
 
-test('wnba prediction calibration caps extreme spreads and dampens confidence', function () {
+test('wnba prediction calibration regresses extreme outputs without hard caps', function () {
     Queue::fake([GeneratePredictionNarrative::class]);
 
     config()->set('wnba.prediction.metric_spread_weight', 0.35);
     config()->set('wnba.prediction.metric_spread_min_games', 8);
     config()->set('wnba.prediction.spread_output_regression_weight', 0.08);
-    config()->set('wnba.prediction.max_predicted_spread', 9.0);
     config()->set('wnba.prediction.spread_to_probability_coefficient', 6.5);
 
     $home = Team::factory()->create([
@@ -141,12 +140,12 @@ test('wnba prediction calibration caps extreme spreads and dampens confidence', 
 
     $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
 
-    expect((float) $prediction->predicted_spread)->toBeLessThanOrEqual(9.0)
-        ->and((float) $prediction->predicted_total)->toBeLessThanOrEqual(180.0)
-        ->and((float) $prediction->confidence_score)->toBeLessThanOrEqual(81.0)
-        ->and((float) data_get($prediction->model_metadata, 'calibration.spread_calibration.max_predicted_spread'))->toBe(9.0)
-        ->and(data_get($prediction->model_metadata, 'calibration.final_output_calibration.spread_was_clamped'))->toBeTrue()
-        ->and(data_get($prediction->model_metadata, 'calibration.final_output_calibration.total_was_clamped'))->toBeTrue()
+    expect((float) $prediction->predicted_spread)->toBeGreaterThan(9.0)
+        ->and((float) $prediction->predicted_total)->toBeGreaterThan(180.0)
+        ->and((float) $prediction->confidence_score)->toBeGreaterThan(81.0)
+        ->and(data_get($prediction->model_metadata, 'calibration.spread_calibration.max_predicted_spread'))->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'calibration.total_calibration.max_predicted_total'))->toBeNull()
+        ->and(data_get($prediction->model_metadata, 'calibration.final_output_calibration.output_cap_applied'))->toBeFalse()
         ->and(data_get($prediction->model_metadata, 'season_context.sample_games'))->toBe(14)
         ->and(data_get($prediction->model_metadata, 'feature_context.uses_net_rating_spread_blend'))->toBeTrue();
 });

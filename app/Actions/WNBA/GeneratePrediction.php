@@ -46,9 +46,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
             : ($eloSpread * (1 - $metricWeight)) + ($metricSpread * $metricWeight);
 
         $regressionWeight = (float) config('wnba.prediction.spread_output_regression_weight', 0.0);
-        $regressedSpread = $blendedSpread * (1 - max(0.0, min(0.75, $regressionWeight)));
-        $maxSpread = (float) config('wnba.prediction.max_predicted_spread', 12.0);
-        $predictedSpread = round($this->clamp($regressedSpread, -$maxSpread, $maxSpread), 1);
+        $predictedSpread = round($blendedSpread * (1 - max(0.0, min(0.75, $regressionWeight))), 1);
 
         $this->calibrationMetadata['spread_calibration'] = [
             'elo_spread' => round($eloSpread, 3),
@@ -59,7 +57,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'away_sample_games' => $sampleGames['away'],
             'sample_games' => $sampleGames['min'],
             'output_regression_weight' => round($regressionWeight, 3),
-            'max_predicted_spread' => $maxSpread,
             'calibrated_spread' => $predictedSpread,
         ];
 
@@ -97,11 +94,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $outputRegressionWeight = (float) config('wnba.prediction.total_output_regression_weight', 0.0);
         $regressedTotal = ($rawTotal * (1 - max(0.0, min(0.75, $outputRegressionWeight))))
             + ($averageTotal * max(0.0, min(0.75, $outputRegressionWeight)));
-        $predictedTotal = round($this->clamp(
-            $regressedTotal,
-            (float) config('wnba.prediction.min_predicted_total', 150.0),
-            (float) config('wnba.prediction.max_predicted_total', 180.0)
-        ), 1);
+        $predictedTotal = round($regressedTotal, 1);
 
         $this->calibrationMetadata['total_calibration'] = [
             'raw_total' => round($rawTotal, 3),
@@ -110,8 +103,6 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'pace_regressed' => round($pace, 3),
             'tempo_regression_weight' => (float) config('wnba.prediction.total_tempo_regression_weight', 0.0),
             'output_regression_weight' => round($outputRegressionWeight, 3),
-            'min_predicted_total' => (float) config('wnba.prediction.min_predicted_total', 150.0),
-            'max_predicted_total' => (float) config('wnba.prediction.max_predicted_total', 180.0),
             'calibrated_total' => $predictedTotal,
         ];
 
@@ -128,22 +119,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ?Model $awayMetrics,
         Model $game
     ): array {
-        $maxSpread = (float) config('wnba.prediction.max_predicted_spread', 12.0);
-        $minTotal = (float) config('wnba.prediction.min_predicted_total', 150.0);
-        $maxTotal = (float) config('wnba.prediction.max_predicted_total', 180.0);
-        $finalSpread = round($this->clamp($predictedSpread, -$maxSpread, $maxSpread), 1);
-        $finalTotal = round($this->clamp($predictedTotal, $minTotal, $maxTotal), 1);
+        $finalSpread = round($predictedSpread, 1);
+        $finalTotal = round($predictedTotal, 1);
 
         $this->calibrationMetadata['final_output_calibration'] = [
             'adjusted_spread' => round($predictedSpread, 3),
             'adjusted_total' => round($predictedTotal, 3),
-            'max_predicted_spread' => $maxSpread,
-            'min_predicted_total' => $minTotal,
-            'max_predicted_total' => $maxTotal,
             'final_spread' => $finalSpread,
             'final_total' => $finalTotal,
-            'spread_was_clamped' => $finalSpread !== round($predictedSpread, 1),
-            'total_was_clamped' => $finalTotal !== round($predictedTotal, 1),
+            'output_cap_applied' => false,
         ];
 
         return [$finalSpread, $finalTotal];
@@ -183,12 +167,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'away_sample_games' => $sampleGames['away'],
             'sample_games' => $sampleGames['min'],
             'spread_output_regression_weight' => (float) config('wnba.prediction.spread_output_regression_weight', 0.0),
-            'max_predicted_spread' => (float) config('wnba.prediction.max_predicted_spread', 12.0),
             'total_tempo_regression_weight' => (float) config('wnba.prediction.total_tempo_regression_weight', 0.0),
             'average_total' => (float) config('wnba.prediction.average_total', $defaultEfficiency * 2 * ($averagePace / 100)),
             'total_output_regression_weight' => (float) config('wnba.prediction.total_output_regression_weight', 0.0),
-            'min_predicted_total' => (float) config('wnba.prediction.min_predicted_total', 150.0),
-            'max_predicted_total' => (float) config('wnba.prediction.max_predicted_total', 180.0),
             'previous_season_metric_fallback_enabled' => (bool) config('wnba.prediction.use_previous_season_metrics_fallback', false),
         ];
         $modelMetadata = [

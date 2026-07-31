@@ -169,7 +169,6 @@ return [
         'metric_spread_weight' => env('WNBA_METRIC_SPREAD_WEIGHT', 0.25),
         'metric_spread_min_games' => env('WNBA_METRIC_SPREAD_MIN_GAMES', 10),
         'spread_output_regression_weight' => env('WNBA_SPREAD_OUTPUT_REGRESSION_WEIGHT', 0.08),
-        'max_predicted_spread' => env('WNBA_MAX_PREDICTED_SPREAD', 12.0),
 
         // Average WNBA pace (possessions per game)
         'average_pace' => 88.0,
@@ -180,8 +179,6 @@ return [
         'average_total' => env('WNBA_AVERAGE_TOTAL', 166.5),
         'total_tempo_regression_weight' => env('WNBA_TOTAL_TEMPO_REGRESSION_WEIGHT', 0.50),
         'total_output_regression_weight' => env('WNBA_TOTAL_OUTPUT_REGRESSION_WEIGHT', 0.25),
-        'min_predicted_total' => env('WNBA_MIN_PREDICTED_TOTAL', 150.0),
-        'max_predicted_total' => env('WNBA_MAX_PREDICTED_TOTAL', 180.0),
         'use_previous_season_metrics_fallback' => env('WNBA_USE_PREVIOUS_SEASON_METRICS_FALLBACK', true),
 
         // Logistic function coefficient for win probability

@@ -206,7 +206,7 @@ function weekLabel(): string | null {
     const postseasonRound = predictionType?.game.postseason_round;
     const seasonType = predictionType?.game.season_type;
 
-    if (!week || !seasonType) {
+    if (week === null || week === undefined || week === '' || !seasonType) {
         return null;
     }
 

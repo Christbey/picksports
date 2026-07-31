@@ -46,13 +46,17 @@ const weekOptions = computed(() => {
     if (!props.config.seasonWeekConfig || !seasonType.value) return [];
 
     if (seasonType.value === 'Regular Season') {
-        return Array.from(
+        const regularWeeks = Array.from(
             { length: props.config.seasonWeekConfig.regularSeasonWeeks },
             (_, i) => ({
                 value: String(i + 1),
                 label: `Week ${i + 1}`,
             }),
         );
+
+        return props.config.sport === 'cfb'
+            ? [{ value: '0', label: 'Week 0' }, ...regularWeeks]
+            : regularWeeks;
     }
 
     return props.config.seasonWeekConfig.postseasonOptions;
@@ -64,7 +68,7 @@ const setDefaultSeasonWeekFilters = () => {
     }
 
     seasonType.value = 'Regular Season';
-    week.value = '1';
+    week.value = props.config.sport === 'cfb' ? '0' : '1';
 };
 
 const buildQuery = (page: number): ApiV2Query => {
@@ -88,7 +92,7 @@ const buildQuery = (page: number): ApiV2Query => {
                 params.season_type = mappedSeasonType;
             }
         }
-        if (week.value) params.week = week.value;
+        if (week.value !== '') params.week = week.value;
     }
 
     return params;

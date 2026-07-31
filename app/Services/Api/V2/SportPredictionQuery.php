@@ -156,7 +156,7 @@ class SportPredictionQuery
             ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
             ->when($filters['team_id'] ?? null, fn (Builder $query, int $teamId): Builder => $this->whereTeam($query, $teamId))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $this->whereGameColumn($query, 'status', $status))
-            ->when($filters['week'] ?? null, fn (Builder $query, int $week): Builder => $this->whereGameColumn($query, 'week', $week))
+            ->when(array_key_exists('week', $filters), fn (Builder $query): Builder => $this->whereGameColumn($query, 'week', $filters['week']))
             ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
             ->when(array_key_exists('has_value', $filters), fn (Builder $query): Builder => $this->whereHasValue($query, (bool) $filters['has_value']))
             ->orderByDesc($this->hasColumn($table, 'updated_at') ? "{$table}.updated_at" : "{$table}.id");

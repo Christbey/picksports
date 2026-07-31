@@ -416,6 +416,42 @@ it('presents cfb v2 prediction game dates in eastern football time', function ()
         ->assertJsonPath('data.game.game_time', '22:00:00');
 });
 
+it('filters cfb v2 predictions by week zero', function () {
+    v2PredictionContractActingAsBypassUser();
+
+    [, $weekZeroPrediction] = v2PredictionContractCreateGamePrediction(
+        CfbTeam::class,
+        CfbGame::class,
+        CfbPrediction::class,
+        [
+            'season' => 2026,
+            'season_type' => 2,
+            'week' => 0,
+            'game_date' => '2026-08-29 00:00:00',
+            'game_time' => '16:00:00',
+        ],
+    );
+
+    v2PredictionContractCreateGamePrediction(
+        CfbTeam::class,
+        CfbGame::class,
+        CfbPrediction::class,
+        [
+            'season' => 2026,
+            'season_type' => 2,
+            'week' => 1,
+            'game_date' => '2026-09-03 00:00:00',
+            'game_time' => '23:00:00',
+        ],
+    );
+
+    $this->getJson('/api/v2/sports/cfb/predictions?season=2026&season_type=2&week=0')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $weekZeroPrediction->id)
+        ->assertJsonPath('data.0.game.week', 0);
+});
+
 function v2PredictionContractActingAsBypassUser(): User
 {
     $user = User::factory()->create();

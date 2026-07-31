@@ -46,7 +46,13 @@ const formatSpread = (spread: number | string): string => {
 };
 
 const weekLabelForGame = (game: NflPageGame): string => {
-    if (!game.week || !game.season_type) return '';
+    if (
+        game.week === null ||
+        game.week === undefined ||
+        game.week === '' ||
+        !game.season_type
+    )
+        return '';
 
     const seasonType = String(game.season_type);
     if (seasonType === 'Regular Season' || seasonType === '2') {
@@ -213,7 +219,8 @@ export function useCfbDetailedGamePage(gameId: number) {
             }
 
             if (predictionData?.data) {
-                prediction.value = predictionData.data as unknown as NflPagePrediction;
+                prediction.value =
+                    predictionData.data as unknown as NflPagePrediction;
             }
 
             if (teamStatsData?.data) {

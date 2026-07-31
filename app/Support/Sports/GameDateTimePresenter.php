@@ -14,7 +14,7 @@ class GameDateTimePresenter
         $displayTimezone = self::displayTimezoneForSport($sport);
         $time = self::timeString($gameTime);
 
-        if ($displayTimezone !== null && $gameDate !== null && $time !== null && $time !== '00:00:00') {
+        if ($displayTimezone !== null && $gameDate !== null && $time !== null) {
             $utcDatetime = Carbon::parse(
                 self::dateString($gameDate).' '.$time,
                 'UTC',

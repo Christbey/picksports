@@ -172,7 +172,7 @@ it('treats late-night wnba utc starts as the local game date for games', functio
         'game_time' => '20:00:00',
     ]);
 
-    $dateOnlyGame = WnbaGame::factory()->create([
+    $priorEveningGame = WnbaGame::factory()->create([
         'home_team_id' => $homeTeam->id,
         'away_team_id' => $awayTeam->id,
         'season' => 2026,
@@ -188,10 +188,11 @@ it('treats late-night wnba utc starts as the local game date for games', functio
 
     $response = $this->getJson('/api/v2/sports/wnba/games?season=2026&from_date=2026-07-31&to_date=2026-07-31&per_page=10')
         ->assertOk()
-        ->assertJsonCount(2, 'data');
+        ->assertJsonCount(1, 'data');
 
     expect(collect($response->json('data'))->pluck('id')->all())
-        ->toContain($game->id, $dateOnlyGame->id);
+        ->toContain($game->id)
+        ->not->toContain($priorEveningGame->id);
 });
 
 it('lists v2 games with sport, filter, pagination, freshness, and warning metadata', function (

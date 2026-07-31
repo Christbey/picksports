@@ -443,7 +443,7 @@ it('treats late-night wnba utc starts as the local game date for predictions', f
         ],
     );
 
-    [, $dateOnlyPrediction] = v2PredictionContractCreateGamePrediction(
+    [, $priorEveningPrediction] = v2PredictionContractCreateGamePrediction(
         WnbaTeam::class,
         WnbaGame::class,
         WnbaPrediction::class,
@@ -463,15 +463,17 @@ it('treats late-night wnba utc starts as the local game date for predictions', f
 
     $response = $this->getJson('/api/v2/sports/wnba/predictions?season=2026&from_date=2026-07-31&to_date=2026-07-31&per_page=10')
         ->assertOk()
-        ->assertJsonCount(2, 'data');
+        ->assertJsonCount(1, 'data');
 
     expect(collect($response->json('data'))->pluck('id')->all())
-        ->toContain($prediction->id, $dateOnlyPrediction->id);
+        ->toContain($prediction->id)
+        ->not->toContain($priorEveningPrediction->id);
 
     $this->getJson('/api/v2/sports/wnba/predictions/available-dates?season=2026')
         ->assertOk()
-        ->assertJsonPath('data.0', '2026-07-31')
-        ->assertJsonPath('data.1', '2026-08-01');
+        ->assertJsonPath('data.0', '2026-07-30')
+        ->assertJsonPath('data.1', '2026-07-31')
+        ->assertJsonPath('data.2', '2026-08-01');
 });
 
 it('filters cfb v2 predictions by week zero', function () {

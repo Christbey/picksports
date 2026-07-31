@@ -81,7 +81,6 @@ class SportsDateWindowService
                     $utcDateAndTimeQuery
                         ->whereRaw("{$timeColumn} is not null")
                         ->whereRaw("{$timeColumn} <> ?", [''])
-                        ->whereRaw("{$timeColumn} <> ?", ['00:00:00'])
                         ->whereRaw("TIME({$dateColumn}) = ?", ['00:00:00'])
                         ->whereRaw("{$combinedDateTime} between ? and ?", [
                             $window->utcStartDateTime(),
@@ -94,7 +93,6 @@ class SportsDateWindowService
                             $dateOnlyQuery
                                 ->whereRaw("{$timeColumn} is null")
                                 ->orWhereRaw("{$timeColumn} = ?", [''])
-                                ->orWhereRaw("{$timeColumn} = ?", ['00:00:00'])
                                 ->orWhereRaw("TIME({$dateColumn}) <> ?", ['00:00:00']);
                         })
                         ->whereDate($column, '>=', $window->localStartDate())

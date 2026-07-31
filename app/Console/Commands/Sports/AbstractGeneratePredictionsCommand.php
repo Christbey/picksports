@@ -147,8 +147,8 @@ abstract class AbstractGeneratePredictionsCommand extends Command
             $query->where('season', $season);
         }
 
-        if ($this->supportsWeekOption() && ($week = $this->option('week'))) {
-            $query->where('week', $week);
+        if ($this->hasWeekOptionValue()) {
+            $query->where('week', $this->option('week'));
         }
 
         if ($this->supportsDateOption() && ($date = $this->option('date'))) {
@@ -184,7 +184,18 @@ abstract class AbstractGeneratePredictionsCommand extends Command
     {
         return $this->supportsDateOption()
             && ! $this->option('date')
-            && ! ($this->supportsWeekOption() && $this->option('week'));
+            && ! $this->hasWeekOptionValue();
+    }
+
+    protected function hasWeekOptionValue(): bool
+    {
+        if (! $this->supportsWeekOption()) {
+            return false;
+        }
+
+        $week = $this->option('week');
+
+        return $week !== null && $week !== '';
     }
 
     protected function sportKey(): string

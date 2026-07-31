@@ -95,6 +95,42 @@ it('uses same season elo history before falling back to prior season elo', funct
         ->and((float) $prediction->predicted_spread)->toBe(12.1);
 });
 
+it('generates week zero predictions from the command week filter', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.30,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1600);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 0,
+        'season_type' => 'regular',
+        'game_date' => '2026-08-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    $this->artisan('cfb:generate-predictions', [
+        '--season' => 2026,
+        '--week' => 0,
+    ])->assertSuccessful();
+
+    expect(Prediction::query()->where('game_id', $game->id)->exists())->toBeTrue();
+});
+
 function createCfbEloRating(Team $team, int $season, int $week, float $elo, ?string $date = null): void
 {
     $attributes = [

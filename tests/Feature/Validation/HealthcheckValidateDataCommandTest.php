@@ -9,7 +9,9 @@ use App\Actions\Validation\Checks\TeamStatCoverageCheck;
 use App\Actions\Validation\Checks\WeatherCompletenessCheck;
 use App\Actions\Validation\SportValidator;
 use App\AI\Agents\ValidationReviewSummaryAgent;
+use App\Models\CFB\Game as CfbGame;
 use App\Models\CFB\Team as CfbTeam;
+use App\Models\CFB\TeamStat as CfbTeamStat;
 use App\Models\CommandHeartbeat;
 use App\Models\Healthcheck;
 use App\Models\MLB\Game as MlbGame;
@@ -30,9 +32,12 @@ use App\Models\ValidationRun;
 use App\Models\WNBA\Player as WnbaPlayer;
 use App\Models\WNBA\Team as WnbaTeam;
 use App\Notifications\ValidationRegressionAlert;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
+
+afterEach(function () {
+    $this->travelBack();
+});
 
 test('healthcheck validate data persists validation run and completeness findings', function () {
     $home = Team::factory()->create([
@@ -627,7 +632,7 @@ test('weather completeness does not require roof status on nfl weather rows', fu
 });
 
 test('team stat coverage does not fail nfl before the season has completed games', function () {
-    Carbon::setTestNow('2026-06-09 12:00:00');
+    $this->travelTo('2026-06-09 12:00:00');
 
     $home = NflTeam::factory()->create();
     $away = NflTeam::factory()->create();
@@ -653,7 +658,7 @@ test('team stat coverage does not fail nfl before the season has completed games
 });
 
 test('game coverage does not fail cfb before the season schedule exists', function () {
-    Carbon::setTestNow('2026-06-10 12:00:00');
+    $this->travelTo('2026-06-10 12:00:00');
 
     CfbTeam::factory()->count(3)->create();
 
@@ -664,6 +669,68 @@ test('game coverage does not fail cfb before the season schedule exists', functi
         ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
         ->and(data_get($result, 'metadata.season_games'))->toBe(0)
         ->and(data_get($result, 'metadata.teams_missing_games'))->toBe(3);
+});
+
+test('game coverage validates the active fall cfb season in january', function () {
+    $this->travelTo('2027-01-02 12:00:00');
+
+    $home = CfbTeam::factory()->create();
+    $away = CfbTeam::factory()->create();
+
+    CfbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'season_type' => config('cfb.season.types.postseason', 3),
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2027-01-05',
+        'game_time' => '20:00:00',
+    ]);
+
+    $result = app(GameCoverageCheck::class)->run('cfb', config('validation.sports.cfb'));
+
+    expect(data_get($result, 'metadata.season'))->toBe(2026)
+        ->and(data_get($result, 'metadata.season_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.teams_with_games'))->toBe(2);
+});
+
+test('team stat coverage validates the active fall cfb season in january', function () {
+    $this->travelTo('2027-01-12 12:00:00');
+
+    $home = CfbTeam::factory()->create();
+    $away = CfbTeam::factory()->create();
+
+    $game = CfbGame::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'season_type' => config('cfb.season.types.postseason', 3),
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2027-01-05',
+        'game_time' => '20:00:00',
+        'home_score' => 31,
+        'away_score' => 24,
+    ]);
+
+    CfbTeamStat::query()->create([
+        'team_id' => $home->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+        'total_yards' => 420,
+    ]);
+
+    CfbTeamStat::query()->create([
+        'team_id' => $away->id,
+        'game_id' => $game->id,
+        'team_type' => 'away',
+        'total_yards' => 360,
+    ]);
+
+    $result = app(TeamStatCoverageCheck::class)->run('cfb', config('validation.sports.cfb'));
+
+    expect(data_get($result, 'metadata.season'))->toBe(2026)
+        ->and(data_get($result, 'metadata.completed_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.teams_with_stats'))->toBe(2);
 });
 
 test('healthcheck validate data flags past mlb games stuck as scheduled', function () {
@@ -864,6 +931,8 @@ test('healthcheck validate data fails when completed mlb games are missing full 
 });
 
 test('healthcheck validate data flags stale futures odds', function () {
+    $this->travelTo('2026-01-15 12:00:00');
+
     DB::table('sports_futures_odds')->insert([
         'row_key' => 'nba-title-lakers',
         'sport' => 'nba',

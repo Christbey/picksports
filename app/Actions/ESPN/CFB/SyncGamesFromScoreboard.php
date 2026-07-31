@@ -7,6 +7,7 @@ use App\Actions\ESPN\AbstractSyncGamesFromScoreboard;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Services\ESPN\CFB\EspnService;
+use App\Support\CFB\CfbWeek;
 use App\Support\CfbPostseasonRoundResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -41,6 +42,12 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
         return array_merge(
             parent::buildGameAttributes($dto, $eventData, $homeTeam, $awayTeam),
             [
+                'week' => CfbWeek::productWeekForGame(
+                    $dto->season,
+                    $dto->seasonType,
+                    $dto->week,
+                    $dto->gameDate,
+                ),
                 'postseason_round' => $this->postseasonRoundResolver?->resolveFromEspnEvent($eventData),
             ],
         );

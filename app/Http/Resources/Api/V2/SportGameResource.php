@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Services\Api\V2\SportContext;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\MissingValue;
@@ -21,6 +22,12 @@ class SportGameResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $dateTime = GameDateTimePresenter::forSport(
+            $this->context->slug,
+            $this->game_date ?? null,
+            $this->game_time ?? null,
+        );
+
         return [
             'id' => $this->id,
             'sport' => $this->context->slug,
@@ -33,8 +40,8 @@ class SportGameResource extends JsonResource
             'postseason_round' => $this->postseason_round ?? null,
             'name' => $this->name ?? null,
             'short_name' => $this->short_name ?? null,
-            'game_date' => $this->serializeDateValue($this->game_date ?? null),
-            'game_time' => $this->serializeTimeValue($this->game_time ?? null),
+            'game_date' => $dateTime['game_date'],
+            'game_time' => $dateTime['game_time'],
             'venue' => $this->venue_name ?? $this->venue ?? null,
             'venue_name' => $this->venue_name ?? $this->venue ?? null,
             'venue_city' => $this->venue_city ?? null,
@@ -79,34 +86,12 @@ class SportGameResource extends JsonResource
 
     private function serializeDateValue(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_object($value) && method_exists($value, 'toIso8601String')) {
-            return $value->toIso8601String();
-        }
-
-        return (string) $value;
+        return GameDateTimePresenter::serializeDateValue($value);
     }
 
     private function serializeTimeValue(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_object($value) && method_exists($value, 'format')) {
-            return $value->format('H:i:s');
-        }
-
-        $time = (string) $value;
-
-        if (preg_match('/\b(\d{2}:\d{2}(?::\d{2})?)\b/', $time, $matches) === 1) {
-            return strlen($matches[1]) === 5 ? "{$matches[1]}:00" : $matches[1];
-        }
-
-        return $time;
+        return GameDateTimePresenter::timeString($value);
     }
 
     /**

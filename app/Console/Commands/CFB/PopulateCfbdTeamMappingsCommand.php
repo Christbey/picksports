@@ -8,12 +8,19 @@ use Illuminate\Console\Command;
 
 class PopulateCfbdTeamMappingsCommand extends Command
 {
-    protected $signature = 'cfbd:populate-team-mappings';
+    protected $signature = 'cfbd:populate-team-mappings
+        {--if-empty : Skip when CFBD mappings already exist}';
 
     protected $description = 'Fetch FBS teams from CollegeFootballData and populate the mapping table';
 
     public function handle(CollegeFootballDataService $service): int
     {
+        if ($this->option('if-empty') && CfbdTeamMapping::query()->exists()) {
+            $this->info('CFBD team mappings already exist; skipping bootstrap sync.');
+
+            return Command::SUCCESS;
+        }
+
         $this->info('Fetching FBS teams from CollegeFootballData...');
 
         $teams = $service->getFbsTeams();

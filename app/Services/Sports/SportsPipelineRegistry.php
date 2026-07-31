@@ -2,6 +2,7 @@
 
 namespace App\Services\Sports;
 
+use App\Support\CFB\CfbWeek;
 use Carbon\Carbon;
 
 class SportsPipelineRegistry
@@ -51,20 +52,12 @@ class SportsPipelineRegistry
         $currentYear = (int) $referenceDate->year;
         $fallSeasonYear = $referenceDate->month <= 2 ? $currentYear - 1 : $currentYear;
 
-        $cfbRegularSeasonStart = $referenceDate->copy()
-            ->setYear($fallSeasonYear)
-            ->setMonth(8)
-            ->setDay(24)
-            ->startOfDay();
-
         return [
             'reference_date' => $referenceDate,
             'season' => $season !== null && $season !== '' ? (int) $season : $fallSeasonYear,
             'week' => $week !== null && $week !== ''
                 ? (int) $week
-                : ($referenceDate->lessThan($cfbRegularSeasonStart)
-                    ? 1
-                    : min($referenceDate->copy()->startOfDay()->diffInWeeks($cfbRegularSeasonStart) + 1, 15)),
+                : CfbWeek::productWeekForDate($fallSeasonYear, $referenceDate),
             'current_year' => $currentYear,
             'fall_season_year' => $fallSeasonYear,
         ];
@@ -270,6 +263,13 @@ class SportsPipelineRegistry
             ],
             'cfb' => [
                 $this->step('Sync teams', 'espn:sync-cfb-teams', ['--sync' => true]),
+                $this->step('Bootstrap CFBD mappings when empty', 'cfbd:populate-team-mappings', [
+                    '--if-empty' => true,
+                ]),
+                $this->step('Bootstrap schedules when empty', 'espn:sync-cfb-schedules', [
+                    '--season' => $season,
+                    '--if-empty' => true,
+                ]),
                 $this->step('Sync current week', 'espn:sync-cfb-current'),
                 $this->step('Sync game details', 'espn:sync-cfb-game-details'),
                 $this->step('Sync injuries', 'espn:sync-cfb-injuries'),

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Resources\BettingRecommendationResource;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\InjuryImpactScorer;
+use App\Support\Sports\GameDateTimePresenter;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -295,18 +296,19 @@ class PublicSportPageController extends Controller
                 ->get();
 
         return $predictions
-            ->map(function ($prediction): array {
+            ->map(function ($prediction) use ($sport): array {
                 $game = $prediction->game;
                 $homeTeam = $game?->homeTeam;
                 $awayTeam = $game?->awayTeam;
                 $homeWinProbability = $this->homeWinProbability($prediction);
                 $pick = $homeWinProbability >= 0.5 ? $this->teamDisplayName($homeTeam) : $this->teamDisplayName($awayTeam);
+                $dateTime = GameDateTimePresenter::forSport($sport, $game?->game_date, $game?->game_time);
 
                 return [
                     'id' => $prediction->id,
                     'game_id' => $game?->id,
                     'matchup' => trim($this->teamDisplayName($awayTeam).' at '.$this->teamDisplayName($homeTeam)),
-                    'game_date' => $game?->game_date?->toIso8601String() ?? $game?->game_date,
+                    'game_date' => $dateTime['game_date'],
                     'status' => $game?->status,
                     'pick' => $pick,
                     'home_team_abbreviation' => $homeTeam?->abbreviation,

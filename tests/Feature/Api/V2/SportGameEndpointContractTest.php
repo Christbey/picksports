@@ -128,6 +128,27 @@ it('returns a clean json 404 for unsupported v2 sport game endpoints', function 
         ->assertJsonPath('message', 'Unsupported sport: nhl');
 });
 
+it('presents cfb v2 game dates in eastern football time', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $homeTeam = CfbTeam::factory()->create(['abbreviation' => 'UNLV']);
+    $awayTeam = CfbTeam::factory()->create(['abbreviation' => 'MEM']);
+    $game = CfbGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2026,
+        'week' => 1,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-08-30 00:00:00',
+        'game_time' => '02:00:00',
+    ]);
+
+    $this->getJson("/api/v2/sports/cfb/games/{$game->id}")
+        ->assertOk()
+        ->assertJsonPath('data.game_date', '2026-08-29')
+        ->assertJsonPath('data.game_time', '22:00:00');
+});
+
 it('lists v2 games with sport, filter, pagination, freshness, and warning metadata', function (
     string $slug,
     string $teamModel,

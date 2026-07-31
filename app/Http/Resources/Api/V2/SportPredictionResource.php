@@ -9,6 +9,7 @@ use App\Services\Api\V2\SportContext;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Support\MLB\MlbGamePhase;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -100,6 +101,12 @@ class SportPredictionResource extends JsonResource
             return null;
         }
 
+        $dateTime = GameDateTimePresenter::forSport(
+            $this->context->slug,
+            $game->getAttribute('game_date'),
+            $game->getAttribute('game_time'),
+        );
+
         return [
             'id' => $game->getAttribute('id'),
             'espn_id' => $game->getAttribute('espn_id'),
@@ -108,8 +115,8 @@ class SportPredictionResource extends JsonResource
             'week' => $game->getAttribute('week'),
             'name' => $game->getAttribute('name'),
             'short_name' => $game->getAttribute('short_name'),
-            'game_date' => $this->serializeDateValue($game->getAttribute('game_date')),
-            'game_time' => $this->serializeTimeValue($game->getAttribute('game_time')),
+            'game_date' => $dateTime['game_date'],
+            'game_time' => $dateTime['game_time'],
             'status' => $game->getAttribute('status'),
             'home_score' => $game->getAttribute('home_score'),
             'away_score' => $game->getAttribute('away_score'),
@@ -738,33 +745,11 @@ class SportPredictionResource extends JsonResource
 
     private function serializeDateValue(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_object($value) && method_exists($value, 'toIso8601String')) {
-            return $value->toIso8601String();
-        }
-
-        return (string) $value;
+        return GameDateTimePresenter::serializeDateValue($value);
     }
 
     private function serializeTimeValue(mixed $value): ?string
     {
-        if ($value === null) {
-            return null;
-        }
-
-        if (is_object($value) && method_exists($value, 'format')) {
-            return $value->format('H:i:s');
-        }
-
-        $time = (string) $value;
-
-        if (preg_match('/\b(\d{2}:\d{2}(?::\d{2})?)\b/', $time, $matches) === 1) {
-            return strlen($matches[1]) === 5 ? "{$matches[1]}:00" : $matches[1];
-        }
-
-        return $time;
+        return GameDateTimePresenter::timeString($value);
     }
 }

@@ -15,6 +15,17 @@ it('bootstraps cfb teams synchronously before current week sync', function () {
         ->command->toBe('espn:sync-cfb-teams')
         ->arguments->toBe(['--sync' => true])
         ->and($steps[1])
+        ->label->toBe('Bootstrap CFBD mappings when empty')
+        ->command->toBe('cfbd:populate-team-mappings')
+        ->arguments->toBe(['--if-empty' => true])
+        ->and($steps[2])
+        ->label->toBe('Bootstrap schedules when empty')
+        ->command->toBe('espn:sync-cfb-schedules')
+        ->arguments->toBe([
+            '--season' => 2026,
+            '--if-empty' => true,
+        ])
+        ->and($steps[3])
         ->label->toBe('Sync current week')
         ->command->toBe('espn:sync-cfb-current');
 });

@@ -7,6 +7,7 @@ use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Services\ESPN\CFB\EspnService;
+use App\Support\CFB\CfbWeek;
 use App\Support\CfbPostseasonRoundResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -18,8 +19,10 @@ class SyncGames extends AbstractSyncGames
 
     public function __construct(
         EspnService $espnService,
-        protected CfbPostseasonRoundResolver $postseasonRoundResolver,
+        protected ?CfbPostseasonRoundResolver $postseasonRoundResolver = null,
     ) {
+        $this->postseasonRoundResolver ??= app(CfbPostseasonRoundResolver::class);
+
         parent::__construct($espnService);
     }
 
@@ -28,7 +31,13 @@ class SyncGames extends AbstractSyncGames
         return array_merge(
             parent::buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam),
             [
-                'postseason_round' => $this->postseasonRoundResolver->resolveFromEspnEvent($gameData),
+                'week' => CfbWeek::productWeekForGame(
+                    $dto->season,
+                    $dto->seasonType,
+                    $dto->week,
+                    $dto->gameDate,
+                ),
+                'postseason_round' => $this->postseasonRoundResolver?->resolveFromEspnEvent($gameData),
             ],
         );
     }

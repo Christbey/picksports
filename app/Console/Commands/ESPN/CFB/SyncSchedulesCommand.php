@@ -7,6 +7,7 @@ use App\Actions\ESPN\CFB\SyncGamesFromScoreboard;
 use App\Console\Commands\ESPN\Concerns\IteratesDateRange;
 use App\Jobs\ESPN\CFB\FetchGamesFromScoreboard;
 use App\Jobs\ESPN\CFB\FetchTeamSchedule;
+use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Services\ESPN\CFB\EspnService;
 use App\Support\CfbSeasonAffiliationResolver;
@@ -19,16 +20,17 @@ class SyncSchedulesCommand extends Command
     use IteratesDateRange;
 
     protected $signature = 'espn:sync-cfb-schedules
-        {--season=2024 : The season year}
+        {--season= : The season year (defaults to current fall season)}
         {--team= : Specific team ESPN ID}
         {--details : Also dispatch game-details sync jobs for touched team schedules}
+        {--if-empty : Skip when the selected season already has schedule rows}
         {--sync : Run synchronously instead of dispatching queued jobs}';
 
     protected $description = 'Sync CFB team schedules from ESPN API; defaults to all FBS teams for the selected season';
 
     public function handle(): int
     {
-        $season = (int) $this->option('season');
+        $season = (int) ($this->option('season') ?: $this->defaultSeason());
         $teamEspnId = $this->option('team');
         $dispatchDetails = (bool) $this->option('details');
         $sync = (bool) $this->option('sync');
@@ -37,6 +39,12 @@ class SyncSchedulesCommand extends Command
             return $sync
                 ? $this->runOneSynchronously((string) $teamEspnId, $season)
                 : $this->dispatchOne((string) $teamEspnId, $season, $dispatchDetails);
+        }
+
+        if ($this->option('if-empty') && Game::query()->where('season', $season)->exists()) {
+            $this->info("CFB schedule rows already exist for season {$season}; skipping bootstrap sync.");
+
+            return self::SUCCESS;
         }
 
         $teams = $this->teamsToSync($season);
@@ -63,7 +71,7 @@ class SyncSchedulesCommand extends Command
         $bar->start();
 
         foreach ($teams as $team) {
-            FetchTeamSchedule::dispatch((string) $team->espn_id, $season, $dispatchDetails);
+            FetchTeamSchedule::dispatch((string) $team->espn_id, $season, $dispatchDetails)->onQueue('sync');
             $bar->advance();
         }
 
@@ -74,9 +82,16 @@ class SyncSchedulesCommand extends Command
         return self::SUCCESS;
     }
 
+    private function defaultSeason(): int
+    {
+        $now = now();
+
+        return $now->month <= 2 ? (int) $now->year - 1 : (int) $now->year;
+    }
+
     private function dispatchOne(string $teamEspnId, int $season, bool $dispatchDetails): int
     {
-        FetchTeamSchedule::dispatch($teamEspnId, $season, $dispatchDetails);
+        FetchTeamSchedule::dispatch($teamEspnId, $season, $dispatchDetails)->onQueue('sync');
         $this->info("Dispatched CFB schedule sync job for team {$teamEspnId} in season {$season}.");
 
         return self::SUCCESS;
@@ -161,7 +176,7 @@ class SyncSchedulesCommand extends Command
         $bar->start();
 
         $this->eachDateInRange($startDate, $endDate, function (Carbon $date) use ($bar): void {
-            FetchGamesFromScoreboard::dispatch($date->format('Ymd'));
+            FetchGamesFromScoreboard::dispatch($date->format('Ymd'))->onQueue('sync');
             $bar->advance();
         });
 

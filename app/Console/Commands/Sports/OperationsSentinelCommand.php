@@ -562,7 +562,7 @@ class OperationsSentinelCommand extends Command
         $this->info('Running '.strtoupper($sport).' canonical model pipeline...');
 
         foreach ($this->registrySteps($registry, $sport, 'predict', $season, $referenceDate) as $step) {
-            $this->callRegistryStep($step);
+            $this->callRegistryStep($step, $sport);
         }
     }
 
@@ -575,7 +575,7 @@ class OperationsSentinelCommand extends Command
                 continue;
             }
 
-            $this->callRegistryStep($step);
+            $this->callRegistryStep($step, $sport);
         }
     }
 
@@ -600,7 +600,7 @@ class OperationsSentinelCommand extends Command
                 $step['arguments']['--retry-rate-limit-delay'] = max(1, (int) $this->option('ai-rate-limit-delay'));
             }
 
-            $this->callRegistryStep($step);
+            $this->callRegistryStep($step, $sport);
         }
     }
 
@@ -663,10 +663,10 @@ class OperationsSentinelCommand extends Command
     /**
      * @param  array{label: string, command: string, arguments: array<string, mixed>}  $step
      */
-    private function callRegistryStep(array $step): void
+    private function callRegistryStep(array $step, string $sport): void
     {
         $this->info("Running {$step['label']}...");
-        $this->callAndRecord($step['command'], $step['arguments'], null, 'operations-sentinel');
+        $this->callAndRecord($step['command'], $step['arguments'], $sport, 'operations-sentinel');
         $this->output->write(Artisan::output());
     }
 

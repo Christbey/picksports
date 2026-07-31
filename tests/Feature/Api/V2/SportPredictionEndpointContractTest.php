@@ -132,7 +132,6 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
         ->assertJsonPath('data.0.id', $prediction->id)
         ->assertJsonPath('data.0.sport', $slug)
         ->assertJsonPath('data.0.game_id', $game->id)
-        ->assertJsonPath('data.0.game.game_time', '18:05:00')
         ->assertJsonPath('data.0.game.home_score', 5)
         ->assertJsonPath('data.0.game.away_score', 3)
         ->assertJsonPath('data.0.actual_spread', 2)
@@ -141,7 +140,8 @@ it('lists v2 predictions with sport, filter, pagination, freshness, and warning 
         ->assertJsonPath('data.0.total_error', 209.5)
         ->assertJsonPath('data.0.winner_correct', true);
 
-    expect($response->json('meta.pagination'))->toBeArray()
+    expect($response->json('data.0.game.game_time'))->toMatch('/^\d{2}:\d{2}:\d{2}$/')
+        ->and($response->json('meta.pagination'))->toBeArray()
         ->and($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2PredictionContractSports');
@@ -391,6 +391,29 @@ it('marks high raw prediction confidence as watch when sample context is missing
         ->assertJsonPath('data.confidence_context.tier', 'watch')
         ->assertJsonPath('data.confidence_context.raw_level', 'high')
         ->assertJsonPath('data.confidence_context.reason_codes.0', 'sample_context_missing');
+});
+
+it('presents cfb v2 prediction game dates in eastern football time', function () {
+    v2PredictionContractActingAsBypassUser();
+
+    [$game, $prediction] = v2PredictionContractCreateGamePrediction(
+        CfbTeam::class,
+        CfbGame::class,
+        CfbPrediction::class,
+        [
+            'season' => 2026,
+            'week' => 1,
+            'game_date' => '2026-08-30 00:00:00',
+            'game_time' => '02:00:00',
+            'status' => 'STATUS_SCHEDULED',
+        ],
+    );
+
+    $this->getJson("/api/v2/sports/cfb/predictions/{$prediction->id}")
+        ->assertOk()
+        ->assertJsonPath('data.game_id', $game->id)
+        ->assertJsonPath('data.game.game_date', '2026-08-29')
+        ->assertJsonPath('data.game.game_time', '22:00:00');
 });
 
 function v2PredictionContractActingAsBypassUser(): User

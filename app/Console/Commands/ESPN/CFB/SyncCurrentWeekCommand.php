@@ -6,6 +6,7 @@ use App\Console\Commands\ESPN\AbstractSyncCurrentWeekNumberCommand;
 use App\Jobs\ESPN\CFB\FetchGames;
 use App\Jobs\ESPN\CFB\FetchTeams;
 use App\Models\CFB\Game;
+use App\Support\CFB\CfbWeek;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -18,7 +19,7 @@ class SyncCurrentWeekCommand extends AbstractSyncCurrentWeekNumberCommand
 
     protected const SEASON_START_MONTH = 8;
 
-    protected const SEASON_START_DAY = 24;
+    protected const SEASON_START_DAY = 29;
 
     protected const MAX_REGULAR_SEASON_WEEKS = 15;
 
@@ -100,12 +101,8 @@ class SyncCurrentWeekCommand extends AbstractSyncCurrentWeekNumberCommand
     protected function fallbackWindow(int $season): array
     {
         $now = now();
-        $seasonStart = now()
-            ->setYear($season)
-            ->setMonth($this->seasonStartMonth())
-            ->setDay($this->seasonStartDay());
         $regularSeasonWeek = $this->getCurrentWeekForSeason($season);
-        $postseasonStart = $seasonStart->copy()->addWeeks($this->maxRegularSeasonWeeks());
+        $postseasonStart = CfbWeek::weekOneStartDate($season)->addWeeks($this->maxRegularSeasonWeeks());
 
         if ($regularSeasonWeek < $this->maxRegularSeasonWeeks() || $now->lessThan($postseasonStart)) {
             return [
@@ -128,18 +125,11 @@ class SyncCurrentWeekCommand extends AbstractSyncCurrentWeekNumberCommand
     protected function getCurrentWeekForSeason(int $season): int
     {
         $now = now();
-        $seasonStart = now()
-            ->setYear($season)
-            ->setMonth($this->seasonStartMonth())
-            ->setDay($this->seasonStartDay());
-
-        if ($now->lessThan($seasonStart)) {
-            return 1;
+        if ($now->lessThan(CfbWeek::weekOneStartDate($season))) {
+            return 0;
         }
 
-        $weekNumber = $now->diffInWeeks($seasonStart) + 1;
-
-        return min($weekNumber, $this->maxRegularSeasonWeeks());
+        return CfbWeek::productWeekForDate($season, $now);
     }
 
     protected function dispatchSeasonTypeWeekGamesSync(int $season, int $seasonType, int $week): void

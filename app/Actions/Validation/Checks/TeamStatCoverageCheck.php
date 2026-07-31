@@ -5,6 +5,7 @@ namespace App\Actions\Validation\Checks;
 use App\Actions\Validation\Contracts\ValidationCheck;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Support\MlbRegularSeasonWindow;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -28,9 +29,10 @@ class TeamStatCoverageCheck implements ValidationCheck
             return null;
         }
 
-        $season = (int) now()->year;
-        $totalTeams = DB::table($teamsTable)->count();
-        $stageContext = app(SeasonStageService::class)->context($sport, $season);
+        $stageContext = app(SeasonStageService::class)->context($sport);
+        $season = (int) ($stageContext->season ?? now()->year);
+        $eligibleTeamIds = $this->eligibleTeamIds($sport, $teamsTable, $season);
+        $totalTeams = $eligibleTeamIds->count();
 
         if ($totalTeams === 0) {
             return [
@@ -51,7 +53,7 @@ class TeamStatCoverageCheck implements ValidationCheck
             ->distinct()
             ->pluck("{$teamStatsTable}.team_id");
 
-        $teamsWithStats = $teamsWithStatsIds->unique()->count();
+        $teamsWithStats = $teamsWithStatsIds->unique()->intersect($eligibleTeamIds)->count();
         $missingTeams = max($totalTeams - $teamsWithStats, 0);
         $missingPct = $totalTeams > 0 ? $missingTeams / $totalTeams : 1.0;
         $completedGamesQuery = DB::table($gamesTable)
@@ -166,5 +168,30 @@ class TeamStatCoverageCheck implements ValidationCheck
             ],
             'recommended_action' => "espn:sync-{$sport}-game-details",
         ];
+    }
+
+    private function eligibleTeamIds(string $sport, string $teamsTable, int $season): Collection
+    {
+        if (
+            $sport === 'cfb'
+            && Schema::hasTable('cfb_team_season_affiliations')
+            && Schema::hasColumn('cfb_team_season_affiliations', 'subdivision')
+        ) {
+            $ids = DB::table($teamsTable)
+                ->join('cfb_team_season_affiliations', function ($join) use ($teamsTable, $season): void {
+                    $join->on('cfb_team_season_affiliations.team_id', '=', "{$teamsTable}.id")
+                        ->where('cfb_team_season_affiliations.season', '=', $season)
+                        ->where('cfb_team_season_affiliations.subdivision', '=', config('cfb.teams.divisions.fbs', 'FBS'));
+                })
+                ->pluck("{$teamsTable}.id")
+                ->unique()
+                ->values();
+
+            if ($ids->isNotEmpty()) {
+                return $ids;
+            }
+        }
+
+        return DB::table($teamsTable)->pluck('id')->unique()->values();
     }
 }

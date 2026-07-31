@@ -4,6 +4,7 @@ namespace App\Jobs\ESPN\CFB;
 
 use App\Actions\ESPN\CFB\SyncGames;
 use App\Services\ESPN\CFB\EspnService;
+use App\Support\CFB\CfbWeek;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -25,9 +26,12 @@ class FetchGames implements ShouldQueue
     {
         $service = new EspnService;
         $action = new SyncGames($service);
+        $espnWeek = CfbWeek::espnWeekForProductWeek($this->seasonType, $this->week);
 
-        $count = $action->execute($this->season, $this->seasonType, $this->week);
+        $count = $action->execute($this->season, $this->seasonType, $espnWeek);
 
-        Log::info("CFB: Synced {$count} games from ESPN for Season {$this->season}, Week {$this->week}");
+        Log::info("CFB: Synced {$count} games from ESPN for Season {$this->season}, Week {$this->week}", [
+            'espn_week' => $espnWeek,
+        ]);
     }
 }

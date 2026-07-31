@@ -1,9 +1,12 @@
 <?php
 
+use App\Http\Resources\CFB\GameResource as CfbGameResource;
 use App\Http\Resources\MLB\GameResource as MlbGameResource;
 use App\Http\Resources\NBA\GameResource as NbaGameResource;
 use App\Http\Resources\NFL\GameResource as NflGameResource;
 use App\Http\Resources\WNBA\GameResource as WnbaGameResource;
+use App\Models\CFB\Game as CfbGame;
+use App\Models\CFB\Team as CfbTeam;
 use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\Team as MlbTeam;
@@ -108,6 +111,31 @@ test('wnba game resource exposes game time plus venue and clock aliases', functi
         'venue_name' => 'Michelob ULTRA Arena',
         'clock' => '08:44',
         'game_clock' => '08:44',
+    ]);
+});
+
+test('cfb game resource presents late kickoff dates in eastern football time', function () {
+    $game = (new CfbGame)->forceFill([
+        'id' => 44,
+        'home_team_id' => 1,
+        'away_team_id' => 2,
+        'season' => 2026,
+        'season_type' => 'regular',
+        'week' => 1,
+        'game_date' => Carbon::parse('2026-08-30 00:00:00'),
+        'game_time' => '02:00:00',
+        'venue_name' => 'Allegiant Stadium',
+        'status' => 'STATUS_SCHEDULED',
+    ])
+        ->setRelation('homeTeam', new CfbTeam(['id' => 1, 'abbreviation' => 'UNLV', 'school' => 'UNLV', 'mascot' => 'Rebels']))
+        ->setRelation('awayTeam', new CfbTeam(['id' => 2, 'abbreviation' => 'MEM', 'school' => 'Memphis', 'mascot' => 'Tigers']));
+
+    $data = CfbGameResource::make($game)->response()->getData(true)['data'];
+
+    expect($data)->toMatchArray([
+        'game_date' => '2026-08-29',
+        'game_time' => '22:00:00',
+        'venue' => 'Allegiant Stadium',
     ]);
 });
 

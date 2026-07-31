@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\CommandHeartbeatService;
+use App\Support\CFB\CfbWeek;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -34,13 +35,7 @@ $cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
 // Season year helpers
 $currentYear = (int) now()->year;
 $fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
-$cfbRegularSeasonStart = now()
-    ->setYear($fallSeasonYear)
-    ->setMonth(8)
-    ->setDay(24);
-$cfbCurrentRegularSeasonWeek = now()->lessThan($cfbRegularSeasonStart)
-    ? 1
-    : min(now()->diffInWeeks($cfbRegularSeasonStart) + 1, 15);
+$cfbCurrentRegularSeasonWeek = CfbWeek::productWeekForDate($fallSeasonYear, now());
 
 /*
 |--------------------------------------------------------------------------

@@ -6,6 +6,7 @@ use App\Actions\ESPN\AbstractSyncGamesFromSchedule;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
+use App\Support\CFB\CfbWeek;
 use Illuminate\Database\Eloquent\Model;
 
 class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
@@ -33,6 +34,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
         Model $existingGame
     ): array {
         return [
+            'week' => $this->productWeek($dto, $rawGame),
             'status' => $this->effectiveStatus($dto, $rawGame),
             'home_score' => $dto->homeScore,
             'away_score' => $dto->awayScore,
@@ -51,7 +53,7 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
             'espn_event_id' => $dto->espnEventId,
             'espn_uid' => $rawGame['uid'] ?? null,
             'season' => $dto->season,
-            'week' => $dto->week,
+            'week' => $this->productWeek($dto, $rawGame),
             'season_type' => $dto->seasonType,
             'game_date' => $dateParts['game_date'],
             'game_time' => $dateParts['game_time'],
@@ -78,5 +80,25 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
     protected function effectiveStatus(GameData $dto, array $rawGame): string
     {
         return $dto->status;
+    }
+
+    protected function extraPartialGameAttributes(GameData $dto, array $rawGame, ?Model $homeTeam, ?Model $awayTeam): array
+    {
+        return [
+            'week' => $this->productWeek($dto, $rawGame),
+        ];
+    }
+
+    private function productWeek(GameData $dto, array $rawGame): int
+    {
+        $dateParts = GameData::extractDateParts($rawGame['date'] ?? $dto->gameDate);
+
+        return CfbWeek::productWeekForGame(
+            $dto->season,
+            $dto->seasonType,
+            $dto->week,
+            $dateParts['game_date'],
+            $dateParts['game_time'],
+        );
     }
 }

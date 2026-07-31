@@ -78,7 +78,12 @@ return [
             'market_window_days' => 7,
             'injuries_command' => 'espn:sync-cfb-injuries',
             'pipeline_order' => [
+                ['label' => 'schedule before predictions', 'upstream' => ['espn:sync-cfb-schedules%', 'espn:sync-cfb-current%', 'espn:sync-cfb-games-scoreboard%'], 'downstream' => ['cfb:generate-predictions%'], 'recommended_action' => 'cfb:generate-predictions'],
                 ['label' => 'details before predictions', 'upstream' => ['espn:sync-cfb-game-details%'], 'downstream' => ['cfb:generate-predictions%'], 'recommended_action' => 'cfb:generate-predictions'],
+                ['label' => 'cfbd mappings before fpi', 'upstream' => ['cfbd:populate-team-mappings%'], 'downstream' => ['cfb:import-fpi%'], 'recommended_action' => 'cfb:import-fpi'],
+                ['label' => 'fpi before team metrics', 'upstream' => ['cfb:import-fpi%'], 'downstream' => ['cfb:calculate-team-metrics%'], 'recommended_action' => 'cfb:calculate-team-metrics'],
+                ['label' => 'team metrics before predictions', 'upstream' => ['cfb:calculate-team-metrics%'], 'downstream' => ['cfb:generate-predictions%'], 'recommended_action' => 'cfb:generate-predictions'],
+                ['label' => 'odds before AI daily predictions', 'upstream' => ['cfb:sync-odds%'], 'downstream' => ['sports:ai-daily-predictions --sport=cfb%'], 'recommended_action' => 'sports:ai-daily-predictions --sport=cfb', 'severity' => 'warning'],
             ],
         ],
         'wcbb' => [

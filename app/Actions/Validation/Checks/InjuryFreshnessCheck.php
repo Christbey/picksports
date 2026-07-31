@@ -125,7 +125,7 @@ class InjuryFreshnessCheck implements ValidationCheck
      */
     private function offseasonContext(string $sport, array $profile): array
     {
-        $stage = app(SeasonStageService::class)->context($sport, (int) now()->year);
+        $stage = app(SeasonStageService::class)->context($sport);
         $activeGames = $this->activeGameCount($profile);
 
         return [

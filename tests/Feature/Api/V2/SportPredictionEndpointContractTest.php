@@ -443,17 +443,30 @@ it('treats late-night wnba utc starts as the local game date for predictions', f
         ],
     );
 
+    [, $dateOnlyPrediction] = v2PredictionContractCreateGamePrediction(
+        WnbaTeam::class,
+        WnbaGame::class,
+        WnbaPrediction::class,
+        [
+            'season' => 2026,
+            'game_date' => '2026-07-31 00:00:00',
+            'game_time' => '00:00:00',
+            'status' => 'STATUS_FINAL',
+        ],
+    );
+
     $this->getJson("/api/v2/sports/wnba/predictions/{$prediction->id}")
         ->assertOk()
         ->assertJsonPath('data.game_id', $game->id)
         ->assertJsonPath('data.game.game_date', '2026-07-31')
         ->assertJsonPath('data.game.game_time', '22:00:00');
 
-    $this->getJson('/api/v2/sports/wnba/predictions?season=2026&from_date=2026-07-31&to_date=2026-07-31&per_page=10')
+    $response = $this->getJson('/api/v2/sports/wnba/predictions?season=2026&from_date=2026-07-31&to_date=2026-07-31&per_page=10')
         ->assertOk()
-        ->assertJsonCount(1, 'data')
-        ->assertJsonPath('data.0.id', $prediction->id)
-        ->assertJsonPath('data.0.game.game_date', '2026-07-31');
+        ->assertJsonCount(2, 'data');
+
+    expect(collect($response->json('data'))->pluck('id')->all())
+        ->toContain($prediction->id, $dateOnlyPrediction->id);
 
     $this->getJson('/api/v2/sports/wnba/predictions/available-dates?season=2026')
         ->assertOk()

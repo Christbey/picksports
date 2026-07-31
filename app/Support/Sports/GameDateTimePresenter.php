@@ -12,10 +12,11 @@ class GameDateTimePresenter
     public static function forSport(string $sport, mixed $gameDate, mixed $gameTime): array
     {
         $displayTimezone = self::displayTimezoneForSport($sport);
+        $time = self::timeString($gameTime);
 
-        if ($displayTimezone !== null && $gameDate !== null) {
+        if ($displayTimezone !== null && $gameDate !== null && $time !== null && $time !== '00:00:00') {
             $utcDatetime = Carbon::parse(
-                self::dateString($gameDate).' '.(self::timeString($gameTime) ?? '00:00:00'),
+                self::dateString($gameDate).' '.$time,
                 'UTC',
             )->setTimezone($displayTimezone);
 
@@ -25,9 +26,16 @@ class GameDateTimePresenter
             ];
         }
 
+        if ($displayTimezone !== null && $gameDate !== null) {
+            return [
+                'game_date' => self::dateString($gameDate),
+                'game_time' => $time,
+            ];
+        }
+
         return [
             'game_date' => self::serializeDateValue($gameDate),
-            'game_time' => self::timeString($gameTime),
+            'game_time' => $time,
         ];
     }
 

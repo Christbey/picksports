@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -48,8 +49,7 @@ class SportGameQuery
             ->with($this->relationsFor($gameModel))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
-            ->when($filters['from_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('game_date', '>=', $date))
-            ->when($filters['to_date'] ?? null, fn (Builder $query, string $date): Builder => $query->whereDate('game_date', '<=', $date))
+            ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
             ->when($filters['team_id'] ?? null, function (Builder $query, int $teamId): Builder {
                 return $query->where(function (Builder $teamQuery) use ($teamId): void {
                     $teamQuery->where('home_team_id', $teamId)
@@ -61,6 +61,31 @@ class SportGameQuery
                 fn (Builder $query): Builder => $query->orderByDesc('game_date'),
                 fn (Builder $query): Builder => $query->orderBy('game_date'),
             );
+    }
+
+    /**
+     * @param  array{from_date?: string, to_date?: string}  $filters
+     */
+    private function whereGameDateFilters(Builder $query, array $filters): Builder
+    {
+        $fromDate = $filters['from_date'] ?? null;
+        $toDate = $filters['to_date'] ?? null;
+
+        if (is_string($fromDate) && is_string($toDate)) {
+            $window = app(SportsDateWindowService::class)->forRange($fromDate, $toDate);
+
+            return app(SportsDateWindowService::class)->applyGameDateWindow($query, $window);
+        }
+
+        if (is_string($fromDate)) {
+            return $query->whereDate('game_date', '>=', $fromDate);
+        }
+
+        if (is_string($toDate)) {
+            return $query->whereDate('game_date', '<=', $toDate);
+        }
+
+        return $query;
     }
 
     /**

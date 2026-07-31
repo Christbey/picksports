@@ -149,6 +149,41 @@ it('presents cfb v2 game dates in eastern football time', function () {
         ->assertJsonPath('data.game_time', '22:00:00');
 });
 
+it('treats late-night wnba utc starts as the local game date for games', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $homeTeam = WnbaTeam::factory()->create(['abbreviation' => 'POR']);
+    $awayTeam = WnbaTeam::factory()->create(['abbreviation' => 'IND']);
+    $game = WnbaGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-08-01 00:00:00',
+        'game_time' => '02:00:00',
+    ]);
+
+    WnbaGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-08-01 00:00:00',
+        'game_time' => '20:00:00',
+    ]);
+
+    $this->getJson("/api/v2/sports/wnba/games/{$game->id}")
+        ->assertOk()
+        ->assertJsonPath('data.game_date', '2026-07-31')
+        ->assertJsonPath('data.game_time', '22:00:00');
+
+    $this->getJson('/api/v2/sports/wnba/games?season=2026&from_date=2026-07-31&to_date=2026-07-31&per_page=10')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $game->id)
+        ->assertJsonPath('data.0.game_date', '2026-07-31');
+});
+
 it('lists v2 games with sport, filter, pagination, freshness, and warning metadata', function (
     string $slug,
     string $teamModel,

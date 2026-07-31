@@ -416,6 +416,51 @@ it('presents cfb v2 prediction game dates in eastern football time', function ()
         ->assertJsonPath('data.game.game_time', '22:00:00');
 });
 
+it('treats late-night wnba utc starts as the local game date for predictions', function () {
+    v2PredictionContractActingAsBypassUser();
+
+    [$game, $prediction] = v2PredictionContractCreateGamePrediction(
+        WnbaTeam::class,
+        WnbaGame::class,
+        WnbaPrediction::class,
+        [
+            'season' => 2026,
+            'game_date' => '2026-08-01 00:00:00',
+            'game_time' => '02:00:00',
+            'status' => 'STATUS_SCHEDULED',
+        ],
+    );
+
+    v2PredictionContractCreateGamePrediction(
+        WnbaTeam::class,
+        WnbaGame::class,
+        WnbaPrediction::class,
+        [
+            'season' => 2026,
+            'game_date' => '2026-08-01 00:00:00',
+            'game_time' => '20:00:00',
+            'status' => 'STATUS_SCHEDULED',
+        ],
+    );
+
+    $this->getJson("/api/v2/sports/wnba/predictions/{$prediction->id}")
+        ->assertOk()
+        ->assertJsonPath('data.game_id', $game->id)
+        ->assertJsonPath('data.game.game_date', '2026-07-31')
+        ->assertJsonPath('data.game.game_time', '22:00:00');
+
+    $this->getJson('/api/v2/sports/wnba/predictions?season=2026&from_date=2026-07-31&to_date=2026-07-31&per_page=10')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $prediction->id)
+        ->assertJsonPath('data.0.game.game_date', '2026-07-31');
+
+    $this->getJson('/api/v2/sports/wnba/predictions/available-dates?season=2026')
+        ->assertOk()
+        ->assertJsonPath('data.0', '2026-07-31')
+        ->assertJsonPath('data.1', '2026-08-01');
+});
+
 it('filters cfb v2 predictions by week zero', function () {
     v2PredictionContractActingAsBypassUser();
 

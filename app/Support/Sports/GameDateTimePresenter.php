@@ -11,11 +11,13 @@ class GameDateTimePresenter
      */
     public static function forSport(string $sport, mixed $gameDate, mixed $gameTime): array
     {
-        if ($sport === 'cfb' && $gameDate !== null) {
+        $displayTimezone = self::displayTimezoneForSport($sport);
+
+        if ($displayTimezone !== null && $gameDate !== null) {
             $utcDatetime = Carbon::parse(
                 self::dateString($gameDate).' '.(self::timeString($gameTime) ?? '00:00:00'),
                 'UTC',
-            )->setTimezone('America/New_York');
+            )->setTimezone($displayTimezone);
 
             return [
                 'game_date' => $utcDatetime->toDateString(),
@@ -68,5 +70,14 @@ class GameDateTimePresenter
         }
 
         return Carbon::parse((string) $value)->toDateString();
+    }
+
+    private static function displayTimezoneForSport(string $sport): ?string
+    {
+        if (! in_array($sport, ['cfb', 'wnba'], true)) {
+            return null;
+        }
+
+        return (string) config("trends.timezones.{$sport}.display", 'America/New_York');
     }
 }

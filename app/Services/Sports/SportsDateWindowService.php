@@ -5,6 +5,7 @@ namespace App\Services\Sports;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class SportsDateWindowService
 {
@@ -65,15 +66,35 @@ class SportsDateWindowService
 
     public function applyGameDateWindow(Builder $query, DateWindow $window, string $column = 'game_date'): Builder
     {
-        return $query->where(function (Builder $query) use ($column, $window): void {
+        $dateColumn = $this->wrappedColumn($column);
+        $timeColumn = $this->wrappedColumn($this->timeColumnFor($column));
+        $combinedDateTime = $this->combinedDateTimeExpression($dateColumn, $timeColumn);
+
+        return $query->where(function (Builder $query) use ($column, $window, $dateColumn, $timeColumn, $combinedDateTime): void {
             $query
                 ->where(function (Builder $utcDateTimeQuery) use ($column, $window): void {
                     $utcDateTimeQuery
                         ->whereBetween($column, [$window->utcStartDateTime(), $window->utcEndDateTime()])
                         ->whereRaw("TIME({$column}) <> ?", ['00:00:00']);
                 })
-                ->orWhere(function (Builder $localDateQuery) use ($column, $window): void {
+                ->orWhere(function (Builder $utcDateAndTimeQuery) use ($window, $dateColumn, $timeColumn, $combinedDateTime): void {
+                    $utcDateAndTimeQuery
+                        ->whereRaw("{$timeColumn} is not null")
+                        ->whereRaw("{$timeColumn} <> ?", [''])
+                        ->whereRaw("TIME({$dateColumn}) = ?", ['00:00:00'])
+                        ->whereRaw("{$combinedDateTime} between ? and ?", [
+                            $window->utcStartDateTime(),
+                            $window->utcEndDateTime(),
+                        ]);
+                })
+                ->orWhere(function (Builder $localDateQuery) use ($column, $window, $dateColumn, $timeColumn): void {
                     $localDateQuery
+                        ->where(function (Builder $dateOnlyQuery) use ($dateColumn, $timeColumn): void {
+                            $dateOnlyQuery
+                                ->whereRaw("{$timeColumn} is null")
+                                ->orWhereRaw("{$timeColumn} = ?", [''])
+                                ->orWhereRaw("TIME({$dateColumn}) <> ?", ['00:00:00']);
+                        })
                         ->whereDate($column, '>=', $window->localStartDate())
                         ->whereDate($column, '<=', $window->localEndDate());
                 });
@@ -102,10 +123,31 @@ class SportsDateWindowService
         }
 
         if (is_string($gameTime) && preg_match('/^\d{1,2}:\d{2}/', $gameTime) === 1) {
-            return CarbonImmutable::parse($base->toDateString().' '.$gameTime, $this->timezone())->utc();
+            return CarbonImmutable::parse($base->toDateString().' '.$gameTime, 'UTC');
         }
 
         return $base->setTimezone('UTC');
+    }
+
+    private function wrappedColumn(string $column): string
+    {
+        return DB::getQueryGrammar()->wrap($column);
+    }
+
+    private function timeColumnFor(string $dateColumn): string
+    {
+        if (! str_contains($dateColumn, '.')) {
+            return 'game_time';
+        }
+
+        return str($dateColumn)->beforeLast('.')->append('.game_time')->toString();
+    }
+
+    private function combinedDateTimeExpression(string $dateColumn, string $timeColumn): string
+    {
+        return DB::connection()->getDriverName() === 'sqlite'
+            ? "datetime(date({$dateColumn}) || ' ' || {$timeColumn})"
+            : "timestamp(date({$dateColumn}), {$timeColumn})";
     }
 
     private function isDateOnly(mixed $value): bool

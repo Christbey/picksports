@@ -3,12 +3,12 @@
 namespace App\Services\Api\V2;
 
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class SportPredictionQuery
@@ -110,12 +110,25 @@ class SportPredictionQuery
                 return $query;
             })
             ->whereNotNull("{$gameTable}.game_date")
-            ->selectRaw('DATE('.DB::getQueryGrammar()->wrap("{$gameTable}.game_date").') as game_date')
-            ->distinct()
-            ->orderBy('game_date');
+            ->select([
+                "{$gameTable}.game_date",
+                "{$gameTable}.game_time",
+            ])
+            ->orderBy("{$gameTable}.game_date")
+            ->orderBy("{$gameTable}.game_time");
 
-        return $query->pluck('game_date')
-            ->map(fn (mixed $date): string => (string) $date)
+        return $query->get()
+            ->map(function (mixed $game) use ($context): ?string {
+                $date = GameDateTimePresenter::forSport(
+                    $context->slug,
+                    $game->game_date ?? null,
+                    $game->game_time ?? null,
+                )['game_date'];
+
+                return $date === null ? null : substr($date, 0, 10);
+            })
+            ->filter()
+            ->unique()
             ->values();
     }
 

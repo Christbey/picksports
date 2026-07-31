@@ -138,11 +138,10 @@ abstract class AbstractPredictionGenerator
             return null;
         }
 
-        // Get current Elo ratings
+        // Get Elo ratings for this game's prediction context.
         $sport = $this->getSport();
         $defaultElo = config("{$sport}.elo.default") ?? config("{$sport}.elo.default_rating");
-        $homeElo = $homeTeam->elo_rating ?? $defaultElo;
-        $awayElo = $awayTeam->elo_rating ?? $defaultElo;
+        [$homeElo, $awayElo] = $this->eloRatingsForGame($game, $homeTeam, $awayTeam, (int) $defaultElo);
 
         // Get team metrics for the season
         [$homeMetrics, $awayMetrics] = $this->teamMetricsForGame($game, $homeTeam->id, $awayTeam->id);
@@ -373,6 +372,17 @@ abstract class AbstractPredictionGenerator
         }
 
         return (bool) config("{$sport}.predictions.use_previous_season_metrics_fallback", false);
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    protected function eloRatingsForGame(Model $game, Model $homeTeam, Model $awayTeam, int $defaultElo): array
+    {
+        return [
+            (int) round((float) ($homeTeam->elo_rating ?? $defaultElo)),
+            (int) round((float) ($awayTeam->elo_rating ?? $defaultElo)),
+        ];
     }
 
     protected function shouldGeneratePredictionForGame(Model $game, Model $homeTeam, Model $awayTeam): bool

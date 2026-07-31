@@ -3,11 +3,14 @@
 namespace App\Actions\CFB;
 
 use App\Actions\Sports\AbstractAmericanFootballPredictionGenerator;
+use App\Models\CFB\EloRating;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
 {
@@ -115,6 +118,101 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         $value = config("cfb.predictions.{$key}");
 
         return is_numeric($value) ? (float) $value : $default;
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    protected function eloRatingsForGame(Model $game, Model $homeTeam, Model $awayTeam, int $defaultElo): array
+    {
+        if (! (bool) config('cfb.predictions.use_previous_season_elo_fallback', true)) {
+            return parent::eloRatingsForGame($game, $homeTeam, $awayTeam, $defaultElo);
+        }
+
+        $homeElo = $this->pointInTimeEloForGame((int) $homeTeam->id, $game, $defaultElo)
+            ?? (int) round((float) ($homeTeam->elo_rating ?? $defaultElo));
+        $awayElo = $this->pointInTimeEloForGame((int) $awayTeam->id, $game, $defaultElo)
+            ?? (int) round((float) ($awayTeam->elo_rating ?? $defaultElo));
+
+        return [$homeElo, $awayElo];
+    }
+
+    protected function pointInTimeEloForGame(int $teamId, Model $game, int $defaultElo): ?int
+    {
+        $sameSeasonElo = $this->latestSameSeasonEloBeforeGame($teamId, $game);
+
+        if ($sameSeasonElo !== null) {
+            return (int) round($sameSeasonElo);
+        }
+
+        if (! $this->shouldUsePriorSeasonEloFallback($game)) {
+            return null;
+        }
+
+        $priorSeasonElo = $this->latestPriorSeasonElo($teamId, (int) $game->season);
+
+        if ($priorSeasonElo === null) {
+            return null;
+        }
+
+        $regressionFactor = (float) config(
+            'cfb.predictions.previous_season_elo_regression_factor',
+            config('cfb.elo.offseason_regression_factor', 0.30)
+        );
+        $regressionFactor = max(0.0, min(1.0, $regressionFactor));
+
+        return (int) round($priorSeasonElo + (($defaultElo - $priorSeasonElo) * $regressionFactor));
+    }
+
+    protected function latestSameSeasonEloBeforeGame(int $teamId, Model $game): ?float
+    {
+        $query = EloRating::query()
+            ->where('team_id', $teamId)
+            ->where('season', (int) $game->season);
+
+        if (Schema::hasColumn((new EloRating)->getTable(), 'date') && $game->game_date) {
+            $gameDate = Carbon::parse($game->game_date)->toDateString();
+
+            return $query
+                ->whereDate('date', '<', $gameDate)
+                ->orderByDesc('date')
+                ->orderByDesc('id')
+                ->value('elo_rating');
+        }
+
+        return $query
+            ->where('week', '<', (int) ($game->week ?? 0))
+            ->orderByDesc('week')
+            ->orderByDesc('id')
+            ->value('elo_rating');
+    }
+
+    protected function latestPriorSeasonElo(int $teamId, int $season): ?float
+    {
+        $query = EloRating::query()
+            ->where('team_id', $teamId)
+            ->where('season', '<', $season)
+            ->orderByDesc('season');
+
+        if (Schema::hasColumn((new EloRating)->getTable(), 'date')) {
+            $query->orderByDesc('date');
+        }
+
+        return $query
+            ->orderByDesc('week')
+            ->orderByDesc('id')
+            ->value('elo_rating');
+    }
+
+    protected function shouldUsePriorSeasonEloFallback(Model $game): bool
+    {
+        $throughWeek = (int) config('cfb.predictions.previous_season_elo_fallback_through_week', 4);
+
+        if ($throughWeek < 0) {
+            return true;
+        }
+
+        return (int) ($game->week ?? 0) <= $throughWeek;
     }
 
     protected function latestPriorSeasonMetric(string $teamMetricModel, int $teamId, int $season, ?Model $game = null): ?Model

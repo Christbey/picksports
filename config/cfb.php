@@ -251,6 +251,17 @@ return [
         'use_previous_season_metrics_fallback' => true,
 
         /**
+         * Use the latest same-season Elo before kickoff, falling back to a
+         * regressed prior-season Elo for Week 0 through the early season.
+         */
+        'use_previous_season_elo_fallback' => env('CFB_USE_PREVIOUS_SEASON_ELO_FALLBACK', true),
+        'previous_season_elo_fallback_through_week' => env('CFB_PREVIOUS_SEASON_ELO_FALLBACK_THROUGH_WEEK', 4),
+        'previous_season_elo_regression_factor' => env(
+            'CFB_PREVIOUS_SEASON_ELO_REGRESSION_FACTOR',
+            env('CFB_OFFSEASON_ELO_REGRESSION_FACTOR', 0.30)
+        ),
+
+        /**
          * Model version for tracking prediction algorithm changes
          */
         'model_version' => '1.1',

@@ -12,6 +12,16 @@ defineProps<{
     ) => string;
     formatSpread: (spread: number | string) => string;
 }>();
+
+const homeSpreadLine = (prediction: NflPagePrediction): number =>
+    -Number(prediction.predicted_spread);
+
+const favoriteLabel = (
+    prediction: NflPagePrediction,
+    home?: string | null,
+    away?: string | null,
+): string =>
+    Number(prediction.predicted_spread) > 0 ? home || 'Home' : away || 'Away';
 </script>
 
 <template>
@@ -82,22 +92,18 @@ defineProps<{
                 <div
                     class="ui-surface-subtle border-primary/25 bg-primary/8 p-3 text-center"
                 >
-                    <div class="text-sm text-muted-foreground">Spread</div>
+                    <div class="text-sm text-muted-foreground">Home Spread</div>
                     <div
                         class="text-2xl font-semibold tracking-tight text-primary"
                     >
                         {{
                             prediction.predicted_spread !== undefined
-                                ? formatSpread(prediction.predicted_spread)
+                                ? formatSpread(homeSpreadLine(prediction))
                                 : '-'
                         }}
                     </div>
                     <div class="mt-0.5 text-xs text-muted-foreground">
-                        {{
-                            Number(prediction.predicted_spread) > 0
-                                ? homeLabel || 'Home'
-                                : awayLabel || 'Away'
-                        }}
+                        {{ favoriteLabel(prediction, homeLabel, awayLabel) }}
                         favored
                     </div>
                 </div>

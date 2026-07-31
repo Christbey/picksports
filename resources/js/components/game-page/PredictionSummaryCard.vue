@@ -18,6 +18,31 @@ defineProps<{
 
 const confidenceDisplayLabel = (prediction: PredictionSummary) =>
     prediction.confidence_context?.label || prediction.confidence_level;
+
+const homeSpreadLine = (prediction: PredictionSummary): number =>
+    -Number(prediction.predicted_spread);
+
+const favoriteLabel = (
+    prediction: PredictionSummary,
+    home?: string | null,
+    away?: string | null,
+): string =>
+    Number(prediction.predicted_spread) > 0 ? home || 'Home' : away || 'Away';
+
+const formatSignedHomeSpread = (
+    prediction: PredictionSummary,
+    formatter: (
+        value: number | string | null | undefined,
+        decimals?: number,
+    ) => string,
+): string => {
+    const line = homeSpreadLine(prediction);
+
+    if (Number.isNaN(line)) return '-';
+    if (Math.abs(line) < 0.05) return 'PK';
+
+    return `${line > 0 ? '+' : ''}${formatter(line)}`;
+};
 </script>
 
 <template>
@@ -69,17 +94,12 @@ const confidenceDisplayLabel = (prediction: PredictionSummary) =>
 
             <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div class="ui-surface-subtle p-4 text-center">
-                    <div class="text-sm text-muted-foreground">Spread</div>
+                    <div class="text-sm text-muted-foreground">Home Spread</div>
                     <div class="text-2xl font-semibold tracking-tight">
-                        {{ prediction.predicted_spread > 0 ? '+' : ''
-                        }}{{ formatNumber(prediction.predicted_spread) }}
+                        {{ formatSignedHomeSpread(prediction, formatNumber) }}
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground">
-                        {{
-                            prediction.predicted_spread > 0
-                                ? homeLabel || 'Home'
-                                : awayLabel || 'Away'
-                        }}
+                        {{ favoriteLabel(prediction, homeLabel, awayLabel) }}
                         favored
                     </div>
                 </div>

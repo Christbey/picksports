@@ -159,6 +159,18 @@ const formatMetric = (value: number | string | null | undefined) => {
     return numeric.toFixed(2);
 };
 
+const formatHomeSpreadLine = (value: number | string | null | undefined) => {
+    if (value === null || value === undefined || value === '') return 'N/A';
+
+    const numeric = Number(value);
+    if (Number.isNaN(numeric)) return String(value);
+
+    const homeLine = -numeric;
+    if (Math.abs(homeLine) < 0.05) return 'PK';
+
+    return `${homeLine > 0 ? '+' : ''}${homeLine.toFixed(1)}`;
+};
+
 const formatGameDate = (value: string | null | undefined) => {
     if (!value) return 'TBD';
 
@@ -746,13 +758,13 @@ const topPlayer = computed(() => props.topPlayers[0] ?? null);
                                         <div
                                             class="text-xs tracking-[0.16em] text-slate-500 uppercase"
                                         >
-                                            Spread
+                                            Home Spread
                                         </div>
                                         <div
                                             class="mt-1 font-medium text-slate-100"
                                         >
                                             {{
-                                                formatMetric(
+                                                formatHomeSpreadLine(
                                                     prediction.predicted_spread,
                                                 )
                                             }}

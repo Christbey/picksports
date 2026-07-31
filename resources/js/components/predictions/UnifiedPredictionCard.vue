@@ -820,6 +820,12 @@ function predictedSpreadValue(): number | null {
     return typeof spread === 'number' ? Number(spread.toFixed(1)) : null;
 }
 
+function homeSpreadLineValue(): number | null {
+    const spread = predictedSpreadValue();
+
+    return spread !== null ? Number((-spread).toFixed(1)) : null;
+}
+
 function predictedTotalValue(): number | null {
     const total = props.prediction.predicted_total;
 
@@ -961,14 +967,14 @@ function saveOptions(): SavePickOption[] {
             selectionSide: 'away',
             teamLabel: awayTeamLabel(),
             title: `${awayTeamLabel()} spread`,
-            defaultLine: spread !== null ? Number((-spread).toFixed(1)) : null,
+            defaultLine: spread,
         },
         {
             betType: 'spread',
             selectionSide: 'home',
             teamLabel: homeTeamLabel(),
             title: `${homeTeamLabel()} spread`,
-            defaultLine: spread,
+            defaultLine: spread !== null ? Number((-spread).toFixed(1)) : null,
         },
         {
             betType: 'total_over',
@@ -1125,9 +1131,9 @@ function saveOptions(): SavePickOption[] {
                 >
                     <div class="min-w-0 text-xs text-muted-foreground">
                         {{ dashboardFooterContextLabel() }}
-                        <span v-if="predictedSpreadValue() !== null">
-                            · Spread
-                            {{ formatSignedNumber(predictedSpreadValue()!) }}
+                        <span v-if="homeSpreadLineValue() !== null">
+                            · Home spread
+                            {{ formatSignedNumber(homeSpreadLineValue()!) }}
                         </span>
                         <span v-if="predictedTotalValue() !== null">
                             · Total {{ predictedTotalValue()!.toFixed(1) }}

@@ -47,6 +47,16 @@ function formatSpread(spread: number | string | null | undefined): string {
     return numSpread > 0 ? `+${numSpread.toFixed(1)}` : numSpread.toFixed(1);
 }
 
+function formatHomeSpreadFromModelMargin(
+    spread: number | string | null | undefined,
+): string {
+    if (spread === null || spread === undefined) return '-';
+    const numSpread = typeof spread === 'string' ? parseFloat(spread) : spread;
+    if (isNaN(numSpread)) return '-';
+
+    return formatSpread(-numSpread);
+}
+
 function formatHomeSideSpreadLine(
     homeLine: number | string | null | undefined,
     homeTeam?: string,
@@ -367,10 +377,12 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                         <div
                             class="rounded-full border border-red-300/50 bg-red-500/12 px-2 py-1 dark:border-red-600/35 dark:bg-red-500/16"
                         >
-                            <span class="text-muted-foreground">Spread:</span>
+                            <span class="text-muted-foreground">
+                                Home spread:
+                            </span>
                             <span class="ml-1 font-semibold text-red-600">
                                 {{
-                                    formatSpread(
+                                    formatHomeSpreadFromModelMargin(
                                         livePrediction.livePredictedSpread ??
                                             livePrediction.preGamePredictedSpread,
                                     )
@@ -379,8 +391,8 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             <span class="text-muted-foreground">
                                 {{
                                     props.compact
-                                        ? `(${formatSpread(livePrediction.preGamePredictedSpread)})`
-                                        : `(was ${formatSpread(livePrediction.preGamePredictedSpread)})`
+                                        ? `(${formatHomeSpreadFromModelMargin(livePrediction.preGamePredictedSpread)})`
+                                        : `(was ${formatHomeSpreadFromModelMargin(livePrediction.preGamePredictedSpread)})`
                                 }}
                             </span>
                         </div>

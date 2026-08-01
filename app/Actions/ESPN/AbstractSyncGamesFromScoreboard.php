@@ -208,6 +208,7 @@ abstract class AbstractSyncGamesFromScoreboard
                     $this->sportKey(),
                 );
             }
+            $attributes = $this->guardFinalStatusForSync($attributes, $existingGame, 'scoreboard');
 
             if ($existingGame) {
                 $previousStatus = (string) ($existingGame->status ?? '');
@@ -368,6 +369,7 @@ abstract class AbstractSyncGamesFromScoreboard
                 $updates['game_time'] = $dateParts['game_time'];
             }
         }
+        $updates = $this->guardFinalStatusForSync($updates, $game, 'summary');
 
         $game->update($updates);
         $this->touchSyncedGame($game);
@@ -487,6 +489,14 @@ abstract class AbstractSyncGamesFromScoreboard
     protected function shouldStorePartialGame(array $attributes): bool
     {
         return (bool) ($attributes['is_ncaa_tournament'] ?? false);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    protected function guardFinalStatusForSync(array $attributes, ?Model $existingGame, string $source): array
+    {
+        return $attributes;
     }
 
     /**

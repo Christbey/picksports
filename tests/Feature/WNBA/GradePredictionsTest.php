@@ -4,6 +4,7 @@ use App\Actions\WNBA\GradePredictions;
 use App\Models\WNBA\Game;
 use App\Models\WNBA\Prediction;
 use App\Models\WNBA\Team;
+use Illuminate\Support\Carbon;
 
 function createFinalWnbaPrediction(
     int $homeScore,
@@ -90,4 +91,78 @@ test('wnba calibration report exposes accuracy bias and confidence buckets', fun
         ->expectsOutputToContain('Spread bias')
         ->expectsOutputToContain('Confidence Buckets')
         ->assertSuccessful();
+});
+
+test('wnba grading skips games marked final before the post tip window', function () {
+    Carbon::setTestNow(Carbon::parse('2026-08-01 00:00:00', 'UTC'));
+
+    try {
+        $home = Team::factory()->create();
+        $away = Team::factory()->create();
+
+        $game = Game::factory()->create([
+            'home_team_id' => $home->id,
+            'away_team_id' => $away->id,
+            'season' => 2026,
+            'season_type' => 2,
+            'status' => 'STATUS_FINAL',
+            'home_score' => 98,
+            'away_score' => 112,
+            'game_date' => '2026-08-01',
+            'game_time' => '02:00:00',
+        ]);
+
+        $prediction = Prediction::query()->create([
+            'game_id' => $game->id,
+            'predicted_spread' => -4.0,
+            'predicted_total' => 160.0,
+            'win_probability' => 0.58,
+            'confidence_score' => 61.0,
+        ]);
+
+        $results = app(GradePredictions::class)->execute(2026);
+
+        expect($results['graded'])->toBe(0)
+            ->and($prediction->refresh()->graded_at)->toBeNull()
+            ->and($prediction->actual_spread)->toBeNull();
+    } finally {
+        Carbon::setTestNow();
+    }
+});
+
+test('wnba grading allows finals after the post tip window', function () {
+    Carbon::setTestNow(Carbon::parse('2026-08-01 04:00:00', 'UTC'));
+
+    try {
+        $home = Team::factory()->create();
+        $away = Team::factory()->create();
+
+        $game = Game::factory()->create([
+            'home_team_id' => $home->id,
+            'away_team_id' => $away->id,
+            'season' => 2026,
+            'season_type' => 2,
+            'status' => 'STATUS_FINAL',
+            'home_score' => 98,
+            'away_score' => 112,
+            'game_date' => '2026-08-01',
+            'game_time' => '02:00:00',
+        ]);
+
+        $prediction = Prediction::query()->create([
+            'game_id' => $game->id,
+            'predicted_spread' => -4.0,
+            'predicted_total' => 160.0,
+            'win_probability' => 0.58,
+            'confidence_score' => 61.0,
+        ]);
+
+        $results = app(GradePredictions::class)->execute(2026);
+
+        expect($results['graded'])->toBe(1)
+            ->and((float) $prediction->refresh()->actual_spread)->toBe(-14.0)
+            ->and($prediction->graded_at)->not->toBeNull();
+    } finally {
+        Carbon::setTestNow();
+    }
 });

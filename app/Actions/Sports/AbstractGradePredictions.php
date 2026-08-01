@@ -68,6 +68,10 @@ abstract class AbstractGradePredictions
 
     protected function gradePredictionsCollection(Collection $predictions): array
     {
+        $predictions = $predictions
+            ->filter(fn (Model $prediction): bool => $this->shouldGradePrediction($prediction))
+            ->values();
+
         if ($predictions->isEmpty()) {
             return $this->emptyResults();
         }
@@ -198,6 +202,11 @@ abstract class AbstractGradePredictions
     protected function additionalGradingUpdates(Model $prediction, float $actualSpread, float $actualTotal): array
     {
         return [];
+    }
+
+    protected function shouldGradePrediction(Model $prediction): bool
+    {
+        return true;
     }
 
     private function emptyResults(): array

@@ -5,6 +5,7 @@ namespace App\Actions\CFB;
 use App\Actions\Sports\AbstractAmericanFootballPredictionGenerator;
 use App\Models\CFB\EloRating;
 use App\Models\CFB\Prediction;
+use App\Models\CFB\PredictionCalibration;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Support\CfbSeasonAffiliationResolver;
@@ -34,6 +35,11 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
      * @var array<string, array<int, string>>
      */
     private array $tableColumns = [];
+
+    /**
+     * @var array<int, array<string, mixed>|null>
+     */
+    private array $adaptiveCalibrationCache = [];
 
     protected function calculatePredictedSpread(
         int $homeElo,
@@ -195,6 +201,7 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             'enabled' => false,
             'week' => $week,
             'week_bucket' => $this->weekCalibrationBucket($week),
+            'adaptive_calibration' => null,
             'spread_adjustment' => 0.0,
             'total_adjustment' => 0.0,
             'confidence_penalty' => 0.0,
@@ -203,6 +210,8 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             'market' => null,
             'components' => [],
         ];
+        $adaptiveCalibration = $this->activeAdaptiveCalibration((int) $game->season);
+        $metadata['adaptive_calibration'] = $this->adaptiveCalibrationMetadata($adaptiveCalibration);
 
         [$predictedSpread, $predictedTotal, $weekCalibration] = $this->applyWeekBucketCalibration(
             $predictedSpread,
@@ -211,6 +220,17 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         );
         $metadata['components']['week_calibration'] = $weekCalibration;
         $metadata['confidence_penalty'] += (float) ($weekCalibration['confidence_penalty'] ?? 0.0);
+
+        [$predictedSpread, $predictedTotal, $adaptiveWeekCalibration] = $this->applyAdaptiveWeekCalibration(
+            $predictedSpread,
+            $predictedTotal,
+            $metadata['week_bucket'],
+            $adaptiveCalibration
+        );
+        $metadata['components']['adaptive_week_calibration'] = $adaptiveWeekCalibration;
+        $metadata['spread_adjustment'] += (float) ($adaptiveWeekCalibration['spread_adjustment'] ?? 0.0);
+        $metadata['total_adjustment'] += (float) ($adaptiveWeekCalibration['total_adjustment'] ?? 0.0);
+        $metadata['confidence_penalty'] += (float) ($adaptiveWeekCalibration['confidence_penalty'] ?? 0.0);
 
         if (! $this->shouldApplyPreseasonLayer($game)) {
             $this->predictionContext['preseason_layer'] = $metadata;
@@ -233,6 +253,12 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         ];
 
         foreach ($components as $name => $component) {
+            $component = $this->applyAdaptiveComponentMultiplier(
+                $name,
+                $component,
+                $metadata['week_bucket'],
+                $adaptiveCalibration
+            );
             $predictedSpread += (float) ($component['spread_adjustment'] ?? 0.0);
             $predictedTotal += (float) ($component['total_adjustment'] ?? 0.0);
             $metadata['spread_adjustment'] += (float) ($component['spread_adjustment'] ?? 0.0);
@@ -312,6 +338,56 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         ]];
     }
 
+    /**
+     * @param  array<string, mixed>|null  $adaptiveCalibration
+     * @return array{0:float,1:float,2:array<string, mixed>}
+     */
+    protected function applyAdaptiveWeekCalibration(
+        float $spread,
+        float $total,
+        string $bucket,
+        ?array $adaptiveCalibration
+    ): array {
+        $bucketCalibration = data_get($adaptiveCalibration, "parameters.week_buckets.{$bucket}");
+
+        if (! is_array($bucketCalibration)) {
+            return [$spread, $total, [
+                'spread_adjustment' => 0.0,
+                'total_adjustment' => 0.0,
+                'confidence_penalty' => 0.0,
+                'source' => 'none',
+            ]];
+        }
+
+        $spreadAdjustment = $this->clamp(
+            (float) ($bucketCalibration['spread_adjustment'] ?? 0.0),
+            (float) config('cfb.predictions.adaptive_calibration.max_spread_adjustment', 3.0)
+        );
+        $totalAdjustment = $this->clamp(
+            (float) ($bucketCalibration['total_adjustment'] ?? 0.0),
+            (float) config('cfb.predictions.adaptive_calibration.max_total_adjustment', 3.0)
+        );
+        $confidencePenalty = max(
+            0.0,
+            min(
+                (float) config('cfb.predictions.adaptive_calibration.max_confidence_penalty', 4.0),
+                (float) ($bucketCalibration['confidence_penalty'] ?? 0.0)
+            )
+        );
+
+        return [
+            $spread + $spreadAdjustment,
+            $total + $totalAdjustment,
+            [
+                'source' => 'adaptive',
+                'spread_adjustment' => round($spreadAdjustment, 3),
+                'total_adjustment' => round($totalAdjustment, 3),
+                'confidence_penalty' => round($confidencePenalty, 2),
+                'sample_size' => (int) ($bucketCalibration['sample_size'] ?? 0),
+            ],
+        ];
+    }
+
     protected function weekCalibrationBucket(int $week): string
     {
         return match (true) {
@@ -320,6 +396,42 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             $week <= 8 => 'week_5_8',
             default => 'week_9_plus',
         };
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $adaptiveCalibration
+     * @return array<string, mixed>
+     */
+    protected function applyAdaptiveComponentMultiplier(
+        string $name,
+        array $component,
+        string $bucket,
+        ?array $adaptiveCalibration
+    ): array {
+        $spreadAdjustment = $component['spread_adjustment'] ?? null;
+
+        if (! is_numeric($spreadAdjustment)) {
+            return $component;
+        }
+
+        $multiplier = data_get($adaptiveCalibration, "parameters.preseason_component_multipliers.{$bucket}.{$name}");
+        if (! is_numeric($multiplier)) {
+            return $component;
+        }
+
+        $multiplier = max(
+            (float) config('cfb.predictions.adaptive_calibration.min_component_multiplier', 0.75),
+            min(
+                (float) config('cfb.predictions.adaptive_calibration.max_component_multiplier', 1.25),
+                (float) $multiplier
+            )
+        );
+        $originalSpreadAdjustment = (float) $spreadAdjustment;
+        $component['spread_adjustment'] = round($originalSpreadAdjustment * $multiplier, 3);
+        $component['adaptive_multiplier'] = round($multiplier, 3);
+        $component['adaptive_delta'] = round($component['spread_adjustment'] - $originalSpreadAdjustment, 3);
+
+        return $component;
     }
 
     /**
@@ -1095,6 +1207,63 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         }
 
         return in_array($column, $this->tableColumns[$table], true);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function activeAdaptiveCalibration(int $season): ?array
+    {
+        if (! (bool) config('cfb.predictions.adaptive_calibration.enabled', true)) {
+            return null;
+        }
+
+        if (array_key_exists($season, $this->adaptiveCalibrationCache)) {
+            return $this->adaptiveCalibrationCache[$season];
+        }
+
+        if (! Schema::hasTable('cfb_prediction_calibrations')) {
+            return $this->adaptiveCalibrationCache[$season] = null;
+        }
+
+        $calibration = PredictionCalibration::query()
+            ->active()
+            ->where('season', $season)
+            ->latest('generated_at')
+            ->latest('id')
+            ->first();
+
+        if (! $calibration) {
+            return $this->adaptiveCalibrationCache[$season] = null;
+        }
+
+        return $this->adaptiveCalibrationCache[$season] = [
+            'id' => (int) $calibration->id,
+            'generated_at' => $calibration->generated_at?->toIso8601String(),
+            'training_from_week' => $calibration->training_from_week,
+            'training_through_week' => $calibration->training_through_week,
+            'games_count' => $calibration->games_count,
+            'parameters' => (array) $calibration->parameters,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $adaptiveCalibration
+     * @return array<string, mixed>|null
+     */
+    protected function adaptiveCalibrationMetadata(?array $adaptiveCalibration): ?array
+    {
+        if ($adaptiveCalibration === null) {
+            return null;
+        }
+
+        return [
+            'id' => $adaptiveCalibration['id'] ?? null,
+            'generated_at' => $adaptiveCalibration['generated_at'] ?? null,
+            'training_from_week' => $adaptiveCalibration['training_from_week'] ?? null,
+            'training_through_week' => $adaptiveCalibration['training_through_week'] ?? null,
+            'games_count' => $adaptiveCalibration['games_count'] ?? null,
+        ];
     }
 
     protected function extractMarketHomeSpread(Model $game): ?float

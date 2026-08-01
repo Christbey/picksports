@@ -4,6 +4,7 @@ use App\Actions\CFB\GeneratePrediction;
 use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Prediction;
+use App\Models\CFB\PredictionCalibration;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
@@ -530,6 +531,79 @@ it('applies no-op-by-default week bucket calibration hooks when configured', fun
     expect((float) $prediction->predicted_spread)->toBe(9.0)
         ->and(data_get($snapshot->model_metadata, 'cfb_preseason_layer.week_bucket'))->toBe('week_5_8')
         ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.week_calibration.confidence_penalty'))->toBe(4.0);
+});
+
+it('applies active adaptive calibration to future cfb predictions', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.adaptive_calibration.enabled' => true,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1500);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    PredictionCalibration::query()->create([
+        'season' => 2026,
+        'training_from_week' => 0,
+        'training_through_week' => 1,
+        'games_count' => 12,
+        'min_games' => 8,
+        'learning_rate' => 0.250,
+        'parameters' => [
+            'week_buckets' => [
+                'week_0_1' => [
+                    'sample_size' => 12,
+                    'spread_adjustment' => 2.5,
+                    'total_adjustment' => -1.5,
+                    'confidence_penalty' => 3.0,
+                    'status' => 'active',
+                ],
+            ],
+            'preseason_component_multipliers' => [],
+        ],
+        'metrics' => [],
+        'is_active' => true,
+        'generated_at' => now(),
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 0,
+        'season_type' => 'regular',
+        'game_date' => '2026-08-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) $prediction->predicted_spread)->toBe(2.5)
+        ->and((float) $prediction->predicted_total)->toBe(50.5)
+        ->and((float) $prediction->confidence_score)->toBe(55.8)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.adaptive_week_calibration.spread_adjustment'))->toBe(2.5)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.adaptive_week_calibration.confidence_penalty'))->toBe(3.0)
+        ->and(data_get($snapshot->model_metadata, 'cfb_preseason_layer.adaptive_calibration.id'))->not->toBeNull();
 });
 
 function createCfbEloRating(Team $team, int $season, int $week, float $elo, ?string $date = null): void

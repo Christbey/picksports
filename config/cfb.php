@@ -404,6 +404,27 @@ return [
         ],
 
         /**
+         * Adaptive season-to-date calibration learned from graded CFB games.
+         * The command writes bounded overrides; prediction generation applies
+         * the latest active profile when this switch is enabled.
+         */
+        'adaptive_calibration' => [
+            'enabled' => env('CFB_ADAPTIVE_CALIBRATION_ENABLED', true),
+            'min_games_per_bucket' => env('CFB_ADAPTIVE_CALIBRATION_MIN_GAMES', 8),
+            'min_component_games' => env('CFB_ADAPTIVE_CALIBRATION_MIN_COMPONENT_GAMES', 6),
+            'learning_rate' => env('CFB_ADAPTIVE_CALIBRATION_LEARNING_RATE', 0.25),
+            'component_learning_rate' => env('CFB_ADAPTIVE_CALIBRATION_COMPONENT_LEARNING_RATE', 0.15),
+            'max_spread_adjustment' => env('CFB_ADAPTIVE_CALIBRATION_MAX_SPREAD_ADJUSTMENT', 3.0),
+            'max_total_adjustment' => env('CFB_ADAPTIVE_CALIBRATION_MAX_TOTAL_ADJUSTMENT', 3.0),
+            'max_component_multiplier_delta' => env('CFB_ADAPTIVE_CALIBRATION_MAX_COMPONENT_DELTA', 0.25),
+            'min_component_multiplier' => env('CFB_ADAPTIVE_CALIBRATION_MIN_COMPONENT_MULTIPLIER', 0.75),
+            'max_component_multiplier' => env('CFB_ADAPTIVE_CALIBRATION_MAX_COMPONENT_MULTIPLIER', 1.25),
+            'target_winner_accuracy' => env('CFB_ADAPTIVE_CALIBRATION_TARGET_WINNER_ACCURACY', 58.0),
+            'confidence_penalty_points_per_accuracy_gap' => env('CFB_ADAPTIVE_CALIBRATION_CONFIDENCE_PENALTY_POINTS', 0.20),
+            'max_confidence_penalty' => env('CFB_ADAPTIVE_CALIBRATION_MAX_CONFIDENCE_PENALTY', 4.0),
+        ],
+
+        /**
          * Model version for tracking prediction algorithm changes
          */
         'model_version' => '1.2',

@@ -132,6 +132,22 @@ return [
         ],
     ],
 
+    'metrics' => [
+        'consensus_ratings' => [
+            'weights' => [
+                'fpi' => env('CFB_CONSENSUS_FPI_WEIGHT', 0.30),
+                'power_rating' => env('CFB_CONSENSUS_POWER_RATING_WEIGHT', 0.25),
+                'wepa_net' => env('CFB_CONSENSUS_WEPA_NET_WEIGHT', 0.20),
+                'net_rating' => env('CFB_CONSENSUS_NET_RATING_WEIGHT', 0.10),
+                'elo' => env('CFB_CONSENSUS_ELO_WEIGHT', 0.10),
+                'cfp_rating' => env('CFB_CONSENSUS_CFP_WEIGHT', 0.03),
+                'resume_rating' => env('CFB_CONSENSUS_RESUME_WEIGHT', 0.02),
+            ],
+        ],
+        'injury_out_rating_penalty' => 18.0,
+        'injury_questionable_rating_penalty' => 7.0,
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | ELO Rating System Configuration
@@ -240,6 +256,20 @@ return [
         'fpi_spread_weight' => 0.18,
         'wepa_spread_weight' => 4.5,
         'efficiency_spread_weight' => 0.04,
+        'rating_consensus_spread_weight' => env('CFB_RATING_CONSENSUS_SPREAD_WEIGHT', 0.10),
+        'rating_consensus_max_adjustment' => env('CFB_RATING_CONSENSUS_MAX_ADJUSTMENT', 2.5),
+        'success_rate_spread_weight' => env('CFB_SUCCESS_RATE_SPREAD_WEIGHT', 14.0),
+        'success_rate_max_adjustment' => env('CFB_SUCCESS_RATE_MAX_ADJUSTMENT', 2.0),
+        'explosiveness_spread_weight' => env('CFB_EXPLOSIVENESS_SPREAD_WEIGHT', 3.0),
+        'explosiveness_max_adjustment' => env('CFB_EXPLOSIVENESS_MAX_ADJUSTMENT', 1.5),
+        'havoc_spread_weight' => env('CFB_HAVOC_SPREAD_WEIGHT', 10.0),
+        'havoc_max_adjustment' => env('CFB_HAVOC_MAX_ADJUSTMENT', 1.25),
+        'ol_qb_environment_spread_weight' => env('CFB_OL_QB_ENVIRONMENT_SPREAD_WEIGHT', 1.25),
+        'ol_qb_environment_max_adjustment' => env('CFB_OL_QB_ENVIRONMENT_MAX_ADJUSTMENT', 1.5),
+        'advanced_total_success_weight' => env('CFB_ADVANCED_TOTAL_SUCCESS_WEIGHT', 18.0),
+        'advanced_total_explosiveness_weight' => env('CFB_ADVANCED_TOTAL_EXPLOSIVENESS_WEIGHT', 2.0),
+        'advanced_total_havoc_weight' => env('CFB_ADVANCED_TOTAL_HAVOC_WEIGHT', 4.0),
+        'advanced_total_max_adjustment' => env('CFB_ADVANCED_TOTAL_MAX_ADJUSTMENT', 3.0),
         'wepa_total_offense_weight' => 2.2,
         'wepa_total_defense_weight' => 1.4,
         'fpi_total_weight' => 0.08,
@@ -353,6 +383,23 @@ return [
                 ],
             ],
 
+            'coaching_scheme' => [
+                'points_per_score_gap' => env('CFB_PRESEASON_COACHING_SCHEME_POINTS', 0.7),
+                'max_adjustment' => env('CFB_PRESEASON_COACHING_SCHEME_MAX_ADJUSTMENT', 1.0),
+                'total_points_per_score' => env('CFB_PRESEASON_COACHING_SCHEME_TOTAL_POINTS', 0.8),
+                'max_total_adjustment' => env('CFB_PRESEASON_COACHING_SCHEME_TOTAL_MAX_ADJUSTMENT', 1.25),
+                'volatility_threshold' => env('CFB_PRESEASON_COACHING_SCHEME_VOLATILITY_THRESHOLD', 0.55),
+                'confidence_penalty_per_volatile_side' => env('CFB_PRESEASON_COACHING_SCHEME_VOLATILITY_PENALTY', 1.5),
+            ],
+
+            'special_teams' => [
+                'spread_weight' => env('CFB_PRESEASON_SPECIAL_TEAMS_SPREAD_WEIGHT', 0.15),
+                'max_adjustment' => env('CFB_PRESEASON_SPECIAL_TEAMS_MAX_ADJUSTMENT', 1.25),
+                'total_weight' => env('CFB_PRESEASON_SPECIAL_TEAMS_TOTAL_WEIGHT', 0.04),
+                'max_total_adjustment' => env('CFB_PRESEASON_SPECIAL_TEAMS_TOTAL_MAX_ADJUSTMENT', 1.0),
+                'mismatch_threshold' => env('CFB_PRESEASON_SPECIAL_TEAMS_MISMATCH_THRESHOLD', 4.0),
+            ],
+
             'schedule_spot' => [
                 'rest_day_weight' => env('CFB_PRESEASON_REST_DAY_WEIGHT', 0.25),
                 'travel_1000_miles_weight' => env('CFB_PRESEASON_TRAVEL_1000_MILES_WEIGHT', 0.35),
@@ -425,6 +472,95 @@ return [
         ],
 
         /**
+         * Market movement signal layer. Spread values are normalized into the
+         * same home-margin convention as predicted_spread before comparison.
+         */
+        'market_movement' => [
+            'enabled' => env('CFB_MARKET_MOVEMENT_ENABLED', true),
+            'apply_confidence_adjustment' => env('CFB_MARKET_MOVEMENT_CONFIDENCE_ENABLED', true),
+            'pick_side_threshold' => env('CFB_MARKET_MOVEMENT_PICK_SIDE_THRESHOLD', 0.5),
+            'min_movement_points' => env('CFB_MARKET_MOVEMENT_MIN_POINTS', 1.0),
+            'confidence_boost_toward_model' => env('CFB_MARKET_MOVEMENT_CONFIDENCE_BOOST', 1.5),
+            'confidence_penalty_against_model' => env('CFB_MARKET_MOVEMENT_CONFIDENCE_PENALTY', 2.0),
+            'max_confidence_adjustment' => env('CFB_MARKET_MOVEMENT_MAX_CONFIDENCE_ADJUSTMENT', 3.0),
+            'book_disagreement_threshold' => env('CFB_MARKET_MOVEMENT_BOOK_DISAGREEMENT_THRESHOLD', 1.0),
+            'book_disagreement_penalty' => env('CFB_MARKET_MOVEMENT_BOOK_DISAGREEMENT_PENALTY', 1.0),
+            'min_current_books' => env('CFB_MARKET_MOVEMENT_MIN_CURRENT_BOOKS', 1),
+        ],
+
+        /**
+         * Game-level context signals. These are intentionally bounded and
+         * mostly no-op unless stored weather or nearby schedule context exists.
+         */
+        'game_context' => [
+            'enabled' => env('CFB_GAME_CONTEXT_ENABLED', true),
+            'max_spread_adjustment' => env('CFB_GAME_CONTEXT_MAX_SPREAD_ADJUSTMENT', 2.0),
+            'max_total_adjustment' => env('CFB_GAME_CONTEXT_MAX_TOTAL_ADJUSTMENT', 4.0),
+            'max_confidence_penalty' => env('CFB_GAME_CONTEXT_MAX_CONFIDENCE_PENALTY', 5.0),
+            'indoor_venue_keywords' => [
+                'dome',
+                'superdome',
+                'alamodome',
+                'allegiant',
+                'sofi',
+                'ford field',
+                'lucas oil',
+                'mercedes-benz',
+                'nrg stadium',
+                'at&t stadium',
+            ],
+            'weather' => [
+                'wind_under_threshold_mph' => env('CFB_WEATHER_WIND_UNDER_THRESHOLD_MPH', 15.0),
+                'gust_under_threshold_mph' => env('CFB_WEATHER_GUST_UNDER_THRESHOLD_MPH', 24.0),
+                'precip_under_threshold_inches' => env('CFB_WEATHER_PRECIP_UNDER_THRESHOLD_INCHES', 0.03),
+                'precip_probability_threshold' => env('CFB_WEATHER_PRECIP_PROBABILITY_THRESHOLD', 55.0),
+                'cold_under_threshold_f' => env('CFB_WEATHER_COLD_UNDER_THRESHOLD_F', 32.0),
+                'heat_under_threshold_f' => env('CFB_WEATHER_HEAT_UNDER_THRESHOLD_F', 88.0),
+                'wind_total_weight' => env('CFB_WEATHER_WIND_TOTAL_WEIGHT', -0.08),
+                'gust_total_weight' => env('CFB_WEATHER_GUST_TOTAL_WEIGHT', -0.04),
+                'precip_total_weight' => env('CFB_WEATHER_PRECIP_TOTAL_WEIGHT', -18.0),
+                'precip_probability_total_adjustment' => env('CFB_WEATHER_PRECIP_PROBABILITY_TOTAL_ADJUSTMENT', -0.5),
+                'cold_total_adjustment' => env('CFB_WEATHER_COLD_TOTAL_ADJUSTMENT', -0.8),
+                'heat_total_adjustment' => env('CFB_WEATHER_HEAT_TOTAL_ADJUSTMENT', -0.4),
+                'indoor_total_adjustment' => env('CFB_WEATHER_INDOOR_TOTAL_ADJUSTMENT', 0.4),
+                'adverse_weather_confidence_penalty' => env('CFB_WEATHER_CONFIDENCE_PENALTY', 1.0),
+                'max_total_adjustment' => env('CFB_WEATHER_MAX_TOTAL_ADJUSTMENT', 4.0),
+                'venue_coordinates' => [],
+            ],
+            'venue' => [
+                'rivalry_pairs' => [],
+                'rivalry_total_adjustment' => env('CFB_RIVALRY_TOTAL_ADJUSTMENT', -0.3),
+                'rivalry_confidence_penalty' => env('CFB_RIVALRY_CONFIDENCE_PENALTY', 0.5),
+            ],
+            'schedule' => [
+                'short_rest_days' => env('CFB_CONTEXT_SHORT_REST_DAYS', 5),
+                'extra_rest_days' => env('CFB_CONTEXT_EXTRA_REST_DAYS', 9),
+                'rest_diff_weight' => env('CFB_CONTEXT_REST_DIFF_WEIGHT', 0.08),
+                'short_rest_spread_penalty' => env('CFB_CONTEXT_SHORT_REST_SPREAD_PENALTY', -0.25),
+                'short_rest_total_adjustment' => env('CFB_CONTEXT_SHORT_REST_TOTAL_ADJUSTMENT', -0.2),
+                'short_rest_confidence_penalty' => env('CFB_CONTEXT_SHORT_REST_CONFIDENCE_PENALTY', 0.5),
+                'extra_rest_spread_bonus' => env('CFB_CONTEXT_EXTRA_REST_SPREAD_BONUS', 0.15),
+                'consecutive_road_spread_penalty' => env('CFB_CONTEXT_CONSECUTIVE_ROAD_SPREAD_PENALTY', 0.25),
+                'consecutive_road_confidence_penalty' => env('CFB_CONTEXT_CONSECUTIVE_ROAD_CONFIDENCE_PENALTY', 0.5),
+                'lookahead_window_days' => env('CFB_CONTEXT_LOOKAHEAD_WINDOW_DAYS', 9),
+                'lookahead_elo_gap' => env('CFB_CONTEXT_LOOKAHEAD_ELO_GAP', 120.0),
+                'lookahead_spread_penalty' => env('CFB_CONTEXT_LOOKAHEAD_SPREAD_PENALTY', 0.25),
+                'lookahead_confidence_penalty' => env('CFB_CONTEXT_LOOKAHEAD_CONFIDENCE_PENALTY', 0.5),
+                'letdown_elo_gap' => env('CFB_CONTEXT_LETDOWN_ELO_GAP', 120.0),
+                'letdown_spread_penalty' => env('CFB_CONTEXT_LETDOWN_SPREAD_PENALTY', 0.2),
+                'letdown_confidence_penalty' => env('CFB_CONTEXT_LETDOWN_CONFIDENCE_PENALTY', 0.5),
+                'max_spread_adjustment' => env('CFB_CONTEXT_SCHEDULE_MAX_SPREAD_ADJUSTMENT', 1.25),
+                'max_total_adjustment' => env('CFB_CONTEXT_SCHEDULE_MAX_TOTAL_ADJUSTMENT', 1.0),
+            ],
+            'persisted' => [
+                'applied_families' => ['market_movement'],
+                'max_spread_adjustment' => env('CFB_PERSISTED_CONTEXT_MAX_SPREAD_ADJUSTMENT', 3.0),
+                'max_total_adjustment' => env('CFB_PERSISTED_CONTEXT_MAX_TOTAL_ADJUSTMENT', 4.0),
+                'max_confidence_penalty' => env('CFB_PERSISTED_CONTEXT_MAX_CONFIDENCE_PENALTY', 5.0),
+            ],
+        ],
+
+        /**
          * Model version for tracking prediction algorithm changes
          */
         'model_version' => '1.2',
@@ -445,6 +581,50 @@ return [
         'injury_questionable_spread_penalty' => 0.20,
         'injury_out_total_penalty' => 0.30,
         'injury_questionable_total_penalty' => 0.10,
+
+        'player_availability' => [
+            'enabled' => env('CFB_PLAYER_AVAILABILITY_WEIGHTING_ENABLED', true),
+            'lookback_games' => env('CFB_PLAYER_AVAILABILITY_LOOKBACK_GAMES', 8),
+            'min_player_multiplier' => env('CFB_PLAYER_AVAILABILITY_MIN_MULTIPLIER', 0.35),
+            'max_player_multiplier' => env('CFB_PLAYER_AVAILABILITY_MAX_MULTIPLIER', 3.0),
+            'unknown_player_multiplier' => env('CFB_PLAYER_AVAILABILITY_UNKNOWN_MULTIPLIER', 0.75),
+            'max_spread_adjustment' => env('CFB_PLAYER_AVAILABILITY_MAX_SPREAD_ADJUSTMENT', 4.5),
+            'max_total_adjustment' => env('CFB_PLAYER_AVAILABILITY_MAX_TOTAL_ADJUSTMENT', 6.0),
+            'availability_weights' => [
+                'out' => 1.00,
+                'doubtful' => 0.85,
+                'questionable' => 0.55,
+                'probable' => 0.25,
+            ],
+            'position_weights' => [
+                'QB' => 2.20,
+                'RB' => 1.10,
+                'WR' => 1.00,
+                'TE' => 0.95,
+                'OL' => 1.20,
+                'DL' => 1.10,
+                'LB' => 1.00,
+                'DB' => 1.00,
+                'K' => 0.60,
+                'P' => 0.35,
+                'OTHER' => 0.75,
+            ],
+            'unknown_production_multipliers' => [
+                'QB' => 1.15,
+                'OL' => 0.95,
+            ],
+            'production_baselines' => [
+                'QB' => 18.0,
+                'RB' => 10.0,
+                'WR' => 8.0,
+                'TE' => 6.0,
+                'DL' => 4.5,
+                'LB' => 5.5,
+                'DB' => 4.5,
+                'K' => 2.2,
+                'OTHER' => 6.0,
+            ],
+        ],
     ],
 
 ];

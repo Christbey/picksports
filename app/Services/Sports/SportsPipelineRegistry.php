@@ -273,6 +273,12 @@ class SportsPipelineRegistry
                 $this->step('Sync current week', 'espn:sync-cfb-current'),
                 $this->step('Sync game details', 'espn:sync-cfb-game-details'),
                 $this->step('Sync injuries', 'espn:sync-cfb-injuries'),
+                $this->step('Sync game weather', 'cfb:sync-game-weather', [
+                    '--season' => $season,
+                    '--days-back' => 0,
+                    '--days-forward' => 14,
+                    '--force' => true,
+                ]),
                 $this->step('Sync odds', 'cfb:sync-odds'),
             ],
             default => [],
@@ -360,6 +366,10 @@ class SportsPipelineRegistry
                     '--week' => $context['week'],
                 ]),
                 $this->step('Calculate team metrics', 'cfb:calculate-team-metrics', ['--season' => $season]),
+                $this->step('Derive game context signals', 'cfb:derive-game-context-signals', [
+                    '--season' => $season,
+                    '--week' => $context['week'],
+                ]),
                 $this->step('Generate predictions', 'cfb:generate-predictions', ['--season' => $season]),
             ],
             default => [],

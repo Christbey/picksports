@@ -1,14 +1,21 @@
 <?php
 
 use App\Actions\CFB\GeneratePrediction;
+use App\Actions\CFB\GradePredictions;
 use App\Models\CFB\EloRating;
+use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
+use App\Models\CFB\GameWeather;
+use App\Models\CFB\Player;
+use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\PredictionCalibration;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -224,6 +231,78 @@ it('does not expand cfb spreads when a meaningful quality signal opposes the sid
     expect((float) $prediction->predicted_spread)->toBe(9.1);
 });
 
+it('applies bounded advanced cfb signal adjustments before final output caps', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.rating_consensus_spread_weight' => 0.10,
+        'cfb.predictions.success_rate_spread_weight' => 10.0,
+        'cfb.predictions.explosiveness_spread_weight' => 2.0,
+        'cfb.predictions.havoc_spread_weight' => 5.0,
+        'cfb.predictions.ol_qb_environment_spread_weight' => 1.0,
+        'cfb.predictions.advanced_total_success_weight' => 0,
+        'cfb.predictions.advanced_total_explosiveness_weight' => 0,
+        'cfb.predictions.advanced_total_havoc_weight' => 0,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1500);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+    createCfbTeamMetric($homeTeam, 2025, fpi: 0.0, wepaNet: 0.0, netRating: 0.0, extra: [
+        'rating_consensus' => 20.0,
+        'net_success_rate' => 0.12,
+        'net_explosiveness' => 0.25,
+        'net_havoc_rate' => 0.10,
+        'offensive_line_rating' => 0.60,
+        'qb_environment_rating' => 0.40,
+    ]);
+    createCfbTeamMetric($awayTeam, 2025, fpi: 0.0, wepaNet: 0.0, netRating: 0.0, extra: [
+        'rating_consensus' => 0.0,
+        'net_success_rate' => 0.02,
+        'net_explosiveness' => 0.05,
+        'net_havoc_rate' => 0.00,
+        'offensive_line_rating' => -0.20,
+        'qb_environment_rating' => -0.40,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 0,
+        'season_type' => 'regular',
+        'game_date' => '2026-08-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) $prediction->predicted_spread)->toBe(4.7)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_advanced_metric_layer.spread.rating_consensus.adjustment'))->toBe(2.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_advanced_metric_layer.spread.success_rate.adjustment'))->toBe(1.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_advanced_metric_layer.spread.explosiveness.adjustment'))->toBe(0.4)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_advanced_metric_layer.spread.havoc.adjustment'))->toBe(0.5)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_advanced_metric_layer.spread.ol_qb_environment.adjustment'))->toBe(0.8);
+});
+
 it('clamps final cfb outputs after shared context adjustments', function () {
     config([
         'cfb.predictions.use_previous_season_elo_fallback' => true,
@@ -418,6 +497,94 @@ it('uses synced canonical preseason signal columns in early season predictions',
         ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.coaching_continuity.spread_adjustment'))->toBe(1.0);
 });
 
+it('applies bounded coaching scheme and special teams preseason adjustments', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => true,
+        'cfb.predictions.preseason.market_guardrail.enabled' => false,
+        'cfb.predictions.preseason.coaching_scheme.points_per_score_gap' => 1.0,
+        'cfb.predictions.preseason.coaching_scheme.max_adjustment' => 1.25,
+        'cfb.predictions.preseason.coaching_scheme.total_points_per_score' => 1.0,
+        'cfb.predictions.preseason.coaching_scheme.max_total_adjustment' => 1.5,
+        'cfb.predictions.preseason.coaching_scheme.volatility_threshold' => 0.55,
+        'cfb.predictions.preseason.coaching_scheme.confidence_penalty_per_volatile_side' => 1.5,
+        'cfb.predictions.preseason.special_teams.spread_weight' => 0.2,
+        'cfb.predictions.preseason.special_teams.max_adjustment' => 1.0,
+        'cfb.predictions.preseason.special_teams.total_weight' => 0.05,
+        'cfb.predictions.preseason.special_teams.max_total_adjustment' => 1.0,
+        'cfb.predictions.preseason.special_teams.mismatch_threshold' => 4.0,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1500);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+    createCfbCanonicalPreseasonSignal($homeTeam, [
+        'coaching_continuity_payload' => json_encode([
+            'scheme_continuity_score' => 0.8,
+            'scheme_change_score' => 0.2,
+            'tempo_change_score' => 0.4,
+        ]),
+    ]);
+    createCfbCanonicalPreseasonSignal($awayTeam, [
+        'coaching_continuity_payload' => json_encode([
+            'scheme_continuity_score' => -0.6,
+            'scheme_change_score' => 0.8,
+            'tempo_change_score' => 0.2,
+        ]),
+    ]);
+    FpiRating::factory()->create([
+        'team_id' => $homeTeam->id,
+        'season' => 2026,
+        'week' => 1,
+        'special_teams' => 4.0,
+    ]);
+    FpiRating::factory()->create([
+        'team_id' => $awayTeam->id,
+        'season' => 2026,
+        'week' => 1,
+        'special_teams' => -1.0,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 0,
+        'season_type' => 'regular',
+        'game_date' => '2026-08-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) $prediction->predicted_spread)->toBe(2.3)
+        ->and((float) $prediction->predicted_total)->toBe(52.8)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.coaching_scheme.spread_adjustment'))->toBe(1.25)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.coaching_scheme.total_adjustment'))->toBe(0.6)
+        ->and(data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.coaching_scheme.risk_flags'))->toContain('coaching_scheme_volatility')
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.special_teams.spread_adjustment'))->toBe(1.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.special_teams.total_adjustment'))->toBe(0.15)
+        ->and(data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.special_teams.risk_flags'))->toContain('special_teams_mismatch');
+});
+
 it('converts sportsbook home lines to home-margin convention for early market guardrails', function () {
     config([
         'cfb.predictions.use_previous_season_elo_fallback' => true,
@@ -490,6 +657,11 @@ it('applies no-op-by-default week bucket calibration hooks when configured', fun
         'cfb.predictions.fpi_spread_weight' => 0,
         'cfb.predictions.wepa_spread_weight' => 0,
         'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.rating_consensus_spread_weight' => 0,
+        'cfb.predictions.success_rate_spread_weight' => 0,
+        'cfb.predictions.explosiveness_spread_weight' => 0,
+        'cfb.predictions.havoc_spread_weight' => 0,
+        'cfb.predictions.ol_qb_environment_spread_weight' => 0,
         'cfb.predictions.margin_calibration.enabled' => false,
         'cfb.predictions.preseason.enabled' => false,
         'cfb.predictions.week_calibration.enabled' => true,
@@ -540,6 +712,11 @@ it('applies active adaptive calibration to future cfb predictions', function () 
         'cfb.predictions.fpi_spread_weight' => 0,
         'cfb.predictions.wepa_spread_weight' => 0,
         'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.rating_consensus_spread_weight' => 0,
+        'cfb.predictions.success_rate_spread_weight' => 0,
+        'cfb.predictions.explosiveness_spread_weight' => 0,
+        'cfb.predictions.havoc_spread_weight' => 0,
+        'cfb.predictions.ol_qb_environment_spread_weight' => 0,
         'cfb.predictions.margin_calibration.enabled' => false,
         'cfb.predictions.preseason.enabled' => false,
         'cfb.predictions.week_calibration.enabled' => false,
@@ -604,6 +781,424 @@ it('applies active adaptive calibration to future cfb predictions', function () 
         ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.adaptive_week_calibration.spread_adjustment'))->toBe(2.5)
         ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.adaptive_week_calibration.confidence_penalty'))->toBe(3.0)
         ->and(data_get($snapshot->model_metadata, 'cfb_preseason_layer.adaptive_calibration.id'))->not->toBeNull();
+});
+
+it('weights cfb player availability by position and recent production', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.player_availability.enabled' => true,
+        'cfb.predictions.player_availability.position_weights.QB' => 2.0,
+        'cfb.predictions.player_availability.position_weights.WR' => 1.0,
+        'cfb.predictions.player_availability.production_baselines.QB' => 10.0,
+        'cfb.predictions.player_availability.production_baselines.WR' => 10.0,
+        'cfb.predictions.player_availability.max_player_multiplier' => 3.0,
+        'cfb.predictions.player_availability.min_player_multiplier' => 0.5,
+        'cfb.predictions.injury_out_spread_penalty' => 0.50,
+        'cfb.predictions.injury_out_total_penalty' => 0.30,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $homeQb = Player::query()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => 'cfb-home-qb-availability-test',
+        'full_name' => 'Home QB',
+        'position' => 'QB',
+    ]);
+    $awayReceiver = Player::query()->create([
+        'team_id' => $awayTeam->id,
+        'espn_id' => 'cfb-away-wr-availability-test',
+        'full_name' => 'Away WR',
+        'position' => 'WR',
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1500);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    $priorGame = Game::factory()->create([
+        'season' => 2025,
+        'week' => 14,
+        'season_type' => 'regular',
+        'game_date' => '2025-11-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'neutral_site' => true,
+    ]);
+
+    DB::table('cfb_player_stats')->insert([
+        'player_id' => $homeQb->id,
+        'game_id' => $priorGame->id,
+        'team_id' => $homeTeam->id,
+        'passing_attempts' => 30,
+        'passing_yards' => 250,
+        'passing_touchdowns' => 2,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('cfb_player_stats')->insert([
+        'player_id' => $awayReceiver->id,
+        'game_id' => $priorGame->id,
+        'team_id' => $awayTeam->id,
+        'receptions' => 1,
+        'receiving_targets' => 2,
+        'receiving_yards' => 8,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    PlayerInjury::query()->create([
+        'player_id' => $homeQb->id,
+        'team_id' => $homeTeam->id,
+        'injury_key' => 'home-qb-out',
+        'status' => 'Out',
+        'detail' => 'Shoulder',
+        'injury_date' => '2026-08-20',
+        'is_active' => true,
+    ]);
+    PlayerInjury::query()->create([
+        'player_id' => $awayReceiver->id,
+        'team_id' => $awayTeam->id,
+        'injury_key' => 'away-wr-out',
+        'status' => 'Out',
+        'detail' => 'Ankle',
+        'injury_date' => '2026-08-20',
+        'is_active' => true,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 0,
+        'season_type' => 'regular',
+        'game_date' => '2026-08-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) $prediction->predicted_spread)->toBe(-2.6)
+        ->and(data_get($snapshot->model_metadata, 'cfb_player_availability.applied'))->toBeTrue()
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_player_availability.home.out'))->toBe(5.7)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_player_availability.away.out'))->toBe(0.5)
+        ->and(data_get($snapshot->model_metadata, 'cfb_player_availability.risk_flags'))->toContain('player_availability_impact');
+});
+
+it('applies stored cfb weather context to totals and snapshot metadata', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.game_context.enabled' => true,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1500);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 1,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-05',
+        'game_time' => '19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    GameWeather::query()->create([
+        'game_id' => $game->id,
+        'provider' => 'open_meteo',
+        'observed_at' => '2026-09-05 19:00:00',
+        'temperature_f' => 25,
+        'wind_speed_mph' => 20,
+        'wind_gust_mph' => 30,
+        'precipitation_probability' => 70,
+        'precipitation_inches' => 0.05,
+        'humidity_percent' => 65,
+        'condition_code' => '61',
+        'is_indoor' => false,
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam', 'weather']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) $prediction->predicted_spread)->toBe(0.0)
+        ->and((float) $prediction->predicted_total)->toBe(49.2)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_game_context.total_adjustment'))->toBe(-2.84)
+        ->and(data_get($snapshot->model_metadata, 'cfb_game_context.weather.risk_flags'))->toContain('wind_total_suppression')
+        ->and(data_get($snapshot->model_metadata, 'cfb_game_context.weather.risk_flags'))->toContain('weather_turnover_risk');
+});
+
+it('applies cfb schedule psychology context with home-margin sign convention', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => false,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.rating_consensus_spread_weight' => 0,
+        'cfb.predictions.success_rate_spread_weight' => 0,
+        'cfb.predictions.explosiveness_spread_weight' => 0,
+        'cfb.predictions.havoc_spread_weight' => 0,
+        'cfb.predictions.ol_qb_environment_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.game_context.enabled' => true,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1600,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayPreviousOpponent = Team::factory()->create(['elo_rating' => 1450]);
+    $homeNextOpponent = Team::factory()->create(['elo_rating' => 1750]);
+    $awayNextOpponent = Team::factory()->create(['elo_rating' => 1750]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 1,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-06',
+        'game_time' => '19:00:00',
+        'home_team_id' => $awayPreviousOpponent->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'home_score' => 17,
+        'away_score' => 24,
+        'neutral_site' => false,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 2,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-12',
+        'game_time' => '19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => false,
+    ]);
+
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 3,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-19',
+        'game_time' => '19:00:00',
+        'home_team_id' => $homeNextOpponent->id,
+        'away_team_id' => $homeTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+    Game::factory()->create([
+        'season' => 2026,
+        'week' => 3,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-19',
+        'game_time' => '19:00:00',
+        'home_team_id' => $awayNextOpponent->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) $prediction->predicted_spread)->toBe(12.9)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_game_context.spread_adjustment'))->toBe(0.5)
+        ->and(data_get($snapshot->model_metadata, 'cfb_game_context.schedule.risk_flags'))->toContain('away_short_rest')
+        ->and(data_get($snapshot->model_metadata, 'cfb_game_context.schedule.risk_flags'))->toContain('away_consecutive_road')
+        ->and(data_get($snapshot->model_metadata, 'cfb_game_context.schedule.risk_flags'))->toContain('home_lookahead_spot')
+        ->and(data_get($snapshot->model_metadata, 'cfb_game_context.schedule.risk_flags'))->toContain('away_lookahead_spot');
+});
+
+it('tracks cfb market movement consensus without flipping spread signs incorrectly', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.game_context.enabled' => false,
+        'cfb.predictions.player_availability.enabled' => false,
+        'cfb.predictions.market_movement.enabled' => true,
+        'cfb.predictions.market_movement.confidence_boost_toward_model' => 1.5,
+        'cfb.predictions.market_movement.book_disagreement_threshold' => 2.0,
+    ]);
+
+    Carbon::setTestNow(Carbon::parse('2026-09-04 12:00:00'));
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'school' => 'Home State',
+        'abbreviation' => 'HST',
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'school' => 'Away Tech',
+        'abbreviation' => 'AT',
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1600);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 1,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-05 19:00:00',
+        'game_time' => '19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    recordCfbSpreadSnapshot($game, '2026-08-20T12:00:00Z', [
+        'draftkings' => -3.5,
+        'fanduel' => -4.5,
+    ]);
+    recordCfbSpreadSnapshot($game, '2026-09-04T11:00:00Z', [
+        'draftkings' => -6.0,
+        'fanduel' => -7.0,
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) data_get($snapshot->model_metadata, 'cfb_market_movement.open_bookmaker_home_line'))->toBe(-4.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.open_home_margin'))->toBe(4.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.current_bookmaker_home_line'))->toBe(-6.5)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.current_home_margin'))->toBe(6.5)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.line_movement_home_margin'))->toBe(2.5)
+        ->and(data_get($snapshot->model_metadata, 'cfb_market_movement.line_moved_toward_model'))->toBeTrue()
+        ->and(data_get($snapshot->model_metadata, 'cfb_market_movement.risk_flags'))->toContain('market_moved_toward_model')
+        ->and((float) data_get($snapshot->outputs, 'bookmaker_home_spread'))->toBe(-6.5)
+        ->and((float) data_get($snapshot->outputs, 'market_spread'))->toBe(6.5)
+        ->and((float) $prediction->confidence_score)->toBeGreaterThan(50.0);
+
+    Carbon::setTestNow();
+});
+
+it('enriches cfb market movement with closing line value when predictions are graded', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.game_context.enabled' => false,
+        'cfb.predictions.player_availability.enabled' => false,
+        'cfb.predictions.market_movement.enabled' => true,
+    ]);
+
+    Carbon::setTestNow(Carbon::parse('2026-09-04 12:00:00'));
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'school' => 'Home State',
+        'abbreviation' => 'HST',
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'school' => 'Away Tech',
+        'abbreviation' => 'AT',
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1600);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 1,
+        'season_type' => 'regular',
+        'game_date' => '2026-09-05 19:00:00',
+        'game_time' => '19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => true,
+    ]);
+
+    recordCfbSpreadSnapshot($game, '2026-08-20T12:00:00Z', ['draftkings' => -4.0]);
+    recordCfbSpreadSnapshot($game, '2026-09-04T11:00:00Z', ['draftkings' => -6.5]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    recordCfbSpreadSnapshot($game, '2026-09-05T18:45:00Z', ['draftkings' => -7.5]);
+
+    Carbon::setTestNow(Carbon::parse('2026-09-06 01:00:00'));
+    $game->update([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 31,
+        'away_score' => 20,
+    ]);
+
+    app(GradePredictions::class)->execute(2026);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) data_get($snapshot->model_metadata, 'cfb_market_movement.closing_bookmaker_home_line'))->toBe(-7.5)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.closing_home_margin'))->toBe(7.5)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_market_movement.closing_line_value_points'))->toBe(1.0)
+        ->and(data_get($snapshot->model_metadata, 'cfb_market_movement.closing_line_value_bucket'))->toBe('positive');
+
+    Carbon::setTestNow();
 });
 
 function createCfbEloRating(Team $team, int $season, int $week, float $elo, ?string $date = null): void
@@ -714,4 +1309,40 @@ function cfbPredictionSnapshot(Prediction $prediction): PredictionFeatureSnapsho
         ->where('prediction_id', $prediction->id)
         ->latest('id')
         ->firstOrFail();
+}
+
+/**
+ * @param  array<string, float>  $bookmakerHomeLines
+ */
+function recordCfbSpreadSnapshot(Game $game, string $capturedAt, array $bookmakerHomeLines): void
+{
+    $homeName = (string) $game->homeTeam->school;
+    $awayName = (string) $game->awayTeam->school;
+
+    app(GameOddsSnapshotRecorder::class)->record(
+        'cfb',
+        $game,
+        [
+            'id' => 'cfb-'.$game->id.'-'.sha1($capturedAt),
+            'commence_time' => '2026-09-05T19:00:00Z',
+        ],
+        [
+            'home_team' => $homeName,
+            'away_team' => $awayName,
+            'bookmakers' => collect($bookmakerHomeLines)->map(
+                fn (float $homeLine, string $bookmaker): array => [
+                    'key' => $bookmaker,
+                    'title' => ucfirst($bookmaker),
+                    'markets' => [[
+                        'key' => 'spreads',
+                        'outcomes' => [
+                            ['name' => $homeName, 'price' => -110, 'point' => $homeLine],
+                            ['name' => $awayName, 'price' => -110, 'point' => -$homeLine],
+                        ],
+                    ]],
+                ]
+            )->values()->all(),
+        ],
+        Carbon::parse($capturedAt),
+    );
 }

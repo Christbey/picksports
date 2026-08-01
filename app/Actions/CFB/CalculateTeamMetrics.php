@@ -12,6 +12,7 @@ use App\Models\CFB\Play;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\CfbdTeamMapping;
+use App\Services\CFB\PlayerAvailabilityImpactService;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Collection;
@@ -28,6 +29,11 @@ class CalculateTeamMetrics
     protected ?array $seasonWepaIndex = null;
 
     /**
+     * @var array<int|string, array<string, mixed>>|null
+     */
+    protected ?array $seasonAdvancedStatsIndex = null;
+
+    /**
      * @var array<string, int>|null
      */
     protected ?array $cfbdMappingIndex = null;
@@ -35,6 +41,7 @@ class CalculateTeamMetrics
     public function __construct(
         private readonly CollegeFootballDataService $collegeFootballDataService,
         private readonly CfbSeasonAffiliationResolver $seasonAffiliationResolver,
+        private readonly PlayerAvailabilityImpactService $playerAvailabilityImpactService,
     ) {}
 
     public function execute(Team $team, int $season): ?TeamMetric
@@ -45,10 +52,11 @@ class CalculateTeamMetrics
 
         $fpi = $this->latestFpiForTeam($team, $season);
         $wepa = $this->wepaForTeam($team, $season);
+        $advancedStats = $this->advancedStatsForTeam($team, $season);
         $games = $this->getCompletedGamesForTeam($team, $season, 'CFB');
 
         if ($games->isEmpty()) {
-            return $this->buildPreseasonMetric($team, $season, $fpi, $wepa);
+            return $this->buildPreseasonMetric($team, $season, $fpi, $wepa, $advancedStats);
         }
 
         extract($this->gatherTeamStatsFromGames($games, $team));
@@ -102,8 +110,8 @@ class CalculateTeamMetrics
         $turnoverDifferential = $this->calculateTurnoverDifferential($teamStats, $opponentStats);
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
-        $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'cfb', (float) ($team->elo_rating ?? 1500));
-        $injuryAdjustedTotalAdjustment = $this->calculateInjuryAdjustedTotalAdjustment($team, 'cfb');
+        $injuryAdjustedTeamRating = $this->playerAvailabilityAdjustedTeamRating($team, $season);
+        $injuryAdjustedTotalAdjustment = $this->playerAvailabilityTotalAdjustment($team, $season);
         $restTravelFatigue = $this->calculateRestTravelFatigue($games, $team);
         $pregameEloIndex = $this->pregameEloIndex($games);
         $powerRating = $this->calculatePowerRating(
@@ -122,6 +130,14 @@ class CalculateTeamMetrics
             strengthOfSchedule: $strengthOfSchedule,
         );
         $cfpRating = $this->calculateCfpRating($powerRating, $resumeRating);
+        $ratingConsensus = $this->calculateRatingConsensus($team, $season, [
+            'fpi' => $fpi,
+            'power_rating' => $powerRating,
+            'resume_rating' => $resumeRating,
+            'cfp_rating' => $cfpRating,
+            'wepa_net' => $wepa['net'],
+            'net_rating' => $netRating,
+        ]);
         $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games, true);
 
         // Update or create team metric
@@ -151,6 +167,24 @@ class CalculateTeamMetrics
             'cfp_rating' => $cfpRating,
             'power_rating' => $powerRating,
             'resume_rating' => $resumeRating,
+            'rating_consensus' => $ratingConsensus['rating'],
+            'rating_consensus_sources' => $ratingConsensus['sources'],
+            'offensive_success_rate' => $advancedStats['offensive_success_rate'],
+            'defensive_success_rate' => $advancedStats['defensive_success_rate'],
+            'net_success_rate' => $advancedStats['net_success_rate'],
+            'offensive_explosiveness' => $advancedStats['offensive_explosiveness'],
+            'defensive_explosiveness' => $advancedStats['defensive_explosiveness'],
+            'net_explosiveness' => $advancedStats['net_explosiveness'],
+            'offensive_havoc_rate' => $advancedStats['offensive_havoc_rate'],
+            'defensive_havoc_rate' => $advancedStats['defensive_havoc_rate'],
+            'net_havoc_rate' => $advancedStats['net_havoc_rate'],
+            'offensive_line_yards' => $advancedStats['offensive_line_yards'],
+            'offensive_stuff_rate' => $advancedStats['offensive_stuff_rate'],
+            'offensive_sack_rate' => $advancedStats['offensive_sack_rate'],
+            'offensive_line_rating' => $advancedStats['offensive_line_rating'],
+            'qb_environment_rating' => $advancedStats['qb_environment_rating'],
+            'defensive_front_rating' => $advancedStats['defensive_front_rating'],
+            'cfbd_advanced_payload' => $advancedStats['payload'],
             'offensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['offensive_true_epa_per_play'], 3),
             'defensive_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['defensive_true_epa_per_play'], 3),
             'net_true_epa_per_play' => $this->roundOrNull($trueEpaMetrics['net_true_epa_per_play'], 3),
@@ -211,9 +245,14 @@ class CalculateTeamMetrics
     /**
      * @param  array{offense: ?float, defense: ?float, net: ?float, payload: ?array<string, mixed>}  $wepa
      */
-    protected function buildPreseasonMetric(Team $team, int $season, ?float $fpi, array $wepa): ?TeamMetric
+    protected function buildPreseasonMetric(Team $team, int $season, ?float $fpi, array $wepa, array $advancedStats): ?TeamMetric
     {
-        if ($fpi === null && $wepa['net'] === null && $wepa['offense'] === null && $wepa['defense'] === null) {
+        if ($fpi === null
+            && $wepa['net'] === null
+            && $wepa['offense'] === null
+            && $wepa['defense'] === null
+            && $advancedStats['payload'] === null
+        ) {
             return null;
         }
 
@@ -224,16 +263,41 @@ class CalculateTeamMetrics
             fpi: $fpi,
             wepaNet: $wepa['net']
         );
+        $ratingConsensus = $this->calculateRatingConsensus($team, $season, [
+            'fpi' => $fpi,
+            'power_rating' => $powerRating,
+            'wepa_net' => $wepa['net'],
+        ]);
 
         return $this->persistMetric($team, $season, [
             'wins' => 0,
             'losses' => 0,
             'fpi' => $fpi,
+            'injury_adjusted_team_rating' => $this->playerAvailabilityAdjustedTeamRating($team, $season),
+            'injury_total_adjustment' => $this->playerAvailabilityTotalAdjustment($team, $season),
             'cfbd_wepa_offense' => $wepa['offense'],
             'cfbd_wepa_defense' => $wepa['defense'],
             'cfbd_wepa_net' => $wepa['net'],
             'cfbd_wepa_payload' => $wepa['payload'],
             'power_rating' => $powerRating,
+            'rating_consensus' => $ratingConsensus['rating'],
+            'rating_consensus_sources' => $ratingConsensus['sources'],
+            'offensive_success_rate' => $advancedStats['offensive_success_rate'],
+            'defensive_success_rate' => $advancedStats['defensive_success_rate'],
+            'net_success_rate' => $advancedStats['net_success_rate'],
+            'offensive_explosiveness' => $advancedStats['offensive_explosiveness'],
+            'defensive_explosiveness' => $advancedStats['defensive_explosiveness'],
+            'net_explosiveness' => $advancedStats['net_explosiveness'],
+            'offensive_havoc_rate' => $advancedStats['offensive_havoc_rate'],
+            'defensive_havoc_rate' => $advancedStats['defensive_havoc_rate'],
+            'net_havoc_rate' => $advancedStats['net_havoc_rate'],
+            'offensive_line_yards' => $advancedStats['offensive_line_yards'],
+            'offensive_stuff_rate' => $advancedStats['offensive_stuff_rate'],
+            'offensive_sack_rate' => $advancedStats['offensive_sack_rate'],
+            'offensive_line_rating' => $advancedStats['offensive_line_rating'],
+            'qb_environment_rating' => $advancedStats['qb_environment_rating'],
+            'defensive_front_rating' => $advancedStats['defensive_front_rating'],
+            'cfbd_advanced_payload' => $advancedStats['payload'],
             'resume_rating' => null,
             'cfp_rating' => null,
         ]);
@@ -253,6 +317,28 @@ class CalculateTeamMetrics
                 'calculation_date' => now()->toDateString(),
             ])
         );
+    }
+
+    protected function playerAvailabilityAdjustedTeamRating(Team $team, int $season): ?float
+    {
+        if (! (bool) config('cfb.predictions.player_availability.enabled', true)) {
+            return $this->calculateInjuryAdjustedTeamRating($team, 'cfb', (float) ($team->elo_rating ?? 1500));
+        }
+
+        $baseRating = (float) ($team->elo_rating ?? 1500);
+        $adjusted = $this->playerAvailabilityImpactService->adjustedTeamRating((int) $team->id, $baseRating, $season);
+
+        return $adjusted ?? $this->calculateInjuryAdjustedTeamRating($team, 'cfb', $baseRating);
+    }
+
+    protected function playerAvailabilityTotalAdjustment(Team $team, int $season): ?float
+    {
+        if (! (bool) config('cfb.predictions.player_availability.enabled', true)) {
+            return $this->calculateInjuryAdjustedTotalAdjustment($team, 'cfb');
+        }
+
+        return $this->playerAvailabilityImpactService->totalAdjustment((int) $team->id, $season)
+            ?? $this->calculateInjuryAdjustedTotalAdjustment($team, 'cfb');
     }
 
     /**
@@ -307,6 +393,161 @@ class CalculateTeamMetrics
             'net' => $net,
             'payload' => $row,
         ];
+    }
+
+    /**
+     * @return array{
+     *     offensive_success_rate:?float,
+     *     defensive_success_rate:?float,
+     *     net_success_rate:?float,
+     *     offensive_explosiveness:?float,
+     *     defensive_explosiveness:?float,
+     *     net_explosiveness:?float,
+     *     offensive_havoc_rate:?float,
+     *     defensive_havoc_rate:?float,
+     *     net_havoc_rate:?float,
+     *     offensive_line_yards:?float,
+     *     offensive_stuff_rate:?float,
+     *     offensive_sack_rate:?float,
+     *     offensive_line_rating:?float,
+     *     qb_environment_rating:?float,
+     *     defensive_front_rating:?float,
+     *     payload:?array<string,mixed>
+     * }
+     */
+    protected function advancedStatsForTeam(Team $team, int $season): array
+    {
+        $empty = [
+            'offensive_success_rate' => null,
+            'defensive_success_rate' => null,
+            'net_success_rate' => null,
+            'offensive_explosiveness' => null,
+            'defensive_explosiveness' => null,
+            'net_explosiveness' => null,
+            'offensive_havoc_rate' => null,
+            'defensive_havoc_rate' => null,
+            'net_havoc_rate' => null,
+            'offensive_line_yards' => null,
+            'offensive_stuff_rate' => null,
+            'offensive_sack_rate' => null,
+            'offensive_line_rating' => null,
+            'qb_environment_rating' => null,
+            'defensive_front_rating' => null,
+            'payload' => null,
+        ];
+
+        $row = $this->advancedStatsRowForTeam($team, $season);
+
+        if (! is_array($row)) {
+            return $empty;
+        }
+
+        $offensiveSuccessRate = $this->rateMetricValue($row, [
+            'offense.successRate',
+            'offense.success_rate',
+            'offensive.successRate',
+            'offensive.success_rate',
+            'offensiveSuccessRate',
+            'offensive_success_rate',
+        ]);
+        $defensiveSuccessRate = $this->rateMetricValue($row, [
+            'defense.successRate',
+            'defense.success_rate',
+            'defensive.successRate',
+            'defensive.success_rate',
+            'defensiveSuccessRate',
+            'defensive_success_rate',
+        ]);
+        $offensiveExplosiveness = $this->extractMetricValue($row, [
+            'offense.explosiveness',
+            'offensive.explosiveness',
+            'offensiveExplosiveness',
+            'offensive_explosiveness',
+        ]);
+        $defensiveExplosiveness = $this->extractMetricValue($row, [
+            'defense.explosiveness',
+            'defensive.explosiveness',
+            'defensiveExplosiveness',
+            'defensive_explosiveness',
+        ]);
+        $offensiveHavocRate = $this->rateMetricValue($row, [
+            'offense.havoc.total',
+            'offense.havocRate',
+            'offense.havoc_rate',
+            'offensive.havoc.total',
+            'offensiveHavocRate',
+            'offensive_havoc_rate',
+        ]);
+        $defensiveHavocRate = $this->rateMetricValue($row, [
+            'defense.havoc.total',
+            'defense.havocRate',
+            'defense.havoc_rate',
+            'defensive.havoc.total',
+            'defensiveHavocRate',
+            'defensive_havoc_rate',
+        ]);
+        $offensiveLineYards = $this->extractMetricValue($row, [
+            'offense.lineYards',
+            'offense.line_yards',
+            'offensive.lineYards',
+            'offensive_line_yards',
+        ]);
+        $offensiveStuffRate = $this->rateMetricValue($row, [
+            'offense.stuffRate',
+            'offense.stuff_rate',
+            'offensive.stuffRate',
+            'offensive_stuff_rate',
+        ]);
+        $offensiveSackRate = $this->rateMetricValue($row, [
+            'offense.sackRate',
+            'offense.sack_rate',
+            'offense.passingDowns.sackRate',
+            'offense.standardDowns.sackRate',
+            'offensive.sackRate',
+            'offensive_sack_rate',
+        ]);
+
+        return array_merge($empty, [
+            'offensive_success_rate' => $this->roundOrNull($offensiveSuccessRate, 4),
+            'defensive_success_rate' => $this->roundOrNull($defensiveSuccessRate, 4),
+            'net_success_rate' => $this->roundOrNull($this->nullableSubtract($offensiveSuccessRate, $defensiveSuccessRate), 4),
+            'offensive_explosiveness' => $this->roundOrNull($offensiveExplosiveness, 4),
+            'defensive_explosiveness' => $this->roundOrNull($defensiveExplosiveness, 4),
+            'net_explosiveness' => $this->roundOrNull($this->nullableSubtract($offensiveExplosiveness, $defensiveExplosiveness), 4),
+            'offensive_havoc_rate' => $this->roundOrNull($offensiveHavocRate, 4),
+            'defensive_havoc_rate' => $this->roundOrNull($defensiveHavocRate, 4),
+            'net_havoc_rate' => $this->roundOrNull($this->nullableSubtract($defensiveHavocRate, $offensiveHavocRate), 4),
+            'offensive_line_yards' => $this->roundOrNull($offensiveLineYards, 4),
+            'offensive_stuff_rate' => $this->roundOrNull($offensiveStuffRate, 4),
+            'offensive_sack_rate' => $this->roundOrNull($offensiveSackRate, 4),
+            'offensive_line_rating' => $this->roundOrNull($this->offensiveLineRating($offensiveLineYards, $offensiveStuffRate, $offensiveSackRate), 4),
+            'qb_environment_rating' => $this->roundOrNull($this->quarterbackEnvironmentRating($offensiveSuccessRate, $offensiveExplosiveness, $offensiveSackRate), 4),
+            'defensive_front_rating' => $this->roundOrNull($this->defensiveFrontRating($defensiveHavocRate, $defensiveSuccessRate), 4),
+            'payload' => $row,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function advancedStatsRowForTeam(Team $team, int $season): ?array
+    {
+        $index = $this->seasonAdvancedStatsIndex($season);
+        $cfbdTeamId = $this->cfbdTeamIdForTeam($team);
+
+        if ($cfbdTeamId !== null && is_array($index[$cfbdTeamId] ?? null)) {
+            return $index[$cfbdTeamId];
+        }
+
+        foreach (array_filter([$team->school, $team->display_name, $team->name, $team->short_display_name]) as $name) {
+            $row = $index[mb_strtolower(trim((string) $name))] ?? null;
+
+            if (is_array($row)) {
+                return $row;
+            }
+        }
+
+        return null;
     }
 
     protected function cfbdTeamIdForTeam(Team $team): ?int
@@ -374,6 +615,49 @@ class CalculateTeamMetrics
     }
 
     /**
+     * @return array<int|string, array<string, mixed>>
+     */
+    protected function seasonAdvancedStatsIndex(int $season): array
+    {
+        if ($this->seasonAdvancedStatsIndex !== null) {
+            return $this->seasonAdvancedStatsIndex;
+        }
+
+        try {
+            $rows = $this->collegeFootballDataService->getAdvancedTeamSeasonStats($season, excludeGarbageTime: true);
+        } catch (\Throwable) {
+            $this->seasonAdvancedStatsIndex = [];
+
+            return $this->seasonAdvancedStatsIndex;
+        }
+
+        $this->seasonAdvancedStatsIndex = collect($rows)
+            ->filter(fn ($row): bool => is_array($row))
+            ->flatMap(function (array $row): array {
+                $keys = [];
+                $teamId = data_get($row, 'id')
+                    ?? data_get($row, 'teamId')
+                    ?? data_get($row, 'team_id');
+
+                if (is_numeric($teamId)) {
+                    $keys[(int) $teamId] = $row;
+                }
+
+                foreach (['team', 'school', 'name'] as $nameKey) {
+                    $name = data_get($row, $nameKey);
+                    if (is_string($name) && trim($name) !== '') {
+                        $keys[mb_strtolower(trim($name))] = $row;
+                    }
+                }
+
+                return $keys;
+            })
+            ->all();
+
+        return $this->seasonAdvancedStatsIndex;
+    }
+
+    /**
      * @return array<string, int>
      */
     protected function cfbdMappingIndex(): array
@@ -408,6 +692,162 @@ class CalculateTeamMetrics
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @param  array<int, string>  $keys
+     */
+    protected function rateMetricValue(array $row, array $keys): ?float
+    {
+        $value = $this->extractMetricValue($row, $keys);
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (abs($value) > 1.5) {
+            $value /= 100;
+        }
+
+        return max(-1.0, min(1.0, $value));
+    }
+
+    protected function nullableSubtract(?float $left, ?float $right): ?float
+    {
+        if ($left === null || $right === null) {
+            return null;
+        }
+
+        return $left - $right;
+    }
+
+    protected function offensiveLineRating(?float $lineYards, ?float $stuffRate, ?float $sackRate): ?float
+    {
+        if ($lineYards === null && $stuffRate === null && $sackRate === null) {
+            return null;
+        }
+
+        $score = 0.0;
+        $weight = 0.0;
+
+        if ($lineYards !== null) {
+            $score += max(-1.0, min(1.0, ($lineYards - 2.75) / 1.25)) * 0.40;
+            $weight += 0.40;
+        }
+
+        if ($stuffRate !== null) {
+            $score += max(-1.0, min(1.0, (0.19 - $stuffRate) / 0.12)) * 0.35;
+            $weight += 0.35;
+        }
+
+        if ($sackRate !== null) {
+            $score += max(-1.0, min(1.0, (0.065 - $sackRate) / 0.07)) * 0.25;
+            $weight += 0.25;
+        }
+
+        return $weight > 0 ? max(-1.0, min(1.0, $score / $weight)) : null;
+    }
+
+    protected function quarterbackEnvironmentRating(?float $successRate, ?float $explosiveness, ?float $sackRate): ?float
+    {
+        if ($successRate === null && $explosiveness === null && $sackRate === null) {
+            return null;
+        }
+
+        $score = 0.0;
+        $weight = 0.0;
+
+        if ($successRate !== null) {
+            $score += max(-1.0, min(1.0, ($successRate - 0.42) / 0.16)) * 0.45;
+            $weight += 0.45;
+        }
+
+        if ($explosiveness !== null) {
+            $score += max(-1.0, min(1.0, ($explosiveness - 1.30) / 0.55)) * 0.35;
+            $weight += 0.35;
+        }
+
+        if ($sackRate !== null) {
+            $score += max(-1.0, min(1.0, (0.065 - $sackRate) / 0.07)) * 0.20;
+            $weight += 0.20;
+        }
+
+        return $weight > 0 ? max(-1.0, min(1.0, $score / $weight)) : null;
+    }
+
+    protected function defensiveFrontRating(?float $defensiveHavocRate, ?float $defensiveSuccessRate): ?float
+    {
+        if ($defensiveHavocRate === null && $defensiveSuccessRate === null) {
+            return null;
+        }
+
+        $score = 0.0;
+        $weight = 0.0;
+
+        if ($defensiveHavocRate !== null) {
+            $score += max(-1.0, min(1.0, ($defensiveHavocRate - 0.17) / 0.10)) * 0.60;
+            $weight += 0.60;
+        }
+
+        if ($defensiveSuccessRate !== null) {
+            $score += max(-1.0, min(1.0, (0.40 - $defensiveSuccessRate) / 0.16)) * 0.40;
+            $weight += 0.40;
+        }
+
+        return $weight > 0 ? max(-1.0, min(1.0, $score / $weight)) : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $ratings
+     * @return array{rating:?float,sources:array<string,array{value:float,weight:float}>}
+     */
+    protected function calculateRatingConsensus(Team $team, int $season, array $ratings): array
+    {
+        $weights = (array) config('cfb.metrics.consensus_ratings.weights', []);
+        $pointsPerElo = (float) config('cfb.predictions.points_per_elo', 0.08);
+        $defaultElo = (float) config('cfb.elo.default_rating', 1500);
+
+        $sourceValues = [
+            'fpi' => $ratings['fpi'] ?? null,
+            'power_rating' => $ratings['power_rating'] ?? null,
+            'wepa_net' => is_numeric($ratings['wepa_net'] ?? null) ? ((float) $ratings['wepa_net'] * 4.0) : null,
+            'net_rating' => is_numeric($ratings['net_rating'] ?? null) ? ((float) $ratings['net_rating'] * 0.40) : null,
+            'elo' => (((float) ($team->elo_rating ?? $defaultElo)) - $defaultElo) * $pointsPerElo,
+            'cfp_rating' => is_numeric($ratings['cfp_rating'] ?? null) ? (((float) $ratings['cfp_rating'] - 50.0) / 2.9) : null,
+            'resume_rating' => is_numeric($ratings['resume_rating'] ?? null) ? ((float) $ratings['resume_rating'] * 0.39 / 2.9) : null,
+        ];
+
+        $weightedSum = 0.0;
+        $totalWeight = 0.0;
+        $sources = [];
+
+        foreach ($sourceValues as $source => $value) {
+            if (! is_numeric($value)) {
+                continue;
+            }
+
+            $weight = (float) ($weights[$source] ?? 0.0);
+            if ($weight <= 0) {
+                continue;
+            }
+
+            $weightedSum += (float) $value * $weight;
+            $totalWeight += $weight;
+            $sources[$source] = [
+                'value' => round((float) $value, 3),
+                'weight' => round($weight, 3),
+            ];
+        }
+
+        if ($totalWeight <= 0) {
+            return ['rating' => null, 'sources' => []];
+        }
+
+        return [
+            'rating' => round($weightedSum / $totalWeight, 3),
+            'sources' => $sources,
+        ];
     }
 
     protected function calculatePowerRating(

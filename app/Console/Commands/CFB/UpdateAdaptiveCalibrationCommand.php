@@ -31,6 +31,8 @@ class UpdateAdaptiveCalibrationCommand extends Command
         'qb_continuity',
         'transfer_portal',
         'coaching_continuity',
+        'coaching_scheme',
+        'special_teams',
         'schedule_spot',
     ];
 

@@ -29,6 +29,99 @@ class ReportPreseasonReadinessCommand extends Command
      * @var array<string, array<string, list<string>>>
      */
     private const SIGNAL_SOURCES = [
+        'player_availability' => [
+            'cfb_player_injuries' => [
+                'status',
+                'detail',
+                'type',
+                'raw_payload',
+            ],
+            'cfb_game_context_signals' => [
+                'home_player_availability_score',
+                'away_player_availability_score',
+                'home_qb_availability_score',
+                'away_qb_availability_score',
+            ],
+        ],
+        'weather_venue' => [
+            'cfb_game_weather' => [
+                'temperature_f',
+                'wind_speed_mph',
+                'wind_gust_mph',
+                'precipitation_inches',
+                'precipitation_probability',
+                'condition_code',
+            ],
+            'cfb_game_context_signals' => [
+                'temperature_f',
+                'wind_speed_mph',
+                'wind_gust_mph',
+                'precipitation_inches',
+                'weather_condition',
+            ],
+        ],
+        'rating_consensus' => [
+            'cfb_team_metrics' => [
+                'rating_consensus',
+                'rating_consensus_sources',
+                'fpi',
+                'power_rating',
+                'cfbd_wepa_net',
+            ],
+            'cfb_game_context_signals' => [
+                'home_rating_consensus',
+                'away_rating_consensus',
+            ],
+        ],
+        'explosiveness_success' => [
+            'cfb_team_metrics' => [
+                'offensive_success_rate',
+                'defensive_success_rate',
+                'net_success_rate',
+                'offensive_explosiveness',
+                'defensive_explosiveness',
+                'net_explosiveness',
+                'offensive_havoc_rate',
+                'defensive_havoc_rate',
+                'net_havoc_rate',
+            ],
+            'cfb_game_context_signals' => [
+                'home_explosiveness_score',
+                'away_explosiveness_score',
+            ],
+        ],
+        'line_qb_environment' => [
+            'cfb_team_metrics' => [
+                'offensive_line_rating',
+                'qb_environment_rating',
+                'defensive_front_rating',
+            ],
+            'cfb_preseason_team_signals' => [
+                'transfer_qb_net_value',
+                'transfer_ol_net_value',
+                'returning_percent_passing_ppa',
+                'qb_continuity_classification',
+            ],
+            'cfb_game_context_signals' => [
+                'home_line_qb_score',
+                'away_line_qb_score',
+            ],
+        ],
+        'market_movement' => [
+            'cfb_game_context_signals' => [
+                'opening_home_spread',
+                'current_home_spread',
+                'closing_home_spread',
+                'consensus_home_spread',
+            ],
+        ],
+        'schedule_context' => [
+            'cfb_game_context_signals' => [
+                'home_rest_days',
+                'away_rest_days',
+                'schedule_context_payload',
+            ],
+        ],
         'returning_production' => [
             'cfb_preseason_team_signals' => [
                 'returning_percent_ppa',
@@ -153,6 +246,37 @@ class ReportPreseasonReadinessCommand extends Command
                 'display_name',
             ],
         ],
+        'coaching_scheme_detail' => [
+            'cfb_preseason_team_signals' => [
+                'coaching_continuity_payload',
+            ],
+            'cfb_team_preseason_signals' => [
+                'scheme_continuity_score',
+                'scheme_fit_score',
+                'scheme_change_score',
+                'offensive_scheme_change',
+                'defensive_scheme_change',
+                'tempo_change_score',
+            ],
+            'cfb_team_coach_seasons' => [
+                'scheme_continuity_score',
+                'scheme_change_score',
+                'offensive_scheme',
+                'defensive_scheme',
+                'tempo_change_score',
+            ],
+        ],
+        'special_teams' => [
+            'cfb_fpi_ratings' => [
+                'special_teams',
+                'special_teams_fpi',
+            ],
+            'cfb_team_metrics' => [
+                'special_teams',
+                'special_teams_rating',
+                'special_teams_fpi',
+            ],
+        ],
     ];
 
     private const CORE_METRIC_SOURCES = [
@@ -171,6 +295,22 @@ class ReportPreseasonReadinessCommand extends Command
             'defense',
             'special_teams',
         ],
+    ];
+
+    /**
+     * Context families can be sparse before lines/weather are published. Track
+     * them in coverage, but only these preseason roster/program signals should
+     * block Week 0/1 readiness.
+     *
+     * @var list<string>
+     */
+    private const EARLY_WEEK_REQUIRED_SIGNAL_FAMILIES = [
+        'returning_production',
+        'portal_talent',
+        'qb_continuity',
+        'coaching_continuity',
+        'coaching_scheme_detail',
+        'special_teams',
     ];
 
     /**
@@ -321,15 +461,28 @@ class ReportPreseasonReadinessCommand extends Command
                 'destination_team_id',
                 'school_id',
             ]);
+            $gameTeamColumns = [
+                'home' => in_array('home_team_id', $columns, true) ? 'home_team_id' : null,
+                'away' => in_array('away_team_id', $columns, true) ? 'away_team_id' : null,
+            ];
 
-            if ($teamColumn === null) {
+            if ($teamColumn === null && ($gameTeamColumns['home'] === null || $gameTeamColumns['away'] === null)) {
                 continue;
             }
 
             $seasonColumn = $this->firstExistingColumn($columns, ['season', 'year']);
             $existingValueColumns = array_values(array_intersect($valueColumns, $columns));
 
-            $query = DB::table($table)->whereIn($teamColumn, $teamIds);
+            $query = DB::table($table);
+
+            if ($teamColumn !== null) {
+                $query->whereIn($teamColumn, $teamIds);
+            } else {
+                $query->where(function ($query) use ($teamIds, $gameTeamColumns): void {
+                    $query->whereIn((string) $gameTeamColumns['home'], $teamIds)
+                        ->orWhereIn((string) $gameTeamColumns['away'], $teamIds);
+                });
+            }
 
             if ($seasonColumn !== null) {
                 $query->where($seasonColumn, $season);
@@ -351,8 +504,18 @@ class ReportPreseasonReadinessCommand extends Command
                 });
             }
 
+            if ($teamColumn !== null) {
+                $covered = $covered
+                    ->merge($query->pluck($teamColumn)->map(fn (mixed $teamId): int => (int) $teamId))
+                    ->unique()
+                    ->values();
+
+                continue;
+            }
+
             $covered = $covered
-                ->merge($query->pluck($teamColumn)->map(fn (mixed $teamId): int => (int) $teamId))
+                ->merge($query->pluck((string) $gameTeamColumns['home'])->map(fn (mixed $teamId): int => (int) $teamId))
+                ->merge($query->pluck((string) $gameTeamColumns['away'])->map(fn (mixed $teamId): int => (int) $teamId))
                 ->unique()
                 ->values();
         }
@@ -518,7 +681,7 @@ class ReportPreseasonReadinessCommand extends Command
     {
         $teamIds = $this->trackedTeamIds($season);
         $coveredByFamily = [];
-        foreach (self::SIGNAL_SOURCES as $family => $sources) {
+        foreach (array_intersect_key(self::SIGNAL_SOURCES, array_flip(self::EARLY_WEEK_REQUIRED_SIGNAL_FAMILIES)) as $family => $sources) {
             $coveredByFamily[$family] = $this->coveredTeamIds($sources, $season, $teamIds)->all();
         }
         $coreMetricTeams = $this->coveredTeamIds(self::CORE_METRIC_SOURCES, $season, $teamIds)->all();

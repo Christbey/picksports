@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\PreseasonTeamSignal;
@@ -58,6 +59,7 @@ it('passes early-week readiness when all preseason signal families are covered',
         $table->decimal('portal_net_rating', 6, 3)->nullable();
         $table->decimal('qb_continuity_signal', 6, 3)->nullable();
         $table->decimal('coach_continuity_signal', 6, 3)->nullable();
+        $table->decimal('scheme_change_score', 6, 3)->nullable();
         $table->timestamps();
     });
 
@@ -70,8 +72,15 @@ it('passes early-week readiness when all preseason signal families are covered',
             'portal_net_rating' => 1.25,
             'qb_continuity_signal' => 0.80,
             'coach_continuity_signal' => 1.00,
+            'scheme_change_score' => 0.15,
             'created_at' => now(),
             'updated_at' => now(),
+        ]);
+        FpiRating::factory()->create([
+            'team_id' => $team->id,
+            'season' => 2026,
+            'week' => 1,
+            'special_teams' => 1.5,
         ]);
     }
 
@@ -80,6 +89,7 @@ it('passes early-week readiness when all preseason signal families are covered',
         'week' => 1,
         'status' => 'STATUS_SCHEDULED',
     ]);
+    cfbReadinessContextSignal($game);
 
     Prediction::query()->create([
         'game_id' => $game->id,
@@ -103,7 +113,9 @@ it('passes early-week readiness when all preseason signal families are covered',
         ->and((float) $report['signal_coverage']['2026']['families']['returning_production']['coverage_pct'])->toBe(100.0)
         ->and((float) $report['signal_coverage']['2026']['families']['portal_talent']['coverage_pct'])->toBe(100.0)
         ->and((float) $report['signal_coverage']['2026']['families']['qb_continuity']['coverage_pct'])->toBe(100.0)
-        ->and((float) $report['signal_coverage']['2026']['families']['coaching_continuity']['coverage_pct'])->toBe(100.0);
+        ->and((float) $report['signal_coverage']['2026']['families']['coaching_continuity']['coverage_pct'])->toBe(100.0)
+        ->and((float) $report['signal_coverage']['2026']['families']['coaching_scheme_detail']['coverage_pct'])->toBe(100.0)
+        ->and((float) $report['signal_coverage']['2026']['families']['special_teams']['coverage_pct'])->toBe(100.0);
 });
 
 it('detects canonical synced preseason signal table coverage', function () {
@@ -118,6 +130,13 @@ it('detects canonical synced preseason signal table coverage', function () {
             'talent_composite' => 850.000,
             'qb_continuity_classification' => PreseasonTeamSignal::QB_RETURNING_STARTER,
             'new_head_coach' => false,
+            'coaching_continuity_payload' => ['scheme_change_score' => 0.10],
+        ]);
+        FpiRating::factory()->create([
+            'team_id' => $team->id,
+            'season' => 2026,
+            'week' => 1,
+            'special_teams' => 1.5,
         ]);
     }
 
@@ -126,6 +145,7 @@ it('detects canonical synced preseason signal table coverage', function () {
         'week' => 0,
         'status' => 'STATUS_SCHEDULED',
     ]);
+    cfbReadinessContextSignal($game);
 
     Prediction::query()->create([
         'game_id' => $game->id,
@@ -150,7 +170,9 @@ it('detects canonical synced preseason signal table coverage', function () {
         ->and((float) $report['signal_coverage']['2026']['families']['returning_production']['coverage_pct'])->toBe(100.0)
         ->and((float) $report['signal_coverage']['2026']['families']['portal_talent']['coverage_pct'])->toBe(100.0)
         ->and((float) $report['signal_coverage']['2026']['families']['qb_continuity']['coverage_pct'])->toBe(100.0)
-        ->and((float) $report['signal_coverage']['2026']['families']['coaching_continuity']['coverage_pct'])->toBe(100.0);
+        ->and((float) $report['signal_coverage']['2026']['families']['coaching_continuity']['coverage_pct'])->toBe(100.0)
+        ->and((float) $report['signal_coverage']['2026']['families']['coaching_scheme_detail']['coverage_pct'])->toBe(100.0)
+        ->and((float) $report['signal_coverage']['2026']['families']['special_teams']['coverage_pct'])->toBe(100.0);
 });
 
 it('backtests cfb prediction performance by week buckets with calibration buckets', function () {
@@ -226,6 +248,47 @@ function cfbReadinessGame(Team $homeTeam, Team $awayTeam, array $attributes = []
         'home_score' => null,
         'away_score' => null,
     ], $attributes));
+}
+
+function cfbReadinessContextSignal(Game $game): void
+{
+    DB::table('cfb_game_context_signals')->insert([
+        'game_id' => $game->id,
+        'home_team_id' => $game->home_team_id,
+        'away_team_id' => $game->away_team_id,
+        'season' => $game->season,
+        'week' => $game->week,
+        'home_player_availability_score' => 0.0,
+        'away_player_availability_score' => 0.0,
+        'home_qb_availability_score' => 1.0,
+        'away_qb_availability_score' => 1.0,
+        'player_availability_payload' => json_encode(['available' => true]),
+        'temperature_f' => 70.0,
+        'wind_speed_mph' => 5.0,
+        'wind_gust_mph' => 8.0,
+        'precipitation_inches' => 0.0,
+        'weather_condition' => 'clear',
+        'weather_payload' => json_encode(['available' => true]),
+        'home_rating_consensus' => 5.0,
+        'away_rating_consensus' => 4.0,
+        'rating_consensus_payload' => json_encode(['available' => true]),
+        'home_explosiveness_score' => 0.15,
+        'away_explosiveness_score' => 0.12,
+        'explosiveness_payload' => json_encode(['available' => true]),
+        'home_line_qb_score' => 1.0,
+        'away_line_qb_score' => 0.8,
+        'line_qb_payload' => json_encode(['available' => true]),
+        'opening_home_spread' => -3.0,
+        'current_home_spread' => -3.0,
+        'consensus_home_spread' => -3.0,
+        'market_movement_payload' => json_encode(['available' => true]),
+        'home_rest_days' => 7,
+        'away_rest_days' => 7,
+        'schedule_context_payload' => json_encode(['available' => true]),
+        'synced_at' => now(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
 }
 
 function cfbReadinessFinalPrediction(

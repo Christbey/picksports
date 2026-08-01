@@ -66,6 +66,18 @@ class Team extends Model
         return $this->hasMany(PlayerStat::class, 'team_id');
     }
 
+    public function playerInjuries(): HasMany
+    {
+        return $this->hasMany(PlayerInjury::class, 'team_id');
+    }
+
+    public function activePlayerInjuries(): HasMany
+    {
+        return $this->playerInjuries()
+            ->where('is_active', true)
+            ->orderByDesc('updated_at');
+    }
+
     public function teamStats(): HasMany
     {
         return $this->hasMany(TeamStat::class, 'team_id');

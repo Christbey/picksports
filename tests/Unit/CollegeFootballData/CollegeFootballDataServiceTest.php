@@ -81,6 +81,33 @@ it('requests preseason signal endpoints', function () {
         && $request['team'] === 'Georgia');
 });
 
+it('requests advanced team season stats', function () {
+    config()->set('services.collegefootballdata.api_key', 'test-cfbd-key');
+    config()->set('services.collegefootballdata.base_url', 'https://api.collegefootballdata.com');
+
+    Http::fake([
+        'https://api.collegefootballdata.com/stats/season/advanced*' => Http::response([
+            [
+                'team' => 'Georgia',
+                'offense' => [
+                    'successRate' => 0.48,
+                    'explosiveness' => 1.41,
+                ],
+            ],
+        ]),
+    ]);
+
+    $service = new CollegeFootballDataService;
+
+    expect($service->getAdvancedTeamSeasonStats(year: 2025, conference: 'SEC', excludeGarbageTime: true)[0]['team'])
+        ->toBe('Georgia');
+
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.collegefootballdata.com/stats/season/advanced')
+        && $request['year'] === 2025
+        && $request['conference'] === 'SEC'
+        && $request['excludeGarbageTime'] === true);
+});
+
 it('throws when the api key is missing', function () {
     config()->set('services.collegefootballdata.api_key', null);
 

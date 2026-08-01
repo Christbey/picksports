@@ -70,6 +70,25 @@ class CollegeFootballDataService
     }
 
     /**
+     * Retrieve opponent-adjusted advanced team season statistics.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getAdvancedTeamSeasonStats(
+        ?int $year = null,
+        ?string $team = null,
+        ?string $conference = null,
+        ?bool $excludeGarbageTime = null
+    ): array {
+        return $this->get('/stats/season/advanced', [
+            'year' => $year,
+            'team' => $team,
+            'conference' => $conference,
+            'excludeGarbageTime' => $excludeGarbageTime,
+        ]);
+    }
+
+    /**
      * Retrieve team returning production metrics.
      *
      * @return array<int, array<string, mixed>>

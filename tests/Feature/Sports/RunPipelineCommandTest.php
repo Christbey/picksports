@@ -20,6 +20,7 @@ it('prints a dry run plan for the nba full pipeline', function () {
 it('runs the cfb predict pipeline in the expected order', function () {
     $runner = Mockery::mock(PipelineCommandRunner::class);
     $runner->shouldReceive('call')->once()->ordered()->with('cfb:grade-predictions', ['--season' => 2026])->andReturn(0);
+    $runner->shouldReceive('call')->once()->ordered()->with('cfb:update-adaptive-calibration', ['--season' => 2026])->andReturn(0);
     $runner->shouldReceive('call')->once()->ordered()->with('cfb:calculate-elo', ['--season' => 2026])->andReturn(0);
     $runner->shouldReceive('call')->once()->ordered()->with('cfb:import-fpi', ['--season' => 2026, '--week' => 8])->andReturn(0);
     $runner->shouldReceive('call')->once()->ordered()->with('cfb:calculate-team-metrics', ['--season' => 2026])->andReturn(0);

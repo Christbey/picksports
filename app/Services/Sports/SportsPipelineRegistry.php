@@ -353,6 +353,7 @@ class SportsPipelineRegistry
             ],
             'cfb' => [
                 $this->step('Grade predictions', 'cfb:grade-predictions', ['--season' => $season]),
+                $this->step('Update adaptive calibration', 'cfb:update-adaptive-calibration', ['--season' => $season]),
                 $this->step('Calculate Elo', 'cfb:calculate-elo', ['--season' => $season]),
                 $this->step('Import FPI', 'cfb:import-fpi', [
                     '--season' => $season,

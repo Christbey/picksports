@@ -3,6 +3,7 @@
 namespace App\Actions\WNBA;
 
 use App\Actions\Sports\AbstractPredictionGenerator;
+use App\Models\WNBA\EloRating;
 use App\Models\WNBA\Prediction;
 use App\Models\WNBA\TeamMetric;
 use App\Services\WNBA\WnbaPredictionSignalService;
@@ -23,6 +24,25 @@ class GeneratePrediction extends AbstractPredictionGenerator
     private array $calibrationMetadata = [];
 
     private ?Model $currentGame = null;
+
+    private bool $usingHistoricalReconstructionContext = false;
+
+    public function executeHistorical(Model $game, bool $dispatchNarratives = false, array $snapshotOverrides = []): ?Model
+    {
+        $this->usingHistoricalReconstructionContext = true;
+
+        try {
+            return parent::executeHistorical($game, $dispatchNarratives, array_replace([
+                'historical_profile' => 'wnba-historical-elo-prior-v1',
+                'point_in_time_verified' => true,
+                'pregame_safe' => true,
+                'verification_method' => 'pregame_elo_history_prior_season_metrics_and_prior_game_signals',
+                'features_available_at' => $game->game_date,
+            ], $snapshotOverrides));
+        } finally {
+            $this->usingHistoricalReconstructionContext = false;
+        }
+    }
 
     protected function calculatePredictedSpread(
         int $homeElo,
@@ -136,6 +156,44 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ];
 
         return [$finalSpread, $finalTotal];
+    }
+
+    /**
+     * @return array{0:int,1:int}
+     */
+    protected function eloRatingsForGame(Model $game, Model $homeTeam, Model $awayTeam, int $defaultElo): array
+    {
+        if (! $this->usingHistoricalReconstructionContext) {
+            return parent::eloRatingsForGame($game, $homeTeam, $awayTeam, $defaultElo);
+        }
+
+        $ratings = EloRating::query()
+            ->where('game_id', $game->getKey())
+            ->whereIn('team_id', [(int) $homeTeam->getKey(), (int) $awayTeam->getKey()])
+            ->get()
+            ->keyBy('team_id');
+
+        return [
+            $this->preGameElo($ratings->get($homeTeam->getKey()), $homeTeam, $defaultElo),
+            $this->preGameElo($ratings->get($awayTeam->getKey()), $awayTeam, $defaultElo),
+        ];
+    }
+
+    /**
+     * @return array{0:?Model,1:?Model}
+     */
+    protected function teamMetricsForGame(Model $game, int $homeTeamId, int $awayTeamId): array
+    {
+        if (! $this->usingHistoricalReconstructionContext) {
+            return parent::teamMetricsForGame($game, $homeTeamId, $awayTeamId);
+        }
+
+        $teamMetricModel = $this->getTeamMetricModel();
+
+        return [
+            $this->latestPriorSeasonMetric($teamMetricModel, $homeTeamId, (int) $game->season, $game),
+            $this->latestPriorSeasonMetric($teamMetricModel, $awayTeamId, (int) $game->season, $game),
+        ];
     }
 
     protected function buildPredictionData(
@@ -277,6 +335,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'away' => $awayGames,
             'min' => min($homeGames, $awayGames),
         ];
+    }
+
+    private function preGameElo(?EloRating $rating, Model $team, int $defaultElo): int
+    {
+        if ($rating === null) {
+            return (int) round((float) ($team->elo_rating ?? $defaultElo));
+        }
+
+        return (int) round((float) $rating->elo_rating - (float) $rating->elo_change);
     }
 
     private function clamp(float $value, float $min, float $max): float

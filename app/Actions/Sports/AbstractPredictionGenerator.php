@@ -118,12 +118,59 @@ abstract class AbstractPredictionGenerator
     }
 
     /**
+     * Execute prediction generation for a completed game during historical reconstruction.
+     *
+     * @param  array<string, mixed>  $snapshotOverrides
+     */
+    public function executeHistorical(Model $game, bool $dispatchNarratives = false, array $snapshotOverrides = []): ?Model
+    {
+        $predictionData = $this->makePredictionData($game, allowCompleted: true);
+        if ($predictionData === null) {
+            return null;
+        }
+
+        $snapshotPayload = Arr::pull($predictionData, '_snapshot', []);
+        if (! is_array($snapshotPayload)) {
+            $snapshotPayload = [];
+        }
+
+        $snapshotPayload = array_replace([
+            'run_type' => 'historical_reconstruction',
+            'historical_profile' => 'historical-reconstruction-v1',
+            'point_in_time_verified' => false,
+            'pregame_safe' => false,
+            'verification_method' => 'completed_game_reconstruction',
+        ], $snapshotPayload, $snapshotOverrides);
+
+        $predictionModel = $this->getPredictionModel();
+
+        $prediction = $predictionModel::updateOrCreate(
+            ['game_id' => $game->id],
+            $predictionData
+        );
+
+        app(PredictionFeatureSnapshotRecorder::class)->record(
+            $prediction,
+            $game,
+            $this->getSport(),
+            $predictionData,
+            $snapshotPayload
+        );
+
+        if ($dispatchNarratives) {
+            $this->dispatchNarrativeGeneration($prediction);
+        }
+
+        return $prediction;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
-    protected function makePredictionData(Model $game): ?array
+    protected function makePredictionData(Model $game, bool $allowCompleted = false): ?array
     {
         // Don't predict games that are already completed
-        if ($game->status === 'STATUS_FINAL') {
+        if (! $allowCompleted && $game->status === 'STATUS_FINAL') {
             return null;
         }
 
@@ -134,7 +181,7 @@ abstract class AbstractPredictionGenerator
             return null;
         }
 
-        if (! $this->shouldGeneratePredictionForGame($game, $homeTeam, $awayTeam)) {
+        if (! $allowCompleted && ! $this->shouldGeneratePredictionForGame($game, $homeTeam, $awayTeam)) {
             return null;
         }
 

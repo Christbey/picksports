@@ -2,6 +2,8 @@
 
 use App\Actions\WNBA\GeneratePrediction;
 use App\Jobs\Predictions\GeneratePredictionNarrative;
+use App\Models\PredictionFeatureSnapshot;
+use App\Models\WNBA\EloRating;
 use App\Models\WNBA\Game;
 use App\Models\WNBA\Prediction;
 use App\Models\WNBA\Team;
@@ -76,6 +78,90 @@ test('wnba prediction action only creates pregame predictions', function () {
         ->and(data_get($prediction->model_metadata, 'feature_context.uses_team_ats_context'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'feature_context.uses_rolling_four_factors'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'feature_context.uses_rest_fatigue_context'))->toBeTrue();
+});
+
+test('wnba historical prediction reconstruction uses pregame elo and prior-season metrics', function () {
+    Queue::fake([GeneratePredictionNarrative::class]);
+
+    $home = Team::factory()->create([
+        'location' => 'Las Vegas',
+        'name' => 'Aces',
+        'abbreviation' => 'LVH',
+        'elo_rating' => 1900,
+    ]);
+    $away = Team::factory()->create([
+        'location' => 'New York',
+        'name' => 'Liberty',
+        'abbreviation' => 'NYH',
+        'elo_rating' => 1100,
+    ]);
+
+    foreach ([[$home, 2021, 101.0, 95.0], [$away, 2021, 98.0, 99.0], [$home, 2022, 120.0, 90.0], [$away, 2022, 88.0, 116.0]] as [$team, $season, $offEff, $defEff]) {
+        TeamMetric::query()->create([
+            'team_id' => $team->id,
+            'season' => $season,
+            'season_type' => 2,
+            'wins' => 10,
+            'losses' => 8,
+            'offensive_efficiency' => $offEff,
+            'defensive_efficiency' => $defEff,
+            'net_rating' => $offEff - $defEff,
+            'tempo' => 84.0,
+            'strength_of_schedule' => 0.0,
+            'recent_form_rating' => 0.0,
+            'injury_adjusted_team_rating' => null,
+            'injury_total_adjustment' => null,
+            'rest_travel_fatigue' => 0.0,
+            'calculation_date' => now()->toDateString(),
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2022,
+        'season_type' => 2,
+        'status' => 'STATUS_FINAL',
+        'game_date' => '2022-06-10',
+        'game_time' => '19:00:00',
+        'home_score' => 86,
+        'away_score' => 80,
+    ]);
+
+    EloRating::query()->create([
+        'team_id' => $home->id,
+        'game_id' => $game->id,
+        'season' => 2022,
+        'week' => 4,
+        'date' => '2022-06-10',
+        'elo_rating' => 1560,
+        'elo_change' => 10,
+    ]);
+    EloRating::query()->create([
+        'team_id' => $away->id,
+        'game_id' => $game->id,
+        'season' => 2022,
+        'week' => 4,
+        'date' => '2022-06-10',
+        'elo_rating' => 1440,
+        'elo_change' => -10,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->executeHistorical($game);
+
+    $snapshot = PredictionFeatureSnapshot::query()
+        ->where('sport', 'wnba')
+        ->where('game_id', $game->id)
+        ->latest('id')
+        ->firstOrFail();
+
+    expect($prediction)->not->toBeNull()
+        ->and((float) $prediction->home_elo)->toBe(1550.0)
+        ->and((float) $prediction->away_elo)->toBe(1450.0)
+        ->and((float) $prediction->home_off_eff)->toBe(101.0)
+        ->and((float) $prediction->away_off_eff)->toBe(98.0)
+        ->and($snapshot->pregame_safe)->toBeTrue()
+        ->and(data_get($snapshot->lineage_metadata, 'historical_profile'))->toBe('wnba-historical-elo-prior-v1');
 });
 
 test('wnba generate predictions command skips in-progress games', function () {

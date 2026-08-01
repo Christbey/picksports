@@ -65,9 +65,10 @@ abstract class AbstractBasketballSyncPlayerStats
                 [$threeMade, $threeAttempted] = $this->parseMadeAttempt($stats[3] ?? null);
                 [$ftMade, $ftAttempted] = $this->parseMadeAttempt($stats[4] ?? null);
 
-                $playerStatModel::create([
+                $playerStatModel::query()->updateOrCreate([
                     'player_id' => $player->id,
                     'game_id' => $game->id,
+                ], [
                     'team_id' => $team->id,
                     'minutes_played' => $stats[0] ?? null,
                     'points' => isset($stats[1]) ? (int) $stats[1] : 0,

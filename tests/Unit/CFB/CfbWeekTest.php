@@ -10,6 +10,7 @@ it('calculates cfb week zero from the saturday before labor day week', function 
 
 it('marks august 29 2026 opening games as week zero without shifting the following slate', function () {
     expect(CfbWeek::productWeekForGame(2026, 2, 1, '2026-08-29', '16:00:00'))->toBe(0)
+        ->and(CfbWeek::productWeekForGame(2026, 2, 1, '2026-08-29'))->toBe(0)
         ->and(CfbWeek::productWeekForGame(2026, 2, 1, '2026-08-30', '02:00:00'))->toBe(0)
         ->and(CfbWeek::productWeekForGame(2026, 2, 1, '2026-09-03', '23:00:00'))->toBe(1)
         ->and(CfbWeek::productWeekForGame(2026, 2, 2, '2026-09-11', '23:00:00'))->toBe(2);

@@ -72,6 +72,10 @@ class CfbWeek
                 return Carbon::instance($gameDate)->setTimezone('America/New_York')->startOfDay();
             }
 
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $gameDate) === 1) {
+                return Carbon::parse((string) $gameDate, 'America/New_York')->startOfDay();
+            }
+
             return Carbon::parse((string) $gameDate, 'UTC')->setTimezone('America/New_York')->startOfDay();
         }
 

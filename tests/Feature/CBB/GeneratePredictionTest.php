@@ -10,6 +10,7 @@ use App\Models\CBB\Team;
 use App\Models\CBB\TeamMetric;
 use App\Models\CBB\TeamStat;
 use App\Models\PredictionFeatureSnapshot;
+use Illuminate\Support\Carbon;
 
 uses()->group('cbb', 'predictions');
 
@@ -233,7 +234,7 @@ it('uses raw total injury adjustments when persisted spread context exists witho
         'status' => 'Out',
         'detail' => 'Test injury',
         'type' => 'Ankle',
-        'injury_date' => now()->toDateString(),
+        'injury_date' => Carbon::parse($game->game_date)->toDateString(),
         'is_active' => true,
     ]);
 
@@ -291,7 +292,7 @@ it('uses persisted total injury adjustments when available on cbb team metrics',
         'status' => 'Out',
         'detail' => 'Test injury',
         'type' => 'Ankle',
-        'injury_date' => now()->toDateString(),
+        'injury_date' => Carbon::parse($game->game_date)->toDateString(),
         'is_active' => true,
     ]);
 
@@ -1037,7 +1038,11 @@ it('keeps home spread recommendations at the base cbb threshold', function () {
     $spreadRec = collect($recommendations ?? [])->firstWhere('type', 'spread');
 
     expect($spreadRec)->not->toBeNull()
-        ->and($spreadRec['recommendation'])->toContain($this->homeTeam->school);
+        ->and($spreadRec['recommendation'])->toContain($this->homeTeam->school)
+        ->and($spreadRec['model_line'])->toBe(-5.9)
+        ->and($spreadRec['market_line'])->toBe(-3.5)
+        ->and($spreadRec['model_home_line'])->toBe(-5.9)
+        ->and($spreadRec['market_home_line'])->toBe(-3.5);
 });
 
 it('filters out sub-threshold home spread recommendations for cbb', function () {

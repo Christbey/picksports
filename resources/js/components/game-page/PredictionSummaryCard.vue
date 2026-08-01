@@ -26,8 +26,13 @@ const favoriteLabel = (
     prediction: PredictionSummary,
     home?: string | null,
     away?: string | null,
-): string =>
-    Number(prediction.predicted_spread) > 0 ? home || 'Home' : away || 'Away';
+): string => {
+    const spread = Number(prediction.predicted_spread);
+
+    if (Math.abs(spread) < 0.05) return 'No team';
+
+    return spread > 0 ? home || 'Home' : away || 'Away';
+};
 
 const formatSignedHomeSpread = (
     prediction: PredictionSummary,
@@ -99,8 +104,15 @@ const formatSignedHomeSpread = (
                         {{ formatSignedHomeSpread(prediction, formatNumber) }}
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground">
-                        {{ favoriteLabel(prediction, homeLabel, awayLabel) }}
-                        favored
+                        <template
+                            v-if="Math.abs(Number(prediction.predicted_spread)) < 0.05"
+                        >
+                            Pick'em
+                        </template>
+                        <template v-else>
+                            {{ favoriteLabel(prediction, homeLabel, awayLabel) }}
+                            favored
+                        </template>
                     </div>
                 </div>
                 <div class="ui-surface-subtle p-4 text-center">

@@ -86,6 +86,20 @@ class Team extends Model
         return $this->hasMany(FpiRating::class, 'team_id');
     }
 
+    public function preseasonTeamSignals(): HasMany
+    {
+        return $this->hasMany(PreseasonTeamSignal::class, 'team_id');
+    }
+
+    public function preseasonTeamSignal(int $season): ?PreseasonTeamSignal
+    {
+        if ($this->relationLoaded('preseasonTeamSignals')) {
+            return $this->preseasonTeamSignals->firstWhere('season', $season);
+        }
+
+        return $this->preseasonTeamSignals()->where('season', $season)->first();
+    }
+
     public function predictions(): Builder
     {
         return Prediction::query()->whereHas('game', function (Builder $query): void {

@@ -10,6 +10,7 @@ use App\Models\CFB\TeamMetric;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
@@ -24,6 +25,16 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         private readonly CfbSeasonAffiliationResolver $seasonAffiliationResolver = new CfbSeasonAffiliationResolver,
     ) {}
 
+    /**
+     * @var array<string, mixed>
+     */
+    private array $predictionContext = [];
+
+    /**
+     * @var array<string, array<int, string>>
+     */
+    private array $tableColumns = [];
+
     protected function calculatePredictedSpread(
         int $homeElo,
         int $awayElo,
@@ -36,6 +47,24 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         $fpiDiff = (float) ($homeMetrics?->fpi ?? 0.0) - (float) ($awayMetrics?->fpi ?? 0.0);
         $wepaNetDiff = (float) ($homeMetrics?->cfbd_wepa_net ?? 0.0) - (float) ($awayMetrics?->cfbd_wepa_net ?? 0.0);
         $efficiencyDiff = (float) ($homeMetrics?->net_rating ?? 0.0) - (float) ($awayMetrics?->net_rating ?? 0.0);
+        $powerRatingDiff = (float) ($homeMetrics?->power_rating ?? 0.0) - (float) ($awayMetrics?->power_rating ?? 0.0);
+
+        $this->predictionContext = [
+            'base_spread' => round($baseSpread, 3),
+            'preseason_layer' => [
+                'enabled' => false,
+                'spread_adjustment' => 0.0,
+                'confidence_penalty' => 0.0,
+                'risk_flags' => [],
+            ],
+            'quality_signals' => [
+                'elo' => round($baseSpread, 3),
+                'fpi' => round($fpiDiff, 3),
+                'wepa_net' => round($wepaNetDiff, 3),
+                'net_rating' => round($efficiencyDiff, 3),
+                'power_rating' => round($powerRatingDiff, 3),
+            ],
+        ];
 
         $spread = $baseSpread
             + ($fpiDiff * $this->predictionWeight('fpi_spread_weight', 0.18))
@@ -78,6 +107,32 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         return round(max($minTotal, min($maxTotal, $total)), 1);
     }
 
+    protected function finalizePredictedOutputs(
+        float $predictedSpread,
+        float $predictedTotal,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): array {
+        [$predictedSpread, $predictedTotal] = $this->applyPreseasonSignalLayer(
+            $predictedSpread,
+            $predictedTotal,
+            $homeMetrics,
+            $awayMetrics,
+            $game
+        );
+
+        $maxSpread = (float) config('cfb.predictions.max_spread', 40);
+        $minSpread = (float) config('cfb.predictions.min_spread', -40);
+        $minTotal = (float) config('cfb.predictions.min_total', 28);
+        $maxTotal = (float) config('cfb.predictions.max_total', 88);
+
+        return [
+            round(max($minSpread, min($maxSpread, $predictedSpread)), 1),
+            round(max($minTotal, min($maxTotal, $predictedTotal)), 1),
+        ];
+    }
+
     protected function buildPredictionData(
         int $homeElo,
         int $awayElo,
@@ -88,6 +143,9 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         float $winProbability,
         float $confidenceScore
     ): array {
+        $confidenceScore = $this->applyStoredConfidencePenalty($confidenceScore);
+        $preseasonLayer = (array) ($this->predictionContext['preseason_layer'] ?? []);
+
         return [
             'home_elo' => $homeElo,
             'away_elo' => $awayElo,
@@ -100,7 +158,1028 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             'model_version' => $this->modelVersion(),
             'feature_version' => $this->featureVersion(),
             'blend_version' => $this->blendVersion(),
+            '_snapshot' => [
+                'features' => [
+                    'home_elo' => $homeElo,
+                    'away_elo' => $awayElo,
+                    'home_fpi' => $homeMetrics?->fpi,
+                    'away_fpi' => $awayMetrics?->fpi,
+                    'quality_signals' => $this->predictionContext['quality_signals'] ?? [],
+                    'preseason_layer' => $preseasonLayer,
+                ],
+                'outputs' => [
+                    'predicted_spread' => $predictedSpread,
+                    'predicted_total' => $predictedTotal,
+                    'win_probability' => $winProbability,
+                    'confidence_score' => $confidenceScore,
+                ],
+                'model_metadata' => [
+                    'cfb_preseason_layer' => $preseasonLayer,
+                ],
+            ],
         ];
+    }
+
+    /**
+     * @return array{0:float,1:float}
+     */
+    protected function applyPreseasonSignalLayer(
+        float $predictedSpread,
+        float $predictedTotal,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        Model $game
+    ): array {
+        $week = (int) ($game->week ?? 0);
+        $metadata = [
+            'enabled' => false,
+            'week' => $week,
+            'week_bucket' => $this->weekCalibrationBucket($week),
+            'spread_adjustment' => 0.0,
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => 0.0,
+            'aligned_signals' => 0,
+            'risk_flags' => [],
+            'market' => null,
+            'components' => [],
+        ];
+
+        [$predictedSpread, $predictedTotal, $weekCalibration] = $this->applyWeekBucketCalibration(
+            $predictedSpread,
+            $predictedTotal,
+            $metadata['week_bucket']
+        );
+        $metadata['components']['week_calibration'] = $weekCalibration;
+        $metadata['confidence_penalty'] += (float) ($weekCalibration['confidence_penalty'] ?? 0.0);
+
+        if (! $this->shouldApplyPreseasonLayer($game)) {
+            $this->predictionContext['preseason_layer'] = $metadata;
+
+            return [round($predictedSpread, 1), round($predictedTotal, 1)];
+        }
+
+        $metadata['enabled'] = true;
+        $homeSignals = $this->preseasonSignalForTeam((int) $game->home_team_id, (int) $game->season);
+        $awaySignals = $this->preseasonSignalForTeam((int) $game->away_team_id, (int) $game->season);
+
+        $components = [
+            'composite' => $this->preseasonCompositeAdjustment($homeMetrics, $awayMetrics, $homeSignals, $awaySignals),
+            'returning_production' => $this->returningProductionAdjustment($homeSignals, $awaySignals),
+            'talent_recruiting' => $this->talentRecruitingAdjustment($homeSignals, $awaySignals),
+            'qb_continuity' => $this->quarterbackContinuityAdjustment($homeSignals, $awaySignals),
+            'transfer_portal' => $this->transferPortalAdjustment($homeSignals, $awaySignals),
+            'coaching_continuity' => $this->coachingContinuityAdjustment($homeSignals, $awaySignals),
+            'schedule_spot' => $this->scheduleSpotAdjustment($game),
+        ];
+
+        foreach ($components as $name => $component) {
+            $predictedSpread += (float) ($component['spread_adjustment'] ?? 0.0);
+            $predictedTotal += (float) ($component['total_adjustment'] ?? 0.0);
+            $metadata['spread_adjustment'] += (float) ($component['spread_adjustment'] ?? 0.0);
+            $metadata['total_adjustment'] += (float) ($component['total_adjustment'] ?? 0.0);
+            $metadata['confidence_penalty'] += (float) ($component['confidence_penalty'] ?? 0.0);
+            $metadata['risk_flags'] = array_values(array_unique([
+                ...$metadata['risk_flags'],
+                ...(array) ($component['risk_flags'] ?? []),
+            ]));
+            $metadata['components'][$name] = $component;
+        }
+
+        $alignedSignals = $this->alignedPreseasonSignalCount(
+            $predictedSpread,
+            $homeMetrics,
+            $awayMetrics,
+            $homeSignals,
+            $awaySignals
+        );
+        $metadata['aligned_signals'] = $alignedSignals;
+
+        $marketGuardrail = $this->marketAwareEarlySeasonGuardrail($predictedSpread, $game, $alignedSignals);
+        $metadata['market'] = $marketGuardrail;
+        $metadata['confidence_penalty'] += (float) ($marketGuardrail['confidence_penalty'] ?? 0.0);
+        $metadata['risk_flags'] = array_values(array_unique([
+            ...$metadata['risk_flags'],
+            ...(array) ($marketGuardrail['risk_flags'] ?? []),
+        ]));
+
+        $metadata['spread_adjustment'] = round($metadata['spread_adjustment'], 3);
+        $metadata['total_adjustment'] = round($metadata['total_adjustment'], 3);
+        $metadata['confidence_penalty'] = round($metadata['confidence_penalty'], 2);
+
+        $this->predictionContext['preseason_layer'] = $metadata;
+
+        return [round($predictedSpread, 1), round($predictedTotal, 1)];
+    }
+
+    protected function shouldApplyPreseasonLayer(Model $game): bool
+    {
+        if (! (bool) config('cfb.predictions.preseason.enabled', true)) {
+            return false;
+        }
+
+        $throughWeek = (int) config('cfb.predictions.preseason.through_week', 4);
+
+        return (int) ($game->week ?? 0) <= $throughWeek;
+    }
+
+    /**
+     * @return array{0:float,1:float,2:array<string, mixed>}
+     */
+    protected function applyWeekBucketCalibration(float $spread, float $total, string $bucket): array
+    {
+        if (! (bool) config('cfb.predictions.week_calibration.enabled', true)) {
+            return [$spread, $total, [
+                'spread_adjustment' => 0.0,
+                'total_adjustment' => 0.0,
+                'confidence_penalty' => 0.0,
+            ]];
+        }
+
+        $spreadMultiplier = (float) config("cfb.predictions.week_calibration.buckets.{$bucket}.spread_multiplier", 1.0);
+        $spreadAdjustment = (float) config("cfb.predictions.week_calibration.buckets.{$bucket}.spread_adjustment", 0.0);
+        $totalAdjustment = (float) config("cfb.predictions.week_calibration.buckets.{$bucket}.total_adjustment", 0.0);
+        $confidencePenalty = (float) config("cfb.predictions.week_calibration.buckets.{$bucket}.confidence_penalty", 0.0);
+
+        $calibratedSpread = ($spread * $spreadMultiplier) + $spreadAdjustment;
+        $calibratedTotal = $total + $totalAdjustment;
+
+        return [$calibratedSpread, $calibratedTotal, [
+            'bucket' => $bucket,
+            'spread_multiplier' => $spreadMultiplier,
+            'spread_adjustment' => round($calibratedSpread - $spread, 3),
+            'total_adjustment' => round($totalAdjustment, 3),
+            'confidence_penalty' => round(max(0.0, $confidencePenalty), 2),
+        ]];
+    }
+
+    protected function weekCalibrationBucket(int $week): string
+    {
+        return match (true) {
+            $week <= 1 => 'week_0_1',
+            $week <= 4 => 'week_2_4',
+            $week <= 8 => 'week_5_8',
+            default => 'week_9_plus',
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @return array<string, mixed>
+     */
+    protected function preseasonCompositeAdjustment(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        ?array $homeSignals,
+        ?array $awaySignals
+    ): array {
+        $powerDiff = $this->signalMetricDiff($homeMetrics, $awayMetrics, $homeSignals, $awaySignals, [
+            'power_rating',
+            'preseason_power_rating',
+        ]);
+        $fpiDiff = $this->signalMetricDiff($homeMetrics, $awayMetrics, $homeSignals, $awaySignals, [
+            'fpi',
+            'preseason_fpi',
+        ]);
+        $netRatingDiff = $this->signalMetricDiff($homeMetrics, $awayMetrics, $homeSignals, $awaySignals, [
+            'net_rating',
+            'preseason_net_rating',
+        ]);
+
+        $adjustment = ($powerDiff * (float) config('cfb.predictions.preseason.composite.power_rating_weight', 0.08))
+            + ($fpiDiff * (float) config('cfb.predictions.preseason.composite.fpi_weight', 0.04))
+            + ($netRatingDiff * (float) config('cfb.predictions.preseason.composite.net_rating_weight', 0.025));
+
+        $maxAdjustment = (float) config('cfb.predictions.preseason.composite.max_adjustment', 3.0);
+
+        return [
+            'spread_adjustment' => round($this->clamp($adjustment, $maxAdjustment), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => 0.0,
+            'inputs' => [
+                'power_rating_diff' => round($powerDiff, 3),
+                'fpi_diff' => round($fpiDiff, 3),
+                'net_rating_diff' => round($netRatingDiff, 3),
+            ],
+            'risk_flags' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @return array<string, mixed>
+     */
+    protected function returningProductionAdjustment(?array $homeSignals, ?array $awaySignals): array
+    {
+        $homeReturning = $this->normalizedPercentSignal($homeSignals, [
+            'returning_production',
+            'returning_production_percent',
+            'returning_production_pct',
+            'returning_percent_ppa',
+            'percent_ppa',
+            'percentPPA',
+        ]);
+        $awayReturning = $this->normalizedPercentSignal($awaySignals, [
+            'returning_production',
+            'returning_production_percent',
+            'returning_production_pct',
+            'returning_percent_ppa',
+            'percent_ppa',
+            'percentPPA',
+        ]);
+
+        if ($homeReturning === null || $awayReturning === null) {
+            return $this->emptyPreseasonComponent();
+        }
+
+        $adjustment = ($homeReturning - $awayReturning)
+            * (float) config('cfb.predictions.preseason.returning_production.points_per_full_retention_gap', 8.0);
+        $maxAdjustment = (float) config('cfb.predictions.preseason.returning_production.max_adjustment', 2.5);
+
+        return [
+            'spread_adjustment' => round($this->clamp($adjustment, $maxAdjustment), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => 0.0,
+            'inputs' => [
+                'home' => round($homeReturning, 3),
+                'away' => round($awayReturning, 3),
+            ],
+            'risk_flags' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @return array<string, mixed>
+     */
+    protected function talentRecruitingAdjustment(?array $homeSignals, ?array $awaySignals): array
+    {
+        $homeScore = $this->talentRecruitingScore($homeSignals);
+        $awayScore = $this->talentRecruitingScore($awaySignals);
+
+        if ($homeScore === null || $awayScore === null) {
+            return $this->emptyPreseasonComponent();
+        }
+
+        $adjustment = ($homeScore - $awayScore)
+            * (float) config('cfb.predictions.preseason.talent_recruiting.points_per_score_gap', 4.0);
+        $maxAdjustment = (float) config('cfb.predictions.preseason.talent_recruiting.max_adjustment', 1.5);
+
+        return [
+            'spread_adjustment' => round($this->clamp($adjustment, $maxAdjustment), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => 0.0,
+            'inputs' => [
+                'home_score' => round($homeScore, 3),
+                'away_score' => round($awayScore, 3),
+            ],
+            'risk_flags' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @return array<string, mixed>
+     */
+    protected function quarterbackContinuityAdjustment(?array $homeSignals, ?array $awaySignals): array
+    {
+        $homeScore = $this->quarterbackContinuityScore($homeSignals);
+        $awayScore = $this->quarterbackContinuityScore($awaySignals);
+
+        if ($homeScore === null || $awayScore === null) {
+            return $this->emptyPreseasonComponent();
+        }
+
+        $adjustment = ($homeScore - $awayScore)
+            * (float) config('cfb.predictions.preseason.qb_continuity.points_per_score_gap', 1.5);
+        $maxAdjustment = (float) config('cfb.predictions.preseason.qb_continuity.max_adjustment', 2.0);
+        $penalty = $this->uncertaintyPenalty($homeScore, $awayScore, 'qb_continuity');
+
+        return [
+            'spread_adjustment' => round($this->clamp($adjustment, $maxAdjustment), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => $penalty,
+            'inputs' => [
+                'home_score' => round($homeScore, 3),
+                'away_score' => round($awayScore, 3),
+            ],
+            'risk_flags' => $penalty > 0 ? ['qb_continuity_uncertainty'] : [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @return array<string, mixed>
+     */
+    protected function transferPortalAdjustment(?array $homeSignals, ?array $awaySignals): array
+    {
+        $homeScore = $this->transferPortalScore($homeSignals);
+        $awayScore = $this->transferPortalScore($awaySignals);
+
+        if ($homeScore === null || $awayScore === null) {
+            return $this->emptyPreseasonComponent();
+        }
+
+        $adjustment = ($homeScore - $awayScore)
+            * (float) config('cfb.predictions.preseason.transfer_portal.points_per_score_gap', 2.5);
+        $maxAdjustment = (float) config('cfb.predictions.preseason.transfer_portal.max_adjustment', 2.0);
+        $penalty = $this->uncertaintyPenalty($homeScore, $awayScore, 'transfer_portal');
+
+        return [
+            'spread_adjustment' => round($this->clamp($adjustment, $maxAdjustment), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => $penalty,
+            'inputs' => [
+                'home_score' => round($homeScore, 3),
+                'away_score' => round($awayScore, 3),
+            ],
+            'risk_flags' => $penalty > 0 ? ['transfer_portal_volatility'] : [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @return array<string, mixed>
+     */
+    protected function coachingContinuityAdjustment(?array $homeSignals, ?array $awaySignals): array
+    {
+        $homeScore = $this->coachingContinuityScore($homeSignals);
+        $awayScore = $this->coachingContinuityScore($awaySignals);
+
+        if ($homeScore === null || $awayScore === null) {
+            return $this->emptyPreseasonComponent();
+        }
+
+        $adjustment = ($homeScore - $awayScore)
+            * (float) config('cfb.predictions.preseason.coaching_continuity.points_per_score_gap', 0.8);
+        $maxAdjustment = (float) config('cfb.predictions.preseason.coaching_continuity.max_adjustment', 1.0);
+        $penalty = $this->uncertaintyPenalty($homeScore, $awayScore, 'coaching_continuity');
+
+        return [
+            'spread_adjustment' => round($this->clamp($adjustment, $maxAdjustment), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => $penalty,
+            'inputs' => [
+                'home_score' => round($homeScore, 3),
+                'away_score' => round($awayScore, 3),
+            ],
+            'risk_flags' => $penalty > 0 ? ['coaching_staff_change'] : [],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function scheduleSpotAdjustment(Model $game): array
+    {
+        $adjustment = 0.0;
+        $inputs = [];
+
+        $homeRest = $this->numericGameAttribute($game, ['home_rest_days', 'home_days_rest', 'rest_days_home']);
+        $awayRest = $this->numericGameAttribute($game, ['away_rest_days', 'away_days_rest', 'rest_days_away']);
+        if ($homeRest !== null && $awayRest !== null) {
+            $restDiff = max(-3.0, min(3.0, $homeRest - $awayRest));
+            $adjustment += $restDiff * (float) config('cfb.predictions.preseason.schedule_spot.rest_day_weight', 0.25);
+            $inputs['rest_day_diff'] = round($restDiff, 3);
+        }
+
+        $homeTravel = $this->numericGameAttribute($game, ['home_travel_miles', 'home_distance_traveled', 'home_travel_distance']);
+        $awayTravel = $this->numericGameAttribute($game, ['away_travel_miles', 'away_distance_traveled', 'away_travel_distance']);
+        if ($homeTravel !== null && $awayTravel !== null) {
+            $travelDiffThousands = max(-3.0, min(3.0, ($awayTravel - $homeTravel) / 1000));
+            $adjustment += $travelDiffThousands * (float) config('cfb.predictions.preseason.schedule_spot.travel_1000_miles_weight', 0.35);
+            $inputs['away_minus_home_travel_1000_miles'] = round($travelDiffThousands, 3);
+        }
+
+        return [
+            'spread_adjustment' => round($this->clamp(
+                $adjustment,
+                (float) config('cfb.predictions.preseason.schedule_spot.max_adjustment', 1.25)
+            ), 3),
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => 0.0,
+            'inputs' => $inputs,
+            'risk_flags' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     */
+    protected function alignedPreseasonSignalCount(
+        float $spread,
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        ?array $homeSignals,
+        ?array $awaySignals
+    ): int {
+        $direction = $this->signalDirection($spread, 0.5);
+        if ($direction === 0) {
+            return 0;
+        }
+
+        $signals = [
+            'elo' => (float) ($this->predictionContext['base_spread'] ?? 0.0),
+            'fpi' => $this->signalMetricDiff($homeMetrics, $awayMetrics, $homeSignals, $awaySignals, ['fpi', 'preseason_fpi']),
+            'net_rating' => $this->signalMetricDiff($homeMetrics, $awayMetrics, $homeSignals, $awaySignals, ['net_rating', 'preseason_net_rating']),
+            'power_rating' => $this->signalMetricDiff($homeMetrics, $awayMetrics, $homeSignals, $awaySignals, ['power_rating', 'preseason_power_rating']),
+            'returning_production' => $this->nullableDiff(
+                $this->normalizedPercentSignal($homeSignals, ['returning_production', 'returning_production_percent', 'returning_production_pct', 'returning_percent_ppa', 'percent_ppa', 'percentPPA']),
+                $this->normalizedPercentSignal($awaySignals, ['returning_production', 'returning_production_percent', 'returning_production_pct', 'returning_percent_ppa', 'percent_ppa', 'percentPPA'])
+            ),
+            'talent_recruiting' => $this->nullableDiff($this->talentRecruitingScore($homeSignals), $this->talentRecruitingScore($awaySignals)),
+            'qb_continuity' => $this->nullableDiff($this->quarterbackContinuityScore($homeSignals), $this->quarterbackContinuityScore($awaySignals)),
+            'transfer_portal' => $this->nullableDiff($this->transferPortalScore($homeSignals), $this->transferPortalScore($awaySignals)),
+        ];
+
+        return collect($signals)
+            ->filter(fn (mixed $value): bool => is_numeric($value))
+            ->filter(function (float|int $value) use ($direction): bool {
+                return $this->signalDirection((float) $value, 0.05) === $direction;
+            })
+            ->count();
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function marketAwareEarlySeasonGuardrail(float $spread, Model $game, int $alignedSignals): ?array
+    {
+        if (! (bool) config('cfb.predictions.preseason.market_guardrail.enabled', true)) {
+            return null;
+        }
+
+        if ((int) ($game->week ?? 0) > (int) config('cfb.predictions.preseason.market_guardrail.through_week', 2)) {
+            return null;
+        }
+
+        $marketHomeLine = $this->extractMarketHomeSpread($game);
+        if ($marketHomeLine === null) {
+            return null;
+        }
+
+        $marketHomeMargin = -$marketHomeLine;
+        $disagreement = abs($spread - $marketHomeMargin);
+        $threshold = (float) config('cfb.predictions.preseason.market_guardrail.large_disagreement_threshold', 10.0);
+
+        if ($disagreement < $threshold) {
+            return [
+                'bookmaker_home_line' => round($marketHomeLine, 1),
+                'market_home_margin' => round($marketHomeMargin, 1),
+                'disagreement' => round($disagreement, 1),
+                'confidence_penalty' => 0.0,
+                'risk_flags' => [],
+            ];
+        }
+
+        $requiredSignals = (int) config('cfb.predictions.preseason.market_guardrail.required_aligned_signals', 3);
+        $confidencePenalty = $alignedSignals >= $requiredSignals
+            ? (float) config('cfb.predictions.preseason.market_guardrail.confirmed_disagreement_penalty', 3.0)
+            : (float) config('cfb.predictions.preseason.market_guardrail.unconfirmed_disagreement_penalty', 12.0);
+
+        return [
+            'bookmaker_home_line' => round($marketHomeLine, 1),
+            'market_home_margin' => round($marketHomeMargin, 1),
+            'disagreement' => round($disagreement, 1),
+            'required_aligned_signals' => $requiredSignals,
+            'aligned_signals' => $alignedSignals,
+            'confidence_penalty' => round($confidencePenalty, 2),
+            'risk_flags' => $alignedSignals >= $requiredSignals
+                ? ['market_disagreement_confirmed']
+                : ['market_disagreement_watchlist'],
+        ];
+    }
+
+    protected function applyStoredConfidencePenalty(float $confidenceScore): float
+    {
+        $penalty = (float) data_get($this->predictionContext, 'preseason_layer.confidence_penalty', 0.0);
+        $minimum = (float) config('cfb.predictions.preseason.min_confidence_after_penalties', 50.0);
+
+        return round(max($minimum, $confidenceScore - max(0.0, $penalty)), 2);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function emptyPreseasonComponent(): array
+    {
+        return [
+            'spread_adjustment' => 0.0,
+            'total_adjustment' => 0.0,
+            'confidence_penalty' => 0.0,
+            'inputs' => [],
+            'risk_flags' => [],
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $homeSignals
+     * @param  array<string, mixed>|null  $awaySignals
+     * @param  array<int, string>  $keys
+     */
+    protected function signalMetricDiff(
+        ?Model $homeMetrics,
+        ?Model $awayMetrics,
+        ?array $homeSignals,
+        ?array $awaySignals,
+        array $keys
+    ): float {
+        $homeValue = $this->numericSignalOrMetric($homeSignals, $homeMetrics, $keys);
+        $awayValue = $this->numericSignalOrMetric($awaySignals, $awayMetrics, $keys);
+
+        if ($homeValue === null || $awayValue === null) {
+            return 0.0;
+        }
+
+        return $homeValue - $awayValue;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     * @param  array<int, string>  $keys
+     */
+    protected function numericSignalOrMetric(?array $signals, ?Model $metrics, array $keys): ?float
+    {
+        $signalValue = $this->numericSignal($signals, $keys);
+        if ($signalValue !== null) {
+            return $signalValue;
+        }
+
+        foreach ($keys as $key) {
+            $metricKey = str_starts_with($key, 'preseason_') ? substr($key, 10) : $key;
+            $value = $metrics?->{$metricKey};
+
+            if (is_numeric($value)) {
+                return (float) $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     * @param  array<int, string>  $keys
+     */
+    protected function normalizedPercentSignal(?array $signals, array $keys): ?float
+    {
+        $value = $this->numericSignal($signals, $keys);
+
+        if ($value === null) {
+            return null;
+        }
+
+        if ($value > 1.5) {
+            $value /= 100;
+        }
+
+        return max(0.0, min(1.0, $value));
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     * @param  array<int, string>  $keys
+     */
+    protected function normalizedSignedSignal(?array $signals, array $keys): ?float
+    {
+        $value = $this->numericSignal($signals, $keys);
+
+        if ($value === null) {
+            return null;
+        }
+
+        if (abs($value) > 1.5) {
+            $value /= 100;
+        }
+
+        return max(-1.0, min(1.0, $value));
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     * @param  array<int, string>  $keys
+     */
+    protected function numericSignal(?array $signals, array $keys): ?float
+    {
+        if ($signals === null) {
+            return null;
+        }
+
+        foreach ($keys as $key) {
+            $value = data_get($signals, $key);
+
+            if (is_numeric($value)) {
+                return (float) $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     */
+    protected function quarterbackContinuityScore(?array $signals): ?float
+    {
+        $score = $this->normalizedSignedSignal($signals, [
+            'qb_continuity_score',
+            'quarterback_continuity_score',
+            'qb_score',
+        ]);
+
+        if ($score !== null) {
+            return $score;
+        }
+
+        $returningStarter = $this->booleanSignal($signals, ['returning_starting_qb', 'qb_returning_starter']);
+        if ($returningStarter !== null) {
+            return $returningStarter ? 1.0 : -0.6;
+        }
+
+        return $this->statusScore($signals, [
+            'qb_continuity_classification',
+            'qb_continuity',
+            'qb_status',
+            'starting_qb_status',
+        ], (array) config('cfb.predictions.preseason.qb_continuity.status_scores', []));
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     */
+    protected function coachingContinuityScore(?array $signals): ?float
+    {
+        $score = $this->normalizedSignedSignal($signals, [
+            'coaching_continuity_score',
+            'coordinator_continuity_score',
+            'staff_continuity_score',
+            'coach_score',
+        ]);
+
+        if ($score !== null) {
+            return $score;
+        }
+
+        $statusScore = $this->statusScore($signals, [
+            'coaching_continuity',
+            'staff_status',
+            'coach_status',
+        ], (array) config('cfb.predictions.preseason.coaching_continuity.status_scores', []));
+
+        if ($statusScore !== null) {
+            return $statusScore;
+        }
+
+        $newHeadCoach = $this->booleanSignal($signals, ['new_head_coach', 'new_hc', 'head_coach_change']);
+        $newOc = $this->booleanSignal($signals, ['new_offensive_coordinator', 'new_oc', 'offensive_coordinator_change']);
+        $newDc = $this->booleanSignal($signals, ['new_defensive_coordinator', 'new_dc', 'defensive_coordinator_change']);
+        $newStaff = $this->booleanSignal($signals, ['new_staff', 'staff_change']);
+
+        if ($newHeadCoach === null && $newOc === null && $newDc === null && $newStaff === null) {
+            return null;
+        }
+
+        if ($newHeadCoach === true || $newStaff === true) {
+            return -1.0;
+        }
+
+        $score = 1.0;
+        $score -= $newOc === true ? 0.35 : 0.0;
+        $score -= $newDc === true ? 0.35 : 0.0;
+
+        return max(-1.0, min(1.0, $score));
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     */
+    protected function talentRecruitingScore(?array $signals): ?float
+    {
+        $explicitScore = $this->normalizedSignedSignal($signals, [
+            'talent_recruiting_score',
+            'talent_score',
+            'recruiting_talent_score',
+        ]);
+
+        if ($explicitScore !== null) {
+            return $explicitScore;
+        }
+
+        $scoreParts = [];
+
+        $talentComposite = $this->numericSignal($signals, ['talent_composite', 'talent_rating', 'talent']);
+        if ($talentComposite !== null) {
+            $scale = max(1.0, (float) config('cfb.predictions.preseason.talent_recruiting.talent_composite_scale', 1000.0));
+            $scoreParts[] = max(0.0, min(1.0, $talentComposite / $scale));
+        }
+
+        $recruitingPoints = $this->numericSignal($signals, ['recruiting_points', 'recruiting_talent', 'recruiting_score']);
+        if ($recruitingPoints !== null) {
+            $scale = max(1.0, (float) config('cfb.predictions.preseason.talent_recruiting.recruiting_points_scale', 350.0));
+            $scoreParts[] = max(0.0, min(1.0, $recruitingPoints / $scale));
+        }
+
+        $recruitingRank = $this->numericSignal($signals, ['recruiting_rank', 'talent_rank']);
+        if ($recruitingRank !== null && $recruitingRank > 0) {
+            $teamCount = max(1.0, (float) config('cfb.predictions.preseason.talent_recruiting.recruiting_rank_team_count', 134.0));
+            $scoreParts[] = max(0.0, min(1.0, ($teamCount - $recruitingRank + 1.0) / $teamCount));
+        }
+
+        if ($scoreParts === []) {
+            return null;
+        }
+
+        return array_sum($scoreParts) / count($scoreParts);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     */
+    protected function transferPortalScore(?array $signals): ?float
+    {
+        $explicitScore = $this->normalizedSignedSignal($signals, [
+            'transfer_portal_net_score',
+            'portal_net_score',
+            'transfer_net_score',
+        ]);
+
+        if ($explicitScore !== null) {
+            return $explicitScore;
+        }
+
+        $netValue = $this->numericSignal($signals, [
+            'transfer_net_value',
+            'portal_net_rating',
+            'transfer_portal_net',
+        ]);
+
+        if ($netValue === null) {
+            return null;
+        }
+
+        $weightedValue = $netValue
+            + (($this->numericSignal($signals, ['transfer_qb_net_value']) ?? 0.0) * 0.75)
+            + (($this->numericSignal($signals, ['transfer_ol_net_value']) ?? 0.0) * 0.20)
+            + (($this->numericSignal($signals, ['transfer_dl_net_value']) ?? 0.0) * 0.20);
+        $normalizer = max(0.1, (float) config('cfb.predictions.preseason.transfer_portal.value_normalizer', 4.0));
+
+        return $this->clamp($weightedValue / $normalizer, 1.0);
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     * @param  array<int, string>  $keys
+     * @param  array<string, mixed>  $map
+     */
+    protected function statusScore(?array $signals, array $keys, array $map): ?float
+    {
+        if ($signals === null) {
+            return null;
+        }
+
+        foreach ($keys as $key) {
+            $value = data_get($signals, $key);
+
+            if (! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $normalized = strtolower(str_replace([' ', '-'], '_', trim($value)));
+
+            if (is_numeric($map[$normalized] ?? null)) {
+                return max(-1.0, min(1.0, (float) $map[$normalized]));
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $signals
+     * @param  array<int, string>  $keys
+     */
+    protected function booleanSignal(?array $signals, array $keys): ?bool
+    {
+        if ($signals === null) {
+            return null;
+        }
+
+        foreach ($keys as $key) {
+            if (! array_key_exists($key, $signals)) {
+                continue;
+            }
+
+            $value = $signals[$key];
+
+            if (is_bool($value)) {
+                return $value;
+            }
+
+            if (is_numeric($value)) {
+                return (int) $value === 1;
+            }
+
+            if (is_string($value)) {
+                return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            }
+        }
+
+        return null;
+    }
+
+    protected function uncertaintyPenalty(float $homeScore, float $awayScore, string $key): float
+    {
+        $threshold = (float) config("cfb.predictions.preseason.{$key}.uncertainty_score_threshold", 0.0);
+        $penaltyPerSide = (float) config("cfb.predictions.preseason.{$key}.confidence_penalty_per_uncertain_side", 2.0);
+
+        $uncertainSides = (int) ($homeScore <= $threshold) + (int) ($awayScore <= $threshold);
+
+        return round(max(0.0, $uncertainSides * $penaltyPerSide), 2);
+    }
+
+    protected function nullableDiff(?float $homeValue, ?float $awayValue): ?float
+    {
+        if ($homeValue === null || $awayValue === null) {
+            return null;
+        }
+
+        return $homeValue - $awayValue;
+    }
+
+    /**
+     * @param  array<int, string>  $keys
+     */
+    protected function numericGameAttribute(Model $game, array $keys): ?float
+    {
+        foreach ($keys as $key) {
+            $value = $game->getAttribute($key);
+
+            if (is_numeric($value)) {
+                return (float) $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function preseasonSignalForTeam(int $teamId, int $season): ?array
+    {
+        $table = (string) config('cfb.predictions.preseason.signal_table', 'cfb_preseason_team_signals');
+
+        if ($table === '' || ! Schema::hasTable($table) || ! $this->tableHasColumn($table, 'team_id')) {
+            return null;
+        }
+
+        $query = DB::table($table)->where('team_id', $teamId);
+
+        if ($this->tableHasColumn($table, 'season')) {
+            $query->where('season', '<=', $season)->orderByDesc('season');
+        }
+
+        foreach (['as_of_date', 'snapshot_date', 'updated_at', 'created_at'] as $dateColumn) {
+            if ($this->tableHasColumn($table, $dateColumn)) {
+                $query->orderByDesc($dateColumn);
+            }
+        }
+
+        $row = $query->first();
+
+        if (! $row) {
+            return null;
+        }
+
+        $signals = (array) $row;
+
+        foreach (['payload', 'signals', 'metadata'] as $jsonColumn) {
+            $decoded = $this->decodeSignalPayload($signals[$jsonColumn] ?? null);
+
+            if ($decoded !== null) {
+                $signals = array_replace_recursive($signals, $decoded);
+            }
+        }
+
+        return $signals;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    protected function decodeSignalPayload(mixed $payload): ?array
+    {
+        if (is_array($payload)) {
+            return $payload;
+        }
+
+        if (! is_string($payload) || trim($payload) === '') {
+            return null;
+        }
+
+        $decoded = json_decode($payload, true);
+
+        return is_array($decoded) ? $decoded : null;
+    }
+
+    protected function tableHasColumn(string $table, string $column): bool
+    {
+        if (! isset($this->tableColumns[$table])) {
+            $this->tableColumns[$table] = Schema::getColumnListing($table);
+        }
+
+        return in_array($column, $this->tableColumns[$table], true);
+    }
+
+    protected function extractMarketHomeSpread(Model $game): ?float
+    {
+        $oddsData = $game->odds_data;
+
+        if (! is_array($oddsData) || ! isset($oddsData['bookmakers'])) {
+            return null;
+        }
+
+        $homeNames = $this->teamNames($game->homeTeam);
+
+        foreach ($oddsData['bookmakers'] as $bookmaker) {
+            foreach (($bookmaker['markets'] ?? []) as $market) {
+                if (($market['key'] ?? null) !== 'spreads') {
+                    continue;
+                }
+
+                foreach (($market['outcomes'] ?? []) as $outcome) {
+                    if (! is_numeric($outcome['point'] ?? null)) {
+                        continue;
+                    }
+
+                    if ($this->outcomeMatchesTeam((string) ($outcome['name'] ?? ''), $homeNames)) {
+                        return (float) $outcome['point'];
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function teamNames(?Model $team): array
+    {
+        if (! $team) {
+            return [];
+        }
+
+        return collect([
+            $team->name,
+            $team->display_name,
+            $team->short_display_name,
+            $team->school,
+            $team->abbreviation,
+            $team->location,
+        ])
+            ->filter(fn (mixed $value): bool => is_string($value) && trim($value) !== '')
+            ->map(fn (string $value): string => strtolower(trim($value)))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $teamNames
+     */
+    protected function outcomeMatchesTeam(string $outcomeName, array $teamNames): bool
+    {
+        $normalizedOutcome = strtolower(trim($outcomeName));
+
+        if ($normalizedOutcome === '') {
+            return false;
+        }
+
+        foreach ($teamNames as $teamName) {
+            if ($normalizedOutcome === $teamName
+                || str_contains($normalizedOutcome, $teamName)
+                || str_contains($teamName, $normalizedOutcome)
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected function clamp(float $value, float $maxAbsoluteValue): float
+    {
+        $maxAbsoluteValue = abs($maxAbsoluteValue);
+
+        return max(-$maxAbsoluteValue, min($maxAbsoluteValue, $value));
     }
 
     protected function baselineTotal(?Model $homeMetrics, ?Model $awayMetrics): float

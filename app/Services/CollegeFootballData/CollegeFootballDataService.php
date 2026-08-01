@@ -70,6 +70,62 @@ class CollegeFootballDataService
     }
 
     /**
+     * Retrieve team returning production metrics.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getReturningProduction(
+        ?int $year = null,
+        ?string $team = null,
+        ?string $conference = null
+    ): array {
+        return $this->get('/player/returning', [
+            'year' => $year,
+            'team' => $team,
+            'conference' => $conference,
+        ]);
+    }
+
+    /**
+     * Retrieve team talent composite ratings.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getTeamTalent(?int $year = null): array
+    {
+        return $this->get('/talent', [
+            'year' => $year,
+        ]);
+    }
+
+    /**
+     * Retrieve team recruiting rankings.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getTeamRecruitingRankings(
+        ?int $year = null,
+        ?string $team = null
+    ): array {
+        return $this->get('/recruiting/teams', [
+            'year' => $year,
+            'team' => $team,
+        ]);
+    }
+
+    /**
+     * Retrieve transfer portal player movement for a season.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getTransferPortal(int $year): array
+    {
+        return $this->get('/player/portal', [
+            'year' => $year,
+        ]);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function getFbsTeams(?int $year = null): array

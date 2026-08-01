@@ -57,10 +57,8 @@ function formatHomeSpreadFromModelMargin(
     return formatSpread(-numSpread);
 }
 
-function formatHomeSideSpreadLine(
+function formatHomeSpreadLine(
     homeLine: number | string | null | undefined,
-    homeTeam?: string,
-    awayTeam?: string,
 ): string {
     if (homeLine === null || homeLine === undefined) return '-';
     const numericLine =
@@ -68,14 +66,7 @@ function formatHomeSideSpreadLine(
     if (isNaN(numericLine)) return '-';
     if (numericLine === 0) return 'PK';
 
-    const homeLabel = homeTeam ?? 'Home';
-    const awayLabel = awayTeam ?? 'Away';
-
-    if (numericLine < 0) {
-        return `${homeLabel} ${numericLine.toFixed(1)}`;
-    }
-
-    return `${awayLabel} -${numericLine.toFixed(1)}`;
+    return `${numericLine > 0 ? '+' : ''}${numericLine.toFixed(1)}`;
 }
 
 function formatNumber(
@@ -241,11 +232,7 @@ function formatBetModelLine(bet: BettingRecommendation): string {
         return formatNumber(bet.model_line);
     }
 
-    return formatHomeSideSpreadLine(
-        bet.model_home_line ?? bet.model_line,
-        bet.home_team,
-        bet.away_team,
-    );
+    return formatHomeSpreadLine(bet.model_home_line ?? bet.model_line);
 }
 
 function formatBetMarketLine(bet: BettingRecommendation): string {
@@ -253,11 +240,7 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
         return formatNumber(bet.market_line);
     }
 
-    return formatHomeSideSpreadLine(
-        bet.market_home_line ?? bet.market_line,
-        bet.home_team,
-        bet.away_team,
-    );
+    return formatHomeSpreadLine(bet.market_home_line ?? bet.market_line);
 }
 </script>
 

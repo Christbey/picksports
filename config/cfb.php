@@ -30,7 +30,7 @@ return [
     */
 
     'season' => [
-        'default' => env('CFB_DEFAULT_SEASON', 2025),
+        'default' => env('CFB_DEFAULT_SEASON', 2026),
         'types' => [
             'preseason' => 1,
             'regular' => 2,
@@ -282,9 +282,131 @@ return [
         ),
 
         /**
+         * Preseason / early-season signal layer. This runs after the base
+         * model and shared context adjustments, then final caps are applied.
+         *
+         * predicted_spread remains model home margin. Sportsbook home spread
+         * lines are converted by negating before market comparisons.
+         */
+        'preseason' => [
+            'enabled' => env('CFB_PRESEASON_LAYER_ENABLED', true),
+            'through_week' => env('CFB_PRESEASON_LAYER_THROUGH_WEEK', 4),
+            'signal_table' => env('CFB_PRESEASON_SIGNAL_TABLE', 'cfb_preseason_team_signals'),
+            'min_confidence_after_penalties' => env('CFB_PRESEASON_MIN_CONFIDENCE', 50.0),
+
+            'composite' => [
+                'power_rating_weight' => env('CFB_PRESEASON_POWER_RATING_WEIGHT', 0.08),
+                'fpi_weight' => env('CFB_PRESEASON_FPI_WEIGHT', 0.04),
+                'net_rating_weight' => env('CFB_PRESEASON_NET_RATING_WEIGHT', 0.025),
+                'max_adjustment' => env('CFB_PRESEASON_COMPOSITE_MAX_ADJUSTMENT', 3.0),
+            ],
+
+            'returning_production' => [
+                'points_per_full_retention_gap' => env('CFB_PRESEASON_RETURNING_PRODUCTION_POINTS', 8.0),
+                'max_adjustment' => env('CFB_PRESEASON_RETURNING_PRODUCTION_MAX_ADJUSTMENT', 2.5),
+            ],
+
+            'qb_continuity' => [
+                'points_per_score_gap' => env('CFB_PRESEASON_QB_CONTINUITY_POINTS', 1.5),
+                'max_adjustment' => env('CFB_PRESEASON_QB_CONTINUITY_MAX_ADJUSTMENT', 2.0),
+                'uncertainty_score_threshold' => env('CFB_PRESEASON_QB_UNCERTAINTY_THRESHOLD', 0.0),
+                'confidence_penalty_per_uncertain_side' => env('CFB_PRESEASON_QB_UNCERTAINTY_PENALTY', 2.5),
+                'status_scores' => [
+                    'returning_starter' => 1.0,
+                    'experienced_transfer' => 0.35,
+                    'injury_return' => 0.15,
+                    'new_transfer' => -0.35,
+                    'first_time_starter' => -0.75,
+                    'unsettled' => -0.8,
+                ],
+            ],
+
+            'transfer_portal' => [
+                'points_per_score_gap' => env('CFB_PRESEASON_TRANSFER_PORTAL_POINTS', 2.5),
+                'max_adjustment' => env('CFB_PRESEASON_TRANSFER_PORTAL_MAX_ADJUSTMENT', 2.0),
+                'value_normalizer' => env('CFB_PRESEASON_TRANSFER_PORTAL_VALUE_NORMALIZER', 4.0),
+                'uncertainty_score_threshold' => env('CFB_PRESEASON_TRANSFER_UNCERTAINTY_THRESHOLD', -0.25),
+                'confidence_penalty_per_uncertain_side' => env('CFB_PRESEASON_TRANSFER_UNCERTAINTY_PENALTY', 1.5),
+            ],
+
+            'talent_recruiting' => [
+                'points_per_score_gap' => env('CFB_PRESEASON_TALENT_RECRUITING_POINTS', 4.0),
+                'max_adjustment' => env('CFB_PRESEASON_TALENT_RECRUITING_MAX_ADJUSTMENT', 1.5),
+                'talent_composite_scale' => env('CFB_PRESEASON_TALENT_COMPOSITE_SCALE', 1000.0),
+                'recruiting_points_scale' => env('CFB_PRESEASON_RECRUITING_POINTS_SCALE', 350.0),
+                'recruiting_rank_team_count' => env('CFB_PRESEASON_RECRUITING_RANK_TEAM_COUNT', 134.0),
+            ],
+
+            'coaching_continuity' => [
+                'points_per_score_gap' => env('CFB_PRESEASON_COACHING_POINTS', 0.8),
+                'max_adjustment' => env('CFB_PRESEASON_COACHING_MAX_ADJUSTMENT', 1.0),
+                'uncertainty_score_threshold' => env('CFB_PRESEASON_COACHING_UNCERTAINTY_THRESHOLD', 0.0),
+                'confidence_penalty_per_uncertain_side' => env('CFB_PRESEASON_COACHING_UNCERTAINTY_PENALTY', 2.0),
+                'status_scores' => [
+                    'stable' => 1.0,
+                    'returning_staff' => 1.0,
+                    'new_coordinator' => 0.25,
+                    'new_oc' => 0.35,
+                    'new_dc' => 0.35,
+                    'new_head_coach' => -1.0,
+                    'new_staff' => -1.0,
+                ],
+            ],
+
+            'schedule_spot' => [
+                'rest_day_weight' => env('CFB_PRESEASON_REST_DAY_WEIGHT', 0.25),
+                'travel_1000_miles_weight' => env('CFB_PRESEASON_TRAVEL_1000_MILES_WEIGHT', 0.35),
+                'max_adjustment' => env('CFB_PRESEASON_SCHEDULE_SPOT_MAX_ADJUSTMENT', 1.25),
+            ],
+
+            'market_guardrail' => [
+                'enabled' => env('CFB_PRESEASON_MARKET_GUARDRAIL_ENABLED', true),
+                'through_week' => env('CFB_PRESEASON_MARKET_GUARDRAIL_THROUGH_WEEK', 2),
+                'large_disagreement_threshold' => env('CFB_PRESEASON_MARKET_DISAGREEMENT_THRESHOLD', 10.0),
+                'required_aligned_signals' => env('CFB_PRESEASON_MARKET_REQUIRED_ALIGNED_SIGNALS', 3),
+                'confirmed_disagreement_penalty' => env('CFB_PRESEASON_MARKET_CONFIRMED_PENALTY', 3.0),
+                'unconfirmed_disagreement_penalty' => env('CFB_PRESEASON_MARKET_UNCONFIRMED_PENALTY', 12.0),
+            ],
+        ],
+
+        /**
+         * Week-bucket calibration hooks. Defaults are no-op so backtesting can
+         * tune the buckets independently without changing code.
+         */
+        'week_calibration' => [
+            'enabled' => env('CFB_WEEK_CALIBRATION_ENABLED', true),
+            'buckets' => [
+                'week_0_1' => [
+                    'spread_multiplier' => env('CFB_WEEK_0_1_SPREAD_MULTIPLIER', 1.0),
+                    'spread_adjustment' => env('CFB_WEEK_0_1_SPREAD_ADJUSTMENT', 0.0),
+                    'total_adjustment' => env('CFB_WEEK_0_1_TOTAL_ADJUSTMENT', 0.0),
+                    'confidence_penalty' => env('CFB_WEEK_0_1_CONFIDENCE_PENALTY', 0.0),
+                ],
+                'week_2_4' => [
+                    'spread_multiplier' => env('CFB_WEEK_2_4_SPREAD_MULTIPLIER', 1.0),
+                    'spread_adjustment' => env('CFB_WEEK_2_4_SPREAD_ADJUSTMENT', 0.0),
+                    'total_adjustment' => env('CFB_WEEK_2_4_TOTAL_ADJUSTMENT', 0.0),
+                    'confidence_penalty' => env('CFB_WEEK_2_4_CONFIDENCE_PENALTY', 0.0),
+                ],
+                'week_5_8' => [
+                    'spread_multiplier' => env('CFB_WEEK_5_8_SPREAD_MULTIPLIER', 1.0),
+                    'spread_adjustment' => env('CFB_WEEK_5_8_SPREAD_ADJUSTMENT', 0.0),
+                    'total_adjustment' => env('CFB_WEEK_5_8_TOTAL_ADJUSTMENT', 0.0),
+                    'confidence_penalty' => env('CFB_WEEK_5_8_CONFIDENCE_PENALTY', 0.0),
+                ],
+                'week_9_plus' => [
+                    'spread_multiplier' => env('CFB_WEEK_9_PLUS_SPREAD_MULTIPLIER', 1.0),
+                    'spread_adjustment' => env('CFB_WEEK_9_PLUS_SPREAD_ADJUSTMENT', 0.0),
+                    'total_adjustment' => env('CFB_WEEK_9_PLUS_TOTAL_ADJUSTMENT', 0.0),
+                    'confidence_penalty' => env('CFB_WEEK_9_PLUS_CONFIDENCE_PENALTY', 0.0),
+                ],
+            ],
+        ],
+
+        /**
          * Model version for tracking prediction algorithm changes
          */
-        'model_version' => '1.1',
+        'model_version' => '1.2',
 
         /**
          * Confidence scoring parameters

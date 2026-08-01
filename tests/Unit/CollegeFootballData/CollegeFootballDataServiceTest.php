@@ -39,6 +39,48 @@ it('requests adjusted team season stats with bearer auth', function () {
         ->and($results[0]['conference'])->toBe('SEC');
 });
 
+it('requests preseason signal endpoints', function () {
+    config()->set('services.collegefootballdata.api_key', 'test-cfbd-key');
+    config()->set('services.collegefootballdata.base_url', 'https://api.collegefootballdata.com');
+
+    Http::fake([
+        'https://api.collegefootballdata.com/player/returning*' => Http::response([
+            ['team' => 'Georgia', 'percentPPA' => 0.74],
+        ]),
+        'https://api.collegefootballdata.com/player/portal*' => Http::response([
+            ['destination' => 'Georgia', 'position' => 'QB', 'rating' => 0.96],
+        ]),
+        'https://api.collegefootballdata.com/talent*' => Http::response([
+            ['school' => 'Georgia', 'talent' => 985.4],
+        ]),
+        'https://api.collegefootballdata.com/recruiting/teams*' => Http::response([
+            ['team' => 'Georgia', 'rank' => 1, 'points' => 315.2],
+        ]),
+    ]);
+
+    $service = new CollegeFootballDataService;
+
+    expect($service->getReturningProduction(year: 2026, conference: 'SEC')[0]['percentPPA'])->toBe(0.74)
+        ->and($service->getTransferPortal(2026)[0]['position'])->toBe('QB')
+        ->and($service->getTeamTalent(2026)[0]['talent'])->toBe(985.4)
+        ->and($service->getTeamRecruitingRankings(year: 2026, team: 'Georgia')[0]['points'])->toBe(315.2);
+
+    Http::assertSent(function (Request $request): bool {
+        return str_starts_with($request->url(), 'https://api.collegefootballdata.com/player/returning')
+            && $request['year'] === 2026
+            && $request['conference'] === 'SEC'
+            && $request->header('Authorization') === ['Bearer test-cfbd-key'];
+    });
+
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.collegefootballdata.com/player/portal')
+        && $request['year'] === 2026);
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.collegefootballdata.com/talent')
+        && $request['year'] === 2026);
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.collegefootballdata.com/recruiting/teams')
+        && $request['year'] === 2026
+        && $request['team'] === 'Georgia');
+});
+
 it('throws when the api key is missing', function () {
     config()->set('services.collegefootballdata.api_key', null);
 

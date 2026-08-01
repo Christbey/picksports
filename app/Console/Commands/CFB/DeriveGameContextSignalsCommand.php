@@ -479,10 +479,10 @@ class DeriveGameContextSignalsCommand extends Command
         }
 
         $parts = array_filter([
-            $this->number($signal->transfer_qb_net_value) === null ? null : $this->clamp(((float) $signal->transfer_qb_net_value) / 4.0, 1.0),
-            $this->number($signal->transfer_ol_net_value) === null ? null : $this->clamp(((float) $signal->transfer_ol_net_value) / 4.0, 1.0),
-            $this->number($signal->returning_percent_passing_ppa),
-            $this->qbContinuityClassScore((string) $signal->qb_continuity_classification),
+            $this->number($signal->transfer_qb_net_value ?? null) === null ? null : $this->clamp(((float) $signal->transfer_qb_net_value) / 4.0, 1.0),
+            $this->number($signal->transfer_ol_net_value ?? null) === null ? null : $this->clamp(((float) $signal->transfer_ol_net_value) / 4.0, 1.0),
+            $this->number($signal->returning_percent_passing_ppa ?? null),
+            $this->qbContinuityClassScore((string) ($signal->qb_continuity_classification ?? '')),
         ], fn (?float $value): bool => $value !== null);
 
         return $parts === [] ? null : array_sum($parts) / count($parts);
@@ -655,22 +655,22 @@ class DeriveGameContextSignalsCommand extends Command
             return null;
         }
 
-        if ($signal->coordinator_continuity_score !== null) {
+        if (($signal->coordinator_continuity_score ?? null) !== null) {
             return (float) $signal->coordinator_continuity_score;
         }
 
-        $hasAny = $signal->new_head_coach !== null
-            || $signal->new_offensive_coordinator !== null
-            || $signal->new_defensive_coordinator !== null;
+        $hasAny = ($signal->new_head_coach ?? null) !== null
+            || ($signal->new_offensive_coordinator ?? null) !== null
+            || ($signal->new_defensive_coordinator ?? null) !== null;
 
         if (! $hasAny) {
             return null;
         }
 
         $score = 1.0;
-        $score -= $signal->new_head_coach ? 1.0 : 0.0;
-        $score -= $signal->new_offensive_coordinator ? 0.35 : 0.0;
-        $score -= $signal->new_defensive_coordinator ? 0.35 : 0.0;
+        $score -= ($signal->new_head_coach ?? false) ? 1.0 : 0.0;
+        $score -= ($signal->new_offensive_coordinator ?? false) ? 0.35 : 0.0;
+        $score -= ($signal->new_defensive_coordinator ?? false) ? 0.35 : 0.0;
 
         return max(-1.0, min(1.0, $score));
     }

@@ -35,7 +35,10 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
             return $attributes;
         }
 
-        if (CarbonImmutable::now('UTC')->gte($scheduledStart->addMinutes(self::MINIMUM_FINAL_SYNC_MINUTES_AFTER_TIP))) {
+        if (
+            $this->hasFinalClock($attributes['game_clock'] ?? $existingGame?->game_clock)
+            && CarbonImmutable::now('UTC')->gte($scheduledStart->addMinutes(self::MINIMUM_FINAL_SYNC_MINUTES_AFTER_TIP))
+        ) {
             return $attributes;
         }
 
@@ -67,5 +70,13 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function hasFinalClock(mixed $clock): bool
+    {
+        $normalized = trim((string) $clock);
+
+        return $normalized === ''
+            || in_array($normalized, ['0', '0.0', '0:00', '00:00'], true);
     }
 }

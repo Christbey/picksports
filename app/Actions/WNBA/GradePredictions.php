@@ -23,12 +23,17 @@ class GradePredictions extends AbstractGradePredictions
             ->addSelect(
                 $this->gamesTable().'.game_date as game_game_date',
                 $this->gamesTable().'.game_time as game_game_time',
+                $this->gamesTable().'.game_clock as game_game_clock',
             );
     }
 
     protected function shouldGradePrediction(Model $prediction): bool
     {
         if (! parent::shouldGradePrediction($prediction)) {
+            return false;
+        }
+
+        if (! $this->hasFinalClock($prediction->game_game_clock ?? null)) {
             return false;
         }
 
@@ -57,5 +62,13 @@ class GradePredictions extends AbstractGradePredictions
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function hasFinalClock(mixed $clock): bool
+    {
+        $normalized = trim((string) $clock);
+
+        return $normalized === ''
+            || in_array($normalized, ['0', '0.0', '0:00', '00:00'], true);
     }
 }

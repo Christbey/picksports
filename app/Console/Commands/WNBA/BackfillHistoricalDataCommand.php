@@ -2,10 +2,8 @@
 
 namespace App\Console\Commands\WNBA;
 
-use App\Actions\WNBA\CalculateElo;
 use App\Models\WNBA\EloRating;
 use App\Models\WNBA\Game;
-use App\Models\WNBA\Team;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
 
@@ -121,41 +119,99 @@ class BackfillHistoricalDataCommand extends Command
             return;
         }
 
-        $this->line("Replaying scoped historical Elo for {$games->count()} WNBA game(s).");
+        $this->line("Replaying scoped historical Elo for {$games->count()} WNBA game(s) without mutating current team ratings.");
 
         $defaultElo = (int) config('wnba.elo.default', 1500);
-        $currentTeamElos = Team::query()
-            ->pluck('elo_rating', 'id')
-            ->map(fn (mixed $elo): int => (int) round((float) $elo))
-            ->all();
-
-        Team::query()->update(['elo_rating' => $defaultElo]);
+        $teamElos = [];
 
         EloRating::query()
             ->whereBetween('season', [$fromSeason, $toSeason])
             ->delete();
 
-        $calculator = app(CalculateElo::class);
         $bar = $this->output->createProgressBar($games->count());
         $bar->start();
 
-        try {
-            foreach ($games as $game) {
-                $calculator->execute($game, skipIfExists: false);
-                $bar->advance();
-            }
-        } finally {
-            $bar->finish();
-            $this->newLine(2);
+        foreach ($games as $game) {
+            $homeTeamId = (int) $game->home_team_id;
+            $awayTeamId = (int) $game->away_team_id;
+            $homeElo = $teamElos[$homeTeamId] ?? $defaultElo;
+            $awayElo = $teamElos[$awayTeamId] ?? $defaultElo;
 
-            foreach ($currentTeamElos as $teamId => $elo) {
-                Team::query()
-                    ->whereKey((int) $teamId)
-                    ->update(['elo_rating' => $elo]);
+            [$homeChange, $awayChange] = $this->eloChanges($game, $homeElo, $awayElo);
+            $newHomeElo = (int) round($homeElo + $homeChange);
+            $newAwayElo = (int) round($awayElo + $awayChange);
+
+            $teamElos[$homeTeamId] = $newHomeElo;
+            $teamElos[$awayTeamId] = $newAwayElo;
+
+            $this->saveHistoricalElo($homeTeamId, $game, $newHomeElo, $homeChange);
+            $this->saveHistoricalElo($awayTeamId, $game, $newAwayElo, $awayChange);
+
+            $bar->advance();
+        }
+
+        $bar->finish();
+        $this->newLine(2);
+
+        $this->info('Historical Elo replay completed.');
+    }
+
+    /**
+     * @return array{0:float,1:float}
+     */
+    private function eloChanges(Game $game, int $homeElo, int $awayElo): array
+    {
+        $homeAdvantage = (float) config('wnba.elo.home_court_advantage', 80);
+        $homeExpected = 1 / (1 + pow(10, ($awayElo - ($homeElo + $homeAdvantage)) / 400));
+        $awayExpected = 1 - $homeExpected;
+        $homeActual = (float) $game->home_score > (float) $game->away_score ? 1.0 : 0.0;
+        $awayActual = 1 - $homeActual;
+        $kFactor = $this->historicalKFactor($game);
+
+        return [
+            round($kFactor * ($homeActual - $homeExpected), 1),
+            round($kFactor * ($awayActual - $awayExpected), 1),
+        ];
+    }
+
+    private function historicalKFactor(Game $game): float
+    {
+        $kFactor = (float) config('wnba.elo.base_k_factor', 25);
+        $kFactor *= $this->marginMultiplier(abs((int) $game->home_score - (int) $game->away_score));
+
+        if (in_array((string) $game->season_type, $this->seasonTypeCandidates(config('wnba.season.types.postseason', 3)), true)) {
+            $kFactor *= (float) config('wnba.elo.playoff_multiplier', 1.0);
+        }
+
+        return $kFactor;
+    }
+
+    private function marginMultiplier(int $margin): float
+    {
+        foreach (config('wnba.elo.margin_multipliers', []) as $tier) {
+            if (($tier['max_margin'] ?? null) === null || $margin <= (int) $tier['max_margin']) {
+                return (float) ($tier['multiplier'] ?? 1.0);
             }
         }
 
-        $this->info('Historical Elo replay completed without changing current team Elo ratings.');
+        return 1.0;
+    }
+
+    private function saveHistoricalElo(int $teamId, Game $game, int $newElo, float $eloChange): void
+    {
+        EloRating::query()->updateOrCreate(
+            [
+                'team_id' => $teamId,
+                'game_id' => $game->id,
+            ],
+            [
+                'season' => $game->season,
+                'week' => $game->week ?? null,
+                'date' => $game->game_date,
+                'elo_rating' => $newElo,
+                'elo_change' => $eloChange,
+            ]
+        );
     }
 
     private function shouldRun(string $stage, string $target): bool

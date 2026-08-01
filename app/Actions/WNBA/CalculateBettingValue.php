@@ -75,11 +75,41 @@ class CalculateBettingValue extends AbstractLineBasedCalculateBettingValue
         $validatedMax = (float) config('wnba.betting.spread_gate.validated_max_edge', 5.0);
         $underdogMin = (float) config('wnba.betting.spread_gate.underdog_min_edge', 2.5);
         $underdogMax = (float) config('wnba.betting.spread_gate.underdog_max_edge', 5.0);
+        $signalContext = (array) data_get($prediction, 'model_metadata.signal_context', []);
+        $selectedKey = $betHome ? 'home' : 'away';
+        $opponentKey = $betHome ? 'away' : 'home';
+        $selectedSignals = (array) data_get($signalContext, $selectedKey, []);
+        $opponentSignals = (array) data_get($signalContext, $opponentKey, []);
+        $selectedRestDays = data_get($selectedSignals, 'rest_days');
+        $selectedLast10AtsPct = data_get($selectedSignals, 'ats.last10.pct');
+        $selectedLast5NetRating = data_get($selectedSignals, 'rolling_four_factors.last5.net_rating');
+        $opponentLast5NetRating = data_get($opponentSignals, 'rolling_four_factors.last5.net_rating');
+        $selectedNetRatingEdge = is_numeric($selectedLast5NetRating) && is_numeric($opponentLast5NetRating)
+            ? round((float) $selectedLast5NetRating - (float) $opponentLast5NetRating, 2)
+            : null;
 
         $inValidatedEdgeBucket = $edge >= $validatedMin && $edge < $validatedMax;
         $isUnderdogLean = ! $isFavorite && $edge >= $underdogMin && $edge < $underdogMax;
 
         if (! $inValidatedEdgeBucket && ! $isUnderdogLean) {
+            return null;
+        }
+
+        if (is_numeric($selectedRestDays)
+            && (float) $selectedRestDays <= 1.0
+            && $edge < (float) config('wnba.betting.spread_gate.fatigue_min_edge', 4.0)) {
+            return null;
+        }
+
+        if (is_numeric($selectedLast10AtsPct)
+            && (float) $selectedLast10AtsPct < (float) config('wnba.betting.spread_gate.cold_ats_pct', 45.0)
+            && $edge < (float) config('wnba.betting.spread_gate.cold_ats_min_edge', 4.0)) {
+            return null;
+        }
+
+        if ($selectedNetRatingEdge !== null
+            && $selectedNetRatingEdge < (float) config('wnba.betting.spread_gate.negative_net_rating_threshold', -6.0)
+            && $edge < (float) config('wnba.betting.spread_gate.negative_four_factor_min_edge', 4.5)) {
             return null;
         }
 
@@ -90,12 +120,18 @@ class CalculateBettingValue extends AbstractLineBasedCalculateBettingValue
                 'pick_type' => $isFavorite ? 'favorite' : 'underdog',
                 'validated_edge_bucket' => $inValidatedEdgeBucket,
                 'underdog_lean' => $isUnderdogLean,
+                'selected_rest_days' => is_numeric($selectedRestDays) ? (float) $selectedRestDays : null,
+                'selected_last10_ats_pct' => is_numeric($selectedLast10AtsPct) ? (float) $selectedLast10AtsPct : null,
+                'selected_last5_net_rating_edge' => $selectedNetRatingEdge,
             ],
-            'reason_tags' => array_values(array_unique([
+            'reason_tags' => array_values(array_unique(array_filter([
                 ...((array) ($recommendation['reason_tags'] ?? [])),
                 'wnba_spread_gate',
                 $isFavorite ? 'favorite_spread' : 'underdog_spread',
-            ])),
+                is_numeric($selectedRestDays) && (float) $selectedRestDays <= 1.0 ? 'fatigue_watch' : null,
+                is_numeric($selectedLast10AtsPct) && (float) $selectedLast10AtsPct >= 55.0 ? 'strong_recent_ats' : null,
+                $selectedNetRatingEdge !== null && $selectedNetRatingEdge > 4.0 ? 'positive_four_factor_form' : null,
+            ]))),
         ];
     }
 

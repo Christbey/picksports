@@ -5,6 +5,7 @@ namespace App\Actions\WNBA;
 use App\Actions\Sports\AbstractPredictionGenerator;
 use App\Models\WNBA\Prediction;
 use App\Models\WNBA\TeamMetric;
+use App\Services\WNBA\WnbaPredictionSignalService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 
@@ -21,6 +22,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
      */
     private array $calibrationMetadata = [];
 
+    private ?Model $currentGame = null;
+
     protected function calculatePredictedSpread(
         int $homeElo,
         int $awayElo,
@@ -28,6 +31,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         ?Model $awayMetrics,
         Model $game
     ): float {
+        $this->currentGame = $game;
+
         // Calculate predicted spread (negative means away team favored)
         $homeCourtAdvantage = config('wnba.elo.home_court_advantage');
         $eloToSpread = config('wnba.prediction.elo_to_spread_divisor');
@@ -147,6 +152,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $averagePace = (float) config('wnba.prediction.average_pace');
         $homeCourtAdvantage = (float) config('wnba.elo.home_court_advantage');
         $sampleGames = $this->metricSampleGames($homeMetrics, $awayMetrics);
+        $signalContext = $this->currentGame instanceof Model
+            ? app(WnbaPredictionSignalService::class)->forGame($this->currentGame)
+            : [];
         $snapshotFeatures = [
             'home_elo' => $homeElo,
             'away_elo' => $awayElo,
@@ -171,10 +179,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'average_total' => (float) config('wnba.prediction.average_total', $defaultEfficiency * 2 * ($averagePace / 100)),
             'total_output_regression_weight' => (float) config('wnba.prediction.total_output_regression_weight', 0.0),
             'previous_season_metric_fallback_enabled' => (bool) config('wnba.prediction.use_previous_season_metrics_fallback', false),
+            'wnba_signals' => $signalContext,
         ];
         $modelMetadata = [
             'model' => 'wnba_elo_efficiency_context',
             'calibration' => $this->calibrationMetadata,
+            'signal_context' => $signalContext,
             'season_context' => [
                 'sample_games' => $sampleGames['min'],
                 'home_sample_games' => $sampleGames['home'],
@@ -189,6 +199,9 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'uses_output_regression' => true,
                 'uses_injury_context' => true,
                 'uses_rest_recent_context_when_metrics_available' => true,
+                'uses_team_ats_context' => true,
+                'uses_rolling_four_factors' => true,
+                'uses_rest_fatigue_context' => true,
                 'uses_previous_season_metric_fallback' => (bool) config('wnba.prediction.use_previous_season_metrics_fallback', false),
             ],
         ];

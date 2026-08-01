@@ -60,6 +60,13 @@ class BacktestSpreadsCommand extends Command
         );
 
         $this->newLine();
+        $this->info('Candidate Gate Comparison');
+        $this->table(
+            ['Candidate', 'Criteria', 'Bets', 'Record', 'Win Rate'],
+            $this->candidateRecordRows($summary['candidate_records'])
+        );
+
+        $this->newLine();
         $this->info('ATS By Edge Bucket');
         $this->table(
             ['Bucket', 'Bets', 'Avg Edge', 'Win Rate'],
@@ -176,6 +183,36 @@ class BacktestSpreadsCommand extends Command
         $threshold = (float) config('wnba.betting.edge_thresholds.spread', 2.0);
         $thresholdRows = $rows->filter(fn (array $row) => (float) $row['edge'] >= $threshold)->values();
         $gateRows = $rows->filter(fn (array $row) => (bool) $row['passes_gate'])->values();
+        $validatedEdgeRows = $rows
+            ->filter(fn (array $row): bool => (float) $row['edge'] >= 3.0 && (float) $row['edge'] < 5.0)
+            ->values();
+        $underdogEdgeRows = $rows
+            ->filter(fn (array $row): bool => (string) $row['pick_type'] === 'underdog'
+                && (float) $row['edge'] >= 2.5
+                && (float) $row['edge'] < 5.0)
+            ->values();
+        $candidateRecords = [
+            'current_gate' => $this->candidateRecord(
+                'Current gate',
+                'Configured WNBA spread promotion gate',
+                $gateRows
+            ),
+            'validated_3_5_edge' => $this->candidateRecord(
+                'Validated 3-5 edge',
+                'Any spread edge >= 3.0 and < 5.0',
+                $validatedEdgeRows
+            ),
+            'underdog_2_5_5_edge' => $this->candidateRecord(
+                'Underdog 2.5-5 edge',
+                'Underdog spread edge >= 2.5 and < 5.0',
+                $underdogEdgeRows
+            ),
+            'all_threshold_plays' => $this->candidateRecord(
+                'All threshold plays',
+                'Any spread edge >= configured threshold',
+                $thresholdRows
+            ),
+        ];
 
         return [
             'count' => $rows->count(),
@@ -187,6 +224,7 @@ class BacktestSpreadsCommand extends Command
             'market_mae' => round((float) $rows->avg('market_error'), 2),
             'threshold_record' => $this->record($thresholdRows),
             'gate_record' => $this->record($gateRows),
+            'candidate_records' => $candidateRecords,
             'edge_buckets' => $this->edgeBuckets($thresholdRows),
             'pick_type_buckets' => $this->pickTypeBuckets($thresholdRows),
             'confidence_buckets' => $this->confidenceBuckets($rows),
@@ -225,6 +263,37 @@ class BacktestSpreadsCommand extends Command
             'pushes' => $pushes,
             'win_rate' => ($wins + $losses) > 0 ? round(($wins / ($wins + $losses)) * 100, 1) : 0.0,
         ];
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $rows
+     * @return array{label:string,criteria:string,bets:int,wins:int,losses:int,pushes:int,win_rate:float}
+     */
+    private function candidateRecord(string $label, string $criteria, Collection $rows): array
+    {
+        return [
+            'label' => $label,
+            'criteria' => $criteria,
+            ...$this->record($rows),
+        ];
+    }
+
+    /**
+     * @param  array<string, array{label:string,criteria:string,bets:int,wins:int,losses:int,pushes:int,win_rate:float}>  $candidateRecords
+     * @return array<int, array<int, string>>
+     */
+    private function candidateRecordRows(array $candidateRecords): array
+    {
+        return collect($candidateRecords)
+            ->map(fn (array $record): array => [
+                $record['label'],
+                $record['criteria'],
+                (string) $record['bets'],
+                "{$record['wins']}-{$record['losses']}-{$record['pushes']}",
+                number_format($record['win_rate'], 1).'%',
+            ])
+            ->values()
+            ->all();
     }
 
     /**

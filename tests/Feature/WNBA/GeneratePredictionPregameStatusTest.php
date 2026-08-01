@@ -69,6 +69,13 @@ test('wnba prediction action only creates pregame predictions', function () {
         ->and($action->execute($inProgressGame))->toBeNull()
         ->and(Prediction::query()->where('game_id', $scheduledGame->id)->exists())->toBeTrue()
         ->and(Prediction::query()->where('game_id', $inProgressGame->id)->exists())->toBeFalse();
+
+    $prediction = Prediction::query()->where('game_id', $scheduledGame->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'signal_context'))->toBeArray()
+        ->and(data_get($prediction->model_metadata, 'feature_context.uses_team_ats_context'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'feature_context.uses_rolling_four_factors'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'feature_context.uses_rest_fatigue_context'))->toBeTrue();
 });
 
 test('wnba generate predictions command skips in-progress games', function () {

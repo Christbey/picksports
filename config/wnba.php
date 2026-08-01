@@ -231,6 +231,11 @@ return [
             'underdog_min_edge' => env('WNBA_SPREAD_GATE_UNDERDOG_MIN_EDGE', 2.5),
             'underdog_max_edge' => env('WNBA_SPREAD_GATE_UNDERDOG_MAX_EDGE', 5.0),
             'block_favorite_confidence' => env('WNBA_SPREAD_GATE_BLOCK_FAVORITE_CONFIDENCE', 80.0),
+            'fatigue_min_edge' => env('WNBA_SPREAD_GATE_FATIGUE_MIN_EDGE', 4.0),
+            'cold_ats_min_edge' => env('WNBA_SPREAD_GATE_COLD_ATS_MIN_EDGE', 4.0),
+            'cold_ats_pct' => env('WNBA_SPREAD_GATE_COLD_ATS_PCT', 45.0),
+            'negative_four_factor_min_edge' => env('WNBA_SPREAD_GATE_NEGATIVE_FOUR_FACTOR_MIN_EDGE', 4.5),
+            'negative_net_rating_threshold' => env('WNBA_SPREAD_GATE_NEGATIVE_NET_RATING_THRESHOLD', -6.0),
         ],
     ],
 

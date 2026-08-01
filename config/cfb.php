@@ -322,6 +322,7 @@ return [
             'enabled' => env('CFB_PRESEASON_LAYER_ENABLED', true),
             'through_week' => env('CFB_PRESEASON_LAYER_THROUGH_WEEK', 4),
             'signal_table' => env('CFB_PRESEASON_SIGNAL_TABLE', 'cfb_preseason_team_signals'),
+            'prior_season_fallback_limit' => env('CFB_PRESEASON_PRIOR_SEASON_FALLBACK_LIMIT', 5),
             'min_confidence_after_penalties' => env('CFB_PRESEASON_MIN_CONFIDENCE', 50.0),
 
             'composite' => [

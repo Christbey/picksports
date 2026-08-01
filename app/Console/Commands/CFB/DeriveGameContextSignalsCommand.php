@@ -31,7 +31,7 @@ class DeriveGameContextSignalsCommand extends Command
     private array $metricCache = [];
 
     /**
-     * @var array<int, PreseasonTeamSignal|null>
+     * @var array<int, object|null>
      */
     private array $preseasonCache = [];
 
@@ -453,7 +453,7 @@ class DeriveGameContextSignalsCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function lineQbSignal(?PreseasonTeamSignal $home, ?PreseasonTeamSignal $away): array
+    private function lineQbSignal(?object $home, ?object $away): array
     {
         $homeScore = $this->lineQbScore($home);
         $awayScore = $this->lineQbScore($away);
@@ -472,7 +472,7 @@ class DeriveGameContextSignalsCommand extends Command
         ];
     }
 
-    private function lineQbScore(?PreseasonTeamSignal $signal): ?float
+    private function lineQbScore(?object $signal): ?float
     {
         if (! $signal) {
             return null;
@@ -627,7 +627,7 @@ class DeriveGameContextSignalsCommand extends Command
     /**
      * @return array<string, mixed>
      */
-    private function schemeSignal(?PreseasonTeamSignal $home, ?PreseasonTeamSignal $away): array
+    private function schemeSignal(?object $home, ?object $away): array
     {
         $homeScore = $this->schemeScore($home);
         $awayScore = $this->schemeScore($away);
@@ -649,7 +649,7 @@ class DeriveGameContextSignalsCommand extends Command
         ];
     }
 
-    private function schemeScore(?PreseasonTeamSignal $signal): ?float
+    private function schemeScore(?object $signal): ?float
     {
         if (! $signal) {
             return null;
@@ -741,16 +741,57 @@ class DeriveGameContextSignalsCommand extends Command
             ->first();
     }
 
-    private function preseasonFor(int $teamId, int $season): ?PreseasonTeamSignal
+    private function preseasonFor(int $teamId, int $season): ?object
     {
         $key = ($season * 100000) + $teamId;
 
-        return $this->preseasonCache[$key] ??= PreseasonTeamSignal::query()
+        if (array_key_exists($key, $this->preseasonCache)) {
+            return $this->preseasonCache[$key];
+        }
+
+        $rows = PreseasonTeamSignal::query()
             ->where('team_id', $teamId)
             ->where('season', '<=', $season)
             ->orderByDesc('season')
             ->latest('id')
-            ->first();
+            ->limit((int) config('cfb.predictions.preseason.prior_season_fallback_limit', 5))
+            ->get();
+
+        if ($rows->isEmpty()) {
+            return $this->preseasonCache[$key] = null;
+        }
+
+        $signals = [];
+        $sourceSeasons = [];
+
+        foreach ($rows as $row) {
+            $rowSignals = $row->toArray();
+            $rowSeason = is_numeric($rowSignals['season'] ?? null) ? (int) $rowSignals['season'] : null;
+
+            foreach ($rowSignals as $column => $value) {
+                if (! is_string($column) || $column === '') {
+                    continue;
+                }
+
+                if ($this->hasSignalValue($signals[$column] ?? null) || ! $this->hasSignalValue($value)) {
+                    continue;
+                }
+
+                $signals[$column] = $value;
+
+                if ($rowSeason !== null && ! str_starts_with($column, '_')) {
+                    $sourceSeasons[$column] = $rowSeason;
+                }
+            }
+        }
+
+        if ($signals === []) {
+            return $this->preseasonCache[$key] = null;
+        }
+
+        $signals['_source_seasons'] = $sourceSeasons;
+
+        return $this->preseasonCache[$key] = (object) $signals;
     }
 
     /**
@@ -851,6 +892,25 @@ class DeriveGameContextSignalsCommand extends Command
     private function number(mixed $value): ?float
     {
         return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function hasSignalValue(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        if (is_string($value)) {
+            $normalized = trim($value);
+
+            return $normalized !== '' && strtolower($normalized) !== 'unknown';
+        }
+
+        if (is_array($value)) {
+            return $value !== [];
+        }
+
+        return true;
     }
 
     private function roundOrNull(mixed $value, int $precision = 3): ?float

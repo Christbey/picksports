@@ -1510,14 +1510,52 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
             }
         }
 
-        $row = $query->first();
+        $rows = $query->limit((int) config('cfb.predictions.preseason.prior_season_fallback_limit', 5))->get();
 
-        if (! $row) {
+        if ($rows->isEmpty()) {
             return null;
         }
 
-        $signals = (array) $row;
+        $signals = [];
+        $sourceSeasons = [];
 
+        foreach ($rows as $row) {
+            $rowSignals = $this->decodePreseasonSignalRow((array) $row);
+            $rowSeason = is_numeric($rowSignals['season'] ?? null) ? (int) $rowSignals['season'] : null;
+
+            foreach ($rowSignals as $column => $value) {
+                if (! is_string($column) || $column === '') {
+                    continue;
+                }
+
+                if ($this->hasSignalValue($signals[$column] ?? null) || ! $this->hasSignalValue($value)) {
+                    continue;
+                }
+
+                $signals[$column] = $value;
+
+                if ($rowSeason !== null && ! str_starts_with($column, '_')) {
+                    $sourceSeasons[$column] = $rowSeason;
+                }
+            }
+        }
+
+        if ($signals === []) {
+            return null;
+        }
+
+        $signals['_source_seasons'] = $sourceSeasons;
+        $signals['_latest_requested_season'] = $season;
+
+        return $signals;
+    }
+
+    /**
+     * @param  array<string, mixed>  $signals
+     * @return array<string, mixed>
+     */
+    protected function decodePreseasonSignalRow(array $signals): array
+    {
         foreach ($signals as $column => $value) {
             if (! is_string($column) || ! str_ends_with($column, '_payload')) {
                 continue;
@@ -1539,6 +1577,25 @@ class GeneratePrediction extends AbstractAmericanFootballPredictionGenerator
         }
 
         return $signals;
+    }
+
+    protected function hasSignalValue(mixed $value): bool
+    {
+        if ($value === null) {
+            return false;
+        }
+
+        if (is_string($value)) {
+            $normalized = trim($value);
+
+            return $normalized !== '' && strtolower($normalized) !== 'unknown';
+        }
+
+        if (is_array($value)) {
+            return $value !== [];
+        }
+
+        return true;
     }
 
     /**

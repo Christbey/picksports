@@ -497,6 +497,78 @@ it('uses synced canonical preseason signal columns in early season predictions',
         ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.coaching_continuity.spread_adjustment'))->toBe(1.0);
 });
 
+it('fills sparse current preseason rows from prior season signal values', function () {
+    config([
+        'cfb.predictions.use_previous_season_elo_fallback' => true,
+        'cfb.predictions.previous_season_elo_regression_factor' => 0.0,
+        'cfb.predictions.fpi_spread_weight' => 0,
+        'cfb.predictions.wepa_spread_weight' => 0,
+        'cfb.predictions.efficiency_spread_weight' => 0,
+        'cfb.predictions.margin_calibration.enabled' => false,
+        'cfb.predictions.week_calibration.enabled' => false,
+        'cfb.predictions.preseason.enabled' => true,
+        'cfb.predictions.preseason.market_guardrail.enabled' => false,
+    ]);
+
+    $homeTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+    $awayTeam = Team::factory()->create([
+        'division' => config('cfb.teams.divisions.fbs', 'FBS'),
+        'elo_rating' => 1500,
+    ]);
+
+    createCfbEloRating($homeTeam, 2025, 14, 1500);
+    createCfbEloRating($awayTeam, 2025, 14, 1500);
+
+    createCfbCanonicalPreseasonSignal($homeTeam, [
+        'season' => 2025,
+        'returning_percent_ppa' => 0.800,
+        'qb_continuity_classification' => 'returning_starter',
+        'coordinator_continuity_score' => 1.000,
+    ]);
+    createCfbCanonicalPreseasonSignal($awayTeam, [
+        'season' => 2025,
+        'returning_percent_ppa' => 0.500,
+        'qb_continuity_classification' => 'first_time_starter',
+        'new_head_coach' => true,
+    ]);
+    createCfbCanonicalPreseasonSignal($homeTeam, [
+        'season' => 2026,
+        'talent_composite' => 900.000,
+        'recruiting_points' => 315.000,
+        'transfer_net_value' => 2.000,
+    ]);
+    createCfbCanonicalPreseasonSignal($awayTeam, [
+        'season' => 2026,
+        'talent_composite' => 650.000,
+        'recruiting_points' => 260.000,
+        'transfer_net_value' => -1.000,
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'week' => 0,
+        'season_type' => 'regular',
+        'game_date' => '2026-08-29 19:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+    ]);
+
+    app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']), false);
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+    $snapshot = cfbPredictionSnapshot($prediction);
+
+    expect((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.returning_production.spread_adjustment'))->toBe(2.4)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.qb_continuity.spread_adjustment'))->toBe(2.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.coaching_continuity.spread_adjustment'))->toBe(1.0)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.talent_recruiting.spread_adjustment'))->toBe(0.814)
+        ->and((float) data_get($snapshot->model_metadata, 'cfb_preseason_layer.components.transfer_portal.spread_adjustment'))->toBe(1.875);
+});
+
 it('applies bounded coaching scheme and special teams preseason adjustments', function () {
     config([
         'cfb.predictions.use_previous_season_elo_fallback' => true,

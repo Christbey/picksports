@@ -224,6 +224,14 @@ return [
             'total' => env('WNBA_BETTING_TOTAL_EDGE_THRESHOLD', 3.5),
             'moneyline' => env('WNBA_BETTING_MONEYLINE_EDGE_THRESHOLD', 0.05),
         ],
+        'spread_gate' => [
+            'enabled' => env('WNBA_SPREAD_GATE_ENABLED', true),
+            'validated_min_edge' => env('WNBA_SPREAD_GATE_VALIDATED_MIN_EDGE', 3.0),
+            'validated_max_edge' => env('WNBA_SPREAD_GATE_VALIDATED_MAX_EDGE', 5.0),
+            'underdog_min_edge' => env('WNBA_SPREAD_GATE_UNDERDOG_MIN_EDGE', 2.5),
+            'underdog_max_edge' => env('WNBA_SPREAD_GATE_UNDERDOG_MAX_EDGE', 5.0),
+            'block_favorite_confidence' => env('WNBA_SPREAD_GATE_BLOCK_FAVORITE_CONFIDENCE', 80.0),
+        ],
     ],
 
 ];

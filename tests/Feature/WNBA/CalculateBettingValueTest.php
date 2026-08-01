@@ -59,7 +59,7 @@ it('calculates wnba spread total and moneyline value with wnba team matching', f
 
     Prediction::factory()->create([
         'game_id' => $game->id,
-        'predicted_spread' => 6.2,
+        'predicted_spread' => 6.6,
         'predicted_total' => 166.3,
         'win_probability' => 0.64,
         'confidence_score' => 70.5,
@@ -79,7 +79,8 @@ it('calculates wnba spread total and moneyline value with wnba team matching', f
 
     expect($spread['recommendation'])->toBe('Bet Las Vegas Aces -3.5')
         ->and($spread['bet_team'])->toBe('Las Vegas Aces')
-        ->and($spread['edge'])->toBe(2.7)
+        ->and($spread['edge'])->toBe(3.1)
+        ->and($spread['spread_gate']['applied'])->toBeTrue()
         ->and($total['recommendation'])->toBe('Bet Over')
         ->and($total['edge'])->toBe(4.8)
         ->and($moneyline['recommendation'])->toBe('Bet Las Vegas Aces ML')
@@ -136,4 +137,50 @@ it('routes wnba game betting recommendations through the wnba calculator', funct
     expect($recommendations)->toHaveCount(1)
         ->and($recommendations[0]['type'])->toBe('moneyline')
         ->and($recommendations[0]['recommendation'])->toBe('Bet Los Angeles Sparks ML');
+});
+
+it('suppresses high-confidence wnba favorite spread recommendations outside the validated gate', function () {
+    $homeTeam = Team::factory()->create([
+        'location' => 'Las Vegas',
+        'name' => 'Aces',
+        'abbreviation' => 'LV',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'New York',
+        'name' => 'Liberty',
+        'abbreviation' => 'NY',
+    ]);
+
+    $game = Game::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'season' => 2026,
+        'week' => 8,
+        'status' => 'STATUS_SCHEDULED',
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'draftkings',
+                'markets' => [[
+                    'key' => 'spreads',
+                    'outcomes' => [
+                        ['name' => 'New York Liberty', 'point' => 2.5, 'price' => -110],
+                        ['name' => 'Las Vegas Aces', 'point' => -2.5, 'price' => -110],
+                    ],
+                ]],
+            ]],
+        ],
+    ]);
+
+    Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 8.2,
+        'predicted_total' => 166.3,
+        'win_probability' => 0.78,
+        'confidence_score' => 82.0,
+    ]);
+
+    $recommendations = app(CalculateBettingValue::class)->execute($game->fresh(['prediction', 'homeTeam', 'awayTeam']));
+
+    expect($recommendations)->toBeNull();
 });

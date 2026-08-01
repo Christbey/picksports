@@ -50,7 +50,7 @@ test('wnba prediction resource exposes betting value and stored ai analysis', fu
         'home_def_eff' => 96.1,
         'away_off_eff' => 101.5,
         'away_def_eff' => 98.4,
-        'predicted_spread' => 5.0,
+        'predicted_spread' => 5.6,
         'predicted_total' => 164.5,
         'win_probability' => 0.72,
         'confidence_score' => 72,
@@ -78,7 +78,7 @@ test('wnba prediction resource exposes betting value and stored ai analysis', fu
         'key_factors' => ['Home efficiency edge', 'Market spread below model'],
         'risk_flags' => ['thin_market'],
         'reason_codes' => ['model_home_edge', 'wnba_market_context'],
-        'calculated_edge' => ['spread_edge' => 2.5],
+        'calculated_edge' => ['spread_edge' => 3.1],
     ]);
 
     $request = Request::create('/');

@@ -52,6 +52,53 @@ class CalculateBettingValue extends AbstractLineBasedCalculateBettingValue
         return false;
     }
 
+    protected function analyzeSpread(object $game, object $prediction, array $market): ?array
+    {
+        $recommendation = parent::analyzeSpread($game, $prediction, $market);
+
+        if ($recommendation === null || ! (bool) config('wnba.betting.spread_gate.enabled', true)) {
+            return $recommendation;
+        }
+
+        $edge = (float) ($recommendation['edge'] ?? 0.0);
+        $homeLine = (float) ($recommendation['market_home_line'] ?? $recommendation['market_line'] ?? 0.0);
+        $betHome = (string) ($recommendation['bet_team'] ?? '') === (string) ($recommendation['home_team'] ?? '');
+        $isFavorite = $betHome ? $homeLine < 0 : $homeLine > 0;
+        $winnerConfidence = (float) ($prediction->confidence_score ?? 0.0);
+        $blockedFavoriteConfidence = (float) config('wnba.betting.spread_gate.block_favorite_confidence', 80.0);
+
+        if ($isFavorite && $winnerConfidence >= $blockedFavoriteConfidence) {
+            return null;
+        }
+
+        $validatedMin = (float) config('wnba.betting.spread_gate.validated_min_edge', 3.0);
+        $validatedMax = (float) config('wnba.betting.spread_gate.validated_max_edge', 5.0);
+        $underdogMin = (float) config('wnba.betting.spread_gate.underdog_min_edge', 2.5);
+        $underdogMax = (float) config('wnba.betting.spread_gate.underdog_max_edge', 5.0);
+
+        $inValidatedEdgeBucket = $edge >= $validatedMin && $edge < $validatedMax;
+        $isUnderdogLean = ! $isFavorite && $edge >= $underdogMin && $edge < $underdogMax;
+
+        if (! $inValidatedEdgeBucket && ! $isUnderdogLean) {
+            return null;
+        }
+
+        return [
+            ...$recommendation,
+            'spread_gate' => [
+                'applied' => true,
+                'pick_type' => $isFavorite ? 'favorite' : 'underdog',
+                'validated_edge_bucket' => $inValidatedEdgeBucket,
+                'underdog_lean' => $isUnderdogLean,
+            ],
+            'reason_tags' => array_values(array_unique([
+                ...((array) ($recommendation['reason_tags'] ?? [])),
+                'wnba_spread_gate',
+                $isFavorite ? 'favorite_spread' : 'underdog_spread',
+            ])),
+        ];
+    }
+
     private function normalizeTeamName(string $value): string
     {
         $normalized = strtolower(trim($value));

@@ -214,6 +214,38 @@ class BackfillHistoricalDataCommand extends Command
         );
     }
 
+    /**
+     * @return list<string>
+     */
+    private function seasonTypeCandidates(mixed $seasonType): array
+    {
+        if ($seasonType === null || $seasonType === '') {
+            return [];
+        }
+
+        $typeNames = config('wnba.season.type_names', []);
+        $typesByKey = config('wnba.season.types', []);
+        $candidates = [(string) $seasonType];
+
+        if (is_string($seasonType) && isset($typeNames[$seasonType])) {
+            $candidates[] = (string) $typeNames[$seasonType];
+        }
+
+        if (is_string($seasonType) && isset($typesByKey[$seasonType])) {
+            $candidates[] = (string) $typesByKey[$seasonType];
+        }
+
+        if (is_numeric($seasonType)) {
+            $matchedKey = array_search((int) $seasonType, $typesByKey, true);
+            if ($matchedKey !== false) {
+                $candidates[] = (string) $matchedKey;
+                $candidates[] = (string) ($typeNames[$matchedKey] ?? '');
+            }
+        }
+
+        return array_values(array_unique(array_filter($candidates, fn (string $value): bool => $value !== '')));
+    }
+
     private function shouldRun(string $stage, string $target): bool
     {
         return $stage === 'full' || $stage === $target;

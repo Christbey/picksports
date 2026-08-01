@@ -47,10 +47,6 @@ class BackfillHistoricalDataCommand extends Command
 
         $this->info("WNBA historical backfill for {$fromSeason}-{$toSeason} ({$stage}).");
 
-        if ($this->shouldRun($stage, 'metrics') && ! (bool) $this->option('skip-metrics')) {
-            $this->rebuildHistoricalElo($fromSeason, $toSeason);
-        }
-
         for ($season = $fromSeason; $season <= $toSeason; $season++) {
             $this->newLine();
             $this->info("Season {$season}");
@@ -76,6 +72,8 @@ class BackfillHistoricalDataCommand extends Command
             }
 
             if ($this->shouldRun($stage, 'metrics') && ! (bool) $this->option('skip-metrics')) {
+                $this->rebuildHistoricalElo($fromSeason, $season);
+
                 $this->runArtisan('wnba:calculate-team-metrics', [
                     '--season' => $season,
                     '--season-type' => (string) $this->option('season-type'),

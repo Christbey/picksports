@@ -441,7 +441,7 @@ class ReportPreseasonReadinessCommand extends Command
      * @param  list<int>  $teamIds
      * @return Collection<int, int>
      */
-    private function coveredTeamIds(array $sources, int $season, array $teamIds): Collection
+    private function coveredTeamIds(array $sources, int $season, array $teamIds, bool $allowPriorSeasonFallback = false): Collection
     {
         if ($teamIds === []) {
             return collect();
@@ -485,7 +485,12 @@ class ReportPreseasonReadinessCommand extends Command
             }
 
             if ($seasonColumn !== null) {
-                $query->where($seasonColumn, $season);
+                if ($allowPriorSeasonFallback) {
+                    $fallbackLimit = max(1, (int) config('cfb.predictions.preseason.prior_season_fallback_limit', 5));
+                    $query->whereBetween($seasonColumn, [$season - $fallbackLimit + 1, $season]);
+                } else {
+                    $query->where($seasonColumn, $season);
+                }
             }
 
             if ($existingValueColumns !== []) {
@@ -682,9 +687,9 @@ class ReportPreseasonReadinessCommand extends Command
         $teamIds = $this->trackedTeamIds($season);
         $coveredByFamily = [];
         foreach (array_intersect_key(self::SIGNAL_SOURCES, array_flip(self::EARLY_WEEK_REQUIRED_SIGNAL_FAMILIES)) as $family => $sources) {
-            $coveredByFamily[$family] = $this->coveredTeamIds($sources, $season, $teamIds)->all();
+            $coveredByFamily[$family] = $this->coveredTeamIds($sources, $season, $teamIds, true)->all();
         }
-        $coreMetricTeams = $this->coveredTeamIds(self::CORE_METRIC_SOURCES, $season, $teamIds)->all();
+        $coreMetricTeams = $this->coveredTeamIds(self::CORE_METRIC_SOURCES, $season, $teamIds, true)->all();
 
         $warnings = Prediction::query()
             ->with(['game.homeTeam', 'game.awayTeam'])

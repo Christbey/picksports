@@ -80,6 +80,11 @@ interface PublicConsensus {
     detail: string;
 }
 
+interface CfbSignalBadge {
+    label: string;
+    tone: 'neutral' | 'positive' | 'watch';
+}
+
 const trackingCache = new Map<string, TrackingSummary>();
 const api = useApiV2Client();
 
@@ -315,6 +320,10 @@ function isNflPrediction(): boolean {
     return (props.sport ?? '').toLowerCase() === 'nfl';
 }
 
+function isCfbPrediction(): boolean {
+    return (props.sport ?? '').toLowerCase() === 'cfb';
+}
+
 function marketAwareProjection() {
     return isMlbPrediction()
         ? (props.prediction.market_aware_projection ?? null)
@@ -339,6 +348,137 @@ function marketAwareSignalLabel(): string {
     }
 
     return 'Tracking Only';
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : {};
+}
+
+function asStringArray(value: unknown): string[] {
+    return Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === 'string')
+        : [];
+}
+
+function numericValue(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const numeric = Number(value);
+
+    return Number.isFinite(numeric) ? numeric : null;
+}
+
+function cfbSignalContext(): Record<string, unknown> {
+    if (!isCfbPrediction()) return {};
+
+    return asRecord(predictionType?.cfb_signal_context);
+}
+
+function cfbSignalBadges(): CfbSignalBadge[] {
+    const context = cfbSignalContext();
+    if (!Object.keys(context).length) return [];
+
+    const badges: CfbSignalBadge[] = [];
+    const preseason = asRecord(context.preseason_layer);
+    const gameContext = asRecord(context.game_context);
+    const market = asRecord(context.market_movement);
+    const playerAvailability = asRecord(context.player_availability);
+
+    const preseasonSpread = numericValue(preseason.spread_adjustment);
+    const alignedSignals = numericValue(preseason.aligned_signals);
+    if (preseason.enabled === true) {
+        const parts = [];
+        if (preseasonSpread !== null) {
+            parts.push(formatSignedNumber(preseasonSpread));
+        }
+        if (alignedSignals !== null) {
+            parts.push(`${alignedSignals} aligned`);
+        }
+
+        badges.push({
+            label: `Preseason${parts.length ? ` ${parts.join(' · ')}` : ''}`,
+            tone: 'positive',
+        });
+    }
+
+    const contextSpread = numericValue(gameContext.spread_adjustment);
+    const contextTotal = numericValue(gameContext.total_adjustment);
+    if (contextSpread !== null || contextTotal !== null) {
+        const parts = [];
+        if (contextSpread !== null) {
+            parts.push(`S ${formatSignedNumber(contextSpread)}`);
+        }
+        if (contextTotal !== null) {
+            parts.push(`T ${formatSignedNumber(contextTotal)}`);
+        }
+
+        badges.push({
+            label: `Context ${parts.join(' ')}`,
+            tone: 'neutral',
+        });
+    }
+
+    const bookmakerHomeLine = numericValue(market.current_bookmaker_home_line);
+    if (bookmakerHomeLine !== null) {
+        const movedToward = market.line_moved_toward_model === true;
+        const movedAgainst = market.line_moved_against_model === true;
+        badges.push({
+            label: `Market ${formatSignedNumber(bookmakerHomeLine)}${
+                movedToward ? ' toward' : movedAgainst ? ' against' : ''
+            }`,
+            tone: movedAgainst ? 'watch' : movedToward ? 'positive' : 'neutral',
+        });
+    }
+
+    const weather = asRecord(gameContext.weather);
+    const weatherSignal = String(weather.signal ?? '');
+    if (
+        weather.available === true &&
+        weatherSignal &&
+        !['neutral', 'weather_not_available'].includes(weatherSignal)
+    ) {
+        badges.push({
+            label: `Weather ${formatAnalysisToken(weatherSignal.split(',')[0])}`,
+            tone: 'watch',
+        });
+    }
+
+    const schedule = asRecord(gameContext.schedule);
+    const scheduleFlags = asStringArray(schedule.risk_flags);
+    if (scheduleFlags.length > 0) {
+        badges.push({
+            label: `Schedule ${scheduleFlags.length}`,
+            tone: 'watch',
+        });
+    }
+
+    const availabilitySpread = numericValue(
+        playerAvailability.spread_adjustment,
+    );
+    if (playerAvailability.applied === true && availabilitySpread !== null) {
+        badges.push({
+            label: `Availability ${formatSignedNumber(availabilitySpread)}`,
+            tone: 'watch',
+        });
+    }
+
+    return badges.slice(0, 6);
+}
+
+function cfbSignalBadgeClass(tone: CfbSignalBadge['tone']): string {
+    if (tone === 'positive') {
+        return 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    }
+
+    if (tone === 'watch') {
+        return 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+    }
+
+    return 'border-muted bg-muted/40 text-muted-foreground';
 }
 
 function displayedWinProbability(): number {
@@ -1115,6 +1255,14 @@ function saveOptions(): SavePickOption[] {
                                 :class="dashboardChipClass()"
                             >
                                 {{ trustScoreLabel() }}
+                            </span>
+                            <span
+                                v-for="badge in cfbSignalBadges()"
+                                :key="badge.label"
+                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                :class="cfbSignalBadgeClass(badge.tone)"
+                            >
+                                {{ badge.label }}
                             </span>
                         </div>
                     </div>

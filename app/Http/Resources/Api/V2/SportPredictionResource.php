@@ -59,6 +59,7 @@ class SportPredictionResource extends JsonResource
             'pro_signal_layer' => $this->proSignalLayer(),
             'prediction_analysis' => $this->predictionAnalysis(),
             'period_insights' => $this->context->slug === 'mlb' ? ($this->mlbPeriodInsights ?? []) : [],
+            'cfb_signal_context' => $this->cfbSignalContext(),
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
             'home_team_elo' => $this->floatAttribute('home_team_elo'),
@@ -454,6 +455,268 @@ class SportPredictionResource extends JsonResource
     /**
      * @return array<string,mixed>|null
      */
+    private function cfbSignalContext(): ?array
+    {
+        if ($this->context->slug !== 'cfb') {
+            return null;
+        }
+
+        $snapshot = $this->latestFeatureSnapshot();
+        $metadata = is_array($snapshot?->model_metadata)
+            ? $snapshot->model_metadata
+            : (is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : []);
+
+        if ($metadata === []) {
+            return null;
+        }
+
+        $preseason = $this->sanitizeCfbPreseasonLayer(data_get($metadata, 'cfb_preseason_layer'));
+        $gameContext = $this->sanitizeCfbGameContext(data_get($metadata, 'cfb_game_context'));
+        $marketMovement = $this->sanitizeCfbMarketMovement(data_get($metadata, 'cfb_market_movement'));
+        $advancedMetricLayer = $this->sanitizeCfbAdjustmentList(data_get($metadata, 'cfb_advanced_metric_layer'));
+        $playerAvailability = $this->sanitizeCfbPlayerAvailability(data_get($metadata, 'cfb_player_availability'));
+
+        if (! $preseason && ! $gameContext && ! $marketMovement && ! $advancedMetricLayer && ! $playerAvailability) {
+            return null;
+        }
+
+        return [
+            'preseason_layer' => $preseason,
+            'game_context' => $gameContext,
+            'market_movement' => $marketMovement,
+            'advanced_metric_layer' => $advancedMetricLayer,
+            'player_availability' => $playerAvailability,
+            'audit' => [
+                'feature_snapshot_at' => $this->serializeDateValue($snapshot?->generated_at),
+                'snapshot_run_id' => $snapshot?->snapshot_run_id,
+                'feature_version' => $snapshot?->feature_version ?? $this->attribute('feature_version'),
+                'blend_version' => $snapshot?->blend_version ?? $this->attribute('blend_version'),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbPreseasonLayer(mixed $layer): ?array
+    {
+        if (! is_array($layer)) {
+            return null;
+        }
+
+        return [
+            'enabled' => (bool) ($layer['enabled'] ?? false),
+            'week' => $this->nullableInt($layer['week'] ?? null),
+            'week_bucket' => $layer['week_bucket'] ?? null,
+            'spread_adjustment' => $this->nullableFloat($layer['spread_adjustment'] ?? null),
+            'total_adjustment' => $this->nullableFloat($layer['total_adjustment'] ?? null),
+            'confidence_penalty' => $this->nullableFloat($layer['confidence_penalty'] ?? null),
+            'aligned_signals' => $this->nullableInt($layer['aligned_signals'] ?? null),
+            'risk_flags' => $this->stringList($layer['risk_flags'] ?? []),
+            'components' => $this->sanitizeCfbAdjustmentList($layer['components'] ?? null),
+            'market' => $this->sanitizeCfbMarketMovement($layer['market'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbGameContext(mixed $context): ?array
+    {
+        if (! is_array($context)) {
+            return null;
+        }
+
+        $weather = is_array($context['weather'] ?? null) ? $context['weather'] : [];
+        $venue = is_array($context['venue'] ?? null) ? $context['venue'] : [];
+        $schedule = is_array($context['schedule'] ?? null) ? $context['schedule'] : [];
+        $persisted = is_array($context['persisted_signals'] ?? null) ? $context['persisted_signals'] : [];
+
+        return [
+            'enabled' => (bool) ($context['enabled'] ?? false),
+            'spread_adjustment' => $this->nullableFloat($context['spread_adjustment'] ?? null),
+            'total_adjustment' => $this->nullableFloat($context['total_adjustment'] ?? null),
+            'confidence_penalty' => $this->nullableFloat($context['confidence_penalty'] ?? null),
+            'risk_flags' => $this->stringList($context['risk_flags'] ?? []),
+            'weather' => $weather === [] ? null : [
+                'available' => (bool) ($weather['available'] ?? false),
+                'signal' => $weather['signal'] ?? null,
+                'total_adjustment' => $this->nullableFloat($weather['total_adjustment'] ?? null),
+                'confidence_penalty' => $this->nullableFloat($weather['confidence_penalty'] ?? null),
+                'risk_flags' => $this->stringList($weather['risk_flags'] ?? []),
+                'inputs' => $this->sanitizeCfbWeatherInputs($weather['inputs'] ?? null),
+            ],
+            'venue' => $venue === [] ? null : [
+                'neutral_site' => (bool) ($venue['neutral_site'] ?? false),
+                'conference_game' => (bool) ($venue['conference_game'] ?? false),
+                'rivalry_game' => (bool) ($venue['rivalry_game'] ?? false),
+                'venue_name' => $venue['venue_name'] ?? null,
+                'venue_city' => $venue['venue_city'] ?? null,
+                'venue_state' => $venue['venue_state'] ?? null,
+                'risk_flags' => $this->stringList($venue['risk_flags'] ?? []),
+            ],
+            'schedule' => $schedule === [] ? null : [
+                'spread_adjustment' => $this->nullableFloat($schedule['spread_adjustment'] ?? null),
+                'total_adjustment' => $this->nullableFloat($schedule['total_adjustment'] ?? null),
+                'confidence_penalty' => $this->nullableFloat($schedule['confidence_penalty'] ?? null),
+                'risk_flags' => $this->stringList($schedule['risk_flags'] ?? []),
+                'inputs' => $this->sanitizeCfbScheduleInputs($schedule['inputs'] ?? null),
+            ],
+            'persisted_signals' => $persisted === [] ? null : [
+                'available' => (bool) ($persisted['available'] ?? false),
+                'source' => $persisted['source'] ?? null,
+                'spread_adjustment' => $this->nullableFloat($persisted['spread_adjustment'] ?? null),
+                'total_adjustment' => $this->nullableFloat($persisted['total_adjustment'] ?? null),
+                'confidence_penalty' => $this->nullableFloat($persisted['confidence_penalty'] ?? null),
+                'applied_families' => $this->stringList($persisted['applied_families'] ?? []),
+                'risk_flags' => $this->stringList($persisted['risk_flags'] ?? []),
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbMarketMovement(mixed $context): ?array
+    {
+        if (! is_array($context)) {
+            return null;
+        }
+
+        return [
+            'source' => $context['source'] ?? null,
+            'model_pick_side' => $context['model_pick_side'] ?? $context['pick_side'] ?? null,
+            'open_bookmaker_home_line' => $this->nullableFloat($context['open_bookmaker_home_line'] ?? null),
+            'current_bookmaker_home_line' => $this->nullableFloat($context['current_bookmaker_home_line'] ?? $context['bookmaker_home_line'] ?? null),
+            'closing_bookmaker_home_line' => $this->nullableFloat($context['closing_bookmaker_home_line'] ?? null),
+            'open_home_margin' => $this->nullableFloat($context['open_home_margin'] ?? null),
+            'current_home_margin' => $this->nullableFloat($context['current_home_margin'] ?? $context['market_home_margin'] ?? null),
+            'closing_home_margin' => $this->nullableFloat($context['closing_home_margin'] ?? null),
+            'line_movement_home_margin' => $this->nullableFloat($context['line_movement_home_margin'] ?? null),
+            'line_value_from_open' => $this->nullableFloat($context['line_value_from_open'] ?? null),
+            'closing_line_value_points' => $this->nullableFloat($context['closing_line_value_points'] ?? null),
+            'closing_line_value_bucket' => $context['closing_line_value_bucket'] ?? null,
+            'line_moved_toward_model' => $this->nullableBool($context['line_moved_toward_model'] ?? null),
+            'line_moved_against_model' => $this->nullableBool($context['line_moved_against_model'] ?? null),
+            'model_edge_vs_current' => $this->nullableFloat($context['model_edge_vs_current'] ?? null),
+            'current_bookmaker_home_line_range' => $this->nullableFloat($context['current_bookmaker_home_line_range'] ?? null),
+            'confidence_adjustment' => $this->nullableFloat($context['confidence_adjustment'] ?? null),
+            'confidence_penalty' => $this->nullableFloat($context['confidence_penalty'] ?? null),
+            'risk_flags' => $this->stringList($context['risk_flags'] ?? []),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbPlayerAvailability(mixed $availability): ?array
+    {
+        if (! is_array($availability)) {
+            return null;
+        }
+
+        return [
+            'enabled' => (bool) ($availability['enabled'] ?? false),
+            'applied' => (bool) ($availability['applied'] ?? false),
+            'spread_adjustment' => $this->nullableFloat($availability['spread_adjustment'] ?? null),
+            'total_adjustment' => $this->nullableFloat($availability['total_adjustment'] ?? null),
+            'risk_flags' => $this->stringList($availability['risk_flags'] ?? []),
+            'home' => $this->sanitizeCfbAvailabilitySide($availability['home'] ?? null),
+            'away' => $this->sanitizeCfbAvailabilitySide($availability['away'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbAvailabilitySide(mixed $side): ?array
+    {
+        if (! is_array($side)) {
+            return null;
+        }
+
+        return [
+            'available' => (bool) ($side['available'] ?? false),
+            'out' => $this->nullableInt($side['out'] ?? null),
+            'questionable' => $this->nullableInt($side['questionable'] ?? null),
+            'weighted_impact' => $this->nullableFloat($side['weighted_impact'] ?? $side['impact_score'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbWeatherInputs(mixed $inputs): ?array
+    {
+        if (! is_array($inputs)) {
+            return null;
+        }
+
+        return [
+            'temperature_f' => $this->nullableFloat($inputs['temperature_f'] ?? null),
+            'wind_speed_mph' => $this->nullableFloat($inputs['wind_speed_mph'] ?? null),
+            'wind_gust_mph' => $this->nullableFloat($inputs['wind_gust_mph'] ?? null),
+            'precipitation_inches' => $this->nullableFloat($inputs['precipitation_inches'] ?? null),
+            'precipitation_probability' => $this->nullableFloat($inputs['precipitation_probability'] ?? null),
+            'humidity_percent' => $this->nullableFloat($inputs['humidity_percent'] ?? null),
+            'condition_code' => $inputs['condition_code'] ?? null,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbScheduleInputs(mixed $inputs): ?array
+    {
+        if (! is_array($inputs)) {
+            return null;
+        }
+
+        return [
+            'home_rest_days' => $this->nullableInt($inputs['home_rest_days'] ?? null),
+            'away_rest_days' => $this->nullableInt($inputs['away_rest_days'] ?? null),
+            'away_road_trip_game_number' => $this->nullableInt($inputs['away_road_trip_game_number'] ?? null),
+            'home_lookahead_gap' => $this->nullableFloat($inputs['home_lookahead_gap'] ?? null),
+            'away_lookahead_gap' => $this->nullableFloat($inputs['away_lookahead_gap'] ?? null),
+            'home_letdown_gap' => $this->nullableFloat($inputs['home_letdown_gap'] ?? null),
+            'away_letdown_gap' => $this->nullableFloat($inputs['away_letdown_gap'] ?? null),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function sanitizeCfbAdjustmentList(mixed $groups): ?array
+    {
+        if (! is_array($groups)) {
+            return null;
+        }
+
+        $sanitized = [];
+        foreach ($groups as $name => $group) {
+            if (! is_string($name) || ! is_array($group)) {
+                continue;
+            }
+
+            $sanitized[$name] = [
+                'available' => array_key_exists('available', $group) ? (bool) $group['available'] : null,
+                'enabled' => array_key_exists('enabled', $group) ? (bool) $group['enabled'] : null,
+                'source' => $group['source'] ?? null,
+                'spread_adjustment' => $this->nullableFloat($group['spread_adjustment'] ?? $group['adjustment'] ?? null),
+                'total_adjustment' => $this->nullableFloat($group['total_adjustment'] ?? null),
+                'confidence_penalty' => $this->nullableFloat($group['confidence_penalty'] ?? null),
+                'risk_flags' => $this->stringList($group['risk_flags'] ?? []),
+                'adaptive_multiplier' => $this->nullableFloat($group['adaptive_multiplier'] ?? null),
+                'label' => $group['label'] ?? null,
+            ];
+        }
+
+        return $sanitized === [] ? null : $sanitized;
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
     private function recommendation(): ?array
     {
         if ($this->context->slug !== 'mlb' || ! $this->resource instanceof MlbPrediction) {
@@ -751,6 +1014,37 @@ class SportPredictionResource extends JsonResource
         $value = $this->attribute($key);
 
         return $value === null ? null : (float) $value;
+    }
+
+    private function nullableFloat(mixed $value): ?float
+    {
+        return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function nullableInt(mixed $value): ?int
+    {
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function nullableBool(mixed $value): ?bool
+    {
+        return is_bool($value) ? $value : null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function stringList(mixed $values): array
+    {
+        if (! is_array($values)) {
+            return [];
+        }
+
+        return collect($values)
+            ->filter(fn (mixed $value): bool => is_string($value) && trim($value) !== '')
+            ->map(fn (string $value): string => $value)
+            ->values()
+            ->all();
     }
 
     private function serializeDateValue(mixed $value): ?string

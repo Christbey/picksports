@@ -252,6 +252,7 @@ export type ApiV2Prediction = {
     audit_context?: ApiV2Record | null;
     pro_signal_layer?: ApiV2Record | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    cfb_signal_context?: ApiV2Record | null;
     period_models?: MlbPeriodModelContext[];
     period_insights?: MlbPeriodInsight[];
     actual_spread?: number | string | null;

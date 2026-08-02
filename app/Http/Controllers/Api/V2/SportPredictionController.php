@@ -175,7 +175,7 @@ class SportPredictionController extends Controller
     {
         return [
             'mode' => 'sanitized_default',
-            'allowed_field_groups' => ['identity', 'game', 'pick', 'projection', 'grading', 'live_state', 'depth_chart_context', 'market_summary', 'timestamps'],
+            'allowed_field_groups' => ['identity', 'game', 'pick', 'projection', 'grading', 'live_state', 'depth_chart_context', 'market_summary', 'sport_signal_context', 'timestamps'],
             'withheld_field_groups' => ['model', 'betting_value', 'ai_analysis', 'narrative', 'raw_inputs'],
         ];
     }

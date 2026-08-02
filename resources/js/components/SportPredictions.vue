@@ -251,6 +251,11 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
             typeof prediction.value_signal === 'object'
                 ? (prediction.value_signal as PredictionListItem['value_signal'])
                 : null,
+        cfb_signal_context:
+            prediction.cfb_signal_context &&
+            typeof prediction.cfb_signal_context === 'object'
+                ? prediction.cfb_signal_context
+                : null,
         recommendation: prediction.recommendation ?? null,
         game: {
             id: Number(game?.id ?? prediction.game_id ?? 0),

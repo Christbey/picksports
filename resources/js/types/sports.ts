@@ -236,6 +236,7 @@ export interface PredictionListItem {
     betting_value_summary?: BettingValueSummary;
     value_signal?: ValueSignalSummary | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    cfb_signal_context?: Record<string, unknown> | null;
     ai_analysis?: AiPredictionAnalysisSummary | null;
     recommendation?: PredictionRecommendation | null;
     market_aware_projection?: MarketAwareProjection | null;

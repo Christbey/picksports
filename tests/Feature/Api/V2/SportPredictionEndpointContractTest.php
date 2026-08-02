@@ -15,6 +15,7 @@ use App\Models\NBA\Team as NbaTeam;
 use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\Prediction as NflPrediction;
 use App\Models\NFL\Team as NflTeam;
+use App\Models\PredictionFeatureSnapshot;
 use App\Models\User;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WCBB\Prediction as WcbbPrediction;
@@ -414,6 +415,102 @@ it('presents cfb v2 prediction game dates in eastern football time', function ()
         ->assertJsonPath('data.game_id', $game->id)
         ->assertJsonPath('data.game.game_date', '2026-08-29')
         ->assertJsonPath('data.game.game_time', '22:00:00');
+});
+
+it('exposes sanitized cfb signal context from the feature snapshot', function () {
+    v2PredictionContractActingAsBypassUser();
+
+    [$game, $prediction] = v2PredictionContractCreateGamePrediction(
+        CfbTeam::class,
+        CfbGame::class,
+        CfbPrediction::class,
+        [
+            'season' => 2026,
+            'week' => 0,
+            'game_date' => '2026-08-29 19:00:00',
+            'status' => 'STATUS_SCHEDULED',
+        ],
+    );
+
+    PredictionFeatureSnapshot::query()->create([
+        'sport' => 'cfb',
+        'prediction_table' => $prediction->getTable(),
+        'prediction_id' => $prediction->id,
+        'game_id' => $game->id,
+        'snapshot_run_id' => 'cfb-signal-context-contract',
+        'model_version' => 'cfb-contract',
+        'feature_version' => 'cfb-context-v1',
+        'blend_version' => 'cfb-context-v1',
+        'features' => [],
+        'outputs' => [],
+        'market_context' => [],
+        'model_metadata' => [
+            'raw_inputs' => ['should_not' => 'leak'],
+            'cfb_preseason_layer' => [
+                'enabled' => true,
+                'week' => 0,
+                'week_bucket' => 'week_0_1',
+                'spread_adjustment' => 2.25,
+                'total_adjustment' => -0.5,
+                'confidence_penalty' => 1.5,
+                'aligned_signals' => 4,
+                'risk_flags' => ['qb_continuity_uncertainty'],
+                'components' => [
+                    'returning_production' => [
+                        'spread_adjustment' => 1.2,
+                        'raw_payload' => ['private' => true],
+                    ],
+                ],
+            ],
+            'cfb_game_context' => [
+                'enabled' => true,
+                'spread_adjustment' => -0.25,
+                'total_adjustment' => -1.1,
+                'confidence_penalty' => 0.5,
+                'risk_flags' => ['wind_total_suppression'],
+                'weather' => [
+                    'available' => true,
+                    'signal' => 'wind_under_signal',
+                    'total_adjustment' => -1.1,
+                    'inputs' => [
+                        'temperature_f' => 62,
+                        'wind_speed_mph' => 17,
+                        'raw_payload' => ['private' => true],
+                    ],
+                ],
+                'schedule' => [
+                    'spread_adjustment' => 0.25,
+                    'inputs' => [
+                        'home_rest_days' => 7,
+                        'away_rest_days' => 5,
+                    ],
+                ],
+            ],
+            'cfb_market_movement' => [
+                'model_pick_side' => 'home',
+                'current_bookmaker_home_line' => -3.5,
+                'current_home_margin' => 3.5,
+                'line_moved_toward_model' => true,
+                'confidence_adjustment' => 1.0,
+                'risk_flags' => ['market_moved_toward_model'],
+            ],
+        ],
+        'generated_at' => now(),
+    ]);
+
+    $response = $this->getJson("/api/v2/sports/cfb/predictions/{$prediction->id}")
+        ->assertOk()
+        ->assertJsonPath('data.cfb_signal_context.preseason_layer.spread_adjustment', 2.25)
+        ->assertJsonPath('data.cfb_signal_context.preseason_layer.components.returning_production.spread_adjustment', 1.2)
+        ->assertJsonPath('data.cfb_signal_context.game_context.weather.signal', 'wind_under_signal')
+        ->assertJsonPath('data.cfb_signal_context.game_context.weather.inputs.wind_speed_mph', 17)
+        ->assertJsonPath('data.cfb_signal_context.market_movement.current_bookmaker_home_line', -3.5)
+        ->assertJsonPath('data.cfb_signal_context.market_movement.line_moved_toward_model', true)
+        ->assertJsonMissingPath('data.cfb_signal_context.raw_inputs')
+        ->assertJsonMissingPath('data.cfb_signal_context.preseason_layer.components.returning_production.raw_payload')
+        ->assertJsonMissingPath('data.cfb_signal_context.game_context.weather.inputs.raw_payload');
+
+    expect($response->json('data.cfb_signal_context.audit.snapshot_run_id'))->toBe('cfb-signal-context-contract');
 });
 
 it('treats late-night wnba utc starts as the local game date for predictions', function () {

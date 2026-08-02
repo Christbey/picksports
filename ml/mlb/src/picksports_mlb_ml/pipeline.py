@@ -746,7 +746,7 @@ def _package_version() -> str:
     try:
         return importlib.metadata.version("picksports-mlb-ml")
     except importlib.metadata.PackageNotFoundError:
-        return "0.1.0"
+        return "0.2.0"
 
 
 def _dependency_versions() -> dict[str, str]:

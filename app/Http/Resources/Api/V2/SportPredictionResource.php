@@ -24,6 +24,7 @@ class SportPredictionResource extends JsonResource
     public function __construct(
         mixed $resource,
         private readonly SportContext $context,
+        private readonly ?array $mlbPeriodInsights = null,
     ) {
         parent::__construct($resource);
     }
@@ -57,6 +58,7 @@ class SportPredictionResource extends JsonResource
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
             'prediction_analysis' => $this->predictionAnalysis(),
+            'period_insights' => $this->context->slug === 'mlb' ? ($this->mlbPeriodInsights ?? []) : [],
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
             'home_team_elo' => $this->floatAttribute('home_team_elo'),
@@ -120,6 +122,8 @@ class SportPredictionResource extends JsonResource
             'status' => $game->getAttribute('status'),
             'home_score' => $game->getAttribute('home_score'),
             'away_score' => $game->getAttribute('away_score'),
+            'home_linescores' => $this->context->slug === 'mlb' ? $game->getAttribute('home_linescores') : null,
+            'away_linescores' => $this->context->slug === 'mlb' ? $game->getAttribute('away_linescores') : null,
             'inning' => $game->getAttribute('inning'),
             'inning_half' => $game->getAttribute('inning_half') ?? $game->getAttribute('inning_state'),
             'balls' => $game->getAttribute('balls'),
@@ -242,6 +246,12 @@ class SportPredictionResource extends JsonResource
                     'spreads' => 'spread',
                     'totals' => 'total',
                     'h2h' => 'moneyline',
+                    'totals_1st_1_innings', 'totals_1st_1' => 'first_inning',
+                    'h2h_1st_3_innings', 'h2h_1st_3',
+                    'totals_1st_3_innings', 'totals_1st_3' => 'first_3',
+                    'h2h_1st_5_innings', 'h2h_1st_5',
+                    'spreads_1st_5_innings', 'spreads_1st_5',
+                    'totals_1st_5_innings', 'totals_1st_5' => 'first_5',
                     default => null,
                 };
 

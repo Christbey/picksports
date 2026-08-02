@@ -218,8 +218,8 @@ class MlbChallengerShadowService
     {
         $capturedHomeId = $this->capturedPitcherId($snapshot, 'home');
         $capturedAwayId = $this->capturedPitcherId($snapshot, 'away');
-        $currentHomeId = trim((string) $game->probable_home_pitcher_espn_id);
-        $currentAwayId = trim((string) $game->probable_away_pitcher_espn_id);
+        $currentHomeId = trim((string) $game->resolvedStartingPitcherEspnId('home'));
+        $currentAwayId = trim((string) $game->resolvedStartingPitcherEspnId('away'));
 
         return $capturedHomeId !== ''
             && $capturedAwayId !== ''

@@ -4,6 +4,7 @@ import type {
     PredictionRecommendation,
 } from '@/lib/predictionRecommendation';
 import type { PredictionAnalysisSummary } from './sports';
+import type { MlbPeriodModelContext } from './mlb-daily-picks';
 
 export type ApiV2SportSlug =
     | 'nba'
@@ -18,6 +19,58 @@ export type ApiV2SportSlug =
 export type ApiV2Record = Record<string, unknown>;
 
 export type ApiV2Id = string | number;
+
+export type MlbPeriodInsightTeam = {
+    games: number;
+    record: { wins: number; losses: number; ties: number };
+    win_probability: number | null;
+    tie_rate: number | null;
+    runs_for_per_game: number | null;
+    runs_against_per_game: number | null;
+    run_difference_per_game: number | null;
+    last_10: {
+        games: number;
+        win_probability: number | null;
+        tie_rate: number | null;
+        run_difference_per_game: number | null;
+    };
+    venue: {
+        games: number;
+        win_probability: number | null;
+        tie_rate: number | null;
+    };
+    rest_days: number | null;
+};
+
+export type MlbPeriodInsight = {
+    market_type: 'first_3_moneyline' | 'first_5_moneyline' | string;
+    label: string;
+    innings: number;
+    state: string;
+    market_available: boolean;
+    candidate_available: boolean;
+    shadow_model_available: boolean;
+    pregame_safe: boolean;
+    lean: {
+        side: 'home' | 'away' | 'neutral';
+        team_id: ApiV2Id | null;
+        team_abbreviation: string | null;
+        period_elo_difference: number;
+        two_way_home_probability: number | null;
+        two_way_away_probability: number | null;
+    };
+    home: MlbPeriodInsightTeam;
+    away: MlbPeriodInsightTeam;
+    starter_context: {
+        known: boolean;
+        home_rating: number | null;
+        away_rating: number | null;
+        rating_difference: number | null;
+    };
+    confidence: { level: string; sample_games: number };
+    signals: string[];
+    risk_flags: string[];
+};
 
 export type ApiV2AccessTier = 'free' | 'premium' | 'admin' | (string & {});
 
@@ -109,6 +162,8 @@ export type ApiV2GameSummary = {
     status?: string | null;
     home_score?: number | string | null;
     away_score?: number | string | null;
+    home_linescores?: Array<number | string | null> | null;
+    away_linescores?: Array<number | string | null> | null;
     home_team_id?: ApiV2Id | null;
     away_team_id?: ApiV2Id | null;
     home_team?: ApiV2TeamSummary | null;
@@ -194,8 +249,11 @@ export type ApiV2Prediction = {
     value_signal?: ApiV2Record | null;
     market_aware_projection?: MarketAwareProjection | null;
     market_summary?: ApiV2Record;
+    audit_context?: ApiV2Record | null;
     pro_signal_layer?: ApiV2Record | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
+    period_models?: MlbPeriodModelContext[];
+    period_insights?: MlbPeriodInsight[];
     actual_spread?: number | string | null;
     actual_total?: number | string | null;
     spread_error?: number | string | null;

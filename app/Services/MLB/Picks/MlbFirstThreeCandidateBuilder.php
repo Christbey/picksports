@@ -3,10 +3,15 @@
 namespace App\Services\MLB\Picks;
 
 use App\Models\MLB\Prediction;
+use App\Services\MLB\MlbPeriodModelContextService;
+use App\Support\MLB\MlbGameStart;
 
 class MlbFirstThreeCandidateBuilder
 {
-    public function __construct(private readonly MlbPickMarketService $markets) {}
+    public function __construct(
+        private readonly MlbPickMarketService $markets,
+        private readonly MlbPeriodModelContextService $periodModels,
+    ) {}
 
     /**
      * @return list<MlbPickCandidateData>
@@ -30,8 +35,22 @@ class MlbFirstThreeCandidateBuilder
             }
 
             $projectedValue = $side === 'home' ? $pitcherEdge : -1 * $pitcherEdge;
-            $modelProbability = max(0.05, min(0.95, 0.5 + ($projectedValue / 700)));
+            $heuristicProbability = max(0.05, min(0.95, 0.5 + ($projectedValue / 700)));
+            $periodModel = $this->periodModels->qualifiedProbability(
+                (int) $game->id,
+                'first_3_moneyline',
+                $side,
+            );
+            $modelProbability = $periodModel['probability'] ?? $heuristicProbability;
             $marketProbability = $this->markets->implied((int) $outcome['price']);
+            $reasonCodes = [$periodModel ? 'promoted_period_model_probability' : 'f3_pitcher_edge'];
+            $riskFlags = ['f3_high_variance', 'low_sample_first_3'];
+
+            if (! $game->probable_home_pitcher_espn_id || ! $game->probable_away_pitcher_espn_id) {
+                $riskFlags[] = 'starter_unconfirmed';
+            } else {
+                $reasonCodes[] = 'starter_confirmed';
+            }
 
             $rows[] = new MlbPickCandidateData(
                 gameId: (int) $game->id,
@@ -50,12 +69,19 @@ class MlbFirstThreeCandidateBuilder
                 edgeRaw: $marketProbability !== null ? $modelProbability - $marketProbability : null,
                 edgeNoVig: $sideNoVig[$side] !== null ? $modelProbability - $sideNoVig[$side] : null,
                 projectedValue: $projectedValue,
-                reasonCodes: ['f5_pitcher_edge', 'starter_confirmed'],
-                riskFlags: ['f3_high_variance', 'low_sample_first_3'],
-                featureSnapshot: ['pitcher_edge' => $pitcherEdge],
+                reasonCodes: $reasonCodes,
+                riskFlags: $riskFlags,
+                featureSnapshot: [
+                    'pitcher_edge' => $pitcherEdge,
+                    'heuristic_probability' => $heuristicProbability,
+                    'model_source' => $periodModel ? 'promoted_period_model' : 'elo_heuristic',
+                    'period_model_artifact_id' => data_get($periodModel, 'context.lineage.artifact_id'),
+                    'period_model_run_id' => data_get($periodModel, 'context.lineage.model_run_id'),
+                    'period_model_feature_hash' => data_get($periodModel, 'context.lineage.feature_hash'),
+                ],
                 marketSnapshot: $outcome,
                 teamId: (int) ($side === 'home' ? $game->home_team_id : $game->away_team_id),
-                gameStartAt: $game->game_date,
+                gameStartAt: MlbGameStart::for($game),
             );
         }
 
@@ -95,7 +121,7 @@ class MlbFirstThreeCandidateBuilder
                 riskFlags: ['f3_high_variance', 'low_sample_first_3'],
                 featureSnapshot: ['corrected_f3_total' => $f3Total],
                 marketSnapshot: $outcome,
-                gameStartAt: $game->game_date,
+                gameStartAt: MlbGameStart::for($game),
             );
         }
 

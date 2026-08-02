@@ -5,6 +5,7 @@ namespace App\Services\Sports;
 use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
+use App\Support\MLB\MlbGameScoreResolver;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
@@ -174,11 +175,18 @@ class GameMatchupContextService
 
     protected function baseGameQuery(Model $game): Builder
     {
+        $relations = ['homeTeam', 'awayTeam'];
+        if ($game instanceof Game) {
+            $relations[] = 'teamStats';
+        }
+
         $query = $game::query()
-            ->with(['homeTeam', 'awayTeam'])
-            ->where('status', 'STATUS_FINAL')
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score');
+            ->with($relations)
+            ->where('status', 'STATUS_FINAL');
+
+        if (! $game instanceof Game) {
+            $query->whereNotNull('home_score')->whereNotNull('away_score');
+        }
 
         $this->applyMatchupContextSeasonTypeFilter($query, $game);
 
@@ -235,11 +243,17 @@ class GameMatchupContextService
 
     protected function teamResult(Model $game, int $teamId): ?string
     {
-        $isHome = (int) $game->home_team_id === $teamId;
-        $rawTeamScore = $isHome ? $game->home_score : $game->away_score;
-        $rawOpponentScore = $isHome ? $game->away_score : $game->home_score;
+        if ($game instanceof Game) {
+            $resolved = app(MlbGameScoreResolver::class)->forTeam($game, $teamId);
+            $rawTeamScore = $resolved['team'];
+            $rawOpponentScore = $resolved['opponent'];
+        } else {
+            $isHome = (int) $game->home_team_id === $teamId;
+            $rawTeamScore = $isHome ? $game->home_score : $game->away_score;
+            $rawOpponentScore = $isHome ? $game->away_score : $game->home_score;
+        }
 
-        if ($rawTeamScore === null || $rawOpponentScore === null) {
+        if (! is_numeric($rawTeamScore) || ! is_numeric($rawOpponentScore)) {
             return null;
         }
 

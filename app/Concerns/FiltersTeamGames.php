@@ -2,7 +2,9 @@
 
 namespace App\Concerns;
 
+use App\Models\MLB\Game as MlbGame;
 use App\Services\PlayerStats\NbaPlayerEpaCalculator;
+use App\Support\MLB\MlbGameScoreResolver;
 use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -256,6 +258,15 @@ trait FiltersTeamGames
      */
     protected function resolvedGameScoreForTeam(Model $game, Model $team, bool $isHome): array
     {
+        if ($game instanceof MlbGame) {
+            $resolved = app(MlbGameScoreResolver::class)->forTeam($game, (int) $team->getKey());
+
+            return [
+                (float) ($resolved['team'] ?? 0),
+                (float) ($resolved['opponent'] ?? 0),
+            ];
+        }
+
         $gameTeamScore = $isHome ? $game->home_score : $game->away_score;
         $gameOpponentScore = $isHome ? $game->away_score : $game->home_score;
 
@@ -321,8 +332,7 @@ trait FiltersTeamGames
 
         foreach ($recentGames as $index => $game) {
             $isHome = (int) $game->home_team_id === (int) $team->id;
-            $teamScore = (float) ($isHome ? ($game->home_score ?? 0) : ($game->away_score ?? 0));
-            $oppScore = (float) ($isHome ? ($game->away_score ?? 0) : ($game->home_score ?? 0));
+            [$teamScore, $oppScore] = $this->resolvedGameScoreForTeam($game, $team, $isHome);
             $margin = $teamScore - $oppScore;
             $weight = pow($decay, $index);
 

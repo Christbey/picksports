@@ -23,7 +23,7 @@ class SyncGames extends AbstractSyncGames
         $dateParts = $this->resolveMlbGameDateParts($gameData);
         [$homeCompetitor, $awayCompetitor] = $this->resolveCompetitors($gameData);
 
-        return [
+        $attributes = [
             'espn_event_id' => $dto->espnEventId,
             'espn_uid' => $gameData['uid'] ?? null,
             'season' => $dto->season,
@@ -50,13 +50,23 @@ class SyncGames extends AbstractSyncGames
             'balls' => null,
             'strikes' => null,
             'outs' => null,
-            'probable_home_pitcher_espn_id' => $this->probablePitcherEspnId($homeCompetitor),
-            'probable_away_pitcher_espn_id' => $this->probablePitcherEspnId($awayCompetitor),
             'venue_name' => $dto->venueName,
             'venue_city' => $dto->venueCity,
             'venue_state' => $dto->venueState,
             'broadcast_networks' => $dto->broadcastNetworks,
         ];
+
+        $homeProbablePitcherId = $this->probablePitcherEspnId($homeCompetitor);
+        $awayProbablePitcherId = $this->probablePitcherEspnId($awayCompetitor);
+
+        if ($homeProbablePitcherId !== null) {
+            $attributes['probable_home_pitcher_espn_id'] = $homeProbablePitcherId;
+        }
+        if ($awayProbablePitcherId !== null) {
+            $attributes['probable_away_pitcher_espn_id'] = $awayProbablePitcherId;
+        }
+
+        return $attributes;
     }
 
     /**

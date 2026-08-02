@@ -352,6 +352,36 @@ export interface PredictionSummary {
     actual_total?: number | null;
     winner_correct?: boolean | null;
     betting_value?: BettingRecommendation[];
+    recommendation?: PredictionRecommendation | null;
+    public_recommendation?: {
+        type?: string | null;
+        label?: string | null;
+        is_bet?: boolean;
+        is_lean?: boolean;
+        promotion_blocked?: boolean;
+        block_reasons?: string[];
+    } | null;
+    value_signal?: ValueSignalSummary | null;
+    market_aware_projection?: MarketAwareProjection | null;
+    market_summary?: {
+        has_odds?: boolean;
+        markets?: string[];
+        odds_updated_at?: string | null;
+        [key: string]: unknown;
+    } | null;
+    audit_context?: {
+        prediction_generated_at?: string | null;
+        prediction_locked_at?: string | null;
+        feature_snapshot_at?: string | null;
+        snapshot_run_id?: string | null;
+        odds_collected_at?: string | null;
+        graded_at?: string | null;
+        result_finalized_at?: string | null;
+        model_version?: string | null;
+        feature_version?: string | null;
+        blend_version?: string | null;
+        [key: string]: unknown;
+    } | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
     narrative?: {
         summary: string;
@@ -573,6 +603,43 @@ export interface MlbPageTeam {
     }>;
 }
 
+export interface MlbStartingPitcherForecast {
+    id: number;
+    forecast_hash: string;
+    model_version: string;
+    prediction_source: string;
+    predicted_pitcher: {
+        id: number;
+        espn_id?: string | null;
+        full_name?: string | null;
+        elo_rating?: number | null;
+    } | null;
+    predicted_pitcher_rating: number | null;
+    predicted_rating_source: string | null;
+    confidence: number | null;
+    evidence: Record<string, unknown>;
+    forecasted_at: string | null;
+    game_start_at: string | null;
+    known_before_game_start: boolean;
+    actual_pitcher: {
+        id: number;
+        espn_id?: string | null;
+        full_name?: string | null;
+        elo_rating?: number | null;
+    } | null;
+    actual_pitcher_rating: number | null;
+    confirmation_source: string | null;
+    confirmed_at: string | null;
+    is_correct: boolean | null;
+    starter_changed: boolean | null;
+    confidence_error: number | null;
+    brier_score: number | null;
+    log_loss: number | null;
+    rating_difference: number | null;
+    grade: 'correct' | 'incorrect' | null;
+    graded_at: string | null;
+}
+
 export interface MlbPageGame extends GamePageGame {
     home_team_id: number;
     away_team_id: number;
@@ -588,8 +655,29 @@ export interface MlbPageGame extends GamePageGame {
     broadcast_networks: string[] | null;
     season: number;
     season_type: string;
+    game_time?: string | null;
     probable_home_pitcher_espn_id?: string | null;
     probable_away_pitcher_espn_id?: string | null;
+    actual_home_pitcher_espn_id?: string | null;
+    actual_away_pitcher_espn_id?: string | null;
+    projected_home_pitcher_espn_id?: string | null;
+    projected_away_pitcher_espn_id?: string | null;
+    home_starting_pitcher_source?:
+        | 'espn_boxscore_confirmed'
+        | 'espn_probable'
+        | 'rotation_projection'
+        | null;
+    away_starting_pitcher_source?:
+        | 'espn_boxscore_confirmed'
+        | 'espn_probable'
+        | 'rotation_projection'
+        | null;
+    home_starting_pitcher_confidence?: number | null;
+    away_starting_pitcher_confidence?: number | null;
+    pitcher_projection_metadata?: Record<string, unknown> | null;
+    pitcher_projection_generated_at?: string | null;
+    starting_pitcher_confirmation_metadata?: Record<string, unknown> | null;
+    starting_pitchers_confirmed_at?: string | null;
     home_starting_pitcher?: {
         id: number;
         espn_id?: string | null;
@@ -604,6 +692,32 @@ export interface MlbPageGame extends GamePageGame {
         headshot_url?: string | null;
         elo_rating?: number | null;
     } | null;
+    home_starting_pitcher_forecast?: MlbStartingPitcherForecast | null;
+    away_starting_pitcher_forecast?: MlbStartingPitcherForecast | null;
 }
 
 export type MlbPagePrediction = PredictionSummary;
+
+export interface MlbTeamMetricsData {
+    team_id?: number | null;
+    season?: number | string | null;
+    season_type?: number | string | null;
+    wins?: number | null;
+    losses?: number | null;
+    games_played?: number | null;
+    record_label?: string | null;
+    offensive_rating?: number | null;
+    pitching_rating?: number | null;
+    defensive_rating?: number | null;
+    runs_per_game?: number | null;
+    runs_allowed_per_game?: number | null;
+    run_differential_per_game?: number | null;
+    ops?: number | null;
+    team_era?: number | null;
+    whip?: number | null;
+    recent_form_rating?: number | null;
+    injury_adjusted_team_rating?: number | null;
+    strength_of_schedule?: number | null;
+    rest_travel_fatigue?: number | null;
+    calculation_date?: string | null;
+}

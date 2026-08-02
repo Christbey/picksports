@@ -2,6 +2,8 @@
 
 namespace App\Actions\Trends;
 
+use App\Models\MLB\Game as MlbGame;
+use App\Support\MLB\MlbGameScoreResolver;
 use Illuminate\Support\Collection;
 
 abstract class TrendCollector
@@ -16,6 +18,9 @@ abstract class TrendCollector
 
     protected object $team;
 
+    /** @var array<int|string, array{home:?int,away:?int,complete:bool,source:string}> */
+    protected array $resolvedScoreCache = [];
+
     abstract public function key(): string;
 
     /**
@@ -29,9 +34,17 @@ abstract class TrendCollector
         $this->team = $team;
         $this->teamId = $team->id;
         $this->teamAbbr = $team->abbreviation;
-        $this->games = $games;
+        $this->resolvedScoreCache = [];
+        $this->games = $games
+            ->filter(fn (object $game): bool => $this->hasCompleteScore($game))
+            ->values();
 
         return $this;
+    }
+
+    public function hasGames(): bool
+    {
+        return $this->games->isNotEmpty();
     }
 
     protected function isHome(object $game): bool
@@ -41,12 +54,16 @@ abstract class TrendCollector
 
     protected function teamScore(object $game): ?int
     {
-        return $this->isHome($game) ? $game->home_score : $game->away_score;
+        $scores = $this->resolvedScores($game);
+
+        return $this->isHome($game) ? $scores['home'] : $scores['away'];
     }
 
     protected function opponentScore(object $game): ?int
     {
-        return $this->isHome($game) ? $game->away_score : $game->home_score;
+        $scores = $this->resolvedScores($game);
+
+        return $this->isHome($game) ? $scores['away'] : $scores['home'];
     }
 
     protected function opponentId(object $game): int
@@ -66,7 +83,40 @@ abstract class TrendCollector
 
     protected function totalPoints(object $game): int
     {
-        return ($game->home_score ?? 0) + ($game->away_score ?? 0);
+        $scores = $this->resolvedScores($game);
+
+        return (int) $scores['home'] + (int) $scores['away'];
+    }
+
+    protected function hasCompleteScore(object $game): bool
+    {
+        return $this->resolvedScores($game)['complete'];
+    }
+
+    /**
+     * @return array{home:?int,away:?int,complete:bool,source:string}
+     */
+    protected function resolvedScores(object $game): array
+    {
+        $key = $game->id ?? spl_object_id($game);
+
+        if (isset($this->resolvedScoreCache[$key])) {
+            return $this->resolvedScoreCache[$key];
+        }
+
+        if ($this->league === 'mlb' && $game instanceof MlbGame) {
+            return $this->resolvedScoreCache[$key] = app(MlbGameScoreResolver::class)->resolve($game);
+        }
+
+        $home = is_numeric($game->home_score ?? null) ? (int) $game->home_score : null;
+        $away = is_numeric($game->away_score ?? null) ? (int) $game->away_score : null;
+
+        return $this->resolvedScoreCache[$key] = [
+            'home' => $home,
+            'away' => $away,
+            'complete' => $home !== null && $away !== null,
+            'source' => 'game',
+        ];
     }
 
     protected function formatRecord(int $wins, int $total): string

@@ -20,6 +20,7 @@ use App\Actions\Trends\Collectors\StreakTrendCollector;
 use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
 use App\Models\MLB\Game;
+use Illuminate\Database\Eloquent\Builder;
 
 class CalculateTeamTrends extends AbstractCalculateTeamTrends
 {
@@ -54,4 +55,25 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
         MomentumTrendCollector::class,
         ClutchPerformanceTrendCollector::class,
     ];
+
+    protected function baseGamesQuery(
+        object $team,
+        ?int $season = null,
+        ?string $seasonType = null,
+        ?string $beforeDate = null
+    ): Builder {
+        return parent::baseGamesQuery($team, $season, $seasonType, $beforeDate)
+            ->where(function (Builder $query): void {
+                $query->where(function (Builder $scores): void {
+                    $scores->whereNotNull('home_score')->whereNotNull('away_score');
+                })->orWhere(function (Builder $stats): void {
+                    $stats->whereHas('teamStats', fn (Builder $home): Builder => $home
+                        ->whereColumn('mlb_team_stats.team_id', 'mlb_games.home_team_id')
+                        ->whereNotNull('runs'))
+                        ->whereHas('teamStats', fn (Builder $away): Builder => $away
+                            ->whereColumn('mlb_team_stats.team_id', 'mlb_games.away_team_id')
+                            ->whereNotNull('runs'));
+                });
+            });
+    }
 }

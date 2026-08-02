@@ -3,6 +3,7 @@
 namespace App\Services\MLB\Picks;
 
 use App\Models\MLB\Prediction;
+use App\Support\MLB\MlbGameStart;
 
 class MlbRunLineCandidateBuilder
 {
@@ -69,7 +70,7 @@ class MlbRunLineCandidateBuilder
                 featureSnapshot: ['predicted_home_margin' => $homeMargin],
                 marketSnapshot: $outcome,
                 teamId: (int) ($side === 'home' ? $game->home_team_id : $game->away_team_id),
-                gameStartAt: $game->game_date,
+                gameStartAt: MlbGameStart::for($game),
             );
         }
 

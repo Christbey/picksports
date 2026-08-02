@@ -51,6 +51,16 @@ class Game extends Model
         'outs',
         'probable_home_pitcher_espn_id',
         'probable_away_pitcher_espn_id',
+        'actual_home_pitcher_espn_id',
+        'actual_away_pitcher_espn_id',
+        'projected_home_pitcher_espn_id',
+        'projected_away_pitcher_espn_id',
+        'projected_home_pitcher_confidence',
+        'projected_away_pitcher_confidence',
+        'pitcher_projection_metadata',
+        'pitcher_projection_generated_at',
+        'starting_pitcher_confirmation_metadata',
+        'starting_pitchers_confirmed_at',
         'venue_name',
         'venue_city',
         'venue_state',
@@ -67,6 +77,12 @@ class Game extends Model
             'home_linescores' => 'array',
             'away_linescores' => 'array',
             'broadcast_networks' => 'array',
+            'projected_home_pitcher_confidence' => 'float',
+            'projected_away_pitcher_confidence' => 'float',
+            'pitcher_projection_metadata' => 'array',
+            'pitcher_projection_generated_at' => 'datetime',
+            'starting_pitcher_confirmation_metadata' => 'array',
+            'starting_pitchers_confirmed_at' => 'datetime',
             'odds_data' => 'array',
             'odds_updated_at' => 'datetime',
         ];
@@ -98,6 +114,116 @@ class Game extends Model
     public function probableAwayPitcher(): BelongsTo
     {
         return $this->belongsTo(Player::class, 'probable_away_pitcher_espn_id', 'espn_id');
+    }
+
+    public function actualHomePitcher(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'actual_home_pitcher_espn_id', 'espn_id');
+    }
+
+    public function actualAwayPitcher(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'actual_away_pitcher_espn_id', 'espn_id');
+    }
+
+    public function projectedHomePitcher(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'projected_home_pitcher_espn_id', 'espn_id');
+    }
+
+    public function projectedAwayPitcher(): BelongsTo
+    {
+        return $this->belongsTo(Player::class, 'projected_away_pitcher_espn_id', 'espn_id');
+    }
+
+    public function resolvedStartingPitcherEspnId(string $side): ?string
+    {
+        $actual = trim((string) ($side === 'home'
+            ? $this->actual_home_pitcher_espn_id
+            : $this->actual_away_pitcher_espn_id));
+
+        if ($actual !== '') {
+            return $actual;
+        }
+
+        $probable = trim((string) ($side === 'home'
+            ? $this->probable_home_pitcher_espn_id
+            : $this->probable_away_pitcher_espn_id));
+
+        if ($probable !== '') {
+            return $probable;
+        }
+
+        $projected = trim((string) ($side === 'home'
+            ? $this->projected_home_pitcher_espn_id
+            : $this->projected_away_pitcher_espn_id));
+
+        return $projected !== '' ? $projected : null;
+    }
+
+    public function startingPitcherSource(string $side): ?string
+    {
+        $actual = $side === 'home'
+            ? $this->actual_home_pitcher_espn_id
+            : $this->actual_away_pitcher_espn_id;
+
+        if (filled($actual)) {
+            return 'espn_boxscore_confirmed';
+        }
+
+        $probable = $side === 'home'
+            ? $this->probable_home_pitcher_espn_id
+            : $this->probable_away_pitcher_espn_id;
+
+        if (filled($probable)) {
+            return 'espn_probable';
+        }
+
+        return filled($this->resolvedStartingPitcherEspnId($side))
+            ? 'rotation_projection'
+            : null;
+    }
+
+    public function startingPitcherConfidence(string $side): ?float
+    {
+        if (in_array($this->startingPitcherSource($side), ['espn_boxscore_confirmed', 'espn_probable'], true)) {
+            return 1.0;
+        }
+
+        $confidence = $side === 'home'
+            ? $this->projected_home_pitcher_confidence
+            : $this->projected_away_pitcher_confidence;
+
+        return $confidence !== null ? (float) $confidence : null;
+    }
+
+    public function hasResolvedStartingPitchers(): bool
+    {
+        return $this->resolvedStartingPitcherEspnId('home') !== null
+            && $this->resolvedStartingPitcherEspnId('away') !== null;
+    }
+
+    public function startingPitcherForecasts(): HasMany
+    {
+        return $this->hasMany(StartingPitcherForecast::class);
+    }
+
+    public function homeStartingPitcherForecast(): HasOne
+    {
+        return $this->hasOne(StartingPitcherForecast::class)
+            ->ofMany(
+                ['forecasted_at' => 'max', 'id' => 'max'],
+                fn ($query) => $query->where('side', 'home'),
+            );
+    }
+
+    public function awayStartingPitcherForecast(): HasOne
+    {
+        return $this->hasOne(StartingPitcherForecast::class)
+            ->ofMany(
+                ['forecasted_at' => 'max', 'id' => 'max'],
+                fn ($query) => $query->where('side', 'away'),
+            );
     }
 
     public function plays(): HasMany

@@ -29,6 +29,17 @@ return [
         'timeout_seconds' => (float) env('MLB_ML_INFERENCE_TIMEOUT', 30),
     ],
 
+    'period_models' => [
+        'enabled' => (bool) env('MLB_PERIOD_ML_ENABLED', true),
+        'schema_path' => base_path('ml/mlb/config/period_feature_schema.yaml'),
+        'work_directory' => storage_path('app/ml/automated-training/mlb-period'),
+        'timeout_seconds' => (int) env('MLB_PERIOD_ML_TRAINING_TIMEOUT', 14_400),
+        'inference_timeout_seconds' => (float) env('MLB_PERIOD_ML_INFERENCE_TIMEOUT', 30),
+        'history_start_season' => (int) env('MLB_PERIOD_ML_HISTORY_START_SEASON', 2021),
+        'minimum_edge' => (float) env('MLB_PERIOD_ML_MINIMUM_EDGE', 0.03),
+        'maximum_uncertainty' => (float) env('MLB_PERIOD_ML_MAXIMUM_UNCERTAINTY', 0.92),
+    ],
+
     'weekly_training' => [
         'enabled' => (bool) env('MLB_ML_WEEKLY_TRAINING_ENABLED', true),
         'auto_promote' => (bool) env('MLB_ML_AUTO_PROMOTE_ENABLED', true),

@@ -9,6 +9,7 @@ use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Prediction;
 use App\Models\MLB\Team;
 use App\Models\MLB\TeamStat;
+use Illuminate\Console\Scheduling\Schedule;
 
 uses()->group('mlb');
 
@@ -106,6 +107,52 @@ it('applies score reconciliation from the command', function () {
 
     expect($game->fresh()->home_score)->toBe(6)
         ->and($game->fresh()->away_score)->toBe(1);
+});
+
+it('runs missing-only reconciliation idempotently without scanning complete finals again', function () {
+    $missingGame = mlbReconciliationGame(homeScore: null, awayScore: null, status: 'STATUS_FINAL', season: 2026);
+    mlbTeamRuns($missingGame, homeRuns: 3, awayRuns: 1);
+
+    $completeGame = mlbReconciliationGame(homeScore: 8, awayScore: 7, status: 'STATUS_FINAL', season: 2026);
+    mlbTeamRuns($completeGame, homeRuns: 9, awayRuns: 7);
+
+    $this->artisan('mlb:reconcile-final-scores', [
+        '--season' => 2026,
+        '--missing-only' => true,
+    ])->assertSuccessful();
+
+    $this->artisan('mlb:reconcile-final-scores', [
+        '--season' => 2026,
+        '--missing-only' => true,
+    ])->assertSuccessful();
+
+    expect($missingGame->fresh()->home_score)->toBe(3)
+        ->and($missingGame->fresh()->away_score)->toBe(1)
+        ->and($completeGame->fresh()->home_score)->toBe(8)
+        ->and($completeGame->fresh()->away_score)->toBe(7);
+});
+
+it('schedules final-score reconciliation before the nightly team metric refresh', function () {
+    $events = collect(app(Schedule::class)->events());
+    $reconciliation = $events->first(
+        fn ($event): bool => $event->description === 'MLB: Reconcile Missing Final Scores'
+    );
+    $metricRefresh = $events->first(
+        fn ($event): bool => str_contains((string) $event->command, 'mlb:calculate-team-metrics --season=')
+    );
+
+    expect($reconciliation)->not->toBeNull()
+        ->and((string) $reconciliation?->command)
+        ->toContain('mlb:reconcile-final-scores --season=')
+        ->toContain('--missing-only')
+        ->and($reconciliation?->expression)->toBe('20 4 * * *')
+        ->and($reconciliation?->timezone)->toBe(config('app.timezone'))
+        ->and($reconciliation?->withoutOverlapping)->toBeTrue()
+        ->and($reconciliation?->expiresAt)->toBe(60)
+        ->and($reconciliation?->onOneServer)->toBeTrue()
+        ->and($reconciliation?->runInBackground)->toBeTrue()
+        ->and($metricRefresh)->not->toBeNull()
+        ->and($metricRefresh?->expression)->toBe('30 5 * * *');
 });
 
 it('validation fails when final mlb scores are reconstructable but missing', function () {

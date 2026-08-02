@@ -34,6 +34,7 @@ const hasDepthChartEntries = computed(() =>
     <SportDetailedGamePage v-bind="pageProps">
         <template #afterPrediction>
             <BettingPlanCard
+                :prediction="pageProps.prediction"
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"
             />
         </template>
@@ -54,13 +55,21 @@ const hasDepthChartEntries = computed(() =>
                     :home-starter-name="pageProps.homeStarterName"
                     :away-starter-rating="pageProps.awayStarterRating"
                     :home-starter-rating="pageProps.homeStarterRating"
+                    :away-starter-source="pageProps.awayStarterSource"
+                    :home-starter-source="pageProps.homeStarterSource"
+                    :away-starter-confidence="pageProps.awayStarterConfidence"
+                    :home-starter-confidence="pageProps.homeStarterConfidence"
+                    :away-starter-forecast="pageProps.awayStarterForecast"
+                    :home-starter-forecast="pageProps.homeStarterForecast"
                 />
                 <InjuryReportCard
                     :away-team-abbr="pageProps.awayTeam?.abbreviation"
                     :home-team-abbr="pageProps.homeTeam?.abbreviation"
                     :away-injuries="awayInjuries"
                     :home-injuries="homeInjuries"
-                    :depth-chart-context="pageProps.prediction?.depth_chart_context"
+                    :depth-chart-context="
+                        pageProps.prediction?.depth_chart_context
+                    "
                 />
             </div>
         </template>

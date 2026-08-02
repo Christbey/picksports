@@ -27,6 +27,8 @@ class SportGameIndexRequest extends FormRequest
                 'date',
                 $this->filled('from_date') ? 'after_or_equal:from_date' : null,
             ]),
+            'before_game_at' => ['sometimes', 'date'],
+            'exclude_game_id' => ['sometimes', 'integer', 'min:1'],
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:'.self::MAX_PER_PAGE],
         ];
     }
@@ -41,6 +43,8 @@ class SportGameIndexRequest extends FormRequest
             'season',
             'from_date',
             'to_date',
+            'before_game_at',
+            'exclude_game_id',
             'per_page',
         ]);
 
@@ -58,6 +62,14 @@ class SportGameIndexRequest extends FormRequest
 
         if (array_key_exists('to_date', $filters)) {
             $filters['to_date'] = (string) $filters['to_date'];
+        }
+
+        if (array_key_exists('before_game_at', $filters)) {
+            $filters['before_game_at'] = (string) $filters['before_game_at'];
+        }
+
+        if (array_key_exists('exclude_game_id', $filters)) {
+            $filters['exclude_game_id'] = (int) $filters['exclude_game_id'];
         }
 
         if (array_key_exists('per_page', $filters)) {

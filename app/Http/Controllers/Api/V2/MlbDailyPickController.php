@@ -7,6 +7,7 @@ use App\Http\Resources\Api\V2\MlbPickCandidateResource;
 use App\Models\MLB\Game;
 use App\Models\MLB\PickCandidate;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\MLB\MlbPeriodModelContextService;
 use App\Services\MLB\Picks\MlbDailyTopPickSelector;
 use App\Services\MLB\Picks\MlbPickCandidateRepository;
 use App\Services\MLB\Picks\MlbPickExplanationService;
@@ -26,6 +27,7 @@ class MlbDailyPickController extends Controller
         MlbPickCandidateRepository $repository,
         MlbDailyTopPickSelector $selector,
         MlbPickExplanationService $explanations,
+        MlbPeriodModelContextService $periodModels,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         abort_unless($context->slug === 'mlb', 404, 'Daily pick candidates are currently supported for MLB only.');
@@ -35,9 +37,17 @@ class MlbDailyPickController extends Controller
         $candidates = $repository->forDate($date, $season);
         $topPicks = $selector->select($candidates->toBase(), $request->query('limit') ? (int) $request->query('limit') : null);
         $slate = $this->slateSummary($date, $season, $dates);
+        $periodModels->prime([
+            ...$candidates->pluck('game_id')->all(),
+            ...$slate['game_ids'],
+        ]);
         $summary = $this->summary($candidates->toBase(), $topPicks, $slate);
+        $periodModelsByGame = collect($slate['game_ids'])
+            ->mapWithKeys(fn (int $gameId): array => [(string) $gameId => $periodModels->forGame($gameId)])
+            ->filter()
+            ->all();
 
-        $resource = fn ($row): array => (new MlbPickCandidateResource($row, $explanations))->toArray($request);
+        $resource = fn ($row): array => (new MlbPickCandidateResource($row, $explanations, $periodModels))->toArray($request);
 
         return response()->json([
             'data' => [
@@ -53,6 +63,7 @@ class MlbDailyPickController extends Controller
                 'candidate_count' => $candidates->count(),
                 'top_picks' => $topPicks->map($resource)->values()->all(),
                 'candidates' => $candidates->map($resource)->values()->all(),
+                'period_models_by_game' => (object) $periodModelsByGame,
                 'blocked_reasons' => (bool) config('mlb.picks.public_promotion_enabled', false)
                     ? []
                     : ['mlb_public_promotion_unvalidated'],
@@ -72,7 +83,7 @@ class MlbDailyPickController extends Controller
     /**
      * @param  Collection<int,PickCandidate>  $candidates
      * @param  Collection<int,PickCandidate>  $topPicks
-     * @param  array{slate_games:int,priced_games:int}  $slate
+     * @param  array{slate_games:int,priced_games:int,first_inning_priced_games:int,first_3_priced_games:int,first_5_priced_games:int,game_ids:list<int>}  $slate
      * @return array<string,mixed>
      */
     private function summary(Collection $candidates, Collection $topPicks, array $slate): array
@@ -86,6 +97,9 @@ class MlbDailyPickController extends Controller
         return [
             'slate_games' => $slate['slate_games'],
             'priced_games' => $slate['priced_games'],
+            'first_inning_priced_games' => $slate['first_inning_priced_games'],
+            'first_3_priced_games' => $slate['first_3_priced_games'],
+            'first_5_priced_games' => $slate['first_5_priced_games'],
             'candidate_count' => $candidates->count(),
             'top_candidate_count' => $topPicks->count(),
             'tracking_count' => $candidates->where('is_tracking_only', true)->count(),
@@ -98,7 +112,7 @@ class MlbDailyPickController extends Controller
     }
 
     /**
-     * @return array{slate_games:int,priced_games:int}
+     * @return array{slate_games:int,priced_games:int,first_inning_priced_games:int,first_3_priced_games:int,first_5_priced_games:int,game_ids:list<int>}
      */
     private function slateSummary(CarbonInterface|string $date, ?int $season, SportsDateWindowService $dates): array
     {
@@ -114,7 +128,42 @@ class MlbDailyPickController extends Controller
         return [
             'slate_games' => $games->count(),
             'priced_games' => $games->filter(fn (Game $game): bool => ! empty(data_get($game->odds_data, 'bookmakers')))->count(),
+            'first_inning_priced_games' => $games->filter(fn (Game $game): bool => $this->hasMarket($game, [
+                'totals_1st_1_innings',
+                'totals_1st_1',
+            ]))->count(),
+            'first_3_priced_games' => $games->filter(fn (Game $game): bool => $this->hasMarket($game, [
+                'h2h_1st_3_innings',
+                'h2h_1st_3',
+                'totals_1st_3_innings',
+                'totals_1st_3',
+            ]))->count(),
+            'first_5_priced_games' => $games->filter(fn (Game $game): bool => $this->hasMarket($game, [
+                'h2h_1st_5_innings',
+                'h2h_1st_5',
+                'spreads_1st_5_innings',
+                'spreads_1st_5',
+                'totals_1st_5_innings',
+                'totals_1st_5',
+            ]))->count(),
+            'game_ids' => $games->pluck('id')->map(fn (mixed $id): int => (int) $id)->values()->all(),
         ];
+    }
+
+    /**
+     * @param  list<string>  $marketKeys
+     */
+    private function hasMarket(Game $game, array $marketKeys): bool
+    {
+        foreach ((array) data_get($game->odds_data, 'bookmakers', []) as $bookmaker) {
+            foreach ((array) data_get($bookmaker, 'markets', []) as $market) {
+                if (in_array((string) data_get($market, 'key'), $marketKeys, true)) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -130,6 +179,7 @@ class MlbDailyPickController extends Controller
             'moneyline' => (int) ($counts['moneyline'] ?? 0),
             'run_line' => (int) ($counts['run_line'] ?? 0),
             'total' => (int) ($counts['total'] ?? 0),
+            'first_inning' => (int) ($counts['first_inning_total'] ?? 0),
             'first_5' => (int) (($counts['first_5_moneyline'] ?? 0) + ($counts['first_5_run_line'] ?? 0) + ($counts['first_5_total'] ?? 0)),
             'first_3' => (int) (($counts['first_3_moneyline'] ?? 0) + ($counts['first_3_total'] ?? 0)),
             'player_prop' => (int) ($counts['player_prop'] ?? 0),

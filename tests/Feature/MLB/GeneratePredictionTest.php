@@ -195,6 +195,44 @@ it('falls back to default pitcher elo when no recent pitcher ratings exist', fun
         ->and($prediction->vegas_spread)->toBeNull();
 });
 
+it('uses rotation projections as lower-confidence pitcher inputs', function () {
+    $homeTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $awayTeam = Team::factory()->create(['elo_rating' => 1500]);
+    $homePitcher = Player::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => 'projected-home',
+        'elo_rating' => 1534,
+    ]);
+    $awayPitcher = Player::factory()->pitcher()->create([
+        'team_id' => $awayTeam->id,
+        'espn_id' => 'projected-away',
+        'elo_rating' => 1478,
+    ]);
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'projected_home_pitcher_espn_id' => $homePitcher->espn_id,
+        'projected_away_pitcher_espn_id' => $awayPitcher->espn_id,
+        'projected_home_pitcher_confidence' => 0.62,
+        'projected_away_pitcher_confidence' => 0.58,
+    ]);
+
+    $prediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    expect($prediction)->not->toBeNull()
+        ->and((float) $prediction->home_pitcher_elo)->toBe(1534.0)
+        ->and((float) $prediction->away_pitcher_elo)->toBe(1478.0)
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.home_source'))->toBe('rotation_projection_player_rating')
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.away_source'))->toBe('rotation_projection_player_rating')
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.home_confidence'))->toBe(0.62)
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.away_confidence'))->toBe(0.58)
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.home_probable_pitcher_espn_id'))->toBe('projected-home')
+        ->and(data_get($prediction->model_metadata, 'pitcher_inputs.away_probable_pitcher_espn_id'))->toBe('projected-away');
+});
+
 it('uses configurable mlb spread, total, and win probability tuning values', function () {
     Config::set('mlb.prediction.home_field_advantage', 0);
     Config::set('mlb.elo.home_field_advantage', 0);

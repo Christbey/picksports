@@ -79,6 +79,7 @@ it('calculates baseball metrics correctly for a single game', function () {
         ->and($metric->strikeouts_pitched_per_game)->toBe(9.0)
         ->and($metric->whip)->toBe(1.111) // (7 + 3) / 9
         ->and((float) $metric->strength_of_schedule)->toBe(1600.0)
+        ->and((float) $metric->recent_form_rating)->toBe(2.0)
         ->and($metric->calculation_date->toDateString())->toBe(now()->toDateString());
 });
 

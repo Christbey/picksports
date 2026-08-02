@@ -43,6 +43,87 @@ export type MlbSignalLayer = {
     signal_groups: MlbSignalGroup[];
 };
 
+export type MlbPeriodModelDecision = {
+    id: number;
+    status: string;
+    recommendation_label?: string | null;
+    side?: string | null;
+    is_public: boolean;
+    is_tracking_only: boolean;
+    is_bet: boolean;
+    pregame_safe: boolean;
+    eligibility_reasons: string[];
+    reason_codes: string[];
+    risk_flags: string[];
+    model_probability?: number | null;
+    market_probability?: number | null;
+    no_vig_probability?: number | null;
+    edge?: number | null;
+    expected_value?: number | null;
+    quote?: {
+        line?: number | null;
+        price?: number | null;
+        bookmaker?: string | null;
+        captured_at?: string | null;
+    } | null;
+    decided_at?: string | null;
+    settlement?: {
+        result_status?: string | null;
+        profit_units?: number | null;
+        closing_price?: number | null;
+        closing_line?: number | null;
+        clv?: number | null;
+        settled_at?: string | null;
+    } | null;
+};
+
+export type MlbPeriodModelContext = {
+    market_type: 'first_3_moneyline' | 'first_5_moneyline' | string;
+    role: 'active_challenger' | 'champion' | 'challenger' | string;
+    status: string;
+    qualified_for_candidates: boolean;
+    active_source: string;
+    apply_to_live_output: boolean;
+    baseline_probability?: number | null;
+    challenger_probability?: number | null;
+    probability_delta?: number | null;
+    probabilities: {
+        home_win?: number | null;
+        away_win?: number | null;
+        tie?: number | null;
+        conditional_home_win?: number | null;
+        conditional_away_win?: number | null;
+    };
+    fair_prices: {
+        home?: number | null;
+        away?: number | null;
+    };
+    uncertainty?: number | null;
+    model_name?: string | null;
+    calibration_method?: string | null;
+    lineage: {
+        model_run_id?: string | null;
+        inference_run_id?: string | null;
+        training_run_id?: string | null;
+        artifact_id?: string | null;
+        artifact_hash?: string | null;
+        artifact_uri?: string | null;
+        dataset_hash?: string | null;
+        config_hash?: string | null;
+        code_version?: string | null;
+        feature_hash?: string | null;
+        snapshot_run_id?: string | null;
+    };
+    timing: {
+        generated_at?: string | null;
+        features_available_at?: string | null;
+        game_start_at?: string | null;
+        pregame_safe: boolean;
+        availability_status?: string | null;
+    };
+    decision?: MlbPeriodModelDecision | null;
+};
+
 export type MlbDailyPick = {
     id: number;
     season: number;
@@ -68,6 +149,7 @@ export type MlbDailyPick = {
     score: number;
     confidence?: number | null;
     model_probability?: number | null;
+    model_source?: string | null;
     market_probability?: number | null;
     no_vig_probability?: number | null;
     blend_probability?: number | null;
@@ -86,16 +168,23 @@ export type MlbDailyPick = {
     recommended_market_angle?: string | null;
     feature_snapshot: Record<string, unknown>;
     market_snapshot: Record<string, unknown>;
+    period_models: MlbPeriodModelContext[];
     explanation: string;
     generated_at?: string | null;
     graded_at?: string | null;
     result_status?: string | null;
     result_profit_units?: number | null;
+    closing_price?: number | null;
+    closing_line?: number | null;
+    clv?: number | null;
 };
 
 export type MlbDailyBoardSummary = {
     slate_games: number;
     priced_games: number;
+    first_inning_priced_games: number;
+    first_3_priced_games: number;
+    first_5_priced_games: number;
     candidate_count: number;
     top_candidate_count: number;
     tracking_count: number;
@@ -155,6 +244,7 @@ export type MlbDailyPicksPayload = {
         candidate_count: number;
         top_picks: MlbDailyPick[];
         candidates: MlbDailyPick[];
+        period_models_by_game: Record<string, MlbPeriodModelContext[]>;
         blocked_reasons: string[];
     };
 };

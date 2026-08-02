@@ -20,12 +20,26 @@ import {
     predictionTiming,
     predictionTimingBadgeClass,
 } from '@/lib/predictionTiming';
-import type { ApiV2Prediction, ApiV2Record } from '@/types';
-import type { MlbDailyPick, MlbSignalGroup } from '@/types/mlb-daily-picks';
+import type {
+    ApiV2Prediction,
+    ApiV2Record,
+    MlbPeriodInsight,
+    MlbPeriodInsightTeam,
+} from '@/types';
+import type {
+    MlbDailyPick,
+    MlbPeriodModelContext,
+    MlbSignalGroup,
+} from '@/types/mlb-daily-picks';
 
 defineProps<{
     prediction: ApiV2Prediction | null;
     candidate?: MlbDailyPick | null;
+    candidates?: MlbDailyPick[];
+}>();
+
+const emit = defineEmits<{
+    selectCandidate: [candidate: MlbDailyPick];
 }>();
 
 const open = defineModel<boolean>('open', { default: false });
@@ -490,6 +504,122 @@ function watchoutLabels(
 function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
     return candidate?.signal_layer?.signal_groups ?? [];
 }
+
+function periodModels(
+    prediction: ApiV2Prediction | null,
+    candidate?: MlbDailyPick | null,
+): MlbPeriodModelContext[] {
+    return candidate?.period_models?.length
+        ? candidate.period_models
+        : (prediction?.period_models ?? []);
+}
+
+function periodInsights(
+    prediction: ApiV2Prediction | null,
+): MlbPeriodInsight[] {
+    return prediction?.period_insights ?? [];
+}
+
+function periodStateLabel(state: string): string {
+    const labels: Record<string, string> = {
+        insight_only_no_market: 'Insight only',
+        no_bet_missing_quote: 'No quote',
+        shadow_model_available: 'Shadow model',
+        priced_candidate: 'Priced candidate',
+        market_available_pending_candidate: 'Market pending',
+    };
+
+    return labels[state] ?? labelizeMlbCode(state);
+}
+
+function periodStateClass(state: string): string {
+    if (state === 'priced_candidate') {
+        return 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300';
+    }
+    if (state === 'shadow_model_available') {
+        return 'border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-300';
+    }
+    if (state === 'no_bet_missing_quote') {
+        return 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
+    }
+
+    return 'border-muted bg-muted/40 text-muted-foreground';
+}
+
+function periodRecord(team: MlbPeriodInsightTeam): string {
+    const record = team.record;
+
+    return `${record.wins}-${record.losses}-${record.ties}`;
+}
+
+function periodLeanLabel(insight: MlbPeriodInsight): string {
+    if (insight.lean.side === 'neutral') return 'No clear Elo lean';
+
+    return `${insight.lean.team_abbreviation ?? insight.lean.side} Elo lean`;
+}
+
+function signedNumber(value?: number | null, digits = 2): string {
+    if (value == null) return '-';
+
+    return `${value > 0 ? '+' : ''}${value.toFixed(digits)}`;
+}
+
+function periodSignalLabel(code: string): string {
+    const labels: Record<string, string> = {
+        home_period_elo_edge: 'Home period Elo edge',
+        away_period_elo_edge: 'Away period Elo edge',
+        home_recent_period_form_edge: 'Home recent-form edge',
+        away_recent_period_form_edge: 'Away recent-form edge',
+        home_starter_edge: 'Home starter edge',
+        away_starter_edge: 'Away starter edge',
+    };
+
+    return labels[code] ?? labelizeMlbCode(code);
+}
+
+function periodRiskLabel(code: string): string {
+    const labels: Record<string, string> = {
+        limited_period_sample: 'Limited period sample',
+        pregame_pitcher_context_missing: 'Pregame pitcher ratings unavailable',
+        period_market_quote_missing: 'No F3/F5 market quote',
+        short_period_variance: 'Higher short-window variance',
+    };
+
+    return labels[code] ?? labelizeMlbCode(code);
+}
+
+function modelSourceLabel(candidate?: MlbDailyPick | null): string {
+    return candidate?.model_source === 'promoted_period_model'
+        ? 'Promoted period model'
+        : candidate?.model_source === 'elo_heuristic'
+          ? 'Elo heuristic fallback'
+          : 'Rules model';
+}
+
+function periodScore(
+    prediction: ApiV2Prediction | null,
+    innings: number,
+): string {
+    const away = prediction?.game?.away_linescores?.slice(0, innings) ?? [];
+    const home = prediction?.game?.home_linescores?.slice(0, innings) ?? [];
+    if (away.length < innings || home.length < innings) return '-';
+
+    const sum = (values: Array<number | string | null>): number =>
+        values.reduce<number>(
+            (total, value) => total + (numberValue(value) ?? 0),
+            0,
+        );
+
+    return `${teamAbbreviation(prediction?.game?.away_team)} ${sum(away)} - ${teamAbbreviation(prediction?.game?.home_team)} ${sum(home)}`;
+}
+
+function compactId(value?: string | null): string {
+    if (!value) return '-';
+
+    return value.length > 18
+        ? `${value.slice(0, 8)}...${value.slice(-6)}`
+        : value;
+}
 </script>
 
 <template>
@@ -514,6 +644,34 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
             </SheetHeader>
 
             <div v-if="prediction" class="mt-6 space-y-5">
+                <section
+                    v-if="(candidates?.length ?? 0) > 1"
+                    class="border-b pb-4"
+                >
+                    <div
+                        class="mb-2 text-xs font-semibold text-muted-foreground"
+                    >
+                        Markets
+                    </div>
+                    <div class="flex gap-2 overflow-x-auto pb-1">
+                        <button
+                            v-for="option in candidates"
+                            :key="option.id"
+                            type="button"
+                            class="shrink-0 rounded-lg border px-3 py-2 text-xs font-semibold transition"
+                            :class="
+                                option.id === candidate?.id
+                                    ? 'border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                    : 'bg-background text-muted-foreground hover:bg-muted'
+                            "
+                            @click="emit('selectCandidate', option)"
+                        >
+                            {{ labelizeMlbCode(option.market_type) }} ·
+                            {{ option.label }}
+                        </button>
+                    </div>
+                </section>
+
                 <section
                     v-if="predictionTiming(prediction).phase === 'live'"
                     class="rounded-2xl border border-red-500/25 bg-red-500/[0.04] p-4"
@@ -689,6 +847,231 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 {{ formatDateTime(prediction.graded_at) }}
                             </div>
                         </div>
+                        <div class="rounded-xl bg-muted/45 p-3">
+                            <div class="text-xs text-muted-foreground">
+                                F3 score
+                            </div>
+                            <div class="mt-1 font-semibold">
+                                {{ periodScore(prediction, 3) }}
+                            </div>
+                        </div>
+                        <div class="rounded-xl bg-muted/45 p-3">
+                            <div class="text-xs text-muted-foreground">
+                                F5 score
+                            </div>
+                            <div class="mt-1 font-semibold">
+                                {{ periodScore(prediction, 5) }}
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section
+                    v-if="periodInsights(prediction).length"
+                    class="rounded-2xl border p-4"
+                >
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-3"
+                    >
+                        <div class="text-sm font-semibold">F3/F5 Insights</div>
+                        <span class="text-xs text-muted-foreground">
+                            Pregame point-in-time form
+                        </span>
+                    </div>
+
+                    <div
+                        v-for="insight in periodInsights(prediction)"
+                        :key="insight.market_type"
+                        class="mt-4 border-t pt-4 first:mt-3"
+                    >
+                        <div
+                            class="flex flex-wrap items-center justify-between gap-2"
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="font-semibold">{{
+                                    insight.label
+                                }}</span>
+                                <span class="text-sm text-muted-foreground">
+                                    {{ periodLeanLabel(insight) }}
+                                </span>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <span
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="periodStateClass(insight.state)"
+                                >
+                                    {{ periodStateLabel(insight.state) }}
+                                </span>
+                                <span
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+                                >
+                                    {{
+                                        labelizeMlbCode(
+                                            insight.confidence.level,
+                                        )
+                                    }}
+                                    ·
+                                    {{ insight.confidence.sample_games }} games
+                                </span>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                            <div class="border-l-2 border-sky-500/50 pl-3">
+                                <div class="text-xs text-muted-foreground">
+                                    {{
+                                        teamAbbreviation(
+                                            prediction.game?.away_team,
+                                        )
+                                    }}
+                                    away
+                                </div>
+                                <div class="mt-1 font-semibold">
+                                    {{ periodRecord(insight.away) }}
+                                    ·
+                                    {{
+                                        formatPercent(
+                                            insight.away.win_probability,
+                                        )
+                                    }}
+                                </div>
+                                <div class="mt-1 text-xs text-muted-foreground">
+                                    L10
+                                    {{
+                                        formatPercent(
+                                            insight.away.last_10
+                                                .win_probability,
+                                        )
+                                    }}
+                                    · RD/G
+                                    {{
+                                        signedNumber(
+                                            insight.away
+                                                .run_difference_per_game,
+                                        )
+                                    }}
+                                    · Tie
+                                    {{ formatPercent(insight.away.tie_rate) }}
+                                </div>
+                            </div>
+                            <div class="border-l-2 border-emerald-500/50 pl-3">
+                                <div class="text-xs text-muted-foreground">
+                                    {{
+                                        teamAbbreviation(
+                                            prediction.game?.home_team,
+                                        )
+                                    }}
+                                    home
+                                </div>
+                                <div class="mt-1 font-semibold">
+                                    {{ periodRecord(insight.home) }}
+                                    ·
+                                    {{
+                                        formatPercent(
+                                            insight.home.win_probability,
+                                        )
+                                    }}
+                                </div>
+                                <div class="mt-1 text-xs text-muted-foreground">
+                                    L10
+                                    {{
+                                        formatPercent(
+                                            insight.home.last_10
+                                                .win_probability,
+                                        )
+                                    }}
+                                    · RD/G
+                                    {{
+                                        signedNumber(
+                                            insight.home
+                                                .run_difference_per_game,
+                                        )
+                                    }}
+                                    · Tie
+                                    {{ formatPercent(insight.home.tie_rate) }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="mt-3 grid grid-cols-2 gap-3 border-t pt-3 text-sm sm:grid-cols-4"
+                        >
+                            <div>
+                                <div class="text-xs text-muted-foreground">
+                                    Home Elo lean
+                                </div>
+                                <div class="font-semibold">
+                                    {{
+                                        formatPercent(
+                                            insight.lean
+                                                .two_way_home_probability,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-muted-foreground">
+                                    Period Elo diff
+                                </div>
+                                <div class="font-semibold">
+                                    {{
+                                        signedNumber(
+                                            insight.lean.period_elo_difference,
+                                            1,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-muted-foreground">
+                                    Starter diff
+                                </div>
+                                <div class="font-semibold">
+                                    {{
+                                        signedNumber(
+                                            insight.starter_context
+                                                .rating_difference,
+                                            1,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-muted-foreground">
+                                    Market
+                                </div>
+                                <div class="font-semibold">
+                                    {{
+                                        insight.market_available
+                                            ? 'Captured'
+                                            : 'Missing'
+                                    }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="
+                                insight.signals.length ||
+                                insight.risk_flags.length
+                            "
+                            class="mt-3 flex flex-wrap gap-2"
+                        >
+                            <span
+                                v-for="signal in insight.signals"
+                                :key="signal"
+                                class="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300"
+                            >
+                                {{ periodSignalLabel(signal) }}
+                            </span>
+                            <span
+                                v-for="risk in insight.risk_flags"
+                                :key="risk"
+                                class="rounded-full border border-amber-500/25 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-700 dark:text-amber-300"
+                            >
+                                {{ periodRiskLabel(risk) }}
+                            </span>
+                        </div>
                     </div>
                 </section>
 
@@ -720,7 +1103,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                                 }}
                             </div>
                             <div class="mt-1 text-[11px] text-muted-foreground">
-                                Our estimate for this pick.
+                                {{ modelSourceLabel(candidate) }}
                             </div>
                         </div>
                         <div class="rounded-xl bg-muted/45 p-3">
@@ -800,9 +1183,7 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                             </div>
                         </div>
                         <div>
-                            <div class="text-muted-foreground">
-                                Model total
-                            </div>
+                            <div class="text-muted-foreground">Model total</div>
                             <div class="font-semibold">
                                 {{
                                     formatNumber(
@@ -830,13 +1211,184 @@ function signalGroups(candidate?: MlbDailyPick | null): MlbSignalGroup[] {
                 </section>
 
                 <section
+                    v-if="periodModels(prediction, candidate).length"
+                    class="rounded-2xl border p-4"
+                >
+                    <div class="text-sm font-semibold">
+                        F3/F5 Model Tracking
+                    </div>
+                    <div
+                        v-for="model in periodModels(prediction, candidate)"
+                        :key="`${model.market_type}-${model.lineage.artifact_id}`"
+                        class="mt-4 border-t pt-4 first:mt-3"
+                    >
+                        <div
+                            class="flex flex-wrap items-center justify-between gap-2"
+                        >
+                            <div class="font-semibold">
+                                {{ labelizeMlbCode(model.market_type) }}
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <span
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                >
+                                    {{ labelizeMlbCode(model.role) }}
+                                </span>
+                                <span
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="
+                                        model.qualified_for_candidates
+                                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                                            : 'border-slate-500/25 bg-slate-500/10 text-slate-700 dark:text-slate-300'
+                                    "
+                                >
+                                    {{
+                                        model.qualified_for_candidates
+                                            ? 'Qualified'
+                                            : 'Shadow only'
+                                    }}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div
+                            class="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4"
+                        >
+                            <div>
+                                <div class="text-muted-foreground">Home</div>
+                                <div class="font-semibold">
+                                    {{
+                                        formatPercent(
+                                            model.probabilities.home_win,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-muted-foreground">Away</div>
+                                <div class="font-semibold">
+                                    {{
+                                        formatPercent(
+                                            model.probabilities.away_win,
+                                        )
+                                    }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-muted-foreground">Tie</div>
+                                <div class="font-semibold">
+                                    {{ formatPercent(model.probabilities.tie) }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-muted-foreground">
+                                    Uncertainty
+                                </div>
+                                <div class="font-semibold">
+                                    {{ formatPercent(model.uncertainty) }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="mt-3 grid gap-2 border-t pt-3 text-xs sm:grid-cols-2"
+                        >
+                            <div>
+                                <span class="text-muted-foreground"
+                                    >Artifact
+                                </span>
+                                <span
+                                    class="font-mono"
+                                    :title="model.lineage.artifact_id ?? ''"
+                                    >{{
+                                        compactId(model.lineage.artifact_id)
+                                    }}</span
+                                >
+                            </div>
+                            <div>
+                                <span class="text-muted-foreground"
+                                    >Model run
+                                </span>
+                                <span
+                                    class="font-mono"
+                                    :title="model.lineage.model_run_id ?? ''"
+                                    >{{
+                                        compactId(model.lineage.model_run_id)
+                                    }}</span
+                                >
+                            </div>
+                            <div>
+                                <span class="text-muted-foreground"
+                                    >Dataset
+                                </span>
+                                <span
+                                    class="font-mono"
+                                    :title="model.lineage.dataset_hash ?? ''"
+                                    >{{
+                                        compactId(model.lineage.dataset_hash)
+                                    }}</span
+                                >
+                            </div>
+                            <div>
+                                <span class="text-muted-foreground"
+                                    >Feature hash
+                                </span>
+                                <span
+                                    class="font-mono"
+                                    :title="model.lineage.feature_hash ?? ''"
+                                    >{{
+                                        compactId(model.lineage.feature_hash)
+                                    }}</span
+                                >
+                            </div>
+                        </div>
+
+                        <div
+                            v-if="model.decision"
+                            class="mt-3 border-t pt-3 text-sm"
+                        >
+                            <div
+                                class="flex flex-wrap items-center justify-between gap-2"
+                            >
+                                <span class="font-semibold">{{
+                                    labelizeMlbCode(model.decision.status)
+                                }}</span>
+                                <span>
+                                    Edge
+                                    {{
+                                        formatSignedPercent(model.decision.edge)
+                                    }}
+                                    · EV
+                                    {{
+                                        formatSignedPercent(
+                                            model.decision.expected_value,
+                                        )
+                                    }}
+                                </span>
+                            </div>
+                            <div
+                                v-if="model.decision.eligibility_reasons.length"
+                                class="mt-2 flex flex-wrap gap-2"
+                            >
+                                <span
+                                    v-for="reason in model.decision
+                                        .eligibility_reasons"
+                                    :key="reason"
+                                    class="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-700 dark:text-amber-300"
+                                >
+                                    {{ labelizeMlbCode(reason) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section
                     v-if="signalGroups(candidate).length"
                     class="space-y-3"
                 >
                     <div>
-                        <div class="text-sm font-semibold">
-                            Why It Shows
-                        </div>
+                        <div class="text-sm font-semibold">Why It Shows</div>
                         <p class="mt-1 text-sm leading-6 text-muted-foreground">
                             Plain-English drivers behind the pick and the main
                             reasons to be careful.

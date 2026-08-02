@@ -25,6 +25,7 @@ type MarketFilter =
     | 'moneyline'
     | 'run_line'
     | 'total'
+    | 'first_inning'
     | 'first_5'
     | 'first_3'
     | 'player_prop'
@@ -46,6 +47,7 @@ const searchQuery = ref('');
 const selectedFilter = ref<MarketFilter>('all');
 const selectedPrediction = ref<ApiV2Prediction | null>(null);
 const selectedCandidate = ref<MlbDailyPick | null>(null);
+const selectedCandidates = ref<MlbDailyPick[]>([]);
 const detailOpen = ref(false);
 
 const allCandidates = computed(() => dailyPayload.value?.candidates ?? []);
@@ -59,6 +61,14 @@ const boardStats = computed(() => [
     {
         label: 'Priced',
         value: summary.value?.priced_games ?? 0,
+    },
+    {
+        label: 'F3 priced',
+        value: summary.value?.first_3_priced_games ?? 0,
+    },
+    {
+        label: 'F5 priced',
+        value: summary.value?.first_5_priced_games ?? 0,
     },
     {
         label: 'Candidates',
@@ -79,12 +89,26 @@ const visibleBoardStats = computed(() =>
     ),
 );
 
+const candidatesByGameId = computed(() => {
+    const map = new Map<number, MlbDailyPick[]>();
+
+    for (const candidate of allCandidates.value) {
+        const candidates = map.get(candidate.game_id) ?? [];
+        candidates.push(candidate);
+        map.set(candidate.game_id, candidates);
+    }
+
+    return map;
+});
+
 const candidateByGameId = computed(() => {
     const map = new Map<number, MlbDailyPick>();
 
-    for (const candidate of allCandidates.value) {
-        if (!map.has(candidate.game_id)) {
-            map.set(candidate.game_id, candidate);
+    for (const [gameId, candidates] of candidatesByGameId.value) {
+        const candidate = candidates[0];
+
+        if (candidate) {
+            map.set(gameId, candidate);
         }
     }
 
@@ -109,6 +133,11 @@ const marketFilters = computed(() => [
         count: countMarket('run_line'),
     },
     { key: 'total' as const, label: 'Totals', count: countMarket('total') },
+    {
+        key: 'first_inning' as const,
+        label: '1st Inning',
+        count: countMarket('first_inning'),
+    },
     { key: 'first_5' as const, label: 'F5', count: countMarket('first_5') },
     { key: 'first_3' as const, label: 'F3', count: countMarket('first_3') },
     {
@@ -135,7 +164,10 @@ const normalizedSearch = computed(() => searchQuery.value.trim().toLowerCase());
 
 const filteredPredictions = computed(() => {
     return predictions.value.filter((prediction) => {
-        const candidate = candidateForPrediction(prediction);
+        const candidate = candidateForPrediction(
+            prediction,
+            selectedFilter.value,
+        );
 
         if (selectedFilter.value === 'candidates' && !candidate) {
             return false;
@@ -143,12 +175,8 @@ const filteredPredictions = computed(() => {
 
         if (selectedFilter.value === 'tracked') {
             if (!candidate?.is_tracking_only) return false;
-        } else if (
-            !['all', 'candidates', 'tracked'].includes(selectedFilter.value)
-        ) {
-            if (!marketMatches(prediction, candidate, selectedFilter.value)) {
-                return false;
-            }
+        } else if (!['all', 'candidates'].includes(selectedFilter.value)) {
+            if (!candidate) return false;
         }
 
         if (!normalizedSearch.value) return true;
@@ -190,12 +218,29 @@ function numberValue(value: unknown): number | null {
 
 function candidateForPrediction(
     prediction: ApiV2Prediction,
+    filter: MarketFilter = selectedFilter.value,
 ): MlbDailyPick | null {
     const gameId = numberValue(prediction.game_id ?? prediction.game?.id);
 
-    return gameId == null
-        ? null
-        : (candidateByGameId.value.get(gameId) ?? null);
+    if (gameId == null) return null;
+
+    const candidates = candidatesByGameId.value.get(gameId) ?? [];
+
+    if (filter === 'tracked') {
+        return (
+            candidates.find((candidate) => candidate.is_tracking_only) ?? null
+        );
+    }
+
+    if (!['all', 'candidates'].includes(filter)) {
+        return (
+            candidates.find((candidate) =>
+                marketMatches(prediction, candidate, filter),
+            ) ?? null
+        );
+    }
+
+    return candidates[0] ?? null;
 }
 
 function predictionMarketType(prediction: ApiV2Prediction): string {
@@ -208,18 +253,20 @@ function predictionMarketType(prediction: ApiV2Prediction): string {
 }
 
 function marketMatches(
-    prediction: ApiV2Prediction,
+    prediction: ApiV2Prediction | null,
     candidate: MlbDailyPick | null,
     filter: MarketFilter,
 ): boolean {
     const marketType = (
-        candidate?.market_type ?? predictionMarketType(prediction)
+        candidate?.market_type ??
+        (prediction ? predictionMarketType(prediction) : '')
     )
         .toLowerCase()
         .replaceAll('-', '_')
         .replaceAll(' ', '_');
 
     if (filter === 'total') return marketType.includes('total');
+    if (filter === 'first_inning') return marketType.includes('first_inning');
     if (filter === 'first_5')
         return marketType.includes('first_5') || marketType.includes('f5');
     if (filter === 'first_3')
@@ -230,9 +277,13 @@ function marketMatches(
 }
 
 function countMarket(filter: MarketFilter): number {
-    return predictions.value.filter((prediction) =>
-        marketMatches(prediction, candidateForPrediction(prediction), filter),
-    ).length;
+    const gameIds = new Set(
+        allCandidates.value
+            .filter((candidate) => marketMatches(null, candidate, filter))
+            .map((candidate) => candidate.game_id),
+    );
+
+    return gameIds.size;
 }
 
 function teamText(team: unknown): string {
@@ -302,6 +353,9 @@ function selectMatchup(
 ): void {
     selectedPrediction.value = prediction;
     selectedCandidate.value = candidate;
+    const gameId = numberValue(prediction.game_id ?? prediction.game?.id);
+    selectedCandidates.value =
+        gameId === null ? [] : (candidatesByGameId.value.get(gameId) ?? []);
     detailOpen.value = true;
 }
 
@@ -374,11 +428,27 @@ async function loadBoard(): Promise<void> {
             }),
         ]);
 
+        const periodModelsByGame =
+            picksPayload?.data?.period_models_by_game ?? {};
         predictions.value = (
             (
                 predictionPayload as ApiV2CollectionResponse<ApiV2Prediction> | null
             )?.data ?? []
-        ).sort((a, b) => gameSortKey(a).localeCompare(gameSortKey(b)));
+        )
+            .map((prediction) => {
+                const gameId = numberValue(
+                    prediction.game_id ?? prediction.game?.id,
+                );
+
+                return {
+                    ...prediction,
+                    period_models:
+                        gameId === null
+                            ? []
+                            : (periodModelsByGame[String(gameId)] ?? []),
+                };
+            })
+            .sort((a, b) => gameSortKey(a).localeCompare(gameSortKey(b)));
         dailyPayload.value = picksPayload?.data ?? null;
     } catch (e) {
         error.value =
@@ -565,7 +635,16 @@ onMounted(async () => {
                         v-for="prediction in filteredPredictions"
                         :key="prediction.id"
                         :prediction="prediction"
-                        :candidate="candidateForPrediction(prediction)"
+                        :candidate="
+                            candidateForPrediction(prediction, selectedFilter)
+                        "
+                        :candidate-count="
+                            candidatesByGameId.get(
+                                numberValue(
+                                    prediction.game_id ?? prediction.game?.id,
+                                ) ?? -1,
+                            )?.length ?? 0
+                        "
                         @select="selectMatchup"
                     />
                 </div>
@@ -575,6 +654,8 @@ onMounted(async () => {
                 v-model:open="detailOpen"
                 :prediction="selectedPrediction"
                 :candidate="selectedCandidate"
+                :candidates="selectedCandidates"
+                @select-candidate="selectedCandidate = $event"
             />
         </template>
     </section>

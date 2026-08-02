@@ -607,10 +607,36 @@ $scheduleDailySeasonJob(
     'MLB: Snapshot Bet Filter'
 );
 $scheduleDailySeasonJob(
+    "mlb:backfill-linescores --season={$currentYear} --lookback-days=7",
+    '04:10',
+    $mlbInSeason,
+    'MLB: Repair Missing Line Scores'
+);
+$mlbFinalScoreReconciliationCommand = "mlb:reconcile-final-scores --season={$currentYear} --missing-only";
+$mlbFinalScoreReconciliation = Schedule::command($mlbFinalScoreReconciliationCommand)
+    ->dailyAt('04:20')
+    ->timezone(config('app.timezone'))
+    ->when($mlbInSeason)
+    ->name('MLB: Reconcile Missing Final Scores')
+    ->withoutOverlapping(60)
+    ->onOneServer()
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $mlbFinalScoreReconciliation,
+    $mlbFinalScoreReconciliationCommand,
+    'MLB: Reconcile Missing Final Scores',
+);
+$scheduleDailySeasonJob(
     "mlb:backtest-pick-candidates --season={$currentYear}",
     '04:40',
     $mlbInSeason,
     'MLB: Grade Pick Candidates'
+);
+$scheduleDailySeasonJob(
+    "mlb:grade-starting-pitcher-forecasts --season={$currentYear}",
+    '04:35',
+    $mlbInSeason,
+    'MLB: Grade Starting Pitcher Forecasts'
 );
 $scheduleDailySeasonJob(
     'sports:settle-bet-decisions --sport=mlb',
@@ -623,6 +649,12 @@ $scheduleDailySeasonJob(
     '06:10',
     $mlbInSeason,
     'MLB: Run Tabular Shadow'
+);
+$scheduleDailySeasonJob(
+    'mlb:run-period-shadow --skip-decisions',
+    '06:12',
+    $mlbInSeason,
+    'MLB: Run F3/F5 Shadow'
 );
 $scheduleDailySeasonJob(
     'sports:record-shadow-bet-decisions --sport=mlb',
@@ -644,9 +676,28 @@ $attachCommandHeartbeat(
     $mlbWeeklyTrainingCommand,
     'MLB: Weekly Model Challenger Training',
 );
+$mlbPeriodWeeklyTrainingCommand = "mlb:train-period-models --from-season=2021 --to-season={$currentYear}";
+$mlbPeriodWeeklyTraining = Schedule::command($mlbPeriodWeeklyTrainingCommand)
+    ->weeklyOn(1, '07:20')
+    ->timezone(config('app.timezone'))
+    ->when($mlbInSeason)
+    ->name('MLB: Weekly F3/F5 Model Training')
+    ->withoutOverlapping(360)
+    ->onOneServer()
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $mlbPeriodWeeklyTraining,
+    $mlbPeriodWeeklyTrainingCommand,
+    'MLB: Weekly F3/F5 Model Training',
+);
 
 $mlbPostOddsRefreshHours = '8,12,16,20';
 $mlbPostOddsRefreshJobs = [
+    [
+        'command' => 'mlb:sync-inning-odds --days='.config('mlb.picks.inning_odds.days_ahead', 1),
+        'minute' => 10,
+        'name' => 'MLB: Sync Inning Odds',
+    ],
     [
         'command' => "mlb:generate-predictions --season={$currentYear}",
         'minute' => 30,
@@ -656,6 +707,11 @@ $mlbPostOddsRefreshJobs = [
         'command' => 'mlb:run-tabular-shadow --skip-decisions',
         'minute' => 50,
         'name' => 'MLB: Refresh Tabular Shadow After Odds Sync',
+    ],
+    [
+        'command' => 'mlb:run-period-shadow --skip-decisions',
+        'minute' => 55,
+        'name' => 'MLB: Refresh F3/F5 Shadow After Odds Sync',
     ],
     [
         'command' => 'sports:record-shadow-bet-decisions --sport=mlb',

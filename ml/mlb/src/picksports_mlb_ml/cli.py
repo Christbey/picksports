@@ -8,6 +8,7 @@ import pandas as pd
 
 from picksports_mlb_ml.data import load_immutable_dataset
 from picksports_mlb_ml.inference import InferenceBundle
+from picksports_mlb_ml.periods import predict_period_models, train_period_models
 from picksports_mlb_ml.pipeline import evaluate_rolling, train
 from picksports_mlb_ml.schema import FeatureSchema
 
@@ -36,6 +37,20 @@ def build_parser() -> argparse.ArgumentParser:
     predict_parser = commands.add_parser("predict")
     predict_parser.add_argument("--run-dir", required=True)
     predict_parser.add_argument("--input", required=True)
+
+    period_train_parser = commands.add_parser("train-period")
+    period_train_parser.add_argument("--input", required=True)
+    period_train_parser.add_argument(
+        "--schema", default="config/period_feature_schema.yaml"
+    )
+    period_train_parser.add_argument("--output", required=True)
+    period_train_parser.add_argument("--evaluation-output", required=True)
+    period_train_parser.add_argument("--manifest-output", required=True)
+    period_train_parser.add_argument("--seed", type=int)
+
+    period_predict_parser = commands.add_parser("predict-period")
+    period_predict_parser.add_argument("--bundle", required=True)
+    period_predict_parser.add_argument("--input", required=True)
     return parser
 
 
@@ -87,6 +102,26 @@ def main() -> None:
         if arguments.command == "predict":
             bundle = InferenceBundle.load(arguments.run_dir)
             _print_json(bundle.predict(_read_prediction_input(arguments.input)))
+            return
+        if arguments.command == "train-period":
+            _print_json(
+                train_period_models(
+                    input_path=arguments.input,
+                    schema_path=arguments.schema,
+                    output_path=arguments.output,
+                    evaluation_path=arguments.evaluation_output,
+                    manifest_path=arguments.manifest_output,
+                    seed=arguments.seed,
+                )
+            )
+            return
+        if arguments.command == "predict-period":
+            _print_json(
+                predict_period_models(
+                    bundle_path=arguments.bundle,
+                    input_path=arguments.input,
+                )
+            )
             return
     except Exception as error:
         parser.exit(1, f"error: {error}\n")

@@ -59,6 +59,11 @@ const marketTabs = computed(() =>
             count: marketCounts.value.run_line ?? 0,
         },
         { key: 'total', label: 'Totals', count: marketCounts.value.total ?? 0 },
+        {
+            key: 'first_inning',
+            label: '1st Inning',
+            count: marketCounts.value.first_inning ?? 0,
+        },
         { key: 'first_5', label: 'F5', count: marketCounts.value.first_5 ?? 0 },
         { key: 'first_3', label: 'F3', count: marketCounts.value.first_3 ?? 0 },
         {
@@ -83,6 +88,11 @@ const filteredCandidates = computed(() => {
     if (tab === 'first_5') {
         return allCandidates.value.filter((pick) =>
             pick.market_type.startsWith('first_5'),
+        );
+    }
+    if (tab === 'first_inning') {
+        return allCandidates.value.filter((pick) =>
+            pick.market_type.startsWith('first_inning'),
         );
     }
     if (tab === 'first_3') {

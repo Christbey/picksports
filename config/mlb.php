@@ -1,6 +1,15 @@
 <?php
 
 return [
+    'starter_projection' => [
+        'version' => 'rotation-v1',
+        'history_games' => 60,
+        'rotation_size' => 5,
+        'minimum_rotation_size' => 3,
+        'base_confidence' => 0.88,
+        'minimum_confidence' => 0.30,
+        'per_game_decay' => 0.018,
+    ],
 
     /*
     |--------------------------------------------------------------------------
@@ -578,6 +587,21 @@ return [
     'picks' => [
         'public_promotion_enabled' => env('MLB_PICKS_PUBLIC_PROMOTION_ENABLED', false),
         'total_bias_correction' => env('MLB_PICKS_TOTAL_BIAS_CORRECTION', 1.0),
+        'inning_odds' => [
+            'bookmaker' => env('MLB_INNING_ODDS_BOOKMAKER', 'draftkings'),
+            'days_ahead' => env('MLB_INNING_ODDS_DAYS_AHEAD', 1),
+            'markets' => [
+                'totals_1st_1_innings',
+                'h2h_1st_3_innings',
+                'h2h_1st_5_innings',
+            ],
+        ],
+        'first_inning' => [
+            'base_yrfi_probability' => env('MLB_FIRST_INNING_BASE_YRFI_PROBABILITY', 0.50),
+            'reference_total' => env('MLB_FIRST_INNING_REFERENCE_TOTAL', 8.5),
+            'total_probability_per_run' => env('MLB_FIRST_INNING_TOTAL_PROBABILITY_PER_RUN', 0.025),
+            'pitcher_probability_per_100_elo' => env('MLB_FIRST_INNING_PITCHER_PROBABILITY_PER_100_ELO', 0.025),
+        ],
         'daily' => [
             'target_count' => env('MLB_PICKS_DAILY_TARGET_COUNT', 3),
             'max_per_game' => env('MLB_PICKS_DAILY_MAX_PER_GAME', 1),
@@ -595,9 +619,19 @@ return [
             'moneyline' => env('MLB_PICKS_MARKET_MONEYLINE_ENABLED', true),
             'run_line' => env('MLB_PICKS_MARKET_RUN_LINE_ENABLED', true),
             'total' => env('MLB_PICKS_MARKET_TOTAL_ENABLED', true),
+            'first_inning' => env('MLB_PICKS_MARKET_FIRST_INNING_ENABLED', true),
             'first_3' => env('MLB_PICKS_MARKET_FIRST_3_ENABLED', true),
             'first_5' => env('MLB_PICKS_MARKET_FIRST_5_ENABLED', true),
             'props' => env('MLB_PICKS_MARKET_PROPS_ENABLED', true),
+        ],
+        'market_promotion' => [
+            'moneyline' => env('MLB_PICKS_PROMOTE_MONEYLINE', false),
+            'run_line' => env('MLB_PICKS_PROMOTE_RUN_LINE', false),
+            'total' => env('MLB_PICKS_PROMOTE_TOTAL', false),
+            'first_inning' => env('MLB_PICKS_PROMOTE_FIRST_INNING', false),
+            'first_3' => env('MLB_PICKS_PROMOTE_FIRST_3', false),
+            'first_5' => env('MLB_PICKS_PROMOTE_FIRST_5', false),
+            'props' => env('MLB_PICKS_PROMOTE_PROPS', false),
         ],
     ],
 

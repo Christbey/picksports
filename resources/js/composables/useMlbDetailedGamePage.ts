@@ -32,6 +32,8 @@ export function useMlbDetailedGamePage(gameId: number) {
         awayRecentForm,
         homeRecentGames,
         awayRecentGames,
+        homeMetrics,
+        awayMetrics,
         trendsSubtitle,
         homeMatchupTeam,
         awayMatchupTeam,
@@ -67,6 +69,24 @@ export function useMlbDetailedGamePage(gameId: number) {
     );
     const homeStarterRating = computed(
         () => currentGame.value.home_starting_pitcher?.elo_rating ?? null,
+    );
+    const awayStarterSource = computed(
+        () => currentGame.value.away_starting_pitcher_source ?? null,
+    );
+    const homeStarterSource = computed(
+        () => currentGame.value.home_starting_pitcher_source ?? null,
+    );
+    const awayStarterConfidence = computed(
+        () => currentGame.value.away_starting_pitcher_confidence ?? null,
+    );
+    const homeStarterConfidence = computed(
+        () => currentGame.value.home_starting_pitcher_confidence ?? null,
+    );
+    const awayStarterForecast = computed(
+        () => currentGame.value.away_starting_pitcher_forecast ?? null,
+    );
+    const homeStarterForecast = computed(
+        () => currentGame.value.home_starting_pitcher_forecast ?? null,
     );
 
     const { pageProps } = useSportGameLayout({
@@ -122,6 +142,12 @@ export function useMlbDetailedGamePage(gameId: number) {
             homeStarterName,
             awayStarterRating,
             homeStarterRating,
+            awayStarterSource,
+            homeStarterSource,
+            awayStarterConfidence,
+            homeStarterConfidence,
+            awayStarterForecast,
+            homeStarterForecast,
             trendsSubtitle,
             trendsLoading,
             topMatchupEdges,
@@ -146,6 +172,8 @@ export function useMlbDetailedGamePage(gameId: number) {
         awayTeamId: currentGame.value.away_team_id,
         homeTeamId: currentGame.value.home_team_id,
         gameHrefPrefix: '/mlb/games',
+        awayMetrics: awayMetrics.value,
+        homeMetrics: homeMetrics.value,
     }));
 
     watch(

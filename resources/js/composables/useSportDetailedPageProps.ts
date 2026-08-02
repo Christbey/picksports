@@ -5,6 +5,7 @@ import type {
     GamePageTeam,
     LineScoreEntry,
     MatchupContextData,
+    MlbStartingPitcherForecast,
     PredictionSummary,
     SportGamePageConfig,
     TeamTrendData,
@@ -69,6 +70,12 @@ export interface UseSportDetailedPagePropsOptions {
     homeStarterName?: MaybeRefOrGetter<string | null>;
     awayStarterRating?: MaybeRefOrGetter<number | null>;
     homeStarterRating?: MaybeRefOrGetter<number | null>;
+    awayStarterSource?: MaybeRefOrGetter<string | null>;
+    homeStarterSource?: MaybeRefOrGetter<string | null>;
+    awayStarterConfidence?: MaybeRefOrGetter<number | null>;
+    homeStarterConfidence?: MaybeRefOrGetter<number | null>;
+    awayStarterForecast?: MaybeRefOrGetter<MlbStartingPitcherForecast | null>;
+    homeStarterForecast?: MaybeRefOrGetter<MlbStartingPitcherForecast | null>;
 }
 
 export function useSportDetailedPageProps(
@@ -146,12 +153,14 @@ export function useSportDetailedPageProps(
                 : [],
             awayScore: options.awayScore ? toValue(options.awayScore) : null,
             homeScore: options.homeScore ? toValue(options.homeScore) : null,
-            usePeriodNumbers: options.usePeriodNumbers
-                ? toValue(options.usePeriodNumbers)
-                : true,
-            periodPrefix: options.periodPrefix
-                ? toValue(options.periodPrefix)
-                : undefined,
+            usePeriodNumbers:
+                options.usePeriodNumbers !== undefined
+                    ? toValue(options.usePeriodNumbers)
+                    : true,
+            periodPrefix:
+                options.periodPrefix !== undefined
+                    ? toValue(options.periodPrefix)
+                    : undefined,
             showPredictionSummary: options.showPredictionSummary
                 ? toValue(options.showPredictionSummary)
                 : false,
@@ -209,6 +218,24 @@ export function useSportDetailedPageProps(
                 : null,
             homeStarterRating: options.homeStarterRating
                 ? toValue(options.homeStarterRating)
+                : null,
+            awayStarterSource: options.awayStarterSource
+                ? toValue(options.awayStarterSource)
+                : null,
+            homeStarterSource: options.homeStarterSource
+                ? toValue(options.homeStarterSource)
+                : null,
+            awayStarterConfidence: options.awayStarterConfidence
+                ? toValue(options.awayStarterConfidence)
+                : null,
+            homeStarterConfidence: options.homeStarterConfidence
+                ? toValue(options.homeStarterConfidence)
+                : null,
+            awayStarterForecast: options.awayStarterForecast
+                ? toValue(options.awayStarterForecast)
+                : null,
+            homeStarterForecast: options.homeStarterForecast
+                ? toValue(options.homeStarterForecast)
                 : null,
         };
     });

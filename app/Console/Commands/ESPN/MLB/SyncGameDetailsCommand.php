@@ -12,7 +12,7 @@ class SyncGameDetailsCommand extends AbstractSyncMissingPlayerStatsGameDetailsCo
 
     protected const SPORT_CODE = 'MLB';
 
-    protected const PENDING_GAMES_DESCRIPTOR = 'MLB games missing player stats';
+    protected const PENDING_GAMES_DESCRIPTOR = 'MLB games missing player stats or inning line scores';
 
     protected const GAME_DETAILS_JOB_CLASS = FetchGameDetails::class;
 
@@ -21,6 +21,11 @@ class SyncGameDetailsCommand extends AbstractSyncMissingPlayerStatsGameDetailsCo
     protected const REQUIRES_FINAL_STATUS = true;
 
     protected function includesMissingFinalScores(): bool
+    {
+        return true;
+    }
+
+    protected function includesMissingLineScores(): bool
     {
         return true;
     }

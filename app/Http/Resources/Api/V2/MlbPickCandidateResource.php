@@ -3,6 +3,7 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Models\MLB\PickCandidate;
+use App\Services\MLB\MlbPeriodModelContextService;
 use App\Services\MLB\Picks\MlbPickExplanationService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -12,6 +13,7 @@ class MlbPickCandidateResource extends JsonResource
     public function __construct(
         mixed $resource,
         private readonly MlbPickExplanationService $explanations,
+        private readonly MlbPeriodModelContextService $periodModels,
     ) {
         parent::__construct($resource);
     }
@@ -56,6 +58,7 @@ class MlbPickCandidateResource extends JsonResource
             'score' => $candidate->score,
             'confidence' => $candidate->confidence !== null ? (float) $candidate->confidence : null,
             'model_probability' => $candidate->model_probability !== null ? (float) $candidate->model_probability : null,
+            'model_source' => data_get($candidate->feature_snapshot, 'model_source', 'rules_heuristic'),
             'market_probability' => $candidate->market_probability !== null ? (float) $candidate->market_probability : null,
             'no_vig_probability' => $candidate->no_vig_probability !== null ? (float) $candidate->no_vig_probability : null,
             'blend_probability' => $candidate->blend_probability !== null ? (float) $candidate->blend_probability : null,
@@ -82,11 +85,15 @@ class MlbPickCandidateResource extends JsonResource
             'recommended_market_angle' => data_get($candidate->feature_snapshot, 'signal_layer.recommended_angle'),
             'feature_snapshot' => $candidate->feature_snapshot ?? [],
             'market_snapshot' => $candidate->market_snapshot ?? [],
+            'period_models' => $this->periodModels->forCandidate($candidate),
             'explanation' => $this->explanations->explain($candidate),
             'generated_at' => $candidate->generated_at?->toISOString(),
             'graded_at' => $candidate->graded_at?->toISOString(),
             'result_status' => $candidate->result_status,
             'result_profit_units' => $candidate->result_profit_units !== null ? (float) $candidate->result_profit_units : null,
+            'closing_price' => $candidate->closing_price !== null ? (int) $candidate->closing_price : null,
+            'closing_line' => $candidate->closing_line !== null ? (float) $candidate->closing_line : null,
+            'clv' => $candidate->clv !== null ? (float) $candidate->clv : null,
         ];
     }
 
@@ -97,6 +104,10 @@ class MlbPickCandidateResource extends JsonResource
             $name = (string) data_get($candidate->feature_snapshot, 'player_name', 'Player');
 
             return trim($name.' '.ucfirst($candidate->side).' '.((string) $candidate->line).' '.str_replace('_', ' ', $candidate->market_key));
+        }
+
+        if ($candidate->market_type === 'first_inning_total') {
+            return trim(strtoupper($candidate->side === 'over' ? 'YRFI' : 'NRFI').' '.((string) $candidate->line));
         }
 
         return trim($side.' '.($candidate->line !== null ? (string) $candidate->line : ''));

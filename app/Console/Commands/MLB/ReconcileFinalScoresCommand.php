@@ -14,6 +14,7 @@ class ReconcileFinalScoresCommand extends Command
         {--season= : Season to reconcile}
         {--from= : Start game date in YYYY-MM-DD}
         {--to= : End game date in YYYY-MM-DD}
+        {--missing-only : Scan only finals where either game score is null}
         {--dry-run : Report what would change without writing}
         {--force : Overwrite existing score conflicts with team stat runs}';
 
@@ -26,15 +27,17 @@ class ReconcileFinalScoresCommand extends Command
             : null;
         $from = $this->parseDateOption('from');
         $to = $this->parseDateOption('to');
+        $missingOnly = (bool) $this->option('missing-only');
         $dryRun = (bool) $this->option('dry-run');
         $force = (bool) $this->option('force');
 
         $this->info('Reconciling MLB final scores from team stats.');
         $this->line('Season: '.($season ?: 'all'));
         $this->line('Date range: '.($from ?: 'beginning').' through '.($to ?: 'today'));
+        $this->line('Scope: '.($missingOnly ? 'missing scores only' : 'all final scores'));
         $this->line('Mode: '.($dryRun ? 'dry-run' : 'apply').($force ? ' with force' : ''));
 
-        $query = $this->baseQuery($season, $from, $to);
+        $query = $this->baseQuery($season, $from, $to, $missingOnly);
         $finalGamesScanned = (clone $query)->count();
 
         $counts = [
@@ -126,13 +129,18 @@ class ReconcileFinalScoresCommand extends Command
     /**
      * @return Builder<Game>
      */
-    private function baseQuery(?int $season, ?string $from, ?string $to): Builder
+    private function baseQuery(?int $season, ?string $from, ?string $to, bool $missingOnly = false): Builder
     {
         return Game::query()
             ->where('status', 'STATUS_FINAL')
             ->when($season !== null, fn (Builder $query) => $query->where('season', $season))
             ->when($from !== null, fn (Builder $query) => $query->whereDate('game_date', '>=', $from))
-            ->when($to !== null, fn (Builder $query) => $query->whereDate('game_date', '<=', $to));
+            ->when($to !== null, fn (Builder $query) => $query->whereDate('game_date', '<=', $to))
+            ->when($missingOnly, fn (Builder $query) => $query->where(
+                fn (Builder $scoreQuery) => $scoreQuery
+                    ->whereNull('home_score')
+                    ->orWhereNull('away_score')
+            ));
     }
 
     /**

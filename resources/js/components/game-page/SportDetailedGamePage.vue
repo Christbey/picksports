@@ -11,6 +11,7 @@ import type {
     GamePageHrefLike,
     GamePageTeam,
     MatchupContextData,
+    MlbStartingPitcherForecast,
     PredictionSummary,
     TeamTrendData,
 } from '@/types';
@@ -77,6 +78,12 @@ withDefaults(
         homeStarterName?: string | null;
         awayStarterRating?: number | null;
         homeStarterRating?: number | null;
+        awayStarterSource?: string | null;
+        homeStarterSource?: string | null;
+        awayStarterConfidence?: number | null;
+        homeStarterConfidence?: number | null;
+        awayStarterForecast?: MlbStartingPitcherForecast | null;
+        homeStarterForecast?: MlbStartingPitcherForecast | null;
     }>(),
     {
         error: null,
@@ -126,6 +133,12 @@ withDefaults(
         homeStarterName: null,
         awayStarterRating: null,
         homeStarterRating: null,
+        awayStarterSource: null,
+        homeStarterSource: null,
+        awayStarterConfidence: null,
+        homeStarterConfidence: null,
+        awayStarterForecast: null,
+        homeStarterForecast: null,
     },
 );
 
@@ -230,9 +243,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :home-label="homeLabel"
                 :away-trends="awayTrends"
                 :home-trends="homeTrends"
-                :matchup-context="
-                    showMatchupContext ? matchupContext : null
-                "
+                :matchup-context="showMatchupContext ? matchupContext : null"
                 :empty-text="trendsEmptyText"
             />
 

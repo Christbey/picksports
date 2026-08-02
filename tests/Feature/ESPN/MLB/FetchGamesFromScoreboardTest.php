@@ -72,6 +72,42 @@ it('stores probable pitcher ids from the mlb scoreboard job', function () {
         ->and($game->probable_away_pitcher_espn_id)->toBe('4433874');
 });
 
+it('does not erase existing probable pitchers when a scoreboard payload omits them', function () {
+    $game = Game::factory()->create([
+        'espn_event_id' => '401814799',
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'probable_home_pitcher_espn_id' => 'existing-home',
+        'probable_away_pitcher_espn_id' => 'existing-away',
+    ]);
+
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard*dates=20260404*' => Http::response([
+            'events' => [[
+                'id' => '401814799',
+                'date' => '2026-04-04T17:05Z',
+                'name' => 'Away at Home',
+                'shortName' => 'AWY @ HME',
+                'season' => ['year' => 2026, 'type' => 2],
+                'competitions' => [[
+                    'status' => ['type' => ['name' => 'STATUS_SCHEDULED']],
+                    'competitors' => [
+                        ['homeAway' => 'home', 'team' => ['id' => '26']],
+                        ['homeAway' => 'away', 'team' => ['id' => '21']],
+                    ],
+                ]],
+            ]],
+        ]),
+    ]);
+
+    (new FetchGamesFromScoreboard('20260404'))->handle();
+
+    expect($game->refresh()->probable_home_pitcher_espn_id)->toBe('existing-home')
+        ->and($game->probable_away_pitcher_espn_id)->toBe('existing-away');
+});
+
 it('persists live inning and inning state from the mlb scoreboard job', function () {
     Http::fake([
         '*site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard*dates=20260403*' => Http::response([

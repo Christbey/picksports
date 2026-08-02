@@ -18,6 +18,7 @@ class MlbDailyPickService
         private readonly MlbMoneylineCandidateBuilder $moneyline,
         private readonly MlbRunLineCandidateBuilder $runLine,
         private readonly MlbTotalCandidateBuilder $total,
+        private readonly MlbFirstInningCandidateBuilder $firstInning,
         private readonly MlbFirstFiveCandidateBuilder $firstFive,
         private readonly MlbFirstThreeCandidateBuilder $firstThree,
         private readonly MlbPlayerPropCandidateBuilder $props,
@@ -41,7 +42,7 @@ class MlbDailyPickService
         $games = Game::query()
             ->with(['homeTeam', 'awayTeam', 'prediction', 'playerProps'])
             ->where('season', $season)
-            ->where('status', '!=', config('mlb.statuses.final', 'STATUS_FINAL'))
+            ->where('status', config('mlb.statuses.scheduled', 'STATUS_SCHEDULED'))
             ->tap(fn ($query) => $this->dateWindows->applyGameDateWindow($query, $window))
             ->orderBy('game_date')
             ->get();
@@ -60,6 +61,9 @@ class MlbDailyPickService
                 }
                 if ($marketSet['total']) {
                     $candidateData = $candidateData->merge($this->total->build($prediction));
+                }
+                if ($marketSet['first_inning']) {
+                    $candidateData = $candidateData->merge($this->firstInning->build($prediction));
                 }
                 if ($marketSet['first_5']) {
                     $candidateData = $candidateData->merge($this->firstFive->build($prediction));
@@ -114,7 +118,7 @@ class MlbDailyPickService
         CarbonInterface $generatedAt,
     ): array {
         $scored = $this->scorer->score($candidate);
-        $promotion = $this->promotionGate->apply($scored['internal_label']);
+        $promotion = $this->promotionGate->apply($scored['internal_label'], $candidate->marketType);
         $payload = $candidate->toPayload();
 
         return [
@@ -150,7 +154,7 @@ class MlbDailyPickService
 
     /**
      * @param  list<string>  $markets
-     * @return array{moneyline:bool,run_line:bool,total:bool,first_3:bool,first_5:bool,props:bool}
+     * @return array{moneyline:bool,run_line:bool,total:bool,first_inning:bool,first_3:bool,first_5:bool,props:bool}
      */
     private function marketSet(array $markets): array
     {
@@ -163,6 +167,7 @@ class MlbDailyPickService
             'moneyline' => $enabled('moneyline'),
             'run_line' => $enabled('run_line') || $enabled('spread'),
             'total' => $enabled('total') || $enabled('totals'),
+            'first_inning' => $enabled('first_inning') || $enabled('first_1') || $enabled('yrfi') || $enabled('nrfi'),
             'first_3' => $enabled('first_3') || $enabled('f3'),
             'first_5' => $enabled('first_5') || $enabled('f5'),
             'props' => $enabled('props') || $enabled('player_prop') || $enabled('player_props'),

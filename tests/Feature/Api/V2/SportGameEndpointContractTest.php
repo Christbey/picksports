@@ -16,6 +16,7 @@ use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WCBB\Team as WcbbTeam;
 use App\Models\WNBA\Game as WnbaGame;
 use App\Models\WNBA\Team as WnbaTeam;
+use App\Services\MLB\MlbStartingPitcherForecastService;
 use Laravel\Sanctum\Sanctum;
 
 dataset('v2GameContractSports', [
@@ -126,6 +127,91 @@ it('returns a clean json 404 for unsupported v2 sport game endpoints', function 
     $this->getJson('/api/v2/sports/nhl/games/1')
         ->assertNotFound()
         ->assertJsonPath('message', 'Unsupported sport: nhl');
+});
+
+it('returns a projected mlb starter with explicit rotation provenance', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $homeTeam = MlbTeam::factory()->create(['abbreviation' => 'CLE']);
+    $awayTeam = MlbTeam::factory()->create(['abbreviation' => 'ARI']);
+    $projectedPitcher = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => 'projected-5001',
+        'full_name' => 'Projected Starter',
+        'elo_rating' => 1512,
+    ]);
+    $game = MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'probable_home_pitcher_espn_id' => null,
+        'projected_home_pitcher_espn_id' => $projectedPitcher->espn_id,
+        'projected_home_pitcher_confidence' => 0.64,
+        'pitcher_projection_metadata' => ['version' => 'rotation-v1'],
+        'pitcher_projection_generated_at' => now(),
+    ]);
+
+    $this->getJson("/api/v2/sports/mlb/games/{$game->id}")
+        ->assertOk()
+        ->assertJsonPath('data.home_starting_pitcher.full_name', 'Projected Starter')
+        ->assertJsonPath('data.home_starting_pitcher_source', 'rotation_projection')
+        ->assertJsonPath('data.home_starting_pitcher_confidence', 0.64)
+        ->assertJsonPath('data.probable_home_pitcher_espn_id', null)
+        ->assertJsonPath('data.projected_home_pitcher_espn_id', 'projected-5001');
+});
+
+it('returns the box score starter ahead of probable and projected mlb pitchers', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $homeTeam = MlbTeam::factory()->create(['abbreviation' => 'CLE']);
+    $awayTeam = MlbTeam::factory()->create(['abbreviation' => 'ARI']);
+    $actualPitcher = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => 'actual-5001',
+        'full_name' => 'Confirmed Starter',
+    ]);
+    $actualAwayPitcher = MlbPlayer::factory()->pitcher()->create([
+        'team_id' => $awayTeam->id,
+        'espn_id' => 'actual-away-5001',
+        'full_name' => 'Confirmed Away Starter',
+    ]);
+    $game = MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'actual_home_pitcher_espn_id' => $actualPitcher->espn_id,
+        'actual_away_pitcher_espn_id' => $actualAwayPitcher->espn_id,
+        'probable_home_pitcher_espn_id' => 'probable-5001',
+        'projected_home_pitcher_espn_id' => 'projected-5001',
+        'starting_pitcher_confirmation_metadata' => ['home' => ['source' => 'espn_boxscore']],
+        'starting_pitchers_confirmed_at' => now(),
+    ]);
+    app(MlbStartingPitcherForecastService::class)->record($game, 'home', [
+        'pitcher_espn_id' => $actualPitcher->espn_id,
+        'confidence' => 0.82,
+        'evidence' => ['rotation_size' => 5],
+    ]);
+    app(MlbStartingPitcherForecastService::class)->record($game, 'away', [
+        'pitcher_espn_id' => $actualAwayPitcher->espn_id,
+        'confidence' => 0.74,
+        'evidence' => ['rotation_size' => 5],
+    ]);
+
+    $this->getJson("/api/v2/sports/mlb/games/{$game->id}")
+        ->assertOk()
+        ->assertJsonPath('data.home_starting_pitcher.full_name', 'Confirmed Starter')
+        ->assertJsonPath('data.home_starting_pitcher_source', 'espn_boxscore_confirmed')
+        ->assertJsonPath('data.home_starting_pitcher_confidence', 1)
+        ->assertJsonPath('data.actual_home_pitcher_espn_id', 'actual-5001')
+        ->assertJsonPath('data.starting_pitcher_confirmation_metadata.home.source', 'espn_boxscore')
+        ->assertJsonPath('data.home_starting_pitcher_forecast.predicted_pitcher.full_name', 'Confirmed Starter')
+        ->assertJsonPath('data.home_starting_pitcher_forecast.grade', 'correct')
+        ->assertJsonPath('data.home_starting_pitcher_forecast.confidence', 0.82)
+        ->assertJsonPath('data.away_starting_pitcher_forecast.predicted_pitcher.full_name', 'Confirmed Away Starter')
+        ->assertJsonPath('data.away_starting_pitcher_forecast.grade', 'correct')
+        ->assertJsonPath('data.away_starting_pitcher_forecast.confidence', 0.74);
 });
 
 it('presents cfb v2 game dates in eastern football time', function () {

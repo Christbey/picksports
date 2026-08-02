@@ -19,12 +19,20 @@ class TrendSignalScorer
                     continue;
                 }
 
-                $quality = $this->qualityForCategory($category);
-                $direction = $this->directionForMessage($message, $category);
-                $tone = $this->toneForDirection($direction, $quality);
-                $extractedSample = $this->extractSampleSize($message) ?? $sampleSize;
                 $percentage = $this->extractPercentage($message);
-                $score = $this->scoreSignal($category, $quality, $direction, $percentage, $extractedSample, $sampleSize);
+                $hasRateEvidence = $percentage !== null;
+                $direction = $this->directionForMessage($message, $category, $percentage);
+                $extractedSample = $this->extractSampleSize($message) ?? $sampleSize;
+
+                // Message text has no settled ROI, CLV, or validation-window evidence.
+                $quality = 'contextual';
+                $score = $this->scoreSignal(
+                    $direction,
+                    $percentage,
+                    $hasRateEvidence,
+                    $extractedSample,
+                    $sampleSize,
+                );
 
                 $signals[] = [
                     'id' => "{$category}_{$index}",
@@ -32,12 +40,20 @@ class TrendSignalScorer
                     'message' => $message,
                     'quality' => $quality,
                     'direction' => $direction,
-                    'tone' => $tone,
+                    'tone' => $this->toneForDirection($direction),
                     'score' => $score,
                     'confidence' => $this->confidenceLabel($score, $extractedSample),
                     'sample_size' => $extractedSample,
                     'percentage' => $percentage,
-                    'reason_codes' => $this->reasonCodes($sport, $category, $quality, $direction, $score, $extractedSample),
+                    'reason_codes' => $this->reasonCodes(
+                        $sport,
+                        $category,
+                        $quality,
+                        $direction,
+                        $score,
+                        $extractedSample,
+                        $hasRateEvidence,
+                    ),
                 ];
             }
         }
@@ -93,82 +109,55 @@ class TrendSignalScorer
         ];
     }
 
-    protected function qualityForCategory(string $category): string
-    {
-        return match ($category) {
-            'advanced',
-            'totals',
-            'rest_schedule',
-            'opponent_strength',
-            'offensive_efficiency',
-            'defensive_performance',
-            'drive_efficiency' => 'actionable',
-
-            'quarters',
-            'halves',
-            'conference',
-            'streaks',
-            'situational',
-            'scoring',
-            'margins',
-            'scoring_patterns',
-            'momentum' => 'contextual',
-
-            'first_score',
-            'time_based',
-            'clutch_performance' => 'volatile',
-
-            default => 'contextual',
-        };
-    }
-
-    protected function directionForMessage(string $message, string $category): string
+    protected function directionForMessage(string $message, string $category, ?float $percentage): string
     {
         $text = strtolower($message);
-        $percentage = $this->extractPercentage($message);
+        $isTotalsContext = in_array($category, ['totals', 'scoring', 'defensive_performance'], true);
+
+        if ($percentage === null) {
+            return $isTotalsContext ? 'total_context' : 'context';
+        }
 
         if (preg_match('/\bover\b/', $text)) {
-            return 'total_over';
+            return $percentage >= 55 ? 'total_over' : 'total_context';
         }
 
         if (preg_match('/\bunder\b/', $text)) {
-            return 'total_under';
+            return $percentage >= 55 ? 'total_under' : 'total_context';
         }
 
-        if (
-            str_contains($text, 'allow') ||
-            str_contains($text, 'blown') ||
-            str_contains($text, 'struggle') ||
-            str_contains($text, 'declining') ||
-            str_contains($text, 'losing streak') ||
-            str_contains($text, 'failed') ||
-            ($percentage !== null && $percentage < 45)
-        ) {
-            return 'risk';
+        if ($this->describesPositiveOutcome($text)) {
+            return match (true) {
+                $percentage >= 55 => 'support',
+                $percentage <= 45 => 'risk',
+                default => 'context',
+            };
         }
 
-        if (
-            str_contains($text, 'won') ||
-            str_contains($text, 'winning') ||
-            str_contains($text, 'hot') ||
-            str_contains($text, 'covered') ||
-            str_contains($text, 'clutch') ||
-            str_contains($text, 'taking care') ||
-            str_contains($text, 'strong') ||
-            str_contains($text, 'improving') ||
-            ($percentage !== null && $percentage >= 60 && ! str_contains($text, 'allow'))
-        ) {
-            return 'support';
+        if ($this->describesNegativeOutcome($text)) {
+            return $percentage >= 55 ? 'risk' : 'context';
         }
 
-        if (in_array($category, ['totals', 'scoring', 'defensive_performance'], true)) {
-            return 'total_context';
-        }
-
-        return 'context';
+        return $isTotalsContext ? 'total_context' : 'context';
     }
 
-    protected function toneForDirection(string $direction, string $quality): string
+    protected function describesPositiveOutcome(string $text): bool
+    {
+        return (bool) preg_match(
+            '/\b(won|wins|winning|covered|covers|covering|outscored|outscore|held|led|leads|leading)\b|against (?:the )?(?:model )?spread/',
+            $text,
+        );
+    }
+
+    protected function describesNegativeOutcome(string $text): bool
+    {
+        return (bool) preg_match(
+            '/\b(lost|loses|losing|failed|fails|struggle|struggles|blown|blows|allowed|allows|allowing|trailed|trails|trailing|declining)\b/',
+            $text,
+        );
+    }
+
+    protected function toneForDirection(string $direction): string
     {
         if ($direction === 'risk') {
             return 'risk';
@@ -178,79 +167,109 @@ class TrendSignalScorer
             return 'total';
         }
 
-        if ($quality === 'volatile') {
-            return 'risk';
-        }
-
         return 'team';
     }
 
     protected function extractPercentage(string $message): ?float
     {
-        preg_match_all('/(\d+(?:\.\d+)?)%/', $message, $matches);
+        if (preg_match('/(\d+(?:\.\d+)?)%/', $message, $match)) {
+            return $this->validPercentage((float) $match[1]);
+        }
 
-        if (empty($matches[1])) {
+        $ratio = $this->extractRatio($message);
+        if ($ratio === null || $ratio['attempts'] === 0) {
             return null;
         }
 
-        return max(array_map(static fn (string $value): float => (float) $value, $matches[1]));
+        return round(($ratio['successes'] / $ratio['attempts']) * 100, 1);
+    }
+
+    protected function validPercentage(float $percentage): ?float
+    {
+        return $percentage >= 0 && $percentage <= 100 ? $percentage : null;
     }
 
     protected function extractSampleSize(string $message): ?int
     {
-        if (preg_match('/\((\d+)\/(\d+)\)/', $message, $match)) {
-            return (int) $match[2];
+        $ratio = $this->extractRatio($message);
+        if ($ratio !== null) {
+            return $ratio['attempts'];
         }
 
         if (preg_match('/\b(?:last|of)\s+(\d+)\s+games\b/i', $message, $match)) {
             return (int) $match[1];
         }
 
-        if (preg_match('/\b(\d+)\s+of\s+(\d+)\s+games\b/i', $message, $match)) {
-            return (int) $match[2];
+        return null;
+    }
+
+    /**
+     * @return array{successes: int, attempts: int}|null
+     */
+    protected function extractRatio(string $message): ?array
+    {
+        if (preg_match('/\((\d+)\/(\d+)\)/', $message, $match)) {
+            return $this->validRatio((int) $match[1], (int) $match[2]);
+        }
+
+        if (preg_match('/\b(\d+)\s+of\s+(?:their\s+)?(?:last\s+)?(\d+)\s+games\b/i', $message, $match)) {
+            return $this->validRatio((int) $match[1], (int) $match[2]);
+        }
+
+        if (preg_match('/\b(\d+)-(\d+)(?:-(\d+))?\b/', $message, $match)) {
+            $wins = (int) $match[1];
+            $losses = (int) $match[2];
+            $ties = isset($match[3]) ? (int) $match[3] : 0;
+
+            return $this->validRatio($wins, $wins + $losses + $ties);
         }
 
         return null;
     }
 
+    /**
+     * @return array{successes: int, attempts: int}|null
+     */
+    protected function validRatio(int $successes, int $attempts): ?array
+    {
+        if ($attempts <= 0 || $successes < 0 || $successes > $attempts) {
+            return null;
+        }
+
+        return [
+            'successes' => $successes,
+            'attempts' => $attempts,
+        ];
+    }
+
     protected function scoreSignal(
-        string $category,
-        string $quality,
         string $direction,
         ?float $percentage,
+        bool $hasRateEvidence,
         int $signalSample,
-        int $teamSample
+        int $teamSample,
     ): int {
-        $base = match ($quality) {
-            'actionable' => 62,
-            'contextual' => 50,
-            'volatile' => 42,
-            default => 48,
-        };
-
-        $base += match ($category) {
-            'advanced', 'opponent_strength', 'rest_schedule', 'drive_efficiency' => 8,
-            'totals', 'offensive_efficiency', 'defensive_performance' => 6,
-            'clutch_performance', 'first_score', 'time_based' => -6,
-            default => 0,
-        };
-
-        if ($percentage !== null) {
-            $base += ($percentage - 50) * 0.45;
+        if (! $hasRateEvidence || $percentage === null) {
+            return 35;
         }
 
-        $sampleRatio = $teamSample > 0 ? min(1.0, $signalSample / max(1, $teamSample)) : 0.5;
-        $base += $sampleRatio * 8;
+        $score = 48 + min(12, abs($percentage - 50) * 0.4);
+
+        if (in_array($direction, ['context', 'total_context'], true)) {
+            $score -= 5;
+        }
+
+        $sampleRatio = $teamSample > 0
+            ? min(1.0, $signalSample / max(1, $teamSample))
+            : min(1.0, $signalSample / 20);
+        $score += $sampleRatio * 5;
 
         if ($signalSample < 6) {
-            $base -= 10;
+            $score -= 12;
         }
 
-        if ($direction === 'risk') {
-            $base += 3;
-        }
-
-        return max(1, min(100, (int) round($base)));
+        // Unvalidated message evidence can rank context, but cannot become a strong edge.
+        return max(1, min(69, (int) round($score)));
     }
 
     protected function confidenceLabel(int $score, int $sampleSize): string
@@ -259,27 +278,28 @@ class TrendSignalScorer
             return 'thin_sample';
         }
 
-        return match (true) {
-            $score >= 75 => 'strong',
-            $score >= 60 => 'medium',
-            default => 'low',
-        };
+        return $score >= 60 ? 'medium' : 'low';
     }
 
     /**
      * @return array<int, string>
      */
-    protected function reasonCodes(string $sport, string $category, string $quality, string $direction, int $score, int $sampleSize): array
-    {
+    protected function reasonCodes(
+        string $sport,
+        string $category,
+        string $quality,
+        string $direction,
+        int $score,
+        int $sampleSize,
+        bool $hasRateEvidence,
+    ): array {
         $codes = [
             "{$category}_trend",
             "{$quality}_trend_quality",
             "{$direction}_signal",
+            $hasRateEvidence ? 'parsed_rate_context' : 'descriptive_trend_context',
+            'unvalidated_trend_evidence',
         ];
-
-        if ($score >= 75) {
-            $codes[] = 'strong_trend_signal';
-        }
 
         if ($sampleSize < 6) {
             $codes[] = 'thin_sample_trend';

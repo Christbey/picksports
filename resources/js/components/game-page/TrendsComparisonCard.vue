@@ -24,6 +24,7 @@ interface TrendInsight {
     confidence?: string;
     sampleSize?: number | null;
     reasonCodes?: string[];
+    direction?: string;
 }
 
 const props = defineProps<{
@@ -183,6 +184,18 @@ const classifyTrendTone = (
 const sideLabel = (side: 'away' | 'home'): string =>
     side === 'away' ? props.awayLabel || 'Away' : props.homeLabel || 'Home';
 
+const insightLabel = (
+    side: 'away' | 'home',
+    tone: TrendTone,
+    direction?: string,
+): string => {
+    if (tone === 'total') return 'Total context';
+    if (tone === 'risk') return `${sideLabel(side)} risk`;
+    return direction === 'support'
+        ? `${sideLabel(side)} edge`
+        : `${sideLabel(side)} context`;
+};
+
 const trendInsights = computed<TrendInsight[]>(() => {
     const insights: TrendInsight[] = [];
 
@@ -203,12 +216,7 @@ const trendInsights = computed<TrendInsight[]>(() => {
 
                 insights.push({
                     key: `${side}-${signal.category}-${signal.id || index}`,
-                    label:
-                        tone === 'total'
-                            ? 'Total context'
-                            : tone === 'risk'
-                              ? `${sideLabel(side)} risk`
-                              : `${sideLabel(side)} edge`,
+                    label: insightLabel(side, tone, signal.direction),
                     detail: props.formatCategoryName(signal.category),
                     category: signal.category,
                     message,
@@ -218,6 +226,7 @@ const trendInsights = computed<TrendInsight[]>(() => {
                     confidence: signal.confidence,
                     sampleSize: signal.sample_size,
                     reasonCodes: signal.reason_codes ?? [],
+                    direction: signal.direction,
                 });
             });
 
@@ -234,12 +243,7 @@ const trendInsights = computed<TrendInsight[]>(() => {
 
                 insights.push({
                     key: `${side}-${category}-${index}`,
-                    label:
-                        tone === 'total'
-                            ? 'Total context'
-                            : tone === 'risk'
-                              ? `${sideLabel(side)} risk`
-                              : `${sideLabel(side)} edge`,
+                    label: insightLabel(side, tone),
                     detail: props.formatCategoryName(category),
                     category,
                     message,
@@ -264,11 +268,17 @@ const actionableTrendCards = computed<TrendInsight[]>(() => {
     const selected: TrendInsight[] = [];
 
     const pushBest = (tone: TrendTone) => {
-        const found = trendInsights.value.find(
+        const available = trendInsights.value.filter(
             (insight) =>
                 insight.tone === tone &&
                 !selected.some((item) => item.key === insight.key),
         );
+        const found =
+            tone === 'team'
+                ? available.find(
+                      (insight) => insight.direction === 'support',
+                  ) || available[0]
+                : available[0];
         if (found) selected.push(found);
     };
 
@@ -338,9 +348,7 @@ const matchupEdgeLabel = (row: MatchupContextRow): string => {
 const matchupRows = computed(() => props.matchupContext?.rows ?? []);
 
 const displayTitle = computed(() =>
-    matchupRows.value.length > 0
-        ? 'Trends & Matchup History'
-        : props.title,
+    matchupRows.value.length > 0 ? 'Trends & Matchup History' : props.title,
 );
 </script>
 
@@ -382,7 +390,9 @@ const displayTitle = computed(() =>
             </div>
 
             <div
-                v-else-if="allTrendCategories.length > 0 || matchupRows.length > 0"
+                v-else-if="
+                    allTrendCategories.length > 0 || matchupRows.length > 0
+                "
                 class="space-y-4"
             >
                 <div class="grid gap-2 sm:grid-cols-3">
@@ -431,9 +441,7 @@ const displayTitle = computed(() =>
                     <div
                         class="flex flex-wrap items-center justify-between gap-2"
                     >
-                        <h4 class="text-sm font-semibold">
-                            Matchup History
-                        </h4>
+                        <h4 class="text-sm font-semibold">Matchup History</h4>
                         <Badge variant="outline" class="text-[11px]">
                             {{ matchupRows.length }}
                             {{ matchupRows.length === 1 ? 'split' : 'splits' }}
@@ -504,7 +512,11 @@ const displayTitle = computed(() =>
                         class="rounded-lg border p-3"
                         :class="{
                             'border-emerald-300/70 bg-emerald-500/10 dark:border-emerald-800/60 dark:bg-emerald-500/12':
-                                insight.tone === 'team',
+                                insight.tone === 'team' &&
+                                insight.direction === 'support',
+                            'border-border/70 bg-muted/25':
+                                insight.tone === 'team' &&
+                                insight.direction !== 'support',
                             'border-blue-300/70 bg-blue-500/10 dark:border-blue-800/60 dark:bg-blue-500/12':
                                 insight.tone === 'total',
                             'border-amber-300/70 bg-amber-500/10 dark:border-amber-800/60 dark:bg-amber-500/12':
@@ -522,7 +534,10 @@ const displayTitle = computed(() =>
                                     {{ insight.detail }}
                                 </p>
                             </div>
-                            <Badge variant="outline" class="shrink-0 text-[11px]">
+                            <Badge
+                                variant="outline"
+                                class="shrink-0 text-[11px]"
+                            >
                                 {{ insight.score }}
                             </Badge>
                         </div>
@@ -560,7 +575,7 @@ const displayTitle = computed(() =>
                     class="rounded-lg border border-border/70 bg-muted/25 p-3"
                 >
                     <h4 class="mb-2 text-sm font-semibold">
-                        Top Matchup Edges
+                        Supporting Patterns
                     </h4>
                     <ul class="space-y-1 text-sm">
                         <li

@@ -3,6 +3,7 @@
 use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\Team as MlbTeam;
+use App\Models\MLB\TeamStat as MlbTeamStat;
 use App\Models\NBA\Game as NbaGame;
 use App\Models\NBA\Team as NbaTeam;
 use App\Models\NFL\Game as NflGame;
@@ -75,7 +76,7 @@ it('returns matchup context rows for mlb game detail', function () {
         'probable_away_pitcher_espn_id' => $awayPitcher->espn_id,
     ]);
 
-    MlbGame::factory()->regularSeason()->create([
+    $fallbackScoreGame = MlbGame::factory()->regularSeason()->create([
         'season' => 2026,
         'season_type' => '2',
         'status' => 'STATUS_FINAL',
@@ -85,6 +86,19 @@ it('returns matchup context rows for mlb game detail', function () {
         'away_team_id' => $awayTeam->id,
         'home_score' => null,
         'away_score' => null,
+    ]);
+
+    MlbTeamStat::factory()->create([
+        'game_id' => $fallbackScoreGame->id,
+        'team_id' => $homeTeam->id,
+        'team_type' => 'home',
+        'runs' => 2,
+    ]);
+    MlbTeamStat::factory()->create([
+        'game_id' => $fallbackScoreGame->id,
+        'team_id' => $awayTeam->id,
+        'team_type' => 'away',
+        'runs' => 7,
     ]);
 
     $currentGame = MlbGame::factory()->regularSeason()->create([
@@ -112,13 +126,13 @@ it('returns matchup context rows for mlb game detail', function () {
     expect($rows->pluck('key')->all())->toContain('head_to_head', 'overall', 'role_record', 'time_bucket_record', 'starter_matchup');
 
     $headToHead = $rows->firstWhere('key', 'head_to_head');
-    expect($headToHead['away']['display'])->toBe('1-0')
-        ->and($headToHead['home']['display'])->toBe('0-1');
+    expect($headToHead['away']['display'])->toBe('2-0')
+        ->and($headToHead['home']['display'])->toBe('0-2');
 
     $overall = $rows->firstWhere('key', 'overall');
-    expect($overall['away']['display'])->toBe('2-0')
+    expect($overall['away']['display'])->toBe('3-0')
         ->and($overall['away']['ties'])->toBe(0)
-        ->and($overall['home']['display'])->toBe('0-2')
+        ->and($overall['home']['display'])->toBe('0-3')
         ->and($overall['home']['ties'])->toBe(0);
 
     $starterRow = $rows->firstWhere('key', 'starter_matchup');

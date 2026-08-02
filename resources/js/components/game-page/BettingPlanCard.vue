@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import { getPredictionRecommendation } from '@/lib/predictionRecommendation';
+import type { PredictionSummary } from '@/types';
 
 type BettingPlan = {
     bet_pick?: string | null;
@@ -13,20 +15,104 @@ type BettingPlan = {
 
 const props = defineProps<{
     bettingPlan?: BettingPlan | null;
+    prediction?: PredictionSummary | null;
     lockedMessage?: string;
 }>();
 
+const humanize = (value: string): string =>
+    value
+        .replaceAll('_', ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const unique = (values: Array<string | null | undefined>): string[] =>
+    values.filter(
+        (value, index, all): value is string =>
+            Boolean(value) && all.indexOf(value) === index,
+    );
+
+const recommendationPick = (
+    recommendation: NonNullable<PredictionSummary['recommendation']>,
+): string => {
+    const side = recommendation.team_name || recommendation.pick_side;
+    const market = recommendation.market_type
+        ? humanize(recommendation.market_type)
+        : null;
+    const price = recommendation.market_price;
+    const priceLabel =
+        typeof price === 'number' ? `${price > 0 ? '+' : ''}${price}` : null;
+
+    return (
+        [side ? humanize(String(side)) : null, market, priceLabel]
+            .filter(Boolean)
+            .join(' · ') || 'Public betting recommendation'
+    );
+};
+
+const resolvedPlan = computed<BettingPlan | null>(() => {
+    const prediction = props.prediction;
+    const narrativePlan =
+        props.bettingPlan ?? prediction?.narrative?.betting_plan;
+    if (!prediction) return narrativePlan ?? null;
+
+    const recommendation = getPredictionRecommendation(prediction);
+    const publicSummary = prediction.public_recommendation;
+    if (!recommendation && !publicSummary) return narrativePlan ?? null;
+
+    const type =
+        recommendation?.recommendation_type ?? publicSummary?.type ?? 'no_play';
+    const isPregame = recommendation?.prediction_phase === 'pregame';
+    const isPublicBet =
+        type === 'bet' && recommendation?.is_bet === true && isPregame;
+    const isPublicLean = type === 'lean' && isPregame;
+    const isPublicPlay = isPublicBet || isPublicLean;
+    const marketReason = prediction.market_aware_projection?.reason;
+    const noBetReason = recommendation?.no_bet_reason;
+
+    return {
+        bet_pick: isPublicPlay
+            ? recommendationPick(recommendation ?? {})
+            : publicSummary?.label ||
+              (type === 'monitor' ? 'Live monitor' : 'No bet'),
+        reasoning: isPublicPlay
+            ? narrativePlan?.reasoning ||
+              marketReason ||
+              'This is the current public recommendation after market and risk controls.'
+            : marketReason ||
+              (noBetReason
+                  ? `No public bet: ${humanize(noBetReason)}.`
+                  : 'No public bet passed the current market, risk, and promotion controls.'),
+        classification: type,
+        for_bet: isPublicPlay ? narrativePlan?.for_bet || [] : [],
+        against_bet: isPublicPlay ? narrativePlan?.against_bet || [] : [],
+        pass_reasons: unique([
+            ...(publicSummary?.block_reasons || []),
+            ...(recommendation?.block_reasons || []),
+            noBetReason,
+        ]),
+        reason_codes: unique([
+            ...(recommendation?.reason_codes || []),
+            ...(recommendation?.risk_flags || []),
+        ]),
+    };
+});
+
 const classificationLabel = computed(() => {
-    const value = props.bettingPlan?.classification;
+    const value = resolvedPlan.value?.classification;
 
     return value ? value.replaceAll('_', ' ') : 'model lean';
 });
 
 const isPass = computed(() => {
     const text =
-        `${props.bettingPlan?.classification || ''} ${props.bettingPlan?.bet_pick || ''}`.toLowerCase();
+        `${resolvedPlan.value?.classification || ''} ${resolvedPlan.value?.bet_pick || ''}`.toLowerCase();
 
-    return text.includes('pass') || text.includes('no bet');
+    return (
+        !['bet', 'lean'].includes(
+            resolvedPlan.value?.classification?.toLowerCase() || '',
+        ) ||
+        text.includes('pass') ||
+        text.includes('no bet')
+    );
 });
 
 const planToneClass = computed(() =>
@@ -37,8 +123,8 @@ const planToneClass = computed(() =>
 
 const uniqueCodes = computed(() =>
     [
-        ...(props.bettingPlan?.pass_reasons || []),
-        ...(props.bettingPlan?.reason_codes || []),
+        ...(resolvedPlan.value?.pass_reasons || []),
+        ...(resolvedPlan.value?.reason_codes || []),
     ].filter((code, index, codes) => code && codes.indexOf(code) === index),
 );
 </script>
@@ -53,7 +139,7 @@ const uniqueCodes = computed(() =>
                 </p>
             </div>
             <span
-                v-if="bettingPlan?.bet_pick"
+                v-if="resolvedPlan?.bet_pick"
                 :class="[
                     'rounded-full px-3 py-1 text-xs font-semibold capitalize ring-1',
                     planToneClass,
@@ -63,7 +149,7 @@ const uniqueCodes = computed(() =>
             </span>
         </div>
 
-        <template v-if="bettingPlan?.bet_pick">
+        <template v-if="resolvedPlan?.bet_pick">
             <div
                 class="mt-4 rounded-lg border border-border/60 bg-background/55 p-3"
             >
@@ -73,25 +159,25 @@ const uniqueCodes = computed(() =>
                     Recommendation
                 </div>
                 <p class="mt-1 text-base font-semibold text-foreground">
-                    {{ bettingPlan.bet_pick }}
+                    {{ resolvedPlan.bet_pick }}
                 </p>
                 <p
-                    v-if="bettingPlan.reasoning"
+                    v-if="resolvedPlan.reasoning"
                     class="mt-2 text-sm text-muted-foreground"
                 >
-                    {{ bettingPlan.reasoning }}
+                    {{ resolvedPlan.reasoning }}
                 </p>
             </div>
 
             <div
                 v-if="
-                    bettingPlan.for_bet?.length ||
-                    bettingPlan.against_bet?.length
+                    resolvedPlan.for_bet?.length ||
+                    resolvedPlan.against_bet?.length
                 "
                 class="mt-3 grid gap-3 text-sm md:grid-cols-2"
             >
                 <div
-                    v-if="bettingPlan.for_bet?.length"
+                    v-if="resolvedPlan.for_bet?.length"
                     class="rounded-lg border border-border/60 bg-card/70 p-3"
                 >
                     <p
@@ -100,14 +186,14 @@ const uniqueCodes = computed(() =>
                         Supports
                     </p>
                     <ul class="mt-2 space-y-1.5 text-muted-foreground">
-                        <li v-for="item in bettingPlan.for_bet" :key="item">
+                        <li v-for="item in resolvedPlan.for_bet" :key="item">
                             {{ item }}
                         </li>
                     </ul>
                 </div>
 
                 <div
-                    v-if="bettingPlan.against_bet?.length"
+                    v-if="resolvedPlan.against_bet?.length"
                     class="rounded-lg border border-border/60 bg-card/70 p-3"
                 >
                     <p
@@ -116,7 +202,10 @@ const uniqueCodes = computed(() =>
                         Risk / Pushback
                     </p>
                     <ul class="mt-2 space-y-1.5 text-muted-foreground">
-                        <li v-for="item in bettingPlan.against_bet" :key="item">
+                        <li
+                            v-for="item in resolvedPlan.against_bet"
+                            :key="item"
+                        >
                             {{ item }}
                         </li>
                     </ul>

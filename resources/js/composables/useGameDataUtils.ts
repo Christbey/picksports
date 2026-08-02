@@ -48,12 +48,28 @@ export const parseLinescores = (linescores: unknown): LineScoreEntry[] => {
 
 export const parseBroadcastNetworks = (value: unknown): string[] => {
     if (!value) return [];
-    if (Array.isArray(value)) return value as string[];
+
+    const normalize = (networks: unknown[]): string[] =>
+        networks
+            .filter((network): network is string => typeof network === 'string')
+            .map((network) => network.trim())
+            .filter((network) => network.length > 0 && network !== ',');
+
+    if (Array.isArray(value)) return normalize(value);
     if (typeof value !== 'string') return [];
+
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === ',') return [];
+
     try {
-        return JSON.parse(value);
-    } catch {
+        const parsed: unknown = JSON.parse(trimmed);
+
+        if (Array.isArray(parsed)) return normalize(parsed);
+        if (typeof parsed === 'string') return normalize([parsed]);
+
         return [];
+    } catch {
+        return normalize(trimmed.split(','));
     }
 };
 
@@ -63,8 +79,18 @@ export const getRecentForm = (games: GameRecord[], teamId: number): string => {
             const isHome = g.home_team_id === teamId;
             const teamScore = isHome ? g.home_score : g.away_score;
             const oppScore = isHome ? g.away_score : g.home_score;
-            return teamScore && oppScore && teamScore > oppScore ? 'W' : 'L';
+            if (
+                teamScore === null ||
+                oppScore === null ||
+                !Number.isFinite(teamScore) ||
+                !Number.isFinite(oppScore)
+            ) {
+                return null;
+            }
+            if (teamScore === oppScore) return 'T';
+            return teamScore > oppScore ? 'W' : 'L';
         })
+        .filter((result): result is 'W' | 'L' | 'T' => result !== null)
         .join('-');
 };
 
@@ -88,11 +114,26 @@ export const getWinLossRecord = (
     games: GameRecord[],
     teamId: number,
 ): string => {
-    const wins = games.filter((g) => {
-        const isHome = g.home_team_id === teamId;
-        const teamScore = isHome ? g.home_score : g.away_score;
-        const oppScore = isHome ? g.away_score : g.home_score;
-        return teamScore !== null && oppScore !== null && teamScore > oppScore;
-    }).length;
-    return `${wins}-${games.length - wins}`;
+    const results = games
+        .map((g) => {
+            const isHome = g.home_team_id === teamId;
+            const teamScore = isHome ? g.home_score : g.away_score;
+            const oppScore = isHome ? g.away_score : g.home_score;
+            if (
+                teamScore === null ||
+                oppScore === null ||
+                !Number.isFinite(teamScore) ||
+                !Number.isFinite(oppScore)
+            ) {
+                return null;
+            }
+            if (teamScore === oppScore) return 'tie';
+            return teamScore > oppScore ? 'win' : 'loss';
+        })
+        .filter((result): result is 'win' | 'loss' | 'tie' => result !== null);
+    const wins = results.filter((result) => result === 'win').length;
+    const losses = results.filter((result) => result === 'loss').length;
+    const ties = results.filter((result) => result === 'tie').length;
+
+    return ties > 0 ? `${wins}-${losses}-${ties}` : `${wins}-${losses}`;
 };

@@ -61,9 +61,7 @@ class StreakTrendCollector extends TrendCollector
                 continue;
             }
 
-            $actualMargin = $this->isHome($game)
-                ? $game->home_score - $game->away_score
-                : $game->away_score - $game->home_score;
+            $actualMargin = $this->margin($game);
 
             $adjustedMargin = $this->isHome($game) ? $actualMargin : -$actualMargin;
             $covered = $adjustedMargin > -$spread;

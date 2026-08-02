@@ -4,6 +4,7 @@ namespace App\Services\MLB\Picks;
 
 use App\Models\MLB\GameWeather;
 use App\Models\MLB\Prediction;
+use App\Support\MLB\MlbGameStart;
 
 class MlbTotalCandidateBuilder
 {
@@ -77,7 +78,7 @@ class MlbTotalCandidateBuilder
                     'weather_present' => $weather !== null,
                 ],
                 marketSnapshot: $outcome,
-                gameStartAt: $game->game_date,
+                gameStartAt: MlbGameStart::for($game),
             );
         }
 

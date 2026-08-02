@@ -4,6 +4,7 @@ namespace App\Services\MLB\Picks;
 
 use App\Models\MLB\Game;
 use App\Models\MLB\PlayerProp;
+use App\Support\MLB\MlbGameStart;
 
 class MlbPlayerPropCandidateBuilder
 {
@@ -85,7 +86,7 @@ class MlbPlayerPropCandidateBuilder
                 'fetched_at' => $prop->fetched_at?->toISOString(),
             ],
             playerId: $prop->player_id ? (int) $prop->player_id : null,
-            gameStartAt: $game->game_date,
+            gameStartAt: MlbGameStart::for($game),
         );
     }
 

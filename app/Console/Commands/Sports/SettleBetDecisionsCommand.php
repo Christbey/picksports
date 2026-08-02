@@ -6,6 +6,7 @@ use App\Models\BetDecision;
 use App\Models\BetSettlement;
 use App\Models\MarketQuote;
 use App\Models\NBA\Game;
+use App\Support\MLB\MlbLineScores;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 
@@ -51,8 +52,12 @@ class SettleBetDecisionsCommand extends Command
                 continue;
             }
 
-            $homeScore = (int) $game->home_score;
-            $awayScore = (int) $game->away_score;
+            $scores = $this->scoreContext($game, $marketType);
+            if ($scores === null) {
+                continue;
+            }
+            $homeScore = $scores['home'];
+            $awayScore = $scores['away'];
             $homeMargin = $homeScore - $awayScore;
             $totalScore = $homeScore + $awayScore;
             $grade = $this->grade($decision, $marketType, $homeMargin, $totalScore);
@@ -89,6 +94,7 @@ class SettleBetDecisionsCommand extends Command
                         'away_score' => $awayScore,
                         'home_margin' => $homeMargin,
                         'total_score' => $totalScore,
+                        'period_innings' => $scores['innings'],
                         'closing_quote_id' => $closingQuote?->id,
                         'closing_quote_captured_at' => $closingQuote?->captured_at?->toIso8601String(),
                         'closing_quote_selection' => $closingQuoteSelection['selection'],
@@ -114,6 +120,10 @@ class SettleBetDecisionsCommand extends Command
         $marketKey = strtolower(trim((string) $decision->market_key));
 
         return match (true) {
+            $marketType === 'first_3_moneyline'
+                || $marketKey === 'h2h_1st_3_innings' => 'first_3_moneyline',
+            $marketType === 'first_5_moneyline'
+                || $marketKey === 'h2h_1st_5_innings' => 'first_5_moneyline',
             in_array($marketType, ['moneyline', 'winner', 'win_probability'], true)
                 || $marketKey === 'h2h' => 'moneyline',
             in_array($marketType, ['spread', 'run_line'], true)
@@ -138,7 +148,7 @@ class SettleBetDecisionsCommand extends Command
         int $homeMargin,
         int $totalScore,
     ): ?array {
-        if ($marketType === 'moneyline') {
+        if (in_array($marketType, ['moneyline', 'first_3_moneyline', 'first_5_moneyline'], true)) {
             $selectedResult = match ($decision->side) {
                 'home' => (float) $homeMargin,
                 'away' => (float) -$homeMargin,
@@ -197,6 +207,7 @@ class SettleBetDecisionsCommand extends Command
     {
         $marketKey = match ($marketType) {
             'moneyline' => 'h2h',
+            'first_3_moneyline', 'first_5_moneyline' => $decision->market_key,
             'spread' => 'spreads',
             'total' => 'totals',
         };
@@ -249,7 +260,11 @@ class SettleBetDecisionsCommand extends Command
             ];
         }
 
-        $metric = $marketType === 'moneyline' ? 'no_vig_probability' : 'line';
+        $metric = in_array(
+            $marketType,
+            ['moneyline', 'first_3_moneyline', 'first_5_moneyline'],
+            true,
+        ) ? 'no_vig_probability' : 'line';
         $consensusQuotes = $latestByBookmaker
             ->filter(fn (MarketQuote $quote): bool => is_numeric($quote->{$metric}))
             ->sortBy([
@@ -285,7 +300,7 @@ class SettleBetDecisionsCommand extends Command
             return ['value' => null, 'type' => null];
         }
 
-        if ($marketType === 'moneyline') {
+        if (in_array($marketType, ['moneyline', 'first_3_moneyline', 'first_5_moneyline'], true)) {
             $entryProbability = is_numeric($decision->no_vig_probability)
                 ? (float) $decision->no_vig_probability
                 : null;
@@ -324,5 +339,40 @@ class SettleBetDecisionsCommand extends Command
         }
 
         return $price > 0 ? $price / 100 : 100 / abs($price);
+    }
+
+    /**
+     * @return array{home: int, away: int, innings: ?int}|null
+     */
+    private function scoreContext(Model $game, string $marketType): ?array
+    {
+        $innings = match ($marketType) {
+            'first_3_moneyline' => 3,
+            'first_5_moneyline' => 5,
+            default => null,
+        };
+        if ($innings === null) {
+            return [
+                'home' => (int) $game->home_score,
+                'away' => (int) $game->away_score,
+                'innings' => null,
+            ];
+        }
+
+        $home = array_slice(MlbLineScores::normalize($game->home_linescores), 0, $innings);
+        $away = array_slice(MlbLineScores::normalize($game->away_linescores), 0, $innings);
+        if (count($home) < $innings
+            || count($away) < $innings
+            || collect([...$home, ...$away])->contains(
+                fn (mixed $score): bool => ! is_numeric($score),
+            )) {
+            return null;
+        }
+
+        return [
+            'home' => (int) array_sum(array_map('intval', $home)),
+            'away' => (int) array_sum(array_map('intval', $away)),
+            'innings' => $innings,
+        ];
     }
 }

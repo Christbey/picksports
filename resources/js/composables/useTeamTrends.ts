@@ -38,6 +38,26 @@ export function useTeamTrends<T extends TeamTrendData>(
     homeTrends: Ref<T | null>,
     awayTrends?: Ref<T | null>,
 ) {
+    const isSupportMessage = (message: string): boolean => {
+        const normalized = message.toLowerCase();
+        const percentage = message.match(/(\d+(?:\.\d+)?)%/)?.[1];
+        const hasLosingLanguage = [
+            'lost',
+            'loss',
+            'allow',
+            'failed',
+            'struggle',
+            'declining',
+        ].some((keyword) => normalized.includes(keyword));
+
+        if (hasLosingLanguage) return false;
+        if (percentage && Number(percentage) < 60) return false;
+
+        return ['won', 'winning', 'covered', 'hot', 'strong', 'improving'].some(
+            (keyword) => normalized.includes(keyword),
+        );
+    };
+
     const trendSignalScore = (message: string): number => {
         const normalized = message.toLowerCase();
         let score = 20;
@@ -91,10 +111,26 @@ export function useTeamTrends<T extends TeamTrendData>(
             if (!data?.trends) return;
             const teamLabel = data.team_abbreviation || fallbackLabel;
 
+            if (Array.isArray(data.scored_signals)) {
+                data.scored_signals
+                    .filter((signal) => signal.direction === 'support')
+                    .forEach((signal) => {
+                        const cleaned = String(signal.message || '').trim();
+                        if (cleaned === '') return;
+                        candidates.push({
+                            team: teamLabel,
+                            category: signal.category,
+                            message: cleaned,
+                            score: Number(signal.score) || 0,
+                        });
+                    });
+                return;
+            }
+
             Object.entries(data.trends).forEach(([category, messages]) => {
                 messages.forEach((message) => {
                     const cleaned = String(message || '').trim();
-                    if (cleaned === '') return;
+                    if (cleaned === '' || !isSupportMessage(cleaned)) return;
                     candidates.push({
                         team: teamLabel,
                         category,

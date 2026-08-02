@@ -3,10 +3,15 @@
 namespace App\Services\MLB\Picks;
 
 use App\Models\MLB\Prediction;
+use App\Services\MLB\MlbPeriodModelContextService;
+use App\Support\MLB\MlbGameStart;
 
 class MlbFirstFiveCandidateBuilder
 {
-    public function __construct(private readonly MlbPickMarketService $markets) {}
+    public function __construct(
+        private readonly MlbPickMarketService $markets,
+        private readonly MlbPeriodModelContextService $periodModels,
+    ) {}
 
     /**
      * @return list<MlbPickCandidateData>
@@ -49,10 +54,20 @@ class MlbFirstFiveCandidateBuilder
             if ($marketType === 'first_5_run_line' && is_numeric($outcome['line'] ?? null)) {
                 $projectedValue += ((float) $outcome['line']) * 50;
             }
-            $modelProbability = max(0.05, min(0.95, 0.5 + ($projectedValue / 600)));
+            $heuristicProbability = max(0.05, min(0.95, 0.5 + ($projectedValue / 600)));
+            $periodModel = $marketType === 'first_5_moneyline'
+                ? $this->periodModels->qualifiedProbability(
+                    (int) $game->id,
+                    'first_5_moneyline',
+                    $side,
+                )
+                : null;
+            $modelProbability = $periodModel['probability'] ?? $heuristicProbability;
             $marketProbability = $this->markets->implied((int) $outcome['price']);
             $riskFlags = [];
-            $reasonCodes = ['f5_pitcher_edge', 'f5_offense_split_edge', 'f5_market_agreement'];
+            $reasonCodes = $periodModel
+                ? ['promoted_period_model_probability', 'f5_market_agreement']
+                : ['f5_pitcher_edge', 'f5_offense_split_edge', 'f5_market_agreement'];
 
             if (! $game->probable_home_pitcher_espn_id || ! $game->probable_away_pitcher_espn_id) {
                 $riskFlags[] = 'starter_unconfirmed';
@@ -79,10 +94,18 @@ class MlbFirstFiveCandidateBuilder
                 projectedValue: $projectedValue,
                 reasonCodes: $reasonCodes,
                 riskFlags: $riskFlags,
-                featureSnapshot: ['pitcher_edge' => $pitcherEdge, 'team_edge' => $teamEdge],
+                featureSnapshot: [
+                    'pitcher_edge' => $pitcherEdge,
+                    'team_edge' => $teamEdge,
+                    'heuristic_probability' => $heuristicProbability,
+                    'model_source' => $periodModel ? 'promoted_period_model' : 'elo_heuristic',
+                    'period_model_artifact_id' => data_get($periodModel, 'context.lineage.artifact_id'),
+                    'period_model_run_id' => data_get($periodModel, 'context.lineage.model_run_id'),
+                    'period_model_feature_hash' => data_get($periodModel, 'context.lineage.feature_hash'),
+                ],
                 marketSnapshot: $outcome,
                 teamId: (int) ($side === 'home' ? $game->home_team_id : $game->away_team_id),
-                gameStartAt: $game->game_date,
+                gameStartAt: MlbGameStart::for($game),
             );
         }
 
@@ -136,7 +159,7 @@ class MlbFirstFiveCandidateBuilder
                 riskFlags: ['total_model_over_bias'],
                 featureSnapshot: ['corrected_f5_total' => $f5Total],
                 marketSnapshot: $outcome,
-                gameStartAt: $game->game_date,
+                gameStartAt: MlbGameStart::for($game),
             );
         }
 

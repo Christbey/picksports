@@ -1,0 +1,67 @@
+schema_version: mlb-period-moneyline-v1
+
+dataset:
+  time_column: game_start_at
+  season_column: season
+  market_column: market_type
+  target_column: target_class
+
+features:
+  feature_period_innings: {type: float, nullable: false}
+  feature_home_period_elo: {type: float, nullable: false}
+  feature_away_period_elo: {type: float, nullable: false}
+  feature_period_elo_diff: {type: float, nullable: false}
+  feature_elo_home_win_probability: {type: float, nullable: false}
+  feature_home_prior_games: {type: float, nullable: false}
+  feature_home_win_pct: {type: float, nullable: true}
+  feature_home_tie_rate: {type: float, nullable: true}
+  feature_home_runs_for_per_game: {type: float, nullable: true}
+  feature_home_runs_against_per_game: {type: float, nullable: true}
+  feature_home_run_diff_per_game: {type: float, nullable: true}
+  feature_home_rolling_10_games: {type: float, nullable: false}
+  feature_home_rolling_10_win_pct: {type: float, nullable: true}
+  feature_home_rolling_10_tie_rate: {type: float, nullable: true}
+  feature_home_rolling_10_run_diff: {type: float, nullable: true}
+  feature_away_prior_games: {type: float, nullable: false}
+  feature_away_win_pct: {type: float, nullable: true}
+  feature_away_tie_rate: {type: float, nullable: true}
+  feature_away_runs_for_per_game: {type: float, nullable: true}
+  feature_away_runs_against_per_game: {type: float, nullable: true}
+  feature_away_run_diff_per_game: {type: float, nullable: true}
+  feature_away_rolling_10_games: {type: float, nullable: false}
+  feature_away_rolling_10_win_pct: {type: float, nullable: true}
+  feature_away_rolling_10_tie_rate: {type: float, nullable: true}
+  feature_away_rolling_10_run_diff: {type: float, nullable: true}
+  feature_home_venue_games: {type: float, nullable: false}
+  feature_home_venue_win_pct: {type: float, nullable: true}
+  feature_home_venue_tie_rate: {type: float, nullable: true}
+  feature_away_venue_games: {type: float, nullable: false}
+  feature_away_venue_win_pct: {type: float, nullable: true}
+  feature_away_venue_tie_rate: {type: float, nullable: true}
+  feature_home_rest_days: {type: float, nullable: true}
+  feature_away_rest_days: {type: float, nullable: true}
+  feature_home_pitcher_elo: {type: float, nullable: true}
+  feature_away_pitcher_elo: {type: float, nullable: true}
+  feature_pitcher_elo_diff: {type: float, nullable: true}
+  feature_pitcher_context_known: {type: float, nullable: false}
+
+training:
+  seed: 20260730
+  calibration_fraction: 0.20
+  probability_floor: 0.005
+  logistic_regression:
+    C: 0.35
+    max_iter: 3000
+  xgboost:
+    n_estimators: 300
+    max_depth: 3
+    learning_rate: 0.035
+    subsample: 0.85
+    colsample_bytree: 0.80
+    reg_lambda: 4.0
+    min_child_weight: 6.0
+  promotion:
+    minimum_windows: 3
+    minimum_better_window_rate: 0.60
+    maximum_worst_log_loss_regression: 0.05
+    minimum_quote_decisions: 100

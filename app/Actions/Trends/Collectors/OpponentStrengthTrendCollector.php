@@ -15,52 +15,40 @@ class OpponentStrengthTrendCollector extends TrendCollector
     {
         $messages = [];
 
-        $gamesVsWinning = $this->games->filter(function ($game) {
-            $opponent = $this->isHome($game) ? $game->awayTeam : $game->homeTeam;
-
-            return $opponent && $this->hasWinningRecord($opponent);
-        });
-
-        if ($gamesVsWinning->count() >= 3) {
-            $winsVsWinning = $gamesVsWinning->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($winsVsWinning, $gamesVsWinning->count())} against winning teams";
-        }
-
-        $gamesVsLosing = $this->games->filter(function ($game) {
-            $opponent = $this->isHome($game) ? $game->awayTeam : $game->homeTeam;
-
-            return $opponent && ! $this->hasWinningRecord($opponent);
-        });
-
-        if ($gamesVsLosing->count() >= 3) {
-            $winsVsLosing = $gamesVsLosing->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($winsVsLosing, $gamesVsLosing->count())} against losing teams";
-        }
-
-        $gamesVsTopElo = $this->games->filter(function ($game) {
-            $opponent = $this->isHome($game) ? $game->awayTeam : $game->homeTeam;
-            $opponentElo = $opponent->elo_rating ?? 1500;
-
-            return $opponentElo >= 1550;
-        });
+        $gamesWithPregameElo = $this->games->filter(
+            fn ($game): bool => $this->opponentPregameElo($game) !== null
+        );
+        $gamesVsTopElo = $gamesWithPregameElo->filter(
+            fn ($game): bool => $this->opponentPregameElo($game) >= 1550
+        );
 
         if ($gamesVsTopElo->count() >= 3) {
             $winsVsTop = $gamesVsTopElo->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($winsVsTop, $gamesVsTopElo->count())} against high-rated opponents (Elo 1550+)";
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($winsVsTop, $gamesVsTopElo->count())} against opponents with pregame Elo 1550+";
+        }
+
+        $gamesVsBelowAverageElo = $gamesWithPregameElo->filter(
+            fn ($game): bool => $this->opponentPregameElo($game) < 1500
+        );
+
+        if ($gamesVsBelowAverageElo->count() >= 3) {
+            $wins = $gamesVsBelowAverageElo->filter(fn ($game): bool => $this->won($game))->count();
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($wins, $gamesVsBelowAverageElo->count())} against opponents with pregame Elo below 1500";
         }
 
         return $messages;
     }
 
-    protected function hasWinningRecord(object $team): bool
+    protected function opponentPregameElo(object $game): ?float
     {
-        $wins = $team->wins ?? 0;
-        $losses = $team->losses ?? 0;
-
-        if ($wins + $losses === 0) {
-            return ($team->elo_rating ?? 1500) >= 1510;
+        if (! $game->relationLoaded('prediction') || ! $game->prediction) {
+            return null;
         }
 
-        return $wins > $losses;
+        $value = $this->isHome($game)
+            ? $game->prediction->away_team_elo
+            : $game->prediction->home_team_elo;
+
+        return is_numeric($value) ? (float) $value : null;
     }
 }

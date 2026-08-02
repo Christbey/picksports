@@ -25,8 +25,8 @@ class SituationalPredictionContextService
         $awayBullpenFatigue = $this->bullpenFatigueScore($game, $awayTeamId);
         $bullpenQuality = app(BullpenRatingService::class)->contextForGame($game, $homeTeamId, $awayTeamId);
 
-        $homeOpponentPitcherHand = $this->probablePitcherThrowingHand($game->probable_away_pitcher_espn_id, $awayTeamId);
-        $awayOpponentPitcherHand = $this->probablePitcherThrowingHand($game->probable_home_pitcher_espn_id, $homeTeamId);
+        $homeOpponentPitcherHand = $this->probablePitcherThrowingHand($game->resolvedStartingPitcherEspnId('away'), $awayTeamId);
+        $awayOpponentPitcherHand = $this->probablePitcherThrowingHand($game->resolvedStartingPitcherEspnId('home'), $homeTeamId);
         $homeHandednessEdge = $historicalReconstruction
             ? 0.0
             : $this->lineupHandednessEdge($homeTeamId, $homeOpponentPitcherHand);
@@ -167,8 +167,8 @@ class SituationalPredictionContextService
             ];
         }
 
-        $homeScore = $this->starterFormScore($game, $game->probable_home_pitcher_espn_id, $homeTeamId);
-        $awayScore = $this->starterFormScore($game, $game->probable_away_pitcher_espn_id, $awayTeamId);
+        $homeScore = $this->starterFormScore($game, $game->resolvedStartingPitcherEspnId('home'), $homeTeamId);
+        $awayScore = $this->starterFormScore($game, $game->resolvedStartingPitcherEspnId('away'), $awayTeamId);
 
         $spreadAdjustment = ($homeScore - $awayScore)
             * (float) config('mlb.prediction.situational.starter_form.spread_weight', 0.25);

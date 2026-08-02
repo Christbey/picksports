@@ -482,6 +482,8 @@ it('returns MLB over under results from the v2 prediction API', function (): voi
         'status' => 'STATUS_FINAL',
         'home_score' => 3,
         'away_score' => 2,
+        'home_linescores' => [0, 1, 0, 1, 0, 0, 1, 0, 0],
+        'away_linescores' => [1, 0, 0, 0, 1, 0, 0, 0, 0],
     ]);
 
     $prediction->forceFill([
@@ -504,13 +506,21 @@ it('returns MLB over under results from the v2 prediction API', function (): voi
         ->assertJsonPath('data.0.total_result.side', 'over')
         ->assertJsonPath('data.0.total_result.line', 8.5)
         ->assertJsonPath('data.0.total_result.result', 'loss')
-        ->assertJsonPath('data.0.total_result.actual_total', 5);
+        ->assertJsonPath('data.0.total_result.actual_total', 5)
+        ->assertJsonPath('data.0.game.home_linescores.1', 1)
+        ->assertJsonPath('data.0.game.away_linescores.0', 1);
 });
 
 it('returns MLB daily picks from the v2 API as tracking only', function (): void {
     mlbPricedSlate();
     $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
         ->assertExitCode(0);
+    $candidate = PickCandidate::query()->whereNull('superseded_at')->firstOrFail();
+    $candidate->update([
+        'closing_price' => -108,
+        'closing_line' => 8.0,
+        'clv' => 0.0245,
+    ]);
 
     Sanctum::actingAs(User::factory()->create());
 
@@ -528,6 +538,10 @@ it('returns MLB daily picks from the v2 API as tracking only', function (): void
 
     expect($response->json('data.candidate_count'))->toBeGreaterThan(0)
         ->and($response->json('data.top_picks'))->not->toBeEmpty();
+    $candidatePayload = collect($response->json('data.candidates'))->firstWhere('id', $candidate->id);
+    expect(data_get($candidatePayload, 'closing_price'))->toBe(-108)
+        ->and((float) data_get($candidatePayload, 'closing_line'))->toBe(8.0)
+        ->and((float) data_get($candidatePayload, 'clv'))->toBe(0.0245);
 });
 
 it('returns slate counts even when no MLB daily pick candidates exist', function (): void {

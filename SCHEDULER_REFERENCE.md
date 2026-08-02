@@ -93,23 +93,31 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 - Daily schedule sync at `01:30`
 - Live scoreboard sync every 5 minutes between `13:00` and `04:00`
 - Game details sync every 30 minutes between `16:00` and `04:00`
+- Repair missing inning line scores at `04:10`
+- Reconcile missing final scores from team-stat runs at `04:20`; the command is
+  idempotent, runs on one server, and never overwrites score conflicts
 - Grade predictions at `04:30`
+- Reconcile and grade immutable rotation-starter forecasts at `04:35`; only
+  forecasts captured before scheduled first pitch count toward accuracy,
+  confidence calibration, Brier score, log loss, and pitcher-rating error
 - Calculate Elo at `05:00`
-- Calculate team metrics at `05:30`
+- Recalculate team metrics at `05:30`, after final-score reconciliation
 - Generate predictions at `06:00`
 - Run the initial private tabular shadow pass at `06:10`
+- Run the initial private F3/F5 shadow pass at `06:12`
 - Record initial private shadow decisions at `06:15`
 - Train and register a weekly challenger Monday at `06:40` Central Time
+- Train and register the weekly F3/F5 challenger Monday at `07:20` Central Time
 - Grade pick candidates at `04:40` and settle model decisions at `04:50`
 - Generate playoff forecast at `08:35`
 - Sync odds every 4 hours between `08:00` and `23:00`
 - After the `08:00`, `12:00`, `16:00`, and `20:00` odds cycles, refresh
-  baseline predictions at `:30`, tabular shadow outputs at `:50`, and immutable
-  decisions at `:58`
+  baseline predictions at `:30`, tabular shadow outputs at `:50`, F3/F5 shadow
+  outputs at `:55`, and immutable decisions at `:58`
 - Sync player props twice daily at `11:00` and `16:00`
 - Sync injuries every 30 minutes between `08:00` and `23:00`
 - Sync futures odds every 4 hours between `08:00` and `23:00`
-- Refresh probable pitchers (next 48h scoreboard) every 30 minutes between `06:00` and `23:00`; regenerates predictions for games whose probable starter changed
+- Refresh probable pitchers (next 48h scoreboard) every 30 minutes between `06:00` and `23:00`; preserves previously supplied ESPN probables, projects missing starters from the latest rotation and intervening schedule, and regenerates predictions whenever the resolved starter or source confidence changes
 
 ### WNBA
 

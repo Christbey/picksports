@@ -41,7 +41,7 @@ class SituationalTrendCollector extends TrendCollector
 
         if ($favoriteGames->count() >= 3) {
             $favoriteWins = $favoriteGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($favoriteWins, $favoriteGames->count())} as favorites";
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($favoriteWins, $favoriteGames->count())} when the Picksports model made them favorites";
         }
 
         $underdogGames = $this->games->filter(function ($game) {
@@ -55,7 +55,7 @@ class SituationalTrendCollector extends TrendCollector
 
         if ($underdogGames->count() >= 3) {
             $underdogWins = $underdogGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($underdogWins, $underdogGames->count())} as underdogs";
+            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($underdogWins, $underdogGames->count())} when the Picksports model made them underdogs";
         }
 
         return $messages;

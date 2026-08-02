@@ -65,6 +65,15 @@ class RecordShadowBetDecisionsCommand extends Command
             $edge = $modelProbability === null || $marketProbability === null
                 ? null
                 : $modelProbability - $marketProbability;
+            $periodMoneyline = $this->isPeriodMoneyline($market['observation_market']);
+            $periodProbabilities = $this->periodOutcomeProbabilities($shadow, $side);
+            $projectedValue = $periodMoneyline
+                ? ($periodProbabilities === null ? null : $this->expectedValue(
+                    $periodProbabilities['win'],
+                    $periodProbabilities['loss'],
+                    is_numeric($quote?->price) ? (int) $quote->price : null,
+                ))
+                : $edge;
             $minimumEdge = max(0.0, (float) $this->option('minimum-edge'));
             $artifactPromotedAtDecisionTime = $artifact->status === 'promoted'
                 && $artifact->promoted_at !== null
@@ -90,7 +99,9 @@ class RecordShadowBetDecisionsCommand extends Command
                     ?? data_get($snapshot->outputs, 'challenger_uncertainty')
                     ?? data_get($snapshot->model_metadata, 'shadow_inference.challenger_outputs.uncertainty'),
             );
-            $maximumUncertainty = config("{$sport}_ml.shadow.max_uncertainty");
+            $maximumUncertainty = $this->isPeriodMoneyline($market['observation_market'])
+                ? config('mlb_ml.period_models.maximum_uncertainty')
+                : config("{$sport}_ml.shadow.max_uncertainty");
             $maximumUncertainty = is_numeric($maximumUncertainty)
                 ? max(0.0, (float) $maximumUncertainty)
                 : null;
@@ -103,6 +114,7 @@ class RecordShadowBetDecisionsCommand extends Command
                 && $modelProbability !== null
                 && $edge !== null
                 && $edge >= $minimumEdge
+                && (! $periodMoneyline || ($projectedValue !== null && $projectedValue > 0))
                 && $uncertaintyEligible;
             $eligibilityReasons = array_values(array_filter([
                 $artifactPromotedAtDecisionTime ? null : 'artifact_not_promoted_at_decision_time',
@@ -125,6 +137,11 @@ class RecordShadowBetDecisionsCommand extends Command
                     ? 'model_uncertainty_above_threshold'
                     : null,
                 $edge !== null && $edge < $minimumEdge ? 'edge_below_threshold' : null,
+                $periodMoneyline
+                    && $quote
+                    && ($projectedValue === null || $projectedValue <= 0)
+                    ? 'expected_value_nonpositive'
+                    : null,
             ]));
             $decisionHash = hash('sha256', implode('|', [
                 $artifact->id,
@@ -161,7 +178,7 @@ class RecordShadowBetDecisionsCommand extends Command
                     'model_probability' => $modelProbability,
                     'blend_probability' => $modelProbability,
                     'edge' => $edge,
-                    'projected_value' => $edge,
+                    'projected_value' => $projectedValue,
                     'confidence' => $modelProbability === null ? null : abs($modelProbability - 0.5) * 2,
                     'status' => $isBet ? 'tracking_bet' : 'shadow_no_bet',
                     'recommendation_label' => $isBet ? 'shadow_bet' : 'no_bet',
@@ -171,7 +188,9 @@ class RecordShadowBetDecisionsCommand extends Command
                     'pregame_safe' => $pregameSafe,
                     'eligibility_reasons' => $eligibilityReasons,
                     'risk_flags' => [],
-                    'reason_codes' => $isBet ? ['promoted_model_edge'] : ['shadow_model_observation'],
+                    'reason_codes' => $isBet
+                        ? [$periodMoneyline ? 'promoted_model_positive_ev' : 'promoted_model_edge']
+                        : ['shadow_model_observation'],
                     'explanation' => [
                         'decision' => $isBet ? 'bet' : 'no_bet',
                         'observation_market' => $market['observation_market'],
@@ -184,6 +203,10 @@ class RecordShadowBetDecisionsCommand extends Command
                         'model_probability' => $modelProbability,
                         'market_probability' => $marketProbability,
                         'edge' => $edge,
+                        'expected_value' => $projectedValue,
+                        'win_probability' => $periodProbabilities['win'] ?? null,
+                        'loss_probability' => $periodProbabilities['loss'] ?? null,
+                        'tie_push_probability' => $periodProbabilities['tie'] ?? null,
                         'minimum_edge' => $minimumEdge,
                         'model_market_reference_line' => $marketReference['line'],
                         'model_market_reference_bookmaker' => $marketReference['bookmaker'],
@@ -250,6 +273,18 @@ class RecordShadowBetDecisionsCommand extends Command
                 'display_type' => 'total',
                 'market_key' => 'totals',
             ],
+            'first_3_moneyline' => [
+                'observation_market' => 'first_3_moneyline',
+                'market_type' => 'first_3_moneyline',
+                'display_type' => 'first_3_moneyline',
+                'market_key' => 'h2h_1st_3_innings',
+            ],
+            'first_5_moneyline' => [
+                'observation_market' => 'first_5_moneyline',
+                'market_type' => 'first_5_moneyline',
+                'display_type' => 'first_5_moneyline',
+                'market_key' => 'h2h_1st_5_innings',
+            ],
             default => null,
         };
     }
@@ -261,6 +296,10 @@ class RecordShadowBetDecisionsCommand extends Command
                 ?? $shadow->challenger_output,
             'spread' => data_get($shadow->explanation, 'challenger_outputs.home_cover_probability'),
             'total' => data_get($shadow->explanation, 'challenger_outputs.over_probability'),
+            'first_3_moneyline', 'first_5_moneyline' => data_get(
+                $shadow->explanation,
+                'challenger_outputs.conditional_home_win_probability',
+            ) ?? $shadow->challenger_output,
             default => null,
         };
 
@@ -303,7 +342,7 @@ class RecordShadowBetDecisionsCommand extends Command
             ->where('captured_at', '<=', $shadow->generated_at)
             ->when($gameStartAt, fn ($builder) => $builder->where('captured_at', '<=', $gameStartAt));
 
-        if ($marketKey === 'h2h') {
+        if ($marketKey === 'h2h' || str_starts_with($marketKey, 'h2h_')) {
             return [
                 'quote' => $query
                     ->latest('captured_at')
@@ -450,5 +489,57 @@ class RecordShadowBetDecisionsCommand extends Command
         }
 
         return trim($value);
+    }
+
+    /**
+     * @return array{win: float, loss: float, tie: float}|null
+     */
+    private function periodOutcomeProbabilities(ShadowModelOutput $shadow, string $side): ?array
+    {
+        if (! $this->isPeriodMoneyline($shadow->market_type)) {
+            return null;
+        }
+
+        $home = $this->probability(data_get(
+            $shadow->explanation,
+            'challenger_outputs.home_win_probability',
+        ));
+        $away = $this->probability(data_get(
+            $shadow->explanation,
+            'challenger_outputs.away_win_probability',
+        ));
+        $tie = $this->probability(data_get(
+            $shadow->explanation,
+            'challenger_outputs.tie_probability',
+        ));
+        if ($home === null || $away === null || $tie === null) {
+            return null;
+        }
+
+        return [
+            'win' => $side === 'home' ? $home : $away,
+            'loss' => $side === 'home' ? $away : $home,
+            'tie' => $tie,
+        ];
+    }
+
+    private function expectedValue(float $win, float $loss, ?int $price): ?float
+    {
+        if ($price === null || $price === 0) {
+            return null;
+        }
+
+        $profit = $price > 0 ? $price / 100 : 100 / abs($price);
+
+        return ($win * $profit) - $loss;
+    }
+
+    private function isPeriodMoneyline(string $marketType): bool
+    {
+        return in_array(
+            ModelArtifact::normalizeMarketType($marketType),
+            ['first_3_moneyline', 'first_5_moneyline'],
+            true,
+        );
     }
 }

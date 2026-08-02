@@ -50,9 +50,26 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
                     });
             });
         }
+
+        if ($this->includesMissingLineScores()) {
+            $query->orWhere(function ($lineScoreQuery) {
+                $lineScoreQuery
+                    ->where('status', 'STATUS_FINAL')
+                    ->where(function ($missingLineScoreQuery) {
+                        $missingLineScoreQuery
+                            ->whereNull('home_linescores')
+                            ->orWhereNull('away_linescores');
+                    });
+            });
+        }
     }
 
     protected function includesMissingFinalScores(): bool
+    {
+        return false;
+    }
+
+    protected function includesMissingLineScores(): bool
     {
         return false;
     }

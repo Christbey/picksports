@@ -58,6 +58,7 @@ it('updates inning half and count state from mlb game details', function () {
                 'competitors' => [
                     [
                         'homeAway' => 'home',
+                        'team' => ['id' => '10', 'abbreviation' => 'HOM'],
                         'score' => '3',
                         'linescores' => [['displayValue' => '0']],
                         'probables' => [[
@@ -67,6 +68,7 @@ it('updates inning half and count state from mlb game details', function () {
                     ],
                     [
                         'homeAway' => 'away',
+                        'team' => ['id' => '20', 'abbreviation' => 'AWY'],
                         'score' => '4',
                         'linescores' => [['displayValue' => '1']],
                         'probables' => [[
@@ -76,6 +78,29 @@ it('updates inning half and count state from mlb game details', function () {
                     ],
                 ],
             ]],
+        ],
+        'boxscore' => [
+            'players' => [
+                [
+                    'team' => ['id' => '20', 'abbreviation' => 'AWY'],
+                    'statistics' => [[
+                        'type' => 'pitching',
+                        'athletes' => [
+                            ['starter' => true, 'athlete' => ['id' => '7102']],
+                            ['starter' => false, 'athlete' => ['id' => '7199']],
+                        ],
+                    ]],
+                ],
+                [
+                    'team' => ['id' => '10', 'abbreviation' => 'HOM'],
+                    'statistics' => [[
+                        'type' => 'pitching',
+                        'athletes' => [
+                            ['starter' => true, 'athlete' => ['id' => '7101']],
+                        ],
+                    ]],
+                ],
+            ],
         ],
     ];
 
@@ -127,8 +152,154 @@ it('updates inning half and count state from mlb game details', function () {
         ->and($game->outs)->toBe(1)
         ->and($game->probable_home_pitcher_espn_id)->toBe('7001')
         ->and($game->probable_away_pitcher_espn_id)->toBe('7002')
+        ->and($game->actual_home_pitcher_espn_id)->toBe('7101')
+        ->and($game->actual_away_pitcher_espn_id)->toBe('7102')
+        ->and($game->resolvedStartingPitcherEspnId('home'))->toBe('7101')
+        ->and($game->startingPitcherSource('home'))->toBe('espn_boxscore_confirmed')
+        ->and(data_get($game->starting_pitcher_confirmation_metadata, 'away.source'))->toBe('espn_boxscore')
+        ->and($game->starting_pitchers_confirmed_at)->not->toBeNull()
         ->and($game->home_score)->toBe(3)
-        ->and($game->away_score)->toBe(4);
+        ->and($game->away_score)->toBe(4)
+        ->and($game->home_linescores)->toBe(['0'])
+        ->and($game->away_linescores)->toBe(['1']);
+});
+
+it('reconciles missing final scores after normal team stat ingestion', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '30']);
+    $awayTeam = Team::factory()->create(['espn_id' => '40']);
+    $game = Game::factory()->create([
+        'espn_event_id' => '401999002',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+
+    $gameData = [
+        'header' => [
+            'competitions' => [[
+                'status' => ['type' => ['name' => 'STATUS_FINAL']],
+                'competitors' => [
+                    ['homeAway' => 'home'],
+                    ['homeAway' => 'away'],
+                ],
+            ]],
+        ],
+    ];
+
+    $espnService = m::mock(EspnService::class);
+    $espnService->shouldReceive('getGame')->once()->with($game->espn_event_id)->andReturn($gameData);
+
+    $syncTeamStats = new class
+    {
+        public function execute(array $gameData, Game $game): int
+        {
+            TeamStat::factory()->create([
+                'game_id' => $game->id,
+                'team_id' => $game->home_team_id,
+                'team_type' => 'home',
+                'runs' => 6,
+            ]);
+            TeamStat::factory()->create([
+                'game_id' => $game->id,
+                'team_id' => $game->away_team_id,
+                'team_type' => 'away',
+                'runs' => 3,
+            ]);
+
+            return 2;
+        }
+    };
+
+    $noOpSync = new class
+    {
+        public function execute(...$args): int
+        {
+            return 0;
+        }
+    };
+
+    $result = (new SyncGameDetails($espnService, $noOpSync, $syncTeamStats, $noOpSync))
+        ->execute($game->espn_event_id);
+
+    expect($result['score_reconciliation'])
+        ->toMatchArray([
+            'status' => 'updated',
+            'reason' => 'filled_missing_final_score_from_team_stats',
+            'home_score_after' => 6,
+            'away_score_after' => 3,
+        ])
+        ->and($game->fresh()->home_score)->toBe(6)
+        ->and($game->fresh()->away_score)->toBe(3);
+});
+
+it('does not overwrite score conflicts during normal final game sync', function () {
+    $homeTeam = Team::factory()->create(['espn_id' => '50']);
+    $awayTeam = Team::factory()->create(['espn_id' => '60']);
+    $game = Game::factory()->create([
+        'espn_event_id' => '401999003',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'home_score' => 5,
+        'away_score' => 2,
+    ]);
+
+    $gameData = [
+        'header' => [
+            'competitions' => [[
+                'status' => ['type' => ['name' => 'STATUS_FINAL']],
+                'competitors' => [
+                    ['homeAway' => 'home', 'score' => '4'],
+                    ['homeAway' => 'away', 'score' => '2'],
+                ],
+            ]],
+        ],
+    ];
+
+    $espnService = m::mock(EspnService::class);
+    $espnService->shouldReceive('getGame')->once()->with($game->espn_event_id)->andReturn($gameData);
+
+    $syncTeamStats = new class
+    {
+        public function execute(array $gameData, Game $game): int
+        {
+            TeamStat::factory()->create([
+                'game_id' => $game->id,
+                'team_id' => $game->home_team_id,
+                'team_type' => 'home',
+                'runs' => 4,
+            ]);
+            TeamStat::factory()->create([
+                'game_id' => $game->id,
+                'team_id' => $game->away_team_id,
+                'team_type' => 'away',
+                'runs' => 2,
+            ]);
+
+            return 2;
+        }
+    };
+
+    $noOpSync = new class
+    {
+        public function execute(...$args): int
+        {
+            return 0;
+        }
+    };
+
+    $result = (new SyncGameDetails($espnService, $noOpSync, $syncTeamStats, $noOpSync))
+        ->execute($game->espn_event_id);
+
+    expect($result['score_reconciliation'])
+        ->toMatchArray([
+            'status' => 'conflict',
+            'reason' => 'game_score_conflicts_with_team_stats_runs',
+        ])
+        ->and($game->fresh()->home_score)->toBe(5)
+        ->and($game->fresh()->away_score)->toBe(2);
 });
 
 it('normalizes mlb team innings pitched from baseball decimal notation', function () {
@@ -256,6 +427,51 @@ it('dispatches final mlb games missing player stats even when linescores exist',
     Queue::assertPushed(
         FetchGameDetails::class,
         fn (FetchGameDetails $job) => $job->eventId === $missingStatsGame->espn_event_id
+    );
+});
+
+it('dispatches final mlb games missing inning line scores even when other details exist', function () {
+    Queue::fake();
+
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+    $game = Game::factory()->create([
+        'espn_event_id' => '401999104',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_FINAL',
+        'home_score' => 4,
+        'away_score' => 2,
+        'home_linescores' => null,
+        'away_linescores' => null,
+    ]);
+    $player = Player::factory()->create(['team_id' => $homeTeam->id]);
+
+    PlayerStat::factory()->create([
+        'player_id' => $player->id,
+        'game_id' => $game->id,
+        'team_id' => $homeTeam->id,
+    ]);
+    TeamStat::factory()->create([
+        'team_id' => $homeTeam->id,
+        'game_id' => $game->id,
+        'team_type' => 'home',
+    ]);
+    Play::query()->create([
+        'game_id' => $game->id,
+        'espn_play_id' => '401999104-1',
+        'sequence_number' => 1,
+        'inning' => 9,
+        'inning_half' => 'bottom',
+        'play_text' => 'Game over',
+    ]);
+
+    artisan('espn:sync-mlb-game-details')->assertSuccessful();
+
+    Queue::assertPushed(FetchGameDetails::class, 1);
+    Queue::assertPushed(
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $game->espn_event_id
     );
 });
 

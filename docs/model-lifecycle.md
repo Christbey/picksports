@@ -189,6 +189,25 @@ Additional passes run after each in-season odds cycle so the model probability,
 exact market line, quote, and decision share a reproducible pregame horizon.
 All resulting decisions remain private and tracking-only.
 
+### MLB F3/F5 workflow
+
+F3 and F5 use official inning line scores and separate three-class models for
+away win, tie, and home win. The period artifact is deliberately independent
+from the full-game artifact:
+
+```bash
+php artisan mlb:backfill-period-history --from-season=2021 --to-season=2025
+php artisan mlb:train-period-models --from-season=2021 --to-season=2026
+php artisan mlb:run-period-shadow
+php artisan mlb:report-period-model-performance
+```
+
+The decision layer compares conditional home/away probabilities with the
+captured two-way quote, but calculates expected value from absolute win and
+loss probabilities so the modeled tie remains a push. Period artifacts have
+no promoted markets at registration. Promotion requires stable chronological
+windows plus enough settled live quote decisions with positive ROI and CLV.
+
 ## Weekly MLB And NFL Automation
 
 The in-season scheduler runs the complete challenger lifecycle:

@@ -7,6 +7,7 @@ use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 
 class SportGameQuery
 {
@@ -50,6 +51,8 @@ class SportGameQuery
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
             ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
+            ->when($filters['before_game_at'] ?? null, fn (Builder $query, string $before): Builder => $this->whereBeforeGame($query, $before))
+            ->when($filters['exclude_game_id'] ?? null, fn (Builder $query, int $gameId): Builder => $query->whereKeyNot($gameId))
             ->when($filters['team_id'] ?? null, function (Builder $query, int $teamId): Builder {
                 return $query->where(function (Builder $teamQuery) use ($teamId): void {
                     $teamQuery->where('home_team_id', $teamId)
@@ -58,8 +61,14 @@ class SportGameQuery
             })
             ->when(
                 $filters['team_id'] ?? null,
-                fn (Builder $query): Builder => $query->orderByDesc('game_date'),
-                fn (Builder $query): Builder => $query->orderBy('game_date'),
+                fn (Builder $query): Builder => $query
+                    ->orderByDesc('game_date')
+                    ->orderByDesc('game_time')
+                    ->orderByDesc('id'),
+                fn (Builder $query): Builder => $query
+                    ->orderBy('game_date')
+                    ->orderBy('game_time')
+                    ->orderBy('id'),
             );
     }
 
@@ -88,6 +97,21 @@ class SportGameQuery
         return $query;
     }
 
+    private function whereBeforeGame(Builder $query, string $before): Builder
+    {
+        $cutoff = Carbon::parse($before)->setTimezone((string) config('app.timezone', 'UTC'));
+        $date = $cutoff->toDateString();
+        $time = $cutoff->format('H:i:s');
+
+        return $query->where(function (Builder $inner) use ($date, $time): void {
+            $inner->whereDate('game_date', '<', $date)
+                ->orWhere(function (Builder $sameDate) use ($date, $time): void {
+                    $sameDate->whereDate('game_date', $date)
+                        ->whereTime('game_time', '<', $time);
+                });
+        });
+    }
+
     /**
      * @return class-string<Model>
      */
@@ -109,8 +133,22 @@ class SportGameQuery
     private function relationsFor(string $gameModel): array
     {
         return array_values(array_filter(
-            ['homeTeam', 'awayTeam', 'prediction', 'probableHomePitcher', 'probableAwayPitcher'],
-            fn (string $relation): bool => method_exists($gameModel, $relation),
+            [
+                'homeTeam',
+                'awayTeam',
+                'prediction',
+                'probableHomePitcher',
+                'probableAwayPitcher',
+                'actualHomePitcher',
+                'actualAwayPitcher',
+                'projectedHomePitcher',
+                'projectedAwayPitcher',
+                'homeStartingPitcherForecast.predictedPitcher',
+                'homeStartingPitcherForecast.actualPitcher',
+                'awayStartingPitcherForecast.predictedPitcher',
+                'awayStartingPitcherForecast.actualPitcher',
+            ],
+            fn (string $relation): bool => method_exists($gameModel, explode('.', $relation, 2)[0]),
         ));
     }
 

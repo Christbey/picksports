@@ -4,6 +4,7 @@ namespace App\Services\MLB\Picks;
 
 use App\Models\MLB\PickCandidate;
 use App\Models\MLB\PlayerProp;
+use App\Support\MLB\MlbLineScores;
 use Illuminate\Support\Collection;
 
 class MlbPickGradingService
@@ -90,14 +91,87 @@ class MlbPickGradingService
         $awayScore = (float) $game->away_score;
         $actualMargin = $homeScore - $awayScore;
         $actualTotal = $homeScore + $awayScore;
+        $firstInningHome = $this->inningTotal($game->home_linescores, 1);
+        $firstInningAway = $this->inningTotal($game->away_linescores, 1);
+        $firstThreeHome = $this->inningTotal($game->home_linescores, 3);
+        $firstThreeAway = $this->inningTotal($game->away_linescores, 3);
+        $firstFiveHome = $this->inningTotal($game->home_linescores, 5);
+        $firstFiveAway = $this->inningTotal($game->away_linescores, 5);
 
         return match ($candidate->market_type) {
             'moneyline' => $this->binary(($candidate->side === 'home' && $actualMargin > 0) || ($candidate->side === 'away' && $actualMargin < 0), $candidate, $actualMargin),
             'run_line' => $this->lineResult($candidate->side === 'home' ? $actualMargin + (float) $candidate->line : (-1 * $actualMargin) + (float) $candidate->line, $candidate),
             'total' => $this->lineResult($candidate->side === 'over' ? $actualTotal - (float) $candidate->line : (float) $candidate->line - $actualTotal, $candidate),
+            'first_inning_total' => $this->periodTotalResult($candidate, $firstInningHome, $firstInningAway),
+            'first_3_moneyline' => $this->periodMoneylineResult($candidate, $firstThreeHome, $firstThreeAway),
+            'first_3_total' => $this->periodTotalResult($candidate, $firstThreeHome, $firstThreeAway),
+            'first_5_moneyline' => $this->periodMoneylineResult($candidate, $firstFiveHome, $firstFiveAway),
+            'first_5_run_line' => $this->periodRunLineResult($candidate, $firstFiveHome, $firstFiveAway),
+            'first_5_total' => $this->periodTotalResult($candidate, $firstFiveHome, $firstFiveAway),
             'player_prop' => $this->propResult($candidate),
             default => null,
         };
+    }
+
+    private function periodMoneylineResult(PickCandidate $candidate, ?float $home, ?float $away): ?array
+    {
+        if ($home === null || $away === null) {
+            return null;
+        }
+
+        $margin = $home - $away;
+        $selectedMargin = $candidate->side === 'home' ? $margin : -1 * $margin;
+
+        return $this->lineResult($selectedMargin, $candidate);
+    }
+
+    private function periodRunLineResult(PickCandidate $candidate, ?float $home, ?float $away): ?array
+    {
+        if ($home === null || $away === null || $candidate->line === null) {
+            return null;
+        }
+
+        $margin = $home - $away;
+        $selectedMargin = $candidate->side === 'home' ? $margin : -1 * $margin;
+
+        return $this->lineResult($selectedMargin + (float) $candidate->line, $candidate);
+    }
+
+    private function periodTotalResult(PickCandidate $candidate, ?float $home, ?float $away): ?array
+    {
+        if ($home === null || $away === null || $candidate->line === null) {
+            return null;
+        }
+
+        $total = $home + $away;
+        $value = $candidate->side === 'over'
+            ? $total - (float) $candidate->line
+            : (float) $candidate->line - $total;
+
+        return $this->lineResult($value, $candidate);
+    }
+
+    private function inningTotal(mixed $lineScores, int $innings): ?float
+    {
+        $scores = $this->decodeLineScores($lineScores);
+        if (count($scores) < $innings) {
+            return null;
+        }
+
+        $period = array_slice($scores, 0, $innings);
+        if (collect($period)->contains(fn (mixed $score): bool => ! is_numeric($score))) {
+            return null;
+        }
+
+        return (float) array_sum(array_map('floatval', $period));
+    }
+
+    /**
+     * @return list<mixed>
+     */
+    private function decodeLineScores(mixed $lineScores): array
+    {
+        return MlbLineScores::normalize($lineScores);
     }
 
     /**

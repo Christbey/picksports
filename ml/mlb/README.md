@@ -109,12 +109,12 @@ pytest
 ## Docker
 
 ```bash
-docker build --tag picksports-mlb-ml:0.1.0 ml/mlb
+docker build --tag picksports-mlb-ml:0.2.0 ml/mlb
 
 docker run --rm \
   --volume "$PWD/storage/app/ml:/data:ro" \
   --volume "$PWD/ml/mlb/artifacts:/artifacts" \
-  picksports-mlb-ml:0.1.0 \
+  picksports-mlb-ml:0.2.0 \
   train --input /data/mlb_training.parquet --output-dir /artifacts
 ```
 
@@ -179,3 +179,28 @@ standard deviation and return `null` when the market feature is absent.
 
 This package predicts outcomes. Laravel remains responsible for quotes,
 expected value, risk gates, bankroll policy, shadow decisions, and publishing.
+
+## F3/F5 Period Models
+
+The same package also trains independent three-outcome models for first-three
+and first-five inning moneylines. Each model estimates away win, tie, and home
+win probabilities. The tie probability is retained for push-aware expected
+value; conditional home/away probabilities are used only for comparison with
+two-way sportsbook prices.
+
+```bash
+php artisan mlb:backfill-period-history --from-season=2021 --to-season=2025
+php artisan mlb:export-period-training-data \
+  --from-season=2021 \
+  --to-season=2026
+php artisan mlb:train-period-models --from-season=2021 --to-season=2026
+php artisan mlb:run-period-shadow
+php artisan mlb:report-period-model-performance
+```
+
+Training uses rolling seasons. The season before each test season is split
+chronologically into calibration-fit and calibration-selection segments, and
+the test season is never used to choose the model or calibration method.
+Registered period artifacts start as challengers with no promoted markets.
+Laravel records their quote-aware outputs as private decisions and settles
+ties as pushes from official inning line scores.

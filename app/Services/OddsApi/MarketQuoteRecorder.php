@@ -167,9 +167,9 @@ class MarketQuoteRecorder
                 }
 
                 $rawMarketKey = Str::of((string) ($market['key'] ?? ''))->lower()->trim()->value();
-                $marketKey = self::MARKET_ALIASES[$rawMarketKey] ?? null;
-                $isCoreMarket = $marketKey !== null;
-                $marketKey ??= $rawMarketKey !== '' ? $rawMarketKey : 'unknown';
+                $marketKey = self::MARKET_ALIASES[$rawMarketKey] ?? ($rawMarketKey !== '' ? $rawMarketKey : 'unknown');
+                $marketKind = $this->pairedMarketKind($rawMarketKey);
+                $isPairedMarket = $marketKind !== null;
 
                 $outcomes = $market['outcomes'] ?? null;
                 if (! is_array($outcomes)) {
@@ -191,8 +191,9 @@ class MarketQuoteRecorder
                         continue;
                     }
 
-                    $normalizedOutcome = $isCoreMarket
+                    $normalizedOutcome = $isPairedMarket
                         ? $this->normalizeCoreOutcome(
+                            $marketKind,
                             $marketKey,
                             $outcome,
                             $homeTeam,
@@ -216,8 +217,8 @@ class MarketQuoteRecorder
                 }
 
                 foreach (collect($normalizedOutcomes)->groupBy('group') as $group => $pairedOutcomes) {
-                    if ($isCoreMarket) {
-                        $requiredSides = $marketKey === 'totals'
+                    if ($isPairedMarket) {
+                        $requiredSides = $marketKind === 'totals'
                             ? ['over', 'under']
                             : ['home', 'away'];
                         $sides = $pairedOutcomes->pluck('side')->all();
@@ -236,7 +237,7 @@ class MarketQuoteRecorder
                     }
 
                     $probabilitySum = (float) $pairedOutcomes->sum('implied_probability');
-                    if ($isCoreMarket && $probabilitySum <= 0.0) {
+                    if ($isPairedMarket && $probabilitySum <= 0.0) {
                         $result['skipped_pairs'] += $pairedOutcomes->count();
                         $this->addIssue($result, 'invalid_probability_pair', "{$rawMarketKey} group {$group}");
 
@@ -245,7 +246,7 @@ class MarketQuoteRecorder
 
                     foreach ($pairedOutcomes as $outcome) {
                         $bookmakerHomeLine = $this->bookmakerHomeLine(
-                            $marketKey,
+                            $marketKind,
                             $outcome['side'],
                             $outcome['line'],
                         );
@@ -254,6 +255,7 @@ class MarketQuoteRecorder
                             $bookmaker,
                             $rawMarketKey,
                             $marketKey,
+                            $marketKind,
                             $outcome,
                             $bookmakerHomeLine,
                             $outcome['implied_probability'] !== null && $probabilitySum > 0.0
@@ -289,6 +291,7 @@ class MarketQuoteRecorder
      * }|null
      */
     private function normalizeCoreOutcome(
+        string $marketKind,
         string $marketKey,
         array $outcome,
         ?string $homeTeam,
@@ -307,19 +310,19 @@ class MarketQuoteRecorder
             return null;
         }
 
-        if (in_array($marketKey, ['spreads', 'totals'], true) && $line === null) {
+        if (in_array($marketKind, ['spreads', 'totals'], true) && $line === null) {
             return null;
         }
 
-        if (in_array($marketKey, ['h2h', 'spreads'], true) && ! in_array($side, ['home', 'away'], true)) {
+        if (in_array($marketKind, ['h2h', 'spreads'], true) && ! in_array($side, ['home', 'away'], true)) {
             return null;
         }
 
-        if ($marketKey === 'totals' && ! in_array($side, ['over', 'under'], true)) {
+        if ($marketKind === 'totals' && ! in_array($side, ['over', 'under'], true)) {
             return null;
         }
 
-        $normalizedLine = $marketKey === 'h2h' ? null : $line;
+        $normalizedLine = $marketKind === 'h2h' ? null : $line;
 
         return [
             'raw' => $outcome,
@@ -384,6 +387,7 @@ class MarketQuoteRecorder
         array $bookmaker,
         string $rawMarketKey,
         string $marketKey,
+        ?string $marketKind,
         array $outcome,
         ?float $bookmakerHomeLine,
         ?float $noVigProbability,
@@ -434,7 +438,12 @@ class MarketQuoteRecorder
                     'h2h' => 'moneyline',
                     'spreads' => 'run_line',
                     'totals' => 'total',
-                    default => $marketKey,
+                    default => match ($marketKind) {
+                        'h2h' => 'period_moneyline',
+                        'spreads' => 'period_run_line',
+                        'totals' => 'period_total',
+                        default => $marketKey,
+                    },
                 },
                 'raw_market_key' => $rawMarketKey,
                 'spread_convention' => $bookmakerHomeLine === null
@@ -483,7 +492,7 @@ class MarketQuoteRecorder
         ]);
     }
 
-    private function bookmakerHomeLine(string $marketKey, string $side, ?float $line): ?float
+    private function bookmakerHomeLine(?string $marketKey, string $side, ?float $line): ?float
     {
         if ($marketKey !== 'spreads' || $line === null) {
             return null;
@@ -492,6 +501,22 @@ class MarketQuoteRecorder
         return match ($side) {
             'home' => $line,
             'away' => -1 * $line,
+            default => null,
+        };
+    }
+
+    private function pairedMarketKind(string $rawMarketKey): ?string
+    {
+        $canonical = self::MARKET_ALIASES[$rawMarketKey] ?? $rawMarketKey;
+        if (in_array($canonical, ['h2h', 'spreads', 'totals'], true)) {
+            return $canonical;
+        }
+
+        return match (true) {
+            str_starts_with($rawMarketKey, 'h2h_')
+                && ! str_starts_with($rawMarketKey, 'h2h_3_way_') => 'h2h',
+            str_starts_with($rawMarketKey, 'spreads_') => 'spreads',
+            str_starts_with($rawMarketKey, 'totals_') => 'totals',
             default => null,
         };
     }

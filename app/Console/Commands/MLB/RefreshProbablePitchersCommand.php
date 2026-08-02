@@ -5,6 +5,7 @@ namespace App\Console\Commands\MLB;
 use App\Actions\ESPN\MLB\SyncGamesFromScoreboard;
 use App\Actions\MLB\GeneratePrediction;
 use App\Models\MLB\Game;
+use App\Services\MLB\MlbStartingPitcherProjectionService;
 use App\Support\SportsViewCache;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -20,8 +21,11 @@ class RefreshProbablePitchersCommand extends Command
 
     protected $description = 'Pull next-N-days probable pitchers from ESPN scoreboard and regenerate predictions for games whose probable starter changed.';
 
-    public function handle(SyncGamesFromScoreboard $sync, GeneratePrediction $generate): int
-    {
+    public function handle(
+        SyncGamesFromScoreboard $sync,
+        GeneratePrediction $generate,
+        MlbStartingPitcherProjectionService $projector,
+    ): int {
         $daysAhead = max(0, (int) $this->option('days-ahead'));
         $dryRun = (bool) $this->option('dry-run');
 
@@ -53,25 +57,48 @@ class RefreshProbablePitchersCommand extends Command
             $cursor = $cursor->addDay();
         }
 
+        $projectionChanges = 0;
+        Game::query()
+            ->with(['homeTeam', 'awayTeam'])
+            ->where('status', 'STATUS_SCHEDULED')
+            ->whereBetween('game_date', [$today->startOfDay(), $end->endOfDay()])
+            ->each(function (Game $game) use ($projector, &$projectionChanges): void {
+                try {
+                    if ($projector->project($game)['changed']) {
+                        $projectionChanges++;
+                    }
+                } catch (Throwable $e) {
+                    Log::warning('MLB probable-pitcher refresh: rotation projection failed.', [
+                        'game_id' => $game->id,
+                        'message' => $e->getMessage(),
+                    ]);
+                    $this->warn("Projection failed for game {$game->id}: {$e->getMessage()}");
+                }
+            });
+
         $changed = $this->detectChangedGames($today, $end, $snapshot);
 
         if ($changed->isEmpty()) {
-            $this->info("Synced {$syncedDays} scoreboard day(s); no probable-pitcher changes detected.");
+            $this->info("Synced {$syncedDays} scoreboard day(s); no probable-pitcher changes detected ({$projectionChanges} projection updates).");
 
             return self::SUCCESS;
         }
 
-        $this->info("Synced {$syncedDays} scoreboard day(s); {$changed->count()} game(s) had probable-pitcher changes.");
+        $this->info("Synced {$syncedDays} scoreboard day(s); {$changed->count()} game(s) had probable-pitcher changes ({$projectionChanges} projection updates).");
 
         if ($dryRun) {
             foreach ($changed as $entry) {
                 $this->line(sprintf(
-                    '  [dry-run] game_id=%d home %s -> %s, away %s -> %s',
+                    '  [dry-run] game_id=%d home %s/%s -> %s/%s, away %s/%s -> %s/%s',
                     $entry['game']->id,
+                    $entry['previous']['home_source'] ?? 'null',
                     $entry['previous']['home'] ?? 'null',
-                    $entry['game']->probable_home_pitcher_espn_id ?? 'null',
+                    $entry['game']->startingPitcherSource('home') ?? 'null',
+                    $entry['game']->resolvedStartingPitcherEspnId('home') ?? 'null',
+                    $entry['previous']['away_source'] ?? 'null',
                     $entry['previous']['away'] ?? 'null',
-                    $entry['game']->probable_away_pitcher_espn_id ?? 'null',
+                    $entry['game']->startingPitcherSource('away') ?? 'null',
+                    $entry['game']->resolvedStartingPitcherEspnId('away') ?? 'null',
                 ));
             }
 
@@ -114,26 +141,30 @@ class RefreshProbablePitchersCommand extends Command
     }
 
     /**
-     * @return array<int, array{home: ?string, away: ?string}>
+     * @return array<int, array{home: ?string, away: ?string, home_source: ?string, away_source: ?string, home_confidence: ?float, away_confidence: ?float}>
      */
     private function snapshotProbablePitchers(CarbonImmutable $from, CarbonImmutable $to): array
     {
         return Game::query()
             ->where('status', 'STATUS_SCHEDULED')
             ->whereBetween('game_date', [$from->startOfDay(), $to->endOfDay()])
-            ->get(['id', 'probable_home_pitcher_espn_id', 'probable_away_pitcher_espn_id'])
+            ->get()
             ->mapWithKeys(fn (Game $game) => [
                 $game->id => [
-                    'home' => $game->probable_home_pitcher_espn_id,
-                    'away' => $game->probable_away_pitcher_espn_id,
+                    'home' => $game->resolvedStartingPitcherEspnId('home'),
+                    'away' => $game->resolvedStartingPitcherEspnId('away'),
+                    'home_source' => $game->startingPitcherSource('home'),
+                    'away_source' => $game->startingPitcherSource('away'),
+                    'home_confidence' => $game->startingPitcherConfidence('home'),
+                    'away_confidence' => $game->startingPitcherConfidence('away'),
                 ],
             ])
             ->all();
     }
 
     /**
-     * @param  array<int, array{home: ?string, away: ?string}>  $snapshot
-     * @return Collection<int, array{game: Game, previous: array{home: ?string, away: ?string}}>
+     * @param  array<int, array{home: ?string, away: ?string, home_source: ?string, away_source: ?string, home_confidence: ?float, away_confidence: ?float}>  $snapshot
+     * @return Collection<int, array{game: Game, previous: array<string, mixed>}>
      */
     private function detectChangedGames(CarbonImmutable $from, CarbonImmutable $to, array $snapshot): Collection
     {
@@ -142,9 +173,13 @@ class RefreshProbablePitchersCommand extends Command
             ->whereBetween('game_date', [$from->startOfDay(), $to->endOfDay()])
             ->get()
             ->filter(function (Game $game) use ($snapshot) {
-                $previous = $snapshot[$game->id] ?? ['home' => null, 'away' => null];
-                $homeChanged = ($previous['home'] ?? null) !== $game->probable_home_pitcher_espn_id;
-                $awayChanged = ($previous['away'] ?? null) !== $game->probable_away_pitcher_espn_id;
+                $previous = $snapshot[$game->id] ?? [];
+                $homeChanged = ($previous['home'] ?? null) !== $game->resolvedStartingPitcherEspnId('home')
+                    || ($previous['home_source'] ?? null) !== $game->startingPitcherSource('home')
+                    || $this->confidenceChanged($previous['home_confidence'] ?? null, $game->startingPitcherConfidence('home'));
+                $awayChanged = ($previous['away'] ?? null) !== $game->resolvedStartingPitcherEspnId('away')
+                    || ($previous['away_source'] ?? null) !== $game->startingPitcherSource('away')
+                    || $this->confidenceChanged($previous['away_confidence'] ?? null, $game->startingPitcherConfidence('away'));
 
                 return $homeChanged || $awayChanged;
             })
@@ -153,5 +188,14 @@ class RefreshProbablePitchersCommand extends Command
                 'previous' => $snapshot[$game->id] ?? ['home' => null, 'away' => null],
             ])
             ->values();
+    }
+
+    private function confidenceChanged(mixed $before, ?float $after): bool
+    {
+        if ($before === null || $after === null) {
+            return $before !== $after;
+        }
+
+        return abs((float) $before - $after) > 0.00005;
     }
 }

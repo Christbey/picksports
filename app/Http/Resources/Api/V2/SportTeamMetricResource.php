@@ -4,6 +4,7 @@ namespace App\Http\Resources\Api\V2;
 
 use App\Models\MLB\Game as MlbGame;
 use App\Services\Api\V2\SportContext;
+use App\Support\MLB\MlbGameScoreResolver;
 use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -159,8 +160,13 @@ class SportTeamMetricResource extends JsonResource
 
         $query->get(['id', 'home_team_id', 'away_team_id', 'home_score', 'away_score'])
             ->each(function (MlbGame $game) use ($teamId, &$wins, &$losses): void {
-                $isHome = (int) $game->home_team_id === $teamId;
-                [$teamScore, $opponentScore] = $this->resolvedMlbScore($game, $teamId, $isHome);
+                $resolved = app(MlbGameScoreResolver::class)->forTeam($game, $teamId);
+                $teamScore = $resolved['team'];
+                $opponentScore = $resolved['opponent'];
+
+                if (! $resolved['complete']) {
+                    return;
+                }
 
                 if ($teamScore > $opponentScore) {
                     $wins++;
@@ -174,36 +180,6 @@ class SportTeamMetricResource extends JsonResource
             'losses' => $losses,
             'games_played' => $wins + $losses,
         ];
-    }
-
-    /**
-     * @return array{0: float, 1: float}
-     */
-    private function resolvedMlbScore(MlbGame $game, int $teamId, bool $isHome): array
-    {
-        $gameTeamScore = $isHome ? $game->home_score : $game->away_score;
-        $gameOpponentScore = $isHome ? $game->away_score : $game->home_score;
-        $teamScore = (float) ($gameTeamScore ?? 0);
-        $opponentScore = (float) ($gameOpponentScore ?? 0);
-
-        if ($teamScore !== 0.0 || $opponentScore !== 0.0) {
-            return [$teamScore, $opponentScore];
-        }
-
-        $teamStat = $game->teamStats->firstWhere('team_id', $teamId)
-            ?? $game->teamStats->firstWhere('team_type', $isHome ? 'home' : 'away');
-        $opponentStat = $game->teamStats->firstWhere('team_type', $isHome ? 'away' : 'home');
-
-        if (! $opponentStat) {
-            $opponentId = $isHome ? $game->away_team_id : $game->home_team_id;
-            $opponentStat = $game->teamStats->firstWhere('team_id', $opponentId);
-        }
-
-        if ($teamStat?->runs !== null && $opponentStat?->runs !== null) {
-            return [(float) $teamStat->runs, (float) $opponentStat->runs];
-        }
-
-        return [$teamScore, $opponentScore];
     }
 
     private function nullableInt(mixed $value): ?int

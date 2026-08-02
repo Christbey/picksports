@@ -13,6 +13,7 @@ class MlbSignalDriverService
     {
         $groups = array_values(array_filter([
             $this->moundGroup($candidate),
+            $this->earlyInningGroup($candidate),
             $this->lineupGroup($candidate),
             $this->marketGroup($candidate),
             $this->runEnvironmentGroup($candidate),
@@ -64,7 +65,7 @@ class MlbSignalDriverService
             $summary = 'Confirmed starters support the read.';
         }
 
-        if ($this->hasAny($codes, ['f5_pitcher_edge', 'pitcher_margin_support'])) {
+        if ($this->hasAny($codes, ['f3_pitcher_edge', 'f5_pitcher_edge', 'pitcher_margin_support'])) {
             $drivers[] = $this->driver('starter_edge', 'Starter edge is strongest early', 'positive', 'Prediction model');
             $scoreDelta += 4;
             $status = 'positive';
@@ -81,6 +82,53 @@ class MlbSignalDriverService
         }
 
         return $drivers === [] ? null : $this->group('mound', 'Mound', $status, $summary, $scoreDelta, $drivers);
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function earlyInningGroup(MlbPickCandidateData $candidate): ?array
+    {
+        if (! str_starts_with($candidate->marketType, 'first_')) {
+            return null;
+        }
+
+        $drivers = [];
+        $scoreDelta = 0;
+        $label = match (true) {
+            str_starts_with($candidate->marketType, 'first_inning') => 'First Inning',
+            str_starts_with($candidate->marketType, 'first_3') => 'First Three',
+            default => 'First Five',
+        };
+
+        if ($this->hasAny($this->codes($candidate), ['starter_confirmed', 'probable_pitchers_confirmed', 'starter_top_order_context'])) {
+            $drivers[] = $this->driver(
+                'early_inning_starter_context',
+                'Confirmed starter context supports the early-game read',
+                'positive',
+                'Probable pitchers and prediction model',
+            );
+            $scoreDelta += 2;
+        }
+
+        if ($this->hasAny($this->risks($candidate), ['first_inning_high_variance', 'f3_high_variance', 'low_sample_first_3'])) {
+            $drivers[] = $this->driver(
+                'early_inning_variance',
+                'Short-window baseball outcomes carry elevated variance',
+                'warning',
+                'Candidate guardrail',
+            );
+            $scoreDelta -= 3;
+        }
+
+        return $this->group(
+            'early_inning',
+            $label,
+            $scoreDelta > 0 ? 'positive' : 'warning',
+            $label.' market isolates starter and top-of-order context.',
+            $scoreDelta,
+            $drivers,
+        );
     }
 
     /**
@@ -359,6 +407,10 @@ class MlbSignalDriverService
     {
         if (! $this->pregameSafe($riskFlags)) {
             return 'tracking_only';
+        }
+
+        if (str_contains($candidate->marketType, 'first_inning')) {
+            return 'first_inning';
         }
 
         if (str_contains($candidate->marketType, 'first_5')) {

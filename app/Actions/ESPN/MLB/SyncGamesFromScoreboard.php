@@ -33,8 +33,17 @@ class SyncGamesFromScoreboard extends AbstractSyncGamesFromScoreboard
         [$homeCompetitor, $awayCompetitor] = $this->resolveCompetitors($eventData);
         $dateParts = $this->resolveMlbGameDateParts($eventData);
 
-        $attributes['probable_home_pitcher_espn_id'] = $this->probablePitcherEspnId($homeCompetitor);
-        $attributes['probable_away_pitcher_espn_id'] = $this->probablePitcherEspnId($awayCompetitor);
+        $homeProbablePitcherId = $this->probablePitcherEspnId($homeCompetitor);
+        $awayProbablePitcherId = $this->probablePitcherEspnId($awayCompetitor);
+
+        // ESPN frequently omits probables from later scoreboard payloads. An
+        // omission is not evidence that a previously supplied starter changed.
+        if ($homeProbablePitcherId !== null) {
+            $attributes['probable_home_pitcher_espn_id'] = $homeProbablePitcherId;
+        }
+        if ($awayProbablePitcherId !== null) {
+            $attributes['probable_away_pitcher_espn_id'] = $awayProbablePitcherId;
+        }
         if ($dateParts['game_date'] !== null) {
             $attributes['game_date'] = $dateParts['game_date'];
         }

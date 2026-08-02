@@ -39,7 +39,16 @@ class MlbPickCandidateScorer
             } elseif ($edge >= 0.02) {
                 $score += 10;
                 $reasonCodes[] = 'positive_no_vig_edge';
+            } elseif ($edge <= 0.0) {
+                $score -= 25;
+                $riskFlags[] = 'nonpositive_no_vig_edge';
+            } else {
+                $score -= 12;
+                $riskFlags[] = 'edge_below_tracking_threshold';
             }
+        } else {
+            $score -= 15;
+            $riskFlags[] = 'market_edge_missing';
         }
 
         if (($candidate->blendProbability ?? 0.0) >= 0.58) {
@@ -64,7 +73,7 @@ class MlbPickCandidateScorer
 
         foreach ($reasonCodes as $code) {
             $score += match ($code) {
-                'probable_pitchers_confirmed', 'starter_confirmed', 'f5_pitcher_edge', 'pitcher_margin_support', 'player_recent_form_support' => 8,
+                'probable_pitchers_confirmed', 'starter_confirmed', 'f3_pitcher_edge', 'f5_pitcher_edge', 'pitcher_margin_support', 'player_recent_form_support' => 8,
                 'bullpen_advantage', 'bullpen_margin_support', 'weather_supports_over', 'weather_supports_under', 'park_support' => 6,
                 'line_value', 'matchup_support', 'season_rate_support' => 7,
                 default => 0,
@@ -87,6 +96,11 @@ class MlbPickCandidateScorer
         if (! (bool) ($signalLayer['pregame_safe'] ?? true)) {
             $score = min($score, 57);
             $riskFlags[] = 'pregame_signal_safety_block';
+        }
+        if (in_array('nonpositive_no_vig_edge', $riskFlags, true) || in_array('market_edge_missing', $riskFlags, true)) {
+            $score = min($score, 57);
+        } elseif (in_array('edge_below_tracking_threshold', $riskFlags, true)) {
+            $score = min($score, 67);
         }
 
         $score = max(0, min(100, $score));

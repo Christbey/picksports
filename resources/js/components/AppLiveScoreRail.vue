@@ -12,8 +12,41 @@ let timer: ReturnType<typeof setTimeout> | null = null;
 
 const hasLiveGames = computed(() => games.value.some((game) => game.is_live));
 
+function ordinal(value: number): string {
+    const mod100 = value % 100;
+    const suffix =
+        mod100 >= 11 && mod100 <= 13
+            ? 'th'
+            : value % 10 === 1
+              ? 'st'
+              : value % 10 === 2
+                ? 'nd'
+                : value % 10 === 3
+                  ? 'rd'
+                  : 'th';
+
+    return `${value}${suffix}`;
+}
+
+function inningStateLabel(value: string): string {
+    const normalized = value.toLowerCase();
+    if (normalized.startsWith('top')) return 'Top';
+    if (normalized.startsWith('bot')) return 'Bottom';
+    if (normalized.startsWith('mid')) return 'Mid';
+    if (normalized.startsWith('end')) return 'End';
+
+    return value;
+}
+
 function statusLabel(game: DashboardPrediction): string {
     if (game.is_live) {
+        if (
+            game.sport.toLowerCase() === 'mlb' &&
+            game.inning &&
+            game.inning_state
+        ) {
+            return `${inningStateLabel(game.inning_state)} ${ordinal(game.inning)}`;
+        }
         if (game.game_clock && game.period) {
             return `P${game.period} ${game.game_clock}`;
         }

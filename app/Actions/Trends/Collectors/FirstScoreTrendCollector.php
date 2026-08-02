@@ -14,40 +14,50 @@ class FirstScoreTrendCollector extends TrendCollector
     public function collect(): array
     {
         $messages = [];
-        $count = $this->games->count();
         $periodLabel = $this->firstPeriodLabel();
 
-        $scoredFirst = $this->countWhere(function ($game) {
+        $gamesWithFirstPeriod = $this->games->filter(function ($game): bool {
+            return array_key_exists(0, $this->teamLinescores($game))
+                && array_key_exists(0, $this->opponentLinescores($game));
+        });
+        $count = $gamesWithFirstPeriod->count();
+
+        if ($count === 0) {
+            return [];
+        }
+
+        $scoredFirst = $gamesWithFirstPeriod->filter(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            return ($team[0] ?? 0) > ($opp[0] ?? 0);
-        });
+            return $team[0] > $opp[0];
+        })->count();
 
         if ($this->isSignificant($scoredFirst)) {
             $messages[] = "The {$this->teamAbbr} have outscored opponents in {$periodLabel} in {$scoredFirst} of their last {$count} games";
         }
 
-        $scoredFirstWins = $this->countWhere(function ($game) {
+        $scoredFirstWins = $gamesWithFirstPeriod->filter(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
             return ($team[0] ?? 0) > ($opp[0] ?? 0) && $this->won($game);
-        });
+        })->count();
 
         if ($scoredFirst >= 3 && $scoredFirstWins >= 2) {
             $pct = $this->percentage($scoredFirstWins, $scoredFirst);
             $messages[] = "When the {$this->teamAbbr} outscore opponents in {$periodLabel}, they win {$pct}% of the time ({$scoredFirstWins}/{$scoredFirst})";
         }
 
-        $scoredLastWins = $this->countWhere(function ($game) {
+        $trailingGames = $gamesWithFirstPeriod->filter(function ($game) {
             $team = $this->teamLinescores($game);
             $opp = $this->opponentLinescores($game);
 
-            return ($team[0] ?? 0) < ($opp[0] ?? 0) && $this->won($game);
+            return $team[0] < $opp[0];
         });
+        $scoredLastWins = $trailingGames->filter(fn ($game): bool => $this->won($game))->count();
 
-        $scoredLast = $count - $scoredFirst;
+        $scoredLast = $trailingGames->count();
         if ($scoredLast >= 3 && $scoredLastWins >= 2) {
             $pct = $this->percentage($scoredLastWins, $scoredLast);
             $messages[] = "When the {$this->teamAbbr} trail after {$periodLabel}, they still win {$pct}% of the time ({$scoredLastWins}/{$scoredLast})";

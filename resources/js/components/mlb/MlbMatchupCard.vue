@@ -16,6 +16,7 @@ import type { MlbDailyPick } from '@/types/mlb-daily-picks';
 const props = defineProps<{
     prediction: ApiV2Prediction;
     candidate?: MlbDailyPick | null;
+    candidateCount?: number;
 }>();
 
 const emit = defineEmits<{
@@ -481,7 +482,17 @@ function resultBadgeClass(
                 <span
                     class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
                 >
-                    {{ candidate ? labelizeMlbCode(candidate.market_type) : 'No market' }}
+                    {{
+                        candidate
+                            ? labelizeMlbCode(candidate.market_type)
+                            : 'No market'
+                    }}
+                </span>
+                <span
+                    v-if="(candidateCount ?? 0) > 1"
+                    class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
+                >
+                    {{ candidateCount }} markets
                 </span>
             </div>
 

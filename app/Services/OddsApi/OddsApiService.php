@@ -92,6 +92,32 @@ class OddsApiService
     }
 
     /**
+     * Get event-specific markets such as baseball inning markets.
+     *
+     * @param  list<string>  $markets
+     * @return array<string, mixed>|null
+     */
+    public function getEventOdds(
+        string $sport,
+        string $eventId,
+        array $markets,
+        string $bookmaker = 'draftkings',
+    ): ?array {
+        if ($markets === []) {
+            return null;
+        }
+
+        $url = $this->baseUrl."/sports/{$sport}/events/{$eventId}/odds";
+
+        return $this->get($url, $this->withApiKey([
+            'regions' => 'us',
+            'markets' => implode(',', array_values(array_unique($markets))),
+            'bookmakers' => $bookmaker,
+            'oddsFormat' => 'american',
+        ]));
+    }
+
+    /**
      * Get historical odds for a sport or a specific event at a point in time.
      *
      * @param  string  $date  ISO-8601 timestamp
@@ -162,17 +188,7 @@ class OddsApiService
         array $markets = ['player_points', 'player_rebounds', 'player_assists'],
         string $bookmaker = 'draftkings'
     ): ?array {
-        // Player props require event-specific endpoint
-        $url = $this->baseUrl."/sports/{$sport}/events/{$eventId}/odds";
-
-        $params = $this->withApiKey([
-            'regions' => 'us',
-            'markets' => implode(',', $markets),
-            'bookmakers' => $bookmaker,
-            'oddsFormat' => 'american',
-        ]);
-
-        return $this->get($url, $params);
+        return $this->getEventOdds($sport, $eventId, $markets, $bookmaker);
     }
 
     /**

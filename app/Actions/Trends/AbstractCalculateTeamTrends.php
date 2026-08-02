@@ -3,6 +3,7 @@
 namespace App\Actions\Trends;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 abstract class AbstractCalculateTeamTrends
@@ -60,6 +61,9 @@ abstract class AbstractCalculateTeamTrends
             }
 
             $collector->setContext($this->sportKey(), $team, $games);
+            if (! $collector->hasGames()) {
+                continue;
+            }
             $messages = $collector->collect();
 
             if (! empty($messages)) {
@@ -133,7 +137,7 @@ abstract class AbstractCalculateTeamTrends
                 $seasonType,
                 fn ($q) => $q->whereIn('season_type', $this->resolveSeasonTypeCandidates($seasonType))
             )
-            ->when($beforeDate, fn ($q) => $q->where('game_date', '<', $beforeDate));
+            ->when($beforeDate, fn ($q) => $this->applyBeforeDateFilter($q, $beforeDate));
 
         if ($seasonType === null && $this->usesAnalyticsSeasonTypes()) {
             $query->when(
@@ -143,6 +147,27 @@ abstract class AbstractCalculateTeamTrends
         }
 
         return $query;
+    }
+
+    protected function applyBeforeDateFilter(Builder $query, string $beforeDate): Builder
+    {
+        $cutoff = Carbon::parse($beforeDate);
+        $date = $cutoff->toDateString();
+        $hasTime = preg_match('/[T ]\d{1,2}:\d{2}/', $beforeDate) === 1;
+
+        if (! $hasTime) {
+            return $query->whereDate('game_date', '<', $date);
+        }
+
+        $time = $cutoff->format('H:i:s');
+
+        return $query->where(function (Builder $inner) use ($date, $time): void {
+            $inner->whereDate('game_date', '<', $date)
+                ->orWhere(function (Builder $sameDate) use ($date, $time): void {
+                    $sameDate->whereDate('game_date', $date)
+                        ->whereTime('game_time', '<', $time);
+                });
+        });
     }
 
     /**

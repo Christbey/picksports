@@ -43,13 +43,17 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     protected const PREDICTION_MODEL = Prediction::class;
 
-    public function executeHistorical(Game $game, bool $dispatchNarratives = false): ?Model
+    public function executeHistorical(Model $game, bool $dispatchNarratives = false, array $snapshotOverrides = []): ?Model
     {
+        if (! $game instanceof Game) {
+            throw new \InvalidArgumentException('MLB historical prediction generation requires an MLB game.');
+        }
+
         $previous = $this->allowHistoricalGames;
         $this->allowHistoricalGames = true;
 
         try {
-            return parent::execute($game, $dispatchNarratives);
+            return parent::executeHistorical($game, $dispatchNarratives, $snapshotOverrides);
         } finally {
             $this->allowHistoricalGames = $previous;
         }
@@ -58,13 +62,13 @@ class GeneratePrediction extends AbstractPredictionGenerator
     /**
      * @return array<string, mixed>|null
      */
-    protected function makePredictionData(Model $game): ?array
+    protected function makePredictionData(Model $game, bool $allowCompleted = false): ?array
     {
         $this->metadata = [];
         $this->pointInTimeSafety = [];
         $this->marketContextSafety = [];
 
-        if (! $this->allowHistoricalGames && $game->status === 'STATUS_FINAL') {
+        if (! $this->allowHistoricalGames && ! $allowCompleted && $game->status === 'STATUS_FINAL') {
             return null;
         }
 
@@ -243,15 +247,15 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     /**
      * Get pitcher Elo with three-tier fallback logic:
-     * 1. Use known probable pitcher Elo (future enhancement - confidence 1.0)
+     * 1. Use an ESPN probable or versioned rotation projection
      * 2. Use team's average pitcher Elo from last 10 starts (confidence 0.75)
      * 3. Use league average 1500 (confidence 0.5)
      */
     protected function getPitcherElo(Game $game, Team $team, string $side): array
     {
-        $probablePitcherEspnId = $side === 'home'
-            ? $game->probable_home_pitcher_espn_id
-            : $game->probable_away_pitcher_espn_id;
+        $probablePitcherEspnId = $game->resolvedStartingPitcherEspnId($side);
+        $starterSource = $game->startingPitcherSource($side);
+        $starterConfidence = $game->startingPitcherConfidence($side);
 
         if ($probablePitcherEspnId) {
             $probablePitcher = Player::query()
@@ -276,8 +280,21 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 if ($probablePitcherElo !== null) {
                     return [
                         'elo' => (float) $probablePitcherElo,
-                        'confidence' => 1.0,
-                        'source' => 'probable_starter',
+                        'confidence' => $starterSource === 'rotation_projection'
+                            ? max(0.3, min(0.95, (float) $starterConfidence))
+                            : 1.0,
+                        'source' => $starterSource === 'rotation_projection'
+                            ? 'rotation_projection'
+                            : 'probable_starter',
+                        'probable_pitcher_espn_id' => $probablePitcherEspnId,
+                    ];
+                }
+
+                if ($starterSource === 'rotation_projection' && is_numeric($probablePitcher->elo_rating)) {
+                    return [
+                        'elo' => (float) $probablePitcher->elo_rating,
+                        'confidence' => max(0.3, min(0.85, (float) $starterConfidence)),
+                        'source' => 'rotation_projection_player_rating',
                         'probable_pitcher_espn_id' => $probablePitcherEspnId,
                     ];
                 }
@@ -306,7 +323,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 return [
                     'elo' => (float) $depthChartPitcherElo,
                     'confidence' => 0.9,
-                    'source' => $probablePitcherEspnId ? 'depth_chart_starter_missing_probable_rating' : 'depth_chart_starter',
+                    'source' => $probablePitcherEspnId
+                        ? ($starterSource === 'rotation_projection'
+                            ? 'depth_chart_starter_missing_projection_rating'
+                            : 'depth_chart_starter_missing_probable_rating')
+                        : 'depth_chart_starter',
                     'probable_pitcher_espn_id' => $probablePitcherEspnId,
                 ];
             }
@@ -334,7 +355,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
             return [
                 'elo' => $recentPitcherElos->avg(),
                 'confidence' => 0.75,
-                'source' => $probablePitcherEspnId ? 'team_recent_average_missing_probable_rating' : 'team_recent_average',
+                'source' => $probablePitcherEspnId
+                    ? ($starterSource === 'rotation_projection'
+                        ? 'team_recent_average_missing_projection_rating'
+                        : 'team_recent_average_missing_probable_rating')
+                    : 'team_recent_average',
                 'probable_pitcher_espn_id' => $probablePitcherEspnId,
             ];
         }
@@ -343,7 +368,11 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return [
             'elo' => config('mlb.elo.default_rating'),
             'confidence' => 0.5,
-            'source' => $probablePitcherEspnId ? 'league_average_missing_probable_rating' : 'league_average',
+            'source' => $probablePitcherEspnId
+                ? ($starterSource === 'rotation_projection'
+                    ? 'league_average_missing_projection_rating'
+                    : 'league_average_missing_probable_rating')
+                : 'league_average',
             'probable_pitcher_espn_id' => $probablePitcherEspnId,
         ];
     }
@@ -1048,8 +1077,8 @@ class GeneratePrediction extends AbstractPredictionGenerator
         float $predictedSpread,
         float $predictedTotal
     ): array {
-        $homeStatus = $this->probablePitcherInjuryStatus($game, $game->probable_home_pitcher_espn_id, $homeTeam);
-        $awayStatus = $this->probablePitcherInjuryStatus($game, $game->probable_away_pitcher_espn_id, $awayTeam);
+        $homeStatus = $this->probablePitcherInjuryStatus($game, $game->resolvedStartingPitcherEspnId('home'), $homeTeam);
+        $awayStatus = $this->probablePitcherInjuryStatus($game, $game->resolvedStartingPitcherEspnId('away'), $awayTeam);
 
         $homeSpreadPenalty = $this->probablePitcherSpreadPenalty($homeStatus);
         $awaySpreadPenalty = $this->probablePitcherSpreadPenalty($awayStatus);

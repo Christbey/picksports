@@ -49,9 +49,7 @@ class AdvancedTrendCollector extends TrendCollector
 
         $covers = $gamesWithPrediction->filter(function ($game) {
             $spread = $game->prediction->predicted_spread ?? 0;
-            $margin = $this->isHome($game)
-                ? $game->home_score - $game->away_score
-                : $game->away_score - $game->home_score;
+            $margin = $this->margin($game);
 
             $adjustedSpread = $this->isHome($game) ? $spread : -$spread;
 

@@ -22,6 +22,14 @@ class GameController extends AbstractGameController
             'awayTeam.activePlayerInjuries.player',
             'probableHomePitcher.activeInjuries.player',
             'probableAwayPitcher.activeInjuries.player',
+            'actualHomePitcher.activeInjuries.player',
+            'actualAwayPitcher.activeInjuries.player',
+            'projectedHomePitcher.activeInjuries.player',
+            'projectedAwayPitcher.activeInjuries.player',
+            'homeStartingPitcherForecast.predictedPitcher',
+            'homeStartingPitcherForecast.actualPitcher',
+            'awayStartingPitcherForecast.predictedPitcher',
+            'awayStartingPitcherForecast.actualPitcher',
         ];
     }
 }

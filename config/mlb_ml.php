@@ -35,6 +35,7 @@ return [
         'work_directory' => storage_path('app/ml/automated-training/mlb-period'),
         'timeout_seconds' => (int) env('MLB_PERIOD_ML_TRAINING_TIMEOUT', 14_400),
         'inference_timeout_seconds' => (float) env('MLB_PERIOD_ML_INFERENCE_TIMEOUT', 30),
+        'shadow_game_limit' => (int) env('MLB_PERIOD_ML_SHADOW_GAME_LIMIT', 30),
         'history_start_season' => (int) env('MLB_PERIOD_ML_HISTORY_START_SEASON', 2021),
         'minimum_edge' => (float) env('MLB_PERIOD_ML_MINIMUM_EDGE', 0.03),
         'maximum_uncertainty' => (float) env('MLB_PERIOD_ML_MAXIMUM_UNCERTAINTY', 0.92),

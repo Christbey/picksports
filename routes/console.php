@@ -650,8 +650,9 @@ $scheduleDailySeasonJob(
     $mlbInSeason,
     'MLB: Run Tabular Shadow'
 );
+$mlbPeriodShadowGameLimit = max(1, (int) config('mlb_ml.period_models.shadow_game_limit', 30));
 $scheduleDailySeasonJob(
-    'mlb:run-period-shadow --skip-decisions',
+    "mlb:run-period-shadow --skip-decisions --limit={$mlbPeriodShadowGameLimit}",
     '06:12',
     $mlbInSeason,
     'MLB: Run F3/F5 Shadow'
@@ -709,7 +710,7 @@ $mlbPostOddsRefreshJobs = [
         'name' => 'MLB: Refresh Tabular Shadow After Odds Sync',
     ],
     [
-        'command' => 'mlb:run-period-shadow --skip-decisions',
+        'command' => "mlb:run-period-shadow --skip-decisions --limit={$mlbPeriodShadowGameLimit}",
         'minute' => 55,
         'name' => 'MLB: Refresh F3/F5 Shadow After Odds Sync',
     ],

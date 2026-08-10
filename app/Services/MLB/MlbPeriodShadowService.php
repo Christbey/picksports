@@ -10,6 +10,7 @@ use App\Services\ML\ShadowArtifactSelector;
 use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -125,7 +126,14 @@ class MlbPeriodShadowService
      */
     private function canonicalSnapshots(?int $gameId, int $limit): Collection
     {
-        $snapshots = PredictionFeatureSnapshot::query()
+        $rankedSnapshots = PredictionFeatureSnapshot::query()
+            ->select([
+                'id',
+                'game_id',
+                'game_start_at',
+                'generated_at',
+            ])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY generated_at DESC, id DESC) AS snapshot_rank')
             ->where('sport', 'mlb')
             ->where('prediction_table', 'mlb_predictions')
             ->where('pregame_safe', true)
@@ -135,24 +143,25 @@ class MlbPeriodShadowService
             ->where('game_start_at', '>', now())
             ->whereColumn('generated_at', '<', 'game_start_at')
             ->whereColumn('features_available_at', '<=', 'game_start_at')
-            ->when($gameId, fn (Builder $query) => $query->where('game_id', $gameId))
-            ->orderBy('generated_at')
-            ->orderBy('id')
-            ->get()
-            ->groupBy('game_id')
-            ->map(fn (Collection $group): PredictionFeatureSnapshot => $group
-                ->sortByDesc(fn (PredictionFeatureSnapshot $snapshot): array => [
-                    $snapshot->generated_at?->getTimestamp() ?? 0,
-                    $snapshot->id,
-                ])
-                ->first())
-            ->sortBy(fn (PredictionFeatureSnapshot $snapshot): array => [
-                $snapshot->game_start_at?->getTimestamp() ?? PHP_INT_MAX,
-                $snapshot->game_id,
-            ])
-            ->values();
+            ->when($gameId, fn (Builder $query) => $query->where('game_id', $gameId));
 
-        return $limit > 0 ? $snapshots->take($limit)->values() : $snapshots;
+        $snapshotIds = DB::query()
+            ->fromSub($rankedSnapshots->toBase(), 'ranked_snapshots')
+            ->where('snapshot_rank', 1)
+            ->orderBy('game_start_at')
+            ->orderBy('game_id')
+            ->when($limit > 0, fn ($query) => $query->limit($limit))
+            ->pluck('id');
+
+        $snapshotsById = PredictionFeatureSnapshot::query()
+            ->whereKey($snapshotIds)
+            ->get()
+            ->keyBy('id');
+
+        return $snapshotIds
+            ->map(fn (int $snapshotId): ?PredictionFeatureSnapshot => $snapshotsById->get($snapshotId))
+            ->filter()
+            ->values();
     }
 
     /**

@@ -10,6 +10,7 @@ use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Services\MLB\MlbPeriodFeatureBuilder;
+use App\Services\MLB\MlbPeriodShadowService;
 use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -59,6 +60,58 @@ it('builds f3 and f5 training rows only from games completed earlier in time', f
         ->and($secondF3['feature_away_prior_games'])->toBe(1)
         ->and($secondF3['feature_home_period_elo'])->toBeLessThan(1500)
         ->and($secondF3['feature_away_period_elo'])->toBeGreaterThan(1500);
+});
+
+it('limits period shadow snapshots in the database after choosing the latest snapshot per game', function () {
+    Carbon::setTestNow('2026-08-09 12:00:00');
+
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $snapshots = collect();
+    foreach ([3, 1, 2] as $daysAhead) {
+        $gameStart = now()->addDays($daysAhead);
+        $game = Game::factory()->create([
+            'season' => 2026,
+            'home_team_id' => $home->id,
+            'away_team_id' => $away->id,
+            'game_date' => $gameStart->toDateString(),
+            'game_time' => $gameStart->format('H:i:s'),
+            'status' => 'STATUS_SCHEDULED',
+        ]);
+
+        foreach ([now()->subMinutes(10), now()->subMinutes(5)] as $generatedAt) {
+            $snapshots->push(PredictionFeatureSnapshot::query()->create([
+                'sport' => 'mlb',
+                'prediction_table' => 'mlb_predictions',
+                'prediction_id' => $game->id,
+                'game_id' => $game->id,
+                'model_version' => 'mlb-rules-v1',
+                'feature_version' => 'core-v1',
+                'blend_version' => 'baseline-v1',
+                'features' => [],
+                'outputs' => [],
+                'feature_hash' => hash('sha256', $game->id.'-'.$generatedAt->timestamp),
+                'generated_at' => $generatedAt,
+                'game_start_at' => $gameStart,
+                'features_available_at' => $generatedAt,
+                'pregame_safe' => true,
+                'availability_status' => 'observed_pregame',
+            ]));
+        }
+    }
+
+    $method = new ReflectionMethod(MlbPeriodShadowService::class, 'canonicalSnapshots');
+    $selected = $method->invoke(app(MlbPeriodShadowService::class), null, 2);
+
+    expect($selected)->toHaveCount(2)
+        ->and($selected->pluck('game_id')->all())->toBe([
+            $snapshots[2]->game_id,
+            $snapshots[4]->game_id,
+        ])
+        ->and($selected->pluck('id')->all())->toBe([
+            $snapshots[3]->id,
+            $snapshots[5]->id,
+        ]);
 });
 
 it('prices period moneylines with tie pushes and settles from inning scores', function () {

@@ -145,6 +145,8 @@ it('does not downgrade finalized mlb games when schedule sync has stale status',
         'away_team_id' => $awayTeam->id,
         'home_score' => 5,
         'away_score' => 2,
+        'home_linescores' => [1, 0, 2, 0, 0, 1, 0, 1, 0],
+        'away_linescores' => [0, 1, 0, 0, 0, 0, 1, 0, 0],
     ]);
 
     $service = new class extends BaseEspnService
@@ -188,7 +190,11 @@ it('does not downgrade finalized mlb games when schedule sync has stale status',
 
     $game->refresh();
 
-    expect($game->status)->toBe('STATUS_FINAL');
+    expect($game->status)->toBe('STATUS_FINAL')
+        ->and($game->home_score)->toBe(5)
+        ->and($game->away_score)->toBe(2)
+        ->and($game->home_linescores)->toBe([1, 0, 2, 0, 0, 1, 0, 1, 0])
+        ->and($game->away_linescores)->toBe([0, 1, 0, 0, 0, 0, 1, 0, 0]);
 });
 
 it('updates orphaned scheduled mlb games from summary using local venue date', function () {

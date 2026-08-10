@@ -81,4 +81,29 @@ class SyncGamesFromSchedule extends AbstractSyncGamesFromSchedule
 
         return $attributes;
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function existingGameAttributes(
+        GameData $dto,
+        array $rawGame,
+        Model $homeTeam,
+        Model $awayTeam,
+        Model $existingGame,
+    ): array {
+        $attributes = parent::existingGameAttributes($dto, $rawGame, $homeTeam, $awayTeam, $existingGame);
+
+        if ((string) $existingGame->status !== 'STATUS_FINAL') {
+            return $attributes;
+        }
+
+        foreach (['home_score', 'away_score', 'home_linescores', 'away_linescores'] as $attribute) {
+            if ($existingGame->{$attribute} !== null) {
+                $attributes[$attribute] = $existingGame->{$attribute};
+            }
+        }
+
+        return $attributes;
+    }
 }

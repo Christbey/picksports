@@ -51,7 +51,7 @@ class ReconcileFinalScoresCommand extends Command
 
         $samples = [];
 
-        $query->orderBy('game_date')->orderBy('id')->lazy()->each(function (Game $game) use ($reconcile, $force, $dryRun, &$counts, &$samples): void {
+        $query->lazyById()->each(function (Game $game) use ($reconcile, $force, $dryRun, &$counts, &$samples): void {
             $result = $reconcile->execute($game, force: $force, dryRun: $dryRun);
             $status = (string) $result['status'];
             $reason = (string) $result['reason'];

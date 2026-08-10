@@ -3,8 +3,10 @@
 namespace App\Services\MLB;
 
 use App\Models\MLB\Game;
+use App\Models\MLB\PitcherEloRating;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerInjury;
+use App\Models\MLB\PlayerStat;
 use App\Models\MLB\Team;
 use App\Support\MLB\MlbGameStart;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,7 +28,7 @@ final class MlbStartingPitcherProjectionService
         $home = $this->projectSide($game, $game->homeTeam, 'home');
         $away = $this->projectSide($game, $game->awayTeam, 'away');
         $metadata = [
-            'version' => (string) config('mlb.starter_projection.version', 'rotation-v1'),
+            'version' => (string) config('mlb.starter_projection.version', 'rotation-v2'),
             'home' => $home['evidence'],
             'away' => $away['evidence'],
         ];
@@ -45,8 +47,9 @@ final class MlbStartingPitcherProjectionService
             ->contains(fn (mixed $value, string $key): bool => $this->changed($game->getAttribute($key), $value));
 
         $game->forceFill($attributes)->save();
-        $this->forecasts->record($game, 'home', $home);
-        $this->forecasts->record($game, 'away', $away);
+        $this->forecasts->recordProbablePitchers($game);
+        $this->recordForecast($game, 'home', $home);
+        $this->recordForecast($game, 'away', $away);
 
         return [
             'changed' => $changed,
@@ -91,14 +94,33 @@ final class MlbStartingPitcherProjectionService
 
         $projectedIndex = ($anchorIndex + $gamesAhead) % $rotation->count();
         $rawPitcherId = (string) $rotation->get($projectedIndex);
-        $resolved = $this->resolveRosterPitcher($team, $rawPitcherId, $rotation, $target);
-        $confidence = $this->confidence($rotation->count(), $gamesAhead, $resolved['substituted']);
+        $ranked = $this->rankCandidates(
+            $target,
+            $team,
+            $rotation,
+            $knownAssignments,
+            $rawPitcherId,
+        );
+
+        if ($ranked['candidates'] === []) {
+            return $this->emptyProjection('rotation_candidates_unavailable', [
+                'team_id' => $team->id,
+                'side' => $side,
+                'rotation_size' => $rotation->count(),
+                'raw_projected_pitcher_espn_id' => $rawPitcherId,
+            ]);
+        }
+
+        $projectedPitcherId = $ranked['expected_slot_available'] ? $rawPitcherId : null;
+        $trackingPitcherId = (string) data_get($ranked, 'candidates.0.pitcher_espn_id');
+        $confidence = (float) data_get($ranked, 'candidates.0.probability', 0.0);
 
         return [
-            'pitcher_espn_id' => $resolved['pitcher_espn_id'],
+            'pitcher_espn_id' => $projectedPitcherId,
+            'tracking_pitcher_espn_id' => $trackingPitcherId,
             'confidence' => $confidence,
             'evidence' => [
-                'status' => $resolved['pitcher_espn_id'] ? 'projected' : 'unresolved',
+                'status' => $projectedPitcherId ? 'projected' : 'uncertain_rotation',
                 'team_id' => $team->id,
                 'side' => $side,
                 'anchor_game_id' => $anchor['game']->id,
@@ -109,8 +131,14 @@ final class MlbStartingPitcherProjectionService
                 'rotation_size' => $rotation->count(),
                 'rotation_pitcher_espn_ids' => $rotation->values()->all(),
                 'raw_projected_pitcher_espn_id' => $rawPitcherId,
-                'roster_substitution' => $resolved['substituted'],
-                'reason' => $resolved['reason'],
+                'roster_substitution' => ! $ranked['expected_slot_available'],
+                'reason' => $ranked['expected_slot_available']
+                    ? 'calibrated_rotation_slot'
+                    : 'expected_rotation_slot_unavailable',
+                'candidates' => $ranked['candidates'],
+                'unknown_probability' => $ranked['unknown_probability'],
+                'expected_pitcher_rating' => $ranked['expected_pitcher_rating'],
+                'uncertainty' => round(1 - $confidence, 4),
             ],
         ];
     }
@@ -126,6 +154,7 @@ final class MlbStartingPitcherProjectionService
         return Game::query()
             ->where('season', $target->season)
             ->whereKeyNot($target->id)
+            ->whereNotIn('status', ['STATUS_CANCELED', 'STATUS_POSTPONED'])
             ->where(function (Builder $query) use ($team): void {
                 $query->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);
@@ -170,16 +199,38 @@ final class MlbStartingPitcherProjectionService
      */
     private function rotationFrom(Collection $knownAssignments): Collection
     {
-        $size = max(3, (int) config('mlb.starter_projection.rotation_size', 5));
+        $minimumSize = max(3, (int) config('mlb.starter_projection.minimum_rotation_size', 3));
+        $maximumSize = max(
+            (int) config('mlb.starter_projection.rotation_size', 5),
+            (int) config('mlb.starter_projection.maximum_rotation_size', 6),
+        );
+        $minimumStarts = $knownAssignments->count() >= 10 ? 2 : 1;
+        $startCounts = $knownAssignments->countBy('pitcher_espn_id');
+        $eligiblePitchers = $startCounts
+            ->filter(fn (int $starts): bool => $starts >= $minimumStarts)
+            ->keys();
         $reverseRotation = collect();
 
         foreach ($knownAssignments as $assignment) {
-            if (! $reverseRotation->contains($assignment['pitcher_espn_id'])) {
+            if ($eligiblePitchers->contains($assignment['pitcher_espn_id'])
+                && ! $reverseRotation->contains($assignment['pitcher_espn_id'])) {
                 $reverseRotation->push($assignment['pitcher_espn_id']);
             }
 
-            if ($reverseRotation->count() >= $size) {
+            if ($reverseRotation->count() >= $maximumSize) {
                 break;
+            }
+        }
+
+        if ($reverseRotation->count() < $minimumSize) {
+            foreach ($knownAssignments as $assignment) {
+                if (! $reverseRotation->contains($assignment['pitcher_espn_id'])) {
+                    $reverseRotation->push($assignment['pitcher_espn_id']);
+                }
+
+                if ($reverseRotation->count() >= (int) config('mlb.starter_projection.rotation_size', 5)) {
+                    break;
+                }
             }
         }
 
@@ -197,6 +248,7 @@ final class MlbStartingPitcherProjectionService
 
         return Game::query()
             ->where('season', $target->season)
+            ->whereNotIn('status', ['STATUS_CANCELED', 'STATUS_POSTPONED'])
             ->where(function (Builder $query) use ($team): void {
                 $query->where('home_team_id', $team->id)
                     ->orWhere('away_team_id', $team->id);
@@ -214,36 +266,136 @@ final class MlbStartingPitcherProjectionService
 
     /**
      * @param  Collection<int, string>  $rotation
-     * @return array{pitcher_espn_id: ?string, substituted: bool, reason: string}
+     * @param  Collection<int, array{game: Game, pitcher_espn_id: string, source: string}>  $knownAssignments
+     * @return array{candidates: list<array<string, mixed>>, unknown_probability: float, expected_pitcher_rating: float, expected_slot_available: bool}
      */
-    private function resolveRosterPitcher(Team $team, string $pitcherEspnId, Collection $rotation, Game $target): array
-    {
-        $player = Player::query()
+    private function rankCandidates(
+        Game $target,
+        Team $team,
+        Collection $rotation,
+        Collection $knownAssignments,
+        string $expectedPitcherId,
+    ): array {
+        $players = Player::query()
             ->where('team_id', $team->id)
-            ->where('espn_id', $pitcherEspnId)
-            ->first();
+            ->where(function (Builder $query) use ($rotation): void {
+                $query->whereIn('espn_id', $rotation->all())
+                    ->orWhere('position', 'SP');
+            })
+            ->get()
+            ->filter(fn (Player $player): bool => filled($player->espn_id))
+            ->unique('espn_id')
+            ->values();
 
-        if ($player && ! $this->isUnavailable($player, $target)) {
-            return [
-                'pitcher_espn_id' => $pitcherEspnId,
-                'substituted' => false,
-                'reason' => 'rotation_slot',
-            ];
+        if ($players->isEmpty()) {
+            return $this->emptyCandidateRanking();
         }
 
-        $replacement = Player::query()
-            ->where('team_id', $team->id)
-            ->where('position', 'SP')
-            ->whereNotIn('espn_id', $rotation->all())
-            ->orderByDesc('elo_rating')
-            ->orderBy('id')
-            ->get()
-            ->first(fn (Player $candidate): bool => ! $this->isUnavailable($candidate, $target));
+        $startsByPitcher = $knownAssignments->groupBy('pitcher_espn_id');
+        $workload = $this->latestWorkload($players, $target);
+        $ratings = $this->candidateRatings($players, $target);
+        $expectedIndex = $rotation->search($expectedPitcherId);
+
+        $candidates = $players
+            ->reject(fn (Player $player): bool => $this->isUnavailable($player, $target))
+            ->map(function (Player $player) use (
+                $target,
+                $rotation,
+                $startsByPitcher,
+                $workload,
+                $ratings,
+                $expectedPitcherId,
+                $expectedIndex,
+            ): array {
+                $pitcherId = (string) $player->espn_id;
+                $assignments = $startsByPitcher->get($pitcherId, collect());
+                $lastAssignment = $assignments->first();
+                $lastStart = $lastAssignment ? MlbGameStart::for($lastAssignment['game']) : null;
+                $targetStart = MlbGameStart::for($target);
+                $daysSinceLastStart = $lastStart && $targetStart
+                    ? (int) $lastStart->startOfDay()->diffInDays($targetStart->startOfDay())
+                    : null;
+                $rotationIndex = $rotation->search($pitcherId);
+                $rotationDistance = $rotationIndex !== false && $expectedIndex !== false
+                    ? min(
+                        abs($rotationIndex - $expectedIndex),
+                        $rotation->count() - abs($rotationIndex - $expectedIndex),
+                    )
+                    : null;
+                $lastPitchCount = data_get($workload, "{$player->id}.pitch_count");
+                $score = min(2.0, $assignments->count() / 3);
+
+                if ($pitcherId === $expectedPitcherId) {
+                    $score += 5.0;
+                } elseif ($rotationDistance !== null) {
+                    $score += max(0.2, 1.8 - $rotationDistance * 0.6);
+                }
+
+                if ($daysSinceLastStart !== null) {
+                    $score += max(-2.0, 2.0 - abs($daysSinceLastStart - 5) * 0.65);
+                    if ($daysSinceLastStart < 4) {
+                        $score -= 2.0;
+                    }
+                }
+
+                if (is_numeric($lastPitchCount) && (int) $lastPitchCount >= 100 && $daysSinceLastStart !== null && $daysSinceLastStart <= 4) {
+                    $score -= 0.75;
+                }
+
+                return [
+                    'pitcher_espn_id' => $pitcherId,
+                    'pitcher_name' => $player->full_name,
+                    'rating' => $ratings->get($player->id),
+                    'score' => round($score, 4),
+                    'starts_in_history' => $assignments->count(),
+                    'days_since_last_start' => $daysSinceLastStart,
+                    'last_pitch_count' => is_numeric($lastPitchCount) ? (int) $lastPitchCount : null,
+                    'rotation_slot' => $rotationIndex !== false ? $rotationIndex + 1 : null,
+                    'expected_rotation_slot' => $expectedIndex !== false ? $expectedIndex + 1 : null,
+                ];
+            })
+            ->sortByDesc('score')
+            ->values();
+
+        if ($candidates->isEmpty()) {
+            return $this->emptyCandidateRanking();
+        }
+
+        $expectedSlotAvailable = $candidates->contains(
+            fn (array $candidate): bool => $candidate['pitcher_espn_id'] === $expectedPitcherId,
+        );
+        if ($expectedSlotAvailable) {
+            $expected = $candidates->firstWhere('pitcher_espn_id', $expectedPitcherId);
+            $candidates = collect([$expected])
+                ->merge($candidates->reject(fn (array $candidate): bool => $candidate['pitcher_espn_id'] === $expectedPitcherId))
+                ->values();
+        }
+
+        $limit = max(2, (int) config('mlb.starter_projection.candidate_limit', 4));
+        $probabilities = $expectedSlotAvailable
+            ? [(float) config('mlb.starter_projection.projected_slot_probability', 0.60), 0.18, 0.10, 0.04]
+            : [(float) config('mlb.starter_projection.uncertain_candidate_probability', 0.25), 0.18, 0.12, 0.05];
+        $rankedCandidates = $candidates
+            ->take($limit)
+            ->values()
+            ->map(function (array $candidate, int $index) use ($probabilities): array {
+                $candidate['probability'] = round((float) ($probabilities[$index] ?? 0.0), 4);
+                unset($candidate['score']);
+
+                return $candidate;
+            });
+        $namedProbability = (float) $rankedCandidates->sum('probability');
+        $unknownProbability = round(max(0.0, 1.0 - $namedProbability), 4);
+        $fallbackRating = $this->teamStarterFallbackRating($team, $target, $rankedCandidates);
+        $expectedRating = (float) $rankedCandidates->sum(
+            fn (array $candidate): float => (float) $candidate['probability'] * (float) ($candidate['rating'] ?? $fallbackRating),
+        ) + $unknownProbability * $fallbackRating;
 
         return [
-            'pitcher_espn_id' => $replacement?->espn_id,
-            'substituted' => $replacement !== null,
-            'reason' => $replacement ? 'roster_replacement_for_unavailable_rotation_slot' : 'rotation_slot_unresolved',
+            'candidates' => $rankedCandidates->all(),
+            'unknown_probability' => $unknownProbability,
+            'expected_pitcher_rating' => round($expectedRating, 2),
+            'expected_slot_available' => $expectedSlotAvailable,
         ];
     }
 
@@ -261,15 +413,103 @@ final class MlbStartingPitcherProjectionService
         );
     }
 
-    private function confidence(int $rotationSize, int $gamesAhead, bool $substituted): float
+    /**
+     * @param  Collection<int, Player>  $players
+     * @return Collection<int, array{pitch_count: ?int}>
+     */
+    private function latestWorkload(Collection $players, Game $target): Collection
     {
-        $base = (float) config('mlb.starter_projection.base_confidence', 0.88);
-        $minimum = (float) config('mlb.starter_projection.minimum_confidence', 0.30);
-        $decay = (float) config('mlb.starter_projection.per_game_decay', 0.018);
-        $sizePenalty = max(0, 5 - $rotationSize) * 0.08;
-        $substitutionPenalty = $substituted ? 0.12 : 0.0;
+        return PlayerStat::query()
+            ->select(['mlb_player_stats.player_id', 'mlb_player_stats.pitch_count', 'mlb_player_stats.pitches_thrown', 'mlb_games.game_date'])
+            ->join('mlb_games', 'mlb_games.id', '=', 'mlb_player_stats.game_id')
+            ->whereIn('mlb_player_stats.player_id', $players->pluck('id'))
+            ->whereDate('mlb_games.game_date', '<', $target->game_date)
+            ->orderByDesc('mlb_games.game_date')
+            ->orderByDesc('mlb_player_stats.id')
+            ->get()
+            ->unique('player_id')
+            ->mapWithKeys(fn (PlayerStat $stat): array => [
+                $stat->player_id => [
+                    'pitch_count' => $stat->pitch_count ?? $stat->pitches_thrown,
+                ],
+            ]);
+    }
 
-        return round(max($minimum, $base - $sizePenalty - $substitutionPenalty - max(0, $gamesAhead - 1) * $decay), 4);
+    /**
+     * @param  Collection<int, Player>  $players
+     * @return Collection<int, float>
+     */
+    private function candidateRatings(Collection $players, Game $target): Collection
+    {
+        $historical = PitcherEloRating::query()
+            ->whereIn('player_id', $players->pluck('id'))
+            ->whereDate('date', '<', $target->game_date)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->get()
+            ->unique('player_id')
+            ->mapWithKeys(fn (PitcherEloRating $rating): array => [
+                $rating->player_id => (float) $rating->elo_rating,
+            ]);
+
+        return $players->mapWithKeys(fn (Player $player): array => [
+            $player->id => (float) ($historical->get($player->id)
+                ?? $player->elo_rating
+                ?? config('mlb.elo.default_rating', 1500)),
+        ]);
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $candidates
+     */
+    private function teamStarterFallbackRating(Team $team, Game $target, Collection $candidates): float
+    {
+        $recent = PitcherEloRating::query()
+            ->where('team_id', $team->id)
+            ->whereDate('date', '<', $target->game_date)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->pluck('elo_rating')
+            ->filter(fn (mixed $rating): bool => is_numeric($rating));
+
+        if ($recent->isNotEmpty()) {
+            return (float) $recent->avg();
+        }
+
+        $candidateRatings = $candidates->pluck('rating')->filter(fn (mixed $rating): bool => is_numeric($rating));
+
+        return $candidateRatings->isNotEmpty()
+            ? (float) $candidateRatings->avg()
+            : (float) config('mlb.elo.default_rating', 1500);
+    }
+
+    /**
+     * @return array{candidates: array<never>, unknown_probability: float, expected_pitcher_rating: float, expected_slot_available: bool}
+     */
+    private function emptyCandidateRanking(): array
+    {
+        return [
+            'candidates' => [],
+            'unknown_probability' => 1.0,
+            'expected_pitcher_rating' => (float) config('mlb.elo.default_rating', 1500),
+            'expected_slot_available' => false,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $projection
+     */
+    private function recordForecast(Game $game, string $side, array $projection): void
+    {
+        $trackingPitcherId = $projection['tracking_pitcher_espn_id']
+            ?? $projection['pitcher_espn_id']
+            ?? null;
+
+        $this->forecasts->record($game, $side, [
+            ...$projection,
+            'pitcher_espn_id' => $trackingPitcherId,
+        ]);
     }
 
     /**

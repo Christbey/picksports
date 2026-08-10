@@ -2,13 +2,15 @@
 
 return [
     'starter_projection' => [
-        'version' => 'rotation-v1',
+        'version' => 'rotation-v2',
         'history_games' => 60,
         'rotation_size' => 5,
+        'maximum_rotation_size' => 6,
         'minimum_rotation_size' => 3,
-        'base_confidence' => 0.88,
-        'minimum_confidence' => 0.30,
-        'per_game_decay' => 0.018,
+        'probable_confidence' => 0.90,
+        'projected_slot_probability' => 0.60,
+        'uncertain_candidate_probability' => 0.25,
+        'candidate_limit' => 4,
     ],
 
     /*

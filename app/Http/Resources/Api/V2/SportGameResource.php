@@ -82,6 +82,24 @@ class SportGameResource extends JsonResource
             'away_starting_pitcher_confidence' => $this->resource instanceof Game
                 ? $this->resource->startingPitcherConfidence('away')
                 : null,
+            'home_starting_pitcher_candidates' => $this->resource instanceof Game
+                ? $this->resource->startingPitcherCandidates('home')
+                : [],
+            'away_starting_pitcher_candidates' => $this->resource instanceof Game
+                ? $this->resource->startingPitcherCandidates('away')
+                : [],
+            'home_expected_starting_pitcher_rating' => $this->resource instanceof Game
+                ? $this->resource->expectedStartingPitcherRating('home')
+                : null,
+            'away_expected_starting_pitcher_rating' => $this->resource instanceof Game
+                ? $this->resource->expectedStartingPitcherRating('away')
+                : null,
+            'home_starting_pitcher_uncertainty' => $this->resource instanceof Game
+                ? $this->resource->startingPitcherUncertainty('home')
+                : null,
+            'away_starting_pitcher_uncertainty' => $this->resource instanceof Game
+                ? $this->resource->startingPitcherUncertainty('away')
+                : null,
             'pitcher_projection_metadata' => $this->pitcher_projection_metadata ?? null,
             'pitcher_projection_generated_at' => $this->serializeDateValue($this->pitcher_projection_generated_at ?? null),
             'starting_pitcher_confirmation_metadata' => $this->starting_pitcher_confirmation_metadata ?? null,

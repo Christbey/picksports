@@ -13,7 +13,7 @@ use Illuminate\Support\Collection;
 final class MlbStartingPitcherForecastService
 {
     /**
-     * @param  array{pitcher_espn_id?: ?string, confidence?: ?float, evidence?: array<string, mixed>}  $projection
+     * @param  array{pitcher_espn_id?: ?string, confidence?: ?float, evidence?: array<string, mixed>, prediction_source?: string, model_version?: string, forecasted_at?: mixed}  $projection
      */
     public function record(Game $game, string $side, array $projection): ?StartingPitcherForecast
     {
@@ -22,16 +22,19 @@ final class MlbStartingPitcherForecastService
             return null;
         }
 
-        $forecastedAt = $game->pitcher_projection_generated_at
-            ? CarbonImmutable::instance($game->pitcher_projection_generated_at)
-            : now()->toImmutable();
+        $forecastedAt = isset($projection['forecasted_at'])
+            ? CarbonImmutable::parse($projection['forecasted_at'])
+            : ($game->pitcher_projection_generated_at
+                ? CarbonImmutable::instance($game->pitcher_projection_generated_at)
+                : now()->toImmutable());
         $gameStart = MlbGameStart::for($game);
         $evidence = is_array($projection['evidence'] ?? null) ? $projection['evidence'] : [];
-        $modelVersion = (string) data_get(
+        $modelVersion = (string) ($projection['model_version'] ?? data_get(
             $game->pitcher_projection_metadata,
             'version',
-            config('mlb.starter_projection.version', 'rotation-v1')
-        );
+            config('mlb.starter_projection.version', 'rotation-v2')
+        ));
+        $predictionSource = (string) ($projection['prediction_source'] ?? 'rotation_projection');
         $rating = $this->ratingSnapshot($game, $pitcherEspnId);
         $confidence = isset($projection['confidence']) && is_numeric($projection['confidence'])
             ? max(0.001, min(0.999, (float) $projection['confidence']))
@@ -41,6 +44,7 @@ final class MlbStartingPitcherForecastService
             'game_id' => $game->id,
             'side' => $side,
             'model_version' => $modelVersion,
+            'prediction_source' => $predictionSource,
             'predicted_pitcher_espn_id' => $pitcherEspnId,
             'confidence' => $confidence,
             'evidence' => $evidence,
@@ -54,7 +58,7 @@ final class MlbStartingPitcherForecastService
                 'season' => $game->season,
                 'side' => $side,
                 'model_version' => $modelVersion,
-                'prediction_source' => 'rotation_projection',
+                'prediction_source' => $predictionSource,
                 'predicted_pitcher_espn_id' => $pitcherEspnId,
                 'confidence' => $confidence,
                 'predicted_pitcher_rating' => $rating['rating'],
@@ -93,6 +97,34 @@ final class MlbStartingPitcherForecastService
                 'pitcher_espn_id' => $pitcherEspnId,
                 'confidence' => $confidence,
                 'evidence' => data_get($game->pitcher_projection_metadata, $side, []),
+            ])) {
+                $recorded++;
+            }
+        }
+
+        return $recorded;
+    }
+
+    public function recordProbablePitchers(Game $game): int
+    {
+        $recorded = 0;
+
+        foreach (['home', 'away'] as $side) {
+            $pitcherEspnId = $side === 'home'
+                ? $game->probable_home_pitcher_espn_id
+                : $game->probable_away_pitcher_espn_id;
+
+            if ($this->record($game, $side, [
+                'pitcher_espn_id' => $pitcherEspnId,
+                'confidence' => (float) config('mlb.starter_projection.probable_confidence', 0.90),
+                'prediction_source' => 'espn_probable',
+                'model_version' => 'espn-probable-v1',
+                'forecasted_at' => now(),
+                'evidence' => [
+                    'status' => 'espn_probable',
+                    'source' => 'espn_scoreboard',
+                    'side' => $side,
+                ],
             ])) {
                 $recorded++;
             }
@@ -159,22 +191,40 @@ final class MlbStartingPitcherForecastService
             ->whereNotNull('graded_at')
             ->when(! $includePostStart, fn ($query) => $query->pregameSafe())
             ->get();
+        $latestForecasts = $this->latestForecasts($forecasts);
+        $latestForecastsBySource = $this->latestForecasts($forecasts, includeSource: true);
 
         return [
             'season' => $season,
             'pregame_safe_only' => ! $includePostStart,
-            'summary' => $this->metrics($forecasts),
-            'by_confidence' => $forecasts
+            'summary' => $this->metrics($latestForecasts),
+            'all_snapshots_summary' => $this->metrics($forecasts),
+            'by_confidence' => $latestForecasts
                 ->groupBy(fn (StartingPitcherForecast $forecast): string => $this->confidenceBucket($forecast->confidence))
                 ->map(fn (Collection $rows, string $bucket): array => ['bucket' => $bucket, ...$this->metrics($rows)])
                 ->values()
                 ->all(),
-            'by_model' => $forecasts
+            'by_model' => $latestForecasts
                 ->groupBy('model_version')
                 ->map(fn (Collection $rows, string $version): array => ['model_version' => $version, ...$this->metrics($rows)])
                 ->values()
                 ->all(),
-            'by_pitcher' => $forecasts
+            'by_source' => $latestForecastsBySource
+                ->groupBy('prediction_source')
+                ->map(fn (Collection $rows, string $source): array => ['prediction_source' => $source, ...$this->metrics($rows)])
+                ->values()
+                ->all(),
+            'by_horizon' => $latestForecasts
+                ->groupBy(fn (StartingPitcherForecast $forecast): string => $this->horizonBucket($forecast))
+                ->map(fn (Collection $rows, string $bucket): array => ['bucket' => $bucket, ...$this->metrics($rows)])
+                ->values()
+                ->all(),
+            'by_projection_status' => $latestForecasts
+                ->groupBy(fn (StartingPitcherForecast $forecast): string => (string) data_get($forecast->evidence, 'status', 'unknown'))
+                ->map(fn (Collection $rows, string $status): array => ['status' => $status, ...$this->metrics($rows)])
+                ->values()
+                ->all(),
+            'by_pitcher' => $latestForecasts
                 ->groupBy('predicted_pitcher_espn_id')
                 ->map(function (Collection $rows, string $pitcherEspnId): array {
                     $first = $rows->first();
@@ -189,6 +239,32 @@ final class MlbStartingPitcherForecastService
                 ->values()
                 ->all(),
         ];
+    }
+
+    /**
+     * @param  Collection<int, StartingPitcherForecast>  $forecasts
+     * @return Collection<int, StartingPitcherForecast>
+     */
+    private function latestForecasts(Collection $forecasts, bool $includeSource = false): Collection
+    {
+        $sorted = $forecasts
+            ->sortByDesc(fn (StartingPitcherForecast $forecast): array => [
+                $forecast->forecasted_at?->getTimestamp() ?? 0,
+                $forecast->id,
+            ]);
+
+        if ($includeSource) {
+            return $sorted
+                ->unique(fn (StartingPitcherForecast $forecast): string => "{$forecast->game_id}:{$forecast->side}:{$forecast->prediction_source}")
+                ->values();
+        }
+
+        return $sorted
+            ->groupBy(fn (StartingPitcherForecast $forecast): string => "{$forecast->game_id}:{$forecast->side}")
+            ->map(function (Collection $rows): StartingPitcherForecast {
+                return $rows->firstWhere('prediction_source', 'espn_probable') ?? $rows->first();
+            })
+            ->values();
     }
 
     private function grade(StartingPitcherForecast $forecast, Game $game, string $actualPitcherEspnId): void
@@ -297,6 +373,22 @@ final class MlbStartingPitcherForecastService
             $confidence >= 0.75 => 'high',
             $confidence >= 0.55 => 'medium',
             default => 'low',
+        };
+    }
+
+    private function horizonBucket(StartingPitcherForecast $forecast): string
+    {
+        if ($forecast->forecasted_at === null || $forecast->game_start_at === null) {
+            return 'unknown';
+        }
+
+        $hours = $forecast->forecasted_at->diffInHours($forecast->game_start_at);
+
+        return match (true) {
+            $hours <= 6 => '0-6h',
+            $hours <= 24 => '6-24h',
+            $hours <= 48 => '24-48h',
+            default => '48h+',
         };
     }
 

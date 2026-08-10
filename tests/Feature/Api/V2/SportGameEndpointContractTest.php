@@ -148,7 +148,20 @@ it('returns a projected mlb starter with explicit rotation provenance', function
         'probable_home_pitcher_espn_id' => null,
         'projected_home_pitcher_espn_id' => $projectedPitcher->espn_id,
         'projected_home_pitcher_confidence' => 0.64,
-        'pitcher_projection_metadata' => ['version' => 'rotation-v1'],
+        'pitcher_projection_metadata' => [
+            'version' => 'rotation-v2',
+            'home' => [
+                'status' => 'projected',
+                'expected_pitcher_rating' => 1508.5,
+                'uncertainty' => 0.4,
+                'candidates' => [[
+                    'pitcher_espn_id' => $projectedPitcher->espn_id,
+                    'pitcher_name' => $projectedPitcher->full_name,
+                    'rating' => 1512,
+                    'probability' => 0.6,
+                ]],
+            ],
+        ],
         'pitcher_projection_generated_at' => now(),
     ]);
 
@@ -157,6 +170,10 @@ it('returns a projected mlb starter with explicit rotation provenance', function
         ->assertJsonPath('data.home_starting_pitcher.full_name', 'Projected Starter')
         ->assertJsonPath('data.home_starting_pitcher_source', 'rotation_projection')
         ->assertJsonPath('data.home_starting_pitcher_confidence', 0.64)
+        ->assertJsonPath('data.home_starting_pitcher_candidates.0.pitcher_espn_id', 'projected-5001')
+        ->assertJsonPath('data.home_starting_pitcher_candidates.0.probability', 0.6)
+        ->assertJsonPath('data.home_expected_starting_pitcher_rating', 1508.5)
+        ->assertJsonPath('data.home_starting_pitcher_uncertainty', 0.4)
         ->assertJsonPath('data.probable_home_pitcher_espn_id', null)
         ->assertJsonPath('data.projected_home_pitcher_espn_id', 'projected-5001');
 });

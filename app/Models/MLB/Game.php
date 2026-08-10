@@ -186,8 +186,14 @@ class Game extends Model
 
     public function startingPitcherConfidence(string $side): ?float
     {
-        if (in_array($this->startingPitcherSource($side), ['espn_boxscore_confirmed', 'espn_probable'], true)) {
+        $source = $this->startingPitcherSource($side);
+
+        if ($source === 'espn_boxscore_confirmed') {
             return 1.0;
+        }
+
+        if ($source === 'espn_probable') {
+            return (float) config('mlb.starter_projection.probable_confidence', 0.90);
         }
 
         $confidence = $side === 'home'
@@ -195,6 +201,30 @@ class Game extends Model
             : $this->projected_away_pitcher_confidence;
 
         return $confidence !== null ? (float) $confidence : null;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function startingPitcherCandidates(string $side): array
+    {
+        $candidates = data_get($this->pitcher_projection_metadata, "{$side}.candidates", []);
+
+        return is_array($candidates) ? array_values($candidates) : [];
+    }
+
+    public function expectedStartingPitcherRating(string $side): ?float
+    {
+        $rating = data_get($this->pitcher_projection_metadata, "{$side}.expected_pitcher_rating");
+
+        return is_numeric($rating) ? (float) $rating : null;
+    }
+
+    public function startingPitcherUncertainty(string $side): ?float
+    {
+        $uncertainty = data_get($this->pitcher_projection_metadata, "{$side}.uncertainty");
+
+        return is_numeric($uncertainty) ? (float) $uncertainty : null;
     }
 
     public function hasResolvedStartingPitchers(): bool

@@ -130,6 +130,8 @@ function forecastLabel(forecast: MlbStartingPitcherForecast): string {
         .join(', ');
     const prediction = details ? `${name} (${details})` : name;
 
+    const uncertain = forecast.evidence?.status === 'uncertain_rotation';
+
     if (forecast.grade === 'correct') {
         return `Rotation forecast correct: ${prediction}`;
     }
@@ -138,7 +140,46 @@ function forecastLabel(forecast: MlbStartingPitcherForecast): string {
         return `Rotation forecast missed: ${prediction}`;
     }
 
-    return `Tracked rotation forecast: ${prediction}`;
+    return uncertain
+        ? `Leading rotation candidate: ${prediction}`
+        : `Tracked rotation forecast: ${prediction}`;
+}
+
+type StarterCandidate = {
+    pitcher_espn_id: string;
+    pitcher_name?: string | null;
+    probability?: number | null;
+    rating?: number | null;
+};
+
+function forecastCandidates(
+    forecast: MlbStartingPitcherForecast,
+): StarterCandidate[] {
+    const candidates = forecast.evidence?.candidates;
+
+    return Array.isArray(candidates)
+        ? candidates.filter(
+              (candidate): candidate is StarterCandidate =>
+                  typeof candidate === 'object' &&
+                  candidate !== null &&
+                  typeof candidate.pitcher_espn_id === 'string',
+          )
+        : [];
+}
+
+function candidateLabel(candidate: StarterCandidate): string {
+    const probability = Number.isFinite(Number(candidate.probability))
+        ? `${Math.round(Number(candidate.probability) * 100)}%`
+        : null;
+    const rating = formatRating(candidate.rating);
+
+    return [
+        candidate.pitcher_name || candidate.pitcher_espn_id,
+        probability,
+        rating ? `rating ${rating}` : null,
+    ]
+        .filter(Boolean)
+        .join(' · ');
 }
 
 function forecastEligibility(forecast: MlbStartingPitcherForecast): string {
@@ -236,6 +277,22 @@ function forecastEligibility(forecast: MlbStartingPitcherForecast): string {
                         <div class="text-muted-foreground/80">
                             {{ forecastEligibility(awayStarterForecast) }}
                         </div>
+                        <div
+                            v-if="
+                                forecastCandidates(awayStarterForecast).length >
+                                1
+                            "
+                            class="mt-2 space-y-1 border-t border-border/30 pt-2 text-muted-foreground"
+                        >
+                            <div
+                                v-for="candidate in forecastCandidates(
+                                    awayStarterForecast,
+                                )"
+                                :key="candidate.pitcher_espn_id"
+                            >
+                                {{ candidateLabel(candidate) }}
+                            </div>
+                        </div>
                     </div>
                 </article>
 
@@ -312,6 +369,22 @@ function forecastEligibility(forecast: MlbStartingPitcherForecast): string {
                         </div>
                         <div class="text-muted-foreground/80">
                             {{ forecastEligibility(homeStarterForecast) }}
+                        </div>
+                        <div
+                            v-if="
+                                forecastCandidates(homeStarterForecast).length >
+                                1
+                            "
+                            class="mt-2 space-y-1 border-t border-border/30 pt-2 text-muted-foreground"
+                        >
+                            <div
+                                v-for="candidate in forecastCandidates(
+                                    homeStarterForecast,
+                                )"
+                                :key="candidate.pitcher_espn_id"
+                            >
+                                {{ candidateLabel(candidate) }}
+                            </div>
                         </div>
                     </div>
                 </article>

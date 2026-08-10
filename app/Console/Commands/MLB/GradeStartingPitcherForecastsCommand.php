@@ -43,13 +43,14 @@ class GradeStartingPitcherForecastsCommand extends Command
         }
 
         $this->table(['Metric', 'Value'], [
-            ['Eligible forecasts', $summary['forecasts']],
+            ['Latest eligible forecasts', $summary['forecasts']],
             ['Correct', $summary['correct']],
             ['Accuracy', $this->percentage($summary['accuracy'])],
             ['Average confidence', $this->percentage($summary['average_confidence'])],
             ['Average Brier', $this->number($summary['average_brier'])],
             ['Average log loss', $this->number($summary['average_log_loss'])],
             ['Pitcher rating MAE', $this->number($summary['rating_mae'])],
+            ['All immutable forecast snapshots', data_get($report, 'all_snapshots_summary.forecasts', 0)],
         ]);
 
         $this->newLine();
@@ -61,6 +62,48 @@ class GradeStartingPitcherForecastsCommand extends Command
                 $row['forecasts'],
                 $row['correct'],
                 $this->percentage($row['accuracy']),
+                $this->number($row['average_brier']),
+            ])->all(),
+        );
+
+        $this->newLine();
+        $this->info('Accuracy by source');
+        $this->table(
+            ['Source', 'Forecasts', 'Correct', 'Accuracy', 'Confidence', 'Brier'],
+            collect($report['by_source'])->map(fn (array $row): array => [
+                $row['prediction_source'],
+                $row['forecasts'],
+                $row['correct'],
+                $this->percentage($row['accuracy']),
+                $this->percentage($row['average_confidence']),
+                $this->number($row['average_brier']),
+            ])->all(),
+        );
+
+        $this->newLine();
+        $this->info('Accuracy by forecast horizon');
+        $this->table(
+            ['Horizon', 'Forecasts', 'Correct', 'Accuracy', 'Confidence', 'Brier'],
+            collect($report['by_horizon'])->map(fn (array $row): array => [
+                $row['bucket'],
+                $row['forecasts'],
+                $row['correct'],
+                $this->percentage($row['accuracy']),
+                $this->percentage($row['average_confidence']),
+                $this->number($row['average_brier']),
+            ])->all(),
+        );
+
+        $this->newLine();
+        $this->info('Accuracy by projection status');
+        $this->table(
+            ['Status', 'Forecasts', 'Correct', 'Accuracy', 'Confidence', 'Brier'],
+            collect($report['by_projection_status'])->map(fn (array $row): array => [
+                $row['status'],
+                $row['forecasts'],
+                $row['correct'],
+                $this->percentage($row['accuracy']),
+                $this->percentage($row['average_confidence']),
                 $this->number($row['average_brier']),
             ])->all(),
         );

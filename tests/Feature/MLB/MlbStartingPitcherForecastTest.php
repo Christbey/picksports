@@ -117,3 +117,64 @@ it('grades a changed starter as an incorrect rotation forecast and reports calib
         ->and(data_get($report, 'summary.average_brier'))->toBe(0.49)
         ->and(data_get($report, 'summary.rating_mae'))->toBe(40.0);
 });
+
+it('reports the latest pregame forecast as the headline while retaining immutable snapshots', function () {
+    Carbon::setTestNow('2026-08-01 09:00:00');
+
+    $homeTeam = Team::factory()->create();
+    $awayTeam = Team::factory()->create();
+    $early = Player::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => 'early-candidate',
+    ]);
+    $latest = Player::factory()->pitcher()->create([
+        'team_id' => $homeTeam->id,
+        'espn_id' => 'latest-candidate',
+    ]);
+    $game = Game::factory()->regularSeason()->create([
+        'season' => 2026,
+        'game_date' => '2026-08-02',
+        'game_time' => '18:00:00',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'pitcher_projection_generated_at' => now(),
+        'pitcher_projection_metadata' => ['version' => 'rotation-v2'],
+    ]);
+    $service = app(MlbStartingPitcherForecastService::class);
+    $service->record($game, 'home', [
+        'pitcher_espn_id' => $early->espn_id,
+        'confidence' => 0.6,
+        'evidence' => ['status' => 'projected'],
+    ]);
+
+    Carbon::setTestNow(now()->addHours(2));
+    $game->update(['pitcher_projection_generated_at' => now()]);
+    $service->record($game->fresh(), 'home', [
+        'pitcher_espn_id' => $latest->espn_id,
+        'confidence' => 0.6,
+        'evidence' => ['status' => 'projected'],
+    ]);
+    $service->record($game->fresh(), 'home', [
+        'pitcher_espn_id' => $latest->espn_id,
+        'confidence' => 0.9,
+        'prediction_source' => 'espn_probable',
+        'model_version' => 'espn-probable-v1',
+        'forecasted_at' => now(),
+        'evidence' => ['status' => 'espn_probable'],
+    ]);
+    $game->update([
+        'actual_home_pitcher_espn_id' => $latest->espn_id,
+        'starting_pitchers_confirmed_at' => now()->addDay(),
+    ]);
+    $service->confirmGame($game->fresh());
+
+    $report = $service->report(2026);
+
+    expect(data_get($report, 'summary.forecasts'))->toBe(1)
+        ->and(data_get($report, 'summary.correct'))->toBe(1)
+        ->and(data_get($report, 'summary.accuracy'))->toBe(1.0)
+        ->and(data_get($report, 'all_snapshots_summary.forecasts'))->toBe(3)
+        ->and(data_get($report, 'all_snapshots_summary.correct'))->toBe(2)
+        ->and(collect($report['by_source'])->pluck('prediction_source')->all())
+        ->toContain('rotation_projection', 'espn_probable');
+});

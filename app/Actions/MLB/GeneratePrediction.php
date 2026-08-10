@@ -193,6 +193,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
             'away_pitcher_source' => $awayPitcherResult['source'],
             'home_probable_pitcher_espn_id' => $homePitcherResult['probable_pitcher_espn_id'] ?? null,
             'away_probable_pitcher_espn_id' => $awayPitcherResult['probable_pitcher_espn_id'] ?? null,
+            'home_pitcher_candidates' => $homePitcherResult['starter_candidates'] ?? [],
+            'away_pitcher_candidates' => $awayPitcherResult['starter_candidates'] ?? [],
+            'home_expected_pitcher_rating' => $homePitcherResult['expected_pitcher_rating'] ?? null,
+            'away_expected_pitcher_rating' => $awayPitcherResult['expected_pitcher_rating'] ?? null,
+            'home_starter_uncertainty' => $homePitcherResult['starter_uncertainty'] ?? null,
+            'away_starter_uncertainty' => $awayPitcherResult['starter_uncertainty'] ?? null,
             'season_sample_games' => $this->seasonSampleGames($game, $homeMetrics, $awayMetrics),
             'season_progress_scale' => round($seasonProgressScale, 3),
             'team_weight' => round($teamWeight, 3),
@@ -247,7 +253,7 @@ class GeneratePrediction extends AbstractPredictionGenerator
 
     /**
      * Get pitcher Elo with three-tier fallback logic:
-     * 1. Use an ESPN probable or versioned rotation projection
+     * 1. Use a confirmed/ESPN probable starter or a candidate-weighted rotation projection
      * 2. Use team's average pitcher Elo from last 10 starts (confidence 0.75)
      * 3. Use league average 1500 (confidence 0.5)
      */
@@ -256,6 +262,26 @@ class GeneratePrediction extends AbstractPredictionGenerator
         $probablePitcherEspnId = $game->resolvedStartingPitcherEspnId($side);
         $starterSource = $game->startingPitcherSource($side);
         $starterConfidence = $game->startingPitcherConfidence($side);
+        $starterCandidates = $game->startingPitcherCandidates($side);
+        $expectedPitcherRating = $game->expectedStartingPitcherRating($side);
+        $starterUncertainty = $game->startingPitcherUncertainty($side);
+
+        if (($starterSource === 'rotation_projection' || $starterSource === null)
+            && $expectedPitcherRating !== null
+            && $starterCandidates !== []) {
+            return [
+                'elo' => $expectedPitcherRating,
+                'confidence' => $starterConfidence
+                    ?? (float) data_get($starterCandidates, '0.probability', 0.0),
+                'source' => $starterSource === 'rotation_projection'
+                    ? 'rotation_projection_weighted'
+                    : 'rotation_candidate_blend',
+                'probable_pitcher_espn_id' => $probablePitcherEspnId,
+                'starter_candidates' => $starterCandidates,
+                'expected_pitcher_rating' => $expectedPitcherRating,
+                'starter_uncertainty' => $starterUncertainty,
+            ];
+        }
 
         if ($probablePitcherEspnId) {
             $probablePitcher = Player::query()
@@ -280,13 +306,14 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 if ($probablePitcherElo !== null) {
                     return [
                         'elo' => (float) $probablePitcherElo,
-                        'confidence' => $starterSource === 'rotation_projection'
-                            ? max(0.3, min(0.95, (float) $starterConfidence))
-                            : 1.0,
-                        'source' => $starterSource === 'rotation_projection'
-                            ? 'rotation_projection'
-                            : 'probable_starter',
+                        'confidence' => $starterConfidence ?? 0.5,
+                        'source' => $starterSource === 'espn_boxscore_confirmed'
+                            ? 'confirmed_starter'
+                            : ($starterSource === 'rotation_projection' ? 'rotation_projection' : 'probable_starter'),
                         'probable_pitcher_espn_id' => $probablePitcherEspnId,
+                        'starter_candidates' => $starterCandidates,
+                        'expected_pitcher_rating' => $expectedPitcherRating,
+                        'starter_uncertainty' => $starterUncertainty,
                     ];
                 }
 
@@ -820,6 +847,12 @@ class GeneratePrediction extends AbstractPredictionGenerator
                 'away_source' => $this->metadata['away_pitcher_source'] ?? null,
                 'home_probable_pitcher_espn_id' => $this->metadata['home_probable_pitcher_espn_id'] ?? null,
                 'away_probable_pitcher_espn_id' => $this->metadata['away_probable_pitcher_espn_id'] ?? null,
+                'home_candidates' => $this->metadata['home_pitcher_candidates'] ?? [],
+                'away_candidates' => $this->metadata['away_pitcher_candidates'] ?? [],
+                'home_expected_pitcher_rating' => $this->metadata['home_expected_pitcher_rating'] ?? null,
+                'away_expected_pitcher_rating' => $this->metadata['away_expected_pitcher_rating'] ?? null,
+                'home_starter_uncertainty' => $this->metadata['home_starter_uncertainty'] ?? null,
+                'away_starter_uncertainty' => $this->metadata['away_starter_uncertainty'] ?? null,
                 'home_probable_pitcher_injury_status' => $this->metadata['home_probable_pitcher_injury_status'] ?? null,
                 'away_probable_pitcher_injury_status' => $this->metadata['away_probable_pitcher_injury_status'] ?? null,
                 'probable_pitcher_spread_adjustment' => $this->metadata['probable_pitcher_spread_adjustment'] ?? 0.0,

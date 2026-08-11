@@ -3,7 +3,10 @@ import type {
     BettingRecommendation,
     PredictionAnalysisSummary,
 } from './sports';
-import type { MarketAwareProjection } from '@/lib/predictionRecommendation';
+import type {
+    MarketAwareProjection,
+    PredictionRecommendation,
+} from '@/lib/predictionRecommendation';
 
 export interface DashboardPrediction {
     id: number;
@@ -23,6 +26,9 @@ export interface DashboardPrediction {
     away_logo: string;
     betting_value?: BettingRecommendation[];
     betting_value_debug?: string | null;
+    recommendation?: PredictionRecommendation | null;
+    public_recommendation?: PredictionRecommendation | null;
+    candidate_recommendation?: PredictionRecommendation | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
     ai_analysis?: AiPredictionAnalysisSummary | null;
     market_aware_projection?: MarketAwareProjection | null;

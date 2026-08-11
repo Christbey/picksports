@@ -24,6 +24,7 @@ use App\Models\WCBB\Game as WCBBGame;
 use App\Models\WCBB\Prediction as WCBBPrediction;
 use App\Models\WNBA\Game as WNBAGame;
 use App\Models\WNBA\Prediction as WNBAPrediction;
+use App\Services\MLB\MlbPredictionRecommendationService;
 use App\Support\SportPredictionAccess;
 use App\Support\SportsViewCache;
 use App\Support\TierAccessBypass;
@@ -40,7 +41,10 @@ class DashboardController extends Controller
 
     private const DEFAULT_FINAL_STATUSES = ['STATUS_FINAL', 'STATUS_FULL_TIME'];
 
-    public function __construct(private readonly SportsViewCache $sportsViewCache) {}
+    public function __construct(
+        private readonly SportsViewCache $sportsViewCache,
+        private readonly MlbPredictionRecommendationService $mlbRecommendations,
+    ) {}
 
     public function __invoke(): Response
     {
@@ -247,6 +251,10 @@ class DashboardController extends Controller
                 $resource
                     ->bettingValue($analysis['recommendations'])
                     ->bettingValueDebug($analysis['debug']);
+            }
+
+            if (strtolower($sport) === 'mlb' && $prediction instanceof MLBPrediction) {
+                $resource->recommendation($this->mlbRecommendations->forPrediction($prediction));
             }
 
             return $resource->resolve();

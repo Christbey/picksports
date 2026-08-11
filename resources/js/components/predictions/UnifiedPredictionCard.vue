@@ -20,6 +20,7 @@ import {
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
 import {
+    candidateRecommendation,
     getPredictionRecommendation,
     isPromotionBlocked,
     isBetRecommendation,
@@ -641,6 +642,10 @@ function canonicalRecommendation() {
     return getPredictionRecommendation(props.prediction);
 }
 
+function canonicalCandidateRecommendation() {
+    return candidateRecommendation(props.prediction);
+}
+
 function canonicalPregameRecommendation() {
     return pregameRecommendation(props.prediction);
 }
@@ -725,6 +730,15 @@ function dashboardCardTone(): 'quiet' | 'positive' | 'negative' | 'candidate' {
         return 'candidate';
     }
 
+    const candidate = canonicalCandidateRecommendation();
+    if (
+        isMlbPrediction() &&
+        canonicalRecommendation()?.prediction_phase === 'pregame' &&
+        ['bet', 'lean'].includes(candidate?.recommendation_type ?? '')
+    ) {
+        return 'candidate';
+    }
+
     return 'quiet';
 }
 
@@ -767,6 +781,32 @@ function dashboardPrimaryPickLabel(): string {
 }
 
 function dashboardSignalLabel(): string {
+    if (isMlbPrediction()) {
+        const recommendation = canonicalRecommendation();
+        const candidate = canonicalCandidateRecommendation();
+        const isPregame = recommendation?.prediction_phase === 'pregame';
+
+        if (recommendation?.recommendation_type === 'monitor') {
+            return 'Live Monitor';
+        }
+
+        if (isPregame && candidate?.recommendation_type === 'bet') {
+            return isPromotionBlocked(props.prediction)
+                ? 'Tracking Bet'
+                : 'Model Bet';
+        }
+
+        if (isPregame && candidate?.recommendation_type === 'lean') {
+            return isPromotionBlocked(props.prediction)
+                ? 'Tracking Lean'
+                : 'Model Lean';
+        }
+
+        if (isPregame && candidate?.recommendation_type === 'no_play') {
+            return 'Pass';
+        }
+    }
+
     return (
         canonicalRecommendationLabel() ??
         betClassificationLabel() ??
@@ -816,6 +856,34 @@ function dashboardFooterContextLabel(): string {
         return valueSignalMeta()
             ? `${valueSignalTitle()} · ${valueSignalMeta()}`
             : valueSignalTitle();
+    }
+
+    if (isMlbPrediction()) {
+        const recommendation = canonicalRecommendation();
+        const candidate = canonicalCandidateRecommendation();
+        const reason = candidate?.no_bet_reason;
+
+        if (
+            recommendation?.prediction_phase === 'pregame' &&
+            candidate?.recommendation_type === 'no_play' &&
+            reason
+        ) {
+            return `Pass · ${formatAnalysisToken(reason)}`;
+        }
+
+        if (
+            ['bet', 'lean'].includes(candidate?.recommendation_type ?? '') &&
+            recommendation?.prediction_phase === 'pregame' &&
+            isPromotionBlocked(props.prediction)
+        ) {
+            const edge = candidate?.raw_edge;
+            const edgeLabel =
+                typeof edge === 'number'
+                    ? ` · ${(edge * 100).toFixed(1)}% raw edge`
+                    : '';
+
+            return `Tracking only${edgeLabel}`;
+        }
     }
 
     if (bettingValueDebugLabel()) {

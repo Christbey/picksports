@@ -23,6 +23,10 @@ class DashboardPredictionResource extends JsonResource
 
     protected ?string $bettingValueDebug = null;
 
+    protected bool $includeRecommendation = false;
+
+    protected mixed $recommendation = null;
+
     public function sport(string $sport): self
     {
         $this->sport = $sport;
@@ -63,6 +67,14 @@ class DashboardPredictionResource extends JsonResource
     public function bettingValueDebug(?string $reason): self
     {
         $this->bettingValueDebug = $reason;
+
+        return $this;
+    }
+
+    public function recommendation(mixed $recommendation): self
+    {
+        $this->includeRecommendation = true;
+        $this->recommendation = $recommendation;
 
         return $this;
     }
@@ -116,6 +128,12 @@ class DashboardPredictionResource extends JsonResource
         if ($this->includeBettingValue) {
             $data['betting_value'] = $this->bettingValue;
             $data['betting_value_debug'] = $this->bettingValueDebug;
+        }
+
+        if ($this->includeRecommendation) {
+            $data['recommendation'] = $this->recommendation;
+            $data['public_recommendation'] = data_get($this->recommendation, 'public');
+            $data['candidate_recommendation'] = data_get($this->recommendation, 'candidate');
         }
 
         if (strtolower($this->sport) === 'nfl') {

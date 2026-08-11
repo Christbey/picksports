@@ -248,6 +248,17 @@ function weekLabel(): string | null {
 
 function gameDateTimeLabel(): string | null {
     if (dashboardType?.game_time) {
+        const date = new Date(dashboardType.game_time);
+
+        if (!Number.isNaN(date.getTime())) {
+            return date.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit',
+            });
+        }
+
         return dashboardType.game_time;
     }
 
@@ -776,8 +787,9 @@ function dashboardChipClass(): string {
 
 function dashboardPrimaryPickLabel(): string {
     const prefix = isNflPrediction() ? 'Moneyline' : 'Pick';
+    const probability = Math.max(winProbPercent(), 100 - winProbPercent());
 
-    return `${prefix}: ${moneylineTeamLabel()} ${winProbPercent().toFixed(1)}%`;
+    return `${prefix}: ${moneylineTeamLabel()} ${probability.toFixed(1)}%`;
 }
 
 function dashboardSignalLabel(): string {

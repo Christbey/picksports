@@ -49,6 +49,7 @@ test('the dashboard exposes evaluated mlb passes and tracking candidates', funct
             ->component('Dashboard')
             ->where('sports.0.name', 'MLB')
             ->where('sports.0.predictions.0.id', $pass->id)
+            ->where('sports.0.predictions.0.game_time', '2026-08-10T18:10:00')
             ->where('sports.0.predictions.0.recommendation.candidate.recommendation_type', 'no_play')
             ->where('sports.0.predictions.0.recommendation.candidate.no_bet_reason', 'no_moneyline_market_value')
             ->where('sports.0.predictions.1.id', $tracking->id)

@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Carbon;
 
 class DashboardPredictionResource extends JsonResource
 {
@@ -93,7 +94,7 @@ class DashboardPredictionResource extends JsonResource
             'game_id' => $game->id,
             'season_type' => $game->season_type,
             'game' => $game->name,
-            'game_time' => $game->game_date,
+            'game_time' => $this->gameDateTime($game),
             'home_team' => $game->homeTeam?->abbreviation,
             'away_team' => $game->awayTeam?->abbreviation,
             'win_probability' => (float) $prediction->win_probability,
@@ -141,6 +142,18 @@ class DashboardPredictionResource extends JsonResource
         }
 
         return $data;
+    }
+
+    private function gameDateTime(object $game): ?string
+    {
+        if ($game->game_date === null) {
+            return null;
+        }
+
+        $date = Carbon::parse($game->game_date)->toDateString();
+        $time = trim((string) ($game->game_time ?? ''));
+
+        return $time !== '' ? "{$date}T{$time}" : $date;
     }
 
     /**

@@ -6,6 +6,7 @@ import {
     SheetHeader,
     SheetTitle,
 } from '@/components/ui/sheet';
+import { LoaderCircle } from 'lucide-vue-next';
 import MlbSignalGroups from '@/components/mlb/MlbSignalGroups.vue';
 import {
     candidateRecommendation,
@@ -36,6 +37,8 @@ defineProps<{
     prediction: ApiV2Prediction | null;
     candidate?: MlbDailyPick | null;
     candidates?: MlbDailyPick[];
+    loadingDetails?: boolean;
+    detailError?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -644,6 +647,21 @@ function compactId(value?: string | null): string {
             </SheetHeader>
 
             <div v-if="prediction" class="mt-6 space-y-5">
+                <div
+                    v-if="loadingDetails"
+                    class="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground"
+                >
+                    <LoaderCircle class="h-4 w-4 animate-spin" />
+                    Loading full market and signal details
+                </div>
+
+                <div
+                    v-else-if="detailError"
+                    class="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
+                >
+                    {{ detailError }}
+                </div>
+
                 <section
                     v-if="(candidates?.length ?? 0) > 1"
                     class="border-b pb-4"

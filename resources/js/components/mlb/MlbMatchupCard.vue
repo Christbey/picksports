@@ -30,6 +30,23 @@ const projection = computed(() => props.prediction.projection ?? {});
 const marketAware = computed(
     () => props.prediction.market_aware_projection ?? null,
 );
+const marketSummary = computed(
+    () => (props.prediction.market_summary ?? {}) as ApiV2Record,
+);
+const availableMarkets = computed(() => {
+    const markets = marketSummary.value.markets;
+
+    return Array.isArray(markets)
+        ? markets.filter(
+              (market): market is string => typeof market === 'string',
+          )
+        : [];
+});
+const hasMarketOdds = computed(
+    () =>
+        marketSummary.value.has_odds === true ||
+        availableMarkets.value.length > 0,
+);
 const timing = computed(() => predictionTiming(props.prediction));
 const showTimingBadge = computed(() => timing.value.phase === 'live');
 
@@ -229,6 +246,16 @@ const candidateDetailLabel = computed(() => {
 
 const footerContextLabel = computed(() => {
     if (candidateMarketLabel.value) return candidateMarketLabel.value;
+
+    if (hasMarketOdds.value) {
+        const labels = availableMarkets.value
+            .slice(0, 3)
+            .map((market) => labelizeMlbCode(market));
+
+        return labels.length > 0
+            ? `Market available: ${labels.join(', ')}`
+            : 'Market available';
+    }
 
     if (marketAware.value?.agreement_status === 'market_missing') {
         return 'Market pending';
@@ -487,7 +514,9 @@ function resultBadgeClass(
                     {{
                         candidate
                             ? labelizeMlbCode(candidate.market_type)
-                            : 'No market'
+                            : hasMarketOdds
+                              ? 'Market available'
+                              : 'Market unavailable'
                     }}
                 </span>
                 <span

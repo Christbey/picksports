@@ -49,6 +49,8 @@ const selectedPrediction = ref<ApiV2Prediction | null>(null);
 const selectedCandidate = ref<MlbDailyPick | null>(null);
 const selectedCandidates = ref<MlbDailyPick[]>([]);
 const detailOpen = ref(false);
+const detailLoading = ref(false);
+const detailError = ref<string | null>(null);
 
 const allCandidates = computed(() => dailyPayload.value?.candidates ?? []);
 const summary = computed(() => dailyPayload.value?.summary ?? null);
@@ -347,16 +349,67 @@ function gameSortKey(prediction: ApiV2Prediction): string {
     return `${datePart} ${timePart} ${game?.short_name ?? ''}`;
 }
 
-function selectMatchup(
+async function selectMatchup(
     prediction: ApiV2Prediction,
     candidate: MlbDailyPick | null,
-): void {
+): Promise<void> {
     selectedPrediction.value = prediction;
     selectedCandidate.value = candidate;
     const gameId = numberValue(prediction.game_id ?? prediction.game?.id);
     selectedCandidates.value =
         gameId === null ? [] : (candidatesByGameId.value.get(gameId) ?? []);
     detailOpen.value = true;
+    detailError.value = null;
+
+    if (gameId === null) return;
+
+    detailLoading.value = true;
+
+    try {
+        const payload = await api.dailyPicks.index<MlbDailyPicksPayload>(
+            'mlb',
+            {
+                query: {
+                    date: selectedDate.value,
+                    game_id: gameId,
+                    ...(selectedSeason.value
+                        ? { season: selectedSeason.value }
+                        : {}),
+                },
+            },
+        );
+
+        if (!payload?.data) {
+            detailError.value =
+                'Full market and signal details are temporarily unavailable.';
+
+            return;
+        }
+
+        if (
+            numberValue(
+                selectedPrediction.value?.game_id ??
+                    selectedPrediction.value?.game?.id,
+            ) !== gameId
+        ) {
+            return;
+        }
+
+        selectedCandidates.value = payload.data.candidates;
+        selectedCandidate.value =
+            payload.data.candidates.find(
+                (option) => option.id === candidate?.id,
+            ) ??
+            payload.data.candidates[0] ??
+            null;
+    } catch (e) {
+        detailError.value =
+            e instanceof Error
+                ? e.message
+                : 'Full market and signal details are temporarily unavailable.';
+    } finally {
+        detailLoading.value = false;
+    }
 }
 
 async function fetchAvailableFilters(): Promise<void> {
@@ -421,12 +474,17 @@ async function loadBoard(): Promise<void> {
             api.dailyPicks.index<MlbDailyPicksPayload>('mlb', {
                 query: {
                     date: selectedDate.value,
+                    compact: 1,
                     ...(selectedSeason.value
                         ? { season: selectedSeason.value }
                         : {}),
                 },
             }),
         ]);
+
+        if (!predictionPayload) {
+            throw new Error('Unable to load MLB predictions.');
+        }
 
         const periodModelsByGame =
             picksPayload?.data?.period_models_by_game ?? {};
@@ -450,6 +508,10 @@ async function loadBoard(): Promise<void> {
             })
             .sort((a, b) => gameSortKey(a).localeCompare(gameSortKey(b)));
         dailyPayload.value = picksPayload?.data ?? null;
+        if (!picksPayload) {
+            error.value =
+                'Candidate details could not be loaded. Sportsbook availability shown on each matchup still comes from the prediction market snapshot.';
+        }
     } catch (e) {
         error.value =
             e instanceof Error ? e.message : 'Unable to load MLB board';
@@ -655,6 +717,8 @@ onMounted(async () => {
                 :prediction="selectedPrediction"
                 :candidate="selectedCandidate"
                 :candidates="selectedCandidates"
+                :loading-details="detailLoading"
+                :detail-error="detailError"
                 @select-candidate="selectedCandidate = $event"
             />
         </template>

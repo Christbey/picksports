@@ -544,6 +544,42 @@ it('returns MLB daily picks from the v2 API as tracking only', function (): void
         ->and((float) data_get($candidatePayload, 'clv'))->toBe(0.0245);
 });
 
+it('returns a compact MLB daily picks board without heavy candidate snapshots', function (): void {
+    [$game] = mlbPricedSlate();
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
+        ->assertExitCode(0);
+
+    Sanctum::actingAs(User::factory()->create());
+
+    $response = $this->getJson('/api/v2/sports/mlb/daily-picks?date=2026-06-20&season=2026&compact=1')
+        ->assertOk()
+        ->assertJsonPath('meta.filters.compact', true)
+        ->assertJsonPath('data.candidates.0.game_id', $game->id)
+        ->assertJsonMissingPath('data.candidates.0.feature_snapshot')
+        ->assertJsonMissingPath('data.candidates.0.market_snapshot')
+        ->assertJsonMissingPath('data.candidates.0.signal_layer')
+        ->assertJsonMissingPath('data.candidates.0.period_models')
+        ->assertJsonMissingPath('data.candidates.0.explanation');
+
+    expect($response->json('data.candidates'))->not->toBeEmpty();
+});
+
+it('limits full MLB daily pick details to the requested game', function (): void {
+    [$game] = mlbPricedSlate();
+    $this->artisan('mlb:generate-daily-picks --date=2026-06-20 --season=2026 --markets=moneyline,total,props')
+        ->assertExitCode(0);
+
+    Sanctum::actingAs(User::factory()->create());
+
+    $response = $this->getJson("/api/v2/sports/mlb/daily-picks?date=2026-06-20&season=2026&game_id={$game->id}")
+        ->assertOk()
+        ->assertJsonPath('meta.filters.game_id', $game->id)
+        ->assertJsonPath('data.candidates.0.game_id', $game->id);
+
+    expect(collect($response->json('data.candidates'))->pluck('game_id')->unique()->all())
+        ->toBe([$game->id]);
+});
+
 it('returns slate counts even when no MLB daily pick candidates exist', function (): void {
     mlbPricedSlate([
         'odds_data' => null,

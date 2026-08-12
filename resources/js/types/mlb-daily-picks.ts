@@ -166,10 +166,10 @@ export type MlbDailyPick = {
     risk_flags: string[];
     signal_layer?: MlbSignalLayer | null;
     recommended_market_angle?: string | null;
-    feature_snapshot: Record<string, unknown>;
-    market_snapshot: Record<string, unknown>;
-    period_models: MlbPeriodModelContext[];
-    explanation: string;
+    feature_snapshot?: Record<string, unknown>;
+    market_snapshot?: Record<string, unknown>;
+    period_models?: MlbPeriodModelContext[];
+    explanation?: string | null;
     generated_at?: string | null;
     graded_at?: string | null;
     result_status?: string | null;

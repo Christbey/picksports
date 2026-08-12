@@ -34,8 +34,12 @@ class MlbPickCandidateRepository
     /**
      * @return EloquentCollection<int,PickCandidate>
      */
-    public function forDate(CarbonInterface|string $date, ?int $season = null): EloquentCollection
-    {
+    public function forDate(
+        CarbonInterface|string $date,
+        ?int $season = null,
+        ?int $gameId = null,
+        bool $compact = false,
+    ): EloquentCollection {
         $window = $this->dateWindows->forDate($date);
         $query = PickCandidate::query()
             ->with(['game.homeTeam', 'game.awayTeam', 'team', 'player'])
@@ -45,6 +49,50 @@ class MlbPickCandidateRepository
 
         if ($season !== null) {
             $query->where('season', $season);
+        }
+
+        if ($gameId !== null) {
+            $query->where('game_id', $gameId);
+        }
+
+        if ($compact) {
+            $query->select([
+                'id',
+                'season',
+                'game_id',
+                'prediction_id',
+                'team_id',
+                'player_id',
+                'market_type',
+                'market_key',
+                'side',
+                'line',
+                'price',
+                'book',
+                'market_probability',
+                'no_vig_probability',
+                'model_probability',
+                'blend_probability',
+                'edge_raw',
+                'edge_no_vig',
+                'projected_value',
+                'score',
+                'confidence',
+                'status',
+                'recommendation_label',
+                'is_public',
+                'is_tracking_only',
+                'is_bet',
+                'risk_flags',
+                'reason_codes',
+                'generated_at',
+                'graded_at',
+                'result_status',
+                'result_profit_units',
+                'closing_price',
+                'closing_line',
+                'clv',
+            ]);
         }
 
         return $query->get();

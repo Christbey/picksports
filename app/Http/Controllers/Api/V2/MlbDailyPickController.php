@@ -34,20 +34,32 @@ class MlbDailyPickController extends Controller
 
         $date = $dates->parseLocalDate($request->query('date'));
         $season = $request->query('season') ? (int) $request->query('season') : null;
-        $candidates = $repository->forDate($date, $season);
+        $gameId = $request->integer('game_id') ?: null;
+        $compact = $request->boolean('compact');
+        $candidates = $repository->forDate($date, $season, $gameId, $compact);
         $topPicks = $selector->select($candidates->toBase(), $request->query('limit') ? (int) $request->query('limit') : null);
         $slate = $this->slateSummary($date, $season, $dates);
-        $periodModels->prime([
-            ...$candidates->pluck('game_id')->all(),
-            ...$slate['game_ids'],
-        ]);
         $summary = $this->summary($candidates->toBase(), $topPicks, $slate);
-        $periodModelsByGame = collect($slate['game_ids'])
+        $periodModelGameIds = match (true) {
+            $compact => [],
+            $gameId !== null => [$gameId],
+            default => array_values(array_unique([
+                ...$candidates->pluck('game_id')->all(),
+                ...$slate['game_ids'],
+            ])),
+        };
+        $periodModels->prime($periodModelGameIds);
+        $periodModelsByGame = collect($periodModelGameIds)
             ->mapWithKeys(fn (int $gameId): array => [(string) $gameId => $periodModels->forGame($gameId)])
             ->filter()
             ->all();
 
-        $resource = fn ($row): array => (new MlbPickCandidateResource($row, $explanations, $periodModels))->toArray($request);
+        $resource = fn ($row): array => (new MlbPickCandidateResource(
+            $row,
+            $explanations,
+            $periodModels,
+            $compact,
+        ))->toArray($request);
 
         return response()->json([
             'data' => [
@@ -75,6 +87,8 @@ class MlbDailyPickController extends Controller
                 'filters' => [
                     'date' => $date->toDateString(),
                     'season' => $season,
+                    'game_id' => $gameId,
+                    'compact' => $compact,
                 ],
             ],
         ]);
@@ -198,7 +212,16 @@ class MlbDailyPickController extends Controller
             $query->where('season', $season);
         }
 
-        $last30 = (clone $query)->where('generated_at', '>=', now()->subDays(30))->get();
+        $last30 = (clone $query)
+            ->where('generated_at', '>=', now()->subDays(30))
+            ->get([
+                'id',
+                'market_type',
+                'score',
+                'generated_at',
+                'result_status',
+                'result_profit_units',
+            ]);
         $last7 = $last30->filter(fn ($candidate): bool => $candidate->generated_at?->gte(now()->subDays(7)) ?? false);
 
         return [

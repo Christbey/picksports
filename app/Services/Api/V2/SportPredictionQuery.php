@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\Sports\SportsDateWindowService;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -9,10 +10,11 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 
 class SportPredictionQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 100;
@@ -26,7 +28,7 @@ class SportPredictionQuery
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
         return $this->query($context, $filters, $user)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     public function find(
@@ -180,13 +182,7 @@ class SportPredictionQuery
      */
     private function predictionModel(SportContext $context): string
     {
-        $predictionModel = $context->models['prediction'] ?? null;
-
-        if (! is_string($predictionModel) || ! is_subclass_of($predictionModel, Model::class)) {
-            abort(404, "Predictions are not available for {$context->slug}.");
-        }
-
-        return $predictionModel;
+        return $this->requireModel($context, 'prediction', 'Predictions');
     }
 
     /**
@@ -194,13 +190,7 @@ class SportPredictionQuery
      */
     private function gameModel(SportContext $context): string
     {
-        $gameModel = $context->models['game'] ?? null;
-
-        if (! is_string($gameModel) || ! is_subclass_of($gameModel, Model::class)) {
-            abort(404, "Games are not available for {$context->slug}.");
-        }
-
-        return $gameModel;
+        return $this->requireModel($context, 'game', 'Games');
     }
 
     /**
@@ -276,18 +266,5 @@ class SportPredictionQuery
         return $hasValue
             ? $query->whereNotNull('predicted_spread')
             : $query->whereNull('predicted_spread');
-    }
-
-    private function hasColumn(string $table, string $column): bool
-    {
-        return Schema::hasColumn($table, $column);
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

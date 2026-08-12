@@ -115,6 +115,7 @@ it('treats only the next regular season game date as market ready unless later g
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'game_date' => '2026-06-06',
+        'game_time' => '12:00:00',
         'status' => 'STATUS_SCHEDULED',
     ]);
 
@@ -124,6 +125,7 @@ it('treats only the next regular season game date as market ready unless later g
         'home_team_id' => $away->id,
         'away_team_id' => $home->id,
         'game_date' => '2026-06-07',
+        'game_time' => '12:00:00',
         'status' => 'STATUS_SCHEDULED',
     ]);
 
@@ -133,6 +135,7 @@ it('treats only the next regular season game date as market ready unless later g
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'game_date' => '2026-06-08',
+        'game_time' => '12:00:00',
         'status' => 'STATUS_SCHEDULED',
         'odds_api_event_id' => 'odds-available',
     ]);
@@ -174,7 +177,7 @@ it('does not include local dates beyond the active stage window', function () {
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,
         'game_date' => '2026-06-14',
-        'game_time' => '23:30:00',
+        'game_time' => '12:00:00',
         'status' => 'STATUS_SCHEDULED',
     ]);
 
@@ -183,7 +186,7 @@ it('does not include local dates beyond the active stage window', function () {
         'home_team_id' => $away->id,
         'away_team_id' => $home->id,
         'game_date' => '2026-06-15',
-        'game_time' => '00:30:00',
+        'game_time' => '12:00:00',
         'status' => 'STATUS_SCHEDULED',
     ]);
 

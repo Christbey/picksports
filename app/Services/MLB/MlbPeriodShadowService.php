@@ -26,7 +26,7 @@ class MlbPeriodShadowService
 
     public function __construct(
         private readonly MlbPeriodModelInferenceService $inference,
-        private readonly MlbPeriodFeatureBuilder $features,
+        private readonly MlbPeriodFeatureStore $featureStore,
         private readonly ModelRunRecorder $runs,
         private readonly ShadowArtifactSelector $artifacts,
     ) {}
@@ -55,18 +55,31 @@ class MlbPeriodShadowService
             return $this->result('not_ready', self::NO_SAFE_SNAPSHOT, $artifacts);
         }
 
+        $games = Game::query()
+            ->whereKey($snapshots->pluck('game_id'))
+            ->where('status', config('mlb.statuses.scheduled', 'STATUS_SCHEDULED'))
+            ->get()
+            ->keyBy('id');
+        $this->featureStore->materialize($games->values());
+        $featuresByGame = $this->featureStore->forGames($games->values());
+
         $inferred = 0;
         $created = 0;
         $reasons = [];
         foreach ($snapshots as $snapshot) {
-            $game = Game::query()->find($snapshot->game_id);
-            if (! $game || $game->status !== config('mlb.statuses.scheduled', 'STATUS_SCHEDULED')) {
+            $game = $games->get((int) $snapshot->game_id);
+            if (! $game) {
                 $this->increment($reasons, self::NO_SAFE_SNAPSHOT);
 
                 continue;
             }
 
-            $featuresByMarket = $this->features->liveFeatures($game, $snapshot);
+            $featuresByMarket = $featuresByGame[(int) $game->id] ?? [];
+            if ($featuresByMarket === []) {
+                $this->increment($reasons, self::NO_SAFE_SNAPSHOT);
+
+                continue;
+            }
             foreach ($artifacts as $artifact) {
                 try {
                     $outputs = $this->inference->predict($artifact, $featuresByMarket);

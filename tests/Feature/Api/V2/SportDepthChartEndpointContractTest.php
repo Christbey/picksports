@@ -6,6 +6,7 @@ use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\PlayerStat as MlbPlayerStat;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 it('requires authenticated access for v2 game depth charts', function () {
@@ -187,6 +188,20 @@ it('returns v2 game depth charts with stable metadata and stat summaries', funct
                 'warnings',
             ],
         ]);
+
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = strtolower($query->sql);
+    });
+
+    $this->getJson("/api/v2/sports/mlb/games/{$targetGame->id}/page")
+        ->assertOk()
+        ->assertJsonPath('data.depth_charts_available', true)
+        ->assertJsonMissingPath('data.depth_charts');
+
+    expect(collect($queries)->contains(
+        fn (string $sql): bool => str_contains($sql, 'mlb_player_stats'),
+    ))->toBeFalse();
 });
 
 it('returns a clean json 404 for v2 sports without depth chart support', function () {

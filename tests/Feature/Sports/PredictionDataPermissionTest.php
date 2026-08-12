@@ -9,6 +9,7 @@ use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
 });
 
 test('prediction data fields are gated by mapped spatie permissions', function () {

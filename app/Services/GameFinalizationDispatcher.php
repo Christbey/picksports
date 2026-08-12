@@ -5,6 +5,8 @@ namespace App\Services;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Events\GameFinalized;
 use App\Models\NBA\Game;
+use App\Models\NBA\PlayerProp;
+use App\Models\NBA\Prediction;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
@@ -27,7 +29,7 @@ class GameFinalizationDispatcher
      * @var array<string, class-string<Model>>
      */
     private const PREDICTION_MODEL_BY_SPORT = [
-        'nba' => \App\Models\NBA\Prediction::class,
+        'nba' => Prediction::class,
         'nfl' => \App\Models\NFL\Prediction::class,
         'mlb' => \App\Models\MLB\Prediction::class,
         'cbb' => \App\Models\CBB\Prediction::class,
@@ -40,7 +42,7 @@ class GameFinalizationDispatcher
      * @var array<string, class-string<Model>>
      */
     private const PLAYER_PROP_MODEL_BY_SPORT = [
-        'nba' => \App\Models\NBA\PlayerProp::class,
+        'nba' => PlayerProp::class,
         'nfl' => \App\Models\NFL\PlayerProp::class,
         'mlb' => \App\Models\MLB\PlayerProp::class,
         'cbb' => \App\Models\CBB\PlayerProp::class,

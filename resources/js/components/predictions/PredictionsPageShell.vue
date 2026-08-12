@@ -81,8 +81,9 @@ const breadcrumbs: BreadcrumbItem[] = [
             :is="'script'"
             head-key="schema-webpage"
             type="application/ld+json"
-            v-text="webPageSchema"
-        />
+        >
+            {{ webPageSchema }}
+        </component>
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">

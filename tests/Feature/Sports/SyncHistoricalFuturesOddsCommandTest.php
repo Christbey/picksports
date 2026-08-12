@@ -12,7 +12,7 @@ it('records historical team futures snapshots from the odds api', function () {
         'abbreviation' => 'KC',
     ]);
 
-    $oddsService = \Mockery::mock(OddsApiService::class);
+    $oddsService = Mockery::mock(OddsApiService::class);
     $oddsService->shouldReceive('getHistoricalOdds')
         ->once()
         ->andReturn([
@@ -65,7 +65,7 @@ it('expands a daily date range into multiple historical futures snapshots', func
         'abbreviation' => 'KC',
     ]);
 
-    $oddsService = \Mockery::mock(OddsApiService::class);
+    $oddsService = Mockery::mock(OddsApiService::class);
     $oddsService->shouldReceive('getHistoricalOdds')
         ->twice()
         ->andReturn(
@@ -132,7 +132,7 @@ it('supports syncing non-outright futures markets', function () {
         'abbreviation' => 'KC',
     ]);
 
-    $oddsService = \Mockery::mock(OddsApiService::class);
+    $oddsService = Mockery::mock(OddsApiService::class);
     $oddsService->shouldReceive('getHistoricalOdds')
         ->once()
         ->withArgs(function (

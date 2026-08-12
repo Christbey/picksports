@@ -60,7 +60,10 @@ function formatRecord(metric: any, fallback = '-'): string {
         return metric.record_label;
     }
 
-    if (metric.record?.wins !== undefined && metric.record?.losses !== undefined) {
+    if (
+        metric.record?.wins !== undefined &&
+        metric.record?.losses !== undefined
+    ) {
         return `${metric.record.wins}-${metric.record.losses}`;
     }
 

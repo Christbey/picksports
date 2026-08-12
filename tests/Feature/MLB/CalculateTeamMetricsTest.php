@@ -230,14 +230,18 @@ it('calculates team ERA correctly across multiple games', function () {
 
     $game1 = Game::factory()->create([
         'season' => $this->season,
+        'week' => 13,
         'status' => 'STATUS_FINAL',
+        'game_date' => "{$this->season}-06-01",
         'home_team_id' => $this->team->id,
         'away_team_id' => $opponent->id,
     ]);
 
     $game2 = Game::factory()->create([
         'season' => $this->season,
+        'week' => 13,
         'status' => 'STATUS_FINAL',
+        'game_date' => "{$this->season}-06-02",
         'home_team_id' => $opponent->id,
         'away_team_id' => $this->team->id,
     ]);

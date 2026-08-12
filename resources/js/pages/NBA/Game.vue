@@ -11,6 +11,7 @@ import PredictionSummaryCard from '@/components/game-page/PredictionSummaryCard.
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useGameDepthCharts } from '@/composables/useGameDepthCharts';
 import { useBasketballDetailedGamePage } from '@/composables/useBasketballDetailedGamePage';
+import { formatNumber } from '@/composables/useFormatters';
 import { type TopPerformer } from '@/types';
 import NBATeamController from '@/actions/App/Http/Controllers/NBA/TeamController';
 
@@ -52,7 +53,7 @@ const isPregame = computed(() =>
                     :away-label="pageProps.awayLabel"
                     :home-label="pageProps.homeLabel"
                     :prediction="pageProps.prediction"
-                    :format-number="pageProps.formatNumber"
+                    :format-number="pageProps.formatNumber ?? formatNumber"
                     :projected-label="pageProps.projectedLabel"
                     :away-bar-class="pageProps.awayBarClass"
                     :home-bar-class="pageProps.homeBarClass"

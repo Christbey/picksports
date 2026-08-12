@@ -212,7 +212,7 @@ function weekLabel(): string | null {
     const postseasonRound = predictionType?.game.postseason_round;
     const seasonType = predictionType?.game.season_type;
 
-    if (week === null || week === undefined || week === '' || !seasonType) {
+    if (week === null || week === undefined || !seasonType) {
         return null;
     }
 
@@ -303,7 +303,9 @@ function predictionFreshnessLabel(): string | null {
 }
 
 function statusBadgeLabel(): string {
-    const status = String(props.prediction.status ?? '').toLowerCase();
+    const status = String(
+        dashboardType?.status ?? predictionType?.game.status ?? '',
+    ).toLowerCase();
 
     if (isFinal()) return 'Final';
     if (isLive()) return 'Live';
@@ -608,7 +610,7 @@ function bettingValueDebugLabel(): string | null {
 }
 
 function valueSignal() {
-    return props.prediction.value_signal ?? null;
+    return predictionType?.value_signal ?? null;
 }
 
 function hasValueSignal(): boolean {

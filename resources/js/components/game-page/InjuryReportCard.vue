@@ -213,7 +213,11 @@ const modelImpactLines = computed(() => {
             items.push(
                 `Weighted availability: ${props.homeTeamAbbr || 'Home'} ${homeOut.toFixed(2)} out / ${homeQuestionable.toFixed(2)} questionable, ${props.awayTeamAbbr || 'Away'} ${awayOut.toFixed(2)} out / ${awayQuestionable.toFixed(2)} questionable.`,
             );
-        } else if (context.applied || hasSpreadAdjustment || hasTotalAdjustment) {
+        } else if (
+            context.applied ||
+            hasSpreadAdjustment ||
+            hasTotalAdjustment
+        ) {
             items.push(
                 `Availability model used ${formatSource(context.injury_total_model_source || context.injury_model_source)}; no weighted depth-chart injuries were detected.`,
             );
@@ -265,10 +269,14 @@ const modelImpactLines = computed(() => {
                 </p>
             </div>
             <div class="flex items-center gap-2 text-[11px] font-medium">
-                <span class="rounded-full bg-muted px-2 py-1 text-foreground/80">
+                <span
+                    class="rounded-full bg-muted px-2 py-1 text-foreground/80"
+                >
                     {{ awayTeamAbbr || 'Away' }} {{ awayInjuries.length }}
                 </span>
-                <span class="rounded-full bg-muted px-2 py-1 text-foreground/80">
+                <span
+                    class="rounded-full bg-muted px-2 py-1 text-foreground/80"
+                >
                     {{ homeTeamAbbr || 'Home' }} {{ homeInjuries.length }}
                 </span>
             </div>
@@ -281,10 +289,14 @@ const modelImpactLines = computed(() => {
             <div
                 class="flex flex-wrap items-center justify-between gap-2 text-xs"
             >
-                <span class="font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                <span
+                    class="font-semibold tracking-[0.14em] text-muted-foreground uppercase"
+                >
                     Model availability impact
                 </span>
-                <span class="rounded-full bg-muted px-2 py-1 font-medium text-foreground/80">
+                <span
+                    class="rounded-full bg-muted px-2 py-1 font-medium text-foreground/80"
+                >
                     {{ modelImpactLines.length }}
                     {{ modelImpactLines.length === 1 ? 'note' : 'notes' }}
                 </span>
@@ -332,7 +344,9 @@ const modelImpactLines = computed(() => {
                             </div>
 
                             <div class="min-w-0 flex-1">
-                                <div class="flex items-start justify-between gap-2">
+                                <div
+                                    class="flex items-start justify-between gap-2"
+                                >
                                     <div class="min-w-0">
                                         <p
                                             class="truncate text-sm font-medium text-foreground"
@@ -355,7 +369,9 @@ const modelImpactLines = computed(() => {
                                     </span>
                                 </div>
 
-                                <div class="mt-2 flex flex-wrap items-center gap-1.5">
+                                <div
+                                    class="mt-2 flex flex-wrap items-center gap-1.5"
+                                >
                                     <span
                                         :class="[
                                             'rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1',
@@ -390,13 +406,17 @@ const modelImpactLines = computed(() => {
                                         v-if="compactDate(injury.return_date)"
                                         class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
                                     >
-                                        Return {{ compactDate(injury.return_date) }}
+                                        Return
+                                        {{ compactDate(injury.return_date) }}
                                     </span>
                                     <span
-                                        v-else-if="compactDate(injury.injury_date)"
+                                        v-else-if="
+                                            compactDate(injury.injury_date)
+                                        "
                                         class="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
                                     >
-                                        Listed {{ compactDate(injury.injury_date) }}
+                                        Listed
+                                        {{ compactDate(injury.injury_date) }}
                                     </span>
                                 </div>
                             </div>

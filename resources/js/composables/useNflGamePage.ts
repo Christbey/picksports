@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import { formatDateLong, useGameStatus } from '@/composables/useFormatters';
@@ -14,6 +14,7 @@ import type {
     NflPagePrediction,
     NflPageTeam,
     NflTeamStats,
+    PredictionAnalysisSummary,
     RecentGameListItem,
     TeamTrendData,
 } from '@/types';
@@ -170,6 +171,11 @@ const normalizePrediction = (
         betting_value: Array.isArray(source.betting_value)
             ? (source.betting_value as NflPagePrediction['betting_value'])
             : undefined,
+        prediction_analysis:
+            source.prediction_analysis &&
+            typeof source.prediction_analysis === 'object'
+                ? (source.prediction_analysis as PredictionAnalysisSummary)
+                : null,
         winner_correct:
             typeof source.winner_correct === 'boolean'
                 ? source.winner_correct
@@ -202,8 +208,10 @@ export function useNflGamePage(gameId: number) {
     const awayRecentGames = ref<RecentGameListItem[]>([]);
     const homeTrends = ref<TeamTrendData | null>(null);
     const awayTrends = ref<TeamTrendData | null>(null);
+    const trendsLoading = ref(false);
     const loading = ref(true);
     const error = ref<string | null>(null);
+    const requestController = new AbortController();
 
     const gameStatus = useGameStatus(() => currentGame.value.status);
     const formatDate = (dateString: string, timeString?: string): string => {
@@ -307,18 +315,16 @@ export function useNflGamePage(gameId: number) {
             loading.value = true;
             error.value = null;
 
-            const [gameData, predictionData, teamStatsData] = await Promise.all(
-                [
-                    api.games.show('nfl', gameId),
-                    api.predictions.forGame('nfl', gameId),
-                    api.stats.teams('nfl', {
-                        query: { game_id: gameId, per_page: 100 },
-                    }),
-                ],
-            );
+            const requestOptions = {
+                init: { signal: requestController.signal },
+            };
+            const [gameData, predictionData] = await Promise.all([
+                api.games.show('nfl', gameId, requestOptions),
+                api.predictions.forGame('nfl', gameId, requestOptions),
+            ]);
 
             if (gameData?.data) {
-                const fullGame = gameData.data as NflPageGame;
+                const fullGame = gameData.data as unknown as NflPageGame;
                 currentGame.value = fullGame;
                 const fallbackGame = fullGame as NflPageGame & {
                     homeTeam?: NflPageGame['home_team'];
@@ -328,60 +334,6 @@ export function useNflGamePage(gameId: number) {
                     fullGame.home_team || fallbackGame.homeTeam || null;
                 awayTeam.value =
                     fullGame.away_team || fallbackGame.awayTeam || null;
-
-                if (fullGame.home_team?.id || fallbackGame.homeTeam?.id) {
-                    const homeTeamId =
-                        fullGame.home_team?.id || fallbackGame.homeTeam?.id;
-                    const [homeGamesData, homeTrendsData] = await Promise.all([
-                        api.teams.games('nfl', homeTeamId),
-                        api.teams.trends('nfl', homeTeamId, {
-                            query: {
-                                games: 'season',
-                                season: currentGame.value.season,
-                                before_date: currentGame.value.game_date,
-                            },
-                        }),
-                    ]);
-                    if (homeGamesData?.data) {
-                        homeRecentGames.value = (homeGamesData.data || [])
-                            .filter(
-                                (g) =>
-                                    g.status === 'STATUS_FINAL' &&
-                                    g.id !== currentGame.value.id,
-                            )
-                            .slice(0, 5);
-                    }
-                    if (homeTrendsData?.data) {
-                        homeTrends.value = homeTrendsData.data as TeamTrendData;
-                    }
-                }
-
-                if (fullGame.away_team?.id || fallbackGame.awayTeam?.id) {
-                    const awayTeamId =
-                        fullGame.away_team?.id || fallbackGame.awayTeam?.id;
-                    const [awayGamesData, awayTrendsData] = await Promise.all([
-                        api.teams.games('nfl', awayTeamId),
-                        api.teams.trends('nfl', awayTeamId, {
-                            query: {
-                                games: 'season',
-                                season: currentGame.value.season,
-                                before_date: currentGame.value.game_date,
-                            },
-                        }),
-                    ]);
-                    if (awayGamesData?.data) {
-                        awayRecentGames.value = (awayGamesData.data || [])
-                            .filter(
-                                (g) =>
-                                    g.status === 'STATUS_FINAL' &&
-                                    g.id !== currentGame.value.id,
-                            )
-                            .slice(0, 5);
-                    }
-                    if (awayTrendsData?.data) {
-                        awayTrends.value = awayTrendsData.data as TeamTrendData;
-                    }
-                }
             }
 
             if (predictionData?.data) {
@@ -391,23 +343,87 @@ export function useNflGamePage(gameId: number) {
                 prediction.value = normalizePrediction(raw);
             }
 
-            if (teamStatsData?.data) {
-                const stats = flattenApiV2Stats(
-                    teamStatsData.data,
-                ) as NflTeamStats[];
-                homeTeamStats.value =
-                    stats.find((s) => s.team_type === 'home') || null;
-                awayTeamStats.value =
-                    stats.find((s) => s.team_type === 'away') || null;
-            }
+            loading.value = false;
+            trendsLoading.value = true;
+
+            const homeTeamId = homeTeam.value?.id;
+            const awayTeamId = awayTeam.value?.id;
+            const trendQuery = {
+                games: 'season',
+                season: currentGame.value.season,
+                before_date: currentGame.value.game_date,
+            };
+            const supplemental: Promise<unknown>[] = [
+                api.stats
+                    .teams('nfl', {
+                        query: { game_id: gameId, per_page: 100 },
+                        init: { signal: requestController.signal },
+                    })
+                    .then((response) => {
+                        const stats = flattenApiV2Stats(
+                            response?.data,
+                        ) as unknown as NflTeamStats[];
+                        homeTeamStats.value =
+                            stats.find(
+                                (statsRow) => statsRow.team_type === 'home',
+                            ) ?? null;
+                        awayTeamStats.value =
+                            stats.find(
+                                (statsRow) => statsRow.team_type === 'away',
+                            ) ?? null;
+                    }),
+            ];
+
+            const addTeamContext = (
+                team: number | string | null | undefined,
+                recentGames: typeof homeRecentGames,
+                trends: typeof homeTrends,
+            ) => {
+                if (!team) return;
+
+                supplemental.push(
+                    api.teams
+                        .games('nfl', team, {
+                            query: { per_page: 25 },
+                            init: { signal: requestController.signal },
+                        })
+                        .then((response) => {
+                            recentGames.value = (response?.data ?? [])
+                                .filter(
+                                    (game) =>
+                                        game.status === 'STATUS_FINAL' &&
+                                        game.id !== currentGame.value.id,
+                                )
+                                .slice(0, 5) as RecentGameListItem[];
+                        }),
+                    api.teams
+                        .trends('nfl', team, {
+                            query: trendQuery,
+                            init: { signal: requestController.signal },
+                        })
+                        .then((response) => {
+                            trends.value =
+                                (response?.data as TeamTrendData | undefined) ??
+                                null;
+                        }),
+                );
+            };
+
+            addTeamContext(homeTeamId, homeRecentGames, homeTrends);
+            addTeamContext(awayTeamId, awayRecentGames, awayTrends);
+
+            await Promise.allSettled(supplemental);
         } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading.value = false;
+            trendsLoading.value = false;
         }
     };
 
     onMounted(load);
+    onBeforeUnmount(() => requestController.abort());
 
     return {
         game: currentGame,
@@ -420,6 +436,7 @@ export function useNflGamePage(gameId: number) {
         awayRecentGames,
         homeTrends,
         awayTrends,
+        trendsLoading,
         loading,
         error,
         gameStatus,

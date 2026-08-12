@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V2\SportPredictionIndexRequest;
 use App\Http\Resources\Api\V2\SportPredictionResource;
 use App\Services\Api\V2\SportContextResolver;
+use App\Services\Api\V2\SportPredictionPresentationService;
 use App\Services\Api\V2\SportPredictionQuery;
-use App\Services\MLB\MlbPeriodInsightService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -18,20 +18,18 @@ class SportPredictionController extends Controller
         SportPredictionIndexRequest $request,
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
-        MlbPeriodInsightService $periodInsights,
+        SportPredictionPresentationService $presentations,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $filters = $request->validatedFilters();
         $paginator = $predictions->paginate($context, $filters, $request->user());
-        $periodInsightsByGame = $context->slug === 'mlb'
-            ? $periodInsights->forGames($paginator->getCollection()->pluck('game')->filter())
-            : [];
+        $presentationByPrediction = $presentations->forPredictions($context, $paginator->getCollection());
 
         $paginator->setCollection(
             $paginator->getCollection()->map(fn ($prediction) => new SportPredictionResource(
                 $prediction,
                 $context,
-                $periodInsightsByGame[(int) $prediction->game_id] ?? [],
+                $presentationByPrediction->get((int) $prediction->getKey()),
             ))
         );
 
@@ -52,7 +50,7 @@ class SportPredictionController extends Controller
         Request $request,
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
-        MlbPeriodInsightService $periodInsights,
+        SportPredictionPresentationService $presentations,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $resolvedPrediction = $predictions->find($context, $prediction, $request->user());
@@ -61,7 +59,7 @@ class SportPredictionController extends Controller
             'data' => new SportPredictionResource(
                 $resolvedPrediction,
                 $context,
-                $context->slug === 'mlb' ? $periodInsights->forGame($resolvedPrediction->game) : [],
+                $presentations->forPrediction($context, $resolvedPrediction),
             ),
             'meta' => $this->itemMeta($context->slug),
         ]);
@@ -102,7 +100,7 @@ class SportPredictionController extends Controller
         Request $request,
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
-        MlbPeriodInsightService $periodInsights,
+        SportPredictionPresentationService $presentations,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $resolvedPrediction = $predictions->findForGame($context, $game, $request->user());
@@ -111,7 +109,7 @@ class SportPredictionController extends Controller
             'data' => new SportPredictionResource(
                 $resolvedPrediction,
                 $context,
-                $context->slug === 'mlb' ? $periodInsights->forGame($resolvedPrediction->game) : [],
+                $presentations->forPrediction($context, $resolvedPrediction),
             ),
             'meta' => $this->itemMeta($context->slug) + ['game_id' => (int) $game],
         ]);

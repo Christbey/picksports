@@ -128,13 +128,15 @@ const idsMatch = (
 
 const teamLabel = (prop: ApiV2PlayerProp) => {
     const playerTeamId = prop.player?.team_id;
+    const homeTeam = prop.game?.home_team;
+    const awayTeam = prop.game?.away_team;
 
-    if (idsMatch(prop.game?.home_team?.id, playerTeamId)) {
-        return prop.game.home_team.abbreviation ?? prop.game.home_team.name;
+    if (homeTeam && idsMatch(homeTeam.id, playerTeamId)) {
+        return homeTeam.abbreviation ?? homeTeam.name;
     }
 
-    if (idsMatch(prop.game?.away_team?.id, playerTeamId)) {
-        return prop.game.away_team.abbreviation ?? prop.game.away_team.name;
+    if (awayTeam && idsMatch(awayTeam.id, playerTeamId)) {
+        return awayTeam.abbreviation ?? awayTeam.name;
     }
 
     return prop.player?.position ?? null;
@@ -233,7 +235,9 @@ const loadProps = async () => {
         return;
     }
 
-    recommendations.value = payload.data
+    const rows = Array.isArray(payload.data) ? payload.data : [];
+
+    recommendations.value = rows
         .filter(hasPropRecommendation)
         .map(mapPlayerProp);
     markets.value = marketOptionsFor(recommendations.value);
@@ -364,7 +368,10 @@ watch(
                 Loading player props...
             </div>
 
-            <div v-else-if="error && filteredRecommendations.length > 0" class="py-8 text-center">
+            <div
+                v-else-if="error && filteredRecommendations.length > 0"
+                class="py-8 text-center"
+            >
                 <BarChart3
                     class="mx-auto mb-3 h-10 w-10 text-muted-foreground"
                 />

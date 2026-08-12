@@ -101,7 +101,9 @@ it('returns the v2 player prop recommendation board envelope from the analyzer',
 
     app()->instance(PlayerPropAnalyzer::class, $analyzer);
 
-    $this->getJson('/api/v2/sports/nba/player-props/board?date=2026-06-10&game=99&market=player_points')
+    $url = '/api/v2/sports/nba/player-props/board?date=2026-06-10&game=99&market=player_points';
+
+    $this->getJson($url)
         ->assertOk()
         ->assertJsonPath('sport', 'NBA')
         ->assertJsonPath('data', [])
@@ -115,6 +117,10 @@ it('returns the v2 player prop recommendation board envelope from the analyzer',
         ->assertJsonPath('meta.sport', 'nba')
         ->assertJsonPath('meta.contract', 'sports.player-props.board')
         ->assertJsonPath('meta.source', 'precomputed');
+
+    $this->getJson($url)
+        ->assertOk()
+        ->assertJsonPath('filters.game', 99);
 });
 
 it('renders v2 player prop board recommendations when provider player names are not linked to internal players', function () {
@@ -192,7 +198,7 @@ it('defaults the player prop board date to today or the next available slate for
     $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
     $analyzer
         ->shouldReceive('getAvailableDatesForSport')
-        ->twice()
+        ->once()
         ->with('MLB')
         ->andReturn(collect([
             ['value' => '2026-06-12', 'label' => 'Jun 12'],

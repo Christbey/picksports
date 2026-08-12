@@ -2,14 +2,16 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Schema;
 
 class SportPlayerQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 50;
 
     private const MAX_PER_PAGE = 100;
@@ -23,7 +25,7 @@ class SportPlayerQuery
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
         return $this->query($context, $filters, $user)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     /**
@@ -74,13 +76,7 @@ class SportPlayerQuery
      */
     private function playerModel(SportContext $context): string
     {
-        $playerModel = $context->models['player'] ?? null;
-
-        if (! is_string($playerModel) || ! is_subclass_of($playerModel, Model::class)) {
-            abort(404, "Players are not available for {$context->slug}.");
-        }
-
-        return $playerModel;
+        return $this->requireModel($context, 'player', 'Players');
     }
 
     /**
@@ -89,10 +85,7 @@ class SportPlayerQuery
      */
     private function relationsFor(string $playerModel): array
     {
-        return array_values(array_filter(
-            ['team'],
-            fn (string $relation): bool => method_exists($playerModel, $relation),
-        ));
+        return $this->availableRelations($playerModel, ['team']);
     }
 
     private function search(Builder $query, string $table, string $search): Builder
@@ -122,18 +115,5 @@ class SportPlayerQuery
         }
 
         return 'id';
-    }
-
-    private function hasColumn(string $table, string $column): bool
-    {
-        return Schema::hasColumn($table, $column);
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

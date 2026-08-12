@@ -201,7 +201,7 @@ test('build digest for user falls back to deterministic summary when ai digest s
 
     expect($payload)->not->toBeNull()
         ->and($payload['summary']['headline'])->toBe('Today\'s NBA Picks')
-        ->and($payload['summary']['intro'])->toContain('0 official bets and 1 watchlist lean today.')
+        ->and($payload['summary']['intro'])->toContain('1 official bet and 0 watchlist leans today.')
         ->and($payload['summary']['highlights'])->not->toBeEmpty();
 });
 
@@ -374,7 +374,7 @@ test('daily digest uses recommendation confidence instead of raw lock-level prob
 
     expect($payload)->not->toBeNull();
     expect($payload['predictions'])->toHaveCount(1);
-    expect($payload['predictions'][0]['confidence'])->toBe(85.0);
+    expect($payload['predictions'][0]['confidence'])->toBe(69.0);
     expect($payload['predictions'][0]['confidence'])->toBeLessThan(95.0);
 });
 

@@ -10,7 +10,7 @@ use Illuminate\Support\Collection;
 class MlbPeriodInsightService
 {
     public function __construct(
-        private readonly MlbPeriodFeatureBuilder $features,
+        private readonly MlbPeriodFeatureStore $featureStore,
         private readonly MlbPickMarketService $markets,
         private readonly MlbPeriodModelContextService $periodModels,
     ) {}
@@ -31,7 +31,7 @@ class MlbPeriodInsightService
 
         $games->each->loadMissing(['homeTeam', 'awayTeam']);
         $gameIds = $games->pluck('id')->map(fn (mixed $id): int => (int) $id)->all();
-        $featuresByGame = $this->features->liveFeaturesForGames($games);
+        $featuresByGame = $this->featureStore->forGames($games);
         $this->periodModels->prime($gameIds);
 
         $candidateMarkets = PickCandidate::query()
@@ -49,6 +49,8 @@ class MlbPeriodInsightService
             foreach (MlbPeriodFeatureBuilder::MARKETS as $marketType => $innings) {
                 $features = $featuresByGame[$gameId][$marketType] ?? null;
                 if (! is_array($features)) {
+                    $rows[] = $this->pending($game, $marketType, $innings);
+
                     continue;
                 }
 
@@ -76,6 +78,43 @@ class MlbPeriodInsightService
     public function forGame(Game $game): array
     {
         return $this->forGames(collect([$game]))[(int) $game->id] ?? [];
+    }
+
+    /** @return array<string, mixed> */
+    private function pending(Game $game, string $marketType, int $innings): array
+    {
+        return [
+            'market_type' => $marketType,
+            'label' => "F{$innings}",
+            'innings' => $innings,
+            'state' => 'features_pending',
+            'market_available' => $this->hasMarket($game, $marketType),
+            'candidate_available' => false,
+            'shadow_model_available' => false,
+            'pregame_safe' => null,
+            'lean' => [
+                'side' => 'neutral',
+                'team_id' => null,
+                'team_abbreviation' => null,
+                'period_elo_difference' => null,
+                'two_way_home_probability' => null,
+                'two_way_away_probability' => null,
+            ],
+            'home' => null,
+            'away' => null,
+            'starter_context' => [
+                'known' => false,
+                'home_rating' => null,
+                'away_rating' => null,
+                'rating_difference' => null,
+            ],
+            'confidence' => [
+                'level' => 'unavailable',
+                'sample_games' => 0,
+            ],
+            'signals' => [],
+            'risk_flags' => ['period_features_pending'],
+        ];
     }
 
     /**

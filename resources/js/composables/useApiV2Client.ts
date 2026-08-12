@@ -75,7 +75,9 @@ export function useApiV2Client() {
         });
 
         if (!response.ok) {
-            const error = new Error('API v2 request failed') as ApiV2MutationError;
+            const error = new Error(
+                'API v2 request failed',
+            ) as ApiV2MutationError;
             error.status = response.status;
 
             try {
@@ -132,10 +134,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.userBets.update.url(
-                        bet,
-                        routeOptions(options.query),
-                    ),
+                    v2.userBets.update.url(bet, routeOptions(options.query)),
                     'PUT',
                     payload,
                     options,
@@ -145,10 +144,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.userBets.destroy.url(
-                        bet,
-                        routeOptions(options.query),
-                    ),
+                    v2.userBets.destroy.url(bet, routeOptions(options.query)),
                     'DELETE',
                     undefined,
                     options,
@@ -165,9 +161,7 @@ export function useApiV2Client() {
                 ),
             leaderboard: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.cbbBrackets.leaderboard.url(
-                        routeOptions(options.query),
-                    ),
+                    v2.cbbBrackets.leaderboard.url(routeOptions(options.query)),
                     options,
                 ),
             show: <T = unknown>(
@@ -241,7 +235,10 @@ export function useApiV2Client() {
 
         groups: {
             index: <T = unknown>(options: RequestOptions = {}) =>
-                get<T>(v2.groups.index.url(routeOptions(options.query)), options),
+                get<T>(
+                    v2.groups.index.url(routeOptions(options.query)),
+                    options,
+                ),
             store: <T = unknown>(
                 payload: ApiV2JsonPayload,
                 options: RequestOptions = {},
@@ -268,9 +265,7 @@ export function useApiV2Client() {
         alertPreferences: {
             show: <T = unknown>(options: RequestOptions = {}) =>
                 get<T>(
-                    v2.alertPreferences.show.url(
-                        routeOptions(options.query),
-                    ),
+                    v2.alertPreferences.show.url(routeOptions(options.query)),
                     options,
                 ),
             store: <T = unknown>(
@@ -278,9 +273,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.alertPreferences.store.url(
-                        routeOptions(options.query),
-                    ),
+                    v2.alertPreferences.store.url(routeOptions(options.query)),
                     'POST',
                     payload,
                     options,
@@ -290,9 +283,7 @@ export function useApiV2Client() {
                 options: RequestOptions = {},
             ) =>
                 mutate<T>(
-                    v2.alertPreferences.update.url(
-                        routeOptions(options.query),
-                    ),
+                    v2.alertPreferences.update.url(routeOptions(options.query)),
                     'PUT',
                     payload,
                     options,
@@ -328,6 +319,30 @@ export function useApiV2Client() {
             ) =>
                 item<ApiV2Game>(
                     v2.sports.games.show.url(
+                        { sport, game },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            page: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    v2.sports.games.page.show.url(
+                        { sport, game },
+                        routeOptions(options.query),
+                    ),
+                    options,
+                ),
+            trends: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    v2.sports.games.trends.show.url(
                         { sport, game },
                         routeOptions(options.query),
                     ),

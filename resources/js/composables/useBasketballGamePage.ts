@@ -180,12 +180,20 @@ const normalizePrediction = (
                           ? ((rawConfidenceContext as Record<string, unknown>)
                                 .tier as string)
                           : null,
-                  raw_level:
+                  model_level:
                       typeof (rawConfidenceContext as Record<string, unknown>)
-                          .raw_level === 'string'
+                          .model_level === 'string'
                           ? ((rawConfidenceContext as Record<string, unknown>)
-                                .raw_level as string)
-                          : null,
+                                .model_level as string)
+                          : typeof (
+                                  rawConfidenceContext as Record<
+                                      string,
+                                      unknown
+                                  >
+                              ).raw_level === 'string'
+                            ? ((rawConfidenceContext as Record<string, unknown>)
+                                  .raw_level as string)
+                            : null,
                   reason_codes: Array.isArray(
                       (rawConfidenceContext as Record<string, unknown>)
                           .reason_codes,

@@ -2,8 +2,8 @@
 
 namespace App\Services\ScoresAndOdds\MLB;
 
-use App\Services\OddsApi\OddsApiService;
 use App\Services\OddsApi\Exceptions\OddsApiException;
+use App\Services\OddsApi\OddsApiService;
 use Illuminate\Support\Facades\Http;
 
 class HistoricalOddsScraper
@@ -267,7 +267,7 @@ class HistoricalOddsScraper
                 continue;
             }
 
-            $alt = strtolower(trim((string) $xpath->evaluate("string(.//img/@alt)", $header)));
+            $alt = strtolower(trim((string) $xpath->evaluate('string(.//img/@alt)', $header)));
             if ($alt === strtolower($bookAlt)) {
                 return $index;
             }

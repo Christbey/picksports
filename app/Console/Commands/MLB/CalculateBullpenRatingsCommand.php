@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\MLB;
 
+use App\Models\MLB\BullpenRating;
 use App\Models\MLB\Game;
 use App\Models\MLB\Team;
 use App\Services\MLB\BullpenRatingService;
@@ -71,7 +72,7 @@ class CalculateBullpenRatingsCommand extends Command
         if ($latestDate !== false) {
             $this->newLine();
             $this->info("Top bullpen ratings for {$latestDate}:");
-            $rows = \App\Models\MLB\BullpenRating::query()
+            $rows = BullpenRating::query()
                 ->with('team')
                 ->where('season', $season)
                 ->where('season_type', (string) $seasonTypes[0])

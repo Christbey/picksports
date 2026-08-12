@@ -345,7 +345,7 @@ export interface PredictionSummary {
     confidence_context?: {
         label?: string | null;
         tier?: string | null;
-        raw_level?: string | null;
+        model_level?: string | null;
         reason_codes?: string[];
         sample_games?: number | null;
     } | null;
@@ -523,6 +523,7 @@ export interface NflPagePrediction {
     win_probability: number | string;
     confidence_score: number | string;
     betting_value?: BettingRecommendation[];
+    prediction_analysis?: PredictionAnalysisSummary | null;
     winner_correct?: boolean | null;
     actual_total?: number | string | null;
     live_predicted_spread?: number | string | null;

@@ -55,6 +55,15 @@ type PlayoffForecast = {
     market_edge?: MarketEdge | null;
 };
 
+type ForecastMeta = {
+    available_seasons?: number[];
+    playoff_teams_per_conference?: number;
+    play_in_teams_per_conference?: number;
+    season?: number;
+    requested_season?: number;
+    fallback_applied?: boolean;
+};
+
 const forecasts = ref<PlayoffForecast[]>([]);
 const loading = ref(true);
 const error = ref<string | null>(null);
@@ -299,19 +308,19 @@ const fetchForecasts = async () => {
             return;
         }
 
+        const meta = (payload.meta ?? {}) as ForecastMeta;
+
         forecasts.value = payload.data ?? [];
-        availableSeasons.value = payload.meta?.available_seasons ?? [];
+        availableSeasons.value = meta.available_seasons ?? [];
         playoffTeamsPerConference.value =
-            payload.meta?.playoff_teams_per_conference ?? 8;
+            meta.playoff_teams_per_conference ?? 8;
         playInTeamsPerConference.value =
-            payload.meta?.play_in_teams_per_conference ?? 10;
-        const resolvedSeason = Number(
-            payload.meta?.season ?? selectedSeason.value,
-        );
+            meta.play_in_teams_per_conference ?? 10;
+        const resolvedSeason = Number(meta.season ?? selectedSeason.value);
         const requestedSeason = Number(
-            payload.meta?.requested_season ?? selectedSeason.value,
+            meta.requested_season ?? selectedSeason.value,
         );
-        const fallbackApplied = Boolean(payload.meta?.fallback_applied ?? false);
+        const fallbackApplied = Boolean(meta.fallback_applied ?? false);
 
         if (
             availableSeasons.value.length > 0 &&

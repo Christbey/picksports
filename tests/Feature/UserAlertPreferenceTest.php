@@ -2,6 +2,7 @@
 
 use App\Models\User;
 use App\Models\UserAlertPreference;
+use Illuminate\Notifications\Notification;
 
 beforeEach(function () {
     $this->user = User::factory()->create();
@@ -155,7 +156,7 @@ test('user routes vonage notifications to alert preference phone number', functi
     $this->preference->phone_number = '+1234567890';
     $this->preference->save();
 
-    $notification = new class extends \Illuminate\Notifications\Notification {};
+    $notification = new class extends Notification {};
 
     expect($this->user->fresh()->routeNotificationForVonage($notification))
         ->toBe('+1234567890');

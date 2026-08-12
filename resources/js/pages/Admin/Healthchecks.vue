@@ -1012,7 +1012,9 @@ function metadataEntries(
                                 class="flex flex-wrap gap-2"
                             >
                                 <span
-                                    v-for="(count, decision) in ai_publishing.decisions"
+                                    v-for="(
+                                        count, decision
+                                    ) in ai_publishing.decisions"
                                     :key="decision"
                                     class="rounded-full border border-sidebar-border px-3 py-1 text-xs font-medium"
                                 >
@@ -1026,14 +1028,12 @@ function metadataEntries(
                             v-if="ai_publishing.total === 0"
                             class="mt-4 rounded-lg border border-sidebar-border bg-sidebar-accent px-4 py-3 text-sm text-muted-foreground"
                         >
-                            No AI publishing reviews found for this sport
-                            today. Run the daily AI prediction command for the
-                            selected sport to populate guardrail data.
+                            No AI publishing reviews found for this sport today.
+                            Run the daily AI prediction command for the selected
+                            sport to populate guardrail data.
                         </p>
                         <div
-                            v-else-if="
-                                ai_publishing.needs_attention.length > 0
-                            "
+                            v-else-if="ai_publishing.needs_attention.length > 0"
                             class="mt-4 space-y-3"
                         >
                             <div
@@ -1061,9 +1061,7 @@ function metadataEntries(
                                         <span
                                             class="rounded-full bg-yellow-100 px-2 py-1 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
                                         >
-                                            {{
-                                                labelize(item.decision)
-                                            }}
+                                            {{ labelize(item.decision) }}
                                             to
                                             {{
                                                 labelize(
@@ -1131,7 +1129,11 @@ function metadataEntries(
                                     Guardrail Trend
                                 </p>
                                 <h2 class="mt-2 text-xl font-semibold">
-                                    {{ percent(ai_publishing_trend.changed_rate) }}
+                                    {{
+                                        percent(
+                                            ai_publishing_trend.changed_rate,
+                                        )
+                                    }}
                                     would change over
                                     {{ ai_publishing_trend.days }} days
                                 </h2>
@@ -1149,7 +1151,9 @@ function metadataEntries(
                                 class="flex flex-wrap gap-2"
                             >
                                 <span
-                                    v-for="(count, decision) in ai_publishing_trend.decisions"
+                                    v-for="(
+                                        count, decision
+                                    ) in ai_publishing_trend.decisions"
                                     :key="decision"
                                     class="rounded-full border border-sidebar-border px-3 py-1 text-xs font-medium"
                                 >
@@ -1166,10 +1170,7 @@ function metadataEntries(
                             No guardrail trend data found for this sport in the
                             last {{ ai_publishing_trend.days }} days.
                         </p>
-                        <div
-                            v-else
-                            class="mt-5 grid gap-4 md:grid-cols-2"
-                        >
+                        <div v-else class="mt-5 grid gap-4 md:grid-cols-2">
                             <div>
                                 <div
                                     class="mb-2 flex items-center justify-between text-xs font-medium text-muted-foreground"
@@ -1205,13 +1206,17 @@ function metadataEntries(
                                 class="space-y-2"
                             >
                                 <div
-                                    v-for="(count, decision) in ai_publishing_trend.decisions"
+                                    v-for="(
+                                        count, decision
+                                    ) in ai_publishing_trend.decisions"
                                     :key="`bar-${decision}`"
                                 >
                                     <div
                                         class="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground"
                                     >
-                                        <span>{{ labelize(String(decision)) }}</span>
+                                        <span>{{
+                                            labelize(String(decision))
+                                        }}</span>
                                         <span>{{ count }}</span>
                                     </div>
                                     <div
@@ -1263,11 +1268,7 @@ function metadataEntries(
                                     {{ labelize(row.saved_classification) }}
                                 </span>
                                 <span>
-                                    {{
-                                        labelize(
-                                            row.guardrail_classification,
-                                        )
-                                    }}
+                                    {{ labelize(row.guardrail_classification) }}
                                 </span>
                             </div>
                         </div>

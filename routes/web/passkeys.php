@@ -5,7 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->prefix('passkeys')->name('passkeys.')->group(function () {
     Route::post('/authentication/options', [PasskeyController::class, 'authenticationOptions'])
-        ->name('authentication.options');
+        ->name('authentication.createOptions');
     Route::post('/authentication/verify', [PasskeyController::class, 'authenticate'])
         ->name('authentication.verify');
 });
@@ -13,7 +13,7 @@ Route::middleware('guest')->prefix('passkeys')->name('passkeys.')->group(functio
 Route::middleware(['auth'])->prefix('passkeys')->name('passkeys.')->group(function () {
     Route::get('/', [PasskeyController::class, 'index'])->name('index');
     Route::post('/registration/options', [PasskeyController::class, 'registrationOptions'])
-        ->name('registration.options');
+        ->name('registration.createOptions');
     Route::post('/registration/verify', [PasskeyController::class, 'register'])
         ->name('registration.verify');
     Route::delete('/{passkey}', [PasskeyController::class, 'destroy'])->name('destroy');

@@ -7,6 +7,7 @@ use App\Concerns\FiltersTeamGames;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use App\Models\NFL\TeamMetric;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
@@ -131,7 +132,7 @@ class HistoricalTeamMetricCalculator
             return [];
         }
 
-        $rows = \App\Models\NFL\TeamMetric::query()
+        $rows = TeamMetric::query()
             ->whereIn('season', $priorSeasons->all())
             ->where('season_type', (string) config('nfl.season.types.regular', 2))
             ->orderByDesc('calculation_date')

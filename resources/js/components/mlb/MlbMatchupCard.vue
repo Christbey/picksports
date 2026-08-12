@@ -471,7 +471,9 @@ function resultBadgeClass(
                             v-if="totalResultLabel"
                             class="rounded-full border px-2.5 py-1 text-xs font-semibold"
                             :class="
-                                resultBadgeClass(prediction.total_pick_result)
+                                resultBadgeClass(
+                                    prediction.total_pick_result ?? null,
+                                )
                             "
                         >
                             {{ totalResultLabel }}

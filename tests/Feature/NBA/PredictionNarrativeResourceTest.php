@@ -6,12 +6,14 @@ use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\User;
 use App\Services\Predictions\PredictionNarrativeService;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 
 beforeEach(function () {
     app(PermissionRegistrar::class)->forgetCachedPermissions();
+    config()->set('subscriptions.enforce_tiers', true);
     Permission::findOrCreate('view-prediction-spread', 'web');
     Permission::findOrCreate('view-prediction-win-probability', 'web');
     Permission::findOrCreate('view-prediction-confidence-score', 'web');
@@ -374,7 +376,7 @@ test('universal nba context rules downgrade weak historical total spots', functi
     foreach ([231, 235, 216] as $index => $total) {
         Game::factory()->create([
             'season' => 2026,
-            'game_date' => now()->subDays($index + 1),
+            'game_date' => CarbonImmutable::parse('2026-05-25')->subDays($index + 1),
             'status' => 'STATUS_FINAL',
             'home_team_id' => $index % 2 === 0 ? $home->id : $away->id,
             'away_team_id' => $index % 2 === 0 ? $away->id : $home->id,
@@ -389,7 +391,7 @@ test('universal nba context rules downgrade weak historical total spots', functi
         $historicalAway = Team::factory()->create();
         $historicalGame = Game::factory()->create([
             'season' => 2026,
-            'game_date' => now()->subDays($i + 20),
+            'game_date' => CarbonImmutable::parse('2026-05-25')->subDays($i + 20),
             'status' => 'STATUS_FINAL',
             'espn_event_id' => 'hist-'.$i,
             'home_team_id' => $historicalHome->id,

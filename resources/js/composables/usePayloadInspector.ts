@@ -46,7 +46,8 @@ const profileLabels: Record<
     },
     'sport-predictions': {
         title: 'Prediction Payload',
-        description: 'Validate sport prediction list and field access payloads.',
+        description:
+            'Validate sport prediction list and field access payloads.',
     },
     'player-props': {
         title: 'Player Props Payload',

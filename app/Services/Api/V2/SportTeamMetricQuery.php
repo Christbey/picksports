@@ -2,15 +2,17 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 
 class SportTeamMetricQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 500;
@@ -24,7 +26,7 @@ class SportTeamMetricQuery
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
         return $this->query($context, $this->normalizeFilters($context, $filters), $user)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     /**
@@ -35,6 +37,7 @@ class SportTeamMetricQuery
         int|string $team,
         array $filters = [],
         ?Authenticatable $user = null,
+        bool $includeTeam = true,
     ): Model {
         $metricModel = $this->metricModel($context);
         $table = (new $metricModel)->getTable();
@@ -42,7 +45,7 @@ class SportTeamMetricQuery
         $filters = $this->normalizeFilters($context, $filters);
 
         return $metricModel::query()
-            ->with($this->relationsFor($metricModel))
+            ->with($includeTeam ? $this->relationsFor($metricModel) : [])
             ->where('team_id', (int) $team)
             ->when(($filters['season'] ?? null) && $this->hasColumn($table, 'season'), fn (Builder $query): Builder => $query->where('season', $filters['season']))
             ->when($this->shouldFilterSeasonType($filters) && $this->hasColumn($table, 'season_type'), fn (Builder $query): Builder => $query->whereIn('season_type', $this->seasonTypeCandidates($context, (string) $filters['season_type'])))
@@ -137,13 +140,7 @@ class SportTeamMetricQuery
      */
     private function metricModel(SportContext $context): string
     {
-        $metricModel = $context->models['team_metric'] ?? null;
-
-        if (! is_string($metricModel) || ! is_subclass_of($metricModel, Model::class)) {
-            abort(404, "Team metrics are not available for {$context->slug}.");
-        }
-
-        return $metricModel;
+        return $this->requireModel($context, 'team_metric', 'Team metrics');
     }
 
     /**
@@ -152,57 +149,7 @@ class SportTeamMetricQuery
      */
     private function relationsFor(string $metricModel): array
     {
-        return method_exists($metricModel, 'team') ? ['team'] : [];
-    }
-
-    /**
-     * @return array<int, int|string>
-     */
-    private function seasonTypeCandidates(SportContext $context, string $requestedSeasonType): array
-    {
-        $requested = trim($requestedSeasonType);
-
-        if ($requested === '') {
-            return [];
-        }
-
-        $typeNames = config("{$context->slug}.season.type_names", []);
-        $typesByKey = config("{$context->slug}.season.types", []);
-        $candidates = [$requested];
-
-        if (is_numeric($requested)) {
-            $code = (int) $requested;
-            $candidates[] = $code;
-            $matchedKey = array_search($code, $typesByKey, true);
-
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typeNames[$matchedKey])) {
-                    $candidates[] = (string) $typeNames[$matchedKey];
-                }
-            }
-        } else {
-            if (isset($typesByKey[$requested])) {
-                $resolvedCode = $typesByKey[$requested];
-                $candidates[] = $resolvedCode;
-                $candidates[] = (string) $resolvedCode;
-            }
-
-            $matchedKey = array_search($requested, $typeNames, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typesByKey[$matchedKey])) {
-                    $resolvedCode = $typesByKey[$matchedKey];
-                    $candidates[] = $resolvedCode;
-                    $candidates[] = (string) $resolvedCode;
-                }
-            }
-        }
-
-        return array_values(array_unique(array_filter(
-            $candidates,
-            fn (mixed $value): bool => $value !== null && $value !== ''
-        )));
+        return $this->availableRelations($metricModel, ['team']);
     }
 
     private function orderColumn(string $table): string
@@ -214,18 +161,5 @@ class SportTeamMetricQuery
         }
 
         return 'id';
-    }
-
-    private function hasColumn(string $table, string $column): bool
-    {
-        return Schema::hasColumn($table, $column);
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

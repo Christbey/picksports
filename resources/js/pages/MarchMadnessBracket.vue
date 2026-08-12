@@ -1500,13 +1500,10 @@ const saveBracketMeta = async () => {
 
         const response = await api.cbbBrackets.update<
             ApiResource<SavedBracket>
-        >(
-            currentBracket.value.public_id,
-            {
-                name: bracketNameDraft.value.trim() || null,
-                group_id: resolvedGroupId,
-            },
-        );
+        >(currentBracket.value.public_id, {
+            name: bracketNameDraft.value.trim() || null,
+            group_id: resolvedGroupId,
+        });
 
         const savedBracket = response?.data;
         if (!savedBracket) {
@@ -1631,12 +1628,9 @@ watch(
                 if (activeBracketPublicId.value) {
                     const response = await api.cbbBrackets.update<
                         ApiResource<SavedBracket>
-                    >(
-                        activeBracketPublicId.value,
-                        {
-                            picks: value,
-                        },
-                    );
+                    >(activeBracketPublicId.value, {
+                        picks: value,
+                    });
 
                     if (!response?.data) {
                         saveState.value = 'error';

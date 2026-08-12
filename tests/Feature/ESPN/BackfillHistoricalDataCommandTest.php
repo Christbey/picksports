@@ -1,8 +1,13 @@
 <?php
 
+use App\Jobs\ESPN\NBA\FetchGameDetails;
+use App\Jobs\ESPN\NBA\FetchGamesFromScoreboard;
+use App\Models\NBA\Game;
 use App\Services\ESPN\HistoricalBackfillService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
+
 it('requires sync mode for full backfill', function () {
     $this->artisan('espn:backfill-historical', [
         'sport' => 'nba',
@@ -18,10 +23,12 @@ it('runs full nba backfill through the shared historical service', function () {
     $start = Carbon::create(2024, 10, 1)->startOfDay();
     $end = Carbon::create(2025, 6, 30)->endOfDay();
     $games = new Collection([
-        new class extends \Illuminate\Database\Eloquent\Model {
+        new class extends Model
+        {
             protected $guarded = [];
         },
-        new class extends \Illuminate\Database\Eloquent\Model {
+        new class extends Model
+        {
             protected $guarded = [];
         },
     ]);
@@ -34,9 +41,9 @@ it('runs full nba backfill through the shared historical service', function () {
         ->with('nba')
         ->andReturn([
             'label' => 'NBA',
-            'game_model' => \App\Models\NBA\Game::class,
-            'scoreboard_job' => \App\Jobs\ESPN\NBA\FetchGamesFromScoreboard::class,
-            'detail_job' => \App\Jobs\ESPN\NBA\FetchGameDetails::class,
+            'game_model' => Game::class,
+            'scoreboard_job' => FetchGamesFromScoreboard::class,
+            'detail_job' => FetchGameDetails::class,
             'season_start_month' => 10,
             'season_end_month' => 6,
         ]);
@@ -51,7 +58,7 @@ it('runs full nba backfill through the shared historical service', function () {
 
     $service->shouldReceive('runScoreboardSync')
         ->once()
-        ->with('nba', \Mockery::on(fn ($value) => $value->equalTo($start)), \Mockery::on(fn ($value) => $value->equalTo($end)), true, \Mockery::type('callable'))
+        ->with('nba', Mockery::on(fn ($value) => $value->equalTo($start)), Mockery::on(fn ($value) => $value->equalTo($end)), true, Mockery::type('callable'))
         ->andReturnUsing(function (string $sport, Carbon $from, Carbon $to, bool $sync, callable $progress): int {
             $progress($from, 1);
             $progress($to, 2);
@@ -61,12 +68,12 @@ it('runs full nba backfill through the shared historical service', function () {
 
     $service->shouldReceive('pendingDetailGames')
         ->once()
-        ->with('nba', \Mockery::on(fn ($value) => $value->equalTo($start)), \Mockery::on(fn ($value) => $value->equalTo($end)), true, 0)
+        ->with('nba', Mockery::on(fn ($value) => $value->equalTo($start)), Mockery::on(fn ($value) => $value->equalTo($end)), true, 0)
         ->andReturn($games);
 
     $service->shouldReceive('runDetailSyncForGames')
         ->once()
-        ->with('nba', $games, true, \Mockery::type('callable'))
+        ->with('nba', $games, true, Mockery::type('callable'))
         ->andReturnUsing(function (string $sport, Collection $games, bool $sync, callable $progress): int {
             foreach ($games as $index => $game) {
                 $progress($game, $index + 1);

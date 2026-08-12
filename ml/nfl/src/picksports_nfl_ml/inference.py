@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier, XGBRegressor
 
+from picksports_nfl_ml.artifacts import verify_artifact_inventory
 from picksports_nfl_ml.blending import weighted_probabilities
 from picksports_nfl_ml.calibration import ProbabilityCalibrator
 from picksports_nfl_ml.hashing import sha256_json
@@ -35,7 +36,12 @@ class InferenceBundle:
         root = Path(run_dir).expanduser().resolve()
         with (root / "manifest.json").open("r", encoding="utf-8") as handle:
             manifest = json.load(handle)
+        verify_artifact_inventory(root, manifest)
         schema = FeatureSchema.load(root / "feature_schema.yaml")
+        if schema.hash != manifest.get("feature_schema_hash"):
+            raise ValueError(
+                "Feature schema hash does not match the registered run manifest."
+            )
         preprocessor = joblib.load(root / "preprocessor.joblib")
         logistic = joblib.load(root / "models" / "logistic_classifier.joblib")
 

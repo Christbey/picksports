@@ -3,6 +3,7 @@
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamStat;
 use App\Services\NFL\HistoricalTeamMetricCalculator;
 
@@ -136,7 +137,7 @@ it('uses prior-season metrics as preseason priors for future seasons', function 
         'abbreviation' => 'BUF',
     ]);
 
-    \App\Models\NFL\TeamMetric::query()->create([
+    TeamMetric::query()->create([
         'team_id' => $chiefs->id,
         'season' => 2025,
         'wins' => 12,
@@ -146,7 +147,7 @@ it('uses prior-season metrics as preseason priors for future seasons', function 
         'future_strength_of_schedule' => 1498.0,
         'calculation_date' => '2026-01-10',
     ]);
-    \App\Models\NFL\TeamMetric::query()->create([
+    TeamMetric::query()->create([
         'team_id' => $bills->id,
         'season' => 2025,
         'wins' => 10,
@@ -203,7 +204,7 @@ it('blends multiple prior seasons into preseason priors with decay', function ()
         'abbreviation' => 'BUF',
     ]);
 
-    \App\Models\NFL\TeamMetric::query()->create([
+    TeamMetric::query()->create([
         'team_id' => $chiefs->id,
         'season' => 2024,
         'wins' => 13,
@@ -213,7 +214,7 @@ it('blends multiple prior seasons into preseason priors with decay', function ()
         'future_strength_of_schedule' => 1495.0,
         'calculation_date' => '2025-01-12',
     ]);
-    \App\Models\NFL\TeamMetric::query()->create([
+    TeamMetric::query()->create([
         'team_id' => $chiefs->id,
         'season' => 2023,
         'wins' => 11,

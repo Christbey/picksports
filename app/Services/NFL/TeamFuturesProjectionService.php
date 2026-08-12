@@ -153,8 +153,7 @@ class TeamFuturesProjectionService
         int $season,
         CarbonInterface|string|null $asOfDate = null,
         bool $requireHistoricalMetrics = false
-    ): array
-    {
+    ): array {
         if ($asOfDate !== null) {
             $snapshotRows = TeamMetricSnapshot::query()
                 ->where('season', $season)

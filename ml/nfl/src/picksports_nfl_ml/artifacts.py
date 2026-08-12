@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,28 @@ from picksports_nfl_ml.calibration import ProbabilityCalibrator
 from picksports_nfl_ml.hashing import sha256_file
 from picksports_nfl_ml.models import ModelSet
 from picksports_nfl_ml.schema import FeatureSchema
+
+
+REQUIRED_ARTIFACTS = {
+    "calibrators/logistic_regression_isotonic.joblib",
+    "calibrators/logistic_regression_platt.joblib",
+    "calibrators/xgboost_isotonic.joblib",
+    "calibrators/xgboost_platt.joblib",
+    "evaluation.json",
+    "explanations/global_shap_importance.json",
+    "explanations/shap_values.parquet",
+    "explanations/xgboost_feature_importance.json",
+    "feature_schema.yaml",
+    "models/logistic_classifier.joblib",
+    "models/xgboost_classifier.ubj",
+    "models/xgboost_home_margin.ubj",
+    "models/xgboost_total_points.ubj",
+    "prediction_example.json",
+    "preprocessor.joblib",
+    "tuning/optuna_provenance.json",
+}
+
+SAFE_RUN_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def save_run_artifacts(
@@ -27,7 +50,13 @@ def save_run_artifacts(
     explanation_values: pd.DataFrame,
     native_feature_importance: dict[str, Any],
 ) -> Path:
-    run_dir = Path(output_root).expanduser().resolve() / manifest["model_run_id"]
+    root = Path(output_root).expanduser().resolve()
+    run_id = str(manifest["model_run_id"])
+    if SAFE_RUN_ID.fullmatch(run_id) is None:
+        raise ValueError("Model run ID must be a safe UUID or slug.")
+    run_dir = (root / run_id).resolve()
+    if run_dir.parent != root:
+        raise ValueError("Model run directory must remain inside the output root.")
     if run_dir.exists():
         raise FileExistsError(f"Artifact run directory already exists: {run_dir}")
     (run_dir / "models").mkdir(parents=True)
@@ -113,6 +142,31 @@ def save_run_artifacts(
     }
     _write_json(run_dir / "manifest.json", manifest)
     return run_dir
+
+
+def verify_artifact_inventory(run_dir: Path, manifest: dict[str, Any]) -> None:
+    inventory = manifest.get("artifacts")
+    if not isinstance(inventory, dict):
+        raise ValueError("Artifact inventory is missing or invalid.")
+    missing = sorted(REQUIRED_ARTIFACTS.difference(inventory))
+    if missing:
+        raise ValueError("Artifact inventory is missing: " + ", ".join(missing))
+    actual = {
+        str(path.relative_to(run_dir))
+        for path in run_dir.rglob("*")
+        if path.is_file() and path.name != "manifest.json"
+    }
+    declared = set(inventory)
+    if actual != declared:
+        raise ValueError("Run directory does not match its artifact inventory.")
+    for relative, descriptor in inventory.items():
+        path = run_dir / relative
+        if not path.is_file():
+            raise FileNotFoundError(f"Artifact is missing: {relative}")
+        if path.stat().st_size != int(descriptor["bytes"]):
+            raise ValueError(f"Artifact size mismatch: {relative}")
+        if sha256_file(path) != descriptor["sha256"]:
+            raise ValueError(f"Artifact SHA-256 mismatch: {relative}")
 
 
 def _write_json(path: Path, value: Any) -> None:

@@ -2,8 +2,8 @@
 
 namespace App\Models\Sports;
 
-use App\Models\NFL\Player;
 use App\Models\NBA\Team;
+use App\Models\NFL\Player;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 

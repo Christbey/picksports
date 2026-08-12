@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AddSecurityHeaders;
+use App\Http\Middleware\AddServerTiming;
 use App\Http\Middleware\AddV1ApiDeprecationHeaders;
 use App\Http\Middleware\EnsureUserCompletedOnboarding;
 use App\Http\Middleware\EnsureUserHasPermission;
@@ -32,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->web(append: [
+            AddServerTiming::class,
             HandleAppearance::class,
             HandleInertiaRequests::class,
             AddSecurityHeaders::class,
@@ -39,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
 
         $middleware->api(append: [
+            AddServerTiming::class,
             UpdateUserLastActive::class,
         ]);
 

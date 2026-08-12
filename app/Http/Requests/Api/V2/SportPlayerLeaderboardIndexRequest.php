@@ -21,6 +21,7 @@ class SportPlayerLeaderboardIndexRequest extends FormRequest
             'season_type' => ['sometimes', 'string', 'max:50'],
             'stat_type' => ['sometimes', 'string', 'max:50'],
             'min_games' => ['sometimes', 'integer', 'min:1', 'max:200'],
+            'focus_player_id' => ['sometimes', 'integer', 'min:1'],
         ];
     }
 
@@ -34,9 +35,10 @@ class SportPlayerLeaderboardIndexRequest extends FormRequest
             'season_type',
             'stat_type',
             'min_games',
+            'focus_player_id',
         ]);
 
-        foreach (['season', 'min_games'] as $key) {
+        foreach (['season', 'min_games', 'focus_player_id'] as $key) {
             if (array_key_exists($key, $filters)) {
                 $filters[$key] = (int) $filters[$key];
             }

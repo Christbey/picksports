@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +45,7 @@ const rows = ref<InjuryRow[]>([]);
 const search = ref('');
 const severityFilter = ref<'all' | 'out' | 'questionable' | 'other'>('all');
 const api = useApiV2Client();
+const requestController = new AbortController();
 
 const filtered = computed(() => {
     const query = search.value.trim().toLowerCase();
@@ -163,13 +164,17 @@ async function fetchInjuries() {
     try {
         const payload = await api.injuries.index<InjuryRow>(
             props.config.sport as ApiV2SportSlug,
-            { query: { active: 1 } },
+            {
+                query: { active: 1 },
+                init: { signal: requestController.signal },
+            },
         );
         if (!payload) {
             throw new Error('Failed to load injuries');
         }
         rows.value = Array.isArray(payload?.data) ? payload.data : [];
     } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
         error.value =
             e instanceof Error ? e.message : 'Failed to load injuries';
     } finally {
@@ -178,6 +183,7 @@ async function fetchInjuries() {
 }
 
 onMounted(fetchInjuries);
+onBeforeUnmount(() => requestController.abort());
 </script>
 
 <template>

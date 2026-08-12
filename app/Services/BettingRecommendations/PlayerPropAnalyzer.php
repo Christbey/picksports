@@ -350,15 +350,18 @@ class PlayerPropAnalyzer
             })
             ->when($marketFilter !== null && $marketFilter !== '', fn ($query) => $query->where('market', $marketFilter));
 
-        $candidateQuery = fn (): Builder => (clone $baseQuery)
-            ->whereNotNull('recommended_side')
-            ->where('confidence_score', '>=', 60);
+        $counts = $baseQuery
+            ->selectRaw('COUNT(*) as raw_prop_count')
+            ->selectRaw('SUM(CASE WHEN recommended_side IS NOT NULL THEN 1 ELSE 0 END) as analyzed_prop_count')
+            ->selectRaw('SUM(CASE WHEN recommended_side IS NOT NULL AND confidence_score >= 60 THEN 1 ELSE 0 END) as recommendation_candidate_count')
+            ->selectRaw('SUM(CASE WHEN recommended_side IS NOT NULL AND confidence_score >= 60 AND player_id IS NULL THEN 1 ELSE 0 END) as missing_player_link_count')
+            ->first();
 
         return [
-            'raw_prop_count' => (clone $baseQuery)->count(),
-            'analyzed_prop_count' => (clone $baseQuery)->whereNotNull('recommended_side')->count(),
-            'recommendation_candidate_count' => $candidateQuery()->count(),
-            'missing_player_link_count' => $candidateQuery()->whereNull('player_id')->count(),
+            'raw_prop_count' => (int) ($counts?->raw_prop_count ?? 0),
+            'analyzed_prop_count' => (int) ($counts?->analyzed_prop_count ?? 0),
+            'recommendation_candidate_count' => (int) ($counts?->recommendation_candidate_count ?? 0),
+            'missing_player_link_count' => (int) ($counts?->missing_player_link_count ?? 0),
         ];
     }
 

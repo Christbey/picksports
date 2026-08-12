@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
 use App\Http\Controllers\Api\V2\SportFuturesOddController;
 use App\Http\Controllers\Api\V2\SportGameController;
+use App\Http\Controllers\Api\V2\SportGamePageController;
+use App\Http\Controllers\Api\V2\SportGameTrendController;
 use App\Http\Controllers\Api\V2\SportInjuryController;
 use App\Http\Controllers\Api\V2\SportPlayerController;
 use App\Http\Controllers\Api\V2\SportPlayerLeaderboardController;
@@ -39,7 +41,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
                 ->name('login');
             Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'options'])
                 ->middleware('throttle:20,1')
-                ->name('passkeys.options');
+                ->name('passkeys.createOptions');
             Route::post('/passkeys/verify', [PasskeyTokenAuthController::class, 'verify'])
                 ->middleware('throttle:10,1')
                 ->name('passkeys.verify');
@@ -110,6 +112,8 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->name('sports.')
         ->group(function (): void {
             Route::get('/games', [SportGameController::class, 'index'])->name('games.index');
+            Route::get('/games/{game}/page', SportGamePageController::class)->name('games.page.show');
+            Route::get('/games/{game}/trends', SportGameTrendController::class)->name('games.trends.show');
             Route::get('/games/{game}', [SportGameController::class, 'show'])->name('games.show');
             Route::get('/games/{game}/depth-charts', [SportDepthChartController::class, 'gameShow'])->name('games.depth-charts.show');
             Route::get('/games/{game}/prediction', [SportPredictionController::class, 'gamePrediction'])->name('games.prediction.show');

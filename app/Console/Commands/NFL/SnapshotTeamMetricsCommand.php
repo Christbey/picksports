@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Services\NFL\TeamMetricSnapshotService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Carbon;
 
 class SnapshotTeamMetricsCommand extends Command
 {
@@ -56,13 +57,13 @@ class SnapshotTeamMetricsCommand extends Command
         $dates = $this->option('date');
         if (is_string($dates) && trim($dates) !== '') {
             return [
-                \Illuminate\Support\Carbon::parse($dates)->utc()->format('Y-m-d\TH:i:s\Z'),
+                Carbon::parse($dates)->utc()->format('Y-m-d\TH:i:s\Z'),
             ];
         }
 
         if (is_array($dates) && $dates !== []) {
             return array_values(array_unique(array_map(
-                static fn ($date) => \Illuminate\Support\Carbon::parse((string) $date)->utc()->format('Y-m-d\TH:i:s\Z'),
+                static fn ($date) => Carbon::parse((string) $date)->utc()->format('Y-m-d\TH:i:s\Z'),
                 $dates
             )));
         }
@@ -78,8 +79,8 @@ class SnapshotTeamMetricsCommand extends Command
         }
 
         $hour = max(0, min(23, (int) $this->option('hour')));
-        $cursor = \Illuminate\Support\Carbon::parse($fromDate, 'UTC')->startOfDay()->setHour($hour);
-        $end = \Illuminate\Support\Carbon::parse($toDate, 'UTC')->startOfDay()->setHour($hour);
+        $cursor = Carbon::parse($fromDate, 'UTC')->startOfDay()->setHour($hour);
+        $end = Carbon::parse($toDate, 'UTC')->startOfDay()->setHour($hour);
         $resolved = [];
 
         while ($cursor->lte($end)) {

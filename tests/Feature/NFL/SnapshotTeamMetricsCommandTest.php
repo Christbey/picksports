@@ -1,9 +1,10 @@
 <?php
 
+use App\Models\NFL\EloRating;
+use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamMetricSnapshot;
-use App\Models\NFL\EloRating;
 use App\Models\NFL\TeamStat;
 use Illuminate\Support\Facades\Artisan;
 
@@ -83,7 +84,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         ]);
     }
 
-    $firstGame = \App\Models\NFL\Game::factory()->create([
+    $firstGame = Game::factory()->create([
         'season' => 2025,
         'season_type' => config('nfl.season.types.regular'),
         'game_date' => '2025-09-10 12:00:00',
@@ -144,7 +145,7 @@ it('can backfill nfl team metric snapshots from game records across dates', func
         'elo_change' => -10.0,
     ]);
 
-    \App\Models\NFL\Game::factory()->create([
+    Game::factory()->create([
         'season' => 2025,
         'season_type' => config('nfl.season.types.regular'),
         'game_date' => '2025-09-20 12:00:00',

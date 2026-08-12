@@ -5,7 +5,7 @@ import AppContent from '@/components/AppContent.vue';
 import AppShell from '@/components/AppShell.vue';
 import AppSidebar from '@/components/AppSidebar.vue';
 import AppSidebarHeader from '@/components/AppSidebarHeader.vue';
-import FeedbackSubmissionModal from '@/components/FeedbackSubmissionModal.vue';
+import LazyFeedbackSubmissionModal from '@/components/LazyFeedbackSubmissionModal.vue';
 import type { AppPageProps, BreadcrumbItem } from '@/types';
 
 type Props = {
@@ -20,6 +20,9 @@ const page = usePage<AppPageProps>();
 const impersonation = computed(() => page.props.impersonation);
 const currentUser = computed(() => page.props.auth?.user ?? null);
 let heartbeatTimer: number | null = null;
+let initialHeartbeatTimer: number | null = null;
+let heartbeatInFlight = false;
+let lastHeartbeatAt = 0;
 
 const csrfToken = () =>
     document
@@ -27,10 +30,18 @@ const csrfToken = () =>
         ?.getAttribute('content') ?? '';
 
 const sendHeartbeat = async () => {
-    if (!currentUser.value || document.visibilityState !== 'visible') {
+    const now = Date.now();
+    if (
+        !currentUser.value ||
+        document.visibilityState !== 'visible' ||
+        heartbeatInFlight ||
+        now - lastHeartbeatAt < 30_000
+    ) {
         return;
     }
 
+    heartbeatInFlight = true;
+    lastHeartbeatAt = now;
     try {
         await fetch('/app/heartbeat', {
             method: 'POST',
@@ -46,6 +57,8 @@ const sendHeartbeat = async () => {
         });
     } catch {
         // Ignore transient heartbeat failures.
+    } finally {
+        heartbeatInFlight = false;
     }
 };
 
@@ -88,7 +101,10 @@ onMounted(() => {
         return;
     }
 
-    void sendHeartbeat();
+    initialHeartbeatTimer = window.setTimeout(() => {
+        initialHeartbeatTimer = null;
+        void sendHeartbeat();
+    }, 1_500);
     startHeartbeat();
 
     window.addEventListener('focus', sendHeartbeat);
@@ -96,6 +112,10 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+    if (initialHeartbeatTimer !== null) {
+        window.clearTimeout(initialHeartbeatTimer);
+        initialHeartbeatTimer = null;
+    }
     stopHeartbeat();
     window.removeEventListener('focus', sendHeartbeat);
     document.removeEventListener('visibilitychange', handleVisibilityChange);
@@ -128,6 +148,6 @@ onBeforeUnmount(() => {
             </div>
             <slot />
         </AppContent>
-        <FeedbackSubmissionModal />
+        <LazyFeedbackSubmissionModal />
     </AppShell>
 </template>

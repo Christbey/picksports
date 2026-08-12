@@ -2,12 +2,9 @@
 
 namespace App\Http\Resources\Api\V2;
 
-use App\Actions\WNBA\CalculateBettingValue as WnbaCalculateBettingValue;
-use App\Models\MLB\Prediction as MlbPrediction;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
-use App\Services\MLB\MlbMarketAwareProjectionService;
-use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\Api\V2\SportPredictionPresentationData;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
@@ -16,17 +13,15 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class SportPredictionResource extends JsonResource
 {
-    private bool $mlbRecommendationResolved = false;
-
-    /** @var array<string,mixed>|null */
-    private ?array $mlbRecommendation = null;
+    private readonly SportPredictionPresentationData $presentation;
 
     public function __construct(
         mixed $resource,
         private readonly SportContext $context,
-        private readonly ?array $mlbPeriodInsights = null,
+        ?SportPredictionPresentationData $presentation = null,
     ) {
         parent::__construct($resource);
+        $this->presentation = $presentation ?? new SportPredictionPresentationData;
     }
 
     /**
@@ -57,8 +52,7 @@ class SportPredictionResource extends JsonResource
             'market_aware_projection' => $this->marketAwareProjection(),
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
-            'prediction_analysis' => $this->predictionAnalysis(),
-            'period_insights' => $this->context->slug === 'mlb' ? ($this->mlbPeriodInsights ?? []) : [],
+            'period_insights' => $this->context->slug === 'mlb' ? $this->presentation->periodInsights : [],
             'cfb_signal_context' => $this->cfbSignalContext(),
             'home_elo' => $this->floatAttribute('home_elo'),
             'away_elo' => $this->floatAttribute('away_elo'),
@@ -316,7 +310,7 @@ class SportPredictionResource extends JsonResource
     }
 
     /**
-     * @return array{label:string,tier:string,raw_level:string,reason_codes:array<int,string>,sample_games:int|null}
+     * @return array{label:string,tier:string,model_level:string,reason_codes:array<int,string>,sample_games:int|null}
      */
     private function confidenceContext(): array
     {
@@ -330,7 +324,7 @@ class SportPredictionResource extends JsonResource
             return [
                 'label' => 'Unavailable',
                 'tier' => 'unavailable',
-                'raw_level' => $rawLevel,
+                'model_level' => $rawLevel,
                 'reason_codes' => ['missing_confidence_score'],
                 'sample_games' => $sampleGames,
             ];
@@ -370,7 +364,7 @@ class SportPredictionResource extends JsonResource
             return [
                 'label' => 'High',
                 'tier' => 'high',
-                'raw_level' => $rawLevel,
+                'model_level' => $rawLevel,
                 'reason_codes' => $reasonCodes,
                 'sample_games' => $sampleGames,
             ];
@@ -380,7 +374,7 @@ class SportPredictionResource extends JsonResource
             return [
                 'label' => 'Watch',
                 'tier' => 'watch',
-                'raw_level' => $rawLevel,
+                'model_level' => $rawLevel,
                 'reason_codes' => $reasonCodes,
                 'sample_games' => $sampleGames,
             ];
@@ -390,7 +384,7 @@ class SportPredictionResource extends JsonResource
             return [
                 'label' => 'Medium',
                 'tier' => 'medium',
-                'raw_level' => $rawLevel,
+                'model_level' => $rawLevel,
                 'reason_codes' => $reasonCodes,
                 'sample_games' => $sampleGames,
             ];
@@ -399,7 +393,7 @@ class SportPredictionResource extends JsonResource
         return [
             'label' => 'Low',
             'tier' => 'low',
-            'raw_level' => $rawLevel,
+            'model_level' => $rawLevel,
             'reason_codes' => $reasonCodes,
             'sample_games' => $sampleGames,
         ];
@@ -418,38 +412,6 @@ class SportPredictionResource extends JsonResource
         $layer = data_get($metadata, 'analysis_layer.pro_signal_layer');
 
         return is_array($layer) ? $layer : null;
-    }
-
-    /**
-     * @return array<string,mixed>|null
-     */
-    private function predictionAnalysis(): ?array
-    {
-        if ($this->context->slug !== 'nfl') {
-            return null;
-        }
-
-        $metadata = is_array($this->attribute('model_metadata')) ? $this->attribute('model_metadata') : [];
-        $analysis = data_get($metadata, 'analysis_layer');
-
-        if (! is_array($analysis)) {
-            return null;
-        }
-
-        return [
-            'enabled' => (bool) ($analysis['enabled'] ?? true),
-            'applied' => (bool) ($analysis['applied'] ?? false),
-            'trust_score' => isset($analysis['trust_score']) ? (float) $analysis['trust_score'] : null,
-            'bet_classification' => $analysis['bet_classification'] ?? null,
-            'model_signal_classification' => $analysis['model_signal_classification'] ?? null,
-            'risk_flags' => array_values((array) ($analysis['risk_flags'] ?? [])),
-            'reason_codes' => array_values((array) ($analysis['reason_codes'] ?? [])),
-            'validated_signals' => array_values((array) ($analysis['validated_signals'] ?? [])),
-            'best_validated_signal' => $analysis['best_validated_signal'] ?? null,
-            'bet_rule_evaluation' => $analysis['bet_rule_evaluation'] ?? null,
-            'calculated_edge' => $analysis['calculated_edge'] ?? null,
-            'analysis_confidence' => $analysis['analysis_confidence'] ?? null,
-        ];
     }
 
     /**
@@ -719,16 +681,43 @@ class SportPredictionResource extends JsonResource
      */
     private function recommendation(): ?array
     {
-        if ($this->context->slug !== 'mlb' || ! $this->resource instanceof MlbPrediction) {
+        if ($this->context->slug !== 'mlb' || $this->presentation->recommendation === null) {
             return null;
         }
 
-        if (! $this->mlbRecommendationResolved) {
-            $this->mlbRecommendation = app(MlbPredictionRecommendationService::class)->forPrediction($this->resource);
-            $this->mlbRecommendationResolved = true;
+        return $this->sanitizeMlbRecommendationPayload($this->presentation->recommendation);
+    }
+
+    /**
+     * @param  array<string,mixed>  $payload
+     * @return array<string,mixed>
+     */
+    private function sanitizeMlbRecommendationPayload(array $payload): array
+    {
+        $sanitized = [];
+
+        foreach ($payload as $key => $value) {
+            $publicKey = match ($key) {
+                'raw_implied_probability' => 'market_implied_probability',
+                'raw_edge' => 'market_edge',
+                default => is_string($key) ? $key : (string) $key,
+            };
+
+            if ($this->isRawPayloadKey($publicKey)) {
+                continue;
+            }
+
+            $sanitized[$publicKey] = is_array($value)
+                ? $this->sanitizeMlbRecommendationPayload($value)
+                : $value;
         }
 
-        return $this->mlbRecommendation;
+        return $sanitized;
+    }
+
+    private function isRawPayloadKey(string $key): bool
+    {
+        return $key === 'raw' || str_starts_with($key, 'raw_') || str_contains($key, '_raw');
     }
 
     /**
@@ -761,51 +750,7 @@ class SportPredictionResource extends JsonResource
      */
     private function valueSignal(): ?array
     {
-        if ($this->context->slug !== 'wnba') {
-            return null;
-        }
-
-        $game = $this->relation('game');
-        if (! $game) {
-            return null;
-        }
-
-        $recommendations = app(WnbaCalculateBettingValue::class)->execute($game);
-        if (! is_array($recommendations) || $recommendations === []) {
-            return [
-                'has_playable_value' => false,
-                'play_count' => 0,
-                'best' => null,
-            ];
-        }
-
-        $playable = collect($recommendations)
-            ->filter(fn (array $recommendation): bool => ($recommendation['is_playable'] ?? false) === true)
-            ->sortByDesc(fn (array $recommendation): float => (float) ($recommendation['bet_units'] ?? 0))
-            ->values();
-
-        $best = $playable->first() ?? collect($recommendations)
-            ->sortByDesc(fn (array $recommendation): float => (float) ($recommendation['confidence'] ?? 0))
-            ->first();
-
-        return [
-            'has_playable_value' => $playable->isNotEmpty(),
-            'play_count' => $playable->count(),
-            'best' => is_array($best) ? [
-                'type' => $best['type'] ?? null,
-                'label' => $best['recommendation'] ?? null,
-                'edge' => isset($best['edge']) ? (float) $best['edge'] : null,
-                'odds' => $best['odds'] ?? null,
-                'market_line' => isset($best['market_line']) ? (float) $best['market_line'] : null,
-                'model_line' => isset($best['model_line']) ? (float) $best['model_line'] : null,
-                'model_probability' => isset($best['model_probability']) ? (float) $best['model_probability'] : null,
-                'implied_probability' => isset($best['implied_probability']) ? (float) $best['implied_probability'] : null,
-                'grade' => $best['grade'] ?? null,
-                'risk_level' => $best['risk_level'] ?? null,
-                'units' => isset($best['bet_units']) ? (float) $best['bet_units'] : null,
-                'reason' => $best['reasoning'] ?? null,
-            ] : null,
-        ];
+        return $this->context->slug === 'wnba' ? $this->presentation->valueSignal : null;
     }
 
     /**
@@ -813,11 +758,7 @@ class SportPredictionResource extends JsonResource
      */
     private function marketAwareProjection(): ?array
     {
-        if ($this->context->slug !== 'mlb' || ! $this->resource instanceof MlbPrediction) {
-            return null;
-        }
-
-        return app(MlbMarketAwareProjectionService::class)->forPrediction($this->resource);
+        return $this->context->slug === 'mlb' ? $this->presentation->marketAwareProjection : null;
     }
 
     private function recommendationLabel(string $type): string
@@ -930,16 +871,7 @@ class SportPredictionResource extends JsonResource
 
     private function latestFeatureSnapshot(): ?PredictionFeatureSnapshot
     {
-        if (! $this->resource instanceof Model || $this->attribute('id') === null) {
-            return null;
-        }
-
-        return PredictionFeatureSnapshot::query()
-            ->where('prediction_table', $this->resource->getTable())
-            ->where('prediction_id', (int) $this->attribute('id'))
-            ->latest('generated_at')
-            ->latest('id')
-            ->first();
+        return $this->presentation->featureSnapshot;
     }
 
     private function liveAttribute(string $key): mixed

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UrlMethodPair } from '@inertiajs/core';
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useApiV2Client } from '@/composables/useApiV2Client';
@@ -99,9 +99,14 @@ const playerData = ref<Player | null>(null);
 const playerProps = ref<PlayerProp[]>([]);
 const gameLogs = ref<PlayerStat[]>([]);
 const leaderboardRows = ref<Record<string, unknown>[]>([]);
+const leaderboardRanks = ref<Record<string, { rank: number; total: number }>>(
+    {},
+);
 const loading = ref(true);
 const error = ref<string | null>(null);
 const api = useApiV2Client();
+let supplementalIdleHandle: number | null = null;
+let supplementalTimeoutHandle: number | null = null;
 
 const breadcrumbs = computed<BreadcrumbItem[]>(() => {
     const items: BreadcrumbItem[] = [
@@ -323,6 +328,9 @@ const summaryCards = computed(
 const rankForMetric = (
     metricKey: string,
 ): { rank: number; total: number } | null => {
+    const focusedRank = leaderboardRanks.value[metricKey];
+    if (focusedRank) return focusedRank;
+
     if (leaderboardRows.value.length === 0 || !playerData.value) return null;
 
     const eligibleRows = leaderboardRows.value
@@ -422,15 +430,71 @@ const getOpponent = (
     };
 };
 
+const loadSupplementalData = async () => {
+    const requests: Promise<unknown>[] = [];
+
+    if (props.config.showPlayerProps) {
+        requests.push(
+            api.players
+                .playerProps(props.config.sport, props.playerId, {
+                    query: { per_page: 12 },
+                })
+                .then((response) => {
+                    playerProps.value = (response?.data ?? []).map(
+                        normalizePlayerProp,
+                    );
+                }),
+        );
+    }
+
+    if (props.config.leaderboardQuery !== null) {
+        requests.push(
+            api.leaderboards
+                .players(props.config.sport, {
+                    query: {
+                        ...(props.config.leaderboardQuery ?? {}),
+                        focus_player_id: props.playerId,
+                    },
+                })
+                .then((response) => {
+                    leaderboardRows.value = response?.data ?? [];
+                    const ranks = response?.meta?.focus_ranks;
+                    leaderboardRanks.value =
+                        ranks && typeof ranks === 'object'
+                            ? (ranks as Record<
+                                  string,
+                                  { rank: number; total: number }
+                              >)
+                            : {};
+                }),
+        );
+    }
+
+    await Promise.allSettled(requests);
+};
+
+const scheduleSupplementalData = () => {
+    if ('requestIdleCallback' in window) {
+        supplementalIdleHandle = window.requestIdleCallback(
+            () => void loadSupplementalData(),
+            { timeout: 1_500 },
+        );
+        return;
+    }
+
+    supplementalTimeoutHandle = globalThis.setTimeout(
+        () => void loadSupplementalData(),
+        500,
+    );
+};
+
 onMounted(async () => {
     try {
-        const requests: Promise<void>[] = [
+        await Promise.all([
             api.players
                 .show(props.config.sport, props.playerId)
                 .then((response) => {
-                    playerData.value = normalizePlayer(
-                        response?.data ?? null,
-                    );
+                    playerData.value = normalizePlayer(response?.data ?? null);
                 }),
             api.stats
                 .players(props.config.sport, {
@@ -445,38 +509,22 @@ onMounted(async () => {
                         normalizeStatRow,
                     );
                 }),
-        ];
-
-        if (props.config.showPlayerProps) {
-            requests.push(
-                api.players
-                    .playerProps(props.config.sport, props.playerId)
-                    .then((response) => {
-                        playerProps.value = (response?.data ?? []).map(
-                            normalizePlayerProp,
-                        );
-                    }),
-            );
-        }
-
-        if (props.config.leaderboardQuery !== null) {
-            requests.push(
-                api.leaderboards
-                    .players(props.config.sport, {
-                        query: props.config.leaderboardQuery ?? {},
-                    })
-                    .then((response) => {
-                        leaderboardRows.value = response?.data ?? [];
-                    }),
-            );
-        }
-
-        await Promise.all(requests);
+        ]);
     } catch (e) {
         error.value =
             e instanceof Error ? e.message : 'Failed to load player data';
     } finally {
         loading.value = false;
+        scheduleSupplementalData();
+    }
+});
+
+onBeforeUnmount(() => {
+    if (supplementalIdleHandle !== null && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(supplementalIdleHandle);
+    }
+    if (supplementalTimeoutHandle !== null) {
+        globalThis.clearTimeout(supplementalTimeoutHandle);
     }
 });
 </script>

@@ -2,6 +2,7 @@
 
 namespace App\Services\NFL;
 
+use App\Services\Sports\FuturesOddsLookupService;
 use Carbon\Carbon;
 
 class TeamFuturesBacktestService
@@ -66,7 +67,7 @@ class TeamFuturesBacktestService
             return [[], [], []];
         }
 
-        $dates = app(\App\Services\Sports\FuturesOddsLookupService::class)->snapshotDatesForSeasonMarket(
+        $dates = app(FuturesOddsLookupService::class)->snapshotDatesForSeasonMarket(
             'nfl',
             $season,
             (array) ($marketConfig['odds_market_keys'] ?? [])

@@ -75,6 +75,18 @@ Laravel also prepends the active release's package source directory to
 `PYTHONPATH` during inference, so a stale site-packages copy cannot silently
 serve older code.
 
+Use the repository post-deployment command as the final Forge deployment step:
+
+```bash
+cd /home/forge/picksports.app/current
+PHP_BINARY=php8.4 bash scripts/post-deploy.sh
+```
+
+It migrates the database, verifies both release-matched Python packages, builds
+Laravel's config/event/route/view caches, and restarts queue workers. Do not run
+`optimize:clear` after this step unless the release is being repaired; doing so
+leaves production requests on the uncached framework bootstrap path.
+
 If Ubuntu does not provide `ensurepip` and the deploy user cannot install
 `python3.12-venv`, create the same user-owned environment without sudo:
 

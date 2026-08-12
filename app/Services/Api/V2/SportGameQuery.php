@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -11,6 +12,8 @@ use Illuminate\Support\Carbon;
 
 class SportGameQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 500;
@@ -22,17 +25,19 @@ class SportGameQuery
         SportContext $context,
         array $filters = [],
         ?Authenticatable $user = null,
+        string $relationProfile = 'summary',
     ): LengthAwarePaginator {
-        return $this->query($context, $filters, $user)
-            ->paginate($this->perPage($filters));
+        return $this->query($context, $filters, $user, $relationProfile)
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     public function find(
         SportContext $context,
         int|string $game,
         ?Authenticatable $user = null,
+        string $relationProfile = 'detail',
     ): Model {
-        return $this->query($context, [], $user)->findOrFail($game);
+        return $this->query($context, [], $user, $relationProfile)->findOrFail($game);
     }
 
     /**
@@ -43,11 +48,12 @@ class SportGameQuery
         SportContext $context,
         array $filters = [],
         ?Authenticatable $user = null,
+        string $relationProfile = 'summary',
     ): Builder {
         $gameModel = $this->gameModel($context);
 
         return $gameModel::query()
-            ->with($this->relationsFor($gameModel))
+            ->with($this->relationsFor($gameModel, $relationProfile))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
             ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
@@ -117,23 +123,27 @@ class SportGameQuery
      */
     private function gameModel(SportContext $context): string
     {
-        $gameModel = $context->models['game'] ?? null;
-
-        if (! is_string($gameModel) || ! is_subclass_of($gameModel, Model::class)) {
-            abort(404, "Games are not available for {$context->slug}.");
-        }
-
-        return $gameModel;
+        return $this->requireModel($context, 'game', 'Games');
     }
 
     /**
      * @param  class-string<Model>  $gameModel
      * @return array<int, string>
      */
-    private function relationsFor(string $gameModel): array
+    private function relationsFor(string $gameModel, string $profile): array
     {
-        return array_values(array_filter(
-            [
+        $relations = match ($profile) {
+            'identity' => [],
+            'recent' => ['homeTeam', 'awayTeam'],
+            'summary' => ['homeTeam', 'awayTeam', 'prediction'],
+            'page' => [
+                'homeTeam',
+                'awayTeam',
+                'prediction',
+                'homeStartingPitcherForecast',
+                'awayStartingPitcherForecast',
+            ],
+            default => [
                 'homeTeam',
                 'awayTeam',
                 'prediction',
@@ -148,15 +158,8 @@ class SportGameQuery
                 'awayStartingPitcherForecast.predictedPitcher',
                 'awayStartingPitcherForecast.actualPitcher',
             ],
-            fn (string $relation): bool => method_exists($gameModel, explode('.', $relation, 2)[0]),
-        ));
-    }
+        };
 
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
+        return $this->availableRelations($gameModel, $relations);
     }
 }

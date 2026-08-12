@@ -62,4 +62,7 @@ it('returns only completed team games before the requested game start', function
         $firstDoubleheaderGame->id,
         $older->id,
     ]);
+
+    preg_match('/desc="(\d+) queries"/', (string) $response->headers->get('Server-Timing'), $matches);
+    expect((int) ($matches[1] ?? PHP_INT_MAX))->toBeLessThanOrEqual(12);
 });

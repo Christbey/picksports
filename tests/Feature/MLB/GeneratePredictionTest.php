@@ -1950,7 +1950,10 @@ it('uses raw total injury adjustments for mlb when persisted spread context exis
 
     $baselinePrediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 
-    $player = Player::factory()->create(['team_id' => $homeTeam->id]);
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'position' => 'SS',
+    ]);
     PlayerInjury::query()->create([
         'player_id' => $player->id,
         'team_id' => $homeTeam->id,
@@ -2028,7 +2031,10 @@ it('uses persisted total injury adjustments for mlb when available on team metri
 
     $baselinePrediction = app(GeneratePrediction::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 
-    $player = Player::factory()->create(['team_id' => $homeTeam->id]);
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'position' => 'SS',
+    ]);
     PlayerInjury::query()->create([
         'player_id' => $player->id,
         'team_id' => $homeTeam->id,

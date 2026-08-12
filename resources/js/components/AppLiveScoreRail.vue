@@ -9,6 +9,8 @@ const games = ref<DashboardPrediction[]>([]);
 const loading = ref(false);
 const api = useApiV2Client();
 let timer: ReturnType<typeof setTimeout> | null = null;
+let initialTimer: ReturnType<typeof setTimeout> | null = null;
+let initialIdleCallback: number | null = null;
 
 const hasLiveGames = computed(() => games.value.some((game) => game.is_live));
 
@@ -96,12 +98,32 @@ function scheduleNextPoll(): void {
     }, pollIntervalMs());
 }
 
-onMounted(async () => {
-    await fetchGames();
-    scheduleNextPoll();
+onMounted(() => {
+    const start = async () => {
+        initialIdleCallback = null;
+        initialTimer = null;
+        await fetchGames();
+        scheduleNextPoll();
+    };
+
+    if ('requestIdleCallback' in window) {
+        initialIdleCallback = window.requestIdleCallback(() => void start(), {
+            timeout: 4_000,
+        });
+    } else {
+        initialTimer = setTimeout(() => void start(), 3_000);
+    }
 });
 
 onUnmounted(() => {
+    if (initialIdleCallback !== null && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(initialIdleCallback);
+        initialIdleCallback = null;
+    }
+    if (initialTimer) {
+        clearTimeout(initialTimer);
+        initialTimer = null;
+    }
     stopPolling();
 });
 </script>

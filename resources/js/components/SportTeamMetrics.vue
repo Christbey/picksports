@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { ref, onMounted, computed, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
@@ -64,9 +64,13 @@ const availableSeasons = ref<number[]>([]);
 const selectedSeason = ref('');
 const api = useApiV2Client();
 const sport = computed(() => props.config.sport as ApiV2SportSlug);
+const pageRequestController = new AbortController();
+let metricsRequestController: AbortController | null = null;
 
 const fetchAvailableSeasons = async () => {
-    const payload = await api.metrics.teamAvailableSeasons(sport.value);
+    const payload = await api.metrics.teamAvailableSeasons(sport.value, {
+        init: { signal: pageRequestController.signal },
+    });
     if (!payload) {
         throw new Error('Failed to fetch available seasons');
     }
@@ -130,6 +134,10 @@ const sortedMetrics = computed(() => {
 });
 
 const fetchMetrics = async () => {
+    metricsRequestController?.abort();
+    const controller = new AbortController();
+    metricsRequestController = controller;
+
     try {
         loading.value = true;
         error.value = null;
@@ -142,18 +150,32 @@ const fetchMetrics = async () => {
             query.season_type = selectedSeasonType.value;
         }
 
-        const response = await api.metrics.teams(sport.value, { query });
+        const response = await api.metrics.teams(sport.value, {
+            query,
+            init: { signal: controller.signal },
+        });
         if (!response) throw new Error('Failed to fetch team metrics');
 
         metrics.value = response.data ?? [];
+        const tier =
+            response.meta?.tier && typeof response.meta.tier === 'object'
+                ? response.meta.tier
+                : null;
         tierLimit.value =
-            response.meta?.tier?.limit ?? (response as any).tier_limit ?? null;
+            (tier?.limit as number | undefined) ??
+            (response as any).tier_limit ??
+            null;
         tierName.value =
-            response.meta?.tier?.name ?? (response as any).tier_name ?? null;
+            (tier?.name as string | undefined) ??
+            (response as any).tier_name ??
+            null;
     } catch (e) {
+        if (e instanceof DOMException && e.name === 'AbortError') return;
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {
-        loading.value = false;
+        if (metricsRequestController === controller) {
+            loading.value = false;
+        }
     }
 };
 
@@ -203,6 +225,11 @@ onMounted(async () => {
     if (!selectedSeason.value) {
         await fetchMetrics();
     }
+});
+
+onBeforeUnmount(() => {
+    pageRequestController.abort();
+    metricsRequestController?.abort();
 });
 </script>
 

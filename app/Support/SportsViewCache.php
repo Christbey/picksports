@@ -44,6 +44,10 @@ class SportsViewCache
 
     public const SEGMENT_PLAYER_PROPS_PAGE = 'player_props_page';
 
+    public const SEGMENT_PLAYER_LEADERBOARDS = 'player_leaderboards';
+
+    public const SEGMENT_PLAYER_STAT_SEASONS = 'player_stat_seasons';
+
     public const SEGMENT_FUTURES_FORECASTS = 'futures_forecasts';
 
     /**

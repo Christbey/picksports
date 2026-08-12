@@ -124,6 +124,14 @@ it('lists v2 player leaderboards with stable metadata and existing aggregate fie
         ->and($response->json('data.0.points_per_game'))->not->toBeNull()
         ->and($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
+
+    $this->getJson("/api/v2/sports/{$slug}/leaderboards/players?season=2026&season_type=2&min_games=1&focus_player_id={$player->id}")
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.player_id', $player->id)
+        ->assertJsonPath('meta.filters.focus_player_id', $player->id)
+        ->assertJsonPath('meta.focus_ranks.points_per_game.rank', 1)
+        ->assertJsonPath('meta.focus_ranks.points_per_game.total', 1);
 })->with('v2PlayerLeaderboardSports');
 
 it('lists v2 player leaderboard available seasons with stable metadata', function (

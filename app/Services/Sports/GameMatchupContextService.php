@@ -26,9 +26,22 @@ class GameMatchupContextService
             return ['rows' => []];
         }
 
-        $homeGames = $this->priorSeasonGamesForTeam($game, (int) $homeTeam->getKey());
-        $awayGames = $this->priorSeasonGamesForTeam($game, (int) $awayTeam->getKey());
-        $headToHeadGames = $this->priorHeadToHeadGames($game);
+        $homeTeamId = (int) $homeTeam->getKey();
+        $awayTeamId = (int) $awayTeam->getKey();
+        $matchupGames = $this->priorSeasonGamesForTeams($game, [$homeTeamId, $awayTeamId]);
+        $homeGames = $matchupGames->filter(
+            fn (Model $item): bool => (int) $item->home_team_id === $homeTeamId
+                || (int) $item->away_team_id === $homeTeamId,
+        );
+        $awayGames = $matchupGames->filter(
+            fn (Model $item): bool => (int) $item->home_team_id === $awayTeamId
+                || (int) $item->away_team_id === $awayTeamId,
+        );
+        $headToHeadGames = $matchupGames->filter(function (Model $item) use ($homeTeamId, $awayTeamId): bool {
+            $teams = [(int) $item->home_team_id, (int) $item->away_team_id];
+
+            return in_array($homeTeamId, $teams, true) && in_array($awayTeamId, $teams, true);
+        });
 
         $rows = [
             $this->makeRow(
@@ -153,6 +166,20 @@ class GameMatchupContextService
             });
 
         return $query->get();
+    }
+
+    /**
+     * @param  list<int>  $teamIds
+     */
+    protected function priorSeasonGamesForTeams(Model $game, array $teamIds): EloquentCollection
+    {
+        return $this->baseGameQuery($game)
+            ->where('season', (int) $game->season)
+            ->where(function (Builder $query) use ($teamIds): void {
+                $query->whereIn('home_team_id', $teamIds)
+                    ->orWhereIn('away_team_id', $teamIds);
+            })
+            ->get();
     }
 
     protected function priorHeadToHeadGames(Model $game): EloquentCollection

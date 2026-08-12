@@ -302,6 +302,7 @@ it('can enforce publishing guardrail downgrades when enabled', function () {
         'season' => 2026,
         'season_type' => 2,
         'game_date' => '2026-05-23',
+        'game_time' => '19:00:00',
         'status' => config('nba.statuses.scheduled'),
         'home_team_id' => $home->id,
         'away_team_id' => $away->id,

@@ -1,4 +1,4 @@
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import type { BreadcrumbItem, Game } from '@/types';
 import type { ApiV2SportSlug, GameDepthChartTeam } from '@/types';
@@ -37,6 +37,7 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
     const loading = ref(true);
     const error = ref<string | null>(null);
     const api = useApiV2Client();
+    const requestController = new AbortController();
 
     const teamId = computed(() => teamData.value?.id || props.teamId);
 
@@ -192,6 +193,119 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
         return null;
     };
 
+    const applyMetricRankings = (allMetricsRaw: any[]) => {
+        const season = toNumber(teamMetrics.value?.season);
+        const seasonMetrics =
+            season !== null
+                ? allMetricsRaw.filter(
+                      (metric: any) => toNumber(metric.season) === season,
+                  )
+                : allMetricsRaw;
+        const baseMetrics =
+            seasonMetrics.length > 0 ? seasonMetrics : allMetricsRaw;
+        const byTeam = Array.from(
+            new Map(
+                baseMetrics.map((metric: any) => [
+                    Number(metric.team_id),
+                    metric,
+                ]),
+            ).values(),
+        ) as any[];
+
+        metricRankingTotalTeams.value = byTeam.length;
+
+        if (props.config.showPowerRanking) {
+            const sortedByNet = [...byTeam].sort(
+                (a, b) =>
+                    (toNumber(b.net_rating) ?? -Infinity) -
+                    (toNumber(a.net_rating) ?? -Infinity),
+            );
+            const index = sortedByNet.findIndex(
+                (metric) => Number(metric.team_id) === Number(teamId.value),
+            );
+            powerRanking.value =
+                index === -1
+                    ? null
+                    : { rank: index + 1, total_teams: byTeam.length };
+        }
+
+        if (props.config.metricRankingKeys) {
+            const rankings: Record<string, number> = {};
+            for (const { key, descending = true } of props.config
+                .metricRankingKeys) {
+                const sorted = [...byTeam]
+                    .filter((row) => toNumber(row[key]) !== null)
+                    .sort((a, b) => {
+                        const first = toNumber(a[key]) ?? 0;
+                        const second = toNumber(b[key]) ?? 0;
+                        return descending ? second - first : first - second;
+                    });
+                const index = sorted.findIndex(
+                    (row) => Number(row.team_id) === Number(teamId.value),
+                );
+                rankings[key] = index === -1 ? 0 : index + 1;
+            }
+            metricRankings.value = rankings;
+        }
+    };
+
+    const applyStatRankings = (allStats: any[]) => {
+        if (!props.config.statRankingKeys) return;
+
+        const rankings: Record<string, number> = {};
+        for (const { key, descending = true } of props.config.statRankingKeys) {
+            const sorted = [...allStats].sort((a, b) =>
+                descending ? b[key] - a[key] : a[key] - b[key],
+            );
+            const index = sorted.findIndex(
+                (stats) => Number(stats.team_id) === Number(teamId.value),
+            );
+            rankings[key] = index === -1 ? 0 : index + 1;
+        }
+        statRankings.value = rankings;
+    };
+
+    const applyGames = (games: Game[]) => {
+        const metricSeason = toNumber(teamMetrics.value?.season);
+        const seasonScopedGames =
+            metricSeason !== null
+                ? games.filter(
+                      (game) => toNumber((game as any).season) === metricSeason,
+                  )
+                : games;
+        const sourceGames =
+            seasonScopedGames.length > 0 ? seasonScopedGames : games;
+
+        recentGames.value = sourceGames
+            .filter((game) => game.status === 'STATUS_FINAL')
+            .sort(
+                (a, b) =>
+                    new Date(b.game_date!).getTime() -
+                    new Date(a.game_date!).getTime(),
+            );
+
+        const now = new Date();
+        upcomingGames.value = sourceGames
+            .filter((game) => {
+                if (props.config.sortRecentByDate) {
+                    return (
+                        game.status !== 'STATUS_FINAL' &&
+                        new Date(game.game_date!) >= now
+                    );
+                }
+
+                return (
+                    game.status === 'STATUS_SCHEDULED' ||
+                    game.status === 'STATUS_IN_PROGRESS'
+                );
+            })
+            .sort(
+                (a, b) =>
+                    new Date(a.game_date!).getTime() -
+                    new Date(b.game_date!).getTime(),
+            );
+    };
+
     onMounted(async () => {
         try {
             loading.value = true;
@@ -201,260 +315,126 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             if (!fetchId) return;
 
             const sport = props.config.sport as ApiV2SportSlug;
-            const fetches: Promise<unknown>[] = [];
-            const fetchKeys: string[] = [];
+            const requestOptions = {
+                init: { signal: requestController.signal },
+            };
+            const [teamResponse, metricResponse] = await Promise.all([
+                api.teams.show(sport, fetchId, requestOptions),
+                api.teams.metrics(sport, fetchId, requestOptions),
+            ]);
 
-            fetches.push(api.teams.metrics(sport, fetchId));
-            fetchKeys.push('metrics');
+            teamData.value = teamResponse?.data ?? null;
+            teamMetrics.value = metricResponse?.data ?? null;
+            loading.value = false;
+
+            const season = toNumber(teamMetrics.value?.season);
+            const supplemental: Promise<unknown>[] = [
+                api.teams
+                    .games(sport, fetchId, {
+                        query: { per_page: 200 },
+                        init: { signal: requestController.signal },
+                    })
+                    .then((response) =>
+                        applyGames((response?.data ?? []) as unknown as Game[]),
+                    ),
+            ];
 
             if (props.config.seasonStatTiles) {
-                fetches.push(api.teams.statSeasonAverages(sport, fetchId));
-                fetchKeys.push('seasonStats');
+                supplemental.push(
+                    api.teams
+                        .statSeasonAverages(sport, fetchId, requestOptions)
+                        .then((response) => {
+                            seasonStats.value = response?.data ?? null;
+                        }),
+                );
             }
-
-            // Pull enough rows to cover the full team schedule/game log for the season.
-            fetches.push(
-                api.teams.games(sport, fetchId, {
-                    query: { per_page: 500 },
-                }),
-            );
-            fetchKeys.push('games');
-
-            fetches.push(api.teams.show(sport, fetchId));
-            fetchKeys.push('team');
 
             if (
                 props.config.showPowerRanking ||
                 props.config.metricRankingKeys
             ) {
-                fetches.push(
-                    api.metrics.teams(sport, { query: { per_page: 500 } }),
+                supplemental.push(
+                    api.metrics
+                        .teams(sport, {
+                            query: {
+                                ...(season !== null ? { season } : {}),
+                                per_page: 500,
+                            },
+                            init: { signal: requestController.signal },
+                        })
+                        .then((response) =>
+                            applyMetricRankings(response?.data ?? []),
+                        ),
                 );
-                fetchKeys.push('allMetrics');
             }
 
             if (props.config.statRankingKeys) {
-                fetches.push(api.stats.teamSeasonAverages(sport));
-                fetchKeys.push('allStats');
+                supplemental.push(
+                    api.stats
+                        .teamSeasonAverages(sport, requestOptions)
+                        .then((response) =>
+                            applyStatRankings(response?.data ?? []),
+                        ),
+                );
             }
 
             if (props.config.showTrends) {
-                const games = props.config.trendsGames ?? 20;
-                fetches.push(
-                    api.teams.trends(sport, fetchId, { query: { games } }),
+                supplemental.push(
+                    api.teams
+                        .trends(sport, fetchId, {
+                            query: { games: props.config.trendsGames ?? 20 },
+                            init: { signal: requestController.signal },
+                        })
+                        .then((response) => {
+                            const payload = response?.data;
+                            trendsData.value =
+                                (payload?.trends as Record<string, string[]>) ??
+                                null;
+                            lockedTrends.value =
+                                (payload?.locked_trends as Record<
+                                    string,
+                                    string
+                                >) ?? null;
+                        }),
                 );
-                fetchKeys.push('trends');
             }
 
             if (props.config.showRoster) {
                 rosterLoading.value = true;
-                fetches.push(
-                    api.teams.players(sport, fetchId, {
-                        query: { per_page: 100 },
-                    }),
+                supplemental.push(
+                    api.teams
+                        .players(sport, fetchId, {
+                            query: { per_page: 100 },
+                            init: { signal: requestController.signal },
+                        })
+                        .then((response) => {
+                            rosterPlayers.value = response?.data ?? [];
+                        })
+                        .finally(() => {
+                            rosterLoading.value = false;
+                        }),
                 );
-                fetchKeys.push('roster');
             }
 
-            const responses = await Promise.all(fetches);
-
-            for (let i = 0; i < fetchKeys.length; i++) {
-                const key = fetchKeys[i];
-                const res = responses[i] as any;
-
-                if (key === 'team' && res) {
-                    const data = res;
-                    teamData.value = data.data;
-                }
-
-                if (key === 'metrics' && res) {
-                    const data = res;
-                    teamMetrics.value = data.data?.[0] ?? data.data ?? null;
-                }
-
-                if (key === 'seasonStats' && res) {
-                    const data = res;
-                    seasonStats.value = data.data || null;
-                }
-
-                if (key === 'games' && res) {
-                    const data = res;
-                    const games = data.data || [];
-                    const metricSeason = toNumber(teamMetrics.value?.season);
-                    const seasonScopedGames =
-                        metricSeason !== null
-                            ? games.filter(
-                                  (g: Game) =>
-                                      toNumber((g as any).season) ===
-                                      metricSeason,
-                              )
-                            : games;
-                    const sourceGames =
-                        seasonScopedGames.length > 0
-                            ? seasonScopedGames
-                            : games;
-
-                    if (props.config.sortRecentByDate) {
-                        recentGames.value = sourceGames
-                            .filter((g: Game) => g.status === 'STATUS_FINAL')
-                            .sort(
-                                (a: Game, b: Game) =>
-                                    new Date(b.game_date!).getTime() -
-                                    new Date(a.game_date!).getTime(),
-                            );
-
-                        const now = new Date();
-                        upcomingGames.value = sourceGames
-                            .filter(
-                                (g: Game) =>
-                                    g.status !== 'STATUS_FINAL' &&
-                                    new Date(g.game_date!) >= now,
-                            )
-                            .sort(
-                                (a: Game, b: Game) =>
-                                    new Date(a.game_date!).getTime() -
-                                    new Date(b.game_date!).getTime(),
-                            );
-                    } else {
-                        recentGames.value = sourceGames
-                            .filter((g: Game) => g.status === 'STATUS_FINAL')
-                            .sort(
-                                (a: Game, b: Game) =>
-                                    new Date(b.game_date!).getTime() -
-                                    new Date(a.game_date!).getTime(),
-                            );
-
-                        upcomingGames.value = sourceGames
-                            .filter(
-                                (g: Game) =>
-                                    g.status === 'STATUS_SCHEDULED' ||
-                                    g.status === 'STATUS_IN_PROGRESS',
-                            )
-                            .sort(
-                                (a: Game, b: Game) =>
-                                    new Date(a.game_date!).getTime() -
-                                    new Date(b.game_date!).getTime(),
-                            );
-                    }
-                }
-
-                if (key === 'allMetrics' && res) {
-                    const data = res;
-                    const allMetricsRaw = data.data || [];
-                    const season = toNumber(teamMetrics.value?.season);
-                    const seasonMetrics =
-                        season !== null
-                            ? allMetricsRaw.filter(
-                                  (m: any) => toNumber(m.season) === season,
-                              )
-                            : allMetricsRaw;
-                    const baseMetrics =
-                        seasonMetrics.length > 0
-                            ? seasonMetrics
-                            : allMetricsRaw;
-                    const byTeam = Array.from(
-                        new Map(
-                            baseMetrics.map((m: any) => [Number(m.team_id), m]),
-                        ).values(),
-                    );
-
-                    metricRankingTotalTeams.value = byTeam.length;
-
-                    if (props.config.showPowerRanking) {
-                        const sortedByNet = [...byTeam].sort(
-                            (a: any, b: any) =>
-                                (toNumber(b.net_rating) ?? -Infinity) -
-                                (toNumber(a.net_rating) ?? -Infinity),
-                        );
-                        const idx = sortedByNet.findIndex(
-                            (m: any) =>
-                                Number(m.team_id) === Number(teamId.value),
-                        );
-                        if (idx !== -1) {
-                            powerRanking.value = {
-                                rank: idx + 1,
-                                total_teams: byTeam.length,
-                            };
-                        }
-                    }
-
-                    if (props.config.metricRankingKeys) {
-                        const rankings: Record<string, number> = {};
-                        for (const { key: metricKey, descending } of props
-                            .config.metricRankingKeys) {
-                            const desc = descending ?? true;
-                            const sorted = [...byTeam]
-                                .filter(
-                                    (row: any) =>
-                                        toNumber(row[metricKey]) !== null,
-                                )
-                                .sort((a: any, b: any) => {
-                                    const av = toNumber(a[metricKey]) ?? 0;
-                                    const bv = toNumber(b[metricKey]) ?? 0;
-                                    return desc ? bv - av : av - bv;
-                                });
-                            const idx = sorted.findIndex(
-                                (row: any) =>
-                                    Number(row.team_id) ===
-                                    Number(teamId.value),
-                            );
-                            rankings[metricKey] = idx !== -1 ? idx + 1 : 0;
-                        }
-                        metricRankings.value = rankings;
-                    }
-                }
-
-                if (key === 'allStats' && res && props.config.statRankingKeys) {
-                    const data = res;
-                    const allStats = data.data || [];
-                    const rankings: Record<string, number> = {};
-                    for (const { key: statKey, descending } of props.config
-                        .statRankingKeys) {
-                        const desc = descending ?? true;
-                        const sorted = [...allStats].sort((a: any, b: any) =>
-                            desc
-                                ? b[statKey] - a[statKey]
-                                : a[statKey] - b[statKey],
-                        );
-                        const idx = sorted.findIndex(
-                            (s: any) => s.team_id === teamId.value,
-                        );
-                        rankings[statKey] = idx !== -1 ? idx + 1 : 0;
-                    }
-                    statRankings.value = rankings;
-                }
-
-                if (key === 'trends' && res) {
-                    const data = res;
-                    const payload = data.data ?? data;
-                    trendsData.value = payload.trends || null;
-                    lockedTrends.value = payload.locked_trends || null;
-                }
-
-                if (key === 'roster' && res) {
-                    const data = res;
-                    rosterPlayers.value = data.data || [];
-                    rosterLoading.value = false;
-                }
-            }
-
-            const sportSupportsDepthCharts = ['nfl', 'nba', 'mlb'].includes(
-                props.config.sport,
-            );
-
-            if (props.config.showDepthCharts && sportSupportsDepthCharts) {
-                const season = toNumber(teamMetrics.value?.season);
-                const depthChartResponse = await api.teams.depthCharts(
-                    sport,
-                    fetchId,
-                    {
-                        query: season !== null ? { season } : undefined,
-                    },
+            if (
+                props.config.showDepthCharts &&
+                ['nfl', 'nba', 'mlb'].includes(props.config.sport)
+            ) {
+                supplemental.push(
+                    api.teams
+                        .depthCharts(sport, fetchId, {
+                            query: season !== null ? { season } : undefined,
+                            init: { signal: requestController.signal },
+                        })
+                        .then((response) => {
+                            depthChart.value = response?.data ?? null;
+                        }),
                 );
-
-                depthChart.value = depthChartResponse?.data ?? null;
             }
+
+            await Promise.allSettled(supplemental);
         } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') return;
             error.value =
                 e instanceof Error
                     ? e.message
@@ -464,6 +444,8 @@ export function useSportTeamData(props: UseSportTeamDataProps) {
             rosterLoading.value = false;
         }
     });
+
+    onBeforeUnmount(() => requestController.abort());
 
     return {
         teamData,

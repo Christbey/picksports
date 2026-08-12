@@ -42,6 +42,7 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
         $generated = $generatePrediction->executeForAllScheduledGames((int) $season);
 
         $this->info("Predictions generated for {$generated} scheduled games.");
+        $this->afterPredictionsGenerated((int) $season, $generated);
         if ($generated > 0) {
             app(SportsViewCache::class)->bustSegments([
                 SportsViewCache::SEGMENT_DASHBOARD,
@@ -54,6 +55,11 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    protected function afterPredictionsGenerated(int $season, int $generated): void
+    {
+        // Sport commands may materialize derived presentation data in one batch.
     }
 
     /**

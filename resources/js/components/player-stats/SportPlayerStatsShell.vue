@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UrlMethodPair } from '@inertiajs/core';
 import { Head, Link } from '@inertiajs/vue3';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -122,11 +122,18 @@ const selectedCategory = ref<string>('all');
 const seasonReady = ref(false);
 const availableSeasons = ref<number[]>([]);
 const selectedSeason = ref('');
+const visibleLimit = ref(100);
 const api = useApiV2Client();
+let leaderboardAbortController: AbortController | null = null;
+let seasonsAbortController: AbortController | null = null;
 
 const fetchAvailableSeasons = async () => {
+    seasonsAbortController?.abort();
+    const controller = new AbortController();
+    seasonsAbortController = controller;
     const payload = await api.leaderboards.playerAvailableSeasons(
         props.config.sport,
+        { init: { signal: controller.signal } },
     );
     if (!payload) {
         throw new Error('Failed to fetch available seasons');
@@ -157,6 +164,24 @@ const activeCategory = computed(
         ) ?? null,
 );
 
+const activeMinGames = computed(
+    () => activeCategory.value?.minGames ?? props.config.minGames ?? 1,
+);
+
+const minimumGamesForRequest = computed(() => {
+    const configuredMinimums = [
+        props.config.minGames,
+        ...categoryOptions.value.map((category) => category.minGames),
+    ].filter(
+        (value): value is number =>
+            typeof value === 'number' && Number.isFinite(value),
+    );
+
+    return configuredMinimums.length > 0
+        ? Math.max(1, Math.min(...configuredMinimums.map(Math.trunc)))
+        : 1;
+});
+
 const sortOptions = computed(() => {
     const options = activeCategory.value?.sortOptions ??
         props.config.sortOptions ?? [
@@ -180,11 +205,14 @@ const sortOptions = computed(() => {
 });
 
 const filteredPlayers = computed(() => {
+    const eligiblePlayers = players.value.filter(
+        (player) => player.games_played >= activeMinGames.value,
+    );
     const categoryFilteredPlayers = activeCategory.value?.match
-        ? players.value.filter(
+        ? eligiblePlayers.filter(
               (player) => activeCategory.value?.match?.(player) ?? true,
           )
-        : players.value;
+        : eligiblePlayers;
 
     if (!searchQuery.value) {
         return categoryFilteredPlayers;
@@ -209,7 +237,15 @@ const sortedPlayers = computed(() => {
     return sorted;
 });
 
+const visiblePlayers = computed(() =>
+    sortedPlayers.value.slice(0, visibleLimit.value),
+);
+
 const fetchPlayers = async () => {
+    leaderboardAbortController?.abort();
+    const controller = new AbortController();
+    leaderboardAbortController = controller;
+
     try {
         loading.value = true;
         error.value = null;
@@ -218,25 +254,26 @@ const fetchPlayers = async () => {
         if (selectedSeason.value) {
             query.season = selectedSeason.value;
         }
-        const minGames =
-            activeCategory.value?.minGames ?? props.config.minGames;
-        if (typeof minGames === 'number' && Number.isFinite(minGames)) {
-            query.min_games = Math.max(0, Math.trunc(minGames));
-        }
+        query.min_games = minimumGamesForRequest.value;
         if (selectedSeasonType.value) {
             query.season_type = selectedSeasonType.value;
         }
 
         const response = await api.leaderboards.players(props.config.sport, {
             query,
+            init: { signal: controller.signal },
         });
         if (!response) throw new Error('Failed to fetch player stats');
 
-        players.value = response.data ?? [];
+        players.value = (response.data ??
+            []) as unknown as PlayerLeaderboardEntry[];
     } catch (e) {
+        if (controller.signal.aborted) return;
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {
-        loading.value = false;
+        if (leaderboardAbortController === controller) {
+            loading.value = false;
+        }
     }
 };
 
@@ -404,9 +441,15 @@ watch(activeCategory, (category) => {
         sortBy.value = categorySort;
         sortDesc.value = true;
     }
+});
 
-    if (!seasonReady.value) return;
-    fetchPlayers();
+watch([searchQuery, sortBy, sortDesc, activeCategory], () => {
+    visibleLimit.value = 100;
+});
+
+onBeforeUnmount(() => {
+    leaderboardAbortController?.abort();
+    seasonsAbortController?.abort();
 });
 </script>
 
@@ -594,7 +637,7 @@ watch(activeCategory, (category) => {
                             </thead>
                             <tbody>
                                 <tr
-                                    v-for="(entry, index) in sortedPlayers"
+                                    v-for="(entry, index) in visiblePlayers"
                                     :key="entry.player_id"
                                     class="border-b transition-colors odd:bg-muted/15 hover:bg-muted/40"
                                 >
@@ -628,6 +671,8 @@ watch(activeCategory, (category) => {
                                                 v-if="entry.player.headshot_url"
                                                 :src="entry.player.headshot_url"
                                                 :alt="entry.player.full_name"
+                                                loading="lazy"
+                                                decoding="async"
                                                 class="h-8 w-8 rounded-full object-cover"
                                             />
                                             <div
@@ -658,6 +703,8 @@ watch(activeCategory, (category) => {
                                                 v-if="entry.player.headshot_url"
                                                 :src="entry.player.headshot_url"
                                                 :alt="entry.player.full_name"
+                                                loading="lazy"
+                                                decoding="async"
                                                 class="h-8 w-8 rounded-full object-cover"
                                             />
                                             <div
@@ -737,6 +784,15 @@ watch(activeCategory, (category) => {
                             No players found matching "{{ searchQuery }}"
                         </p>
                         <p v-else>No player stats available.</p>
+                    </div>
+
+                    <div
+                        v-if="visiblePlayers.length < sortedPlayers.length"
+                        class="flex justify-center pt-4"
+                    >
+                        <Button variant="outline" @click="visibleLimit += 100">
+                            Show more players
+                        </Button>
                     </div>
                 </CardContent>
             </Card>

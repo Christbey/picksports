@@ -2,7 +2,6 @@
 
 namespace App\Services\NFL;
 
-use App\Models\NFL\Game;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamMetricSnapshot;
 use Carbon\CarbonInterface;

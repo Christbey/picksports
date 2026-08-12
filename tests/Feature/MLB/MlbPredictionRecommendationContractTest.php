@@ -208,7 +208,7 @@ it('exposes the same mlb slate bet as a canonical v2 prediction recommendation',
         ->assertJsonPath('data.0.recommendation.recommendation_strength', 'moderate')
         ->assertJsonPath('data.0.recommendation.is_bet', true)
         ->assertJsonPath('data.0.recommendation.prediction_phase', 'pregame')
-        ->assertJsonPath('data.0.recommendation.raw_edge', 0.0578)
+        ->assertJsonPath('data.0.recommendation.market_edge', 0.0578)
         ->assertJsonPath('data.0.recommendation.no_vig_edge', 0.07);
 
     Carbon::setTestNow();

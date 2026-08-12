@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\NFL\Game;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Models\Sports\FuturesOddsSnapshot;
@@ -30,7 +31,7 @@ it('writes an nfl team futures backtest report', function () {
     ]);
 
     foreach (range(1, 9) as $index) {
-        \App\Models\NFL\Game::factory()->create([
+        Game::factory()->create([
             'season' => 2025,
             'season_type' => config('nfl.season.types.regular'),
             'game_date' => "2025-10-0{$index} 12:00:00",

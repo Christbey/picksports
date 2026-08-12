@@ -39,6 +39,7 @@ test('users can save template selections in alert preferences', function () {
             'time_window_end' => '23:00',
             'digest_mode' => 'realtime',
             'digest_time' => null,
+            'daily_digest_subscribed' => true,
             'phone_number' => null,
         ]);
 
@@ -71,6 +72,7 @@ test('users can save empty template selection to receive all templates', functio
             'time_window_end' => '23:00',
             'digest_mode' => 'realtime',
             'digest_time' => null,
+            'daily_digest_subscribed' => true,
             'phone_number' => null,
         ]);
 

@@ -3,11 +3,14 @@
 namespace App\Services\Api\V2;
 
 use App\Models\Sports\FuturesOdd;
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 
 class SportFuturesOddQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 100;
@@ -30,7 +33,7 @@ class SportFuturesOddQuery
     public function paginate(string $sport, array $filters = []): LengthAwarePaginator
     {
         return $this->query($sport, $filters)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     /**
@@ -72,13 +75,5 @@ class SportFuturesOddQuery
             'wcbb' => ['wcbbTeam'],
             default => [],
         };
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

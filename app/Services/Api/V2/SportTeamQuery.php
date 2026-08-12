@@ -2,14 +2,16 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Schema;
 
 class SportTeamQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 50;
 
     private const MAX_PER_PAGE = 100;
@@ -23,7 +25,7 @@ class SportTeamQuery
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
         return $this->query($context, $filters, $user)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     public function find(
@@ -59,13 +61,7 @@ class SportTeamQuery
      */
     private function teamModel(SportContext $context): string
     {
-        $teamModel = $context->models['team'] ?? null;
-
-        if (! is_string($teamModel) || ! is_subclass_of($teamModel, Model::class)) {
-            abort(404, "Teams are not available for {$context->slug}.");
-        }
-
-        return $teamModel;
+        return $this->requireModel($context, 'team', 'Teams');
     }
 
     private function search(Builder $query, string $table, string $search): Builder
@@ -84,18 +80,5 @@ class SportTeamQuery
                 $query->orWhere($column, 'like', "%{$search}%");
             }
         });
-    }
-
-    private function hasColumn(string $table, string $column): bool
-    {
-        return Schema::hasColumn($table, $column);
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

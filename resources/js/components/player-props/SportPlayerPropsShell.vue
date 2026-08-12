@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import { BarChart3, TrendingDown, TrendingUp, X } from 'lucide-vue-next';
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -168,7 +168,9 @@ const markets = ref<MarketOption[]>([]);
 const boardMeta = ref<PlayerPropsMeta | null>(null);
 const loading = ref(true);
 const error = ref<string | null>(null);
+const visibleLimit = ref(18);
 const api = useApiV2Client();
+let boardAbortController: AbortController | null = null;
 
 const filteredGames = computed(() => {
     if (!selectedDate.value) {
@@ -183,6 +185,10 @@ const hasActiveFilters = computed(
         selectedDate.value !== '' ||
         selectedGame.value !== '' ||
         selectedMarket.value !== '',
+);
+
+const visibleRecommendations = computed(() =>
+    recommendations.value.slice(0, visibleLimit.value),
 );
 
 const emptyStateTitle = computed(() => {
@@ -266,6 +272,9 @@ const updateBrowserUrl = (filters: PlayerPropsFilters) => {
 };
 
 const loadBoard = async () => {
+    boardAbortController?.abort();
+    const controller = new AbortController();
+    boardAbortController = controller;
     loading.value = true;
     error.value = null;
 
@@ -274,6 +283,7 @@ const loadBoard = async () => {
             props.sportSlug,
             {
                 query: buildQueryParams(),
+                init: { signal: controller.signal },
             },
         );
         if (!payload) {
@@ -283,6 +293,7 @@ const loadBoard = async () => {
         }
 
         recommendations.value = payload.data || [];
+        visibleLimit.value = 18;
         dates.value = payload.dates || [];
         games.value = payload.games || [];
         markets.value = payload.markets || [];
@@ -294,12 +305,15 @@ const loadBoard = async () => {
         selectedMarket.value = payload.filters.market || '';
         updateBrowserUrl(payload.filters);
     } catch (err) {
+        if (controller.signal.aborted) return;
         error.value =
             err instanceof Error ? err.message : 'Unable to load player props.';
         recommendations.value = [];
         boardMeta.value = null;
     } finally {
-        loading.value = false;
+        if (boardAbortController === controller) {
+            loading.value = false;
+        }
     }
 };
 
@@ -346,8 +360,10 @@ const getCoverRecordRows = (rec: Recommendation) => {
     ].filter((row): row is [string, CoverRecord] => row[1] !== null);
 };
 
-const formatCoverRecord = (record: CoverRecord, recommendation: 'Over' | 'Under') =>
-    `${recommendation} ${record.recommendation_record}`;
+const formatCoverRecord = (
+    record: CoverRecord,
+    recommendation: 'Over' | 'Under',
+) => `${recommendation} ${record.recommendation_record}`;
 
 const formatCoverRate = (record: CoverRecord) =>
     record.win_rate === null ? 'N/A' : `${record.win_rate.toFixed(1)}%`;
@@ -421,6 +437,10 @@ const toggleModelDetails = (id: number) => {
 
 onMounted(() => {
     void loadBoard();
+});
+
+onBeforeUnmount(() => {
+    boardAbortController?.abort();
 });
 </script>
 
@@ -536,26 +556,53 @@ onMounted(() => {
                 </p>
             </div>
 
-            <div v-else class="columns-1 gap-5 md:columns-2 lg:columns-3">
-                <Card
-                    v-for="rec in recommendations"
-                    :key="rec.id"
-                    class="mb-5 inline-block w-full break-inside-avoid overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
-                >
-                    <CardHeader>
-                        <div class="flex items-start gap-3">
-                            <div class="flex min-w-0 flex-1 items-start gap-3">
-                                <template v-if="rec.player?.url">
-                                    <Link
-                                        :href="rec.player.url"
-                                        class="shrink-0"
-                                    >
+            <template v-else>
+                <div class="columns-1 gap-5 md:columns-2 lg:columns-3">
+                    <Card
+                        v-for="rec in visibleRecommendations"
+                        :key="rec.id"
+                        class="mb-5 inline-block w-full break-inside-avoid overflow-hidden transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                    >
+                        <CardHeader>
+                            <div class="flex items-start gap-3">
+                                <div
+                                    class="flex min-w-0 flex-1 items-start gap-3"
+                                >
+                                    <template v-if="rec.player?.url">
+                                        <Link
+                                            :href="rec.player.url"
+                                            class="shrink-0"
+                                        >
+                                            <Avatar
+                                                class="h-12 w-12 border-2 border-border transition-colors hover:border-primary"
+                                            >
+                                                <AvatarImage
+                                                    v-if="rec.player.headshot"
+                                                    :src="rec.player.headshot"
+                                                    :alt="rec.player.name"
+                                                    loading="lazy"
+                                                    decoding="async"
+                                                    class="object-cover"
+                                                />
+                                                <AvatarFallback>{{
+                                                    getInitials(
+                                                        rec.player.name ||
+                                                            'Unknown',
+                                                    )
+                                                }}</AvatarFallback>
+                                            </Avatar>
+                                        </Link>
+                                    </template>
+                                    <template v-else>
                                         <Avatar
-                                            class="h-12 w-12 border-2 border-border transition-colors hover:border-primary"
+                                            class="h-12 w-12 border-2 border-border"
                                         >
                                             <AvatarImage
+                                                v-if="rec.player.headshot"
                                                 :src="rec.player.headshot"
                                                 :alt="rec.player.name"
+                                                loading="lazy"
+                                                decoding="async"
                                                 class="object-cover"
                                             />
                                             <AvatarFallback>{{
@@ -565,351 +612,376 @@ onMounted(() => {
                                                 )
                                             }}</AvatarFallback>
                                         </Avatar>
-                                    </Link>
-                                </template>
-                                <template v-else>
-                                    <Avatar
-                                        class="h-12 w-12 border-2 border-border"
-                                    >
-                                        <AvatarImage
-                                            :src="rec.player.headshot"
-                                            :alt="rec.player.name"
-                                            class="object-cover"
-                                        />
-                                        <AvatarFallback>{{
-                                            getInitials(
-                                                rec.player.name || 'Unknown',
-                                            )
-                                        }}</AvatarFallback>
-                                    </Avatar>
-                                </template>
+                                    </template>
 
-                                <div class="min-w-0 flex-1 space-y-1">
-                                    <template v-if="rec.player?.url">
-                                        <Link
-                                            :href="rec.player.url"
-                                            class="hover:underline"
-                                        >
+                                    <div class="min-w-0 flex-1 space-y-1">
+                                        <template v-if="rec.player?.url">
+                                            <Link
+                                                :href="rec.player.url"
+                                                class="hover:underline"
+                                            >
+                                                <CardTitle
+                                                    class="truncate text-lg tracking-tight"
+                                                    >{{
+                                                        rec.player.name
+                                                    }}</CardTitle
+                                                >
+                                            </Link>
+                                        </template>
+                                        <template v-else>
                                             <CardTitle
                                                 class="truncate text-lg tracking-tight"
                                                 >{{
                                                     rec.player.name
                                                 }}</CardTitle
                                             >
-                                        </Link>
-                                    </template>
-                                    <template v-else>
-                                        <CardTitle
-                                            class="truncate text-lg tracking-tight"
-                                            >{{ rec.player.name }}</CardTitle
-                                        >
-                                    </template>
+                                        </template>
 
-                                    <div
-                                        class="flex flex-wrap items-center gap-2"
-                                    >
-                                        <CardDescription
-                                            v-if="
-                                                rec.player.position &&
-                                                rec.player.team
-                                            "
-                                            class="shrink-0"
-                                        >
-                                            {{ rec.player.position }} •
-                                            {{ rec.player.team }}
-                                        </CardDescription>
-                                        <Badge
-                                            :variant="getSignalBandVariant(rec)"
-                                            class="max-w-full shrink text-[10px]"
-                                        >
-                                            {{ getSignalBand(rec) }}
-                                        </Badge>
-                                        <Badge
-                                            v-if="
-                                                rec.streak &&
-                                                rec.streak.count >= 2
-                                            "
-                                            :variant="
-                                                rec.streak.status === 'hot'
-                                                    ? 'default'
-                                                    : 'secondary'
-                                            "
-                                            class="shrink-0 text-xs"
-                                        >
-                                            {{
-                                                rec.streak.status === 'hot'
-                                                    ? '🔥'
-                                                    : '❄️'
-                                            }}
-                                            {{ rec.streak.count }}
-                                        </Badge>
-                                    </div>
-                                    <CardDescription class="truncate text-xs">
-                                        {{ rec.game?.away_team }} @
-                                        {{ rec.game?.home_team }}
-                                    </CardDescription>
-                                </div>
-                            </div>
-                        </div>
-                    </CardHeader>
-
-                    <CardContent class="space-y-4">
-                        <div
-                            class="ui-surface-subtle flex items-center justify-between p-3"
-                        >
-                            <div class="flex items-center gap-2">
-                                <component
-                                    :is="
-                                        rec.recommendation === 'Over'
-                                            ? TrendingUp
-                                            : TrendingDown
-                                    "
-                                    :class="[
-                                        'h-5 w-5',
-                                        rec.recommendation === 'Over'
-                                            ? 'text-green-500'
-                                            : 'text-red-500',
-                                    ]"
-                                />
-                                <div>
-                                    <p class="font-semibold">
-                                        {{ rec.recommendation }} {{ rec.line }}
-                                    </p>
-                                    <p class="text-xs text-muted-foreground">
-                                        {{ rec.market }}
-                                    </p>
-                                </div>
-                            </div>
-                            <Badge variant="outline" class="font-mono">
-                                {{ formatOdds(rec.odds) }}
-                            </Badge>
-                        </div>
-
-                        <div class="flex items-center justify-between">
-                            <Badge
-                                :variant="getResultStatus(rec).variant"
-                                :class="getResultStatus(rec).className"
-                            >
-                                {{ getResultStatus(rec).label }}
-                            </Badge>
-                            <span
-                                v-if="
-                                    rec.actual_value !== null &&
-                                    rec.actual_value !== undefined
-                                "
-                                class="text-xs text-muted-foreground"
-                            >
-                                Actual:
-                                {{ Number(rec.actual_value).toFixed(1) }}
-                            </span>
-                        </div>
-
-                        <div class="space-y-1.5">
-                            <div
-                                class="flex justify-between text-xs text-muted-foreground"
-                            >
-                                <span>Signal Score</span>
-                                <span>{{ rec.confidence }}/100</span>
-                            </div>
-                            <div
-                                class="h-2 overflow-hidden rounded-full bg-muted"
-                            >
-                                <div
-                                    class="h-full transition-all"
-                                    :class="getConfidenceColor(rec)"
-                                    :style="{ width: `${rec.confidence}%` }"
-                                />
-                            </div>
-                        </div>
-
-                        <div class="space-y-2">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                class="h-7 px-2 text-xs text-muted-foreground"
-                                @click="toggleModelDetails(rec.id)"
-                            >
-                                {{
-                                    isModelDetailsOpen(rec.id)
-                                        ? 'Hide Stats'
-                                        : 'Show Stats'
-                                }}
-                            </Button>
-
-                            <div
-                                v-if="isModelDetailsOpen(rec.id)"
-                                class="ui-surface-subtle space-y-2 p-2 text-xs"
-                            >
-                                <div class="space-y-2">
-                                    <div class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground"
-                                            >Season Avg</span
-                                        >
-                                        <span class="font-medium">{{
-                                            rec.stats?.season_avg ?? 0
-                                        }}</span>
-                                    </div>
-                                    <div class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground"
-                                            >Last 10 Games</span
-                                        >
-                                        <span
-                                            :class="[
-                                                'font-medium',
-                                                (rec.stats?.recent_avg ?? 0) >
-                                                (rec.stats?.season_avg ?? 0)
-                                                    ? 'text-green-600 dark:text-green-400'
-                                                    : 'text-red-600 dark:text-red-400',
-                                            ]"
-                                        >
-                                            {{ rec.stats?.recent_avg ?? 0 }}
-                                        </span>
-                                    </div>
-                                    <div class="flex justify-between text-sm">
-                                        <span class="text-muted-foreground"
-                                            >Last 5 Games</span
-                                        >
-                                        <span
-                                            :class="[
-                                                'font-medium',
-                                                (rec.stats?.last5_avg ?? 0) >
-                                                (rec.stats?.recent_avg ?? 0)
-                                                    ? 'text-green-600 dark:text-green-400'
-                                                    : 'text-red-600 dark:text-red-400',
-                                            ]"
-                                        >
-                                            {{ rec.stats?.last5_avg ?? 0 }}
-                                        </span>
-                                    </div>
-                                    <div
-                                        v-if="
-                                            rec.stats?.vs_opponent_avg !== null
-                                        "
-                                        class="flex justify-between text-sm"
-                                    >
-                                        <span class="text-muted-foreground"
-                                            >vs Opponent</span
-                                        >
-                                        <span
-                                            :class="[
-                                                'font-medium',
-                                                rec.stats.vs_opponent_avg >
-                                                (rec.stats?.season_avg ?? 0)
-                                                    ? 'text-green-600 dark:text-green-400'
-                                                    : 'text-red-600 dark:text-red-400',
-                                            ]"
-                                        >
-                                            {{ rec.stats.vs_opponent_avg }}
-                                        </span>
-                                    </div>
-                                    <div
-                                        v-if="getCoverRecordRows(rec).length"
-                                        class="space-y-1 border-t pt-2"
-                                    >
                                         <div
-                                            class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"
+                                            class="flex flex-wrap items-center gap-2"
                                         >
-                                            Cover Record
+                                            <CardDescription
+                                                v-if="
+                                                    rec.player.position &&
+                                                    rec.player.team
+                                                "
+                                                class="shrink-0"
+                                            >
+                                                {{ rec.player.position }} •
+                                                {{ rec.player.team }}
+                                            </CardDescription>
+                                            <Badge
+                                                :variant="
+                                                    getSignalBandVariant(rec)
+                                                "
+                                                class="max-w-full shrink text-[10px]"
+                                            >
+                                                {{ getSignalBand(rec) }}
+                                            </Badge>
+                                            <Badge
+                                                v-if="
+                                                    rec.streak &&
+                                                    rec.streak.count >= 2
+                                                "
+                                                :variant="
+                                                    rec.streak.status === 'hot'
+                                                        ? 'default'
+                                                        : 'secondary'
+                                                "
+                                                class="shrink-0 text-xs"
+                                            >
+                                                {{
+                                                    rec.streak.status === 'hot'
+                                                        ? '🔥'
+                                                        : '❄️'
+                                                }}
+                                                {{ rec.streak.count }}
+                                            </Badge>
+                                        </div>
+                                        <CardDescription
+                                            class="truncate text-xs"
+                                        >
+                                            {{ rec.game?.away_team }} @
+                                            {{ rec.game?.home_team }}
+                                        </CardDescription>
+                                    </div>
+                                </div>
+                            </div>
+                        </CardHeader>
+
+                        <CardContent class="space-y-4">
+                            <div
+                                class="ui-surface-subtle flex items-center justify-between p-3"
+                            >
+                                <div class="flex items-center gap-2">
+                                    <component
+                                        :is="
+                                            rec.recommendation === 'Over'
+                                                ? TrendingUp
+                                                : TrendingDown
+                                        "
+                                        :class="[
+                                            'h-5 w-5',
+                                            rec.recommendation === 'Over'
+                                                ? 'text-green-500'
+                                                : 'text-red-500',
+                                        ]"
+                                    />
+                                    <div>
+                                        <p class="font-semibold">
+                                            {{ rec.recommendation }}
+                                            {{ rec.line }}
+                                        </p>
+                                        <p
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{ rec.market }}
+                                        </p>
+                                    </div>
+                                </div>
+                                <Badge variant="outline" class="font-mono">
+                                    {{ formatOdds(rec.odds) }}
+                                </Badge>
+                            </div>
+
+                            <div class="flex items-center justify-between">
+                                <Badge
+                                    :variant="getResultStatus(rec).variant"
+                                    :class="getResultStatus(rec).className"
+                                >
+                                    {{ getResultStatus(rec).label }}
+                                </Badge>
+                                <span
+                                    v-if="
+                                        rec.actual_value !== null &&
+                                        rec.actual_value !== undefined
+                                    "
+                                    class="text-xs text-muted-foreground"
+                                >
+                                    Actual:
+                                    {{ Number(rec.actual_value).toFixed(1) }}
+                                </span>
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <div
+                                    class="flex justify-between text-xs text-muted-foreground"
+                                >
+                                    <span>Signal Score</span>
+                                    <span>{{ rec.confidence }}/100</span>
+                                </div>
+                                <div
+                                    class="h-2 overflow-hidden rounded-full bg-muted"
+                                >
+                                    <div
+                                        class="h-full transition-all"
+                                        :class="getConfidenceColor(rec)"
+                                        :style="{ width: `${rec.confidence}%` }"
+                                    />
+                                </div>
+                            </div>
+
+                            <div class="space-y-2">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-7 px-2 text-xs text-muted-foreground"
+                                    @click="toggleModelDetails(rec.id)"
+                                >
+                                    {{
+                                        isModelDetailsOpen(rec.id)
+                                            ? 'Hide Stats'
+                                            : 'Show Stats'
+                                    }}
+                                </Button>
+
+                                <div
+                                    v-if="isModelDetailsOpen(rec.id)"
+                                    class="ui-surface-subtle space-y-2 p-2 text-xs"
+                                >
+                                    <div class="space-y-2">
+                                        <div
+                                            class="flex justify-between text-sm"
+                                        >
+                                            <span class="text-muted-foreground"
+                                                >Season Avg</span
+                                            >
+                                            <span class="font-medium">{{
+                                                rec.stats?.season_avg ?? 0
+                                            }}</span>
                                         </div>
                                         <div
-                                            v-for="[
-                                                label,
-                                                record,
-                                            ] in getCoverRecordRows(rec)"
-                                            :key="`${rec.id}-${label}`"
-                                            class="grid grid-cols-[76px_1fr_auto] items-center gap-2 text-xs"
+                                            class="flex justify-between text-sm"
                                         >
-                                            <span class="text-muted-foreground">
-                                                {{ label }}
+                                            <span class="text-muted-foreground"
+                                                >Last 10 Games</span
+                                            >
+                                            <span
+                                                :class="[
+                                                    'font-medium',
+                                                    (rec.stats?.recent_avg ??
+                                                        0) >
+                                                    (rec.stats?.season_avg ?? 0)
+                                                        ? 'text-green-600 dark:text-green-400'
+                                                        : 'text-red-600 dark:text-red-400',
+                                                ]"
+                                            >
+                                                {{ rec.stats?.recent_avg ?? 0 }}
                                             </span>
+                                        </div>
+                                        <div
+                                            class="flex justify-between text-sm"
+                                        >
+                                            <span class="text-muted-foreground"
+                                                >Last 5 Games</span
+                                            >
+                                            <span
+                                                :class="[
+                                                    'font-medium',
+                                                    (rec.stats?.last5_avg ??
+                                                        0) >
+                                                    (rec.stats?.recent_avg ?? 0)
+                                                        ? 'text-green-600 dark:text-green-400'
+                                                        : 'text-red-600 dark:text-red-400',
+                                                ]"
+                                            >
+                                                {{ rec.stats?.last5_avg ?? 0 }}
+                                            </span>
+                                        </div>
+                                        <div
+                                            v-if="
+                                                rec.stats?.vs_opponent_avg !==
+                                                null
+                                            "
+                                            class="flex justify-between text-sm"
+                                        >
+                                            <span class="text-muted-foreground"
+                                                >vs Opponent</span
+                                            >
+                                            <span
+                                                :class="[
+                                                    'font-medium',
+                                                    rec.stats.vs_opponent_avg >
+                                                    (rec.stats?.season_avg ?? 0)
+                                                        ? 'text-green-600 dark:text-green-400'
+                                                        : 'text-red-600 dark:text-red-400',
+                                                ]"
+                                            >
+                                                {{ rec.stats.vs_opponent_avg }}
+                                            </span>
+                                        </div>
+                                        <div
+                                            v-if="
+                                                getCoverRecordRows(rec).length
+                                            "
+                                            class="space-y-1 border-t pt-2"
+                                        >
+                                            <div
+                                                class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
+                                            >
+                                                Cover Record
+                                            </div>
+                                            <div
+                                                v-for="[
+                                                    label,
+                                                    record,
+                                                ] in getCoverRecordRows(rec)"
+                                                :key="`${rec.id}-${label}`"
+                                                class="grid grid-cols-[76px_1fr_auto] items-center gap-2 text-xs"
+                                            >
+                                                <span
+                                                    class="text-muted-foreground"
+                                                >
+                                                    {{ label }}
+                                                </span>
+                                                <span class="font-medium">
+                                                    {{
+                                                        formatCoverRecord(
+                                                            record,
+                                                            rec.recommendation,
+                                                        )
+                                                    }}
+                                                </span>
+                                                <span
+                                                    class="text-muted-foreground"
+                                                >
+                                                    {{
+                                                        formatCoverRate(record)
+                                                    }}
+                                                </span>
+                                                <span
+                                                    class="col-span-3 text-[11px] text-muted-foreground"
+                                                >
+                                                    Raw O/U:
+                                                    {{ record.record }}
+                                                    <template
+                                                        v-if="record.pushes > 0"
+                                                    >
+                                                        incl. pushes
+                                                    </template>
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div
+                                            v-if="rec.stats?.consistency"
+                                            class="flex justify-between text-sm"
+                                        >
+                                            <span class="text-muted-foreground"
+                                                >Consistency</span
+                                            >
+                                            <span class="text-xs font-medium">
+                                                {{
+                                                    rec.stats.consistency.level
+                                                }}
+                                                (±{{
+                                                    rec.stats.consistency
+                                                        .std_dev
+                                                }})
+                                            </span>
+                                        </div>
+                                        <div
+                                            class="flex justify-between border-t pt-2 text-sm"
+                                        >
+                                            <span class="text-muted-foreground"
+                                                >Edge vs Line</span
+                                            >
+                                            <span
+                                                :class="[
+                                                    'font-bold',
+                                                    (rec.edge ?? 0) > 0
+                                                        ? 'text-green-600 dark:text-green-400'
+                                                        : 'text-red-600 dark:text-red-400',
+                                                ]"
+                                            >
+                                                {{
+                                                    (rec.edge ?? 0) > 0
+                                                        ? '+'
+                                                        : ''
+                                                }}{{ rec.edge ?? 0 }}
+                                            </span>
+                                        </div>
+                                        <div
+                                            v-if="
+                                                rec.model_over_probability !==
+                                                    null &&
+                                                rec.market_over_probability !==
+                                                    null
+                                            "
+                                            class="flex justify-between text-sm"
+                                        >
+                                            <span class="text-muted-foreground"
+                                                >Model vs Market</span
+                                            >
                                             <span class="font-medium">
                                                 {{
-                                                    formatCoverRecord(
-                                                        record,
-                                                        rec.recommendation,
+                                                    rec.model_over_probability?.toFixed(
+                                                        1,
                                                     )
-                                                }}
-                                            </span>
-                                            <span
-                                                class="text-muted-foreground"
-                                            >
-                                                {{ formatCoverRate(record) }}
-                                            </span>
-                                            <span
-                                                class="col-span-3 text-[11px] text-muted-foreground"
-                                            >
-                                                Raw O/U:
-                                                {{ record.record }}
-                                                <template
-                                                    v-if="record.pushes > 0"
-                                                >
-                                                    incl. pushes
-                                                </template>
+                                                }}% vs
+                                                {{
+                                                    rec.market_over_probability?.toFixed(
+                                                        1,
+                                                    )
+                                                }}%
                                             </span>
                                         </div>
                                     </div>
-                                    <div
-                                        v-if="rec.stats?.consistency"
-                                        class="flex justify-between text-sm"
-                                    >
-                                        <span class="text-muted-foreground"
-                                            >Consistency</span
-                                        >
-                                        <span class="text-xs font-medium">
-                                            {{ rec.stats.consistency.level }}
-                                            (±{{
-                                                rec.stats.consistency.std_dev
-                                            }})
-                                        </span>
-                                    </div>
-                                    <div
-                                        class="flex justify-between border-t pt-2 text-sm"
-                                    >
-                                        <span class="text-muted-foreground"
-                                            >Edge vs Line</span
-                                        >
-                                        <span
-                                            :class="[
-                                                'font-bold',
-                                                (rec.edge ?? 0) > 0
-                                                    ? 'text-green-600 dark:text-green-400'
-                                                    : 'text-red-600 dark:text-red-400',
-                                            ]"
-                                        >
-                                            {{ (rec.edge ?? 0) > 0 ? '+' : ''
-                                            }}{{ rec.edge ?? 0 }}
-                                        </span>
-                                    </div>
-                                    <div
-                                        v-if="
-                                            rec.model_over_probability !==
-                                                null &&
-                                            rec.market_over_probability !== null
-                                        "
-                                        class="flex justify-between text-sm"
-                                    >
-                                        <span class="text-muted-foreground"
-                                            >Model vs Market</span
-                                        >
-                                        <span class="font-medium">
-                                            {{
-                                                rec.model_over_probability?.toFixed(
-                                                    1,
-                                                )
-                                            }}% vs
-                                            {{
-                                                rec.market_over_probability?.toFixed(
-                                                    1,
-                                                )
-                                            }}%
-                                        </span>
-                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+                <div
+                    v-if="
+                        visibleRecommendations.length < recommendations.length
+                    "
+                    class="flex justify-center"
+                >
+                    <Button variant="outline" @click="visibleLimit += 18">
+                        Show more props
+                    </Button>
+                </div>
+            </template>
         </div>
     </AppLayout>
 </template>

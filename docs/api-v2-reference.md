@@ -64,7 +64,7 @@ warning-bearing contract instead of throwing provider-specific errors to Vue.
 | `GET` | `/api/v2/sports` | `v2.sports.index` | `sports.index()` | `tests/Feature/Api/V2/SportMetadataEndpointTest.php` |
 | `GET` | `/api/v2/sports/{sport}` | `v2.sports.show` | `sports.show()` | `tests/Feature/Api/V2/SportMetadataEndpointTest.php` |
 | `POST` | `/api/v2/auth/login` | `v2.auth.login` | auth clients | `tests/Feature/Api/V2/AuthEndpointAliasTest.php` |
-| `POST` | `/api/v2/auth/passkeys/options` | `v2.auth.passkeys.options` | auth clients | `tests/Feature/Api/V2/AuthEndpointAliasTest.php` |
+| `POST` | `/api/v2/auth/passkeys/options` | `v2.auth.passkeys.createOptions` | auth clients | `tests/Feature/Api/V2/AuthEndpointAliasTest.php` |
 | `POST` | `/api/v2/auth/passkeys/verify` | `v2.auth.passkeys.verify` | auth clients | `tests/Feature/Api/V2/AuthEndpointAliasTest.php` |
 | `GET` | `/api/v2/auth/me` | `v2.auth.me` | auth clients | `tests/Feature/Api/V2/AuthEndpointAliasTest.php` |
 | `POST` | `/api/v2/auth/logout` | `v2.auth.logout` | auth clients | `tests/Feature/Api/V2/AuthEndpointAliasTest.php` |

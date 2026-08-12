@@ -11,6 +11,8 @@ use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
 use App\Models\ShadowModelOutput;
 use App\Models\User;
+use App\Services\MLB\MlbPeriodFeatureStore;
+use App\Services\MLB\MlbPeriodInsightService;
 use App\Services\MLB\Odds\MlbInningOddsSyncService;
 use App\Services\MLB\Picks\MlbPickGradingService;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
@@ -19,6 +21,7 @@ use App\Services\Predictions\ModelRunRecorder;
 use App\Support\SportsViewCache;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Mockery as m;
@@ -60,6 +63,58 @@ it('exposes quote-independent F3 and F5 insights on the predictions API', functi
         ->assertJsonPath('data.0.period_insights.0.risk_flags.0', 'limited_period_sample')
         ->assertJsonPath('data.0.period_insights.1.market_type', 'first_5_moneyline')
         ->assertJsonPath('data.0.period_insights.1.state', 'insight_only_no_market');
+});
+
+it('serves the composite mlb game page with timing and without request-time history replay', function (): void {
+    Carbon::setTestNow('2026-07-30 10:00:00');
+    [$game, $home, $away] = inningSignalGame(now()->addDay());
+    Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('mlb.season.types.regular'),
+        'game_date' => '2026-07-29',
+        'game_time' => '19:10:00',
+        'status' => 'STATUS_FINAL',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'home_score' => 4,
+        'away_score' => 2,
+        'home_linescores' => [1, 0, 0, 1, 0, 1, 0, 1, 0],
+        'away_linescores' => [0, 0, 0, 1, 0, 1, 0, 0, 0],
+    ]);
+    $prediction = inningSignalPrediction($game);
+    app(MlbPeriodFeatureStore::class)->materialize(collect([$game]));
+
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = strtolower($query->sql);
+    });
+
+    $insights = app(MlbPeriodInsightService::class)->forGame($game);
+
+    expect($insights)->toHaveCount(2)
+        ->and(collect($queries)->contains(
+            fn (string $sql): bool => str_contains($sql, 'mlb_games')
+                && str_contains($sql, 'between'),
+        ))->toBeFalse();
+
+    Sanctum::actingAs(User::factory()->create());
+    $response = $this->getJson("/api/v2/sports/mlb/games/{$game->id}/page");
+
+    $response
+        ->assertOk()
+        ->assertHeader('Server-Timing')
+        ->assertJsonPath('data.game.id', $game->id)
+        ->assertJsonPath('data.game.home_team.id', $home->id)
+        ->assertJsonPath('data.game.away_team.id', $away->id)
+        ->assertJsonPath('data.prediction.id', $prediction->id)
+        ->assertJsonPath('data.prediction.period_insights.0.market_type', 'first_3_moneyline')
+        ->assertJsonPath('data.depth_charts_available', false)
+        ->assertJsonMissingPath('data.depth_charts')
+        ->assertJsonPath('meta.deferred.0', 'matchup_trends')
+        ->assertJsonPath('meta.deferred.1', 'depth_charts');
+
+    preg_match('/desc="(\d+) queries"/', (string) $response->headers->get('Server-Timing'), $matches);
+    expect((int) ($matches[1] ?? PHP_INT_MAX))->toBeLessThanOrEqual(30);
 });
 
 it('syncs event-level MLB inning markets into odds snapshots and normalized quotes', function (): void {

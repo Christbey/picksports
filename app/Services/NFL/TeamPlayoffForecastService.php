@@ -170,7 +170,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<int, array<string,mixed>> $rows
+     * @param  array<int, array<string,mixed>>  $rows
      * @return array<int, array<string,mixed>>
      */
     protected function buildTeamInputs(array $rows): array
@@ -230,7 +230,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<string,mixed> $team
+     * @param  array<string,mixed>  $team
      * @return array<string,mixed>
      */
     protected function sampleSeason(array $team): array
@@ -245,7 +245,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<int, array<string,mixed>> $teams
+     * @param  array<int, array<string,mixed>>  $teams
      * @return array<string,mixed>
      */
     protected function simulateStandings(array $teams): array
@@ -332,7 +332,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<int, array<string,mixed>> $field
+     * @param  array<int, array<string,mixed>>  $field
      */
     protected function simulateConferenceBracket(array $field): ?array
     {
@@ -379,8 +379,8 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<string,mixed> $teamA
-     * @param array<string,mixed> $teamB
+     * @param  array<string,mixed>  $teamA
+     * @param  array<string,mixed>  $teamB
      * @return array<string,mixed>
      */
     protected function simulateGame(array $teamA, array $teamB, bool $useHomeField, bool $teamAHome = true): array
@@ -420,7 +420,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<int, array<string,mixed>> $teams
+     * @param  array<int, array<string,mixed>>  $teams
      */
     protected function findTeamById(array $teams, int $teamId): ?array
     {
@@ -434,7 +434,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<int, array<string,mixed>> $teams
+     * @param  array<int, array<string,mixed>>  $teams
      * @return array<int, array<string,mixed>>
      */
     protected function divisionLeaders(array $teams): array
@@ -453,7 +453,7 @@ class TeamPlayoffForecastService
     }
 
     /**
-     * @param array<int, array<string,mixed>> $teams
+     * @param  array<int, array<string,mixed>>  $teams
      * @return array<int, array<string,mixed>>
      */
     protected function conferenceLeaders(array $teams): array

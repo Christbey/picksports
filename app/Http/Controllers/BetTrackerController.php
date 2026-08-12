@@ -134,17 +134,14 @@ class BetTrackerController extends Controller
 
     public function export(Request $request): StreamedResponse
     {
-        $bets = UserBet::where('user_id', $request->user()->id)
-            ->with('prediction')
-            ->orderBy('placed_at', 'desc')
-            ->get();
+        $userId = (int) $request->user()->id;
 
         $headers = [
             'Content-Type' => 'text/csv',
             'Content-Disposition' => 'attachment; filename="my-bets-'.now()->format('Y-m-d').'.csv"',
         ];
 
-        $callback = function () use ($bets) {
+        $callback = function () use ($userId) {
             $file = fopen('php://output', 'w');
 
             fputcsv($file, [
@@ -160,7 +157,7 @@ class BetTrackerController extends Controller
                 'Notes',
             ]);
 
-            foreach ($bets as $bet) {
+            foreach (UserBet::query()->where('user_id', $userId)->orderByDesc('placed_at')->cursor() as $bet) {
                 fputcsv($file, [
                     $bet->placed_at->format('Y-m-d H:i'),
                     class_basename($bet->prediction_type),
@@ -183,21 +180,28 @@ class BetTrackerController extends Controller
 
     protected function calculateStatistics(int $userId): array
     {
-        $allBets = UserBet::where('user_id', $userId)->get();
+        $summary = UserBet::query()
+            ->where('user_id', $userId)
+            ->selectRaw('COUNT(*) as total_bets')
+            ->selectRaw('COALESCE(SUM(bet_amount), 0) as total_wagered')
+            ->selectRaw("SUM(CASE WHEN result = 'won' THEN 1 ELSE 0 END) as wins")
+            ->selectRaw("SUM(CASE WHEN result = 'lost' THEN 1 ELSE 0 END) as losses")
+            ->selectRaw("SUM(CASE WHEN result = 'push' THEN 1 ELSE 0 END) as pushes")
+            ->selectRaw('COALESCE(SUM(profit_loss), 0) as total_profit')
+            ->first();
 
-        $totalBets = $allBets->count();
-        $totalWagered = $allBets->sum('bet_amount');
+        $totalBets = (int) ($summary?->total_bets ?? 0);
+        $totalWagered = (float) ($summary?->total_wagered ?? 0);
+        $wins = (int) ($summary?->wins ?? 0);
+        $losses = (int) ($summary?->losses ?? 0);
+        $pushes = (int) ($summary?->pushes ?? 0);
+        $settledBets = $wins + $losses + $pushes;
 
-        $settledBets = $allBets->whereIn('result', ['won', 'lost', 'push']);
-        $wins = $settledBets->where('result', 'won')->count();
-        $losses = $settledBets->where('result', 'lost')->count();
-        $pushes = $settledBets->where('result', 'push')->count();
-
-        $winRate = $settledBets->count() > 0
-            ? round(($wins / $settledBets->count()) * 100, 1)
+        $winRate = $settledBets > 0
+            ? round(($wins / $settledBets) * 100, 1)
             : 0;
 
-        $totalProfit = $allBets->sum('profit_loss') ?? 0;
+        $totalProfit = (float) ($summary?->total_profit ?? 0);
         $roi = $totalWagered > 0
             ? round(($totalProfit / $totalWagered) * 100, 1)
             : 0;

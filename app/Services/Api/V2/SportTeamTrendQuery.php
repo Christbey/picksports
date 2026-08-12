@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\Trends\TrendSignalScorer;
 use App\Support\SportsViewCache;
 use App\Support\UserTierResolver;
@@ -10,6 +11,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class SportTeamTrendQuery
 {
+    use BuildsSportQueries;
+
     public function __construct(
         private readonly SportsViewCache $sportsViewCache,
         private readonly UserTierResolver $tierResolver,
@@ -93,13 +96,7 @@ class SportTeamTrendQuery
      */
     private function teamModel(SportContext $context): string
     {
-        $teamModel = $context->models['team'] ?? null;
-
-        if (! is_string($teamModel) || ! is_subclass_of($teamModel, Model::class)) {
-            abort(404, "Team trends are not available for {$context->slug}.");
-        }
-
-        return $teamModel;
+        return $this->requireModel($context, 'team', 'Team trends');
     }
 
     /**

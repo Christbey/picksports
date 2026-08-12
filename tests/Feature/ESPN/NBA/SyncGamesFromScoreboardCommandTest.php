@@ -207,7 +207,7 @@ it('reconciles a scheduled game that fell off the scoreboard via the summary end
     $game = Game::where('espn_event_id', '401871332')->first();
     expect($game)->not->toBeNull()
         ->status->toBe('STATUS_POSTPONED')
-        ->game_date->toEqual('2026-02-02');
+        ->and($game->game_date?->toDateString())->toBe('2026-02-02');
 });
 
 it('skips games without teams in database', function () {

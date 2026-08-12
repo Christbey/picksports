@@ -144,15 +144,17 @@ const sportsTeamSchema = computed(() =>
             :is="'script'"
             head-key="schema-webpage-team"
             type="application/ld+json"
-            v-text="webPageSchema"
-        />
+        >
+            {{ webPageSchema }}
+        </component>
         <component
             :is="'script'"
             v-if="sportsTeamSchema"
             head-key="schema-sportsteam"
             type="application/ld+json"
-            v-text="sportsTeamSchema"
-        />
+        >
+            {{ sportsTeamSchema }}
+        </component>
     </Head>
 
     <AppLayout :breadcrumbs="breadcrumbs">

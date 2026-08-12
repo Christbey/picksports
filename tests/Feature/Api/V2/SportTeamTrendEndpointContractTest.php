@@ -1,7 +1,9 @@
 <?php
 
+use App\Actions\MLB\CalculateTeamTrends;
 use App\Models\CBB\Team as CbbTeam;
 use App\Models\CFB\Team as CfbTeam;
+use App\Models\MLB\Game as MlbGame;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Team as NbaTeam;
 use App\Models\NFL\Team as NflTeam;
@@ -26,6 +28,11 @@ it('requires authenticated access for v2 team trend endpoints', function (string
     $this->getJson("/api/v2/sports/{$slug}/teams/1/trends")
         ->assertUnauthorized();
 })->with('v2TeamTrendContractSports');
+
+it('requires authenticated access for v2 game matchup trend endpoints', function () {
+    $this->getJson('/api/v2/sports/mlb/games/1/trends')
+        ->assertUnauthorized();
+});
 
 it('returns a clean json 404 for unsupported v2 team trend endpoints', function () {
     Sanctum::actingAs(User::factory()->create());
@@ -113,3 +120,47 @@ it('shows v2 team trends with stable metadata and scored signals', function (
         ->and($response->json('meta.freshness'))->toBeArray()
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2TeamTrendContractSports');
+
+it('returns both cached matchup trend payloads through one game request', function () {
+    Cache::flush();
+    Sanctum::actingAs(User::factory()->create());
+
+    $home = MlbTeam::factory()->create(['abbreviation' => 'HME']);
+    $away = MlbTeam::factory()->create(['abbreviation' => 'AWY']);
+    $game = MlbGame::factory()->regularSeason()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'game_date' => '2026-06-01',
+        'game_time' => '19:10:00',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+    ]);
+
+    $this->mock(CalculateTeamTrends::class)
+        ->shouldReceive('countAvailableGames')
+        ->twice()
+        ->andReturn(12)
+        ->shouldReceive('execute')
+        ->twice()
+        ->andReturnUsing(fn (Model $team): array => [
+            'trends' => [
+                'scoring' => ["{$team->abbreviation} covered in 8 of 12 games."],
+            ],
+            'locked' => [],
+        ]);
+
+    $url = "/api/v2/sports/mlb/games/{$game->id}/trends?games=season";
+    $this->getJson($url)
+        ->assertOk()
+        ->assertJsonPath('meta.contract', 'sports.games.trends.show')
+        ->assertJsonPath('meta.game_id', $game->id)
+        ->assertJsonPath('data.home.team_id', $home->id)
+        ->assertJsonPath('data.away.team_id', $away->id)
+        ->assertJsonPath('data.home.trends.scoring.0', 'HME covered in 8 of 12 games.')
+        ->assertJsonPath('data.away.trends.scoring.0', 'AWY covered in 8 of 12 games.');
+
+    $this->getJson($url)
+        ->assertOk()
+        ->assertJsonPath('data.home.team_id', $home->id)
+        ->assertJsonPath('data.away.team_id', $away->id);
+});

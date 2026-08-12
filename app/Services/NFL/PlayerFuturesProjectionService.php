@@ -564,8 +564,7 @@ class PlayerFuturesProjectionService
         string $position,
         string $archetype,
         array $definition
-    ): float
-    {
+    ): float {
         $priorGames = (float) config('nfl.player_futures.prior_games', 4);
         $positionPriors = (array) ($definition['prior_per_game_by_position'] ?? []);
         $archetypePriors = (array) ($definition['prior_per_game_by_archetype'] ?? []);

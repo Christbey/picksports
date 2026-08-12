@@ -24,6 +24,8 @@ use App\Models\WNBA\Game as WnbaGame;
 use App\Models\WNBA\Prediction as WnbaPrediction;
 use App\Models\WNBA\Team as WnbaTeam;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
@@ -390,7 +392,7 @@ it('marks high raw prediction confidence as watch when sample context is missing
         ->assertJsonPath('data.confidence_level', 'high')
         ->assertJsonPath('data.confidence_context.label', 'Watch')
         ->assertJsonPath('data.confidence_context.tier', 'watch')
-        ->assertJsonPath('data.confidence_context.raw_level', 'high')
+        ->assertJsonPath('data.confidence_context.model_level', 'high')
         ->assertJsonPath('data.confidence_context.reason_codes.0', 'sample_context_missing');
 });
 
@@ -607,6 +609,50 @@ it('filters cfb v2 predictions by week zero', function () {
         ->assertJsonCount(1, 'data')
         ->assertJsonPath('data.0.id', $weekZeroPrediction->id)
         ->assertJsonPath('data.0.game.week', 0);
+});
+
+it('loads prediction feature snapshots once for a paginated response', function () {
+    v2PredictionContractActingAsBypassUser();
+
+    $predictions = collect(range(1, 3))->map(function (int $index): NbaPrediction {
+        [, $prediction] = v2PredictionContractCreateGamePrediction(
+            NbaTeam::class,
+            NbaGame::class,
+            NbaPrediction::class,
+        );
+
+        PredictionFeatureSnapshot::query()->create([
+            'sport' => 'nba',
+            'prediction_table' => $prediction->getTable(),
+            'prediction_id' => $prediction->id,
+            'game_id' => $prediction->game_id,
+            'snapshot_run_id' => "nba-api-contract-{$index}",
+            'model_version' => 'snapshot-query-contract',
+            'feature_version' => 'snapshot-query-contract',
+            'blend_version' => 'snapshot-query-contract',
+            'features' => [],
+            'outputs' => [],
+            'model_metadata' => [],
+            'generated_at' => now(),
+        ]);
+
+        return $prediction;
+    });
+
+    $snapshotQueryCount = 0;
+    DB::listen(function (QueryExecuted $query) use (&$snapshotQueryCount): void {
+        if (str_contains(strtolower($query->sql), 'prediction_feature_snapshots')) {
+            $snapshotQueryCount++;
+        }
+    });
+
+    $response = $this->getJson('/api/v2/sports/nba/predictions?season=2026&per_page=10')
+        ->assertOk()
+        ->assertJsonCount(3, 'data');
+
+    expect($snapshotQueryCount)->toBe(1)
+        ->and(collect($response->json('data'))->pluck('id')->all())
+        ->toEqualCanonicalizing($predictions->pluck('id')->all());
 });
 
 function v2PredictionContractActingAsBypassUser(): User

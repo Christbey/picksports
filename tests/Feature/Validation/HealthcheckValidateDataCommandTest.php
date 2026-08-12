@@ -293,7 +293,7 @@ test('healthcheck validate data does not flag future provider unavailable odds a
         'season' => 2026,
         'season_type' => 2,
         'status' => 'STATUS_SCHEDULED',
-        'game_date' => '2026-06-10',
+        'game_date' => '2026-06-11',
         'game_time' => '19:00:00',
         'odds_api_event_id' => fake()->uuid(),
         'odds_data' => null,

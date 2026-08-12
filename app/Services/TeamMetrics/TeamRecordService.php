@@ -105,13 +105,13 @@ class TeamRecordService
             ->values();
 
         $recordsQuery = DB::table($gamesTable)
-            ->selectRaw("
+            ->selectRaw('
                 home_team_id as team_id,
                 season,
                 CAST(season_type AS CHAR) as season_type,
                 SUM(CASE WHEN home_score > away_score THEN 1 ELSE 0 END) as wins,
                 SUM(CASE WHEN home_score <= away_score THEN 1 ELSE 0 END) as losses
-            ")
+            ')
             ->where('status', 'STATUS_FINAL')
             ->whereIn('season', $metricSeasons->all())
             ->when(
@@ -121,13 +121,13 @@ class TeamRecordService
             ->groupBy('home_team_id', 'season', 'season_type')
             ->unionAll(
                 DB::table($gamesTable)
-                    ->selectRaw("
+                    ->selectRaw('
                         away_team_id as team_id,
                         season,
                         CAST(season_type AS CHAR) as season_type,
                         SUM(CASE WHEN away_score > home_score THEN 1 ELSE 0 END) as wins,
                         SUM(CASE WHEN away_score <= home_score THEN 1 ELSE 0 END) as losses
-                    ")
+                    ')
                     ->where('status', 'STATUS_FINAL')
                     ->whereIn('season', $metricSeasons->all())
                     ->when(

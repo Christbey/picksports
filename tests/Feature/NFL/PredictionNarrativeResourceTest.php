@@ -137,5 +137,5 @@ test('nfl prediction resource exposes depth chart context in api and template na
         ->and($data['depth_chart_context']['type'])->toBe('injury_weighting')
         ->and($data['depth_chart_context']['home_out_weighted'])->toBe(3.0)
         ->and(collect($data['narrative']['key_points'])->contains(fn ($point) => str_contains($point, 'Depth-chart weighting')))
-            ->toBeTrue();
+        ->toBeTrue();
 });

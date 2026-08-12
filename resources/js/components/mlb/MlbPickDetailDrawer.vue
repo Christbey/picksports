@@ -72,7 +72,9 @@ function formatOdds(value?: number | null): string {
                         <div>
                             <div class="text-muted-foreground">Market</div>
                             <div class="font-semibold">
-                                {{ formatPercent(candidate.market_probability) }}
+                                {{
+                                    formatPercent(candidate.market_probability)
+                                }}
                             </div>
                         </div>
                         <div>
@@ -126,10 +128,18 @@ function formatOdds(value?: number | null): string {
                     <div class="mb-3 text-sm font-semibold">Diagnostics</div>
                     <pre
                         class="max-h-72 overflow-auto rounded-lg bg-muted p-3 text-xs leading-5"
-                    >{{ JSON.stringify({
-                        feature_snapshot: candidate.feature_snapshot,
-                        market_snapshot: candidate.market_snapshot,
-                    }, null, 2) }}</pre>
+                        >{{
+                            JSON.stringify(
+                                {
+                                    feature_snapshot:
+                                        candidate.feature_snapshot,
+                                    market_snapshot: candidate.market_snapshot,
+                                },
+                                null,
+                                2,
+                            )
+                        }}</pre
+                    >
                 </section>
             </div>
         </SheetContent>

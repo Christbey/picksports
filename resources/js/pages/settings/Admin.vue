@@ -6,8 +6,8 @@ import Heading from '@/components/Heading.vue';
 import { Button } from '@/components/ui/button';
 import { usePayloadInspector } from '@/composables/usePayloadInspector';
 import AppLayout from '@/layouts/AppLayout.vue';
-import foundingUsers from '@/routes/admin/settings/founding-users';
-import groups from '@/routes/admin/settings/groups';
+import foundingUserRoutes from '@/routes/admin/settings/founding-users';
+import groupRoutes from '@/routes/admin/settings/groups';
 import SettingsLayout from '@/layouts/settings/Layout.vue';
 import { type BreadcrumbItem } from '@/types';
 
@@ -167,7 +167,7 @@ watch(userSearch, (value) => {
 
         try {
             userSuggestions.value = await fetchUserSuggestions(
-                foundingUsers.search.url({
+                foundingUserRoutes.search.url({
                     query: { query },
                 }),
                 searchAbortController.signal,
@@ -209,7 +209,7 @@ function selectUserSuggestion(user: UserLookupResult): void {
 }
 
 function grantFoundingAccess(): void {
-    grantForm.post(foundingUsers.grant.url(), {
+    grantForm.post(foundingUserRoutes.grant.url(), {
         preserveScroll: true,
         onSuccess: () => {
             grantForm.reset();
@@ -220,7 +220,7 @@ function grantFoundingAccess(): void {
 }
 
 function updateFoundingLimit(): void {
-    limitForm.post(foundingUsers.limit.url(), {
+    limitForm.post(foundingUserRoutes.limit.url(), {
         preserveScroll: true,
     });
 }
@@ -231,7 +231,7 @@ function revokeFoundingAccess(userId: number): void {
     }
 
     router.post(
-        foundingUsers.revoke.url(),
+        foundingUserRoutes.revoke.url(),
         { user_id: userId },
         {
             preserveScroll: true,
@@ -240,14 +240,14 @@ function revokeFoundingAccess(userId: number): void {
 }
 
 function createGroup(): void {
-    groupForm.post(groups.store.url(), {
+    groupForm.post(groupRoutes.store.url(), {
         preserveScroll: true,
         onSuccess: () => groupForm.reset('name'),
     });
 }
 
 function inviteToGroup(): void {
-    inviteForm.post(groups.invite.url(), {
+    inviteForm.post(groupRoutes.invite.url(), {
         preserveScroll: true,
         onSuccess: () => inviteForm.reset('email'),
     });
@@ -285,7 +285,7 @@ function searchAssignableUsers(groupId: number): void {
 
         try {
             const suggestions = await fetchUserSuggestions(
-                groups.users.search.url({
+                groupRoutes.users.search.url({
                     query: {
                         group_id: groupId,
                         query,
@@ -346,7 +346,7 @@ function addUserToGroup(groupId: number): void {
         return;
     }
 
-    assignMemberForm.post(groups.users.store.url(), {
+    assignMemberForm.post(groupRoutes.users.store.url(), {
         preserveScroll: true,
         onSuccess: () => {
             assignMemberForm.reset();
@@ -371,7 +371,7 @@ function removeUserFromGroup(
         return;
     }
 
-    router.delete(groups.users.destroy.url(), {
+    router.delete(groupRoutes.users.destroy.url(), {
         data: {
             group_id: groupId,
             user_id: userId,
@@ -382,7 +382,7 @@ function removeUserFromGroup(
 
 function rotateJoinLink(groupId: number): void {
     router.post(
-        groups.joinLink.url(),
+        groupRoutes.joinLink.url(),
         { group_id: groupId },
         {
             preserveScroll: true,

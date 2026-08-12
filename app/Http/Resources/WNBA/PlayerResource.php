@@ -14,27 +14,29 @@ class PlayerResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        $fullName = $this->display_name ?? $this->name;
+        $fullName = $this->full_name
+            ?? trim(implode(' ', array_filter([$this->first_name, $this->last_name])))
+            ?: null;
 
         return [
             'id' => $this->id,
             'team_id' => $this->team_id,
             'espn_id' => $this->espn_id,
-            'first_name' => null,
-            'last_name' => null,
+            'first_name' => $this->first_name,
+            'last_name' => $this->last_name,
             'full_name' => $fullName,
-            'name' => $this->name ?? $fullName,
-            'display_name' => $this->display_name,
-            'short_name' => $this->short_name,
-            'jersey' => $this->jersey,
-            'jersey_number' => $this->jersey,
+            'name' => $fullName,
+            'display_name' => $fullName,
+            'short_name' => $fullName,
+            'jersey' => $this->jersey_number,
+            'jersey_number' => $this->jersey_number,
             'position' => $this->position,
             'height' => $this->height,
             'weight' => $this->weight,
             'experience' => $this->experience,
             'college' => $this->college,
-            'headshot' => $this->headshot,
-            'headshot_url' => $this->headshot,
+            'headshot' => $this->headshot_url,
+            'headshot_url' => $this->headshot_url,
             'active_injuries_count' => $this->when(
                 $this->relationLoaded('activeInjuries'),
                 fn () => $this->activeInjuries->count()

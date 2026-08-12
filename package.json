@@ -10,8 +10,9 @@
         "format:check": "prettier --check resources/",
         "lint": "eslint . --fix",
         "lint:check": "eslint .",
+        "typecheck": "vue-tsc --noEmit --pretty false",
         "quality:fix": "npm run format && npm run lint -- --fix",
-        "quality:check": "npm run format:check && npm run lint:check"
+        "quality:check": "npm run format:check && npm run lint:check && npm run typecheck"
     },
     "devDependencies": {
         "@eslint/js": "^9.19.0",

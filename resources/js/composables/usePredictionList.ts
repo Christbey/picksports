@@ -13,18 +13,26 @@ export function usePredictionList<T>(
     const meta = ref<PaginationMeta | null>(null);
     const loading = ref(true);
     const error = ref<string | null>(null);
+    let latestRequest = 0;
 
     const fetchPage = async (page = 1): Promise<void> => {
+        const request = ++latestRequest;
+
         try {
             loading.value = true;
             error.value = null;
             const data = await fetcher(page);
+            if (request !== latestRequest) return;
+
             items.value = data.data;
             meta.value = data.meta;
         } catch (e) {
+            if (request !== latestRequest) return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
-            loading.value = false;
+            if (request === latestRequest) {
+                loading.value = false;
+            }
         }
     };
 

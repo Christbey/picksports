@@ -92,30 +92,39 @@ interface ProjectionPick {
 
 export interface PredictionWithRecommendation {
     recommendation?: PredictionRecommendation | null;
-    public_recommendation?: Record<string, unknown> | null;
+    public_recommendation?:
+        | PredictionRecommendation
+        | Record<string, unknown>
+        | null;
     market_aware_projection?: MarketAwareProjection | null;
 }
 
+type OptionalPrediction = PredictionWithRecommendation | null | undefined;
+
 export function getPredictionRecommendation(
-    prediction: PredictionWithRecommendation,
+    prediction: OptionalPrediction,
 ): PredictionRecommendation | null {
-    const recommendation = prediction.recommendation ?? null;
+    const recommendation = prediction?.recommendation ?? null;
 
     return recommendation?.public ?? recommendation;
 }
 
 export function pregameRecommendation(
-    prediction: PredictionWithRecommendation,
+    prediction: OptionalPrediction,
 ): PredictionRecommendation | null {
-    const recommendation = prediction.recommendation ?? null;
+    const recommendation = prediction?.recommendation ?? null;
 
-    return recommendation?.public ?? recommendation?.pregame_recommendation ?? recommendation;
+    return (
+        recommendation?.public ??
+        recommendation?.pregame_recommendation ??
+        recommendation
+    );
 }
 
 export function candidateRecommendation(
-    prediction: PredictionWithRecommendation,
+    prediction: OptionalPrediction,
 ): PredictionRecommendation | null {
-    const recommendation = prediction.recommendation ?? null;
+    const recommendation = prediction?.recommendation ?? null;
 
     return (
         recommendation?.candidate ??
@@ -125,19 +134,15 @@ export function candidateRecommendation(
     );
 }
 
-export function promotionStatus(prediction: PredictionWithRecommendation) {
-    return prediction.recommendation?.promotion ?? null;
+export function promotionStatus(prediction: OptionalPrediction) {
+    return prediction?.recommendation?.promotion ?? null;
 }
 
-export function isPromotionBlocked(
-    prediction: PredictionWithRecommendation,
-): boolean {
+export function isPromotionBlocked(prediction: OptionalPrediction): boolean {
     return promotionStatus(prediction)?.status === 'blocked';
 }
 
-export function isBetRecommendation(
-    prediction: PredictionWithRecommendation,
-): boolean {
+export function isBetRecommendation(prediction: OptionalPrediction): boolean {
     const recommendation = getPredictionRecommendation(prediction);
 
     return (
@@ -147,9 +152,7 @@ export function isBetRecommendation(
     );
 }
 
-export function isLeanRecommendation(
-    prediction: PredictionWithRecommendation,
-): boolean {
+export function isLeanRecommendation(prediction: OptionalPrediction): boolean {
     const recommendation = getPredictionRecommendation(prediction);
 
     return (
@@ -158,9 +161,7 @@ export function isLeanRecommendation(
     );
 }
 
-export function isLiveMonitor(
-    prediction: PredictionWithRecommendation,
-): boolean {
+export function isLiveMonitor(prediction: OptionalPrediction): boolean {
     const recommendation = getPredictionRecommendation(prediction);
 
     return recommendation?.recommendation_type === 'monitor';

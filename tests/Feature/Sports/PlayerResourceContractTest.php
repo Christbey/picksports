@@ -45,12 +45,10 @@ test('wnba player resource includes canonical aliases alongside legacy fields', 
         'id' => 8,
         'team_id' => 2,
         'espn_id' => 'espn-8',
-        'name' => 'Aja Wilson',
-        'display_name' => 'Aja Wilson',
-        'short_name' => 'A. Wilson',
-        'jersey' => '22',
+        'full_name' => 'Aja Wilson',
+        'jersey_number' => '22',
         'position' => 'F',
-        'headshot' => 'https://example.test/aja.png',
+        'headshot_url' => 'https://example.test/aja.png',
     ]);
 
     $data = WnbaPlayerResource::make($player)->toArray(resourceRequest());

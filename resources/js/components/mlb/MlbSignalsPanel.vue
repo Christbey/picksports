@@ -526,7 +526,9 @@ onUnmounted(() => {
                                 {{ bestBets.length }} public picks
                             </span>
                             <span
-                                v-if="promotionProtected && shadowBets.length > 0"
+                                v-if="
+                                    promotionProtected && shadowBets.length > 0
+                                "
                                 class="rounded-full border px-2.5 py-1"
                             >
                                 {{ shadowBets.length }} research
@@ -863,7 +865,9 @@ onUnmounted(() => {
                                     </span>
                                 </div>
                                 <div class="grid gap-2 text-xs sm:grid-cols-3">
-                                    <div class="rounded-md bg-muted/40 px-2 py-1">
+                                    <div
+                                        class="rounded-md bg-muted/40 px-2 py-1"
+                                    >
                                         <div class="text-muted-foreground">
                                             Live WP
                                         </div>
@@ -875,7 +879,9 @@ onUnmounted(() => {
                                             }}
                                         </div>
                                     </div>
-                                    <div class="rounded-md bg-muted/40 px-2 py-1">
+                                    <div
+                                        class="rounded-md bg-muted/40 px-2 py-1"
+                                    >
                                         <div class="text-muted-foreground">
                                             Spread
                                         </div>
@@ -887,7 +893,9 @@ onUnmounted(() => {
                                             }}
                                         </div>
                                     </div>
-                                    <div class="rounded-md bg-muted/40 px-2 py-1">
+                                    <div
+                                        class="rounded-md bg-muted/40 px-2 py-1"
+                                    >
                                         <div class="text-muted-foreground">
                                             Total
                                         </div>
@@ -900,9 +908,7 @@ onUnmounted(() => {
                                         </div>
                                     </div>
                                 </div>
-                                <div
-                                    class="mt-2 text-xs text-muted-foreground"
-                                >
+                                <div class="mt-2 text-xs text-muted-foreground">
                                     {{ row.live_outs_remaining ?? '-' }} outs
                                     remaining
                                 </div>

@@ -39,6 +39,7 @@ return [
         'history_start_season' => (int) env('MLB_PERIOD_ML_HISTORY_START_SEASON', 2021),
         'minimum_edge' => (float) env('MLB_PERIOD_ML_MINIMUM_EDGE', 0.03),
         'maximum_uncertainty' => (float) env('MLB_PERIOD_ML_MAXIMUM_UNCERTAINTY', 0.92),
+        'feature_snapshot_version' => 'mlb-period-live-v1',
     ],
 
     'weekly_training' => [

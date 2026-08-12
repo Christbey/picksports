@@ -20,6 +20,7 @@ import type {
     ApiV2Prediction,
     ApiV2Query,
     ApiV2TeamSummary,
+    PaginationMeta,
     PredictionListGameTeam,
     PredictionListItem,
     SportPredictionsConfig,
@@ -129,7 +130,10 @@ const {
 
     return {
         data: payload.data.map(mapV2Prediction),
-        meta: payload.meta.pagination ?? null,
+        meta:
+            (payload.meta.pagination as unknown as
+                | PaginationMeta
+                | undefined) ?? null,
     };
 });
 
@@ -249,7 +253,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
         value_signal:
             prediction.value_signal &&
             typeof prediction.value_signal === 'object'
-                ? (prediction.value_signal as PredictionListItem['value_signal'])
+                ? (prediction.value_signal as unknown as PredictionListItem['value_signal'])
                 : null,
         cfb_signal_context:
             prediction.cfb_signal_context &&
@@ -282,7 +286,9 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
 };
 
 watch(selectedDate, () => {
-    if (filterMode.value === 'date') fetchPredictions(1);
+    if (!isBootstrapping.value && filterMode.value === 'date') {
+        fetchPredictions(1);
+    }
 });
 
 watch(seasonType, () => {
@@ -523,16 +529,11 @@ onMounted(async () => {
 
         if (filterMode.value === 'date') {
             await fetchAvailableDates();
-            if (!selectedDate.value) {
-                await fetchPredictions(1);
-            }
-            return;
-        }
-
-        if (filterMode.value === 'seasonWeek') {
+        } else if (filterMode.value === 'seasonWeek') {
             setDefaultSeasonWeekFilters();
         }
 
+        isBootstrapping.value = false;
         await fetchPredictions(1);
     } catch (e) {
         error.value = e instanceof Error ? e.message : 'An error occurred';

@@ -2,14 +2,16 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Schema;
 
 class SportPlayerPropQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 100;
@@ -23,7 +25,7 @@ class SportPlayerPropQuery
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
         return $this->query($context, $filters, $user)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     /**
@@ -57,13 +59,7 @@ class SportPlayerPropQuery
      */
     private function propModel(SportContext $context): string
     {
-        $propModel = $context->models['player_prop'] ?? null;
-
-        if (! is_string($propModel) || ! is_subclass_of($propModel, Model::class)) {
-            abort(404, "Player props are not available for {$context->slug}.");
-        }
-
-        return $propModel;
+        return $this->requireModel($context, 'player_prop', 'Player props');
     }
 
     /**
@@ -92,18 +88,5 @@ class SportPlayerPropQuery
     private function whereGameDate(Builder $query, string $operator, string $date): Builder
     {
         return $query->whereHas('game', fn (Builder $query): Builder => $query->whereDate('game_date', $operator, $date));
-    }
-
-    private function hasColumn(string $table, string $column): bool
-    {
-        return Schema::hasColumn($table, $column);
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

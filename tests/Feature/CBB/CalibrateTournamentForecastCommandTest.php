@@ -2,7 +2,6 @@
 
 use App\Actions\CBB\GenerateTournamentForecast;
 use App\Services\TournamentForecast\CbbTournamentForecastTuningStore;
-use Illuminate\Support\Collection;
 use Mockery\MockInterface;
 
 uses()->group('cbb', 'commands');

@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\NFL;
 
-use App\Services\NFL\TeamRegressionRiskReportService;
 use App\Models\NFL\Team;
 use App\Models\NFL\TeamMetric;
 use App\Models\NFL\TeamMetricSnapshot;
+use App\Services\NFL\TeamRegressionRiskReportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 

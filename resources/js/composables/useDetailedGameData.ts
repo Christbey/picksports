@@ -1,4 +1,4 @@
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { flattenApiV2Stats } from '@/composables/useApiV2StatsAdapter';
 import type {
@@ -49,23 +49,32 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     const trendsLoading = ref(false);
     const loading = ref(true);
     const error = ref<string | null>(null);
+    let requestController: AbortController | null = null;
 
     const resolveMetrics =
         options.metricFromResponse ?? defaultMetricFromResponse;
 
     const load = async () => {
+        requestController?.abort();
+        requestController = new AbortController();
+        const signal = requestController.signal;
+
         try {
             loading.value = true;
             error.value = null;
 
             const [gameData, predictionData] = await Promise.all([
-                api.games.show(options.sport, options.gameId),
-                api.predictions.forGame(options.sport, options.gameId),
+                api.games.show(options.sport, options.gameId, {
+                    init: { signal },
+                }),
+                api.predictions.forGame(options.sport, options.gameId, {
+                    init: { signal },
+                }),
             ]);
 
-            const fullGame = gameData?.data;
+            const fullGame = gameData?.data as unknown as Game | undefined;
             if (fullGame) {
-                game.value = fullGame as Game;
+                game.value = fullGame;
                 homeTeam.value = fullGame.home_team ?? homeTeam.value;
                 awayTeam.value = fullGame.away_team ?? awayTeam.value;
             }
@@ -74,30 +83,41 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                 prediction.value = predictionData?.data ?? null;
             }
 
+            loading.value = false;
+            const supplemental: Promise<unknown>[] = [];
+
             if (hasFinalBoxScore(game.value?.status)) {
-                const [teamStatsData, playerStatsData] = await Promise.all([
-                    api.stats.teams(options.sport, {
-                        query: { game_id: options.gameId, per_page: 100 },
-                    }),
-                    api.stats.players(options.sport, {
-                        query: { game_id: options.gameId, per_page: 100 },
-                    }),
-                ]);
-
-                const stats = flattenApiV2Stats(
-                    teamStatsData?.data,
-                ) as TeamStatsEntry[];
-                homeTeamStats.value =
-                    stats.find((s) => s.team_type === 'home') || null;
-                awayTeamStats.value =
-                    stats.find((s) => s.team_type === 'away') || null;
-
-                const players = flattenApiV2Stats(
-                    playerStatsData?.data,
-                ) as TopPerformer[];
-                topPerformers.value = options.sortTopPerformers
-                    ? options.sortTopPerformers(players)
-                    : players.slice(0, 10);
+                supplemental.push(
+                    api.stats
+                        .teams(options.sport, {
+                            query: { game_id: options.gameId, per_page: 100 },
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            const stats = flattenApiV2Stats(
+                                response?.data,
+                            ) as TeamStatsEntry[];
+                            homeTeamStats.value =
+                                stats.find((row) => row.team_type === 'home') ??
+                                null;
+                            awayTeamStats.value =
+                                stats.find((row) => row.team_type === 'away') ??
+                                null;
+                        }),
+                    api.stats
+                        .players(options.sport, {
+                            query: { game_id: options.gameId, per_page: 100 },
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            const players = flattenApiV2Stats(
+                                response?.data,
+                            ) as TopPerformer[];
+                            topPerformers.value = options.sortTopPerformers
+                                ? options.sortTopPerformers(players)
+                                : players.slice(0, 10);
+                        }),
+                );
             } else {
                 homeTeamStats.value = null;
                 awayTeamStats.value = null;
@@ -107,75 +127,64 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
             const homeTeamId = homeTeam.value?.id ?? game.value?.home_team_id;
             const awayTeamId = awayTeam.value?.id ?? game.value?.away_team_id;
 
-            const teamFetches: Array<{
-                key: string;
-                promise: Promise<unknown>;
-            }> = [];
-
             if (homeTeamId) {
-                teamFetches.push(
-                    {
-                        key: 'homeMetrics',
-                        promise: api.teams.metrics(options.sport, homeTeamId),
-                    },
-                    {
-                        key: 'homeGames',
-                        promise: api.teams.games(options.sport, homeTeamId),
-                    },
+                supplemental.push(
+                    api.teams
+                        .metrics(options.sport, homeTeamId, {
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            if (response) {
+                                homeMetrics.value = resolveMetrics(
+                                    response as unknown as ApiEnvelope<
+                                        TeamMetric | TeamMetric[] | null
+                                    >,
+                                );
+                            }
+                        }),
+                    api.teams
+                        .games(options.sport, homeTeamId, {
+                            query: { per_page: 25 },
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            homeRecentGames.value = (
+                                (response?.data ?? []) as unknown as Game[]
+                            )
+                                .filter((row) => row.status === 'STATUS_FINAL')
+                                .slice(0, 5);
+                        }),
                 );
             }
 
             if (awayTeamId) {
-                teamFetches.push(
-                    {
-                        key: 'awayMetrics',
-                        promise: api.teams.metrics(options.sport, awayTeamId),
-                    },
-                    {
-                        key: 'awayGames',
-                        promise: api.teams.games(options.sport, awayTeamId),
-                    },
+                supplemental.push(
+                    api.teams
+                        .metrics(options.sport, awayTeamId, {
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            if (response) {
+                                awayMetrics.value = resolveMetrics(
+                                    response as unknown as ApiEnvelope<
+                                        TeamMetric | TeamMetric[] | null
+                                    >,
+                                );
+                            }
+                        }),
+                    api.teams
+                        .games(options.sport, awayTeamId, {
+                            query: { per_page: 25 },
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            awayRecentGames.value = (
+                                (response?.data ?? []) as unknown as Game[]
+                            )
+                                .filter((row) => row.status === 'STATUS_FINAL')
+                                .slice(0, 5);
+                        }),
                 );
-            }
-
-            if (teamFetches.length > 0) {
-                for (const entry of teamFetches) {
-                    const key = entry.key;
-                    const payload = await entry.promise;
-                    if (!payload) continue;
-
-                    if (key === 'homeMetrics') {
-                        homeMetrics.value = resolveMetrics(
-                            payload as ApiEnvelope<
-                                TeamMetric | TeamMetric[] | null
-                            >,
-                        );
-                    }
-
-                    if (key === 'awayMetrics') {
-                        awayMetrics.value = resolveMetrics(
-                            payload as ApiEnvelope<
-                                TeamMetric | TeamMetric[] | null
-                            >,
-                        );
-                    }
-
-                    if (key === 'homeGames') {
-                        homeRecentGames.value = (
-                            (payload as ApiEnvelope<Game[]>).data || []
-                        )
-                            .filter((g: Game) => g.status === 'STATUS_FINAL')
-                            .slice(0, 5);
-                    }
-
-                    if (key === 'awayGames') {
-                        awayRecentGames.value = (
-                            (payload as ApiEnvelope<Game[]>).data || []
-                        )
-                            .filter((g: Game) => g.status === 'STATUS_FINAL')
-                            .slice(0, 5);
-                    }
-                }
             }
 
             if (homeTeamId && awayTeamId) {
@@ -197,26 +206,34 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
                     );
                 }
 
-                const [homeTrendsData, awayTrendsData] = await Promise.all([
-                    api.teams.trends(options.sport, homeTeamId, {
-                        query: Object.fromEntries(trendQuery.entries()),
-                    }),
-                    api.teams.trends(options.sport, awayTeamId, {
-                        query: Object.fromEntries(trendQuery.entries()),
-                    }),
-                ]);
-
-                if (homeTrendsData?.data) {
-                    homeTrends.value = homeTrendsData.data as TeamTrendData;
-                }
-
-                if (awayTrendsData?.data) {
-                    awayTrends.value = awayTrendsData.data as TeamTrendData;
-                }
-
-                trendsLoading.value = false;
+                const query = Object.fromEntries(trendQuery.entries());
+                supplemental.push(
+                    api.teams
+                        .trends(options.sport, homeTeamId, {
+                            query,
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            homeTrends.value =
+                                (response?.data as TeamTrendData | undefined) ??
+                                null;
+                        }),
+                    api.teams
+                        .trends(options.sport, awayTeamId, {
+                            query,
+                            init: { signal },
+                        })
+                        .then((response) => {
+                            awayTrends.value =
+                                (response?.data as TeamTrendData | undefined) ??
+                                null;
+                        }),
+                );
             }
+
+            await Promise.allSettled(supplemental);
         } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') return;
             error.value = e instanceof Error ? e.message : 'An error occurred';
         } finally {
             loading.value = false;
@@ -225,6 +242,7 @@ export function useDetailedGameData(options: UseDetailedGameDataOptions) {
     };
 
     onMounted(load);
+    onBeforeUnmount(() => requestController?.abort());
 
     return {
         game,

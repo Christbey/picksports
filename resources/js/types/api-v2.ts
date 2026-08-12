@@ -239,6 +239,7 @@ export type ApiV2Prediction = {
     confidence_context?: {
         label?: string | null;
         tier?: string | null;
+        model_level?: string | null;
         raw_level?: string | null;
         reason_codes?: string[];
         sample_games?: number | null;

@@ -19,8 +19,7 @@ class DepthChartImpactService
         int $playerId,
         ?int $season = null,
         CarbonInterface|string|null $asOf = null,
-    ): float
-    {
+    ): float {
         if ($teamId <= 0 || $playerId <= 0) {
             return 1.0;
         }
@@ -71,8 +70,7 @@ class DepthChartImpactService
         int $playerId,
         ?int $season = null,
         CarbonInterface|string|null $asOf = null,
-    ): ?Model
-    {
+    ): ?Model {
         $asOfTimestamp = is_string($asOf) ? Carbon::parse($asOf) : $asOf;
 
         if ($sport === 'nfl' && $asOfTimestamp !== null) {

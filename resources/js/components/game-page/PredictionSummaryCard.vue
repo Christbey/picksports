@@ -105,12 +105,17 @@ const formatSignedHomeSpread = (
                     </div>
                     <div class="mt-1 text-xs text-muted-foreground">
                         <template
-                            v-if="Math.abs(Number(prediction.predicted_spread)) < 0.05"
+                            v-if="
+                                Math.abs(Number(prediction.predicted_spread)) <
+                                0.05
+                            "
                         >
                             Pick'em
                         </template>
                         <template v-else>
-                            {{ favoriteLabel(prediction, homeLabel, awayLabel) }}
+                            {{
+                                favoriteLabel(prediction, homeLabel, awayLabel)
+                            }}
                             favored
                         </template>
                     </div>

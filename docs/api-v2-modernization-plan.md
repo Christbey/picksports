@@ -16,6 +16,9 @@ route matrix, supported filters, auth rules, and contract-test ownership live
 in `docs/api-v2-reference.md`. The generated OpenAPI artifact lives in
 `docs/openapi-v2.json`.
 
+The current sport-by-sport architecture, performance, dead-code, AI, and ML
+review lives in `docs/api-layer-sport-domain-review.md`.
+
 This is a parallel migration, not a rewrite.
 
 `/api/v1` remains operational throughout the migration and is only retired after:
@@ -195,6 +198,39 @@ Frontend DRY rules:
 - shared sport page state should live in Vue composables.
 - page components should compose behavior rather than copy fetch/filter/table logic per sport.
 - sport-specific display differences should come from config, slots, or small formatter maps.
+
+## 2026-08 API Layer Review Notes
+
+The current API surface has two domains:
+
+- `/api/v1/{sport}` keeps legacy sport-specific controllers/resources alive
+  through shared `routes/api/sports.php` registration.
+- `/api/v2/sports/{sport}` is the canonical sport-domain API. It resolves
+  models/resources through `SportContext`, then delegates filtering to V2 query
+  services and serialization to V2 resources.
+
+Sport-by-sport V2 coverage is now contract-tested for:
+
+| Sport | Core domain | Sport-specific V2 behavior |
+| --- | --- | --- |
+| NFL | teams, players, games, predictions, stats, metrics, injuries, props, futures, signals, depth charts, forecasts | Pro signal data remains calculation metadata; default V2 prediction payloads must not expose `prediction_analysis`. |
+| CFB | teams, players, games, predictions, stats, metrics, injuries, leaderboards | Week-zero prediction filtering and CFB signal context are sanitized at the resource boundary. |
+| CBB | teams, players, games, predictions, stats, metrics, injuries, props, tournament forecasts | Tournament forecast payloads keep v1-compatible rows while V2 owns auth/metadata. |
+| WCBB | teams, games, predictions, stats, metrics, injuries, tournament forecasts | Team/player availability differs from CBB and should continue to flow through capability config. |
+| NBA | teams, players, games, predictions, stats, metrics, injuries, props, futures, signals, depth charts, forecasts | Basketball shared logic should stay in V2 query/resource helpers unless NBA needs a presenter override. |
+| WNBA | teams, players, games, predictions, stats, metrics, injuries, props | Value signals are public summaries; internal betting-value arrays remain gated. |
+| MLB | teams, players, games, predictions, stats, metrics, injuries, props, futures, signals, depth charts, playoff forecasts, daily picks | Pitching, period insights, bullpen ratings, and market-aware recommendations are the richest API extensions and should move toward per-sport presenters. |
+
+Near-term cleanup priorities:
+
+- Keep extracting repeated V2 query mechanics into `App\Services\Api\V2\Concerns\BuildsSportQueries`.
+- Split large cross-sport resources, especially `SportPredictionResource`, into
+  common payload primitives plus per-sport presenters for MLB, NFL, and CFB.
+- Keep raw model inputs, AI narrative fields, and backend calibration internals
+  out of default V2 payloads. Public equivalents should use consumer-safe names
+  such as `model_level`, `market_edge`, and `market_implied_probability`.
+- Continue retiring duplicated v1 sport controllers/resources only after usage
+  logs and Vue scans show no callers.
 
 ## Sport Context
 

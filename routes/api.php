@@ -24,7 +24,7 @@ Route::prefix('v1')->group(function () use ($registerSportRoutes) {
             ->name('login');
         Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'options'])
             ->middleware('throttle:20,1')
-            ->name('passkeys.options');
+            ->name('passkeys.createOptions');
         Route::post('/passkeys/verify', [PasskeyTokenAuthController::class, 'verify'])
             ->middleware('throttle:10,1')
             ->name('passkeys.verify');

@@ -2,7 +2,6 @@
 
 namespace App\Actions\OddsApi;
 
-use App\Services\OddsApi\OddsApiService;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;

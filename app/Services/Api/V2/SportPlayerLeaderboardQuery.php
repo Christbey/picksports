@@ -2,6 +2,7 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\PlayerStats\BasketballLeaderboardService;
 use App\Services\PlayerStats\CfbPlayerLeaderboardService;
 use App\Services\PlayerStats\MlbPlayerLeaderboardService;
@@ -12,6 +13,8 @@ use Illuminate\Support\Collection;
 
 class SportPlayerLeaderboardQuery
 {
+    use BuildsSportQueries;
+
     public function __construct(
         private readonly BasketballLeaderboardService $basketballLeaderboards,
         private readonly NbaPlayerEpaCalculator $basketballEpa,
@@ -155,61 +158,6 @@ class SportPlayerLeaderboardQuery
      */
     private function modelClass(SportContext $context, string $key, string $label): string
     {
-        $model = $context->models[$key] ?? null;
-
-        if (! is_string($model)) {
-            abort(404, "{$label} are not available for {$context->slug}.");
-        }
-
-        return $model;
-    }
-
-    /**
-     * @return array<int, int|string>
-     */
-    private function seasonTypeCandidates(SportContext $context, string $requestedSeasonType): array
-    {
-        $requested = trim($requestedSeasonType);
-        if ($requested === '') {
-            return [];
-        }
-
-        $typeNames = config("{$context->slug}.season.type_names", []);
-        $typesByKey = config("{$context->slug}.season.types", []);
-        $candidates = [$requested];
-
-        if (is_numeric($requested)) {
-            $code = (int) $requested;
-            $candidates[] = $code;
-            $matchedKey = array_search($code, $typesByKey, true);
-
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typeNames[$matchedKey])) {
-                    $candidates[] = (string) $typeNames[$matchedKey];
-                }
-            }
-        } else {
-            if (isset($typesByKey[$requested])) {
-                $resolvedCode = $typesByKey[$requested];
-                $candidates[] = $resolvedCode;
-                $candidates[] = (string) $resolvedCode;
-            }
-
-            $matchedKey = array_search($requested, $typeNames, true);
-            if ($matchedKey !== false) {
-                $candidates[] = (string) $matchedKey;
-                if (isset($typesByKey[$matchedKey])) {
-                    $resolvedCode = $typesByKey[$matchedKey];
-                    $candidates[] = $resolvedCode;
-                    $candidates[] = (string) $resolvedCode;
-                }
-            }
-        }
-
-        return array_values(array_unique(array_filter(
-            $candidates,
-            fn (mixed $value): bool => $value !== null && $value !== ''
-        )));
+        return $this->requireModel($context, $key, $label);
     }
 }

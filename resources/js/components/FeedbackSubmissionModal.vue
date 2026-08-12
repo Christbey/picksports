@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,7 +14,12 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-const isOpen = ref(false);
+const props = defineProps<{ open: boolean }>();
+const emit = defineEmits<{ 'update:open': [value: boolean] }>();
+const isOpen = computed({
+    get: () => props.open,
+    set: (value: boolean) => emit('update:open', value),
+});
 const submitted = ref(false);
 
 const form = useForm({
@@ -22,12 +27,6 @@ const form = useForm({
     message: '',
     page_url: '',
 });
-
-const handleOpenRequest = () => {
-    submitted.value = false;
-    form.clearErrors();
-    isOpen.value = true;
-};
 
 const submit = () => {
     form.page_url = typeof window !== 'undefined' ? window.location.href : '';
@@ -41,19 +40,14 @@ const submit = () => {
     });
 };
 
-onMounted(() => {
-    window.addEventListener(
-        'open-feedback-submission-modal',
-        handleOpenRequest,
-    );
-});
-
-onUnmounted(() => {
-    window.removeEventListener(
-        'open-feedback-submission-modal',
-        handleOpenRequest,
-    );
-});
+watch(
+    () => props.open,
+    (open) => {
+        if (!open) return;
+        submitted.value = false;
+        form.clearErrors();
+    },
+);
 </script>
 
 <template>

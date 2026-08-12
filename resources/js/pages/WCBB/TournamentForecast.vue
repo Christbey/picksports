@@ -62,6 +62,7 @@ const sortMode = ref<'model' | 'edge'>('model');
 const onlyPlusEv = ref(false);
 const availableSeasons = ref<number[]>([]);
 const api = useApiV2Client();
+let latestForecastRequest = 0;
 
 const availableSeasonOptions = computed(() =>
     availableSeasons.value.length > 0
@@ -244,6 +245,7 @@ const meterClass = (value: number) => {
 
 const fetchForecasts = async () => {
     if (!selectedSeason.value) return;
+    const request = ++latestForecastRequest;
 
     loading.value = true;
     error.value = null;
@@ -255,16 +257,27 @@ const fetchForecasts = async () => {
         if (!payload) {
             throw new Error('Failed to load tournament forecast data');
         }
-        forecasts.value = payload?.data ?? [];
-        availableSeasons.value = payload?.meta?.available_seasons ?? [];
+        if (request !== latestForecastRequest) return;
+        const meta = payload.meta as { available_seasons?: number[] };
+        forecasts.value = payload.data ?? [];
+        availableSeasons.value = meta.available_seasons ?? [];
+        if (
+            availableSeasons.value.length > 0 &&
+            !availableSeasons.value.includes(selectedSeason.value)
+        ) {
+            selectedSeason.value = availableSeasons.value[0];
+        }
     } catch (e) {
+        if (request !== latestForecastRequest) return;
         error.value =
             e instanceof Error
                 ? e.message
                 : 'An error occurred while loading forecast data.';
         forecasts.value = [];
     } finally {
-        loading.value = false;
+        if (request === latestForecastRequest) {
+            loading.value = false;
+        }
     }
 };
 
@@ -272,15 +285,8 @@ watch(selectedSeason, () => {
     fetchForecasts();
 });
 
-onMounted(async () => {
+onMounted(() => {
     selectedSeason.value = new Date().getFullYear();
-    await fetchForecasts();
-    if (
-        availableSeasons.value.length > 0 &&
-        !availableSeasons.value.includes(selectedSeason.value)
-    ) {
-        selectedSeason.value = availableSeasons.value[0];
-    }
 });
 </script>
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from picksports_nfl_ml.inference import InferenceBundle
 from picksports_nfl_ml.pipeline import train
@@ -128,6 +130,38 @@ def test_trains_versioned_artifacts_and_emits_output_contract(
     nullable_output = InferenceBundle.load(run_dir).predict(nullable_input)[0]
     assert nullable_output["home_cover_probability"] is None
     assert nullable_output["over_probability"] is None
+
+    evaluation_path = run_dir / "evaluation.json"
+    original_evaluation = evaluation_path.read_bytes()
+    with evaluation_path.open("a", encoding="utf-8") as handle:
+        handle.write("tampered")
+    with pytest.raises(ValueError, match="mismatch"):
+        InferenceBundle.load(run_dir)
+    evaluation_path.write_bytes(original_evaluation)
+
+    schema_file = run_dir / "feature_schema.yaml"
+    schema_file.write_text(
+        schema_file.read_text(encoding="utf-8").replace(
+            "nfl-pregame-ml-v1", "nfl-pregame-ml-v1-tampered", 1
+        ),
+        encoding="utf-8",
+    )
+    manifest_path = run_dir / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["artifacts"]["evaluation.json"] = {
+        "sha256": hashlib.sha256(original_evaluation).hexdigest(),
+        "bytes": len(original_evaluation),
+    }
+    manifest["artifacts"]["feature_schema.yaml"] = {
+        "sha256": hashlib.sha256(schema_file.read_bytes()).hexdigest(),
+        "bytes": schema_file.stat().st_size,
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="schema hash"):
+        InferenceBundle.load(run_dir)
 
 
 def test_held_out_targets_cannot_change_model_selection(

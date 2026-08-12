@@ -27,7 +27,7 @@
                 'wcbb/*',
                 'mlb/*',
             ]);
-            $showAdsense = $isPublicPage || request()->is([
+            $showAdsense = auth()->guest() && ($isPublicPage || request()->is([
                 'nba/*',
                 'wnba/*',
                 'nfl/*',
@@ -35,7 +35,7 @@
                 'cbb/*',
                 'wcbb/*',
                 'mlb/*',
-            ]);
+            ]));
 
             $defaultDescription = 'Sports predictions, analytics, and live game insights.';
             $descriptionMap = [
@@ -233,8 +233,6 @@
         <link rel="icon" type="image/png" sizes="512x512" href="{{ $siteIcon512 }}">
 
         <link rel="dns-prefetch" href="//fonts.bunny.net">
-        <link rel="dns-prefetch" href="//github.com">
-        <link rel="dns-prefetch" href="//laravel.com">
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
         @if ($showAdsense)
@@ -243,10 +241,19 @@
 
         <!-- Google Tag Manager -->
         <script>
-            (function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-            new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-            j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-            'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+            (function(w,d,s,l,i){
+                var load=function(){
+                    if(w.__psGtmLoaded){return;}w.__psGtmLoaded=true;
+                    w[l]=w[l]||[];w[l].push({'gtm.start':new Date().getTime(),event:'gtm.js'});
+                    var f=d.getElementsByTagName(s)[0],j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
+                    j.async=true;j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+                };
+                var schedule=function(){
+                    if('requestIdleCallback' in w){w.requestIdleCallback(load,{timeout:3000});}
+                    else{w.setTimeout(load,1500);}
+                };
+                if(d.readyState==='complete'){schedule();}
+                else{w.addEventListener('load',schedule,{once:true});}
             })(window,document,'script','dataLayer','GTM-P5NFGS3P');
         </script>
         <!-- End Google Tag Manager -->

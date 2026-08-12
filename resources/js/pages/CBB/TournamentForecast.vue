@@ -64,6 +64,7 @@ const actualFieldSize = ref(0);
 const forecastMode = ref<string>('baseline');
 const snapshotAsOf = ref<string | null>(null);
 const api = useApiV2Client();
+let latestForecastRequest = 0;
 
 const regionOrder = ['East', 'West', 'South', 'Midwest'];
 
@@ -154,6 +155,7 @@ const plusEvTitleEdges = computed(() =>
 
 const fetchForecasts = async () => {
     if (!selectedSeason.value) return;
+    const request = ++latestForecastRequest;
 
     loading.value = true;
     error.value = null;
@@ -165,13 +167,27 @@ const fetchForecasts = async () => {
         if (!payload) {
             throw new Error('Failed to load tournament forecast data');
         }
+        if (request !== latestForecastRequest) return;
 
+        const meta = payload.meta as {
+            available_seasons?: number[];
+            actual_field_size?: number;
+            mode?: string;
+            snapshot_as_of?: string | null;
+        };
         forecasts.value = payload.data ?? [];
-        availableSeasons.value = payload.meta?.available_seasons ?? [];
-        actualFieldSize.value = payload.meta?.actual_field_size ?? 0;
-        forecastMode.value = payload.meta?.mode ?? 'baseline';
-        snapshotAsOf.value = payload.meta?.snapshot_as_of ?? null;
+        availableSeasons.value = meta.available_seasons ?? [];
+        actualFieldSize.value = meta.actual_field_size ?? 0;
+        forecastMode.value = meta.mode ?? 'baseline';
+        snapshotAsOf.value = meta.snapshot_as_of ?? null;
+        if (
+            availableSeasons.value.length > 0 &&
+            !availableSeasons.value.includes(selectedSeason.value)
+        ) {
+            selectedSeason.value = availableSeasons.value[0];
+        }
     } catch (e) {
+        if (request !== latestForecastRequest) return;
         error.value =
             e instanceof Error
                 ? e.message
@@ -181,7 +197,9 @@ const fetchForecasts = async () => {
         forecastMode.value = 'baseline';
         snapshotAsOf.value = null;
     } finally {
-        loading.value = false;
+        if (request === latestForecastRequest) {
+            loading.value = false;
+        }
     }
 };
 
@@ -189,15 +207,8 @@ watch(selectedSeason, () => {
     fetchForecasts();
 });
 
-onMounted(async () => {
+onMounted(() => {
     selectedSeason.value = new Date().getFullYear();
-    await fetchForecasts();
-    if (
-        availableSeasons.value.length > 0 &&
-        !availableSeasons.value.includes(selectedSeason.value)
-    ) {
-        selectedSeason.value = availableSeasons.value[0];
-    }
 });
 </script>
 

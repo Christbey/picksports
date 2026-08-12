@@ -2,16 +2,18 @@
 
 namespace App\Services\Api\V2;
 
+use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 class SportStatQuery
 {
+    use BuildsSportQueries;
+
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 100;
@@ -26,7 +28,7 @@ class SportStatQuery
         ?Authenticatable $user = null,
     ): LengthAwarePaginator {
         return $this->query($context, $type, $filters, $user)
-            ->paginate($this->perPage($filters));
+            ->paginate($this->perPage($filters, self::DEFAULT_PER_PAGE, self::MAX_PER_PAGE));
     }
 
     /**
@@ -131,13 +133,8 @@ class SportStatQuery
     {
         $key = $type === 'team' ? 'team_stat' : 'player_stat';
         $message = $type === 'team' ? 'Team stats' : 'Player stats';
-        $statModel = $context->models[$key] ?? null;
 
-        if (! is_string($statModel) || ! is_subclass_of($statModel, Model::class)) {
-            abort(404, "{$message} are not available for {$context->slug}.");
-        }
-
-        return $statModel;
+        return $this->requireModel($context, $key, $message);
     }
 
     /**
@@ -145,13 +142,7 @@ class SportStatQuery
      */
     private function gameModel(SportContext $context): string
     {
-        $gameModel = $context->models['game'] ?? null;
-
-        if (! is_string($gameModel) || ! is_subclass_of($gameModel, Model::class)) {
-            abort(404, "Games are not available for {$context->slug}.");
-        }
-
-        return $gameModel;
+        return $this->requireModel($context, 'game', 'Games');
     }
 
     /**
@@ -196,18 +187,5 @@ class SportStatQuery
     private function whereGameDate(Builder $query, string $operator, string $date): Builder
     {
         return $query->whereHas('game', fn (Builder $query): Builder => $query->whereDate('game_date', $operator, $date));
-    }
-
-    private function hasColumn(string $table, string $column): bool
-    {
-        return Schema::hasColumn($table, $column);
-    }
-
-    /**
-     * @param  array{per_page?: int}  $filters
-     */
-    private function perPage(array $filters): int
-    {
-        return max(1, min((int) ($filters['per_page'] ?? self::DEFAULT_PER_PAGE), self::MAX_PER_PAGE));
     }
 }

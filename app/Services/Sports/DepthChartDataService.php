@@ -4,7 +4,6 @@ namespace App\Services\Sports;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 
 class DepthChartDataService
 {
@@ -60,6 +59,27 @@ class DepthChartDataService
             ->with(['homeTeam', 'awayTeam'])
             ->findOrFail($gameId);
 
+        return $this->forLoadedGame(
+            sport: $sport,
+            game: $game,
+            depthChartEntryModel: $depthChartEntryModel,
+            playerStatModel: $playerStatModel,
+        );
+    }
+
+    /**
+     * @param  class-string<Model>  $depthChartEntryModel
+     * @param  class-string<Model>  $playerStatModel
+     * @return array<string, mixed>
+     */
+    public function forLoadedGame(
+        string $sport,
+        Model $game,
+        string $depthChartEntryModel,
+        string $playerStatModel,
+    ): array {
+        $game->loadMissing(['homeTeam', 'awayTeam']);
+
         $season = (int) ($game->season ?? now()->year);
         $seasonType = $game->season_type ?? null;
         $beforeDate = $game->game_date?->toDateString();
@@ -74,7 +94,7 @@ class DepthChartDataService
                 teamModelInstance: $game->awayTeam,
                 depthChartEntryModel: $depthChartEntryModel,
                 playerStatModel: $playerStatModel,
-                gameModel: $gameModel,
+                gameModel: $game::class,
                 season: $season,
                 seasonType: $seasonType,
                 beforeDate: $beforeDate,
@@ -85,7 +105,7 @@ class DepthChartDataService
                 teamModelInstance: $game->homeTeam,
                 depthChartEntryModel: $depthChartEntryModel,
                 playerStatModel: $playerStatModel,
-                gameModel: $gameModel,
+                gameModel: $game::class,
                 season: $season,
                 seasonType: $seasonType,
                 beforeDate: $beforeDate,

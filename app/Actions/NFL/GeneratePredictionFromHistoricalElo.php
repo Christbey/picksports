@@ -24,8 +24,8 @@ use App\Support\NflReasonCodeCatalog;
 use App\Support\NflValidatedSignalCombos;
 use App\Support\Odds\MarketSpread;
 use Carbon\CarbonInterface;
-use Illuminate\Support\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class GeneratePredictionFromHistoricalElo
@@ -3932,17 +3932,17 @@ class GeneratePredictionFromHistoricalElo
 
         if (! $entry) {
             $entry = DepthChartEntry::query()
-            ->with('player')
-            ->where('team_id', $teamId)
-            ->where('season', (int) $game->season)
-            ->where('position_code', 'QB')
-            ->where('is_starter', true)
-            ->when($historicalReconstruction, fn ($query) => $query
-                ->whereNotNull('source_updated_at')
-                ->where('source_updated_at', '<=', $asOf))
-            ->orderBy('depth_rank')
-            ->orderBy('slot_order')
-            ->first();
+                ->with('player')
+                ->where('team_id', $teamId)
+                ->where('season', (int) $game->season)
+                ->where('position_code', 'QB')
+                ->where('is_starter', true)
+                ->when($historicalReconstruction, fn ($query) => $query
+                    ->whereNotNull('source_updated_at')
+                    ->where('source_updated_at', '<=', $asOf))
+                ->orderBy('depth_rank')
+                ->orderBy('slot_order')
+                ->first();
         }
 
         if (! $entry || ! $entry->player_id) {

@@ -9,9 +9,11 @@ use App\Http\Resources\BettingRecommendationResource;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPlayerPropQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Support\SportsViewCache;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 
 class SportPlayerPropController extends Controller
 {
@@ -20,6 +22,7 @@ class SportPlayerPropController extends Controller
         Request $request,
         SportContextResolver $sports,
         PlayerPropAnalyzer $analyzer,
+        SportsViewCache $cache,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $sportCode = strtoupper($context->slug);
@@ -31,54 +34,69 @@ class SportPlayerPropController extends Controller
             'limit' => ['nullable', 'integer', 'min:1', 'max:150'],
         ]);
 
-        $resolvedDate = $this->resolveBoardDate($analyzer, $sportCode, $validated['date'] ?? null);
         $gameFilter = isset($validated['game']) ? (int) $validated['game'] : null;
         $marketFilter = $validated['market'] ?? null;
         $limit = isset($validated['limit']) ? (int) $validated['limit'] : 75;
-
-        $recommendations = $analyzer->precomputedRecommendations(
-            sport: $sportCode,
-            dateFilter: $resolvedDate,
-            gameFilter: $gameFilter,
-            marketFilter: $marketFilter,
-            limit: $limit,
-        );
-        $diagnostics = $analyzer->precomputedRecommendationDiagnostics(
-            sport: $sportCode,
-            dateFilter: $resolvedDate,
-            gameFilter: $gameFilter,
-            marketFilter: $marketFilter,
-        );
-
-        return response()->json([
-            'sport' => $sportCode,
-            'data' => BettingRecommendationResource::collection($recommendations)->resolve(),
-            'dates' => $analyzer->getAvailableDatesForSport($sportCode)->values(),
-            'games' => $analyzer->getAvailableGamesForSport($sportCode, $resolvedDate)->values(),
-            'markets' => $analyzer->getAvailableMarketsForSport($sportCode, $resolvedDate, $gameFilter)->values(),
-            'filters' => [
-                'date' => $resolvedDate,
+        $payload = $cache->remember(
+            SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE,
+            $cache->contextHash([
+                'sport' => $context->slug,
+                'date' => $validated['date'] ?? null,
                 'game' => $gameFilter,
                 'market' => $marketFilter,
-            ],
-            'meta' => [
-                'version' => 'v2',
-                'sport' => $context->slug,
-                'contract' => 'sports.player-props.board',
-                'tier' => [
-                    'mode' => 'recommendation_board',
-                    'allowed_field_groups' => ['identity', 'market', 'odds', 'recommendation', 'stats_summary', 'grading', 'freshness'],
-                    'withheld_field_groups' => ['raw_data'],
-                ],
-                'freshness' => [],
-                'diagnostics' => $diagnostics,
-                'warnings' => $recommendations->isEmpty()
-                    ? [$this->emptyBoardWarning($diagnostics)]
-                    : [],
                 'limit' => $limit,
-                'source' => 'precomputed',
-            ],
-        ]);
+            ]),
+            (int) config('performance.player_props_cache_seconds', 60),
+            function () use ($analyzer, $context, $sportCode, $validated, $gameFilter, $marketFilter, $limit): array {
+                $dates = $analyzer->getAvailableDatesForSport($sportCode)->values();
+                $resolvedDate = $this->resolveBoardDate($dates, $validated['date'] ?? null);
+                $recommendations = $analyzer->precomputedRecommendations(
+                    sport: $sportCode,
+                    dateFilter: $resolvedDate,
+                    gameFilter: $gameFilter,
+                    marketFilter: $marketFilter,
+                    limit: $limit,
+                );
+                $diagnostics = $analyzer->precomputedRecommendationDiagnostics(
+                    sport: $sportCode,
+                    dateFilter: $resolvedDate,
+                    gameFilter: $gameFilter,
+                    marketFilter: $marketFilter,
+                );
+
+                return [
+                    'sport' => $sportCode,
+                    'data' => BettingRecommendationResource::collection($recommendations)->resolve(),
+                    'dates' => $dates,
+                    'games' => $analyzer->getAvailableGamesForSport($sportCode, $resolvedDate)->values(),
+                    'markets' => $analyzer->getAvailableMarketsForSport($sportCode, $resolvedDate, $gameFilter)->values(),
+                    'filters' => [
+                        'date' => $resolvedDate,
+                        'game' => $gameFilter,
+                        'market' => $marketFilter,
+                    ],
+                    'meta' => [
+                        'version' => 'v2',
+                        'sport' => $context->slug,
+                        'contract' => 'sports.player-props.board',
+                        'tier' => [
+                            'mode' => 'recommendation_board',
+                            'allowed_field_groups' => ['identity', 'market', 'odds', 'recommendation', 'stats_summary', 'grading', 'freshness'],
+                            'withheld_field_groups' => ['raw_data'],
+                        ],
+                        'freshness' => [],
+                        'diagnostics' => $diagnostics,
+                        'warnings' => $recommendations->isEmpty()
+                            ? [$this->emptyBoardWarning($diagnostics)]
+                            : [],
+                        'limit' => $limit,
+                        'source' => 'precomputed',
+                    ],
+                ];
+            },
+        );
+
+        return response()->json($payload);
     }
 
     public function index(
@@ -181,13 +199,15 @@ class SportPlayerPropController extends Controller
         ];
     }
 
-    private function resolveBoardDate(PlayerPropAnalyzer $analyzer, string $sportCode, ?string $requestedDate): ?string
+    /**
+     * @param  Collection<int, array{value: string, label: string}>  $dates
+     */
+    private function resolveBoardDate(Collection $dates, ?string $requestedDate): ?string
     {
         if ($requestedDate !== null && $requestedDate !== '') {
             return $requestedDate;
         }
 
-        $dates = $analyzer->getAvailableDatesForSport($sportCode);
         if ($dates->isEmpty()) {
             return $requestedDate;
         }

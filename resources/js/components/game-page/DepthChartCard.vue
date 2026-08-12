@@ -16,8 +16,12 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
         v-if="awayTeam || homeTeam"
         class="overflow-hidden rounded-3xl border border-slate-200/80 bg-white/95 shadow-sm ring-1 ring-black/5 dark:border-slate-800 dark:bg-slate-950/80"
     >
-        <div class="border-b border-slate-200/80 px-6 py-4 dark:border-slate-800">
-            <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
+        <div
+            class="border-b border-slate-200/80 px-6 py-4 dark:border-slate-800"
+        >
+            <h2
+                class="text-lg font-semibold text-slate-900 dark:text-slate-100"
+            >
                 {{ title || 'Depth Charts' }}
             </h2>
             <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -35,15 +39,29 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                     <img
                         v-if="team.team.logo"
                         :src="team.team.logo"
-                        :alt="team.team.display_name || team.team.abbreviation || 'Team logo'"
+                        :alt="
+                            team.team.display_name ||
+                            team.team.abbreviation ||
+                            'Team logo'
+                        "
                         class="h-10 w-10 rounded-full object-contain"
                     />
                     <div>
-                        <h3 class="text-base font-semibold text-slate-900 dark:text-slate-100">
-                            {{ team.team.display_name || team.team.abbreviation }}
+                        <h3
+                            class="text-base font-semibold text-slate-900 dark:text-slate-100"
+                        >
+                            {{
+                                team.team.display_name || team.team.abbreviation
+                            }}
                         </h3>
-                        <p class="text-xs uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
-                            {{ team.entries.filter((entry) => entry.is_starter).length }} listed starters
+                        <p
+                            class="text-xs tracking-[0.18em] text-slate-400 uppercase dark:text-slate-500"
+                        >
+                            {{
+                                team.entries.filter((entry) => entry.is_starter)
+                                    .length
+                            }}
+                            listed starters
                         </p>
                     </div>
                 </div>
@@ -57,23 +75,40 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                         <div class="flex items-start justify-between gap-4">
                             <div class="min-w-0">
                                 <div class="flex items-center gap-2">
-                                    <span class="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white dark:bg-slate-100 dark:text-slate-950">
-                                        {{ entry.position_code || entry.position_slot_key }}
+                                    <span
+                                        class="rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold tracking-[0.18em] text-white uppercase dark:bg-slate-100 dark:text-slate-950"
+                                    >
+                                        {{
+                                            entry.position_code ||
+                                            entry.position_slot_key
+                                        }}
                                     </span>
                                     <span
                                         v-if="entry.is_starter"
-                                        class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
+                                        class="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold tracking-[0.18em] text-emerald-700 uppercase dark:bg-emerald-950/70 dark:text-emerald-300"
                                     >
                                         Starter
                                     </span>
                                 </div>
-                                <div class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                    {{ entry.full_name || `ESPN #${entry.espn_athlete_id ?? 'Unknown'}` }}
+                                <div
+                                    class="mt-2 text-sm font-semibold text-slate-900 dark:text-slate-100"
+                                >
+                                    {{
+                                        entry.full_name ||
+                                        `ESPN #${entry.espn_athlete_id ?? 'Unknown'}`
+                                    }}
                                 </div>
-                                <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                <div
+                                    class="mt-1 text-xs text-slate-500 dark:text-slate-400"
+                                >
                                     {{ entry.position_name }}
-                                    <span v-if="entry.jersey_number"> • #{{ entry.jersey_number }}</span>
-                                    <span v-if="entry.stats.games_played"> • {{ entry.stats.games_played }} GP</span>
+                                    <span v-if="entry.jersey_number">
+                                        • #{{ entry.jersey_number }}</span
+                                    >
+                                    <span v-if="entry.stats.games_played">
+                                        •
+                                        {{ entry.stats.games_played }} GP</span
+                                    >
                                 </div>
                             </div>
 
@@ -94,10 +129,14 @@ const metricKey = (entry: TeamDepthChartEntry, index: number): string =>
                                 :key="metricKey(entry, index)"
                                 class="rounded-xl bg-white px-3 py-2 text-center ring-1 ring-slate-200/80 dark:bg-slate-950/80 dark:ring-slate-800"
                             >
-                                <div class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                                <div
+                                    class="text-[10px] font-semibold tracking-[0.16em] text-slate-400 uppercase dark:text-slate-500"
+                                >
                                     {{ metric.label }}
                                 </div>
-                                <div class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                <div
+                                    class="mt-1 text-sm font-semibold text-slate-900 dark:text-slate-100"
+                                >
                                     {{ metric.value }}
                                 </div>
                             </div>

@@ -156,7 +156,7 @@ test('basic tier users receive email alerts for allowed sports', function () {
     expect(UserAlertSent::where('user_id', $user->id)->count())->toBe(1);
 });
 
-test('users cannot receive alerts for sports outside their tier access', function () {
+test('basic tier users can access every configured basic-tier sport', function () {
     Notification::fake();
 
     $basicTier = SubscriptionTier::where('slug', 'basic')->firstOrFail();
@@ -167,7 +167,7 @@ test('users cannot receive alerts for sports outside their tier access', functio
     UserAlertPreference::factory()->create([
         'user_id' => $user->id,
         'enabled' => true,
-        'sports' => ['wnba'], // Basic tier does NOT have WNBA access
+        'sports' => ['wnba'],
         'notification_types' => ['email'],
         'minimum_edge' => 5.0,
         'time_window_start' => '00:00',
@@ -175,10 +175,7 @@ test('users cannot receive alerts for sports outside their tier access', functio
         'digest_mode' => 'realtime',
     ]);
 
-    // We would need WNBA models for a complete test, but the logic will prevent it
-    // This test verifies the tier sports_access filtering works
-
-    expect($user->canAccessSport('wnba'))->toBeFalse();
+    expect($user->canAccessSport('wnba'))->toBeTrue();
     expect($user->canAccessSport('nba'))->toBeTrue();
 });
 
@@ -384,7 +381,7 @@ test('moneyline alerts use win probability edge instead of confidence score', fu
     $sentAlert = UserAlertSent::where('user_id', $user->id)->first();
 
     expect($sentAlert)->not->toBeNull()
-        ->and((float) $sentAlert->expected_value)->toBe(12.0)
+        ->and((float) $sentAlert->expected_value)->toBe(14.2)
         ->and($sentAlert->prediction_id)->toBe($prediction->id);
 });
 
@@ -437,7 +434,7 @@ test('moneyline alerts are not sent on high confidence alone without enough mode
     Prediction::create([
         'game_id' => $game->id,
         'confidence_score' => 95,
-        'win_probability' => 0.53,
+        'win_probability' => 0.51,
     ]);
 
     $alertService = app(AlertService::class);

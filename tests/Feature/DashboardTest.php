@@ -61,6 +61,55 @@ test('the dashboard exposes evaluated mlb passes and tracking candidates', funct
     Carbon::setTestNow();
 });
 
+test('the dashboard exposes live mlb game state and model movement', function () {
+    Carbon::setTestNow('2026-08-10 19:30:00');
+
+    $user = User::factory()->create();
+    config()->set('subscriptions.enforce_tiers', true);
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+
+    $prediction = dashboardMlbPrediction(
+        gameTime: '19:10:00',
+        winProbability: 0.54,
+        homePrice: -105,
+        awayPrice: -105,
+    );
+    $prediction->game()->update([
+        'status' => config('mlb.statuses.in_progress'),
+        'away_score' => 3,
+        'home_score' => 4,
+        'inning' => 6,
+        'inning_half' => 'Bottom 6th',
+        'balls' => 2,
+        'strikes' => 1,
+        'outs' => 2,
+    ]);
+    $prediction->update([
+        'live_win_probability' => 0.68,
+        'live_predicted_spread' => 1.4,
+        'live_predicted_total' => 9.6,
+        'live_outs_remaining' => 10,
+        'live_updated_at' => now(),
+    ]);
+
+    $this->actingAs($user)
+        ->get(route('dashboard'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('Dashboard')
+            ->where('sports.0.name', 'MLB')
+            ->where('sports.0.predictions.0.is_live', true)
+            ->where('sports.0.predictions.0.inning', 6)
+            ->where('sports.0.predictions.0.inning_state', 'Bottom 6th')
+            ->where('sports.0.predictions.0.balls', 2)
+            ->where('sports.0.predictions.0.strikes', 1)
+            ->where('sports.0.predictions.0.outs', 2)
+            ->where('sports.0.predictions.0.live_win_probability', 0.68)
+            ->where('sports.0.predictions.0.live_predicted_total', 9.6));
+
+    Carbon::setTestNow();
+});
+
 function dashboardMlbPrediction(
     string $gameTime,
     float $winProbability,

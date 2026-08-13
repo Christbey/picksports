@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ChevronDown, ChevronRight, Clock } from 'lucide-vue-next';
+import {
+    Activity,
+    ChevronDown,
+    ChevronRight,
+    Clock,
+    Gauge,
+    Radio,
+} from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
 import SavePickDialog from '@/components/predictions/SavePickDialog.vue';
 import { Button } from '@/components/ui/button';
@@ -137,6 +144,18 @@ function homeLogo(): string | null {
 
 function isLive(): boolean {
     return normalizedLiveState.value.isLive;
+}
+
+function gameBalls(): number | null {
+    return normalizedLiveState.value.balls;
+}
+
+function gameStrikes(): number | null {
+    return normalizedLiveState.value.strikes;
+}
+
+function gameOuts(): number | null {
+    return normalizedLiveState.value.outs;
 }
 
 function isFinal(): boolean {
@@ -314,12 +333,168 @@ function statusBadgeLabel(): string {
     return 'Pregame';
 }
 
+function statusBadgeClass(): string {
+    if (isLive()) {
+        return 'rounded-full border border-red-500/30 bg-red-500/10 px-2.5 py-1 text-xs font-semibold text-red-700 dark:text-red-300';
+    }
+
+    return dashboardChipClass();
+}
+
 function preGameWinProbability(): number {
     return props.prediction.win_probability ?? 0;
 }
 
 function liveWinProbability(): number | null {
     return normalizedLiveState.value.liveWinProbability;
+}
+
+function normalizedProbability(value: number | null): number | null {
+    if (value === null || !Number.isFinite(value)) return null;
+
+    const decimal = value > 1 ? value / 100 : value;
+
+    return Math.max(0, Math.min(1, decimal));
+}
+
+function ordinal(value: number): string {
+    const mod100 = value % 100;
+    if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+
+    const suffix =
+        value % 10 === 1
+            ? 'st'
+            : value % 10 === 2
+              ? 'nd'
+              : value % 10 === 3
+                ? 'rd'
+                : 'th';
+
+    return `${value}${suffix}`;
+}
+
+function liveGameStateLabel(): string {
+    if (isMlbPrediction()) {
+        const rawState = normalizedLiveState.value.inningState?.trim();
+        const inning = normalizedLiveState.value.inning;
+
+        if (rawState && /\d/.test(rawState)) return rawState;
+
+        if (inning !== null) {
+            const half = rawState
+                ? rawState.charAt(0).toUpperCase() + rawState.slice(1)
+                : 'Inning';
+
+            return `${half} ${ordinal(inning)}`;
+        }
+
+        return rawState || 'Live inning';
+    }
+
+    const parts = [];
+    if (normalizedLiveState.value.period !== null) {
+        parts.push(`Period ${normalizedLiveState.value.period}`);
+    }
+    if (normalizedLiveState.value.gameClock) {
+        parts.push(normalizedLiveState.value.gameClock);
+    }
+
+    return parts.join(' · ') || 'Live game';
+}
+
+function liveScoreContextLabel(): string {
+    const away = awayScore();
+    const home = homeScore();
+
+    if (away === null || home === null) return 'Score updating';
+    if (away === home) return `Tied at ${home}`;
+
+    const leader = home > away ? homeTeamLabel() : awayTeamLabel();
+
+    return `${leader} leads by ${Math.abs(home - away)}`;
+}
+
+function liveGameStateMeta(): string {
+    if (!isMlbPrediction()) return liveScoreContextLabel();
+
+    const parts = [];
+    if (gameOuts() !== null) {
+        parts.push(`${gameOuts()} ${gameOuts() === 1 ? 'out' : 'outs'}`);
+    }
+    if (gameBalls() !== null && gameStrikes() !== null) {
+        parts.push(`Count ${gameBalls()}-${gameStrikes()}`);
+    }
+
+    return parts.join(' · ') || liveScoreContextLabel();
+}
+
+function liveHomeProbability(): number | null {
+    return normalizedProbability(liveWinProbability());
+}
+
+function liveWinLeaderLabel(): string | null {
+    const probability = liveHomeProbability();
+    if (probability === null) return null;
+
+    return probability >= 0.5 ? homeTeamLabel() : awayTeamLabel();
+}
+
+function liveWinOutlookValue(): string {
+    const probability = liveHomeProbability();
+    const leader = liveWinLeaderLabel();
+
+    if (probability === null || !leader) return 'Model updating';
+
+    return `${leader} ${(Math.max(probability, 1 - probability) * 100).toFixed(1)}%`;
+}
+
+function liveWinMovement(): number | null {
+    const live = liveHomeProbability();
+    const pregame = normalizedProbability(preGameWinProbability());
+
+    return live === null || pregame === null ? null : (live - pregame) * 100;
+}
+
+function liveWinOutlookMeta(): string {
+    const movement = liveWinMovement();
+    if (movement === null) return 'Live probability pending';
+    if (Math.abs(movement) < 1) return 'Holding near pregame';
+
+    const beneficiary = movement > 0 ? homeTeamLabel() : awayTeamLabel();
+
+    return `${beneficiary} +${Math.abs(movement).toFixed(1)} pts from pregame`;
+}
+
+function liveTotalOutlookValue(): string {
+    const projected = normalizedLiveState.value.livePredictedTotal;
+    const unit = isMlbPrediction() ? 'runs' : 'points';
+
+    if (projected !== null) return `${projected.toFixed(1)} ${unit}`;
+
+    const away = awayScore();
+    const home = homeScore();
+
+    return away !== null && home !== null
+        ? `${away + home} ${unit} scored`
+        : 'Model updating';
+}
+
+function liveTotalOutlookMeta(): string {
+    const live = normalizedLiveState.value.livePredictedTotal;
+    const pregame = normalizedLiveState.value.preGamePredictedTotal;
+
+    if (live === null || !Number.isFinite(pregame)) {
+        return 'Updated total pending';
+    }
+
+    const movement = live - pregame;
+    if (Math.abs(movement) < 0.5) return 'Near pregame projection';
+
+    return `${formatSignedNumber(movement)} vs pregame total`;
+}
+
+function preGameTeamLabel(): string {
+    return preGameWinProbability() >= 0.5 ? homeTeamLabel() : awayTeamLabel();
 }
 
 function hasLiveData(): boolean {
@@ -527,13 +702,6 @@ function edgeSignalLabel(): string {
     return 'Strong model edge';
 }
 
-function moneylineTeamLabel(): string {
-    const home = homeTeamLabel();
-    const away = awayTeamLabel();
-
-    return winProbPercent() >= 50 ? home : away;
-}
-
 function predictionAnalysis() {
     return props.prediction.prediction_analysis ?? null;
 }
@@ -720,7 +888,14 @@ function finalResultLabel(): string | null {
     return null;
 }
 
-function dashboardCardTone(): 'quiet' | 'positive' | 'negative' | 'candidate' {
+function dashboardCardTone():
+    | 'quiet'
+    | 'positive'
+    | 'negative'
+    | 'candidate'
+    | 'live' {
+    if (isLive()) return 'live';
+
     if (isFinal()) {
         const correct = winnerCorrect();
         if (correct === true) return 'positive';
@@ -770,6 +945,10 @@ function dashboardCardClass(): string {
         return 'border-sky-500/35 bg-sky-950/[0.03] dark:bg-sky-500/[0.05]';
     }
 
+    if (tone === 'live') {
+        return 'border-red-500/35 bg-red-950/[0.025] ring-1 ring-red-500/10 dark:bg-red-500/[0.045]';
+    }
+
     return 'border-border/70 bg-card/80 hover:border-sky-500/30';
 }
 
@@ -779,6 +958,7 @@ function dashboardRailClass(): string {
     if (tone === 'positive') return 'bg-emerald-500';
     if (tone === 'negative') return 'bg-red-500';
     if (tone === 'candidate') return 'bg-sky-500';
+    if (tone === 'live') return 'bg-red-500';
 
     return 'bg-slate-500/40';
 }
@@ -788,10 +968,17 @@ function dashboardChipClass(): string {
 }
 
 function dashboardPrimaryPickLabel(): string {
-    const prefix = isNflPrediction() ? 'Moneyline' : 'Pick';
-    const probability = Math.max(winProbPercent(), 100 - winProbPercent());
+    const prefix = isLive()
+        ? 'Pregame'
+        : isNflPrediction()
+          ? 'Moneyline'
+          : 'Pick';
+    const pregamePercent = Math.max(
+        preGameWinProbability() * 100,
+        100 - preGameWinProbability() * 100,
+    );
 
-    return `${prefix}: ${moneylineTeamLabel()} ${probability.toFixed(1)}%`;
+    return `${prefix}: ${preGameTeamLabel()} ${pregamePercent.toFixed(1)}%`;
 }
 
 function dashboardSignalLabel(): string {
@@ -844,6 +1031,10 @@ function dashboardSignalClass(): string {
         return 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300';
     }
 
+    if (tone === 'live') {
+        return 'border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300';
+    }
+
     return 'border-muted bg-muted/40 text-muted-foreground';
 }
 
@@ -853,6 +1044,7 @@ function dashboardActionTextClass(): string {
     if (tone === 'positive') return 'text-emerald-600 dark:text-emerald-400';
     if (tone === 'negative') return 'text-red-600 dark:text-red-400';
     if (tone === 'candidate') return 'text-sky-600 dark:text-sky-400';
+    if (tone === 'live') return 'text-red-600 dark:text-red-400';
 
     return 'text-muted-foreground';
 }
@@ -1284,7 +1476,14 @@ function saveOptions(): SavePickOption[] {
                             >
                                 {{ weekLabel() }}
                             </span>
-                            <span :class="dashboardChipClass()">
+                            <span
+                                class="inline-flex items-center gap-1.5"
+                                :class="statusBadgeClass()"
+                            >
+                                <span
+                                    v-if="isLive()"
+                                    class="h-1.5 w-1.5 rounded-full bg-red-500 motion-safe:animate-pulse"
+                                />
                                 {{ statusBadgeLabel() }}
                             </span>
                             <span
@@ -1355,6 +1554,125 @@ function saveOptions(): SavePickOption[] {
                         {{ dashboardSignalLabel() }}
                     </span>
                 </div>
+
+                <section
+                    v-if="isLive()"
+                    data-testid="live-game-insights"
+                    class="overflow-hidden border-y border-red-500/15 bg-red-500/[0.035]"
+                    aria-label="Live game insights"
+                >
+                    <div
+                        class="flex items-center justify-between gap-3 px-3 py-2"
+                    >
+                        <div
+                            class="flex items-center gap-2 text-xs font-semibold tracking-wide text-red-700 uppercase dark:text-red-300"
+                        >
+                            <Radio class="h-3.5 w-3.5" />
+                            Live read
+                        </div>
+                        <span class="text-xs text-muted-foreground">
+                            {{ liveScoreContextLabel() }}
+                        </span>
+                    </div>
+
+                    <div
+                        class="grid divide-y divide-border/60 border-t border-red-500/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+                    >
+                        <div
+                            class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                        >
+                            <div
+                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-red-600 dark:text-red-400"
+                            >
+                                <Radio class="h-4 w-4" />
+                            </div>
+                            <div class="min-w-0">
+                                <div
+                                    class="text-[11px] font-medium text-muted-foreground uppercase"
+                                >
+                                    Game state
+                                </div>
+                                <div class="truncate text-sm font-semibold">
+                                    {{ liveGameStateLabel() }}
+                                </div>
+                                <div
+                                    class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground"
+                                >
+                                    <span>{{ liveGameStateMeta() }}</span>
+                                    <span
+                                        v-if="
+                                            isMlbPrediction() &&
+                                            gameOuts() !== null
+                                        "
+                                        class="inline-flex gap-1"
+                                        :aria-label="`${gameOuts()} outs`"
+                                    >
+                                        <span
+                                            v-for="outNumber in 3"
+                                            :key="outNumber"
+                                            class="h-1.5 w-1.5 rounded-full border border-red-500/40"
+                                            :class="
+                                                outNumber <= gameOuts()!
+                                                    ? 'bg-red-500'
+                                                    : 'bg-transparent'
+                                            "
+                                        />
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                        >
+                            <div
+                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-sky-600 dark:text-sky-400"
+                            >
+                                <Activity class="h-4 w-4" />
+                            </div>
+                            <div class="min-w-0">
+                                <div
+                                    class="text-[11px] font-medium text-muted-foreground uppercase"
+                                >
+                                    Win outlook
+                                </div>
+                                <div class="truncate text-sm font-semibold">
+                                    {{ liveWinOutlookValue() }}
+                                </div>
+                                <div
+                                    class="truncate text-xs text-muted-foreground"
+                                >
+                                    {{ liveWinOutlookMeta() }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                        >
+                            <div
+                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-amber-600 dark:text-amber-400"
+                            >
+                                <Gauge class="h-4 w-4" />
+                            </div>
+                            <div class="min-w-0">
+                                <div
+                                    class="text-[11px] font-medium text-muted-foreground uppercase"
+                                >
+                                    Updated total
+                                </div>
+                                <div class="truncate text-sm font-semibold">
+                                    {{ liveTotalOutlookValue() }}
+                                </div>
+                                <div
+                                    class="truncate text-xs text-muted-foreground"
+                                >
+                                    {{ liveTotalOutlookMeta() }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
 
                 <div
                     class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"

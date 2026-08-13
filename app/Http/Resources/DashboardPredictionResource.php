@@ -117,6 +117,9 @@ class DashboardPredictionResource extends JsonResource
         if ($this->includeInning) {
             $data['inning'] = $isLive ? $game->inning : null;
             $data['inning_state'] = $isLive ? $game->inning_state : null;
+            $data['balls'] = $isLive ? $game->balls : null;
+            $data['strikes'] = $isLive ? $game->strikes : null;
+            $data['outs'] = $isLive ? $game->outs : null;
         } else {
             $data['period'] = $isLive ? $game->period : null;
             $data['game_clock'] = $isLive ? $game->game_clock : null;

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { Radio } from 'lucide-vue-next';
+import { Activity, Radio } from 'lucide-vue-next';
 import { computed } from 'vue';
 import type { DashboardPrediction, DashboardSport } from '@/types';
 
@@ -11,6 +11,22 @@ const props = defineProps<{
 type LiveTile = DashboardPrediction & {
     sportName: string;
 };
+
+function ordinal(value: number): string {
+    const mod100 = value % 100;
+    if (mod100 >= 11 && mod100 <= 13) return `${value}th`;
+
+    const suffix =
+        value % 10 === 1
+            ? 'st'
+            : value % 10 === 2
+              ? 'nd'
+              : value % 10 === 3
+                ? 'rd'
+                : 'th';
+
+    return `${value}${suffix}`;
+}
 
 const liveGames = computed<LiveTile[]>(() =>
     props.sports.flatMap((sport) =>
@@ -32,13 +48,61 @@ function statusLabel(game: LiveTile): string {
         if (game.game_clock && game.period) {
             return `P${game.period} ${game.game_clock}`;
         }
-        if (game.inning && game.inning_state) {
-            return `${game.inning_state} ${game.inning}`;
+        if (game.inning_state && /\d/.test(game.inning_state)) {
+            return game.inning_state;
         }
+        if (game.inning) {
+            const half = game.inning_state
+                ? game.inning_state.charAt(0).toUpperCase() +
+                  game.inning_state.slice(1)
+                : 'Inning';
+
+            return `${half} ${ordinal(game.inning)}`;
+        }
+        if (game.inning_state) return game.inning_state;
         return 'Live';
     }
 
     return 'Final';
+}
+
+function liveStateDetail(game: LiveTile): string | null {
+    if (!game.is_live) return null;
+
+    const parts = [];
+    if (typeof game.outs === 'number') {
+        parts.push(`${game.outs} ${game.outs === 1 ? 'out' : 'outs'}`);
+    }
+    if (typeof game.balls === 'number' && typeof game.strikes === 'number') {
+        parts.push(`Count ${game.balls}-${game.strikes}`);
+    }
+
+    return parts.length ? parts.join(' · ') : null;
+}
+
+function liveTrendLabel(game: LiveTile): string | null {
+    if (!game.is_live || typeof game.live_win_probability !== 'number') {
+        return null;
+    }
+
+    const live =
+        game.live_win_probability > 1
+            ? game.live_win_probability / 100
+            : game.live_win_probability;
+    const pregame =
+        game.win_probability > 1
+            ? game.win_probability / 100
+            : game.win_probability;
+    const leader = live >= 0.5 ? game.home_team : game.away_team;
+    const probability = Math.max(live, 1 - live) * 100;
+    const movement = (live - pregame) * 100;
+    const beneficiary = movement >= 0 ? game.home_team : game.away_team;
+    const movementLabel =
+        Math.abs(movement) < 1
+            ? 'near pregame'
+            : `${beneficiary} +${Math.abs(movement).toFixed(1)} pts`;
+
+    return `${leader} ${probability.toFixed(1)}% · ${movementLabel}`;
 }
 </script>
 
@@ -72,7 +136,7 @@ function statusLabel(game: LiveTile): string {
                 v-for="game in liveGames"
                 :key="`${game.sport}-${game.game_id}`"
                 :href="`/${game.sport.toLowerCase()}/games/${game.game_id}`"
-                class="ui-surface-subtle min-w-[250px] snap-start p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                class="ui-surface-subtle min-w-[280px] snap-start p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm"
             >
                 <div class="mb-2 flex items-center justify-between">
                     <span class="ui-chip text-foreground/80">{{
@@ -89,6 +153,13 @@ function statusLabel(game: LiveTile): string {
                         {{ statusLabel(game) }}
                     </span>
                 </div>
+
+                <p
+                    v-if="liveStateDetail(game)"
+                    class="mb-2 text-xs text-muted-foreground"
+                >
+                    {{ liveStateDetail(game) }}
+                </p>
 
                 <div class="space-y-1.5">
                     <div class="flex items-center justify-between text-sm">
@@ -107,6 +178,18 @@ function statusLabel(game: LiveTile): string {
                             {{ game.home_score ?? '-' }}
                         </p>
                     </div>
+                </div>
+
+                <div
+                    v-if="liveTrendLabel(game)"
+                    class="mt-2 flex items-center gap-2 border-t border-border/60 pt-2 text-xs"
+                >
+                    <Activity
+                        class="h-3.5 w-3.5 shrink-0 text-sky-600 dark:text-sky-400"
+                    />
+                    <span class="truncate font-medium text-foreground/80">
+                        {{ liveTrendLabel(game) }}
+                    </span>
                 </div>
             </Link>
         </div>

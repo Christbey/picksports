@@ -162,6 +162,9 @@ export interface LivePredictionData {
     inning?: number | null;
     gameClock?: string | null;
     inningState?: string | null;
+    balls?: number | null;
+    strikes?: number | null;
+    outs?: number | null;
     status?: string | null;
     liveWinProbability?: number | null;
     livePredictedSpread?: number | null;

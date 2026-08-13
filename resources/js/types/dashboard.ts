@@ -42,6 +42,9 @@ export interface DashboardPrediction {
     inning?: number;
     game_clock?: string;
     inning_state?: string;
+    balls?: number | null;
+    strikes?: number | null;
+    outs?: number | null;
     status?: string;
     // Live prediction data
     live_win_probability?: number;

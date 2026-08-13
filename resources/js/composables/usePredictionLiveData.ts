@@ -23,6 +23,9 @@ interface NormalizedPredictionLiveState {
     inning: number | null;
     gameClock: string | null;
     inningState: string | null;
+    balls: number | null;
+    strikes: number | null;
+    outs: number | null;
     liveWinProbability: number | null;
     livePredictedSpread: number | null;
     livePredictedTotal: number | null;
@@ -54,6 +57,9 @@ export function normalizePredictionLiveState(
             inning: prediction.inning ?? null,
             gameClock: prediction.game_clock ?? null,
             inningState: prediction.inning_state ?? null,
+            balls: prediction.balls ?? null,
+            strikes: prediction.strikes ?? null,
+            outs: prediction.outs ?? null,
             liveWinProbability: prediction.live_win_probability ?? null,
             livePredictedSpread: prediction.live_predicted_spread ?? null,
             livePredictedTotal: prediction.live_predicted_total ?? null,
@@ -91,6 +97,9 @@ export function normalizePredictionLiveState(
         inning: prediction.game.inning ?? null,
         gameClock: prediction.game.clock ?? null,
         inningState: prediction.game.inning_half ?? null,
+        balls: prediction.game.balls ?? null,
+        strikes: prediction.game.strikes ?? null,
+        outs: prediction.game.outs ?? null,
         liveWinProbability,
         livePredictedSpread: prediction.live_predicted_spread ?? null,
         livePredictedTotal: prediction.live_predicted_total ?? null,
@@ -130,6 +139,9 @@ export function buildPredictionLiveData(
         inning: normalized.inning,
         gameClock: normalized.gameClock,
         inningState: normalized.inningState,
+        balls: normalized.balls,
+        strikes: normalized.strikes,
+        outs: normalized.outs,
         status: normalized.status,
         liveWinProbability: normalized.liveWinProbability,
         livePredictedSpread: normalized.livePredictedSpread,

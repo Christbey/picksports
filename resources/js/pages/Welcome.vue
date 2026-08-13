@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
+import {
+    ArrowRight,
+    BarChart3,
+    CheckCircle2,
+    CircleDollarSign,
+    LayoutDashboard,
+    LogIn,
+    Scale,
+    ShieldCheck,
+} from 'lucide-vue-next';
 import { computed } from 'vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
     dashboard,
@@ -16,22 +25,9 @@ import {
 interface OverallStats {
     total_predictions: number;
     winner_accuracy: number;
-    avg_spread_error: number;
-    avg_total_error: number;
+    avg_spread_error: number | null;
+    avg_total_error: number | null;
     win_record: string;
-}
-
-interface RecentPerformance {
-    overall: OverallStats;
-    roi: {
-        total_bets: number;
-        total_wins: number;
-        total_losses: number;
-        total_wagered: number;
-        total_profit: number;
-        roi_percentage: number;
-        win_percentage: number;
-    };
 }
 
 interface ROIStats {
@@ -40,13 +36,16 @@ interface ROIStats {
     total_losses: number;
     total_wagered: number;
     total_profit: number;
-    roi_percentage: number;
-    win_percentage: number;
+    roi_percentage: number | null;
+    win_percentage: number | null;
 }
 
 interface PerformanceData {
     overall: OverallStats;
-    recent: RecentPerformance;
+    recent: {
+        overall: OverallStats;
+        roi: ROIStats;
+    };
     roi: ROIStats;
 }
 
@@ -55,777 +54,775 @@ const props = defineProps<{
     performance: PerformanceData;
 }>();
 
-// Create computed refs to ensure reactivity
-const overallStats = computed(
-    () =>
-        props.performance?.overall || {
-            total_predictions: 0,
-            winner_accuracy: 0,
-            avg_spread_error: 0,
-            avg_total_error: 0,
-            win_record: '0-0',
-        },
-);
+const sports = [
+    {
+        slug: 'mlb',
+        label: 'MLB',
+        detail: 'Games, F3/F5, markets',
+        accent: 'bg-emerald-500',
+    },
+    {
+        slug: 'nfl',
+        label: 'NFL',
+        detail: 'Matchups, injuries, futures',
+        accent: 'bg-amber-400',
+    },
+    {
+        slug: 'nba',
+        label: 'NBA',
+        detail: 'Games, props, futures',
+        accent: 'bg-sky-500',
+    },
+    {
+        slug: 'wnba',
+        label: 'WNBA',
+        detail: 'Games, injuries, props',
+        accent: 'bg-rose-500',
+    },
+    {
+        slug: 'cfb',
+        label: 'CFB',
+        detail: 'Games, teams, futures',
+        accent: 'bg-orange-500',
+    },
+    {
+        slug: 'cbb',
+        label: 'CBB',
+        detail: 'Games, teams, tournament',
+        accent: 'bg-indigo-500',
+    },
+    {
+        slug: 'wcbb',
+        label: 'WCBB',
+        detail: 'Games, teams, tournament',
+        accent: 'bg-teal-500',
+    },
+] as const;
 
-const recentStats = computed(
-    () =>
-        props.performance?.recent?.overall || {
-            total_predictions: 0,
-            winner_accuracy: 0,
-            avg_spread_error: 0,
-            avg_total_error: 0,
-            win_record: '0-0',
-        },
-);
+const decisionSteps = [
+    {
+        label: 'Forecast',
+        detail: 'A pregame probability with model lineage.',
+        icon: BarChart3,
+    },
+    {
+        label: 'Price',
+        detail: 'The model is compared with the available market.',
+        icon: CircleDollarSign,
+    },
+    {
+        label: 'Risk',
+        detail: 'Availability, uncertainty, and data quality are checked.',
+        icon: ShieldCheck,
+    },
+    {
+        label: 'Decision',
+        detail: 'Bet or no bet, with the reason recorded.',
+        icon: Scale,
+    },
+] as const;
 
-const roiStats = computed(
-    () =>
-        props.performance?.roi || {
-            total_bets: 0,
-            total_wins: 0,
-            total_losses: 0,
-            total_wagered: 0,
-            total_profit: 0,
-            roi_percentage: 0,
-            win_percentage: 0,
-        },
-);
+const overall = computed(() => props.performance.overall);
+const recent = computed(() => props.performance.recent.overall);
+const roi = computed(() => props.performance.roi);
+const hasOverallSample = computed(() => overall.value.total_predictions > 0);
+const hasRecentSample = computed(() => recent.value.total_predictions > 0);
+const hasRoiSample = computed(() => roi.value.total_bets > 0);
 
-const getAccuracyColor = (accuracy: number | undefined) => {
-    if (!accuracy) return 'text-gray-600 dark:text-gray-400';
-    if (accuracy >= 55) return 'text-green-600 dark:text-green-400';
-    if (accuracy >= 52) return 'text-blue-600 dark:text-blue-400';
-    return 'text-orange-600 dark:text-orange-400';
-};
+const formatPercent = (value: number, hasSample: boolean) =>
+    hasSample ? `${value.toFixed(1)}%` : 'Pending';
 
-const getROIColor = (roi: number | undefined) => {
-    if (roi === undefined || roi === null)
-        return 'text-gray-600 dark:text-gray-400';
-    if (roi > 0) return 'text-green-600 dark:text-green-400';
-    if (roi === 0) return 'text-gray-600 dark:text-gray-400';
-    return 'text-red-600 dark:text-red-400';
+const formatSignedPercent = (value: number | null, hasSample: boolean) => {
+    if (!hasSample || value === null) return 'Pending';
+
+    return `${value > 0 ? '+' : ''}${value.toFixed(2)}%`;
 };
 </script>
 
 <template>
-    <Head title="Beat the Books - Advanced Sports Betting Analytics">
+    <Head title="PickSports - Model-Based Sports Decisions">
         <meta
             head-key="description"
             name="description"
-            content="PickSports provides transparent, data-driven sports predictions across major leagues with verified performance and ROI."
+            content="PickSports turns pregame models, market prices, and risk checks into transparent sports betting decisions."
         />
         <meta
             head-key="og:title"
             property="og:title"
-            content="Beat the Books - Advanced Sports Betting Analytics"
+            content="PickSports - Model-Based Sports Decisions"
         />
         <meta
             head-key="og:description"
             property="og:description"
-            content="Data-driven sports betting analytics, transparent results, and live predictions across major sports."
+            content="Pregame probabilities, market-aware decisions, and a fully graded public record across seven sports."
         />
         <meta
             head-key="twitter:title"
             name="twitter:title"
-            content="Beat the Books - Advanced Sports Betting Analytics"
+            content="PickSports - Model-Based Sports Decisions"
         />
         <meta
             head-key="twitter:description"
             name="twitter:description"
-            content="Data-driven sports betting analytics, transparent results, and live predictions across major sports."
+            content="Pregame probabilities, market-aware decisions, and a fully graded public record across seven sports."
         />
     </Head>
 
-    <div class="min-h-screen bg-background text-foreground">
-        <!-- Navigation -->
+    <div
+        class="min-h-screen bg-[#f4f6f8] text-[#151a21] dark:bg-[#0b0e12] dark:text-[#f4f6f8]"
+    >
         <nav
-            class="sticky top-0 z-50 border-b border-border/70 bg-background/95"
+            class="sticky top-0 z-50 border-b border-black/10 bg-[#f4f6f8]/95 dark:border-white/10 dark:bg-[#0b0e12]/95"
+            aria-label="Primary navigation"
         >
-            <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div class="flex h-18 items-center justify-between">
-                    <div class="flex items-center gap-3">
-                        <div
-                            class="flex size-8 items-center justify-center rounded-lg bg-foreground"
-                        >
-                            <span class="text-sm font-bold text-background"
-                                >PS</span
+            <div
+                class="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8"
+            >
+                <Link
+                    href="/"
+                    class="flex items-center gap-3"
+                    aria-label="PickSports home"
+                >
+                    <span
+                        class="flex size-9 items-center justify-center rounded-md bg-[#151a21] text-sm font-bold text-white dark:bg-white dark:text-[#151a21]"
+                    >
+                        PS
+                    </span>
+                    <span
+                        class="hidden text-lg font-semibold tracking-normal sm:inline"
+                        >PickSports</span
+                    >
+                </Link>
+
+                <div class="flex items-center gap-1 sm:gap-3">
+                    <Link
+                        :href="performanceRoute()"
+                        class="hidden px-3 py-2 text-sm font-medium text-[#59616d] transition hover:text-[#151a21] sm:block dark:text-[#aab2bf] dark:hover:text-white"
+                    >
+                        Performance
+                    </Link>
+
+                    <template v-if="$page.props.auth.user">
+                        <Link :href="dashboard()">
+                            <Button size="sm" class="gap-2 rounded-md">
+                                <LayoutDashboard class="size-4" />
+                                Dashboard
+                            </Button>
+                        </Link>
+                    </template>
+                    <template v-else>
+                        <Link :href="login()">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="gap-2 rounded-md"
                             >
-                        </div>
-                        <h1 class="text-lg font-semibold tracking-tight">
-                            PickSports
-                        </h1>
-                    </div>
-                    <div class="flex items-center gap-4">
-                        <template v-if="$page.props.auth.user">
-                            <Link :href="dashboard()">
-                                <Button variant="default" size="sm"
-                                    >Dashboard</Button
-                                >
-                            </Link>
-                        </template>
-                        <template v-else>
-                            <Link :href="login()">
-                                <Button variant="ghost" size="sm"
-                                    >Log in</Button
-                                >
-                            </Link>
-                            <Link v-if="canRegister" :href="register()">
-                                <Button size="sm">Get Started</Button>
-                            </Link>
-                        </template>
-                    </div>
+                                <LogIn class="size-4" />
+                                Log in
+                            </Button>
+                        </Link>
+                        <Link v-if="canRegister" :href="register()">
+                            <Button size="sm" class="rounded-md"
+                                >Create account</Button
+                            >
+                        </Link>
+                    </template>
                 </div>
             </div>
         </nav>
 
-        <!-- Hero Section -->
-        <section class="relative overflow-hidden border-b border-border/50">
-            <!-- Background gradient -->
-            <div
-                class="absolute inset-0 bg-gradient-to-b from-sky-50/70 via-background to-background dark:from-sky-950/20 dark:via-background dark:to-background"
-            />
-
-            <div
-                class="relative mx-auto max-w-6xl px-4 py-20 sm:px-6 sm:py-28 lg:px-8"
+        <main>
+            <section
+                class="relative isolate overflow-hidden border-b border-white/10 bg-[#0c1118] text-white"
             >
-                <div class="text-center">
-                    <!-- Badge -->
-                    <div
-                        class="ui-chip mb-7 inline-flex items-center gap-2 text-foreground/85"
-                    >
-                        Live predictions across 7 major sports
-                    </div>
-
-                    <!-- Main Headline -->
-                    <h1
-                        class="mb-5 text-5xl font-semibold tracking-tight text-balance sm:text-6xl lg:text-7xl"
-                    >
-                        <span>Stop Losing to</span>
-                        <br />
-                        <span
-                            class="bg-gradient-to-r from-sky-600 via-blue-600 to-cyan-600 bg-clip-text text-transparent"
-                        >
-                            The Sportsbooks
-                        </span>
-                    </h1>
-
-                    <!-- Subheadline -->
-                    <p
-                        class="mx-auto mb-3 max-w-3xl text-xl font-medium text-balance text-muted-foreground sm:text-2xl"
-                    >
-                        Advanced ELO ratings and machine learning models built
-                        to beat closing lines
-                    </p>
-                    <p
-                        class="mx-auto mb-10 max-w-2xl text-lg text-balance text-muted-foreground"
-                    >
-                        Every prediction is tracked, graded, and published in
-                        public. No cherry-picking. No hidden losses.
-                    </p>
-
-                    <!-- CTA Buttons -->
-                    <div
-                        class="mb-10 flex flex-col items-center justify-center gap-3 sm:flex-row"
-                    >
-                        <Link v-if="!$page.props.auth.user" :href="register()">
-                            <Button size="lg" class="px-8 text-base">
-                                Start Free
-                            </Button>
-                        </Link>
-                        <Link v-if="!$page.props.auth.user" :href="login()">
-                            <Button
-                                size="lg"
-                                variant="secondary"
-                                class="px-8 text-base"
-                            >
-                                View Dashboard Preview
-                            </Button>
-                        </Link>
-                    </div>
-
-                    <!-- Social Proof -->
-                    <p class="text-sm text-muted-foreground">
-                        Trusted by
-                        <span class="font-semibold text-foreground">2,847</span>
-                        active bettors
-                    </p>
-                </div>
-            </div>
-        </section>
-
-        <!-- Performance Stats -->
-        <section class="bg-background/70 px-4 py-18 sm:px-6 lg:px-8">
-            <div class="mx-auto max-w-7xl">
-                <!-- Section Header -->
-                <div class="mb-14 text-center">
-                    <h2
-                        class="mb-4 text-4xl font-semibold tracking-tight text-balance sm:text-5xl"
-                    >
-                        Transparent Performance
-                    </h2>
-                    <p class="mx-auto max-w-2xl text-xl text-muted-foreground">
-                        Every pick is public before kickoff or tipoff. Here is
-                        the live record.
-                    </p>
-                </div>
-
-                <!-- Stats Grid -->
                 <div
-                    class="mb-12 grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4"
+                    class="absolute inset-x-0 top-0 flex h-1"
+                    aria-hidden="true"
                 >
-                    <!-- Overall Accuracy -->
-                    <div
-                        class="ui-surface group relative p-8 transition-all duration-300 hover:shadow-md"
-                    >
-                        <div
-                            class="absolute inset-0 rounded-2xl bg-gradient-to-br from-orange-500/5 to-pink-500/5 opacity-0 transition-opacity group-hover:opacity-100"
-                        />
-                        <div class="relative">
-                            <div
-                                class="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-                            >
-                                All-Time Win Rate
-                            </div>
-                            <div
-                                class="mb-2 text-5xl font-semibold"
-                                :class="
-                                    getAccuracyColor(
-                                        overallStats.winner_accuracy,
-                                    )
-                                "
-                            >
-                                {{ overallStats.winner_accuracy }}%
-                            </div>
-                            <div
-                                class="mb-1 text-sm font-medium text-foreground/90"
-                            >
-                                {{ overallStats.win_record }}
-                            </div>
-                            <div class="text-xs text-muted-foreground">
-                                {{
-                                    overallStats.total_predictions.toLocaleString()
-                                }}
-                                tracked bets
-                            </div>
-                        </div>
-                    </div>
+                    <span class="w-[42%] bg-[#7ee2b8]" />
+                    <span class="w-[33%] bg-[#65b9f3]" />
+                    <span class="flex-1 bg-[#ffb45f]" />
+                </div>
 
-                    <!-- Recent Performance -->
+                <div
+                    class="relative mx-auto grid min-h-[610px] max-w-7xl lg:min-h-[650px] lg:grid-cols-[1.02fr_0.98fr]"
+                >
                     <div
-                        class="ui-surface group relative p-8 transition-all duration-300 hover:shadow-md"
+                        class="flex flex-col justify-center px-4 py-12 sm:px-6 sm:py-14 lg:px-8 lg:py-16 lg:pr-14"
                     >
                         <div
-                            class="absolute inset-0 rounded-2xl bg-gradient-to-br from-blue-500/5 to-purple-500/5 opacity-0 transition-opacity group-hover:opacity-100"
-                        />
-                        <div class="relative">
-                            <div
-                                class="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-                            >
-                                Last 30 Days
-                            </div>
-                            <div
-                                class="mb-2 text-5xl font-semibold"
-                                :class="
-                                    getAccuracyColor(
-                                        recentStats.winner_accuracy,
-                                    )
-                                "
-                            >
-                                {{ recentStats.winner_accuracy }}%
-                            </div>
-                            <div
-                                class="mb-3 text-sm font-medium text-foreground/90"
-                            >
-                                {{ recentStats.win_record }}
-                            </div>
-                            <Badge
-                                class="font-semibold"
-                                :variant="
-                                    recentStats.winner_accuracy >= 52.4
-                                        ? 'default'
-                                        : 'secondary'
-                                "
-                            >
-                                {{
-                                    recentStats.winner_accuracy >= 52.4
-                                        ? '✓ Beating -110 odds'
-                                        : 'Near break-even'
-                                }}
-                            </Badge>
+                            class="mb-6 flex items-center gap-3 text-xs font-semibold text-[#7ee2b8] uppercase"
+                        >
+                            <span class="h-px w-8 bg-[#7ee2b8]" />
+                            Model + market intelligence
                         </div>
-                    </div>
+                        <h1
+                            class="text-5xl leading-none font-bold tracking-normal sm:text-6xl xl:text-7xl"
+                        >
+                            PickSports
+                        </h1>
+                        <p
+                            class="mt-5 max-w-xl text-2xl leading-8 font-medium text-white sm:text-3xl sm:leading-10"
+                        >
+                            Know the probability. Know the price. Know when to
+                            pass.
+                        </p>
+                        <p
+                            class="mt-4 max-w-xl text-base leading-7 text-[#aeb8c5] sm:text-lg"
+                        >
+                            Pregame models become accountable decisions only
+                            after market value, uncertainty, and risk are
+                            measured.
+                        </p>
 
-                    <!-- ROI -->
-                    <div
-                        class="ui-surface group relative p-8 transition-all duration-300 hover:shadow-md"
-                    >
+                        <div class="mt-7 flex flex-wrap gap-3">
+                            <Link
+                                v-if="$page.props.auth.user"
+                                :href="dashboard()"
+                            >
+                                <Button
+                                    size="lg"
+                                    class="gap-2 rounded-md bg-[#7ee2b8] text-[#07110d] hover:bg-[#9aebca]"
+                                >
+                                    Open dashboard
+                                    <ArrowRight class="size-4" />
+                                </Button>
+                            </Link>
+                            <Link v-else-if="canRegister" :href="register()">
+                                <Button
+                                    size="lg"
+                                    class="gap-2 rounded-md bg-[#7ee2b8] text-[#07110d] hover:bg-[#9aebca]"
+                                >
+                                    Create account
+                                    <ArrowRight class="size-4" />
+                                </Button>
+                            </Link>
+                            <Link v-else :href="login()">
+                                <Button
+                                    size="lg"
+                                    class="gap-2 rounded-md bg-[#7ee2b8] text-[#07110d] hover:bg-[#9aebca]"
+                                >
+                                    Log in
+                                    <ArrowRight class="size-4" />
+                                </Button>
+                            </Link>
+                            <Link :href="performanceRoute()">
+                                <Button
+                                    size="lg"
+                                    variant="outline"
+                                    class="rounded-md border-white/25 bg-transparent text-white hover:bg-white/10 hover:text-white"
+                                >
+                                    View verified performance
+                                </Button>
+                            </Link>
+                        </div>
+
                         <div
-                            class="absolute inset-0 rounded-2xl bg-gradient-to-br from-green-500/5 to-emerald-500/5 opacity-0 transition-opacity group-hover:opacity-100"
-                        />
-                        <div class="relative">
-                            <div
-                                class="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-                            >
-                                Total ROI
-                            </div>
-                            <div
-                                class="mb-2 text-5xl font-semibold"
-                                :class="getROIColor(roiStats.roi_percentage)"
-                            >
-                                {{ roiStats.roi_percentage > 0 ? '+' : ''
-                                }}{{ roiStats.roi_percentage }}%
-                            </div>
-                            <div
-                                class="mb-1 text-sm font-medium text-foreground/90"
-                            >
-                                <span
-                                    :class="getROIColor(roiStats.total_profit)"
+                            class="mt-9 grid grid-cols-3 border-y border-white/15"
+                        >
+                            <div class="py-4 pr-3 sm:py-5">
+                                <div
+                                    class="text-2xl font-semibold text-white sm:text-3xl"
                                 >
                                     {{
-                                        roiStats.total_profit > 0 ? '+' : ''
-                                    }}${{
-                                        roiStats.total_profit.toLocaleString()
+                                        formatPercent(
+                                            overall.winner_accuracy,
+                                            hasOverallSample,
+                                        )
                                     }}
-                                </span>
-                                profit
+                                </div>
+                                <div
+                                    class="mt-1 text-[10px] font-semibold text-[#8993a2] uppercase sm:text-xs"
+                                >
+                                    Accuracy
+                                </div>
+                            </div>
+                            <div
+                                class="border-x border-white/15 px-3 py-4 sm:px-5 sm:py-5"
+                            >
+                                <div
+                                    class="text-2xl font-semibold text-white sm:text-3xl"
+                                >
+                                    {{
+                                        overall.total_predictions.toLocaleString()
+                                    }}
+                                </div>
+                                <div
+                                    class="mt-1 text-[10px] font-semibold text-[#8993a2] uppercase sm:text-xs"
+                                >
+                                    Graded
+                                </div>
+                            </div>
+                            <div class="py-4 pl-3 sm:py-5 sm:pl-5">
+                                <div
+                                    class="text-2xl font-semibold text-white sm:text-3xl"
+                                >
+                                    7
+                                </div>
+                                <div
+                                    class="mt-1 text-[10px] font-semibold text-[#8993a2] uppercase sm:text-xs"
+                                >
+                                    Sports
+                                </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Spread Accuracy -->
                     <div
-                        class="ui-surface group relative p-8 transition-all duration-300 hover:shadow-md"
+                        class="relative hidden border-l border-white/10 bg-[#101720] lg:flex lg:flex-col"
+                        aria-label="PickSports decision pipeline"
                     >
                         <div
-                            class="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500/5 to-violet-500/5 opacity-0 transition-opacity group-hover:opacity-100"
+                            class="flex items-start justify-between border-b border-white/10 px-8 py-7"
+                        >
+                            <div>
+                                <div
+                                    class="text-xs font-semibold text-[#7ee2b8] uppercase"
+                                >
+                                    Decision desk
+                                </div>
+                                <div class="mt-2 text-xl font-semibold">
+                                    Every lean earns its way through.
+                                </div>
+                            </div>
+                            <span
+                                class="flex items-center gap-2 border border-[#7ee2b8]/30 bg-[#7ee2b8]/10 px-2.5 py-1 text-[10px] font-semibold text-[#7ee2b8] uppercase"
+                            >
+                                <span class="size-1.5 bg-[#7ee2b8]" />
+                                Pregame
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-4 border-b border-white/10">
+                            <div
+                                v-for="(step, index) in decisionSteps"
+                                :key="step.label"
+                                class="border-r border-white/10 px-4 py-5 last:border-r-0"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <component
+                                        :is="step.icon"
+                                        class="size-4 text-[#65b9f3]"
+                                    />
+                                    <span
+                                        class="font-mono text-[10px] text-[#657080]"
+                                        >0{{ index + 1 }}</span
+                                    >
+                                </div>
+                                <div class="mt-4 text-sm font-semibold">
+                                    {{ step.label }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="flex-1">
+                            <div
+                                class="grid grid-cols-[0.7fr_1.25fr_1fr_0.65fr] border-b border-white/10 px-8 py-3 text-[10px] font-semibold text-[#657080] uppercase"
+                            >
+                                <div>Sport</div>
+                                <div>Model</div>
+                                <div>Market</div>
+                                <div class="text-right">Layer</div>
+                            </div>
+                            <div
+                                v-for="(sport, index) in sports"
+                                :key="sport.slug"
+                                class="grid grid-cols-[0.7fr_1.25fr_1fr_0.65fr] items-center border-b border-white/10 px-8 py-4 text-sm"
+                            >
+                                <div
+                                    class="flex items-center gap-3 font-semibold"
+                                >
+                                    <span :class="['h-5 w-1', sport.accent]" />
+                                    {{ sport.label }}
+                                </div>
+                                <div class="text-[#aeb8c5]">Probability</div>
+                                <div class="text-[#aeb8c5]">Price check</div>
+                                <div
+                                    class="text-right font-mono text-[10px]"
+                                    :class="
+                                        index % 3 === 1
+                                            ? 'text-[#ffb45f]'
+                                            : 'text-[#7ee2b8]'
+                                    "
+                                >
+                                    {{ index % 3 === 1 ? 'GATED' : 'TRACKED' }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div
+                            class="flex items-center justify-between border-t border-white/10 bg-[#0c1118] px-8 py-5"
+                        >
+                            <div class="text-sm text-[#8993a2]">
+                                Prediction, price, risk, settlement.
+                            </div>
+                            <Link
+                                :href="performanceRoute()"
+                                class="flex items-center gap-2 text-sm font-semibold text-[#65b9f3]"
+                            >
+                                Audit the record
+                                <ArrowRight class="size-4" />
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section
+                class="border-b border-black/10 bg-white dark:border-white/10 dark:bg-[#11151b]"
+            >
+                <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+                    <div
+                        class="flex flex-col gap-3 border-b border-black/10 pb-6 sm:flex-row sm:items-end sm:justify-between dark:border-white/10"
+                    >
+                        <div>
+                            <p
+                                class="text-xs font-semibold text-[#697382] uppercase"
+                            >
+                                Verified record
+                            </p>
+                            <h2
+                                class="mt-2 text-2xl font-semibold tracking-normal sm:text-3xl"
+                            >
+                                Results without a fallback story
+                            </h2>
+                        </div>
+                        <Link
+                            :href="performanceRoute()"
+                            class="inline-flex items-center gap-2 text-sm font-semibold text-[#006fbb] hover:text-[#00568f] dark:text-[#62b5f6]"
+                        >
+                            Full methodology
+                            <ArrowRight class="size-4" />
+                        </Link>
+                    </div>
+
+                    <div
+                        class="grid divide-y divide-black/10 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4 dark:divide-white/10"
+                    >
+                        <div class="py-6 sm:pr-6">
+                            <div
+                                class="text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                All-time accuracy
+                            </div>
+                            <div
+                                class="mt-2 text-3xl font-semibold tracking-normal"
+                            >
+                                {{
+                                    formatPercent(
+                                        overall.winner_accuracy,
+                                        hasOverallSample,
+                                    )
+                                }}
+                            </div>
+                            <div
+                                class="mt-2 text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                {{
+                                    hasOverallSample
+                                        ? `${overall.win_record} across ${overall.total_predictions.toLocaleString()} graded predictions`
+                                        : 'Awaiting a graded prediction sample'
+                                }}
+                            </div>
+                        </div>
+                        <div class="py-6 sm:px-6">
+                            <div
+                                class="text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                Last 30 days
+                            </div>
+                            <div
+                                class="mt-2 text-3xl font-semibold tracking-normal"
+                            >
+                                {{
+                                    formatPercent(
+                                        recent.winner_accuracy,
+                                        hasRecentSample,
+                                    )
+                                }}
+                            </div>
+                            <div
+                                class="mt-2 text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                {{
+                                    hasRecentSample
+                                        ? `${recent.win_record} from ${recent.total_predictions} predictions`
+                                        : 'No graded predictions in this window'
+                                }}
+                            </div>
+                        </div>
+                        <div class="py-6 sm:pr-6 lg:px-6">
+                            <div
+                                class="text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                Settled decision ROI
+                            </div>
+                            <div
+                                class="mt-2 text-3xl font-semibold tracking-normal"
+                            >
+                                {{
+                                    formatSignedPercent(
+                                        roi.roi_percentage,
+                                        hasRoiSample,
+                                    )
+                                }}
+                            </div>
+                            <div
+                                class="mt-2 text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                {{
+                                    hasRoiSample
+                                        ? `${roi.total_bets} pregame-safe settled bets`
+                                        : 'No settled qualifying bets yet'
+                                }}
+                            </div>
+                        </div>
+                        <div class="py-6 sm:px-6 lg:pr-0">
+                            <div
+                                class="text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                Average spread error
+                            </div>
+                            <div
+                                class="mt-2 text-3xl font-semibold tracking-normal"
+                            >
+                                {{
+                                    hasOverallSample &&
+                                    overall.avg_spread_error !== null
+                                        ? overall.avg_spread_error.toFixed(2)
+                                        : 'Pending'
+                                }}
+                            </div>
+                            <div
+                                class="mt-2 text-sm text-[#697382] dark:text-[#98a2b0]"
+                            >
+                                {{
+                                    hasOverallSample
+                                        ? 'Points from the final margin'
+                                        : 'Requires graded spread targets'
+                                }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-[#f4f6f8] py-16 dark:bg-[#0b0e12]">
+                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                    <div class="max-w-2xl">
+                        <p
+                            class="text-xs font-semibold text-[#697382] uppercase"
+                        >
+                            League coverage
+                        </p>
+                        <h2
+                            class="mt-2 text-3xl font-semibold tracking-normal sm:text-4xl"
+                        >
+                            Start with the sport you follow
+                        </h2>
+                        <p
+                            class="mt-3 text-base leading-7 text-[#697382] dark:text-[#98a2b0]"
+                        >
+                            Open the public league board for predictions, team
+                            context, injuries, and available markets.
+                        </p>
+                    </div>
+
+                    <div class="mt-9 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <Link
+                            v-for="sport in sports"
+                            :key="sport.slug"
+                            :href="`/${sport.slug}`"
+                            class="group relative flex min-h-32 items-center justify-between overflow-hidden rounded-md border border-black/10 bg-white p-5 transition hover:-translate-y-0.5 hover:border-[#006fbb] hover:shadow-md dark:border-white/10 dark:bg-[#11151b] dark:hover:border-[#62b5f6]"
+                        >
+                            <span
+                                :class="[
+                                    'absolute inset-y-0 left-0 w-1',
+                                    sport.accent,
+                                ]"
+                            />
+                            <div>
+                                <span
+                                    class="text-xl font-semibold tracking-normal"
+                                    >{{ sport.label }}</span
+                                >
+                                <div
+                                    class="mt-2 text-sm text-[#697382] dark:text-[#98a2b0]"
+                                >
+                                    {{ sport.detail }}
+                                </div>
+                            </div>
+                            <ArrowRight
+                                class="size-5 text-[#8b95a3] transition group-hover:translate-x-1 group-hover:text-[#006fbb] dark:group-hover:text-[#62b5f6]"
+                            />
+                        </Link>
+                    </div>
+                </div>
+            </section>
+
+            <section
+                class="border-y border-black/10 bg-[#e8edf2] py-16 dark:border-white/10 dark:bg-[#151a21]"
+            >
+                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                    <div
+                        class="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start"
+                    >
+                        <div>
+                            <p
+                                class="text-xs font-semibold text-[#697382] uppercase dark:text-[#98a2b0]"
+                            >
+                                Decision discipline
+                            </p>
+                            <h2
+                                class="mt-2 text-3xl font-semibold tracking-normal sm:text-4xl"
+                            >
+                                A prediction is not automatically a bet
+                            </h2>
+                            <p
+                                class="mt-4 max-w-xl text-base leading-7 text-[#59616d] dark:text-[#aab2bf]"
+                            >
+                                The recommendation layer can reject a model lean
+                                when the price, evidence, or uncertainty does
+                                not support a wager.
+                            </p>
+                        </div>
+
+                        <ol
+                            class="grid gap-px overflow-hidden rounded-md border border-black/10 bg-black/10 sm:grid-cols-2 dark:border-white/10 dark:bg-white/10"
+                        >
+                            <li
+                                v-for="(step, index) in decisionSteps"
+                                :key="step.label"
+                                class="min-h-44 bg-white p-6 dark:bg-[#0f1319]"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <component
+                                        :is="step.icon"
+                                        class="size-5 text-[#006fbb] dark:text-[#62b5f6]"
+                                    />
+                                    <span
+                                        class="font-mono text-xs text-[#8b95a3]"
+                                        >0{{ index + 1 }}</span
+                                    >
+                                </div>
+                                <h3
+                                    class="mt-7 text-lg font-semibold tracking-normal"
+                                >
+                                    {{ step.label }}
+                                </h3>
+                                <p
+                                    class="mt-2 text-sm leading-6 text-[#697382] dark:text-[#98a2b0]"
+                                >
+                                    {{ step.detail }}
+                                </p>
+                            </li>
+                        </ol>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white py-14 dark:bg-[#11151b]">
+                <div
+                    class="mx-auto flex max-w-7xl flex-col gap-6 px-4 sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8"
+                >
+                    <div class="flex items-start gap-4">
+                        <CheckCircle2
+                            class="mt-1 size-6 shrink-0 text-emerald-600 dark:text-emerald-400"
                         />
-                        <div class="relative">
-                            <div
-                                class="mb-3 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                        <div>
+                            <h2 class="text-2xl font-semibold tracking-normal">
+                                Keep every result accountable
+                            </h2>
+                            <p
+                                class="mt-2 max-w-2xl text-[#697382] dark:text-[#98a2b0]"
                             >
-                                Avg Spread Error
-                            </div>
-                            <div class="mb-2 text-5xl font-semibold">
-                                {{ overallStats.avg_spread_error }}
-                            </div>
-                            <div
-                                class="mb-1 text-sm font-medium text-foreground/90"
-                            >
-                                points off
-                            </div>
-                            <div class="text-xs text-muted-foreground">
-                                Industry avg: 12.5 pts
-                            </div>
+                                Review the current board, follow settled
+                                outcomes, and see when the system chooses not to
+                                bet.
+                            </p>
                         </div>
                     </div>
-                </div>
-
-                <!-- CTA -->
-                <div class="text-center">
-                    <p class="mt-4 text-sm text-muted-foreground">
-                        Updated live after every game. No cherry-picking. No
-                        hiding losses.
-                    </p>
-                </div>
-            </div>
-        </section>
-
-        <!-- How It Works -->
-        <section class="px-4 py-18 sm:px-6 lg:px-8">
-            <div class="mx-auto max-w-7xl">
-                <div class="mb-14 text-center">
-                    <h2
-                        class="mb-4 text-4xl font-semibold tracking-tight text-balance sm:text-5xl"
+                    <Link
+                        v-if="$page.props.auth.user"
+                        :href="dashboard()"
+                        class="shrink-0"
                     >
-                        Built For Disciplined Bettors
-                    </h2>
-                    <p class="mx-auto max-w-2xl text-xl text-muted-foreground">
-                        Not hype picks. A repeatable, data-first workflow for
-                        finding value.
-                    </p>
-                </div>
-
-                <!-- Main Features Grid -->
-                <div class="mb-12 grid grid-cols-1 gap-8 lg:grid-cols-2">
-                    <!-- Advanced ELO Engine -->
-                    <div class="group relative">
-                        <div class="ui-surface relative p-8">
-                            <div
-                                class="mb-6 inline-flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    class="size-6 text-white"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
-                                    />
-                                </svg>
-                            </div>
-                            <h3
-                                class="mb-3 text-2xl font-semibold tracking-tight"
-                            >
-                                Advanced ELO Rating System
-                            </h3>
-                            <p
-                                class="mb-4 leading-relaxed text-muted-foreground"
-                            >
-                                We calculate team and player ELO ratings that
-                                update after every game. Our models account for
-                                strength of schedule, home court advantage, rest
-                                days, and dozens of other factors the public
-                                ignores.
-                            </p>
-                            <div class="flex flex-wrap gap-2">
-                                <Badge variant="secondary" class="font-medium"
-                                    >Dynamic Ratings</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >7 Sports Covered</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >Daily Updates</Badge
-                                >
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Complete Transparency -->
-                    <div class="group relative">
-                        <div class="ui-surface relative p-8">
-                            <div
-                                class="mb-6 inline-flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-purple-500"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    class="size-6 text-white"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                    />
-                                </svg>
-                            </div>
-                            <h3
-                                class="mb-3 text-2xl font-semibold tracking-tight"
-                            >
-                                100% Transparent Track Record
-                            </h3>
-                            <p
-                                class="mb-4 leading-relaxed text-muted-foreground"
-                            >
-                                Every single prediction is published before game
-                                time and graded after. We show our losses just
-                                as prominently as our wins. No retroactive
-                                edits, no "premium" secret picks, no BS.
-                            </p>
-                            <div class="flex flex-wrap gap-2">
-                                <Badge variant="secondary" class="font-medium"
-                                    >All Picks Public</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >Real-Time Grading</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >Full History</Badge
-                                >
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Value Detection -->
-                    <div class="group relative">
-                        <div class="ui-surface relative p-8">
-                            <div
-                                class="mb-6 inline-flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-500"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    class="size-6 text-white"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"
-                                    />
-                                </svg>
-                            </div>
-                            <h3
-                                class="mb-3 text-2xl font-semibold tracking-tight"
-                            >
-                                +EV Betting Opportunities
-                            </h3>
-                            <p
-                                class="mb-4 leading-relaxed text-muted-foreground"
-                            >
-                                Our edge calculator compares our model's
-                                probabilities against current betting lines to
-                                identify positive expected value (+EV) bets.
-                                Only bet when you have a mathematical advantage.
-                            </p>
-                            <div class="flex flex-wrap gap-2">
-                                <Badge variant="secondary" class="font-medium"
-                                    >Edge Detection</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >Live Odds</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >Kelly Calculator</Badge
-                                >
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Live Updates -->
-                    <div class="group relative">
-                        <div class="ui-surface relative p-8">
-                            <div
-                                class="mb-6 inline-flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-violet-500"
-                            >
-                                <svg
-                                    xmlns="http://www.w3.org/2000/svg"
-                                    class="size-6 text-white"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        stroke-linecap="round"
-                                        stroke-linejoin="round"
-                                        stroke-width="2"
-                                        d="M13 10V3L4 14h7v7l9-11h-7z"
-                                    />
-                                </svg>
-                            </div>
-                            <h3
-                                class="mb-3 text-2xl font-semibold tracking-tight"
-                            >
-                                Real-Time Game Analysis
-                            </h3>
-                            <p
-                                class="mb-4 leading-relaxed text-muted-foreground"
-                            >
-                                Live win probability updates during games. Track
-                                how your bets are performing in real-time and
-                                get alerts when value shifts on live betting
-                                markets.
-                            </p>
-                            <div class="flex flex-wrap gap-2">
-                                <Badge variant="secondary" class="font-medium"
-                                    >Live Probabilities</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >In-Game Value</Badge
-                                >
-                                <Badge variant="secondary" class="font-medium"
-                                    >Instant Alerts</Badge
-                                >
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Sports Coverage -->
-                <div class="text-center">
-                    <p
-                        class="mb-4 text-sm font-semibold tracking-wider text-muted-foreground uppercase"
-                    >
-                        Complete Coverage Across
-                    </p>
-                    <div
-                        class="flex flex-wrap justify-center gap-4 text-2xl font-semibold tracking-tight"
-                    >
-                        <span>NFL</span>
-                        <span class="text-muted-foreground/40">•</span>
-                        <span>NBA</span>
-                        <span class="text-gray-300 dark:text-gray-700">•</span>
-                        <span>MLB</span>
-                        <span class="text-gray-300 dark:text-gray-700">•</span>
-                        <span>CBB</span>
-                        <span class="text-gray-300 dark:text-gray-700">•</span>
-                        <span>WCBB</span>
-                        <span class="text-gray-300 dark:text-gray-700">•</span>
-                        <span>CFB</span>
-                        <span class="text-gray-300 dark:text-gray-700">•</span>
-                        <span>WNBA</span>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Final CTA -->
-        <section
-            class="relative overflow-hidden border-t border-border/50 bg-muted/35 px-4 py-20 sm:px-6 lg:px-8"
-        >
-            <!-- Background -->
-            <div
-                class="absolute inset-0 bg-gradient-to-b from-sky-100/60 via-background to-background dark:from-sky-950/20 dark:via-background dark:to-background"
-            />
-
-            <div class="relative mx-auto max-w-4xl text-center">
-                <h2
-                    class="mb-5 text-4xl font-semibold tracking-tight text-balance text-foreground sm:text-5xl"
-                >
-                    Cut The Noise. Keep The Edge.
-                </h2>
-                <p
-                    class="mx-auto mb-9 max-w-2xl text-xl text-balance text-muted-foreground"
-                >
-                    Use a system that prioritizes expected value, clear
-                    reporting, and long-term discipline.
-                </p>
-
-                <div
-                    class="mb-8 flex flex-col items-center justify-center gap-4 sm:flex-row"
-                >
-                    <Link v-if="!$page.props.auth.user" :href="register()">
-                        <Button size="lg" class="px-10 text-base">
-                            Get Started Free
+                        <Button size="lg" class="gap-2 rounded-md">
+                            Open dashboard
+                            <ArrowRight class="size-4" />
                         </Button>
                     </Link>
-                    <Link v-else :href="dashboard()">
-                        <Button size="lg" class="px-10 text-base">
-                            Go to Dashboard
+                    <Link
+                        v-else-if="canRegister"
+                        :href="register()"
+                        class="shrink-0"
+                    >
+                        <Button size="lg" class="gap-2 rounded-md">
+                            Create account
+                            <ArrowRight class="size-4" />
+                        </Button>
+                    </Link>
+                    <Link v-else :href="login()" class="shrink-0">
+                        <Button size="lg" class="gap-2 rounded-md">
+                            Log in
+                            <ArrowRight class="size-4" />
                         </Button>
                     </Link>
                 </div>
+            </section>
+        </main>
 
+        <footer class="border-t border-white/10 bg-[#0c1118] text-white">
+            <div class="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
                 <div
-                    class="flex flex-col items-center justify-center gap-6 text-sm text-foreground/70 sm:flex-row"
+                    class="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between"
                 >
-                    <div class="flex items-center gap-2">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="size-5"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                        >
-                            <path
-                                fill-rule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                        <span>No credit card required</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="size-5"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                        >
-                            <path
-                                fill-rule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                        <span>Cancel anytime</span>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            class="size-5"
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                        >
-                            <path
-                                fill-rule="evenodd"
-                                d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-                                clip-rule="evenodd"
-                            />
-                        </svg>
-                        <span>Instant access</span>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Footer -->
-        <footer class="border-t border-border/70 bg-background/70">
-            <div class="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
-                <!-- Disclaimer -->
-                <div class="ui-surface-subtle mb-8 p-6">
-                    <p
-                        class="text-center text-sm font-medium text-foreground/90"
-                    >
-                        <strong>Important:</strong> This platform is for
-                        entertainment and educational purposes only. Gambling
-                        involves risk of loss. Never bet more than you can
-                        afford to lose. If you or someone you know has a
-                        gambling problem, call 1-800-GAMBLER.
-                    </p>
-                </div>
-
-                <!-- Footer Links -->
-                <div
-                    class="flex flex-col items-center justify-between gap-4 border-b border-border/70 pb-6 sm:flex-row"
-                >
-                    <div class="flex items-center gap-2">
-                        <div
-                            class="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-sky-500 to-blue-600"
-                        >
-                            <span class="text-sm font-bold text-white">PS</span>
+                    <div class="max-w-xl">
+                        <div class="flex items-center gap-3">
+                            <span
+                                class="flex size-8 items-center justify-center rounded-md bg-white text-xs font-bold text-[#151a21]"
+                                >PS</span
+                            >
+                            <span class="font-semibold tracking-normal"
+                                >PickSports</span
+                            >
                         </div>
-                        <span class="text-lg font-semibold tracking-tight"
-                            >PickSports</span
-                        >
+                        <p class="mt-4 text-sm leading-6 text-[#9da7b5]">
+                            For entertainment and educational purposes only.
+                            Gambling involves risk of loss. Never wager more
+                            than you can afford to lose. Call 1-800-GAMBLER for
+                            help.
+                        </p>
                     </div>
 
                     <div
-                        class="flex flex-wrap items-center justify-center gap-6 text-sm"
+                        class="flex flex-wrap gap-x-6 gap-y-3 text-sm text-[#c8d0db]"
                     >
                         <Link
                             :href="performanceRoute()"
-                            class="font-medium text-muted-foreground transition-colors hover:text-foreground"
+                            class="hover:text-white"
+                            >Performance</Link
                         >
-                            Performance
-                        </Link>
-                        <Link
-                            :href="terms()"
-                            class="font-medium text-muted-foreground transition-colors hover:text-foreground"
+                        <Link :href="terms()" class="hover:text-white"
+                            >Terms</Link
                         >
-                            Terms
-                        </Link>
-                        <Link
-                            :href="privacy()"
-                            class="font-medium text-muted-foreground transition-colors hover:text-foreground"
+                        <Link :href="privacy()" class="hover:text-white"
+                            >Privacy</Link
                         >
-                            Privacy
-                        </Link>
                         <Link
                             :href="responsibleGambling()"
-                            class="font-medium text-muted-foreground transition-colors hover:text-foreground"
+                            class="hover:text-white"
                         >
-                            Responsible Gambling
+                            Responsible gambling
                         </Link>
                     </div>
                 </div>
 
-                <!-- Copyright -->
-                <div class="pt-6 text-center text-sm text-muted-foreground">
-                    <p>
-                        &copy; 2026 PickSports. All rights reserved. Not
-                        affiliated with any professional sports league or
-                        gambling operator.
-                    </p>
+                <div
+                    class="mt-8 border-t border-white/10 pt-6 text-xs text-[#7f8997]"
+                >
+                    &copy; 2026 PickSports. Not affiliated with any professional
+                    sports league or gambling operator.
                 </div>
             </div>
         </footer>

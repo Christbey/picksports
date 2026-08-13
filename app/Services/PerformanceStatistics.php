@@ -2,12 +2,17 @@
 
 namespace App\Services;
 
-use App\Models\BetDecision;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class PerformanceStatistics
 {
+    /** @var array<string,array<string,int|float>> */
+    private array $sportStatsMemo = [];
+
+    /** @var array<string,int|null> */
+    private array $latestGradedSeasonMemo = [];
+
     protected const SPORTS = ['nfl', 'cbb', 'nba', 'wcbb', 'wnba', 'mlb', 'cfb'];
 
     protected const SPORT_LABELS = [
@@ -27,23 +32,30 @@ class PerformanceStatistics
     {
         $totalGraded = 0;
         $totalWinnerCorrect = 0;
-        $spreadErrors = [];
-        $totalErrors = [];
+        $spreadErrorSum = 0.0;
+        $spreadErrorSamples = 0;
+        $totalErrorSum = 0.0;
+        $totalErrorSamples = 0;
 
         foreach (self::SPORTS as $sport) {
             $stats = $this->getSportStats($sport, $fromDate, $toDate);
             $totalGraded += $stats['total_graded'];
             $totalWinnerCorrect += $stats['winner_correct'];
-            $spreadErrors = array_merge($spreadErrors, $stats['spread_errors']);
-            $totalErrors = array_merge($totalErrors, $stats['total_errors']);
+            $spreadErrorSum += $stats['spread_error_sum'];
+            $spreadErrorSamples += $stats['spread_error_samples'];
+            $totalErrorSum += $stats['total_error_sum'];
+            $totalErrorSamples += $stats['total_error_samples'];
         }
 
         return [
             'total_predictions' => $totalGraded,
             'winner_accuracy' => $totalGraded > 0 ? round(($totalWinnerCorrect / $totalGraded) * 100, 1) : 0,
-            'avg_spread_error' => ! empty($spreadErrors) ? round(array_sum($spreadErrors) / count($spreadErrors), 2) : 0,
-            'avg_total_error' => ! empty($totalErrors) ? round(array_sum($totalErrors) / count($totalErrors), 2) : 0,
+            'avg_spread_error' => $spreadErrorSamples > 0 ? round($spreadErrorSum / $spreadErrorSamples, 2) : null,
+            'avg_total_error' => $totalErrorSamples > 0 ? round($totalErrorSum / $totalErrorSamples, 2) : null,
             'win_record' => "{$totalWinnerCorrect}-".($totalGraded - $totalWinnerCorrect),
+            'winner_sample_size' => $totalGraded,
+            'spread_sample_size' => $spreadErrorSamples,
+            'total_sample_size' => $totalErrorSamples,
         ];
     }
 
@@ -68,36 +80,52 @@ class PerformanceStatistics
     /**
      * Get statistics for a specific sport.
      */
-    protected function getSportStats(string $sport, ?string $fromDate = null, ?string $toDate = null): array
-    {
+    protected function getSportStats(
+        string $sport,
+        ?string $fromDate = null,
+        ?string $toDate = null,
+        ?int $season = null,
+    ): array {
+        $memoKey = implode('|', [$sport, $fromDate, $toDate, $season]);
+        if (isset($this->sportStatsMemo[$memoKey])) {
+            return $this->sportStatsMemo[$memoKey];
+        }
+
         $table = "{$sport}_predictions";
         $gamesTable = "{$sport}_games";
 
         $query = DB::table($table)
             ->join($gamesTable, "{$table}.game_id", '=', "{$gamesTable}.id")
-            ->whereNotNull("{$table}.graded_at")
-            ->whereNotNull("{$table}.actual_spread")
-            ->whereNotNull("{$table}.actual_total");
+            ->whereNotNull("{$table}.graded_at");
 
         if ($fromDate) {
-            $query->where("{$gamesTable}.game_date", '>=', $fromDate);
+            $query->whereDate("{$gamesTable}.game_date", '>=', $fromDate);
         }
 
         if ($toDate) {
-            $query->where("{$gamesTable}.game_date", '<=', $toDate);
+            $query->whereDate("{$gamesTable}.game_date", '<=', $toDate);
         }
 
-        $predictions = $query->select([
-            "{$table}.winner_correct",
-            "{$table}.spread_error",
-            "{$table}.total_error",
-        ])->get();
+        if ($season !== null) {
+            $query->where("{$gamesTable}.season", $season);
+        }
 
-        return [
-            'total_graded' => $predictions->count(),
-            'winner_correct' => $predictions->where('winner_correct', true)->count(),
-            'spread_errors' => $predictions->pluck('spread_error')->filter()->toArray(),
-            'total_errors' => $predictions->pluck('total_error')->filter()->toArray(),
+        $row = $query->selectRaw("
+            COUNT(CASE WHEN {$table}.winner_correct IS NOT NULL THEN 1 END) AS winner_samples,
+            SUM(CASE WHEN {$table}.winner_correct = 1 THEN 1 ELSE 0 END) AS winner_correct,
+            COUNT({$table}.spread_error) AS spread_error_samples,
+            COALESCE(SUM({$table}.spread_error), 0) AS spread_error_sum,
+            COUNT({$table}.total_error) AS total_error_samples,
+            COALESCE(SUM({$table}.total_error), 0) AS total_error_sum
+        ")->first();
+
+        return $this->sportStatsMemo[$memoKey] = [
+            'total_graded' => (int) ($row->winner_samples ?? 0),
+            'winner_correct' => (int) ($row->winner_correct ?? 0),
+            'spread_error_samples' => (int) ($row->spread_error_samples ?? 0),
+            'spread_error_sum' => (float) ($row->spread_error_sum ?? 0),
+            'total_error_samples' => (int) ($row->total_error_samples ?? 0),
+            'total_error_sum' => (float) ($row->total_error_sum ?? 0),
         ];
     }
 
@@ -106,42 +134,50 @@ class PerformanceStatistics
      */
     public function calculateROI(?string $fromDate = null, ?string $toDate = null): array
     {
-        $query = BetDecision::query()
-            ->with('settlement')
-            ->where('is_bet', true)
-            ->where('pregame_safe', true)
-            ->whereHas('settlement');
+        $query = DB::table('bet_decisions')
+            ->join('bet_settlements', 'bet_settlements.bet_decision_id', '=', 'bet_decisions.id')
+            ->where('bet_decisions.is_bet', true)
+            ->where('bet_decisions.pregame_safe', true);
 
         if ($fromDate) {
-            $query->whereDate('decided_at', '>=', $fromDate);
+            $query->whereDate('bet_decisions.decided_at', '>=', $fromDate);
         }
 
         if ($toDate) {
-            $query->whereDate('decided_at', '<=', $toDate);
+            $query->whereDate('bet_decisions.decided_at', '<=', $toDate);
         }
 
-        $decisions = $query->get();
-        $totalBets = $decisions->count();
-        $totalWins = $decisions->filter(
-            fn (BetDecision $decision): bool => $decision->settlement?->result_status === 'win'
-        )->count();
-        $totalLosses = $decisions->filter(
-            fn (BetDecision $decision): bool => $decision->settlement?->result_status === 'loss'
-        )->count();
+        $row = $query->selectRaw("
+            COUNT(*) AS total_bets,
+            SUM(CASE WHEN bet_settlements.result_status = 'win' THEN 1 ELSE 0 END) AS total_wins,
+            SUM(CASE WHEN bet_settlements.result_status = 'loss' THEN 1 ELSE 0 END) AS total_losses,
+            SUM(CASE WHEN bet_settlements.result_status = 'push' THEN 1 ELSE 0 END) AS total_pushes,
+            COALESCE(SUM(bet_settlements.profit_units), 0) AS total_profit_units,
+            AVG(bet_settlements.clv) AS avg_clv
+        ")->first();
+
+        $totalBets = (int) ($row->total_bets ?? 0);
+        $totalWins = (int) ($row->total_wins ?? 0);
+        $totalLosses = (int) ($row->total_losses ?? 0);
+        $totalPushes = (int) ($row->total_pushes ?? 0);
+        $gradedDecisions = $totalWins + $totalLosses;
+        $totalProfitUnits = round((float) ($row->total_profit_units ?? 0), 4);
         $totalWagered = $totalBets * 100;
-        $totalProfit = round((float) $decisions->sum(
-            fn (BetDecision $decision): float => ((float) ($decision->settlement?->profit_units ?? 0.0)) * 100
-        ), 2);
-        $roi = $totalWagered > 0 ? round(($totalProfit / $totalWagered) * 100, 2) : 0;
+        $totalProfit = round($totalProfitUnits * 100, 2);
+        $roi = $totalWagered > 0 ? round(($totalProfit / $totalWagered) * 100, 2) : null;
 
         return [
             'total_bets' => $totalBets,
             'total_wins' => $totalWins,
             'total_losses' => $totalLosses,
+            'total_pushes' => $totalPushes,
+            'total_staked_units' => $totalBets,
             'total_wagered' => $totalWagered,
             'total_profit' => $totalProfit,
+            'total_profit_units' => $totalProfitUnits,
             'roi_percentage' => $roi,
-            'win_percentage' => $totalBets > 0 ? round(($totalWins / $totalBets) * 100, 1) : 0,
+            'win_percentage' => $gradedDecisions > 0 ? round(($totalWins / $gradedDecisions) * 100, 1) : null,
+            'avg_clv' => $row->avg_clv !== null ? round((float) $row->avg_clv, 4) : null,
             'verified' => true,
             'methodology' => 'settled_pregame_bet_decisions',
         ];
@@ -153,7 +189,7 @@ class PerformanceStatistics
     public function getRecentPerformance(): array
     {
         $toDate = Carbon::now()->toDateString();
-        $fromDate = Carbon::now()->subDays(30)->toDateString();
+        $fromDate = Carbon::now()->subDays(29)->toDateString();
 
         return [
             'overall' => $this->getOverallStats($fromDate, $toDate),
@@ -167,32 +203,48 @@ class PerformanceStatistics
      */
     public function getSeasonToDate(): array
     {
-        // Define season start dates for each sport
-        $seasonStarts = [
-            'nfl' => Carbon::create(null, 9, 1)->toDateString(), // September 1
-            'cbb' => Carbon::create(null, 11, 1)->toDateString(), // November 1
-            'nba' => Carbon::create(null, 10, 1)->toDateString(), // October 1
-            'wcbb' => Carbon::create(null, 11, 1)->toDateString(), // November 1
-            'wnba' => Carbon::create(null, 5, 1)->toDateString(), // May 1
-            'mlb' => Carbon::create(null, 3, 1)->toDateString(), // March 1
-            'cfb' => Carbon::create(null, 8, 1)->toDateString(), // August 1
-        ];
-
         $results = [];
 
-        foreach ($seasonStarts as $sport => $startDate) {
-            $stats = $this->getSportStats($sport, $startDate, Carbon::now()->toDateString());
+        foreach (self::SPORTS as $sport) {
+            $season = $this->latestGradedSeason($sport);
+            if ($season === null) {
+                continue;
+            }
+
+            $stats = $this->getSportStats($sport, season: $season);
 
             if ($stats['total_graded'] > 0) {
-                $results[$sport] = $this->sportSummary(self::SPORT_LABELS[$sport], $stats);
+                $results[$sport] = [
+                    ...$this->sportSummary(self::SPORT_LABELS[$sport], $stats),
+                    'season' => $season,
+                ];
             }
         }
 
         return $results;
     }
 
+    private function latestGradedSeason(string $sport): ?int
+    {
+        if (array_key_exists($sport, $this->latestGradedSeasonMemo)) {
+            return $this->latestGradedSeasonMemo[$sport];
+        }
+
+        $table = "{$sport}_predictions";
+        $gamesTable = "{$sport}_games";
+        $season = DB::table($table)
+            ->join($gamesTable, "{$table}.game_id", '=', "{$gamesTable}.id")
+            ->whereNotNull("{$table}.graded_at")
+            ->whereNotNull("{$table}.winner_correct")
+            ->max("{$gamesTable}.season");
+
+        return $this->latestGradedSeasonMemo[$sport] = is_numeric($season)
+            ? (int) $season
+            : null;
+    }
+
     /**
-     * @param  array{total_graded:int,winner_correct:int,spread_errors:array<int, mixed>,total_errors:array<int, mixed>}  $stats
+     * @param  array{total_graded:int,winner_correct:int,spread_error_samples:int,spread_error_sum:float,total_error_samples:int,total_error_sum:float}  $stats
      * @return array<string, mixed>
      */
     private function sportSummary(string $label, array $stats, bool $includeErrorMetrics = false): array
@@ -203,6 +255,7 @@ class PerformanceStatistics
             'winner_correct' => $stats['winner_correct'],
             'winner_accuracy' => round(($stats['winner_correct'] / $stats['total_graded']) * 100, 1),
             'win_record' => "{$stats['winner_correct']}-".($stats['total_graded'] - $stats['winner_correct']),
+            'winner_sample_size' => $stats['total_graded'],
         ];
 
         if (! $includeErrorMetrics) {
@@ -210,12 +263,14 @@ class PerformanceStatistics
         }
 
         return array_merge($summary, [
-            'avg_spread_error' => ! empty($stats['spread_errors'])
-                ? round(array_sum($stats['spread_errors']) / count($stats['spread_errors']), 2)
-                : 0,
-            'avg_total_error' => ! empty($stats['total_errors'])
-                ? round(array_sum($stats['total_errors']) / count($stats['total_errors']), 2)
-                : 0,
+            'avg_spread_error' => $stats['spread_error_samples'] > 0
+                ? round($stats['spread_error_sum'] / $stats['spread_error_samples'], 2)
+                : null,
+            'spread_sample_size' => $stats['spread_error_samples'],
+            'avg_total_error' => $stats['total_error_samples'] > 0
+                ? round($stats['total_error_sum'] / $stats['total_error_samples'], 2)
+                : null,
+            'total_sample_size' => $stats['total_error_samples'],
         ]);
     }
 }

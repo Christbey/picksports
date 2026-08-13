@@ -13,9 +13,12 @@ import AppLayout from '@/layouts/AppLayout.vue';
 interface OverallStats {
     total_predictions: number;
     winner_accuracy: number;
-    avg_spread_error: number;
-    avg_total_error: number;
+    avg_spread_error: number | null;
+    avg_total_error: number | null;
     win_record: string;
+    winner_sample_size: number;
+    spread_sample_size: number;
+    total_sample_size: number;
 }
 
 interface SportStats {
@@ -23,19 +26,27 @@ interface SportStats {
     total_graded: number;
     winner_correct: number;
     winner_accuracy: number;
-    avg_spread_error: number;
-    avg_total_error: number;
+    avg_spread_error: number | null;
+    avg_total_error: number | null;
     win_record: string;
+    winner_sample_size: number;
+    spread_sample_size: number;
+    total_sample_size: number;
 }
 
 interface ROIStats {
     total_bets: number;
     total_wins: number;
     total_losses: number;
+    total_pushes: number;
+    total_staked_units: number;
     total_wagered: number;
     total_profit: number;
-    roi_percentage: number;
-    win_percentage: number;
+    total_profit_units: number;
+    roi_percentage: number | null;
+    win_percentage: number | null;
+    verified: boolean;
+    methodology: string;
 }
 
 interface RecentPerformance {
@@ -50,6 +61,8 @@ interface SeasonSportStats {
     winner_correct: number;
     winner_accuracy: number;
     win_record: string;
+    winner_sample_size: number;
+    season: number;
 }
 
 defineProps<{
@@ -60,17 +73,28 @@ defineProps<{
     roi: ROIStats;
 }>();
 
-const getAccuracyColor = (accuracy: number) => {
+const getAccuracyColor = (accuracy: number | null) => {
+    if (accuracy === null) return 'text-muted-foreground';
     if (accuracy >= 55) return 'text-green-600 dark:text-green-400';
     if (accuracy >= 52) return 'text-blue-600 dark:text-blue-400';
     return 'text-orange-600 dark:text-orange-400';
 };
 
-const getROIColor = (roi: number) => {
+const getROIColor = (roi: number | null) => {
+    if (roi === null) return 'text-muted-foreground';
     if (roi > 0) return 'text-green-600 dark:text-green-400';
     if (roi === 0) return 'text-gray-600 dark:text-gray-400';
     return 'text-red-600 dark:text-red-400';
 };
+
+const formatPercent = (value: number | null, digits = 1) =>
+    value === null ? 'Pending' : `${value.toFixed(digits)}%`;
+
+const formatMetric = (value: number | null, suffix = '') =>
+    value === null ? 'Pending' : `${value.toFixed(2)}${suffix}`;
+
+const formatUnits = (value: number) =>
+    `${value > 0 ? '+' : ''}${value.toFixed(2)}u`;
 </script>
 
 <template>
@@ -109,8 +133,8 @@ const getROIColor = (roi: number) => {
                 <div>
                     <h1 class="text-3xl font-bold">Performance Dashboard</h1>
                     <p class="mt-2 text-muted-foreground">
-                        Transparent track record of prediction accuracy and
-                        betting performance
+                        Auditable model accuracy and verified settled-decision
+                        performance
                     </p>
                 </div>
 
@@ -127,7 +151,7 @@ const getROIColor = (roi: number) => {
                         <div class="grid grid-cols-2 gap-4 md:grid-cols-5">
                             <div>
                                 <div class="text-sm text-muted-foreground">
-                                    Total Predictions
+                                    Winner Decisions
                                 </div>
                                 <div class="text-2xl font-bold">
                                     {{ overall.total_predictions }}
@@ -158,18 +182,34 @@ const getROIColor = (roi: number) => {
                             </div>
                             <div>
                                 <div class="text-sm text-muted-foreground">
-                                    Avg Spread Error
+                                    Spread MAE
                                 </div>
                                 <div class="text-2xl font-bold">
-                                    {{ overall.avg_spread_error }} pts
+                                    {{
+                                        formatMetric(
+                                            overall.avg_spread_error,
+                                            ' pts',
+                                        )
+                                    }}
+                                </div>
+                                <div class="mt-1 text-xs text-muted-foreground">
+                                    {{ overall.spread_sample_size }} targets
                                 </div>
                             </div>
                             <div>
                                 <div class="text-sm text-muted-foreground">
-                                    Avg Total Error
+                                    Total MAE
                                 </div>
                                 <div class="text-2xl font-bold">
-                                    {{ overall.avg_total_error }} pts
+                                    {{
+                                        formatMetric(
+                                            overall.avg_total_error,
+                                            ' pts',
+                                        )
+                                    }}
+                                </div>
+                                <div class="mt-1 text-xs text-muted-foreground">
+                                    {{ overall.total_sample_size }} targets
                                 </div>
                             </div>
                         </div>
@@ -181,29 +221,32 @@ const getROIColor = (roi: number) => {
                     <CardHeader>
                         <CardTitle>Return on Investment (ROI)</CardTitle>
                         <CardDescription>
-                            Hypothetical returns if betting $100 on every
-                            prediction at -110 odds
+                            Verified results from settled, pregame-safe bet
+                            decisions only
                         </CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div class="grid grid-cols-2 gap-4 md:grid-cols-4">
                             <div>
                                 <div class="text-sm text-muted-foreground">
-                                    Total Wagered
+                                    Settled Stake
                                 </div>
                                 <div class="text-2xl font-bold">
-                                    ${{ roi.total_wagered.toLocaleString() }}
+                                    {{ roi.total_staked_units.toFixed(2) }}u
+                                </div>
+                                <div class="mt-1 text-xs text-muted-foreground">
+                                    {{ roi.total_bets }} decisions
                                 </div>
                             </div>
                             <div>
                                 <div class="text-sm text-muted-foreground">
-                                    Total Profit/Loss
+                                    Net Profit
                                 </div>
                                 <div
                                     class="text-2xl font-bold"
-                                    :class="getROIColor(roi.total_profit)"
+                                    :class="getROIColor(roi.roi_percentage)"
                                 >
-                                    ${{ roi.total_profit.toLocaleString() }}
+                                    {{ formatUnits(roi.total_profit_units) }}
                                 </div>
                             </div>
                             <div>
@@ -214,8 +257,11 @@ const getROIColor = (roi: number) => {
                                     class="text-2xl font-bold"
                                     :class="getROIColor(roi.roi_percentage)"
                                 >
-                                    {{ roi.roi_percentage > 0 ? '+' : ''
-                                    }}{{ roi.roi_percentage }}%
+                                    {{
+                                        roi.roi_percentage === null
+                                            ? 'Pending'
+                                            : `${roi.roi_percentage > 0 ? '+' : ''}${roi.roi_percentage.toFixed(2)}%`
+                                    }}
                                 </div>
                             </div>
                             <div>
@@ -228,14 +274,22 @@ const getROIColor = (roi: number) => {
                                         getAccuracyColor(roi.win_percentage)
                                     "
                                 >
-                                    {{ roi.win_percentage }}%
+                                    {{ formatPercent(roi.win_percentage) }}
+                                </div>
+                                <div class="mt-1 text-xs text-muted-foreground">
+                                    {{ roi.total_wins }}-{{ roi.total_losses
+                                    }}<template v-if="roi.total_pushes > 0"
+                                        >-{{ roi.total_pushes }}</template
+                                    >
                                 </div>
                             </div>
                         </div>
                         <div class="mt-4 text-sm text-muted-foreground">
-                            <strong>Note:</strong> Break-even at -110 odds
-                            requires 52.38% win rate. ROI calculations assume
-                            standard $100 bets on each prediction.
+                            <strong>Method:</strong> One unit is staked per
+                            qualifying decision. Profit comes from the recorded
+                            settlement price; pushes retain stake but do not
+                            enter the win-rate denominator. No qualifying sample
+                            is shown as Pending.
                         </div>
                     </CardContent>
                 </Card>
@@ -291,8 +345,11 @@ const getROIColor = (roi: number) => {
                                         getROIColor(recent.roi.roi_percentage)
                                     "
                                 >
-                                    {{ recent.roi.roi_percentage > 0 ? '+' : ''
-                                    }}{{ recent.roi.roi_percentage }}%
+                                    {{
+                                        recent.roi.roi_percentage === null
+                                            ? 'Pending'
+                                            : `${recent.roi.roi_percentage > 0 ? '+' : ''}${recent.roi.roi_percentage.toFixed(2)}%`
+                                    }}
                                 </div>
                             </div>
                         </div>
@@ -357,20 +414,42 @@ const getROIColor = (roi: number) => {
                                         <div
                                             class="text-xs text-muted-foreground"
                                         >
-                                            Avg Spread Error
+                                            Spread MAE
                                         </div>
                                         <div class="text-lg font-semibold">
-                                            {{ stats.avg_spread_error }} pts
+                                            {{
+                                                formatMetric(
+                                                    stats.avg_spread_error,
+                                                    ' pts',
+                                                )
+                                            }}
+                                        </div>
+                                        <div
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{ stats.spread_sample_size }}
+                                            targets
                                         </div>
                                     </div>
                                     <div>
                                         <div
                                             class="text-xs text-muted-foreground"
                                         >
-                                            Avg Total Error
+                                            Total MAE
                                         </div>
                                         <div class="text-lg font-semibold">
-                                            {{ stats.avg_total_error }} pts
+                                            {{
+                                                formatMetric(
+                                                    stats.avg_total_error,
+                                                    ' pts',
+                                                )
+                                            }}
+                                        </div>
+                                        <div
+                                            class="text-xs text-muted-foreground"
+                                        >
+                                            {{ stats.total_sample_size }}
+                                            targets
                                         </div>
                                     </div>
                                 </div>
@@ -382,9 +461,9 @@ const getROIColor = (roi: number) => {
                 <!-- Season-to-Date Stats -->
                 <Card>
                     <CardHeader>
-                        <CardTitle>Season-to-Date Performance</CardTitle>
+                        <CardTitle>Latest Graded Season</CardTitle>
                         <CardDescription
-                            >Current season performance by
+                            >Most recent season with graded outcomes by
                             sport</CardDescription
                         >
                     </CardHeader>
@@ -398,7 +477,7 @@ const getROIColor = (roi: number) => {
                                 class="rounded-lg border p-4"
                             >
                                 <h4 class="mb-2 font-semibold">
-                                    {{ stats.label }}
+                                    {{ stats.label }} · {{ stats.season }}
                                 </h4>
                                 <div class="space-y-2">
                                     <div class="flex justify-between">
@@ -446,15 +525,17 @@ const getROIColor = (roi: number) => {
                     <CardHeader>
                         <CardTitle>Our Methodology</CardTitle>
                         <CardDescription
-                            >How we make predictions</CardDescription
+                            >What each metric measures</CardDescription
                         >
                     </CardHeader>
                     <CardContent class="space-y-3">
                         <p class="text-sm">
-                            All predictions are generated using advanced Elo
-                            rating systems and efficiency metrics. We track
-                            every prediction and show both successful and
-                            unsuccessful outcomes for complete transparency.
+                            Models combine sport-specific ratings, efficiency,
+                            availability, and contextual features. Prediction
+                            accuracy is reported separately from betting ROI: an
+                            accurate winner forecast is not automatically a
+                            wager without a playable market price and passing
+                            risk checks.
                         </p>
                         <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
                             <div class="space-y-2">
@@ -465,22 +546,26 @@ const getROIColor = (roi: number) => {
                                     class="list-inside list-disc space-y-1 text-sm text-muted-foreground"
                                 >
                                     <li>Winner prediction accuracy</li>
-                                    <li>Spread prediction error</li>
-                                    <li>Total points prediction error</li>
-                                    <li>Hypothetical betting ROI</li>
+                                    <li>Spread mean absolute error (MAE)</li>
+                                    <li>Total mean absolute error (MAE)</li>
+                                    <li>Verified settled-decision ROI</li>
                                 </ul>
                             </div>
                             <div class="space-y-2">
                                 <h4 class="text-sm font-semibold">
-                                    Break-Even Benchmarks:
+                                    Reading the Record:
                                 </h4>
                                 <ul
                                     class="list-inside list-disc space-y-1 text-sm text-muted-foreground"
                                 >
                                     <li>52.38% win rate needed at -110 odds</li>
-                                    <li>55%+ win rate is excellent</li>
-                                    <li>50-52% is break-even territory</li>
-                                    <li>Below 50% is unprofitable</li>
+                                    <li>
+                                        50% breaks even only at even-money odds
+                                    </li>
+                                    <li>
+                                        Required win rate changes with price
+                                    </li>
+                                    <li>ROI uses recorded settlement profit</li>
                                 </ul>
                             </div>
                         </div>
@@ -493,9 +578,9 @@ const getROIColor = (roi: number) => {
                 >
                     <strong>Important Disclaimer:</strong> These predictions are
                     for entertainment purposes only. Past performance does not
-                    guarantee future results. ROI calculations are hypothetical
-                    and do not reflect actual betting outcomes. Always gamble
-                    responsibly.
+                    guarantee future results. ROI reflects tracked model
+                    decisions and settlements, not a claim of user wagering or
+                    future returns. Always gamble responsibly.
                 </div>
             </div>
         </div>

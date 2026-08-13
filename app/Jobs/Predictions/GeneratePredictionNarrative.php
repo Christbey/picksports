@@ -4,13 +4,14 @@ namespace App\Jobs\Predictions;
 
 use App\Services\Predictions\PredictionNarrativeService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
-class GeneratePredictionNarrative implements ShouldQueue
+class GeneratePredictionNarrative implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -23,6 +24,18 @@ class GeneratePredictionNarrative implements ShouldQueue
         public readonly string $sport,
         public readonly bool $force = false
     ) {}
+
+    public int $uniqueFor = 86400;
+
+    public function uniqueId(): string
+    {
+        return implode(':', [
+            $this->predictionModelClass,
+            $this->predictionId,
+            $this->sport,
+            $this->force ? 'force' : 'standard',
+        ]);
+    }
 
     public function handle(PredictionNarrativeService $narrativeService): void
     {

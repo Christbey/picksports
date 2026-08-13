@@ -5,19 +5,27 @@ namespace App\Jobs\ESPN\CBB;
 use App\Actions\ESPN\CBB\SyncGamesFromScoreboard;
 use App\Services\ESPN\CBB\EspnService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class FetchGamesFromScoreboard implements ShouldQueue
+class FetchGamesFromScoreboard implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    public int $uniqueFor = 3600;
 
     public function __construct(
         public string $date
     ) {}
+
+    public function uniqueId(): string
+    {
+        return $this->date;
+    }
 
     public function handle(): void
     {

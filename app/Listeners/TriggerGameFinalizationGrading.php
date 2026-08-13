@@ -11,11 +11,14 @@ use App\Actions\NFL\GradePredictions as NflGradePredictions;
 use App\Actions\WCBB\GradePredictions as WcbbGradePredictions;
 use App\Actions\WNBA\GradePredictions as WnbaGradePredictions;
 use App\Events\GameFinalized;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 
-class TriggerGameFinalizationGrading implements ShouldQueue
+class TriggerGameFinalizationGrading implements ShouldBeUnique, ShouldQueue
 {
+    public int $uniqueFor = 86400;
+
     /**
      * @var array<string, class-string>
      */
@@ -46,6 +49,11 @@ class TriggerGameFinalizationGrading implements ShouldQueue
         return [
             (new WithoutOverlapping($lockKey))->expireAfter(180),
         ];
+    }
+
+    public function uniqueId(GameFinalized $event): string
+    {
+        return "{$event->sport}:{$event->gameId}";
     }
 
     public function handle(GameFinalized $event): void

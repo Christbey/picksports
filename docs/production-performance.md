@@ -13,6 +13,18 @@ The command migrates the database, reinstalls the release-matched MLB and NFL
 Python packages when the shared runtime exists, builds Laravel's production
 caches, and restarts queue workers.
 
+Forge queue daemons should also recycle hourly so a long-running worker cannot
+remain attached to a release after the `current` symlink advances. Keep
+Supervisor's `autorestart=true` and add `--max-time=3600` to every Picksports
+queue worker command, for example:
+
+```ini
+command=php8.4 /home/forge/picksports.app/current/artisan queue:work database --sleep=3 --daemon --quiet --delay=0 --queue=default --tries=3 --timeout=300 --max-time=3600
+```
+
+Apply the same option to the `sync` queue daemon. This bounds release pinning to
+one hour even when a deployment does not explicitly restart Forge daemons.
+
 ## Immutable Frontend Assets
 
 Install the versioned-asset Nginx location once per server:

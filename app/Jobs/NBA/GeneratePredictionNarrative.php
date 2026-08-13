@@ -5,12 +5,13 @@ namespace App\Jobs\NBA;
 use App\Models\NBA\Prediction;
 use App\Services\Predictions\PredictionNarrativeService;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 
-class GeneratePredictionNarrative implements ShouldQueue
+class GeneratePredictionNarrative implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable;
     use InteractsWithQueue;
@@ -21,6 +22,16 @@ class GeneratePredictionNarrative implements ShouldQueue
         public readonly int $predictionId,
         public readonly bool $force = false
     ) {}
+
+    public int $uniqueFor = 86400;
+
+    public function uniqueId(): string
+    {
+        return implode(':', [
+            $this->predictionId,
+            $this->force ? 'force' : 'standard',
+        ]);
+    }
 
     public function handle(PredictionNarrativeService $narrativeService): void
     {

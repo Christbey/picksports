@@ -5,7 +5,19 @@ use App\Jobs\Predictions\GeneratePredictionNarrative;
 use App\Models\NFL\Game;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Bus;
+
+test('generic narrative jobs are unique per prediction and generation mode', function () {
+    $standard = new GeneratePredictionNarrative(Prediction::class, 42, 'nfl');
+    $duplicate = new GeneratePredictionNarrative(Prediction::class, 42, 'nfl');
+    $forced = new GeneratePredictionNarrative(Prediction::class, 42, 'nfl', true);
+
+    expect($standard)->toBeInstanceOf(ShouldBeUnique::class)
+        ->and($standard->uniqueFor)->toBe(86400)
+        ->and($standard->uniqueId())->toBe($duplicate->uniqueId())
+        ->and($standard->uniqueId())->not->toBe($forced->uniqueId());
+});
 
 test('generic prediction narrative job persists nfl narrative payload and metadata', function () {
     config()->set('nba.prediction.narrative.provider', 'openai');

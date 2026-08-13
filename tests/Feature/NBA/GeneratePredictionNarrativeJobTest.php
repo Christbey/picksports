@@ -5,7 +5,19 @@ use App\Jobs\NBA\GeneratePredictionNarrative;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Bus;
+
+test('nba narrative jobs are unique per prediction and generation mode', function () {
+    $standard = new GeneratePredictionNarrative(42);
+    $duplicate = new GeneratePredictionNarrative(42);
+    $forced = new GeneratePredictionNarrative(42, true);
+
+    expect($standard)->toBeInstanceOf(ShouldBeUnique::class)
+        ->and($standard->uniqueFor)->toBe(86400)
+        ->and($standard->uniqueId())->toBe($duplicate->uniqueId())
+        ->and($standard->uniqueId())->not->toBe($forced->uniqueId());
+});
 
 test('nba narrative job persists narrative payload and generation metadata', function () {
     config()->set('nba.prediction.narrative.provider', 'template');

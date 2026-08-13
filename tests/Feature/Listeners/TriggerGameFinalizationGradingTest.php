@@ -6,6 +6,22 @@ use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\PredictionEvaluation;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+
+it('queues finalization grading uniquely per sport and game', function () {
+    $listener = app(TriggerGameFinalizationGrading::class);
+    $event = new GameFinalized(
+        sport: 'mlb',
+        gameId: 720,
+        season: 2026,
+        gameModelClass: App\Models\MLB\Game::class,
+    );
+
+    expect($listener)->toBeInstanceOf(ShouldBeUnique::class)
+        ->and($listener->uniqueFor)->toBe(86400)
+        ->and($listener->uniqueId($event))->toBe('mlb:720')
+        ->and($listener->middleware($event))->toHaveCount(1);
+});
 
 it('grades nba predictions when nba game finalized event is handled', function () {
     $home = Team::factory()->create();

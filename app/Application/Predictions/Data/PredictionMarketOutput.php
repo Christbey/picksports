@@ -37,9 +37,20 @@ final readonly class PredictionMarketOutput
         return [
             'market_type' => $this->marketType,
             'selection' => $this->selection,
-            'projected_line' => $this->projectedLine === null ? null : round($this->projectedLine, 4),
-            'probability' => $this->probability === null ? null : round($this->probability, 6),
-            'confidence_score' => $this->confidenceScore === null ? null : round($this->confidenceScore, 4),
+            'projected_line' => $this->normalizedNumber($this->projectedLine, 4),
+            'probability' => $this->normalizedNumber($this->probability, 6),
+            'confidence_score' => $this->normalizedNumber($this->confidenceScore, 4),
         ];
+    }
+
+    private function normalizedNumber(?float $value, int $precision): ?float
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $rounded = round($value, $precision);
+
+        return $rounded == 0.0 ? 0.0 : $rounded;
     }
 }

@@ -92,6 +92,13 @@ function lifecycleRulesRelease(string $sport = 'nba'): CalculationRelease
     );
 }
 
+it('normalizes rounded negative zero before hashing prediction output', function () {
+    $market = new PredictionMarketOutput('spread', 'home', projectedLine: -0.00001);
+
+    expect($market->toArray()['projected_line'])->toBe(0.0)
+        ->and(json_encode($market->toArray(), JSON_THROW_ON_ERROR))->not->toContain('-0');
+});
+
 it('approves and selects one frozen rules release without fabricated ML evidence', function () {
     $event = SportEvent::factory()->create(['sport' => 'nba']);
     $release = lifecycleRulesRelease();

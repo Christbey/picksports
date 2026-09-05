@@ -12,6 +12,7 @@ use App\Models\SportEventProviderMapping;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WNBA\Game as WnbaGame;
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -360,7 +361,10 @@ class SportEventIdentityBackfill
 
     private function startsAt(Model $game): ?CarbonImmutable
     {
-        $date = $this->stringAttribute($game, 'game_date');
+        $dateValue = $game->getAttribute('game_date');
+        $date = $dateValue instanceof DateTimeInterface
+            ? $dateValue->format('Y-m-d')
+            : $this->stringAttribute($game, 'game_date');
         $time = $this->stringAttribute($game, 'game_time');
 
         if ($date === null || $time === null) {
@@ -368,7 +372,8 @@ class SportEventIdentityBackfill
         }
 
         try {
-            return CarbonImmutable::parse("{$date} {$time}", 'UTC');
+            return CarbonImmutable::parse("{$date} {$time}", 'UTC')
+                ->setTimezone((string) config('app.timezone', 'UTC'));
         } catch (\Throwable) {
             return null;
         }

@@ -86,6 +86,8 @@ it('dual writes canonical identities from common ESPN lifecycles across sports w
 
     expect($mlbGame->sportEvent?->sport)->toBe('mlb')
         ->and($wnbaGame->sportEvent?->sport)->toBe('wnba')
+        ->and($mlbGame->sportEvent?->starts_at?->utc()->toIso8601String())->toBe('2026-06-10T18:05:00+00:00')
+        ->and($wnbaGame->sportEvent?->starts_at?->utc()->toIso8601String())->toBe('2026-08-01T02:00:00+00:00')
         ->and($mlbGame->sportEvent?->providerMappings()->where('provider', 'espn')->value('provider_uid'))
         ->toBe('s:1~l:10~e:401990001')
         ->and($wnbaGame->sportEvent?->providerMappings()->where('provider', 'espn')->value('provider_uid'))

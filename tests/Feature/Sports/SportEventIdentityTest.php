@@ -56,6 +56,8 @@ it('backfills one canonical event with every known provider identity idempotentl
         'espn_uid' => 's:20~l:28~e:401810101',
         'odds_api_event_id' => 'odds-event-101',
         'nflverse_game_id' => '2026_01_BUF_KC',
+        'game_date' => '2026-09-13',
+        'game_time' => '20:20:00',
     ]);
 
     expect(Artisan::call('sports:backfill-event-identities', [
@@ -68,6 +70,7 @@ it('backfills one canonical event with every known provider identity idempotentl
 
     expect($event)->not->toBeNull()
         ->and($event->sport)->toBe('nfl')
+        ->and($event->starts_at?->utc()->toIso8601String())->toBe('2026-09-13T20:20:00+00:00')
         ->and($event->providerMappings()->count())->toBe(3)
         ->and($event->providerMappings()->where('provider', 'espn')->value('provider_uid'))
         ->toBe('s:20~l:28~e:401810101');

@@ -19,6 +19,10 @@ abstract class AbstractSyncOddsCommand extends Command
 
     protected const SYNC_ACTION_CLASS = '';
 
+    protected const REPORT_MATCH_COVERAGE = false;
+
+    protected const MIN_MATCH_COVERAGE_PERCENT = null;
+
     public function __construct()
     {
         $this->signature = $this->buildSignature();
@@ -40,7 +44,35 @@ abstract class AbstractSyncOddsCommand extends Command
         }
         $this->info($message.'...');
 
-        $updated = app($this->syncActionClass())->execute($days, $oddsSport);
+        $syncAction = app($this->syncActionClass());
+        $updated = $syncAction->execute($days, $oddsSport);
+
+        if (static::REPORT_MATCH_COVERAGE) {
+            $diagnostics = $syncAction->diagnostics($days, $oddsSport);
+            $localGames = (int) ($diagnostics['local_games'] ?? 0);
+            $matchedEvents = (int) ($diagnostics['matched_events'] ?? 0);
+            $coverage = $localGames > 0
+                ? min(100.0, ($matchedEvents / $localGames) * 100)
+                : 100.0;
+
+            $this->line(sprintf(
+                'Odds match coverage: %d/%d local actionable games (%.1f%%).',
+                $matchedEvents,
+                $localGames,
+                $coverage,
+            ));
+
+            $minimumCoverage = static::MIN_MATCH_COVERAGE_PERCENT;
+            if ($minimumCoverage !== null && $localGames > 0 && $coverage < $minimumCoverage) {
+                $this->error(sprintf(
+                    'Odds sync coverage %.1f%% is below the required %.1f%%; unmatched events require attention.',
+                    $coverage,
+                    $minimumCoverage,
+                ));
+
+                return self::FAILURE;
+            }
+        }
 
         if ($updated === 0) {
             $this->warn('No games were updated with odds data.');

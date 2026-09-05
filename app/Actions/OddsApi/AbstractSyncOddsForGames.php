@@ -4,7 +4,9 @@ namespace App\Actions\OddsApi;
 
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\OddsApi\OddsApiService;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -28,6 +30,7 @@ abstract class AbstractSyncOddsForGames
         protected OddsApiService $oddsApiService,
         protected SportsViewCache $sportsViewCache,
         protected ?GameOddsSnapshotRecorder $gameOddsSnapshotRecorder = null,
+        protected ?SportsDateWindowService $sportsDateWindowService = null,
     ) {}
 
     public function execute(?int $daysAhead = 7, ?string $oddsSportKey = null): int
@@ -257,7 +260,7 @@ abstract class AbstractSyncOddsForGames
         return abs($gameTime->diffInMinutes($eventTime, false)) <= $this->maxEventTimeDifferenceMinutes();
     }
 
-    protected function gameScheduledTime(Model $game): ?Carbon
+    protected function gameScheduledTime(Model $game): ?CarbonInterface
     {
         $gameDate = $game->game_date;
         $gameTime = $game->game_time;
@@ -266,13 +269,11 @@ abstract class AbstractSyncOddsForGames
             return null;
         }
 
-        $dateString = $gameDate instanceof Carbon
-            ? $gameDate->toDateString()
-            : Carbon::parse((string) $gameDate)->toDateString();
+        $this->sportsDateWindowService ??= app(SportsDateWindowService::class);
 
-        $appTimezone = (string) config('app.timezone', 'UTC');
-
-        return Carbon::parse(sprintf('%s %s', $dateString, $gameTime), $appTimezone)->utc();
+        return $this->sportsDateWindowService
+            ->gameDateTimeUtc($gameDate, $gameTime)
+            ?->toMutable();
     }
 
     protected function maxEventTimeDifferenceMinutes(): int
@@ -307,7 +308,13 @@ abstract class AbstractSyncOddsForGames
         if ($daysAhead !== null) {
             $query->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
                 ->whereDate('game_date', '<=', now()->startOfDay()->addDays($daysAhead)->toDateString())
-                ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME']);
+                ->whereIn('status', [
+                    'STATUS_SCHEDULED',
+                    'STATUS_DELAYED',
+                    'STATUS_IN_PROGRESS',
+                    'STATUS_HALFTIME',
+                    'STATUS_END_PERIOD',
+                ]);
         }
 
         $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);
@@ -486,6 +493,7 @@ abstract class AbstractSyncOddsForGames
         return array_filter([
             $team->school ?? '',
             $team->mascot ?? '',
+            trim((string) (($team->school ?? '').' '.($team->mascot ?? ''))),
             $team->abbreviation ?? '',
         ]);
     }

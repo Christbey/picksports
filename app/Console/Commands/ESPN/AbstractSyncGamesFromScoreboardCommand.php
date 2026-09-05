@@ -106,8 +106,12 @@ abstract class AbstractSyncGamesFromScoreboardCommand extends Command
         $endDate = Carbon::parse($toDate);
 
         $totalDays = $this->inclusiveDayCount($startDate, $endDate);
+        $runsSynchronously = $this->shouldRunSynchronously();
+        $action = $runsSynchronously ? 'Running' : 'Queuing';
+        $dayLabel = $totalDays === 1 ? 'day' : 'days';
+        $jobLabel = $totalDays === 1 ? 'job' : 'jobs';
 
-        $this->info("Queuing {$totalDays} days of games ({$fromDate} to {$toDate})...");
+        $this->info("{$action} {$totalDays} {$dayLabel} of games ({$fromDate} to {$toDate})...");
 
         $bar = $this->output->createProgressBar($totalDays);
         $bar->start();
@@ -120,8 +124,12 @@ abstract class AbstractSyncGamesFromScoreboardCommand extends Command
         $bar->finish();
         $this->newLine(2);
 
-        $this->info("Queued {$totalDays} game sync jobs successfully.");
-        $this->info('Run "php artisan queue:work" to process the jobs.');
+        if ($runsSynchronously) {
+            $this->info("Synchronized {$totalDays} {$dayLabel} of games successfully.");
+        } else {
+            $this->info("Queued {$totalDays} game sync {$jobLabel} successfully.");
+            $this->info('Run "php artisan queue:work" to process the jobs.');
+        }
 
         return Command::SUCCESS;
     }

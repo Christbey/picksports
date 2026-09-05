@@ -105,6 +105,24 @@ it('can run the scoreboard sync inline without a queue worker', function () {
     expect(Game::where('espn_event_id', '401585699')->exists())->toBeTrue();
 });
 
+it('reports date-range syncs as completed when they run inline', function () {
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=20260130*' => Http::response([
+            'events' => [],
+        ]),
+    ]);
+
+    artisan('espn:sync-nba-games-scoreboard', [
+        '--from-date' => '2026-01-30',
+        '--to-date' => '2026-01-30',
+        '--sync' => true,
+    ])
+        ->expectsOutput('Running 1 day of games (2026-01-30 to 2026-01-30)...')
+        ->expectsOutput('Synchronized 1 day of games successfully.')
+        ->doesntExpectOutput('Run "php artisan queue:work" to process the jobs.')
+        ->assertSuccessful();
+});
+
 it('syncs games for today when no date is provided', function () {
     $today = date('Ymd');
 

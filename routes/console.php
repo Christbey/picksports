@@ -1094,7 +1094,10 @@ $scheduleSportPipeline(
 $cfbCanonicalPipelineEnabled = fn (): bool => $cfbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.cfb', false);
 $scheduleDailySeasonJob("cfb:evaluate-canonical-predictions --season={$fallSeasonYear}", '03:05', $cfbCanonicalPipelineEnabled, 'CFB: Evaluate Canonical Predictions');
+$scheduleDailySeasonJob('sports:settle-bet-decisions --sport=cfb', '03:10', $cfbCanonicalPipelineEnabled, 'CFB: Settle Model Decisions');
 $scheduleDailySeasonJob("cfb:generate-canonical-predictions --season={$fallSeasonYear}", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
+$scheduleDailySeasonJob("cfb:record-moneyline-calibration-shadow --season={$fallSeasonYear}", '08:10', $cfbCanonicalPipelineEnabled, 'CFB: Record Moneyline Calibration Shadow');
+$scheduleDailySeasonJob('sports:record-shadow-bet-decisions --sport=cfb', '08:15', $cfbCanonicalPipelineEnabled, 'CFB: Record Shadow Bet Decisions');
 $scheduleHalfHourlyWindowJob(
     'espn:sync-cfb-injuries',
     '08:00',

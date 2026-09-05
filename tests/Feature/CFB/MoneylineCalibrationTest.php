@@ -1,8 +1,19 @@
 <?php
 
+use App\Actions\CFB\GenerateCanonicalPrediction;
+use App\Models\CFB\Game;
+use App\Models\CFB\Team;
+use App\Models\CFB\TeamMetric;
 use App\Models\ModelArtifact;
+use App\Models\PredictionFeatureSnapshot;
+use App\Models\ShadowModelOutput;
+use App\Models\SportEvent;
+use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbMoneylineCalibrationDataset;
+use App\Services\ML\ModelArtifactRegistry;
+use App\Services\Predictions\ModelRunRecorder;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -101,6 +112,118 @@ it('refuses to train without four independent seasons', function () {
     expect($exitCode)->toBe(1)
         ->and(Artisan::output())->toContain('across four seasons')
         ->and(ModelArtifact::query()->count())->toBe(0);
+});
+
+it('records an observed canonical shadow without changing the published probability', function () {
+    $startsAt = now()->addDay()->startOfHour();
+    $event = SportEvent::factory()->create([
+        'sport' => 'cfb',
+        'season' => 2026,
+        'season_type' => 'regular',
+        'week' => 1,
+        'starts_at' => $startsAt,
+        'status' => 'STATUS_SCHEDULED',
+        'neutral_site' => false,
+    ]);
+    $home = Team::factory()->create(['elo_rating' => 1600]);
+    $away = Team::factory()->create(['elo_rating' => 1450]);
+
+    foreach ([[$home, 31, 20, 8], [$away, 21, 29, -6]] as [$team, $scored, $allowed, $power]) {
+        TeamMetric::query()->create([
+            'team_id' => $team->id,
+            'season' => 2026,
+            'wins' => 8,
+            'losses' => 4,
+            'points_per_game' => $scored,
+            'points_allowed_per_game' => $allowed,
+            'turnover_differential' => 1,
+            'recent_form_rating' => 0,
+            'injury_adjusted_team_rating' => $team->elo_rating,
+            'rest_travel_fatigue' => 0,
+            'power_rating' => $power,
+            'fpi' => $power,
+            'calculation_date' => now()->toDateString(),
+        ]);
+    }
+
+    $game = Game::factory()->create([
+        'sport_event_id' => $event->id,
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'season_type' => 'regular',
+        'week' => 1,
+        'game_date' => $startsAt,
+        'game_time' => $startsAt->format('H:i:s'),
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($game);
+    $publishedProbability = (float) $prediction->markets
+        ->where('market_type', 'moneyline')
+        ->where('selection', 'home')
+        ->sole()
+        ->probability;
+
+    $trainingRun = app(ModelRunRecorder::class)->create(
+        sport: 'cfb',
+        runType: 'training',
+        modelVersion: 'cfb-moneyline-platt-v1',
+        featureVersion: CfbMoneylineCalibrationDataset::FEATURE_VERSION,
+        blendVersion: 'challenger-shadow-v1',
+    );
+    $sourcePath = storage_path('framework/testing/cfb_shadow_artifact.json');
+    File::ensureDirectoryExists(dirname($sourcePath));
+    File::put($sourcePath, json_encode([
+        'model_type' => 'cfb_moneyline_platt_calibration',
+        'alpha' => 0.8,
+        'beta' => 0.2,
+    ], JSON_THROW_ON_ERROR));
+    $artifact = app(ModelArtifactRegistry::class)->register(
+        id: app(ModelArtifactRegistry::class)->newId(),
+        trainingRun: $trainingRun,
+        marketType: 'win_probability',
+        modelType: 'cfb_moneyline_platt_calibration',
+        modelVersion: 'cfb-moneyline-platt-v1',
+        featureVersion: CfbMoneylineCalibrationDataset::FEATURE_VERSION,
+        datasetHash: hash('sha256', 'test-dataset'),
+        artifactPath: $sourcePath,
+        metrics: [],
+    );
+    $artifact->update(['status' => 'promotion_eligible']);
+
+    $firstExitCode = Artisan::call('cfb:record-moneyline-calibration-shadow', [
+        '--artifact' => $artifact->id,
+        '--season' => 2026,
+        '--week' => 1,
+    ]);
+    $secondExitCode = Artisan::call('cfb:record-moneyline-calibration-shadow', [
+        '--artifact' => $artifact->id,
+        '--season' => 2026,
+        '--week' => 1,
+    ]);
+    $snapshot = PredictionFeatureSnapshot::query()->sole();
+    $shadow = ShadowModelOutput::query()->sole();
+
+    expect($firstExitCode)->toBe(0)
+        ->and($secondExitCode)->toBe(0)
+        ->and($snapshot->prediction_table)->toBe('predictions')
+        ->and($snapshot->prediction_id)->toBe($prediction->id)
+        ->and($snapshot->pregame_safe)->toBeTrue()
+        ->and($snapshot->availability_status)->toBe('observed_pregame')
+        ->and(data_get($snapshot->lineage_metadata, 'event_input_snapshot_id'))->toBe($prediction->calculationRun->inputSnapshot->id)
+        ->and($shadow->model_artifact_id)->toBe($artifact->id)
+        ->and($shadow->baseline_output)->toBe($publishedProbability)
+        ->and($shadow->challenger_output)->not->toBe($publishedProbability)
+        ->and((float) $prediction->fresh()->markets
+            ->where('market_type', 'moneyline')
+            ->where('selection', 'home')
+            ->sole()
+            ->probability)->toBe($publishedProbability)
+        ->and(PredictionFeatureSnapshot::query()->count())->toBe(1)
+        ->and(ShadowModelOutput::query()->count())->toBe(1);
 });
 
 /** @return array<string, mixed> */

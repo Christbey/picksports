@@ -25,6 +25,7 @@ class SettleBetDecisionsCommand extends Command
         'nba' => Game::class,
         'nfl' => \App\Models\NFL\Game::class,
         'mlb' => \App\Models\MLB\Game::class,
+        'cfb' => \App\Models\CFB\Game::class,
     ];
 
     public function handle(): int

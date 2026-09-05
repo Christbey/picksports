@@ -68,6 +68,14 @@ export interface ValueSignalSummary {
         risk_level?: string | null;
         units?: number | null;
         reason?: string | null;
+        side?: 'home' | 'away' | string | null;
+        is_key_edge?: boolean;
+        stats_supported?: boolean;
+        model_home_line?: number | null;
+        market_home_line?: number | null;
+        risk_flags?: string[];
+        statistical_support?: Record<string, unknown> | null;
+        market_evidence?: Record<string, unknown> | null;
     } | null;
 }
 

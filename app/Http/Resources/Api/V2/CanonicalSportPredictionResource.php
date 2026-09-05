@@ -3,8 +3,10 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\Game as CfbGame;
 use App\Models\PredictionMarket;
 use App\Services\Api\V2\SportContext;
+use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -32,6 +34,9 @@ class CanonicalSportPredictionResource extends JsonResource
         $confidence = $this->number($homeMoneyline?->confidence_score);
         $evaluation = $prediction->latestEvaluation;
         $confidenceContext = $this->confidenceContext($prediction, $confidence);
+        $valueSignal = $prediction->sport === 'cfb' && $game instanceof CfbGame
+            ? app(CfbCanonicalSpreadValueSignalService::class)->forPrediction($prediction, $game)
+            : null;
 
         return [
             'id' => $prediction->public_id,
@@ -63,7 +68,7 @@ class CanonicalSportPredictionResource extends JsonResource
             'confidence_level' => $this->confidenceLevel($confidence),
             'confidence_context' => $confidenceContext,
             'public_recommendation' => null,
-            'value_signal' => null,
+            'value_signal' => $valueSignal,
             'market_aware_projection' => null,
             'recommendation' => null,
             'pro_signal_layer' => null,
@@ -100,9 +105,9 @@ class CanonicalSportPredictionResource extends JsonResource
             'live_updated_at' => null,
             'depth_chart_context' => null,
             'market_summary' => [
-                'has_odds' => false,
+                'has_odds' => $valueSignal !== null,
                 'markets' => $prediction->markets->pluck('market_type')->unique()->values()->all(),
-                'odds_updated_at' => null,
+                'odds_updated_at' => $game?->odds_updated_at?->toIso8601String(),
             ],
             'audit_context' => $this->auditContext($prediction),
             'generated_at' => $prediction->generated_at?->toIso8601String(),

@@ -24,7 +24,7 @@ class CfbMarketMovementSignalService
         $asOf ??= now();
         $quotes = $this->pregameSpreadQuotes($game, $asOf);
         $points = $quotes->isEmpty()
-            ? $this->fallbackCurrentPoint($game, $asOf)
+            ? $this->fallbackCurrentPoint($game)
             : $this->consensusPoints($quotes);
 
         if ($points->isEmpty()) {
@@ -195,7 +195,7 @@ class CfbMarketMovementSignalService
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function fallbackCurrentPoint(Game $game, CarbonInterface $asOf): Collection
+    private function fallbackCurrentPoint(Game $game): Collection
     {
         $bookmakerHomeLine = $this->bookmakerHomeLineFromOddsData($game);
 
@@ -203,10 +203,14 @@ class CfbMarketMovementSignalService
             return collect();
         }
 
+        $capturedAt = $game->odds_updated_at instanceof CarbonInterface
+            ? $game->odds_updated_at->toIso8601String()
+            : null;
+
         return collect([[
             'bookmaker_home_line' => $bookmakerHomeLine,
             'home_margin' => MarketSpread::bookmakerHomeLineToHomeMargin($bookmakerHomeLine),
-            'captured_at' => $asOf->toIso8601String(),
+            'captured_at' => $capturedAt,
             'book_count' => 1,
             'bookmaker_home_line_range' => 0.0,
         ]]);

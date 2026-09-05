@@ -242,6 +242,17 @@ return [
             'injury_out_total_penalty' => 0.25,
             'injury_questionable_total_penalty' => 0.10,
         ],
+        'spread_value' => [
+            'enabled' => env('CFB_SPREAD_VALUE_ENABLED', true),
+            'minimum_edge_points' => env('CFB_SPREAD_VALUE_MINIMUM_EDGE_POINTS', 3.0),
+            'key_edge_points' => env('CFB_SPREAD_VALUE_KEY_EDGE_POINTS', 7.0),
+            'extreme_edge_points' => env('CFB_SPREAD_VALUE_EXTREME_EDGE_POINTS', 14.0),
+            'minimum_sample_games' => env('CFB_SPREAD_VALUE_MINIMUM_SAMPLE_GAMES', 6),
+            'minimum_metric_reliability' => env('CFB_SPREAD_VALUE_MINIMUM_METRIC_RELIABILITY', 0.75),
+            'minimum_books' => env('CFB_SPREAD_VALUE_MINIMUM_BOOKS', 1),
+            'maximum_book_line_range' => env('CFB_SPREAD_VALUE_MAXIMUM_BOOK_LINE_RANGE', 2.5),
+            'maximum_quote_age_hours' => env('CFB_SPREAD_VALUE_MAXIMUM_QUOTE_AGE_HOURS', 6),
+        ],
         /**
          * ELO points per predicted point spread
          * Calibrated to minimize spread prediction error

@@ -201,6 +201,134 @@ it('can generate and verify only the requested CFB week', function () {
         ->and(app(CfbCanonicalCutoverReadinessService::class)->report(2026, 2)['ready_for_cutover'])->toBeFalse();
 });
 
+it('highlights a statistically supported CFB away cover edge against an inflated favorite line', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $modelHomeLine = (float) $prediction->markets
+        ->where('market_type', 'spread')
+        ->where('selection', 'home')
+        ->sole()
+        ->projected_line;
+    $marketHomeLine = $modelHomeLine - 14;
+    $fixture['game']->update([
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'consensus',
+                'markets' => [[
+                    'key' => 'spreads',
+                    'outcomes' => [
+                        ['name' => 'University', 'point' => $marketHomeLine],
+                        ['name' => 'College', 'point' => -$marketHomeLine],
+                    ],
+                ]],
+            ]],
+        ],
+    ]);
+
+    $user = User::factory()->create();
+    config()->set('subscriptions.enforce_tiers', true);
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    Sanctum::actingAs($user);
+
+    $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')
+        ->assertOk()
+        ->assertJsonPath('data.0.value_signal.has_playable_value', true)
+        ->assertJsonPath('data.0.value_signal.play_count', 1)
+        ->assertJsonPath('data.0.value_signal.best.side', 'away')
+        ->assertJsonPath('data.0.value_signal.best.edge', 14)
+        ->assertJsonPath('data.0.value_signal.best.is_key_edge', true)
+        ->assertJsonPath('data.0.value_signal.best.stats_supported', true)
+        ->assertJsonPath('data.0.value_signal.best.grade', 'Key')
+        ->assertJsonPath('data.0.value_signal.best.statistical_support.home_sample_games', 12)
+        ->assertJsonPath('data.0.value_signal.best.statistical_support.away_sample_games', 12)
+        ->assertJsonPath('data.0.market_summary.has_odds', true)
+        ->assertJson(fn ($json) => $json->whereType('data.0.value_signal.best.label', 'string')->etc());
+
+    $fixture['game']->update([
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'consensus',
+                'markets' => [[
+                    'key' => 'spreads',
+                    'outcomes' => [
+                        ['name' => 'University', 'point' => $modelHomeLine - 2],
+                        ['name' => 'College', 'point' => -($modelHomeLine - 2)],
+                    ],
+                ]],
+            ]],
+        ],
+    ]);
+
+    $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')
+        ->assertOk()
+        ->assertJsonPath('data.0.market_summary.has_odds', true)
+        ->assertJsonPath('data.0.value_signal.has_playable_value', false)
+        ->assertJsonPath('data.0.value_signal.best', null);
+});
+
+it('keeps a large CFB spread disagreement on watch when team samples do not support it', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+    TeamMetric::query()->update(['wins' => 1, 'losses' => 0]);
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $modelHomeLine = (float) $prediction->markets
+        ->where('market_type', 'spread')
+        ->where('selection', 'home')
+        ->sole()
+        ->projected_line;
+    $marketHomeLine = $modelHomeLine - 14;
+    $fixture['game']->update([
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'consensus',
+                'markets' => [[
+                    'key' => 'spreads',
+                    'outcomes' => [
+                        ['name' => 'University', 'point' => $marketHomeLine],
+                        ['name' => 'College', 'point' => -$marketHomeLine],
+                    ],
+                ]],
+            ]],
+        ],
+    ]);
+
+    $user = User::factory()->create();
+    config()->set('subscriptions.enforce_tiers', true);
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    Sanctum::actingAs($user);
+
+    $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')
+        ->assertOk()
+        ->assertJsonPath('data.0.value_signal.has_playable_value', false)
+        ->assertJsonPath('data.0.value_signal.best.side', 'away')
+        ->assertJsonPath('data.0.value_signal.best.edge', 14)
+        ->assertJsonPath('data.0.value_signal.best.is_key_edge', false)
+        ->assertJsonPath('data.0.value_signal.best.stats_supported', false)
+        ->assertJsonPath('data.0.value_signal.best.grade', 'Watch')
+        ->assertJsonPath('data.0.value_signal.best.statistical_support.home_sample_games', 1)
+        ->assertJsonPath('data.0.value_signal.best.statistical_support.away_sample_games', 1);
+});
+
 it('runs canonical football commands and evaluation idempotently', function (array $definition) {
     $fixture = canonicalFootballFixture($definition);
     $sport = $definition['sport'];

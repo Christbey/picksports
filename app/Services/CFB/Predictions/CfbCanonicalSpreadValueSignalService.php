@@ -7,6 +7,7 @@ use App\Models\CFB\Game;
 use App\Models\PredictionMarket;
 use App\Services\CFB\CfbMarketMovementSignalService;
 use Carbon\CarbonImmutable;
+use Carbon\CarbonInterface;
 
 class CfbCanonicalSpreadValueSignalService
 {
@@ -55,7 +56,7 @@ class CfbCanonicalSpreadValueSignalService
         }
 
         $support = $this->statisticalSupport($prediction);
-        $marketHealth = $this->marketHealth($market);
+        $marketHealth = $this->marketHealth($market, $game);
         $isPlayable = $edgePoints >= $minimumEdge && $support['supported'] && $marketHealth['supported'];
         $isKeyEdge = $isPlayable && $edgePoints >= $keyEdge;
         $team = $side === 'home' ? $game->homeTeam : $game->awayTeam;
@@ -100,6 +101,7 @@ class CfbCanonicalSpreadValueSignalService
                 'market_evidence' => [
                     'source' => $market['source'] ?? null,
                     'captured_at' => $market['current_captured_at'] ?? null,
+                    'observed_at' => $marketHealth['observed_at'],
                     'book_count' => (int) ($market['current_book_count'] ?? 0),
                     'bookmaker_home_line_range' => $this->number($market['current_bookmaker_home_line_range'] ?? null),
                 ],
@@ -141,8 +143,8 @@ class CfbCanonicalSpreadValueSignalService
         ];
     }
 
-    /** @param array<string, mixed> $market @return array{supported:bool,risk_flags:list<string>} */
-    private function marketHealth(array $market): array
+    /** @param array<string, mixed> $market @return array{supported:bool,observed_at:string|null,risk_flags:list<string>} */
+    private function marketHealth(array $market, Game $game): array
     {
         $riskFlags = [];
         $minimumBooks = (int) config('cfb.predictions.spread_value.minimum_books', 1);
@@ -150,6 +152,12 @@ class CfbCanonicalSpreadValueSignalService
         $bookRange = $this->number($market['current_bookmaker_home_line_range'] ?? null);
         $maximumRange = (float) config('cfb.predictions.spread_value.maximum_book_line_range', 2.5);
         $capturedAt = $market['current_captured_at'] ?? null;
+        $observedAt = $this->freshestTimestamp(
+            $capturedAt,
+            $game->odds_updated_at instanceof CarbonInterface
+                ? $game->odds_updated_at->toIso8601String()
+                : null,
+        );
         $maximumAgeHours = (int) config('cfb.predictions.spread_value.maximum_quote_age_hours', 6);
 
         if ($bookCount < $minimumBooks) {
@@ -158,12 +166,13 @@ class CfbCanonicalSpreadValueSignalService
         if ($bookRange !== null && $bookRange > $maximumRange) {
             $riskFlags[] = 'wide_bookmaker_line_range';
         }
-        if (! $this->hasFreshTimestamp($capturedAt, $maximumAgeHours)) {
+        if (! $this->hasFreshTimestamp($observedAt, $maximumAgeHours)) {
             $riskFlags[] = 'stale_market_quote';
         }
 
         return [
             'supported' => $riskFlags === [],
+            'observed_at' => $observedAt,
             'risk_flags' => $riskFlags,
         ];
     }
@@ -217,5 +226,28 @@ class CfbCanonicalSpreadValueSignalService
         } catch (\Throwable) {
             return false;
         }
+    }
+
+    private function freshestTimestamp(mixed ...$timestamps): ?string
+    {
+        $freshest = null;
+
+        foreach ($timestamps as $timestamp) {
+            if (! is_string($timestamp) || trim($timestamp) === '') {
+                continue;
+            }
+
+            try {
+                $candidate = CarbonImmutable::parse($timestamp);
+            } catch (\Throwable) {
+                continue;
+            }
+
+            if ($freshest === null || $candidate->gt($freshest)) {
+                $freshest = $candidate;
+            }
+        }
+
+        return $freshest?->toIso8601String();
     }
 }

@@ -8,6 +8,8 @@ use App\Models\CFB\Prediction;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\EventInputSnapshot;
+use App\Models\GameOddsSnapshot;
+use App\Models\MarketQuote;
 use App\Models\PredictionEvaluation;
 use App\Models\PredictionMarket;
 use App\Models\SportEvent;
@@ -233,6 +235,32 @@ it('highlights a statistically supported CFB away cover edge against an inflated
             ]],
         ],
     ]);
+    $staleCapturedAt = now()->subDay();
+    $oddsSnapshot = GameOddsSnapshot::query()->create([
+        'sport' => 'cfb',
+        'game_table' => 'cfb_games',
+        'game_id' => $fixture['game']->getKey(),
+        'source' => 'test',
+        'captured_at' => $staleCapturedAt,
+        'payload_hash' => hash('sha256', 'stale-cfb-spread-snapshot'),
+        'odds_data' => $fixture['game']->fresh()->odds_data,
+    ]);
+    MarketQuote::query()->create([
+        'game_odds_snapshot_id' => $oddsSnapshot->getKey(),
+        'sport' => 'cfb',
+        'game_table' => 'cfb_games',
+        'game_id' => $fixture['game']->getKey(),
+        'source' => 'test',
+        'bookmaker_key' => 'consensus',
+        'market_key' => 'spreads',
+        'side' => 'home',
+        'line' => $marketHomeLine,
+        'bookmaker_home_line' => $marketHomeLine,
+        'home_margin_equivalent' => -$marketHomeLine,
+        'captured_at' => $staleCapturedAt,
+        'is_pregame' => true,
+        'quote_hash' => hash('sha256', 'stale-cfb-spread-quote'),
+    ]);
 
     $user = User::factory()->create();
     config()->set('subscriptions.enforce_tiers', true);
@@ -251,9 +279,12 @@ it('highlights a statistically supported CFB away cover edge against an inflated
         ->assertJsonPath('data.0.value_signal.best.grade', 'Key')
         ->assertJsonPath('data.0.value_signal.best.statistical_support.home_sample_games', 12)
         ->assertJsonPath('data.0.value_signal.best.statistical_support.away_sample_games', 12)
+        ->assertJsonPath('data.0.value_signal.best.market_evidence.source', 'market_quotes_consensus')
+        ->assertJsonPath('data.0.value_signal.best.risk_flags.0', 'extreme_model_market_disagreement')
         ->assertJsonPath('data.0.market_summary.has_odds', true)
         ->assertJson(fn ($json) => $json->whereType('data.0.value_signal.best.label', 'string')->etc());
 
+    MarketQuote::query()->delete();
     $fixture['game']->update([
         'odds_updated_at' => now(),
         'odds_data' => [

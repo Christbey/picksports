@@ -55,6 +55,15 @@ class RecordMoneylineCalibrationShadowCommand extends Command
             return self::FAILURE;
         }
 
+        $minimumWeek = (int) data_get($artifact->trainingRun?->parameters, 'min_week', 0);
+        $maximumWeek = (int) data_get($artifact->trainingRun?->parameters, 'max_week', 4);
+        $requestedWeek = filled($this->option('week')) ? (int) $this->option('week') : null;
+        if ($requestedWeek !== null && ($requestedWeek < $minimumWeek || $requestedWeek > $maximumWeek)) {
+            $this->error("Artifact calibration scope is weeks {$minimumWeek}-{$maximumWeek}; week {$requestedWeek} cannot be shadowed.");
+
+            return self::FAILURE;
+        }
+
         $inferenceRun = $runs->forPrediction(
             sport: 'cfb',
             modelVersion: $artifact->model_version,
@@ -71,7 +80,7 @@ class RecordMoneylineCalibrationShadowCommand extends Command
         $recorded = 0;
         $skipped = 0;
 
-        foreach ($this->predictions()->get() as $prediction) {
+        foreach ($this->predictions($artifact, $minimumWeek, $maximumWeek)->get() as $prediction) {
             $event = $prediction->sportEvent;
             $game = $event?->cfbGame;
             $input = $prediction->calculationRun?->inputSnapshot;
@@ -195,7 +204,7 @@ class RecordMoneylineCalibrationShadowCommand extends Command
     }
 
     /** @return Builder<CanonicalPrediction> */
-    private function predictions(): Builder
+    private function predictions(ModelArtifact $artifact, int $minimumWeek, int $maximumWeek): Builder
     {
         return CanonicalPrediction::query()
             ->with([
@@ -206,8 +215,9 @@ class RecordMoneylineCalibrationShadowCommand extends Command
             ->where('sport', 'cfb')
             ->where('phase', 'pregame')
             ->where('publication_state', 'published')
-            ->whereHas('sportEvent', function (Builder $query): void {
+            ->whereHas('sportEvent', function (Builder $query) use ($minimumWeek, $maximumWeek): void {
                 $query->where('starts_at', '>', now())
+                    ->whereBetween('week', [$minimumWeek, $maximumWeek])
                     ->when($this->option('season'), fn (Builder $builder) => $builder->where('season', (int) $this->option('season')))
                     ->when($this->option('week'), fn (Builder $builder) => $builder->where('week', (int) $this->option('week')))
                     ->when($this->option('game'), fn (Builder $builder) => $builder->whereHas(

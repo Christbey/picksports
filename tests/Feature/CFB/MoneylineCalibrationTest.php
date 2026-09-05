@@ -173,6 +173,7 @@ it('records an observed canonical shadow without changing the published probabil
         modelVersion: 'cfb-moneyline-platt-v1',
         featureVersion: CfbMoneylineCalibrationDataset::FEATURE_VERSION,
         blendVersion: 'challenger-shadow-v1',
+        parameters: ['min_week' => 0, 'max_week' => 4],
     );
     $sourcePath = storage_path('framework/testing/cfb_shadow_artifact.json');
     File::ensureDirectoryExists(dirname($sourcePath));
@@ -224,6 +225,15 @@ it('records an observed canonical shadow without changing the published probabil
             ->probability)->toBe($publishedProbability)
         ->and(PredictionFeatureSnapshot::query()->count())->toBe(1)
         ->and(ShadowModelOutput::query()->count())->toBe(1);
+
+    $outsideScope = Artisan::call('cfb:record-moneyline-calibration-shadow', [
+        '--artifact' => $artifact->id,
+        '--season' => 2026,
+        '--week' => 5,
+    ]);
+
+    expect($outsideScope)->toBe(1)
+        ->and(Artisan::output())->toContain('calibration scope is weeks 0-4');
 });
 
 /** @return array<string, mixed> */

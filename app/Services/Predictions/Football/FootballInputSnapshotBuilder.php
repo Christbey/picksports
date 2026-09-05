@@ -7,6 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 
 abstract class FootballInputSnapshotBuilder extends CanonicalTeamInputSnapshotBuilder
 {
+    protected function metricHasUsableSample(Model $metric): bool
+    {
+        return ((int) $metric->getAttribute('wins') + (int) $metric->getAttribute('losses')) > 0;
+    }
+
     /** @return array<string, mixed> */
     protected function metricInputs(Model $metric): array
     {

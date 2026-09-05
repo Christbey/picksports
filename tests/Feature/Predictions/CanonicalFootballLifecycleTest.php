@@ -105,6 +105,72 @@ it('generates reproducible canonical football predictions without legacy writes'
         ->and($legacy::query()->count())->toBe(0);
 })->with('canonical football sports');
 
+it('uses prior-season football metrics when current-season rows are empty shells', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+
+    foreach ([
+        [$fixture['home'], 30.0, 20.0],
+        [$fixture['away'], 24.0, 28.0],
+    ] as [$team, $scored, $allowed]) {
+        $current = TeamMetric::query()->where('team_id', $team->getKey())->where('season', 2026)->sole();
+        $current->update([
+            'wins' => 0,
+            'losses' => 0,
+            'points_per_game' => 0,
+            'points_allowed_per_game' => 0,
+        ]);
+        $previous = $current->replicate();
+        $previous->fill([
+            'season' => 2025,
+            'wins' => 8,
+            'losses' => 4,
+            'points_per_game' => $scored,
+            'points_allowed_per_game' => $allowed,
+            'recent_form_rating' => 0,
+            'rest_travel_fatigue' => 0,
+            'calculation_date' => '2025-12-31',
+        ])->save();
+    }
+
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $total = $prediction->markets->where('market_type', 'total')->where('selection', 'combined')->sole();
+
+    expect(data_get($prediction->calculationRun->inputSnapshot->inputs, 'home.metrics.record_season'))->toBe(2025)
+        ->and(data_get($prediction->calculationRun->inputSnapshot->inputs, 'away.metrics.record_season'))->toBe(2025)
+        ->and((float) $total->projected_line)->toBe(52.0);
+});
+
+it('uses the football scoring baseline when no team has a completed metric sample', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+    TeamMetric::query()->update([
+        'wins' => 0,
+        'losses' => 0,
+        'points_per_game' => 0,
+        'points_allowed_per_game' => 0,
+    ]);
+
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $total = $prediction->markets->where('market_type', 'total')->where('selection', 'combined')->sole();
+
+    expect((float) $total->projected_line)->toBe(56.0);
+});
+
 it('can generate and verify only the requested CFB week', function () {
     $definition = [
         'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,

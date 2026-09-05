@@ -32,16 +32,24 @@ abstract class CanonicalFootballCalculator implements SportCalculator
             / $this->positive($config, 'elo.points_per_spread_point');
 
         $defaultPoints = $this->positive($config, 'total.default_team_points');
-        $homeScoring = $this->numericOr($homeMetrics, 'points_per_game', $defaultPoints);
-        $homeAllowed = $this->numericOr($homeMetrics, 'points_allowed_per_game', $defaultPoints);
-        $awayScoring = $this->numericOr($awayMetrics, 'points_per_game', $defaultPoints);
-        $awayAllowed = $this->numericOr($awayMetrics, 'points_allowed_per_game', $defaultPoints);
+        $homeSample = (int) data_get($homeMetrics, 'wins', 0) + (int) data_get($homeMetrics, 'losses', 0);
+        $awaySample = (int) data_get($awayMetrics, 'wins', 0) + (int) data_get($awayMetrics, 'losses', 0);
+        $homeScoring = $homeSample > 0
+            ? $this->numericOr($homeMetrics, 'points_per_game', $defaultPoints)
+            : $defaultPoints;
+        $homeAllowed = $homeSample > 0
+            ? $this->numericOr($homeMetrics, 'points_allowed_per_game', $defaultPoints)
+            : $defaultPoints;
+        $awayScoring = $awaySample > 0
+            ? $this->numericOr($awayMetrics, 'points_per_game', $defaultPoints)
+            : $defaultPoints;
+        $awayAllowed = $awaySample > 0
+            ? $this->numericOr($awayMetrics, 'points_allowed_per_game', $defaultPoints)
+            : $defaultPoints;
         $homeExpected = ($homeScoring + $awayAllowed) / 2;
         $awayExpected = ($awayScoring + $homeAllowed) / 2;
         $metricMargin = $homeExpected - $awayExpected;
 
-        $homeSample = (int) data_get($homeMetrics, 'wins', 0) + (int) data_get($homeMetrics, 'losses', 0);
-        $awaySample = (int) data_get($awayMetrics, 'wins', 0) + (int) data_get($awayMetrics, 'losses', 0);
         $minimumGames = max(1, (int) $this->numeric($config, 'spread.minimum_metric_games'));
         $reliability = min(1.0, min($homeSample, $awaySample) / $minimumGames);
         $metricWeight = $this->bounded($this->numeric($config, 'spread.metric_weight') * $reliability, 0, 0.8);

@@ -111,12 +111,17 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
         }
 
         $metric = $query->orderByDesc('calculation_date')->orderByDesc('id')->first();
+        $usePreviousSeasonFallback = (bool) data_get(
+            $release->configuration,
+            'inputs.use_previous_season_metrics_fallback',
+            false,
+        );
 
-        if ($metric !== null || ! data_get($release->configuration, 'inputs.use_previous_season_metrics_fallback', false)) {
+        if (($metric !== null && $this->metricHasUsableSample($metric)) || ! $usePreviousSeasonFallback) {
             return $metric;
         }
 
-        return $metricClass::query()
+        $previousSeasonMetric = $metricClass::query()
             ->where('team_id', $team->getKey())
             ->where('season', '<', $game->getAttribute('season'))
             ->where('updated_at', '<=', $capturedAt)
@@ -124,6 +129,8 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
             ->orderByDesc('calculation_date')
             ->orderByDesc('id')
             ->first();
+
+        return $previousSeasonMetric;
     }
 
     /** @return Collection<int, Model> */
@@ -240,6 +247,11 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
     abstract protected function metricInputs(Model $metric): array;
 
     protected function teamMetricsUseSeasonType(): bool
+    {
+        return true;
+    }
+
+    protected function metricHasUsableSample(Model $metric): bool
     {
         return true;
     }

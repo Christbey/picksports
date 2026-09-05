@@ -2,6 +2,7 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\CBB\Game as CbbGame;
 use App\Models\CFB\Game as CfbGame;
@@ -12,6 +13,7 @@ use App\Models\PredictionEvaluation;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WNBA\Game as WnbaGame;
 use App\Services\Api\V2\CanonicalSportPredictionQuery;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 
 class CanonicalSportCutoverReadinessService
@@ -39,11 +41,37 @@ class CanonicalSportCutoverReadinessService
             throw new \InvalidArgumentException("Canonical cutover readiness does not support {$sport}.");
         }
 
-        $eligibleGames = $gameModel::query()
+        $cutoverStartedAtValue = CalculationRelease::query()
+            ->where('sport', $sport)
+            ->where('phase', 'pregame')
+            ->whereIn('status', ['approved', 'retired'])
+            ->whereNotNull('effective_at')
+            ->min('effective_at');
+        $cutoverStartedAt = $cutoverStartedAtValue === null
+            ? null
+            : CarbonImmutable::parse($cutoverStartedAtValue);
+        $scopedGames = $gameModel::query()
             ->whereNotNull('sport_event_id')
-            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED', 'STATUS_FINAL'])
+            ->whereIn('status', [
+                'STATUS_SCHEDULED',
+                'STATUS_DELAYED',
+                'STATUS_IN_PROGRESS',
+                'STATUS_END_PERIOD',
+                'STATUS_HALFTIME',
+                'STATUS_FINAL',
+            ])
             ->when($season !== null, fn ($query) => $query->where('season', $season))
             ->when($week !== null, fn ($query) => $query->where('week', $week));
+        $scopedEventIds = (clone $scopedGames)
+            ->pluck('sport_event_id')
+            ->map(fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+        $eligibleGames = (clone $scopedGames)
+            ->when($cutoverStartedAt !== null, fn ($query) => $query->whereHas(
+                'sportEvent',
+                fn ($query) => $query->where('starts_at', '>=', $cutoverStartedAt),
+            ));
         $eligibleEventIds = (clone $eligibleGames)
             ->pluck('sport_event_id')
             ->map(fn (mixed $id): int => (int) $id)
@@ -56,6 +84,9 @@ class CanonicalSportCutoverReadinessService
                 'season' => $season,
                 'week' => $week,
             ], fn (mixed $value): bool => $value !== null),
+        )->when(
+            $cutoverStartedAt !== null,
+            fn ($query) => $query->where('sport_events.starts_at', '>=', $cutoverStartedAt),
         );
         $safePredictionEventIds = (clone $safePredictions)
             ->pluck('predictions.sport_event_id')
@@ -67,6 +98,10 @@ class CanonicalSportCutoverReadinessService
             ->where('sport', $sport)
             ->where('phase', 'pregame')
             ->where('publication_state', 'published')
+            ->when($cutoverStartedAt !== null, fn ($query) => $query->whereHas(
+                'sportEvent',
+                fn ($query) => $query->where('starts_at', '>=', $cutoverStartedAt),
+            ))
             ->when($season !== null || $week !== null, fn ($query) => $query->whereHas(
                 'sportEvent.'.($sport.'Game'),
                 fn ($query) => $query
@@ -104,7 +139,8 @@ class CanonicalSportCutoverReadinessService
         $missingPredictionCount = $eligibleEventIds->diff($safePredictionEventIds)->count();
         $missingEvaluationCount = $safeFinalEventIds->diff($evaluatedEventIds)->count();
         $unsafePublishedCount = max(0, $publishedCount - $safeCount);
-        $ready = $missingPredictionCount === 0
+        $ready = $cutoverStartedAt !== null
+            && $missingPredictionCount === 0
             && $missingEvaluationCount === 0
             && $unsafePublishedCount === 0
             && $duplicateEventGroups === 0;
@@ -113,9 +149,11 @@ class CanonicalSportCutoverReadinessService
             'sport' => $sport,
             'season' => $season,
             'week' => $week,
+            'cutover_started_at' => $cutoverStartedAt?->toIso8601String(),
             'ready_for_cutover' => $ready,
             'canonical_reader_enabled' => (bool) config("prediction_lifecycle.canonical_reads.{$sport}", false),
             'eligible_event_count' => $eligibleEventIds->count(),
+            'pre_cutover_event_count' => $scopedEventIds->diff($eligibleEventIds)->count(),
             'safe_published_event_count' => $safePredictionEventIds->count(),
             'missing_safe_prediction_count' => $missingPredictionCount,
             'published_revision_count' => $publishedCount,

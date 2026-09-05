@@ -153,11 +153,30 @@ it('runs canonical football commands and evaluation idempotently', function (arr
 
 it('serves strict football reads only after readiness passes', function (array $definition) {
     $fixture = canonicalFootballFixture($definition);
+    $historical = canonicalFootballFixture([
+        ...$definition,
+        'home_abbreviation' => 'HIS',
+        'away_abbreviation' => 'OLD',
+    ]);
+    $historicalStartsAt = now()->subHours(2)->startOfHour();
+    $historical['event']->update([
+        'starts_at' => $historicalStartsAt,
+        'status' => 'STATUS_FINAL',
+    ]);
+    $historical['game']->update([
+        'game_date' => $historicalStartsAt,
+        'status' => 'STATUS_FINAL',
+        'home_score' => 24,
+        'away_score' => 17,
+    ]);
     $readiness = app($definition['readiness']);
     expect($readiness->report(2026)['ready_for_cutover'])->toBeFalse();
     app($definition['registrar'])->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app($definition['generator'])->execute($fixture['game']);
-    expect($readiness->report(2026)['ready_for_cutover'])->toBeTrue();
+    $report = $readiness->report(2026);
+    expect($report['ready_for_cutover'])->toBeTrue()
+        ->and($report['eligible_event_count'])->toBe(1)
+        ->and($report['pre_cutover_event_count'])->toBe(1);
     $user = User::factory()->create();
     config()->set('subscriptions.enforce_tiers', true);
     config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);

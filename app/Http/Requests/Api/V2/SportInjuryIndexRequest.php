@@ -18,8 +18,10 @@ class SportInjuryIndexRequest extends FormRequest
     {
         return [
             'active' => ['sometimes', 'boolean'],
+            'actionable' => ['sometimes', 'boolean'],
             'team_id' => ['sometimes', 'integer', 'min:1'],
             'status' => ['sometimes', 'string', 'max:100'],
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
         ];
     }
 
@@ -28,10 +30,12 @@ class SportInjuryIndexRequest extends FormRequest
      */
     public function validatedFilters(): array
     {
-        $filters = $this->safe()->only(['active', 'team_id', 'status']);
+        $filters = $this->safe()->only(['active', 'actionable', 'team_id', 'status', 'limit']);
 
-        if (array_key_exists('active', $filters)) {
-            $filters['active'] = filter_var($filters['active'], FILTER_VALIDATE_BOOL);
+        foreach (['active', 'actionable'] as $booleanFilter) {
+            if (array_key_exists($booleanFilter, $filters)) {
+                $filters[$booleanFilter] = filter_var($filters[$booleanFilter], FILTER_VALIDATE_BOOL);
+            }
         }
 
         if (array_key_exists('team_id', $filters)) {
@@ -40,6 +44,10 @@ class SportInjuryIndexRequest extends FormRequest
 
         if (array_key_exists('status', $filters)) {
             $filters['status'] = trim((string) $filters['status']);
+        }
+
+        if (array_key_exists('limit', $filters)) {
+            $filters['limit'] = (int) $filters['limit'];
         }
 
         return array_filter(

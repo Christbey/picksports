@@ -125,10 +125,10 @@ const props = defineProps<{
     featuredProps: FeaturedProp[];
     links: {
         predictions: string;
-        injuries: string;
-        teamMetrics: string;
-        playerStats: string;
-        playerProps: string;
+        injuries: string | null;
+        teamMetrics: string | null;
+        playerStats: string | null;
+        playerProps: string | null;
     };
     summary: {
         topInjuriesCount: number;
@@ -140,15 +140,19 @@ const props = defineProps<{
     };
 }>();
 
-const navLinks = computed(() => [
-    { label: 'Predictions', href: props.links.predictions },
-    { label: 'Injuries', href: props.links.injuries },
-    { label: 'Teams', href: props.links.teamMetrics },
-    { label: 'Players', href: props.links.playerStats },
-    ...(props.hasPlayerProps
-        ? [{ label: 'Props', href: props.links.playerProps }]
-        : []),
-]);
+const navLinks = computed(() =>
+    [
+        { label: 'Predictions', href: props.links.predictions },
+        { label: 'Injuries', href: props.links.injuries },
+        { label: 'Teams', href: props.links.teamMetrics },
+        { label: 'Players', href: props.links.playerStats },
+        ...(props.hasPlayerProps
+            ? [{ label: 'Props', href: props.links.playerProps }]
+            : []),
+    ].filter((link): link is { label: string; href: string } =>
+        Boolean(link.href),
+    ),
+);
 
 const formatMetric = (value: number | string | null | undefined) => {
     if (value === null || value === undefined || value === '') return 'N/A';
@@ -312,7 +316,7 @@ const topPlayer = computed(() => props.topPlayers[0] ?? null);
                     <p class="mt-5 max-w-2xl text-lg leading-8 text-slate-300">
                         This page packages the strongest public hooks from
                         PickSports into a fast read: injuries that move lines,
-                        teams rising into the playoff field, top scorers,
+                        teams rising into the playoff field, player leaders,
                         featured predictions, and player props worth a second
                         look.
                     </p>
@@ -398,7 +402,7 @@ const topPlayer = computed(() => props.topPlayers[0] ?? null);
                             <div
                                 class="text-xs tracking-[0.2em] text-emerald-300 uppercase"
                             >
-                                Top Scorer
+                                Top Player
                             </div>
                             <div class="mt-3 text-lg font-semibold text-white">
                                 {{ topPlayer?.name ?? 'No player data yet' }}
@@ -568,7 +572,7 @@ const topPlayer = computed(() => props.topPlayers[0] ?? null);
                                 Explore predictions
                             </a>
                             <a
-                                v-if="hasPlayerProps"
+                                v-if="links.playerProps"
                                 :href="links.playerProps"
                                 class="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-4 py-2 text-sm font-medium text-emerald-100 transition hover:bg-emerald-400/15"
                             >
@@ -1456,12 +1460,12 @@ const topPlayer = computed(() => props.topPlayers[0] ?? null);
                             <span>Top Players</span>
                             <span
                                 class="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-semibold tracking-[0.18em] text-emerald-200 uppercase"
-                                >Scoring Leaders</span
+                                >Stat Leaders</span
                             >
                         </CardTitle>
                         <CardDescription class="text-slate-400"
-                            >Public player leaders ranked by points per
-                            game.</CardDescription
+                            >Public player leaders ranked by sport-specific
+                            production.</CardDescription
                         >
                     </CardHeader>
                     <CardContent class="space-y-3">

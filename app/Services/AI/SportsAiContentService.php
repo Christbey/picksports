@@ -13,6 +13,7 @@ use App\AI\Agents\SportsPredictionNarrativeAgent;
 use App\AI\Agents\ValidationReviewSummaryAgent;
 use App\Models\ValidationFinding;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Ai\Responses\StructuredAgentResponse;
 use Throwable;
@@ -58,14 +59,36 @@ class SportsAiContentService
             return null;
         }
 
+        $prompt = $this->buildDailyPredictionAnalysisPrompt($payload);
+        $recorder = app(AiGenerationRecorder::class);
+        $generation = Schema::hasTable('ai_generations')
+            ? $recorder->start(
+                purpose: 'daily_prediction_analysis',
+                promptVersion: (string) config('ai.features.daily_prediction_analysis.prompt_version', 'daily-prediction-analysis-v1'),
+                provider: $provider,
+                model: $model,
+                input: $payload,
+                contextType: 'sports_prediction',
+                contextId: isset($payload['prediction']['id']) ? (string) $payload['prediction']['id'] : null,
+            )
+            : null;
+        $startedAt = microtime(true);
+
         try {
             $response = app(SportsDailyPredictionAnalysisAgent::class)->prompt(
-                $this->buildDailyPredictionAnalysisPrompt($payload),
+                $prompt,
                 provider: $provider,
                 model: $model,
             );
 
             if (! $response instanceof StructuredAgentResponse) {
+                if ($generation !== null) {
+                    $recorder->fail(
+                        $generation,
+                        'unexpected_response_type',
+                        (int) round((microtime(true) - $startedAt) * 1000),
+                    );
+                }
                 $this->lastDailyPredictionAnalysisFailure = 'Daily prediction analysis agent returned '.class_basename($response).' instead of a structured response.';
 
                 logger()->warning('Daily prediction analysis agent returned an unexpected response type.', [
@@ -79,6 +102,13 @@ class SportsAiContentService
             $analysis = $this->normalizeDailyPredictionAnalysisPayload($response->toArray());
 
             if (! $analysis) {
+                if ($generation !== null) {
+                    $recorder->fail(
+                        $generation,
+                        'schema_normalization_failed',
+                        (int) round((microtime(true) - $startedAt) * 1000),
+                    );
+                }
                 $this->lastDailyPredictionAnalysisFailure = 'Daily prediction analysis response failed schema normalization.';
 
                 logger()->warning('Daily prediction analysis response failed normalization.', [
@@ -93,8 +123,35 @@ class SportsAiContentService
                 .':'
                 .(string) ($response->meta->model ?? $model);
 
+            if ($generation !== null) {
+                $recorder->complete(
+                    generation: $generation,
+                    output: $analysis,
+                    latencyMs: (int) round((microtime(true) - $startedAt) * 1000),
+                    tokens: [
+                        'input' => $response->usage->promptTokens,
+                        'output' => $response->usage->completionTokens,
+                        'cached_input' => $response->usage->cacheReadInputTokens,
+                    ],
+                    metadata: [
+                        'invocation_id' => $response->invocationId,
+                        'reasoning_tokens' => $response->usage->reasoningTokens,
+                        'cache_write_input_tokens' => $response->usage->cacheWriteInputTokens,
+                    ],
+                );
+            }
+
             return $analysis;
         } catch (Throwable $exception) {
+            if ($generation !== null && $generation->fresh()?->status === 'running') {
+                $recorder->fail(
+                    $generation,
+                    'provider_exception',
+                    (int) round((microtime(true) - $startedAt) * 1000),
+                    ['exception_class' => $exception::class],
+                );
+            }
+
             logger()->warning('Daily prediction analysis request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -1120,6 +1177,9 @@ Analyze this daily sports prediction packet.
 Rules:
 - Use only the supplied JSON.
 - Treat calculated_model as the deterministic model output.
+- When external_game_context is available, explicitly compare the base model with context_adjusted_model and cite its sourced facts in the reasoning.
+- Treat web market_snapshot as corroborating context only; the synced market_context remains authoritative for wager pricing.
+- If external game context is missing, expired, insufficient, or unsourced, add a risk flag and do not imply that current participation plans were considered.
 - Your job is to audit, explain, and classify the bet quality, not to invent a new projection.
 - If price/odds are missing, classify conservatively.
 - Separate calculated edge from analysis confidence.

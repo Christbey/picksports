@@ -3,7 +3,6 @@
 namespace App\Http\Resources\MLB;
 
 use App\Http\Resources\Sports\AbstractPredictionResource;
-use App\Services\MLB\MlbMarketAwareProjectionService;
 use Illuminate\Http\Request;
 
 class PredictionResource extends AbstractPredictionResource
@@ -50,9 +49,9 @@ class PredictionResource extends AbstractPredictionResource
         }
 
         $data = $this->appendDepthChartContext($data);
-        $data['market_aware_projection'] = app(MlbMarketAwareProjectionService::class)->forPrediction($this->resource);
-        $data = $this->appendNarrativeFields($data, $request, 'mlb');
-        $data = $this->appendAiAnalysisFields($data, $request, 'mlb');
+        $data['market_aware_projection'] = $this->preparedData()->marketAwareProjection;
+        $data = $this->appendNarrativeFields($data);
+        $data = $this->appendAiAnalysisFields($data);
 
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }

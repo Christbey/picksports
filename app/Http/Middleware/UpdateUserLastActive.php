@@ -2,8 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\User;
 use Closure;
-use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Symfony\Component\HttpFoundation\Response;
@@ -33,9 +33,10 @@ class UpdateUserLastActive
         return $next($request);
     }
 
-    private function resolveUser(Request $request): ?Authenticatable
+    private function resolveUser(Request $request): ?User
     {
-        return $request->user()
-            ?? $request->user('sanctum');
+        $user = $request->user() ?? $request->user('sanctum');
+
+        return $user instanceof User ? $user : null;
     }
 }

@@ -22,6 +22,7 @@ AI should not decide whether a game is final, calculate model edge from scratch,
 
 | Agent | Class | Trigger | Purpose | Output Location |
 | --- | --- | --- | --- | --- |
+| NFL web context research | `NflGameContextResearchAgent` | `nfl:research-game-context` | Searches current sources for starter plans, QB rotations, injuries, coaching intent, joint-practice effects, weather, and market observations. | `sports_game_context_reports` |
 | Daily prediction analysis | `SportsDailyPredictionAnalysisAgent` | `sports:ai-daily-predictions` | Turns deterministic prediction payloads into analysis, recommendation, risk flags, and market notes. | `sports_ai_prediction_analyses` |
 | Data freshness review | `DataFreshnessAgent` | `sports:ai-daily-predictions` shadow chain | Audits freshness using `operational_context` and validation findings. | `sports_ai_prediction_analyses.metadata.shadow_agents.data_freshness` |
 | Market readiness review | `MarketReadinessAgent` | `sports:ai-daily-predictions` shadow chain | Audits odds and market availability before publishing a pick. | `sports_ai_prediction_analyses.metadata.shadow_agents.market_readiness` |
@@ -47,8 +48,10 @@ These are not AI agents, but they are operational agents and should be treated a
 ```mermaid
 flowchart TD
     A["Sports source syncs: ESPN, odds, weather, injuries, props"] --> B["Deterministic models and betting signal services"]
+    W["Sourced NFL web context research"] --> X["Bounded deterministic context adjustment"]
     B --> C["Validation checks"]
     C --> D["SportsOperationalContextBuilder"]
+    X --> E
     D --> E["AI daily prediction analysis"]
     E --> F["Shadow agents: freshness, market, model audit"]
     F --> G["Publishing guardrail"]
@@ -60,6 +63,7 @@ flowchart TD
 This matters because each layer has a different job:
 
 - Source syncs collect facts.
+- Web context research collects time-sensitive claims with URLs; bounded application rules translate supported NFL context into scenario adjustments.
 - Models calculate predictions and edges.
 - Validation detects bad or stale facts.
 - Operational context carries validation facts into AI.

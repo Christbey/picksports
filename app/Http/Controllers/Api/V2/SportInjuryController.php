@@ -20,6 +20,11 @@ class SportInjuryController extends Controller
         $filters = $request->validatedFilters();
         $rows = $injuries->get($context, $filters);
         $summary = $injuries->summary($rows);
+        $freshness = $injuries->freshness($context, $rows);
+        $warnings = [];
+        if ($freshness['is_stale']) {
+            $warnings[] = 'Injury data is stale and should not be used for a new betting decision.';
+        }
 
         return response()->json([
             'data' => $rows,
@@ -31,8 +36,8 @@ class SportInjuryController extends Controller
                 'total' => $summary['total'],
                 'teams' => $summary['teams'],
                 'tier' => [],
-                'freshness' => [],
-                'warnings' => [],
+                'freshness' => $freshness,
+                'warnings' => $warnings,
             ],
         ]);
     }

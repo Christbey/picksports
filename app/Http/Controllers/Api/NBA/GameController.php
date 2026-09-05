@@ -16,6 +16,11 @@ class GameController extends AbstractGameController
 
     protected const GAME_RESOURCE = GameResource::class;
 
+    protected function serializesPrediction(): bool
+    {
+        return true;
+    }
+
     protected function additionalGameRelations(): array
     {
         return [

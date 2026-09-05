@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 use Laravel\Fortify\Features;
+use Laravel\Passport\Token;
 
 class TokenAuthService
 {
@@ -40,6 +41,14 @@ class TokenAuthService
 
     public function revokeCurrentToken(?User $user): void
     {
+        $oauthToken = request()->attributes->get('oauth_access_token');
+        if ($oauthToken instanceof Token) {
+            $oauthToken->refreshToken?->revoke();
+            $oauthToken->revoke();
+
+            return;
+        }
+
         $token = $user?->currentAccessToken();
 
         if ($token) {
@@ -51,6 +60,13 @@ class TokenAuthService
     {
         if ($user) {
             $user->tokens()->delete();
+            Token::query()
+                ->where('user_id', $user->getAuthIdentifier())
+                ->where('revoked', false)
+                ->each(function (Token $token): void {
+                    $token->refreshToken?->revoke();
+                    $token->revoke();
+                });
         }
     }
 }

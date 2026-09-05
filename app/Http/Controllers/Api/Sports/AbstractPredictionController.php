@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Models\User;
+use App\Services\Predictions\PredictionResourcePreparer;
 use App\Support\PredictionDataPermissions;
 use App\Support\PredictionFieldAccess;
 use App\Support\SportsViewCache;
@@ -14,6 +16,10 @@ use Illuminate\Support\Facades\Schema;
 
 abstract class AbstractPredictionController extends AbstractSportsApiController
 {
+    public function __construct(
+        private readonly PredictionResourcePreparer $resourcePreparer,
+    ) {}
+
     /**
      * @var array<string, bool>
      */
@@ -229,6 +235,8 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
                     $predictions = $predictions->take($tierLimit);
                 }
 
+                $this->prepareResources($predictions);
+
                 return $this->withTierMetadata($resourceClass::collection($predictions), $tierMetadata)
                     ->response()
                     ->getData(true);
@@ -326,15 +334,18 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     /**
      * Display the specified prediction
      */
-    public function show($prediction): JsonResource
+    public function show($prediction): JsonResponse
     {
         $predictionModel = $this->getPredictionModel();
         $resourceClass = $this->getPredictionResource();
         $predictionId = $this->requireNumericId($prediction);
 
-        $prediction = $predictionModel::query()->with(['game'])->findOrFail($predictionId);
+        $prediction = $predictionModel::query()
+            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->findOrFail($predictionId);
+        $this->resourcePreparer->prepareOne($prediction, (string) $this->sportSlug(), $this->requestUser());
 
-        return new $resourceClass($prediction);
+        return (new $resourceClass($prediction))->response();
     }
 
     /**
@@ -360,6 +371,7 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
             ttlSeconds: (int) config('sports_view_cache.ttl.predictions_by_game_seconds', 30),
             resolver: function () use ($predictionModel, $resourceClass, $gameId): array {
                 $query = $predictionModel::query()
+                    ->with(['game.homeTeam', 'game.awayTeam'])
                     ->where('game_id', $gameId)
                     ->orderByDesc('created_at');
 
@@ -370,10 +382,13 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
                         return ['data' => null, '__status' => 404];
                     }
 
+                    $this->resourcePreparer->prepareOne($prediction, (string) $this->sportSlug(), $this->requestUser());
+
                     return (new $resourceClass($prediction))->response()->getData(true);
                 }
 
                 $predictions = $query->paginate(15);
+                $this->prepareResources($predictions->getCollection());
 
                 return $resourceClass::collection($predictions)->response()->getData(true);
             },
@@ -414,5 +429,21 @@ abstract class AbstractPredictionController extends AbstractSportsApiController
     protected function applyAvailableDatesVisibilityFilters($query, string $gameTable): void
     {
         //
+    }
+
+    private function prepareResources(Collection $predictions): void
+    {
+        $this->resourcePreparer->prepare(
+            $predictions,
+            (string) $this->sportSlug(),
+            $this->requestUser(),
+        );
+    }
+
+    private function requestUser(): ?User
+    {
+        $user = request()->user();
+
+        return $user instanceof User ? $user : null;
     }
 }

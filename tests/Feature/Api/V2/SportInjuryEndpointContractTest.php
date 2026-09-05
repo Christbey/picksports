@@ -8,6 +8,7 @@ use App\Models\MLB\Player as MlbPlayer;
 use App\Models\MLB\Team as MlbTeam;
 use App\Models\NBA\Player as NbaPlayer;
 use App\Models\NBA\Team as NbaTeam;
+use App\Models\NFL\DepthChartEntry as NflDepthChartEntry;
 use App\Models\NFL\Player as NflPlayer;
 use App\Models\NFL\Team as NflTeam;
 use App\Models\User;
@@ -34,6 +35,51 @@ it('requires authenticated access for v2 injury endpoints', function (string $sl
     $this->getJson("/api/v2/sports/{$slug}/injuries")
         ->assertUnauthorized();
 })->with('v2InjuryContractSports');
+
+it('returns only actionable nfl injuries with depth and impact context', function () {
+    actAsV2InjuryContractUser();
+    $team = NflTeam::factory()->create(['abbreviation' => 'ACT']);
+    $player = NflPlayer::factory()->create([
+        'team_id' => $team->id,
+        'full_name' => 'Actionable Quarterback',
+        'position' => 'QB',
+    ]);
+    NflDepthChartEntry::query()->create([
+        'team_id' => $team->id,
+        'player_id' => $player->id,
+        'season' => now()->year,
+        'position_slot_key' => 'QB',
+        'position_code' => 'QB',
+        'depth_rank' => 1,
+        'is_starter' => true,
+        'source_updated_at' => now(),
+    ]);
+    createV2InjuryContractRow('nfl', $team, $player, [
+        'injury_key' => 'actionable-out',
+        'status' => 'Out',
+        'return_date' => now()->addWeek()->toDateString(),
+    ]);
+    createV2InjuryContractRow('nfl', $team, $player, [
+        'injury_key' => 'resolved-active',
+        'status' => 'Active',
+        'type' => 'INJURY_STATUS_ACTIVE',
+    ]);
+    createV2InjuryContractRow('nfl', $team, $player, [
+        'injury_key' => 'expired-questionable',
+        'status' => 'Questionable',
+        'return_date' => now()->subDay()->toDateString(),
+    ]);
+
+    $this->getJson('/api/v2/sports/nfl/injuries?active=1&actionable=1')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.status', 'Out')
+        ->assertJsonPath('data.0.position', 'QB')
+        ->assertJsonPath('data.0.is_starter', true)
+        ->assertJsonPath('data.0.availability_probability', 0)
+        ->assertJsonPath('data.0.impact_level', 'critical')
+        ->assertJsonPath('meta.freshness.is_stale', false);
+});
 
 it('returns a clean json 404 for unsupported v2 injury endpoints', function () {
     actAsV2InjuryContractUser();

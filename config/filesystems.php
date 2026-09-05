@@ -123,6 +123,38 @@ return [
             'report' => true,
         ],
 
+        'provider-local' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/provider-data'),
+            'visibility' => 'private',
+            'permissions' => [
+                'file' => [
+                    'public' => 0644,
+                    'private' => 0600,
+                ],
+                'dir' => [
+                    'public' => 0755,
+                    'private' => 0700,
+                ],
+            ],
+            'throw' => true,
+            'report' => true,
+        ],
+
+        'provider-object-storage' => [
+            'driver' => 's3',
+            'key' => env('PROVIDER_DATA_ACCESS_KEY_ID', env('AWS_ACCESS_KEY_ID')),
+            'secret' => env('PROVIDER_DATA_SECRET_ACCESS_KEY', env('AWS_SECRET_ACCESS_KEY')),
+            'region' => env('PROVIDER_DATA_REGION', env('AWS_DEFAULT_REGION')),
+            'bucket' => env('PROVIDER_DATA_BUCKET', env('AWS_BUCKET')),
+            'url' => env('PROVIDER_DATA_URL'),
+            'endpoint' => env('PROVIDER_DATA_ENDPOINT', env('AWS_ENDPOINT')),
+            'use_path_style_endpoint' => env('PROVIDER_DATA_USE_PATH_STYLE_ENDPOINT', false),
+            'visibility' => 'private',
+            'throw' => true,
+            'report' => true,
+        ],
+
     ],
 
     /*

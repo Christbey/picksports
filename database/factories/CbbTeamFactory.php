@@ -21,7 +21,7 @@ class CbbTeamFactory extends Factory
     {
         return [
             'espn_id' => fake()->unique()->numberBetween(1, 999999),
-            'abbreviation' => fake()->lexify('???'),
+            'abbreviation' => strtoupper(fake()->bothify('???####')),
             'school' => fake()->words(2, true),
             'mascot' => fake()->word(),
             'conference' => fake()->word(),

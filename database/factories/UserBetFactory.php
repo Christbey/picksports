@@ -2,6 +2,7 @@
 
 namespace Database\Factories;
 
+use App\Enums\PredictionSport;
 use App\Models\User;
 use App\Models\UserBet;
 use Illuminate\Database\Eloquent\Factories\Factory;
@@ -28,15 +29,8 @@ class UserBetFactory extends Factory
         return [
             'user_id' => User::factory(),
             'prediction_id' => fake()->numberBetween(1, 100),
-            'prediction_type' => fake()->randomElement([
-                'App\Models\NBA\Prediction',
-                'App\Models\NFL\Prediction',
-                'App\Models\CBB\Prediction',
-                'App\Models\WCBB\Prediction',
-                'App\Models\MLB\Prediction',
-                'App\Models\CFB\Prediction',
-                'App\Models\WNBA\Prediction',
-            ]),
+            'prediction_sport' => $sport = fake()->randomElement(PredictionSport::cases()),
+            'prediction_type' => $sport->predictionModelClass(),
             'bet_amount' => fake()->randomFloat(2, 10, 500),
             'odds' => fake()->randomElement(['-110', '-120', '-150', '+150', '+200', '-105', '+120']),
             'bet_type' => $betType,

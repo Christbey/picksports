@@ -6,8 +6,10 @@ use App\Http\Controllers\Api\Auth\TokenAuthController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
+use App\Http\Controllers\Api\V2\DeveloperSandboxController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\MlbDailyPickController;
+use App\Http\Controllers\Api\V2\NativeDeviceSessionController;
 use App\Http\Controllers\Api\V2\SportController;
 use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
@@ -30,6 +32,13 @@ use App\Http\Controllers\BetTrackerController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v2')->name('v2.')->group(function (): void {
+    Route::get('/developer/sandbox', DeveloperSandboxController::class)
+        ->middleware([
+            'auth:developer-api',
+            'developer.entitlement:developer-sandbox,sandbox:read,developer.sandbox.show',
+        ])
+        ->name('developer.sandbox.show');
+
     Route::get('/sports', [SportController::class, 'index'])->name('sports.index');
     Route::get('/sports/{sport}', [SportController::class, 'show'])->name('sports.show');
 
@@ -37,77 +46,118 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->name('auth.')
         ->group(function (): void {
             Route::post('/login', [TokenAuthController::class, 'login'])
-                ->middleware('throttle:10,1')
+                ->middleware('throttle:api-v2-auth-login')
                 ->name('login');
             Route::post('/passkeys/options', [PasskeyTokenAuthController::class, 'options'])
-                ->middleware('throttle:20,1')
+                ->middleware('throttle:api-v2-auth-passkey-options')
                 ->name('passkeys.createOptions');
             Route::post('/passkeys/verify', [PasskeyTokenAuthController::class, 'verify'])
-                ->middleware('throttle:10,1')
+                ->middleware('throttle:api-v2-auth-passkey-verify')
                 ->name('passkeys.verify');
+            Route::post('/device-sessions/refresh', [NativeDeviceSessionController::class, 'refresh'])
+                ->middleware('throttle:api-v2-auth-login')
+                ->name('device-sessions.refresh');
 
-            Route::middleware('auth:sanctum')->group(function (): void {
+            Route::middleware('v2.auth')->group(function (): void {
                 Route::get('/me', [TokenAuthController::class, 'me'])->name('me');
-                Route::post('/logout', [TokenAuthController::class, 'logout'])->name('logout');
-                Route::post('/logout-all', [TokenAuthController::class, 'logoutAll'])->name('logout-all');
+                Route::post('/logout', [TokenAuthController::class, 'logout'])
+                    ->middleware('throttle:api-v2-writes')
+                    ->name('logout');
+                Route::post('/logout-all', [TokenAuthController::class, 'logoutAll'])
+                    ->middleware('throttle:api-v2-writes')
+                    ->name('logout-all');
+                Route::post('/device-sessions', [NativeDeviceSessionController::class, 'store'])
+                    ->middleware('throttle:api-v2-writes')
+                    ->name('device-sessions.store');
+                Route::delete('/device-sessions/{deviceSession}', [NativeDeviceSessionController::class, 'destroy'])
+                    ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                    ->name('device-sessions.destroy');
+                Route::post('/device-sessions/{deviceSession}/push-registrations', [NativeDeviceSessionController::class, 'storePushRegistration'])
+                    ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                    ->name('device-sessions.push-registrations.store');
+                Route::delete('/device-sessions/{deviceSession}/push-registrations/{provider}', [NativeDeviceSessionController::class, 'destroyPushRegistrations'])
+                    ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                    ->name('device-sessions.push-registrations.destroy');
             });
         });
 
-    Route::middleware(['auth:sanctum'])
+    Route::middleware(['v2.auth'])
         ->get('/live-scoreboard', LiveScoreboardController::class)
         ->name('live-scoreboard.show');
 
-    Route::middleware(['auth:sanctum'])
+    Route::middleware(['v2.auth'])
         ->prefix('/user-bets')
         ->name('user-bets.')
         ->group(function (): void {
             Route::get('/', [BetTrackerController::class, 'index'])->name('index');
-            Route::post('/', [BetTrackerController::class, 'store'])->name('store');
-            Route::put('/{bet}', [BetTrackerController::class, 'update'])->name('update');
-            Route::delete('/{bet}', [BetTrackerController::class, 'destroy'])->name('destroy');
+            Route::post('/', [BetTrackerController::class, 'store'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('store');
+            Route::put('/{bet}', [BetTrackerController::class, 'update'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('update');
+            Route::delete('/{bet}', [BetTrackerController::class, 'destroy'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('destroy');
             Route::get('/export', [BetTrackerController::class, 'export'])->name('export');
         });
 
-    Route::middleware(['auth:sanctum'])
+    Route::middleware(['v2.auth'])
         ->prefix('/cbb-brackets')
         ->name('cbb-brackets.')
         ->group(function (): void {
             Route::get('/leaderboard', [CbbBracketController::class, 'leaderboard'])->name('leaderboard');
             Route::get('/', [CbbBracketController::class, 'index'])->name('index');
-            Route::post('/', [CbbBracketController::class, 'store'])->name('store');
+            Route::post('/', [CbbBracketController::class, 'store'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('store');
             Route::get('/current', [CbbBracketController::class, 'showCurrent'])->name('current.show');
-            Route::put('/current', [CbbBracketController::class, 'upsertCurrent'])->name('current.upsert');
+            Route::put('/current', [CbbBracketController::class, 'upsertCurrent'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('current.upsert');
             Route::get('/{publicId}', [CbbBracketController::class, 'show'])->name('show');
-            Route::patch('/{publicId}', [CbbBracketController::class, 'update'])->name('update');
-            Route::delete('/{publicId}', [CbbBracketController::class, 'destroy'])->name('destroy');
+            Route::patch('/{publicId}', [CbbBracketController::class, 'update'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('update');
+            Route::delete('/{publicId}', [CbbBracketController::class, 'destroy'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('destroy');
         });
 
-    Route::middleware(['auth:sanctum'])
+    Route::middleware(['v2.auth'])
         ->prefix('/groups')
         ->name('groups.')
         ->group(function (): void {
             Route::get('/', [GroupController::class, 'index'])->name('index');
-            Route::post('/', [GroupController::class, 'store'])->name('store');
-            Route::patch('/{publicId}', [GroupController::class, 'update'])->name('update');
+            Route::post('/', [GroupController::class, 'store'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('store');
+            Route::patch('/{publicId}', [GroupController::class, 'update'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('update');
         });
 
-    Route::middleware(['auth:sanctum'])
+    Route::middleware(['v2.auth'])
         ->prefix('/alert-preferences')
         ->name('alert-preferences.')
         ->group(function (): void {
             Route::get('/', [AlertPreferenceController::class, 'show'])->name('show');
-            Route::post('/', [AlertPreferenceController::class, 'store'])->name('store');
-            Route::put('/', [AlertPreferenceController::class, 'update'])->name('update');
+            Route::post('/', [AlertPreferenceController::class, 'store'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('store');
+            Route::put('/', [AlertPreferenceController::class, 'update'])
+                ->middleware(['throttle:api-v2-writes', 'v2.idempotent'])
+                ->name('update');
         });
 
-    Route::middleware(['auth:sanctum', 'admin'])
+    Route::middleware(['v2.auth', 'admin'])
         ->prefix('/admin')
         ->name('admin.')
         ->group(function (): void {
             Route::get('/payload-inspector', PayloadInspectorController::class)->name('payload-inspector');
         });
 
-    Route::middleware(['auth:sanctum', 'v2.sport-api-access'])
+    Route::middleware(['v2.auth', 'v2.sport-api-access'])
         ->prefix('/sports/{sport}')
         ->name('sports.')
         ->group(function (): void {

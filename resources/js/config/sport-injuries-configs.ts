@@ -3,6 +3,7 @@ export interface SportInjuriesConfig {
     title: string;
     subtitle: string;
     breadcrumbHref: string;
+    actionableOnly?: boolean;
 }
 
 export const nbaInjuriesConfig: SportInjuriesConfig = {
@@ -38,6 +39,7 @@ export const nflInjuriesConfig: SportInjuriesConfig = {
     title: 'NFL Injuries',
     subtitle: 'Current injury statuses and expected return timelines.',
     breadcrumbHref: '/nfl/injuries',
+    actionableOnly: true,
 };
 
 export const cfbInjuriesConfig: SportInjuriesConfig = {

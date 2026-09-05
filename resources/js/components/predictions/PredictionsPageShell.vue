@@ -9,8 +9,9 @@ import { responsibleGambling } from '@/routes';
 
 const props = defineProps<{
     title: string;
-    breadcrumbTitle: string;
-    breadcrumbHref: string;
+    sportTitle: string;
+    sportHref: string;
+    pageTitle: string;
     bannerStorageKey: string;
     seoDescription?: string;
 }>();
@@ -43,12 +44,10 @@ const webPageSchema = computed(() =>
     ),
 );
 
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: props.breadcrumbTitle,
-        href: props.breadcrumbHref,
-    },
-];
+const breadcrumbs = computed<BreadcrumbItem[]>(() => [
+    { title: props.sportTitle, href: props.sportHref },
+    { title: props.pageTitle },
+]);
 </script>
 
 <template>

@@ -7,6 +7,11 @@ return [
         'cache_disk' => env('ML_CACHE_DISK', 'ml-cache'),
     ],
 
+    'archive' => [
+        'python_binary' => env('ML_PARQUET_PYTHON_BINARY', 'python3'),
+        'parquet_writer' => base_path('scripts/export_jsonl_to_parquet.py'),
+    ],
+
     'promotion' => [
         'minimum_windows' => (int) env('ML_PROMOTION_MINIMUM_WINDOWS', 3),
         'minimum_better_window_rate' => (float) env('ML_PROMOTION_MINIMUM_BETTER_WINDOW_RATE', 0.60),

@@ -321,6 +321,19 @@ return [
     */
     'prediction' => [
         'use_previous_season_metrics_fallback' => true,
+        'canonical' => [
+            'default_pitcher_elo' => 1500.0,
+            'team_elo_weight' => 0.70,
+            'pitcher_elo_weight' => 0.30,
+            'elo_points_per_run' => 35.0,
+            'metric_weight' => 0.45,
+            'minimum_metric_games' => 20,
+            'spread_output_regression_weight' => 0.10,
+            'run_margin_probability_coefficient' => 1.45,
+            'default_team_runs' => 4.4,
+            'average_total' => 8.8,
+            'total_output_regression_weight' => 0.20,
+        ],
         /**
          * Home-field advantage applied to the predicted spread only (in Elo points).
          * Decoupled from `mlb.elo.home_field_advantage`, which governs Elo-update math.

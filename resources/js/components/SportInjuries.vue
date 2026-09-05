@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
+import { Activity, AlertTriangle, Clock3 } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -26,6 +27,24 @@ interface InjuryRow {
     updated_at: string | null;
     team_abbreviation: string | null;
     player_name: string | null;
+    position?: string | null;
+    depth_rank?: number | null;
+    is_starter?: boolean;
+    availability_probability?: number;
+    impact_weight?: number;
+    expected_impact?: number;
+    impact_level?: 'critical' | 'high' | 'medium' | 'low';
+    source?: string;
+    is_stale?: boolean;
+}
+
+interface InjuryFreshness {
+    last_observed_at?: string | null;
+    latest_source_updated_at?: string | null;
+    age_hours?: number | null;
+    is_stale?: boolean;
+    stale_rows?: number;
+    max_age_hours?: number;
 }
 
 const props = defineProps<{
@@ -42,6 +61,8 @@ const breadcrumbs: BreadcrumbItem[] = [
 const loading = ref(true);
 const error = ref<string | null>(null);
 const rows = ref<InjuryRow[]>([]);
+const freshness = ref<InjuryFreshness | null>(null);
+const warnings = ref<string[]>([]);
 const search = ref('');
 const severityFilter = ref<'all' | 'out' | 'questionable' | 'other'>('all');
 const api = useApiV2Client();
@@ -68,6 +89,7 @@ const filtered = computed(() => {
             row.status ?? '',
             row.detail ?? '',
             row.type ?? '',
+            row.position ?? '',
         ]
             .join(' ')
             .toLowerCase();
@@ -89,7 +111,20 @@ const grouped = computed(() => {
 
     return Array.from(map.entries())
         .sort((a, b) => a[0].localeCompare(b[0]))
-        .map(([team, injuries]) => ({ team, injuries }));
+        .map(([team, injuries]) => ({
+            team,
+            injuries: injuries.sort(
+                (a, b) => (b.expected_impact ?? 0) - (a.expected_impact ?? 0),
+            ),
+            expectedImpact: injuries.reduce(
+                (total, injury) => total + (injury.expected_impact ?? 0),
+                0,
+            ),
+            critical: injuries.filter(
+                (injury) => injury.impact_level === 'critical',
+            ).length,
+        }))
+        .sort((a, b) => b.expectedImpact - a.expectedImpact);
 });
 
 function statusClass(status: string | null): string {
@@ -97,7 +132,9 @@ function statusClass(status: string | null): string {
     if (
         normalized.includes('out') ||
         normalized.includes('doubtful') ||
-        normalized.includes('inactive')
+        normalized.includes('inactive') ||
+        normalized.includes('injured reserve') ||
+        normalized.includes('suspension')
     ) {
         return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
     }
@@ -120,7 +157,9 @@ function severityBucket(
     if (
         normalized.includes('out') ||
         normalized.includes('doubtful') ||
-        normalized.includes('inactive')
+        normalized.includes('inactive') ||
+        normalized.includes('injured reserve') ||
+        normalized.includes('suspension')
     ) {
         return 'out';
     }
@@ -154,8 +193,39 @@ const summary = computed(() => {
         out: outCount,
         questionable: questionableCount,
         other: otherCount,
+        highImpact: rows.value.filter((row) =>
+            ['critical', 'high'].includes(row.impact_level ?? ''),
+        ).length,
     };
 });
+
+function impactClass(level?: InjuryRow['impact_level']): string {
+    if (level === 'critical') {
+        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300';
+    }
+    if (level === 'high') {
+        return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300';
+    }
+    if (level === 'medium') {
+        return 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300';
+    }
+
+    return 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+}
+
+function formatTimestamp(value: string | null | undefined): string {
+    if (!value) return 'Unknown';
+
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+    }).format(date);
+}
 
 async function fetchInjuries() {
     loading.value = true;
@@ -165,7 +235,11 @@ async function fetchInjuries() {
         const payload = await api.injuries.index<InjuryRow>(
             props.config.sport as ApiV2SportSlug,
             {
-                query: { active: 1 },
+                query: {
+                    active: 1,
+                    limit: 500,
+                    ...(props.config.actionableOnly ? { actionable: 1 } : {}),
+                },
                 init: { signal: requestController.signal },
             },
         );
@@ -173,6 +247,10 @@ async function fetchInjuries() {
             throw new Error('Failed to load injuries');
         }
         rows.value = Array.isArray(payload?.data) ? payload.data : [];
+        freshness.value = (payload?.meta?.freshness as InjuryFreshness) ?? null;
+        warnings.value = Array.isArray(payload?.meta?.warnings)
+            ? payload.meta.warnings
+            : [];
     } catch (e) {
         if (e instanceof DOMException && e.name === 'AbortError') return;
         error.value =
@@ -201,6 +279,29 @@ onBeforeUnmount(() => requestController.abort());
                         {{ config.subtitle }}
                     </p>
                 </div>
+
+                <Alert
+                    v-if="freshness?.is_stale"
+                    class="border-amber-500/40 bg-amber-500/10"
+                >
+                    <AlertTriangle class="size-4 text-amber-600" />
+                    <AlertDescription
+                        class="text-amber-900 dark:text-amber-100"
+                    >
+                        Injury data is stale. Last successful sync:
+                        {{ formatTimestamp(freshness.last_observed_at) }}. Do
+                        not use this board for a new betting decision until the
+                        sync recovers.
+                    </AlertDescription>
+                </Alert>
+
+                <Alert v-else-if="freshness?.last_observed_at">
+                    <Clock3 class="size-4" />
+                    <AlertDescription>
+                        Last successful sync
+                        {{ formatTimestamp(freshness.last_observed_at) }}.
+                    </AlertDescription>
+                </Alert>
 
                 <Card>
                     <CardContent class="pt-6">
@@ -284,6 +385,12 @@ onBeforeUnmount(() => requestController.abort());
                     <span class="ui-chip text-foreground/80"
                         >Other: {{ summary.other }}</span
                     >
+                    <span
+                        v-if="summary.highImpact > 0"
+                        class="ui-chip text-orange-700 dark:text-orange-300"
+                    >
+                        High impact: {{ summary.highImpact }}
+                    </span>
                     <span v-if="search" class="ui-chip text-foreground/80"
                         >Search: "{{ search }}"</span
                     >
@@ -291,6 +398,13 @@ onBeforeUnmount(() => requestController.abort());
 
                 <Alert v-if="error" variant="destructive">
                     <AlertDescription>{{ error }}</AlertDescription>
+                </Alert>
+
+                <Alert v-else-if="warnings.length > 0 && !freshness?.is_stale">
+                    <AlertTriangle class="size-4" />
+                    <AlertDescription>{{
+                        warnings.join(' ')
+                    }}</AlertDescription>
                 </Alert>
 
                 <Card v-else-if="loading">
@@ -301,17 +415,35 @@ onBeforeUnmount(() => requestController.abort());
 
                 <Card v-else-if="grouped.length === 0">
                     <CardContent class="py-8 text-sm text-muted-foreground">
-                        No active injuries found.
+                        No actionable injuries found.
                     </CardContent>
                 </Card>
 
                 <div v-else class="grid gap-4">
                     <Card v-for="group in grouped" :key="group.team">
                         <CardHeader>
-                            <div class="ui-kicker">Team</div>
-                            <CardTitle class="tracking-tight">{{
-                                group.team
-                            }}</CardTitle>
+                            <div
+                                class="flex flex-wrap items-start justify-between gap-3"
+                            >
+                                <div>
+                                    <div class="ui-kicker">Team</div>
+                                    <CardTitle class="tracking-tight">{{
+                                        group.team
+                                    }}</CardTitle>
+                                </div>
+                                <div
+                                    v-if="group.expectedImpact > 0"
+                                    class="text-right"
+                                >
+                                    <div class="ui-kicker">Expected impact</div>
+                                    <div
+                                        class="flex items-center justify-end gap-1.5 font-semibold"
+                                    >
+                                        <Activity class="size-4" />
+                                        {{ group.expectedImpact.toFixed(2) }}
+                                    </div>
+                                </div>
+                            </div>
                         </CardHeader>
                         <CardContent>
                             <div class="grid gap-2">
@@ -335,6 +467,49 @@ onBeforeUnmount(() => requestController.abort());
                                         >
                                             {{ injury.status || 'Unknown' }}
                                         </Badge>
+                                        <Badge
+                                            v-if="injury.impact_level"
+                                            :class="
+                                                impactClass(injury.impact_level)
+                                            "
+                                            class="border-0"
+                                        >
+                                            {{ injury.impact_level }} impact
+                                        </Badge>
+                                    </div>
+                                    <div
+                                        v-if="
+                                            injury.position || injury.is_starter
+                                        "
+                                        class="mt-1 flex flex-wrap gap-2 text-xs font-medium text-foreground/80"
+                                    >
+                                        <span v-if="injury.position">
+                                            {{ injury.position }}
+                                        </span>
+                                        <span v-if="injury.is_starter"
+                                            >Starter</span
+                                        >
+                                        <span
+                                            v-else-if="
+                                                injury.depth_rank !== null &&
+                                                injury.depth_rank !== undefined
+                                            "
+                                        >
+                                            Depth {{ injury.depth_rank }}
+                                        </span>
+                                        <span
+                                            v-if="
+                                                injury.availability_probability !==
+                                                undefined
+                                            "
+                                        >
+                                            {{
+                                                Math.round(
+                                                    injury.availability_probability *
+                                                        100,
+                                                )
+                                            }}% availability
+                                        </span>
                                     </div>
                                     <p
                                         class="mt-1 text-sm text-muted-foreground"
@@ -360,6 +535,30 @@ onBeforeUnmount(() => requestController.abort());
                                                 injury.return_date || 'N/A'
                                             }}</span
                                         >
+                                        <span
+                                            v-if="
+                                                injury.expected_impact !==
+                                                undefined
+                                            "
+                                            class="ui-chip text-foreground/75"
+                                        >
+                                            Impact:
+                                            {{
+                                                injury.expected_impact.toFixed(
+                                                    2,
+                                                )
+                                            }}
+                                        </span>
+                                        <span
+                                            class="ui-chip text-foreground/75"
+                                        >
+                                            Updated:
+                                            {{
+                                                formatTimestamp(
+                                                    injury.source_updated_at,
+                                                )
+                                            }}
+                                        </span>
                                     </div>
                                 </div>
                             </div>

@@ -2,10 +2,7 @@
 
 namespace App\Http\Resources\Api\V2;
 
-use App\Models\MLB\Game as MlbGame;
 use App\Services\Api\V2\SportContext;
-use App\Support\MLB\MlbGameScoreResolver;
-use App\Support\MlbRegularSeasonWindow;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -15,6 +12,7 @@ class SportTeamMetricResource extends JsonResource
     public function __construct(
         mixed $resource,
         private readonly SportContext $context,
+        private readonly ?array $preparedRecord = null,
     ) {
         parent::__construct($resource);
     }
@@ -99,8 +97,8 @@ class SportTeamMetricResource extends JsonResource
         $losses = $this->nullableInt($metrics['losses'] ?? $this->attribute('losses'));
         $source = 'metric';
 
-        if ($this->shouldDeriveMlbRecord($wins, $losses)) {
-            $derived = $this->deriveMlbRecord();
+        if ($this->preparedRecord !== null && ($wins === null || $losses === null || ($wins + $losses) === 0)) {
+            $derived = $this->preparedRecord;
 
             if ($derived['games_played'] > 0) {
                 $wins = $derived['wins'];
@@ -119,66 +117,6 @@ class SportTeamMetricResource extends JsonResource
             'games_played' => $gamesPlayed,
             'label' => $wins !== null && $losses !== null ? "{$wins}-{$losses}" : null,
             'source' => $source,
-        ];
-    }
-
-    private function shouldDeriveMlbRecord(?int $wins, ?int $losses): bool
-    {
-        return $this->context->slug === 'mlb'
-            && $this->attribute('team_id') !== null
-            && $this->attribute('season') !== null
-            && ($wins === null || $losses === null || ($wins + $losses) === 0);
-    }
-
-    /**
-     * @return array{wins: int, losses: int, games_played: int}
-     */
-    private function deriveMlbRecord(): array
-    {
-        $teamId = (int) $this->attribute('team_id');
-        $season = (int) $this->attribute('season');
-        $seasonType = $this->attribute('season_type') ?? config('mlb.season.default_team_metrics_type');
-        $finalStatus = (string) config('mlb.statuses.final');
-
-        $query = MlbGame::query()
-            ->with('teamStats')
-            ->where('season', $season)
-            ->where('season_type', $seasonType)
-            ->where('status', $finalStatus)
-            ->where(function ($query) use ($teamId) {
-                $query->where('home_team_id', $teamId)
-                    ->orWhere('away_team_id', $teamId);
-            });
-
-        if ((string) $seasonType === (string) config('mlb.season.types.regular')
-            && ($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null) {
-            $query->whereDate('game_date', '>=', $openerDate);
-        }
-
-        $wins = 0;
-        $losses = 0;
-
-        $query->get(['id', 'home_team_id', 'away_team_id', 'home_score', 'away_score'])
-            ->each(function (MlbGame $game) use ($teamId, &$wins, &$losses): void {
-                $resolved = app(MlbGameScoreResolver::class)->forTeam($game, $teamId);
-                $teamScore = $resolved['team'];
-                $opponentScore = $resolved['opponent'];
-
-                if (! $resolved['complete']) {
-                    return;
-                }
-
-                if ($teamScore > $opponentScore) {
-                    $wins++;
-                } elseif ($teamScore < $opponentScore) {
-                    $losses++;
-                }
-            });
-
-        return [
-            'wins' => $wins,
-            'losses' => $losses,
-            'games_played' => $wins + $losses,
         ];
     }
 

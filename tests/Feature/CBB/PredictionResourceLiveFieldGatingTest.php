@@ -47,7 +47,7 @@ test('hides cbb live fields when game is not live', function () {
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'cbb', $request);
 
     expect($data['home_win_probability'])->toBe(0.62)
         ->and($data['away_win_probability'])->toBe(0.38)
@@ -91,7 +91,7 @@ test('includes cbb live fields when game is live', function () {
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'cbb', $request);
 
     expect($data['home_win_probability'])->toBe(0.54)
         ->and($data['away_win_probability'])->toBe(0.46)

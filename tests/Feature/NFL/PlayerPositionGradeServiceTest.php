@@ -72,6 +72,26 @@ it('grades the offensive line as a point-in-time unit with sample confidence', f
         ]);
     }
 
+    $injurySnapshot = PlayerInjurySnapshot::query()->create([
+        'snapshot_uuid' => '40000000-0000-4000-8000-000000000001',
+        'team_id' => $team->id,
+        'espn_team_id' => $team->espn_id,
+        'provider' => 'espn',
+        'observed_at' => '2026-10-10 10:00:00',
+        'source_updated_at' => '2026-10-10 09:55:00',
+        'payload_hash' => hash('sha256', 'ol-out'),
+        'entry_count' => 1,
+    ]);
+    PlayerInjurySnapshotEntry::query()->create([
+        'snapshot_id' => $injurySnapshot->id,
+        'player_id' => $lineman->id,
+        'espn_athlete_id' => $lineman->espn_id,
+        'injury_key' => 'ol-starter-out',
+        'status' => 'Out',
+        'observed_at' => '2026-10-10 10:00:00',
+        'source_updated_at' => '2026-10-10 09:55:00',
+    ]);
+
     $report = app(PlayerPositionGradeService::class)->teamReport(
         $team->id,
         2026,
@@ -87,7 +107,10 @@ it('grades the offensive line as a point-in-time unit with sample confidence', f
         ->and($offensiveLine['sample_games'])->toBe(4)
         ->and($offensiveLine['grade_source'])->toBe('team_pass_protection_and_run_blocking')
         ->and(data_get($report, 'summary.overall_grade'))->toBe($offensiveLine['grade'])
-        ->and(data_get($report, 'summary.grade_confidence'))->toBe(0.5);
+        ->and(data_get($report, 'summary.grade_confidence'))->toBe(0.5)
+        ->and(data_get($report, 'availability.players.0.grade_source'))->toBe('offensive_line_unit_proxy')
+        ->and(data_get($report, 'availability.players.0.if_out_grade_delta'))->toBeLessThan(0)
+        ->and(data_get($report, 'summary.if_out_grade'))->toBeLessThan(data_get($report, 'summary.if_in_grade'));
 });
 
 it('uses the latest append-only depth chart known before the requested timestamp', function () {

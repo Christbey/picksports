@@ -2,8 +2,11 @@
 
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use App\Models\ProviderImportManifest;
+use App\Models\ProviderSourceFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Storage;
 
 use function Pest\Laravel\artisan;
 
@@ -141,4 +144,40 @@ it('imports nflverse weekly player stats rows', function () {
         ->and($row->player_display_name)->toBe('Lamar Jackson')
         ->and((int) $row->passing_yards)->toBe(265)
         ->and((float) $row->fantasy_points_ppr)->toBe(31.0);
+});
+
+it('archives each nflverse source file once and omits repeated raw row payloads', function () {
+    Storage::fake('provider-test');
+    config()->set('provider-data.storage.disk', 'provider-test');
+    config()->set('provider-data.storage.prefix', 'providers');
+    config()->set('filesystems.disks.provider-test.driver', 'local');
+
+    Team::factory()->create(['abbreviation' => 'JAX']);
+
+    $path = sys_get_temp_dir().'/nflverse-archived-rosters-test.csv';
+    File::put($path, implode("\n", [
+        'season,team,gsis_id,full_name,position',
+        '2025,JAC,00-0036971,Trevor Lawrence,QB',
+    ]));
+
+    foreach (range(1, 2) as $attempt) {
+        artisan('nfl:import-nflverse-layer', [
+            'dataset' => 'rosters',
+            'file' => $path,
+            '--archive-source' => true,
+        ])->assertExitCode(0);
+    }
+
+    $source = ProviderSourceFile::query()->sole();
+
+    expect($source->provider)->toBe('nflverse')
+        ->and($source->dataset)->toBe('rosters')
+        ->and($source->sha256)->toBe(hash_file('sha256', $path))
+        ->and($source->size_bytes)->toBe(filesize($path))
+        ->and($source->imports()->count())->toBe(2)
+        ->and(ProviderImportManifest::query()->where('status', 'completed')->count())->toBe(2)
+        ->and(DB::table('nflverse_rosters')->value('raw_payload'))->toBeNull();
+
+    Storage::disk('provider-test')->assertExists($source->object_key);
+    expect(Storage::disk('provider-test')->getVisibility($source->object_key))->toBe('private');
 });

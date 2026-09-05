@@ -19,7 +19,7 @@ import { type BreadcrumbItem } from '@/types';
 interface Bet {
     id: number;
     prediction_id: number | null;
-    prediction_type: string | null;
+    prediction_sport: string | null;
     bet_amount: number;
     odds: string;
     bet_type: string;
@@ -84,7 +84,7 @@ const loading = ref(true);
 const showAddBetForm = ref(false);
 const form = ref({
     prediction_id: '',
-    prediction_type: 'App\\Models\\NBA\\Prediction',
+    prediction_sport: 'nba',
     bet_amount: '',
     odds: '',
     bet_type: 'spread',
@@ -114,11 +114,21 @@ async function fetchBets() {
 
 async function submitBet() {
     try {
-        await api.userBets.store(form.value);
+        await api.userBets.store({
+            ...form.value,
+            prediction_id:
+                form.value.prediction_id === ''
+                    ? null
+                    : Number(form.value.prediction_id),
+            prediction_sport:
+                form.value.prediction_id === ''
+                    ? null
+                    : form.value.prediction_sport,
+        });
         showAddBetForm.value = false;
         form.value = {
             prediction_id: '',
-            prediction_type: 'App\\Models\\NBA\\Prediction',
+            prediction_sport: 'nba',
             bet_amount: '',
             odds: '',
             bet_type: 'spread',
@@ -174,8 +184,8 @@ function formatDate(date: string) {
     });
 }
 
-function getSportName(predictionType: string) {
-    return predictionType.split('\\').slice(-2, -1)[0];
+function getSportName(predictionSport: string) {
+    return predictionSport.toUpperCase();
 }
 
 function displaySelection(bet: Bet) {
@@ -346,30 +356,16 @@ watch(
                             <Label for="prediction-type">Sport</Label>
                             <select
                                 id="prediction-type"
-                                v-model="form.prediction_type"
+                                v-model="form.prediction_sport"
                                 class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-sm transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none"
                             >
-                                <option value="App\Models\NBA\Prediction">
-                                    NBA
-                                </option>
-                                <option value="App\Models\NFL\Prediction">
-                                    NFL
-                                </option>
-                                <option value="App\Models\CBB\Prediction">
-                                    CBB
-                                </option>
-                                <option value="App\Models\WCBB\Prediction">
-                                    WCBB
-                                </option>
-                                <option value="App\Models\MLB\Prediction">
-                                    MLB
-                                </option>
-                                <option value="App\Models\CFB\Prediction">
-                                    CFB
-                                </option>
-                                <option value="App\Models\WNBA\Prediction">
-                                    WNBA
-                                </option>
+                                <option value="nba">NBA</option>
+                                <option value="wnba">WNBA</option>
+                                <option value="mlb">MLB</option>
+                                <option value="nfl">NFL</option>
+                                <option value="cbb">CBB</option>
+                                <option value="wcbb">WCBB</option>
+                                <option value="cfb">CFB</option>
                             </select>
                         </div>
 
@@ -513,9 +509,9 @@ watch(
                                     <div class="flex items-center gap-2">
                                         <span class="font-semibold">
                                             {{
-                                                bet.prediction_type
+                                                bet.prediction_sport
                                                     ? getSportName(
-                                                          bet.prediction_type,
+                                                          bet.prediction_sport,
                                                       )
                                                     : 'Manual'
                                             }}

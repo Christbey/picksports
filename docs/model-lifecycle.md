@@ -27,6 +27,47 @@ Use `sports:report-model-lineage {artifact}` to print the full chain.
 Admins can review the same lineage and live feedback at
 `/admin/nfl-model-monitoring` and `/admin/mlb-model-monitoring`.
 
+## Immutable Data And Deployment Manifests
+
+Raw provider inputs and derived datasets live in private object storage. A
+provider source-file record identifies the provider and dataset, content hash,
+byte size, content type, compression, and immutable object key. Its import
+manifest records timing, options, status, imported/skipped/error row counts,
+and the source-file hash. Importing the same content again reuses the archived
+source object instead of silently replacing it.
+
+Large historical play partitions can be archived without loading the full
+result into memory:
+
+```bash
+php artisan ml:export-historical-plays mlb 2025
+php artisan ml:export-historical-plays nfl 2025 --format=jsonl --disk=ml-s3
+php artisan ml:export-historical-plays nba 2025 --format=parquet
+```
+
+JSONL is the portable default. Parquet is produced only by a configured Python
+runtime with PyArrow; requesting it without that dependency fails rather than
+writing JSON data with a `.parquet` suffix. Each export manifest captures the
+sport/season partition, actual encoding, row count, schema and schema hash,
+data and manifest SHA-256 hashes, source table and maximum included source ID,
+and private object URI. Object keys are content addressed. Repeated exports are
+idempotent, and a hash mismatch is treated as immutable-object corruption.
+Export never deletes or mutates source MySQL rows.
+
+Derived feature datasets should add a feature manifest containing feature
+names, types, nullability, timing semantics, availability cutoff, and the code
+and configuration hashes. Every snapshot and trained artifact must reference
+that exact feature-manifest hash. Artifact inventories similarly record the
+model run, dataset and feature hashes plus every file's path, content type,
+size, and SHA-256 hash.
+
+Evaluation manifests use chronological windows and preserve train/test start
+and end timestamps, row and game counts, metrics, and baseline deltas. A
+deployment record separately identifies the artifact, environment and cohort,
+activation and retirement timestamps, actor and reason, rollout or shadow
+configuration, and rollback target. Model promotion is an eligibility decision;
+it is not public recommendation publication.
+
 ## NBA Workflow
 
 ```bash

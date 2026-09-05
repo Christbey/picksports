@@ -85,7 +85,8 @@ test('uses template narrative when provider is template', function () {
     ]);
 
     $prediction = makeNbaPredictionFixture();
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
 
     expect($data['narrative'])->toBeArray()
         ->and($data['narrative']['generated_by'])->toBe('template-v7')
@@ -122,7 +123,8 @@ test('uses stored narrative when hash matches current prediction inputs', functi
         ],
     ])->save();
 
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
 
     expect($data['narrative'])->toBeArray()
         ->and($data['narrative']['generated_by'])->toBe('openai:gpt-4o-mini')
@@ -155,7 +157,8 @@ test('falls back to template when stored narrative hash is stale', function () {
         ],
     ])->save();
 
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
 
     expect($data['narrative'])->toBeArray()
         ->and($data['narrative']['generated_by'])->toBe('template-v7')
@@ -168,7 +171,8 @@ test('prediction narrative remains available without granular prediction field p
     $user = User::factory()->create();
     $prediction = makeNbaPredictionFixture();
 
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
 
     expect($data['narrative'])->toBeArray()
         ->and($data['narrative']['generated_by'])->toBe('template-v7')
@@ -335,7 +339,8 @@ test('template narrative keeps a strong total edge playable when series context 
         ],
     ])->load('game.homeTeam', 'game.awayTeam');
 
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
     $narrative = $data['narrative'];
 
     expect($narrative['generated_by'])->toBe('template-v7')
@@ -425,7 +430,8 @@ test('universal nba context rules downgrade weak historical total spots', functi
         'rest_days_away' => 2,
     ])->load('game.homeTeam', 'game.awayTeam');
 
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
     $narrative = $data['narrative'];
 
     expect($narrative['context_layer']['historical_spot_reference']['sample_size'])->toBeGreaterThanOrEqual(12)
@@ -452,8 +458,13 @@ test('template betting plan does not recommend a spread bet without a market lin
         'rest_days_away' => 13,
     ])->save();
 
-    $data = PredictionResource::make($prediction->refresh()->load('game.homeTeam', 'game.awayTeam'))
-        ->toArray(makeAuthorizedRequest($user));
+    $request = makeAuthorizedRequest($user);
+    $data = resolvePreparedPredictionResource(
+        PredictionResource::class,
+        $prediction->refresh()->load('game.homeTeam', 'game.awayTeam'),
+        'nba',
+        $request,
+    );
 
     expect($data['narrative']['betting_plan']['bet_pick'])
         ->toBe('No spread bet until a current market line is available.')

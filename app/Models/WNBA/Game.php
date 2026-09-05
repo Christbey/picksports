@@ -2,6 +2,7 @@
 
 namespace App\Models\WNBA;
 
+use App\Models\SportEvent;
 use Database\Factories\WnbaGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,7 @@ class Game extends Model
     }
 
     protected $fillable = [
+        'sport_event_id',
         'espn_id',
         'espn_event_id',
         'espn_uid',
@@ -72,6 +74,11 @@ class Game extends Model
         return $this->belongsTo(Team::class, 'home_team_id');
     }
 
+    public function sportEvent(): BelongsTo
+    {
+        return $this->belongsTo(SportEvent::class);
+    }
+
     public function awayTeam(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'away_team_id');
@@ -95,5 +102,10 @@ class Game extends Model
     public function prediction(): HasOne
     {
         return $this->hasOne(Prediction::class, 'game_id');
+    }
+
+    public function playerProps(): HasMany
+    {
+        return $this->hasMany(PlayerProp::class, 'game_id');
     }
 }

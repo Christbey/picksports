@@ -113,6 +113,7 @@ $scheduleLiveScoreboardSync = function (
         ->between($betweenStart, $betweenEnd)
         ->when($inSeason)
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -129,6 +130,7 @@ $scheduleDailySeasonJob = function (
         ->dailyAt($time)
         ->when($inSeason)
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -147,6 +149,7 @@ $scheduleHalfHourlyWindowJob = function (
         ->between($betweenStart, $betweenEnd)
         ->when($inSeason)
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -163,6 +166,7 @@ $scheduleOddsSyncWindow = function (
         ->between('08:00', '23:00')
         ->when($inSeason)
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -180,6 +184,7 @@ $schedulePlayerPropsWindow = function (
         ->twiceDaily($firstHour, $secondHour)
         ->when($inSeason)
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -194,6 +199,7 @@ $scheduleEveryMinuteJob = function (
     $event = Schedule::command($command)
         ->everyMinute()
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -229,6 +235,7 @@ $scheduleWeeklySeasonJob = function (
         ->weeklyOn($dayOfWeek, $time)
         ->when($inSeason)
         ->name($name)
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -408,6 +415,20 @@ $scheduleDailySeasonJob(
     $nbaInSeason,
     'NBA: Record Shadow Bet Decisions'
 );
+$nbaCanonicalPipelineEnabled = fn (): bool => $nbaInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.nba', false);
+$scheduleDailySeasonJob(
+    "nba:evaluate-canonical-predictions --season={$fallSeasonYear}",
+    '03:35',
+    $nbaCanonicalPipelineEnabled,
+    'NBA: Evaluate Canonical Predictions'
+);
+$scheduleDailySeasonJob(
+    "nba:generate-canonical-predictions --season={$fallSeasonYear}",
+    '05:05',
+    $nbaCanonicalPipelineEnabled,
+    'NBA: Generate Canonical Predictions'
+);
 
 // CBB
 $scheduleWeeklySeasonJob(
@@ -421,6 +442,7 @@ $cbbTeamSchedulesEvent = Schedule::command('espn:sync-cbb-all-team-schedules')
     ->weeklyOn(0, '01:30')
     ->when($cbbInSeason)
     ->name('CBB: Sync All Team Schedules')
+    ->onOneServer()
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($cbbTeamSchedulesEvent, 'espn:sync-cbb-all-team-schedules', 'CBB: Sync All Team Schedules');
@@ -474,6 +496,20 @@ $scheduleSportPipeline(
     17,
     'CBB: Sync Player Props'
 );
+$cbbCanonicalPipelineEnabled = fn (): bool => $cbbInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.cbb', false);
+$scheduleDailySeasonJob(
+    "cbb:evaluate-canonical-predictions --season={$fallSeasonYear}",
+    '05:05',
+    $cbbCanonicalPipelineEnabled,
+    'CBB: Evaluate Canonical Predictions'
+);
+$scheduleDailySeasonJob(
+    "cbb:generate-canonical-predictions --season={$fallSeasonYear}",
+    '06:35',
+    $cbbCanonicalPipelineEnabled,
+    'CBB: Generate Canonical Predictions'
+);
 $scheduleDailySeasonJob(
     "cbb:generate-tournament-forecast --season={$fallSeasonYear}",
     '10:15',
@@ -505,6 +541,7 @@ $wcbbTeamSchedulesEvent = Schedule::command("espn:sync-wcbb-schedules --season={
     ->weeklyOn(0, '01:45')
     ->when($wcbbInSeason)
     ->name('WCBB: Sync All Team Schedules')
+    ->onOneServer()
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($wcbbTeamSchedulesEvent, "espn:sync-wcbb-schedules --season={$fallSeasonYear}", 'WCBB: Sync All Team Schedules');
@@ -536,6 +573,20 @@ $scheduleSportPipeline(
     ],
     'wcbb:sync-odds',
     'WCBB: Sync Odds'
+);
+$wcbbCanonicalPipelineEnabled = fn (): bool => $wcbbInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.wcbb', false);
+$scheduleDailySeasonJob(
+    "wcbb:evaluate-canonical-predictions --season={$fallSeasonYear}",
+    '03:35',
+    $wcbbCanonicalPipelineEnabled,
+    'WCBB: Evaluate Canonical Predictions'
+);
+$scheduleDailySeasonJob(
+    "wcbb:generate-canonical-predictions --season={$fallSeasonYear}",
+    '05:05',
+    $wcbbCanonicalPipelineEnabled,
+    'WCBB: Generate Canonical Predictions'
 );
 $scheduleDailySeasonJob(
     "wcbb:generate-tournament-forecast --season={$fallSeasonYear}",
@@ -594,6 +645,10 @@ $scheduleSportPipeline(
         ],
     ]
 );
+$mlbCanonicalPipelineEnabled = fn (): bool => $mlbInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.mlb', false);
+$scheduleDailySeasonJob("mlb:evaluate-canonical-predictions --season={$currentYear}", '04:55', $mlbCanonicalPipelineEnabled, 'MLB: Evaluate Canonical Predictions');
+$scheduleDailySeasonJob("mlb:generate-canonical-predictions --season={$currentYear}", '06:05', $mlbCanonicalPipelineEnabled, 'MLB: Generate Canonical Predictions');
 $scheduleDailySeasonJob(
     "mlb:generate-playoff-forecast --season={$currentYear}",
     '08:35',
@@ -605,6 +660,15 @@ $scheduleDailySeasonJob(
     '08:40',
     $mlbInSeason,
     'MLB: Snapshot Bet Filter'
+);
+$mlbPreviousScoreboardDate = now(config('sports.business_timezone', config('app.timezone')))
+    ->subDay()
+    ->format('Ymd');
+$scheduleDailySeasonJob(
+    "espn:sync-mlb-games-scoreboard {$mlbPreviousScoreboardDate} --sync",
+    '04:05',
+    $mlbInSeason,
+    'MLB: Reconcile Previous Day Scoreboard'
 );
 $scheduleDailySeasonJob(
     "mlb:backfill-linescores --season={$currentYear} --lookback-days=7",
@@ -705,6 +769,11 @@ $mlbPostOddsRefreshJobs = [
         'name' => 'MLB: Refresh Predictions After Odds Sync',
     ],
     [
+        'command' => "mlb:generate-daily-picks --today --season={$currentYear}",
+        'minute' => 35,
+        'name' => 'MLB: Refresh Daily Picks After Odds Sync',
+    ],
+    [
         'command' => 'mlb:run-tabular-shadow --skip-decisions',
         'minute' => 50,
         'name' => 'MLB: Refresh Tabular Shadow After Odds Sync',
@@ -726,6 +795,7 @@ foreach ($mlbPostOddsRefreshJobs as $job) {
         ->cron("{$job['minute']} {$mlbPostOddsRefreshHours} * * *")
         ->when($mlbInSeason)
         ->name($job['name'])
+        ->onOneServer()
         ->withoutOverlapping()
         ->runInBackground();
 
@@ -738,6 +808,7 @@ $mlbDailyPicksEvent = Schedule::command($mlbDailyPicksCommand)
     ->between('08:00', '23:30')
     ->when($mlbInSeason)
     ->name('MLB: Generate Daily Picks')
+    ->onOneServer()
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($mlbDailyPicksEvent, $mlbDailyPicksCommand, 'MLB: Generate Daily Picks');
@@ -829,6 +900,20 @@ $scheduleHalfHourlyWindowJob(
     $wnbaInSeason,
     'WNBA: Sync Injuries'
 );
+$wnbaCanonicalPipelineEnabled = fn (): bool => $wnbaInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.wnba', false);
+$scheduleDailySeasonJob(
+    "wnba:evaluate-canonical-predictions --season={$currentYear}",
+    '00:05',
+    $wnbaCanonicalPipelineEnabled,
+    'WNBA: Evaluate Canonical Predictions'
+);
+$scheduleDailySeasonJob(
+    "wnba:generate-canonical-predictions --season={$currentYear}",
+    '02:05',
+    $wnbaCanonicalPipelineEnabled,
+    'WNBA: Generate Canonical Predictions'
+);
 
 // NFL
 $scheduleSportPipeline(
@@ -860,6 +945,10 @@ $scheduleSportPipeline(
     15,
     'NFL: Sync Player Props'
 );
+$nflCanonicalPipelineEnabled = fn (): bool => $nflInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false);
+$scheduleDailySeasonJob("nfl:evaluate-canonical-predictions --season={$fallSeasonYear}", '08:35', $nflCanonicalPipelineEnabled, 'NFL: Evaluate Canonical Predictions');
+$scheduleDailySeasonJob("nfl:generate-canonical-predictions --season={$fallSeasonYear}", '10:05', $nflCanonicalPipelineEnabled, 'NFL: Generate Canonical Predictions');
 $scheduleWeeklySeasonJob(
     "espn:sync-nfl-depth-charts --season={$fallSeasonYear}",
     1,
@@ -879,6 +968,32 @@ $scheduleHalfHourlyWindowJob(
     '23:00',
     $nflInSeason,
     'NFL: Sync Injuries'
+);
+$nflGameContextResearchCommand = "nfl:research-game-context --season={$fallSeasonYear}";
+$nflGameContextResearchEvent = Schedule::command($nflGameContextResearchCommand)
+    ->cron('35 10,14,18 * * *')
+    ->when($nflInSeason)
+    ->name('NFL: Research Sourced Game Context')
+    ->onOneServer()
+    ->withoutOverlapping(120)
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $nflGameContextResearchEvent,
+    $nflGameContextResearchCommand,
+    'NFL: Research Sourced Game Context',
+);
+$nflContextAwareAnalysisCommand = "sports:ai-daily-predictions --sport=nfl --season={$fallSeasonYear} --force";
+$nflContextAwareAnalysisEvent = Schedule::command($nflContextAwareAnalysisCommand)
+    ->cron('50 10,14,18 * * *')
+    ->when($nflInSeason)
+    ->name('NFL: Context-Aware AI Prediction Analysis')
+    ->onOneServer()
+    ->withoutOverlapping(120)
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $nflContextAwareAnalysisEvent,
+    $nflContextAwareAnalysisCommand,
+    'NFL: Context-Aware AI Prediction Analysis',
 );
 $scheduleOddsSyncWindow(
     "sports:sync-futures-odds --sport=nfl --season={$fallSeasonYear}",
@@ -976,6 +1091,10 @@ $scheduleSportPipeline(
         ],
     ]
 );
+$cfbCanonicalPipelineEnabled = fn (): bool => $cfbInSeason()
+    && (bool) config('prediction_lifecycle.canonical_pipeline.cfb', false);
+$scheduleDailySeasonJob("cfb:evaluate-canonical-predictions --season={$fallSeasonYear}", '03:05', $cfbCanonicalPipelineEnabled, 'CFB: Evaluate Canonical Predictions');
+$scheduleDailySeasonJob("cfb:generate-canonical-predictions --season={$fallSeasonYear}", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
 $scheduleHalfHourlyWindowJob(
     'espn:sync-cfb-injuries',
     '08:00',
@@ -993,9 +1112,36 @@ $scheduleHalfHourlyWindowJob(
 $pruneFailedJobsEvent = Schedule::command('queue:prune-failed --hours=168')
     ->dailyAt('03:20')
     ->name('Queue: Prune Failed Jobs')
+    ->onOneServer()
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($pruneFailedJobsEvent, 'queue:prune-failed --hours=168', 'Queue: Prune Failed Jobs');
+
+$pruneCommandHeartbeatsCommand = 'model:prune --model=App\\Models\\CommandHeartbeat';
+$pruneCommandHeartbeatsEvent = Schedule::command($pruneCommandHeartbeatsCommand)
+    ->dailyAt('03:25')
+    ->name('Maintenance: Prune Command Heartbeats')
+    ->onOneServer()
+    ->withoutOverlapping()
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $pruneCommandHeartbeatsEvent,
+    $pruneCommandHeartbeatsCommand,
+    'Maintenance: Prune Command Heartbeats',
+);
+
+$pruneApiIdempotencyKeysCommand = 'model:prune --model=App\\Models\\ApiIdempotencyKey';
+$pruneApiIdempotencyKeysEvent = Schedule::command($pruneApiIdempotencyKeysCommand)
+    ->dailyAt('03:30')
+    ->name('Maintenance: Prune API Idempotency Keys')
+    ->onOneServer()
+    ->withoutOverlapping()
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $pruneApiIdempotencyKeysEvent,
+    $pruneApiIdempotencyKeysCommand,
+    'Maintenance: Prune API Idempotency Keys',
+);
 
 $scheduleEveryMinuteJob(
     'alerts:send-daily-digests',
@@ -1007,6 +1153,7 @@ $adminEmailReportEvent = Schedule::command('alerts:send-admin-email-report')
     ->dailyAt((string) config('alerts.admin_report.daily_time', '07:30'))
     ->when(fn () => (bool) config('alerts.admin_report.enabled', true))
     ->name('Alerts: Send Admin Email Report')
+    ->onOneServer()
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($adminEmailReportEvent, 'alerts:send-admin-email-report', 'Alerts: Send Admin Email Report');

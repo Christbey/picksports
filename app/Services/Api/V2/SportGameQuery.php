@@ -2,6 +2,8 @@
 
 namespace App\Services\Api\V2;
 
+use App\Application\Sports\ReadModels\GameSummary;
+use App\Application\Sports\ReadModels\GameSummaryMapper;
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -9,6 +11,7 @@ use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class SportGameQuery
 {
@@ -17,6 +20,82 @@ class SportGameQuery
     private const DEFAULT_PER_PAGE = 25;
 
     private const MAX_PER_PAGE = 500;
+
+    public function __construct(
+        private readonly GameSummaryMapper $summaries,
+    ) {}
+
+    /**
+     * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int, team_id?: int}  $filters
+     * @return LengthAwarePaginator<GameSummary>
+     */
+    public function paginateSummaries(
+        SportContext $context,
+        array $filters = [],
+        ?Authenticatable $user = null,
+        string $relationProfile = 'summary',
+    ): LengthAwarePaginator {
+        $paginator = $this->paginate($context, $filters, $user, $relationProfile);
+
+        $paginator->setCollection(
+            $paginator->getCollection()
+                ->map(fn (Model $game): GameSummary => $this->summaries->fromModel($context, $game))
+        );
+
+        return $paginator;
+    }
+
+    /**
+     * @return Collection<int, GameSummary>
+     */
+    public function featuredPredictionSummaries(SportContext $context, int $limit = 5): Collection
+    {
+        $predictionModel = $context->models['prediction'] ?? null;
+        $gameModel = $context->models['game'] ?? null;
+
+        if (! is_string($predictionModel)
+            || ! is_subclass_of($predictionModel, Model::class)
+            || ! is_string($gameModel)
+            || ! is_subclass_of($gameModel, Model::class)) {
+            return collect();
+        }
+
+        $gameTable = (new $gameModel)->getTable();
+        $predictionTable = (new $predictionModel)->getTable();
+        $scheduledStatus = config("{$context->slug}.statuses.scheduled");
+        $inProgressStatus = config("{$context->slug}.statuses.in_progress");
+
+        $upcoming = $predictionModel::query()
+            ->with(['game.homeTeam', 'game.awayTeam', 'game.sportEvent'])
+            ->whereHas('game', function (Builder $query) use ($scheduledStatus, $inProgressStatus): void {
+                $query->whereDate('game_date', '>=', now()->subDay()->toDateString())
+                    ->whereIn('status', array_values(array_filter([$scheduledStatus, $inProgressStatus])));
+            })
+            ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
+            ->orderBy("{$gameTable}.game_date")
+            ->select("{$predictionTable}.*")
+            ->limit($limit)
+            ->get();
+
+        $predictions = $upcoming->isNotEmpty()
+            ? $upcoming
+            : $predictionModel::query()
+                ->with(['game.homeTeam', 'game.awayTeam', 'game.sportEvent'])
+                ->latest()
+                ->limit($limit)
+                ->get();
+
+        return $predictions
+            ->map(function (Model $prediction) use ($context): ?GameSummary {
+                $game = $prediction->getRelation('game');
+
+                return $game instanceof Model
+                    ? $this->summaries->fromModel($context, $game, $prediction)
+                    : null;
+            })
+            ->filter()
+            ->values();
+    }
 
     /**
      * @param  array{status?: string, season?: int, from_date?: string, to_date?: string, per_page?: int, team_id?: int}  $filters
@@ -37,7 +116,19 @@ class SportGameQuery
         ?Authenticatable $user = null,
         string $relationProfile = 'detail',
     ): Model {
-        return $this->query($context, [], $user, $relationProfile)->findOrFail($game);
+        $query = $this->query($context, [], $user, $relationProfile);
+
+        if (is_int($game) || ctype_digit($game)) {
+            return $query->findOrFail($game);
+        }
+
+        return $query
+            ->whereHas('sportEvent', function (Builder $eventQuery) use ($context, $game): void {
+                $eventQuery
+                    ->where('public_id', $game)
+                    ->where('sport', $context->slug);
+            })
+            ->firstOrFail();
     }
 
     /**
@@ -160,6 +251,6 @@ class SportGameQuery
             ],
         };
 
-        return $this->availableRelations($gameModel, $relations);
+        return $this->availableRelations($gameModel, ['sportEvent', ...$relations]);
     }
 }

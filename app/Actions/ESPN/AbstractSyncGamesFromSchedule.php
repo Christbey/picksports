@@ -4,6 +4,7 @@ namespace App\Actions\ESPN;
 
 use App\DataTransferObjects\ESPN\GameData;
 use App\Services\ESPN\BaseEspnService;
+use App\Services\Sports\SportEventIdentitySynchronizer;
 use App\Support\EspnGameStatusResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -97,10 +98,13 @@ abstract class AbstractSyncGamesFromSchedule
 
                     $existingGame->update($updateAttributes);
                 }
+
+                $persistedGame = $existingGame->fresh();
             } else {
-                $gameModel::query()->create($attributes);
+                $persistedGame = $gameModel::query()->create($attributes);
             }
 
+            app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $persistedGame);
             $synced++;
         }
 

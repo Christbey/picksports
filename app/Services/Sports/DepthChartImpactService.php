@@ -137,12 +137,14 @@ class DepthChartImpactService
     {
         $tokens = $this->entryTokens($entry);
         $roleMultiplier = $this->nflRoleMultiplier($entry, $tokens);
+        $depthRank = (int) ($entry->depth_rank ?? 99);
+        $isStarter = (bool) ($entry->is_starter ?? false) || $depthRank === 1;
 
-        if ($this->tokensContain($tokens, ['QB'])) {
+        if ($isStarter && $this->tokensContain($tokens, ['QB'])) {
             return max($baseWeight, $roleMultiplier, $this->configFloat('nfl', 'qb_multiplier', 2.4));
         }
 
-        if ($this->tokensContain($tokens, ['RB', 'WR', 'TE'])) {
+        if (($isStarter || $depthRank <= 2) && $this->tokensContain($tokens, ['RB', 'WR', 'TE'])) {
             return max($baseWeight, $roleMultiplier, $this->configFloat('nfl', 'skill_multiplier', 1.45));
         }
 
@@ -158,22 +160,22 @@ class DepthChartImpactService
         $depthRank = (int) ($entry->depth_rank ?? 99);
 
         $candidates = [];
-        if ($this->tokensContain($tokens, ['QB'])) {
+        if ($depthRank === 1 && $this->tokensContain($tokens, ['QB'])) {
             $candidates[] = 'QB';
         }
-        if ($this->tokensContain($tokens, ['LT', 'LEFT TACKLE'])) {
+        if ($depthRank === 1 && $this->tokensContain($tokens, ['LT', 'LEFT TACKLE'])) {
             $candidates[] = 'LT';
         }
-        if ($this->tokensContain($tokens, ['RT', 'RIGHT TACKLE'])) {
+        if ($depthRank === 1 && $this->tokensContain($tokens, ['RT', 'RIGHT TACKLE'])) {
             $candidates[] = 'RT';
         }
-        if ($this->tokensContain($tokens, ['C', 'CENTER'])) {
+        if ($depthRank === 1 && $this->tokensContain($tokens, ['C', 'CENTER'])) {
             $candidates[] = 'C';
         }
         if ($this->tokensContain($tokens, ['WR']) && $depthRank === 1) {
             $candidates[] = 'WR1';
         }
-        if ($this->tokensContain($tokens, ['WR'])) {
+        if ($this->tokensContain($tokens, ['WR']) && $depthRank <= 2) {
             $candidates[] = 'WR';
         }
         if ($this->tokensContain($tokens, ['RB']) && $depthRank === 1) {
@@ -188,10 +190,10 @@ class DepthChartImpactService
         if ($this->tokensContain($tokens, ['CB']) && $depthRank === 1) {
             $candidates[] = 'CB1';
         }
-        if ($this->tokensContain($tokens, ['S', 'FS', 'SS'])) {
+        if ($this->tokensContain($tokens, ['S', 'FS', 'SS']) && $depthRank === 1) {
             $candidates[] = 'S';
         }
-        if ($this->tokensContain($tokens, ['K', 'KICKER'])) {
+        if ($this->tokensContain($tokens, ['K', 'KICKER']) && $depthRank === 1) {
             $candidates[] = 'K';
         }
 

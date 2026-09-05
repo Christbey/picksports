@@ -2,6 +2,7 @@
 
 namespace App\Models\NFL;
 
+use App\Models\SportEvent;
 use Database\Factories\NflGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,7 @@ class Game extends Model
     protected $table = 'nfl_games';
 
     protected $fillable = [
+        'sport_event_id',
         'espn_event_id',
         'espn_uid',
         'nflverse_game_id',
@@ -76,6 +78,11 @@ class Game extends Model
     public function homeTeam(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'home_team_id');
+    }
+
+    public function sportEvent(): BelongsTo
+    {
+        return $this->belongsTo(SportEvent::class);
     }
 
     public function awayTeam(): BelongsTo

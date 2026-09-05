@@ -20,9 +20,14 @@ class SportTeamMetricController extends Controller
         $context = $sports->resolve($sport);
         $filters = $metrics->normalizeFilters($context, $request->validatedFilters());
         $paginator = $metrics->paginate($context, $filters, $request->user());
+        $preparedRecords = $metrics->preparedRecords($context, $paginator->getCollection());
 
         $paginator->setCollection(
-            $paginator->getCollection()->map(fn ($metric) => new SportTeamMetricResource($metric, $context))
+            $paginator->getCollection()->map(fn ($metric) => new SportTeamMetricResource(
+                $metric,
+                $context,
+                $preparedRecords[$metric->getKey()] ?? null,
+            ))
         );
 
         return response()->json([
@@ -64,7 +69,7 @@ class SportTeamMetricController extends Controller
         $metric = $metrics->latestForTeam($context, $team, $filters, $request->user());
 
         return response()->json([
-            'data' => new SportTeamMetricResource($metric, $context),
+            'data' => new SportTeamMetricResource($metric, $context, $metrics->preparedRecord($context, $metric)),
             'meta' => $this->meta($context->slug, 'sports.teams.metrics.show', $filters),
         ]);
     }

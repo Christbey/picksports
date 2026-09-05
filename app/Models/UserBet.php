@@ -2,11 +2,11 @@
 
 namespace App\Models;
 
+use App\Enums\PredictionSport;
 use Database\Factories\UserBetFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class UserBet extends Model
 {
@@ -21,6 +21,8 @@ class UserBet extends Model
         'user_id',
         'prediction_id',
         'prediction_type',
+        'prediction_sport',
+        'sport_event_id',
         'bet_amount',
         'odds',
         'bet_type',
@@ -37,6 +39,7 @@ class UserBet extends Model
     protected function casts(): array
     {
         return [
+            'prediction_sport' => PredictionSport::class,
             'bet_amount' => 'decimal:2',
             'line' => 'decimal:2',
             'profit_loss' => 'decimal:2',
@@ -50,8 +53,18 @@ class UserBet extends Model
         return $this->belongsTo(User::class);
     }
 
-    public function prediction(): MorphTo
+    public function sportEvent(): BelongsTo
     {
-        return $this->morphTo();
+        return $this->belongsTo(SportEvent::class);
+    }
+
+    public function normalizedPredictionSport(): ?PredictionSport
+    {
+        if ($this->prediction_sport instanceof PredictionSport) {
+            return $this->prediction_sport;
+        }
+
+        return PredictionSport::tryFrom((string) $this->prediction_sport)
+            ?? PredictionSport::fromLegacyModelClass($this->prediction_type);
     }
 }

@@ -74,6 +74,11 @@ class ModelArtifact extends Model
         return $this->hasMany(ShadowModelOutput::class);
     }
 
+    public function canonicalPredictions(): HasMany
+    {
+        return $this->hasMany(CanonicalPrediction::class);
+    }
+
     /**
      * @return list<string>
      */

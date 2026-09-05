@@ -57,7 +57,8 @@ test('nba prediction resource exposes shared summary fields for ios clients', fu
         'home_def_eff' => 108.4,
     ]);
 
-    $data = NbaPredictionResource::make($prediction)->toArray(authorizedPredictionRequest());
+    $request = authorizedPredictionRequest();
+    $data = resolvePreparedPredictionResource(NbaPredictionResource::class, $prediction, 'nba', $request);
 
     expect($data)->toMatchArray([
         'id' => 1,
@@ -88,7 +89,8 @@ test('cbb prediction resource exposes shared home away probability aliases', fun
         'home_def_eff' => 101.7,
     ]);
 
-    $data = CbbPredictionResource::make($prediction)->toArray(authorizedPredictionRequest());
+    $request = authorizedPredictionRequest();
+    $data = resolvePreparedPredictionResource(CbbPredictionResource::class, $prediction, 'cbb', $request);
 
     expect($data)->toMatchArray([
         'predicted_spread' => 2.5,
@@ -117,7 +119,8 @@ test('mlb prediction resource preserves canonical prediction fields and elo spli
         'home_combined_elo' => 1525,
     ]);
 
-    $data = MlbPredictionResource::make($prediction)->toArray(authorizedPredictionRequest());
+    $request = authorizedPredictionRequest();
+    $data = resolvePreparedPredictionResource(MlbPredictionResource::class, $prediction, 'mlb', $request);
 
     expect($data)->toMatchArray([
         'predicted_spread' => 1.5,

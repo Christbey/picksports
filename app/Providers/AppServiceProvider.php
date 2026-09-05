@@ -6,19 +6,26 @@ use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Events\GameFinalized;
 use App\Listeners\TriggerGameFinalizationGrading;
+use App\Models\DeveloperApiCredential;
 use App\Services\CommandHeartbeatService;
+use App\Services\DeveloperPlatform\DeveloperApiCredentialAuthenticator;
 use App\Services\ESPN\NBA\EspnService;
 use App\Services\Predictions\ModelRunRecorder;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\CommandFinished;
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Passport\Passport;
 use Symfony\Component\Console\Input\InputInterface;
 
 class AppServiceProvider extends ServiceProvider
@@ -39,8 +46,53 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureDeveloperApiGuard();
+        $this->configurePassport();
+        $this->configureApiRateLimiters();
         $this->configureFactories();
         $this->registerEventListeners();
+    }
+
+    protected function configurePassport(): void
+    {
+        Passport::authorizationView('auth.oauth.authorize');
+        Passport::tokensCan([
+            'mobile:read' => 'Read PickSports data available to your account.',
+            'mobile:write' => 'Manage your bets, groups, brackets, alerts, and device settings.',
+        ]);
+        Passport::setDefaultScope(['mobile:read']);
+        Passport::tokensExpireIn(now()->addMinutes(max(5, (int) config('native_auth.access_token_ttl_minutes', 15))));
+        Passport::refreshTokensExpireIn(now()->addDays(max(1, (int) config('native_auth.refresh_token_ttl_days', 30))));
+    }
+
+    protected function configureDeveloperApiGuard(): void
+    {
+        Auth::viaRequest('developer-api-token', function (Request $request): ?DeveloperApiCredential {
+            $token = $request->bearerToken();
+
+            return is_string($token) && $token !== ''
+                ? app(DeveloperApiCredentialAuthenticator::class)->authenticate($token)
+                : null;
+        });
+    }
+
+    protected function configureApiRateLimiters(): void
+    {
+        RateLimiter::for('api-v2-auth-login', fn (Request $request): Limit => Limit::perMinute(
+            max(1, (int) config('api.v2.rate_limits.auth_login_per_minute', 10)),
+        )->by('api-v2-auth-login:'.$request->ip()));
+
+        RateLimiter::for('api-v2-auth-passkey-options', fn (Request $request): Limit => Limit::perMinute(
+            max(1, (int) config('api.v2.rate_limits.auth_passkey_options_per_minute', 20)),
+        )->by('api-v2-auth-passkey-options:'.$request->ip()));
+
+        RateLimiter::for('api-v2-auth-passkey-verify', fn (Request $request): Limit => Limit::perMinute(
+            max(1, (int) config('api.v2.rate_limits.auth_passkey_verify_per_minute', 10)),
+        )->by('api-v2-auth-passkey-verify:'.$request->ip()));
+
+        RateLimiter::for('api-v2-writes', fn (Request $request): Limit => Limit::perMinute(
+            max(1, (int) config('api.v2.rate_limits.writes_per_minute', 60)),
+        )->by('api-v2-writes:'.($request->user()?->getAuthIdentifier() ?? $request->ip())));
     }
 
     protected function configureDefaults(): void

@@ -47,7 +47,7 @@ test('hides nba live fields when game is not live', function () {
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
 
     expect($data['home_win_probability'])->toBe(0.63)
         ->and($data['away_win_probability'])->toBe(0.37)
@@ -91,7 +91,7 @@ test('includes nba live fields when game is live', function () {
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nba', $request);
 
     expect($data['home_win_probability'])->toBe(0.58)
         ->and($data['away_win_probability'])->toBe(0.42)

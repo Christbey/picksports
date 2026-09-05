@@ -8,6 +8,7 @@ use App\Models\NBA\PlayoffForecast;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
 use App\Models\NBA\TeamMetric;
+use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Inertia\Testing\AssertableInertia as Assert;
 
 test('nba public sport page renders public summary data', function () {
@@ -241,4 +242,73 @@ test('public top players section caps repeated teams', function () {
             ->count() <= 2
         )
     );
+});
+
+test('public sport pages advertise only configured destinations', function (string $sport, array $links, bool $hasPlayerProps) {
+    $this->withoutVite();
+
+    $response = $this->get("/{$sport}");
+
+    $response->assertOk()->assertInertia(fn (Assert $page) => $page
+        ->component('PublicSport')
+        ->where('sport', $sport)
+        ->where('hasPlayerProps', $hasPlayerProps)
+        ->where('links', $links)
+    );
+})->with([
+    'cfb omits unavailable team metrics and props' => [
+        'cfb',
+        [
+            'predictions' => '/cfb/predictions',
+            'injuries' => '/cfb/injuries',
+            'teamMetrics' => null,
+            'playerStats' => '/cfb/player-stats',
+            'playerProps' => null,
+        ],
+        false,
+    ],
+    'wcbb omits unavailable player pages and props' => [
+        'wcbb',
+        [
+            'predictions' => '/wcbb/predictions',
+            'injuries' => '/wcbb/injuries',
+            'teamMetrics' => '/wcbb/team-metrics',
+            'playerStats' => null,
+            'playerProps' => null,
+        ],
+        false,
+    ],
+    'wnba exposes props but omits unavailable player stats' => [
+        'wnba',
+        [
+            'predictions' => '/wnba/predictions',
+            'injuries' => '/wnba/injuries',
+            'teamMetrics' => '/wnba/team-metrics',
+            'playerStats' => null,
+            'playerProps' => '/wnba/player-props',
+        ],
+        true,
+    ],
+]);
+
+test('public player prop summaries do not generate narratives during page loads', function () {
+    $analyzer = Mockery::mock(PlayerPropAnalyzer::class);
+    $analyzer->shouldReceive('getAvailableDatesForSport')
+        ->once()
+        ->with('WNBA')
+        ->andReturn(collect());
+    $analyzer->shouldReceive('analyzeProps')
+        ->once()
+        ->with('WNBA', 3, null, null, null, false)
+        ->andReturn(collect());
+
+    app()->instance(PlayerPropAnalyzer::class, $analyzer);
+    $this->withoutVite();
+
+    $this->get('/wnba')
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('PublicSport')
+            ->where('summary.propsCount', 0)
+        );
 });

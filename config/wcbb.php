@@ -253,6 +253,22 @@ return [
         'average_pace' => 70.0,
         'default_efficiency' => 100.0,
         'spread_to_probability_coefficient' => 5.2,
+        'canonical' => [
+            'metric_spread_weight' => 0.55,
+            'metric_spread_min_games' => 8,
+            'spread_output_regression_weight' => 0.12,
+            'spread_to_probability_coefficient' => 5.2,
+            'average_total' => 136.0,
+            'total_tempo_regression_weight' => 0.30,
+            'total_output_regression_weight' => 0.18,
+            'recent_spread_weight' => 0.10,
+            'fatigue_spread_weight' => 0.18,
+            'injury_rating_spread_weight' => 0.025,
+            'recent_total_weight' => 0.10,
+            'fatigue_total_weight' => 0.18,
+            'injury_rating_total_weight' => 0.012,
+            'use_previous_season_metrics_fallback' => true,
+        ],
 
         // Ensemble weights (sum to 1.0)
         'elo_weight' => 0.25,

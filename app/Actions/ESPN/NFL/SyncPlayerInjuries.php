@@ -30,11 +30,20 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
         array $snapshotRows,
         CarbonInterface $observedAt
     ): void {
+        $actionableInjuries = collect($injuries)
+            ->filter(fn (array $injury): bool => $this->isCurrentInjuryActive($this->normalizeInjury($injury)))
+            ->values()
+            ->all();
+        $actionableSnapshotRows = collect($snapshotRows)
+            ->filter(fn (array $row): bool => $this->isCurrentInjuryActive($row))
+            ->values()
+            ->all();
         $encodedPayload = json_encode(
-            $injuries,
+            $actionableInjuries,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );
-        $sourceUpdatedAt = collect($snapshotRows)
+        $payloadHash = hash('sha256', $encodedPayload);
+        $sourceUpdatedAt = collect($actionableSnapshotRows)
             ->pluck('source_updated_at')
             ->filter()
             ->sortByDesc(fn (CarbonInterface $timestamp): int => $timestamp->getTimestamp())
@@ -43,12 +52,21 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
         DB::transaction(function () use (
             $team,
             $teamEspnId,
-            $injuries,
-            $encodedPayload,
-            $snapshotRows,
+            $actionableInjuries,
+            $actionableSnapshotRows,
             $observedAt,
-            $sourceUpdatedAt
+            $sourceUpdatedAt,
+            $payloadHash,
         ): void {
+            $latestHash = PlayerInjurySnapshot::query()
+                ->where('team_id', (int) $team->getKey())
+                ->latest('observed_at')
+                ->latest('id')
+                ->value('payload_hash');
+            if (hash_equals((string) $latestHash, $payloadHash)) {
+                return;
+            }
+
             $snapshot = PlayerInjurySnapshot::query()->create([
                 'snapshot_uuid' => (string) Str::uuid(),
                 'team_id' => (int) $team->getKey(),
@@ -56,12 +74,27 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
                 'provider' => 'espn',
                 'observed_at' => $observedAt,
                 'source_updated_at' => $sourceUpdatedAt,
-                'payload_hash' => hash('sha256', $encodedPayload),
-                'entry_count' => count($snapshotRows),
-                'raw_payload' => $injuries,
+                'payload_hash' => $payloadHash,
+                'entry_count' => count($actionableSnapshotRows),
+                'raw_payload' => $actionableInjuries,
             ]);
 
-            $snapshot->entries()->createMany($snapshotRows);
+            $snapshot->entries()->createMany($actionableSnapshotRows);
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $normalizedInjury
+     */
+    protected function isCurrentInjuryActive(array $normalizedInjury): bool
+    {
+        $status = strtolower(trim((string) ($normalizedInjury['status'] ?? '')));
+        $type = strtolower(trim((string) ($normalizedInjury['type'] ?? '')));
+
+        if ($status === '' || in_array($status, ['active', 'available', 'healthy'], true)) {
+            return false;
+        }
+
+        return ! str_contains($type, 'injury_status_active');
     }
 }

@@ -2,9 +2,12 @@
 
 namespace App\Http\Resources\Api\V2;
 
+use App\Application\Sports\ReadModels\GameSummary;
+use App\Application\Sports\ReadModels\TeamSummary;
 use App\Models\MLB\Game;
 use App\Services\Api\V2\SportContext;
 use App\Support\Sports\GameDateTimePresenter;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\MissingValue;
@@ -23,6 +26,10 @@ class SportGameResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        if ($this->resource instanceof GameSummary) {
+            return $this->summaryPayload($this->resource);
+        }
+
         $dateTime = GameDateTimePresenter::forSport(
             $this->context->slug,
             $this->game_date ?? null,
@@ -31,6 +38,7 @@ class SportGameResource extends JsonResource
 
         return [
             'id' => $this->id,
+            'sport_event_id' => $this->sportEventId(),
             'sport' => $this->context->slug,
             'espn_id' => $this->espn_id ?? $this->espn_event_id ?? null,
             'espn_event_id' => $this->espn_event_id ?? $this->espn_id ?? null,
@@ -125,9 +133,103 @@ class SportGameResource extends JsonResource
         ];
     }
 
+    /** @return array<string, mixed> */
+    private function summaryPayload(GameSummary $game): array
+    {
+        return [
+            'id' => $game->id,
+            'sport_event_id' => $game->sportEventId,
+            'sport' => $game->sport,
+            'espn_id' => $game->espnId,
+            'espn_event_id' => $game->espnEventId,
+            'espn_uid' => $game->espnUid,
+            'season' => $game->season,
+            'season_type' => $game->seasonType,
+            'week' => $game->week,
+            'postseason_round' => $game->postseasonRound,
+            'name' => $game->name,
+            'short_name' => $game->shortName,
+            'game_date' => $game->gameDate,
+            'game_time' => $game->gameTime,
+            'venue' => $game->venue,
+            'venue_name' => $game->venue,
+            'venue_city' => $game->venueCity,
+            'venue_state' => $game->venueState,
+            'attendance' => $game->attendance,
+            'status' => $game->status,
+            'period' => $game->period,
+            'clock' => $game->gameClock,
+            'game_clock' => $game->gameClock,
+            'home_team_id' => $game->homeTeamId,
+            'away_team_id' => $game->awayTeamId,
+            'home_score' => $game->homeScore,
+            'away_score' => $game->awayScore,
+            'home_linescores' => $game->homeLinescores,
+            'away_linescores' => $game->awayLinescores,
+            'broadcast_networks' => $game->broadcastNetworks,
+            'inning' => $game->inning,
+            'inning_half' => $game->inningHalf,
+            'balls' => $game->balls,
+            'strikes' => $game->strikes,
+            'outs' => $game->outs,
+            'probable_home_pitcher_espn_id' => $game->probableHomePitcherEspnId,
+            'probable_away_pitcher_espn_id' => $game->probableAwayPitcherEspnId,
+            'actual_home_pitcher_espn_id' => $game->actualHomePitcherEspnId,
+            'actual_away_pitcher_espn_id' => $game->actualAwayPitcherEspnId,
+            'projected_home_pitcher_espn_id' => $game->projectedHomePitcherEspnId,
+            'projected_away_pitcher_espn_id' => $game->projectedAwayPitcherEspnId,
+            'home_starting_pitcher_source' => $game->homeStartingPitcherSource,
+            'away_starting_pitcher_source' => $game->awayStartingPitcherSource,
+            'home_starting_pitcher_confidence' => $game->homeStartingPitcherConfidence,
+            'away_starting_pitcher_confidence' => $game->awayStartingPitcherConfidence,
+            'home_starting_pitcher_candidates' => $game->homeStartingPitcherCandidates,
+            'away_starting_pitcher_candidates' => $game->awayStartingPitcherCandidates,
+            'home_expected_starting_pitcher_rating' => $game->homeExpectedStartingPitcherRating,
+            'away_expected_starting_pitcher_rating' => $game->awayExpectedStartingPitcherRating,
+            'home_starting_pitcher_uncertainty' => $game->homeStartingPitcherUncertainty,
+            'away_starting_pitcher_uncertainty' => $game->awayStartingPitcherUncertainty,
+            'pitcher_projection_metadata' => $game->pitcherProjectionMetadata,
+            'pitcher_projection_generated_at' => $game->pitcherProjectionGeneratedAt,
+            'starting_pitcher_confirmation_metadata' => $game->startingPitcherConfirmationMetadata,
+            'starting_pitchers_confirmed_at' => $game->startingPitchersConfirmedAt,
+            'is_ncaa_tournament' => $game->isNcaaTournament,
+            'tournament_id' => $game->tournamentId,
+            'tournament_note' => $game->tournamentNote,
+            'tournament_round' => $game->tournamentRound,
+            'tournament_region' => $game->tournamentRegion,
+            'home_seed' => $game->homeSeed,
+            'away_seed' => $game->awaySeed,
+            'play_in_target_seed' => $game->playInTargetSeed,
+            'matchup_context' => $game->matchupContext,
+            'home_team' => $this->teamPayload($game->homeTeam),
+            'away_team' => $this->teamPayload($game->awayTeam),
+            'home_starting_pitcher' => $game->homeStartingPitcher,
+            'away_starting_pitcher' => $game->awayStartingPitcher,
+            'home_starting_pitcher_forecast' => $game->homeStartingPitcherForecast,
+            'away_starting_pitcher_forecast' => $game->awayStartingPitcherForecast,
+            'has_prediction' => $game->prediction !== null,
+            'completed_at' => $game->completedAt,
+            'updated_at' => $game->updatedAt,
+        ];
+    }
+
     private function serializeDateValue(mixed $value): ?string
     {
         return GameDateTimePresenter::serializeDateValue($value);
+    }
+
+    private function sportEventId(): ?string
+    {
+        $sportEvent = $this->whenLoaded('sportEvent');
+
+        if (! $sportEvent instanceof Model
+            || $sportEvent->getAttribute('sport') !== $this->context->slug) {
+            return null;
+        }
+
+        $publicId = $sportEvent->getAttribute('public_id');
+
+        return is_string($publicId) && $publicId !== '' ? $publicId : null;
     }
 
     private function serializeTimeValue(mixed $value): ?string
@@ -140,6 +242,26 @@ class SportGameResource extends JsonResource
      */
     private function teamPayload(mixed $team): ?array
     {
+        if ($team instanceof TeamSummary) {
+            return [
+                'id' => $team->id,
+                'espn_id' => $team->espnId,
+                'abbreviation' => $team->abbreviation,
+                'location' => $team->location,
+                'name' => $team->name,
+                'nickname' => $team->nickname,
+                'display_name' => $team->displayName,
+                'short_display_name' => $team->shortDisplayName,
+                'conference' => $team->conference,
+                'league' => $team->league,
+                'division' => $team->division,
+                'color' => $team->color,
+                'alternate_color' => $team->alternateColor,
+                'logo' => $team->logoUrl,
+                'logo_url' => $team->logoUrl,
+            ];
+        }
+
         if (! $team || $team instanceof MissingValue) {
             return null;
         }

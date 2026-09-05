@@ -69,6 +69,12 @@ jobs:
       - name: Tests
         run: composer test:ci
 
+      - name: Verify committed API v2 OpenAPI artifact
+        if: matrix.php-version == '8.4'
+        run: |
+          php artisan api:v2-openapi-generate --output=/tmp/openapi-v2.json
+          diff --unified docs/openapi-v2.json /tmp/openapi-v2.json
+
   ml:
     name: ${{ matrix.package }} ML tests
     runs-on: ubuntu-latest

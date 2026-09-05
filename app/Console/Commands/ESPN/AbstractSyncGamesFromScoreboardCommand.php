@@ -43,11 +43,15 @@ abstract class AbstractSyncGamesFromScoreboardCommand extends Command
         $date = (string) ($this->argument('date') ?? date('Ymd'));
         $sport = $this->sportCode();
 
-        $this->info("Dispatching {$sport} games scoreboard sync job for date {$date}...");
+        $action = $this->shouldRunSynchronously() ? 'Running' : 'Dispatching';
+        $this->info("{$action} {$sport} games scoreboard sync job for date {$date}...");
 
         $this->dispatchScoreboardSync($date);
 
-        $this->info("{$sport} games scoreboard sync job dispatched successfully.");
+        $this->info($this->shouldRunSynchronously()
+            ? "{$sport} games scoreboard sync job completed successfully."
+            : "{$sport} games scoreboard sync job dispatched successfully."
+        );
 
         return Command::SUCCESS;
     }
@@ -60,7 +64,7 @@ abstract class AbstractSyncGamesFromScoreboardCommand extends Command
     protected function buildSignature(): string
     {
         $signature = sprintf(
-            "%s\n {date? : The date in YYYYMMDD format (defaults to today)}\n {--from-date= : Start date in YYYY-MM-DD format}\n {--to-date= : End date in YYYY-MM-DD format}",
+            "%s\n {date? : The date in YYYYMMDD format (defaults to today)}\n {--from-date= : Start date in YYYY-MM-DD format}\n {--to-date= : End date in YYYY-MM-DD format}\n {--sync : Run scoreboard jobs inline instead of dispatching them to the queue}",
             $this->commandName()
         );
 
@@ -133,6 +137,18 @@ abstract class AbstractSyncGamesFromScoreboardCommand extends Command
     protected function dispatchScoreboardSync(string $date): void
     {
         $job = $this->requiredJobClass(static::SCOREBOARD_SYNC_JOB_CLASS, 'SCOREBOARD_SYNC_JOB_CLASS');
+
+        if ($this->shouldRunSynchronously()) {
+            app()->call([new $job($date), 'handle']);
+
+            return;
+        }
+
         $job::dispatch($date);
+    }
+
+    protected function shouldRunSynchronously(): bool
+    {
+        return (bool) $this->option('sync');
     }
 }

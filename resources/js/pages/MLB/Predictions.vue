@@ -7,8 +7,9 @@ import { mlbPredictions } from '@/routes';
 <template>
     <PredictionsPageShell
         title="MLB Daily Board"
-        breadcrumb-title="MLB Daily Board"
-        :breadcrumb-href="mlbPredictions().url"
+        sport-title="MLB"
+        :sport-href="mlbPredictions().url"
+        page-title="Board"
         banner-storage-key="mlb-predictions-banner-dismissed"
         seo-description="Market-aware MLB daily board with tracking candidates, model context, and slate intelligence."
     >

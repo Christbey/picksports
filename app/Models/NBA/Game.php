@@ -2,6 +2,7 @@
 
 namespace App\Models\NBA;
 
+use App\Models\SportEvent;
 use Database\Factories\NbaGameFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -22,6 +23,7 @@ class Game extends Model
     private const PLAYOFF_SERIES_WINS_TO_ADVANCE = 4;
 
     protected $fillable = [
+        'sport_event_id',
         'espn_event_id',
         'espn_uid',
         'season',
@@ -65,6 +67,11 @@ class Game extends Model
     public function homeTeam(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'home_team_id');
+    }
+
+    public function sportEvent(): BelongsTo
+    {
+        return $this->belongsTo(SportEvent::class);
     }
 
     public function awayTeam(): BelongsTo

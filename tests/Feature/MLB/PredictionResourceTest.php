@@ -65,7 +65,7 @@ test('mlb prediction resource exposes depth chart starter fallback context', fun
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'mlb', $request);
 
     expect($data['depth_chart_context'])->toBeArray()
         ->and($data['depth_chart_context']['type'])->toBe('starter_fallback')
@@ -123,7 +123,7 @@ test('mlb prediction resource exposes injury model sources for availability adju
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'mlb', $request);
 
     expect($data['depth_chart_context'])->toBeArray()
         ->and($data['depth_chart_context']['type'])->toBe('injury_weighting')
@@ -188,7 +188,7 @@ test('mlb prediction resource exposes stored daily ai analysis with betting valu
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'mlb', $request);
 
     expect($data['ai_analysis'])->toBeArray()
         ->and($data['ai_analysis']['recommendation'])->toBe('moneyline')

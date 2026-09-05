@@ -46,7 +46,7 @@ type ApiV2MutationError = {
 const props = defineProps<{
     open: boolean;
     predictionId: number;
-    predictionType: string;
+    predictionSport: string;
     option: SavePickOption | null;
     existingBet?: ExistingBet | null;
     publicConsensus?: PublicConsensus | null;
@@ -207,7 +207,7 @@ async function submit(): Promise<void> {
 
     const payload = {
         prediction_id: props.predictionId,
-        prediction_type: props.predictionType,
+        prediction_sport: props.predictionSport,
         bet_type: props.option.betType,
         selection_side: props.option.selectionSide,
         selection_label: selectionLabel.value,

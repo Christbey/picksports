@@ -2,7 +2,6 @@
 
 namespace App\Http\Resources\CBB;
 
-use App\Actions\CBB\CalculateBettingValue;
 use App\Http\Resources\Sports\AbstractPredictionResource;
 use Illuminate\Http\Request;
 
@@ -60,11 +59,11 @@ class PredictionResource extends AbstractPredictionResource
 
         // Betting Value
         if ($this->hasTierPermission($request, 'betting_value') && $this->relationLoaded('game')) {
-            $data['betting_value'] = $this->betting_value ?? app(CalculateBettingValue::class)->execute($this->game);
+            $data['betting_value'] = $this->preparedData()->bettingValue;
         }
 
-        $data = $this->appendNarrativeFields($data, $request, 'cbb');
-        $data = $this->appendAiAnalysisFields($data, $request, 'cbb');
+        $data = $this->appendNarrativeFields($data);
+        $data = $this->appendAiAnalysisFields($data);
 
         return $this->appendStandardTimestamps($this->appendStandardGradingFields($data));
     }

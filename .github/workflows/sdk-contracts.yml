@@ -1,0 +1,84 @@
+name: SDK Contracts
+
+on:
+  pull_request:
+    paths:
+      - docs/openapi-v2.json
+      - app/Console/Commands/Api/V2OpenApiGenerateCommand.php
+      - routes/api-v2.php
+      - .github/workflows/sdk-contracts.yml
+  push:
+    branches: [main]
+    paths:
+      - docs/openapi-v2.json
+      - app/Console/Commands/Api/V2OpenApiGenerateCommand.php
+      - routes/api-v2.php
+      - .github/workflows/sdk-contracts.yml
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Generate TypeScript Fetch SDK
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
+            -i /local/docs/openapi-v2.json \
+            -g typescript-fetch \
+            -o /local/build/sdk/typescript \
+            --additional-properties=npmName=@picksports/api-v2,supportsES6=true,typescriptThreePlus=true
+      - name: Compile TypeScript SDK
+        working-directory: build/sdk/typescript
+        run: |
+          npm install --ignore-scripts
+          npm run build
+
+  swift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.0"
+      - name: Generate Swift SDK
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
+            -i /local/docs/openapi-v2.json \
+            -g swift6 \
+            -o /local/build/sdk/swift \
+            --additional-properties=projectName=PickSportsApiV2
+      - name: Compile Swift SDK
+        run: swift build --package-path build/sdk/swift
+
+  kotlin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Generate Kotlin SDK
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$PWD:/local" openapitools/openapi-generator-cli:v7.14.0 generate \
+            -i /local/docs/openapi-v2.json \
+            -g kotlin \
+            -o /local/build/sdk/kotlin \
+            --additional-properties=packageName=com.picksports.api.v2,library=jvm-retrofit2,useCoroutines=true
+      - name: Compile Kotlin SDK
+        working-directory: build/sdk/kotlin
+        run: |
+          chmod +x gradlew
+          ./gradlew compileKotlin --no-daemon

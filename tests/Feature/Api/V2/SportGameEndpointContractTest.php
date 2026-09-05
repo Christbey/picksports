@@ -11,6 +11,7 @@ use App\Models\NBA\Game as NbaGame;
 use App\Models\NBA\Team as NbaTeam;
 use App\Models\NFL\Game as NflGame;
 use App\Models\NFL\Team as NflTeam;
+use App\Models\SportEvent;
 use App\Models\User;
 use App\Models\WCBB\Game as WcbbGame;
 use App\Models\WCBB\Team as WcbbTeam;
@@ -127,6 +128,28 @@ it('returns a clean json 404 for unsupported v2 sport game endpoints', function 
     $this->getJson('/api/v2/sports/nhl/games/1')
         ->assertNotFound()
         ->assertJsonPath('message', 'Unsupported sport: nhl');
+});
+
+it('resolves games by canonical sport event ulid without changing the legacy numeric id', function () {
+    Sanctum::actingAs(User::factory()->create());
+
+    $homeTeam = NbaTeam::factory()->create();
+    $awayTeam = NbaTeam::factory()->create();
+    $sportEvent = SportEvent::factory()->create(['sport' => 'nba']);
+    $game = NbaGame::factory()->create([
+        'sport_event_id' => $sportEvent->id,
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $this->getJson("/api/v2/sports/nba/games/{$sportEvent->public_id}")
+        ->assertOk()
+        ->assertJsonPath('data.id', $game->id)
+        ->assertJsonPath('data.sport_event_id', $sportEvent->public_id)
+        ->assertJsonPath('data.sport', 'nba');
+
+    $this->getJson("/api/v2/sports/mlb/games/{$sportEvent->public_id}")
+        ->assertNotFound();
 });
 
 it('returns a projected mlb starter with explicit rotation provenance', function () {
@@ -321,6 +344,7 @@ it('lists v2 games with sport, filter, pagination, freshness, and warning metada
             'data' => [
                 '*' => [
                     'id',
+                    'sport_event_id',
                     'espn_id',
                     'home_team_id',
                     'away_team_id',
@@ -373,6 +397,7 @@ it('shows a v2 game with sport, freshness, and warning metadata', function (
         ->assertJsonStructure([
             'data' => [
                 'id',
+                'sport_event_id',
                 'espn_id',
                 'home_team_id',
                 'away_team_id',

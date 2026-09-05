@@ -20,6 +20,8 @@ abstract class AbstractSyncPlayerInjuries
 
     protected bool $injuryPayloadObserved = false;
 
+    protected bool $injuryPayloadReliable = true;
+
     /**
      * @var array<string, array<string, mixed>|null>
      */
@@ -43,6 +45,10 @@ abstract class AbstractSyncPlayerInjuries
 
         $observedAt = now();
         $injuries = $this->extractTeamInjuries($teamEspnId);
+        if (! $this->injuryPayloadObserved) {
+            return 0;
+        }
+
         $teamId = (int) $team->getKey();
         $playerMap = $this->playerIdMapByEspnId($teamId);
         $rows = [];
@@ -81,7 +87,7 @@ abstract class AbstractSyncPlayerInjuries
                 'injury_date' => $normalized['injury_date'],
                 'return_date' => $normalized['return_date'],
                 'source_updated_at' => $normalized['source_updated_at'],
-                'is_active' => true,
+                'is_active' => $this->isCurrentInjuryActive($normalized),
                 'raw_payload' => json_encode($injury, JSON_UNESCAPED_SLASHES),
                 'created_at' => $observedAt,
                 'updated_at' => $observedAt,
@@ -98,37 +104,41 @@ abstract class AbstractSyncPlayerInjuries
             );
         }
 
-        DB::table($this->injuryTable())
-            ->where('team_id', $teamId)
-            ->where('is_active', true)
-            ->update([
-                'is_active' => false,
-                'updated_at' => $observedAt,
-            ]);
+        DB::transaction(function () use ($teamId, $observedAt, $rows): void {
+            if ($this->injuryPayloadReliable) {
+                DB::table($this->injuryTable())
+                    ->where('team_id', $teamId)
+                    ->where('is_active', true)
+                    ->update([
+                        'is_active' => false,
+                        'updated_at' => $observedAt,
+                    ]);
+            }
 
-        if ($rows === []) {
-            return 0;
-        }
+            if ($rows === []) {
+                return;
+            }
 
-        DB::table($this->injuryTable())->upsert(
-            $rows,
-            ['player_id', 'injury_key'],
-            [
-                'team_id',
-                'espn_injury_id',
-                'status',
-                'detail',
-                'type',
-                'injury_date',
-                'return_date',
-                'source_updated_at',
-                'is_active',
-                'raw_payload',
-                'updated_at',
-            ]
-        );
+            DB::table($this->injuryTable())->upsert(
+                $rows,
+                ['player_id', 'injury_key'],
+                [
+                    'team_id',
+                    'espn_injury_id',
+                    'status',
+                    'detail',
+                    'type',
+                    'injury_date',
+                    'return_date',
+                    'source_updated_at',
+                    'is_active',
+                    'raw_payload',
+                    'updated_at',
+                ]
+            );
+        });
 
-        return count($rows);
+        return collect($rows)->where('is_active', true)->count();
     }
 
     /**
@@ -183,6 +193,7 @@ abstract class AbstractSyncPlayerInjuries
     protected function extractTeamInjuries(string $teamEspnId): array
     {
         $this->injuryPayloadObserved = false;
+        $this->injuryPayloadReliable = true;
         $teamInjuriesResponse = $this->espnService->getTeamInjuries($teamEspnId);
         $this->injuryPayloadObserved = is_array($teamInjuriesResponse);
         $teamInjuries = $this->extractInjuriesFromTeamInjuriesResponse($teamInjuriesResponse);
@@ -296,6 +307,8 @@ abstract class AbstractSyncPlayerInjuries
 
         $resolved = $this->resolveRefPayload($ref);
         if (! is_array($resolved) || $resolved === []) {
+            $this->injuryPayloadReliable = false;
+
             return $entity;
         }
 
@@ -421,6 +434,14 @@ abstract class AbstractSyncPlayerInjuries
         ]);
 
         return 'hash:'.sha1($fallback);
+    }
+
+    /**
+     * @param  array<string, mixed>  $normalizedInjury
+     */
+    protected function isCurrentInjuryActive(array $normalizedInjury): bool
+    {
+        return true;
     }
 
     /**

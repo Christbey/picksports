@@ -149,6 +149,39 @@ export interface AiPredictionAnalysisSummary {
         vegas_spread?: number | null;
         spread_edge?: number | null;
     };
+    external_game_context?: {
+        status?: string | null;
+        researched_at?: string | null;
+        expires_at?: string | null;
+        confidence?: number | null;
+        summary?: string | null;
+        facts: Array<{
+            category?: string;
+            team_side?: string;
+            claim: string;
+            certainty?: string;
+            source_urls?: string[];
+        }>;
+        sources: Array<{
+            url: string;
+            title: string;
+            publisher: string;
+            published_at?: string | null;
+            source_type?: string | null;
+        }>;
+        risk_flags: string[];
+        deterministic_adjustment?: {
+            home_margin_points?: number | null;
+            total_points?: number | null;
+            policy?: string | null;
+            eligible?: boolean;
+        } | null;
+        context_adjusted_model?: {
+            predicted_spread?: number | null;
+            predicted_total?: number | null;
+            home_win_probability?: number | null;
+        } | null;
+    } | null;
     provider?: string | null;
     model?: string | null;
     created_at?: string | null;

@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Presenters\PublicGameSummaryPresenter;
 use App\Http\Resources\BettingRecommendationResource;
+use App\Services\Api\V2\SportContext;
+use App\Services\Api\V2\SportContextResolver;
+use App\Services\Api\V2\SportGameQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Support\InjuryImpactScorer;
-use App\Support\Sports\GameDateTimePresenter;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
@@ -22,6 +25,9 @@ class PublicSportPageController extends Controller
     public function __construct(
         private readonly PlayerPropAnalyzer $playerPropAnalyzer,
         private readonly InjuryImpactScorer $injuryImpactScorer,
+        private readonly PublicGameSummaryPresenter $gameSummaries,
+        private readonly SportContextResolver $sports,
+        private readonly SportGameQuery $games,
     ) {}
 
     public function __invoke(Request $request, string $sport): Response
@@ -38,20 +44,24 @@ class PublicSportPageController extends Controller
             abort(404);
         }
 
+        $context = $this->sports->resolve($sport);
+
         $gameModel = $this->resolveModelClass($namespace, 'Game');
         $latestSeason = $this->latestSeason($gameModel);
         $injuries = $this->injurySummaries($sport);
         $topTeams = $this->topTeams($sport, $namespace, $latestSeason);
         $topPlayers = $this->topPlayers($sport, $namespace, $latestSeason);
-        $featuredPredictions = $this->featuredPredictions($sport, $namespace);
+        $featuredPredictions = $this->featuredPredictions($context, $this->games);
         $featuredProps = $this->featuredProps($sport, $definition);
         $conferencePlayoffTeams = $sport === 'nba' ? $this->nbaConferencePlayoffTeams() : null;
+        $web = (array) ($definition['web'] ?? []);
+        $pages = (array) ($web['pages'] ?? []);
 
         return Inertia::render('PublicSport', [
             'sport' => $sport,
             'sportLabel' => $this->sportLabel($sport),
             'latestSeason' => $latestSeason,
-            'hasPlayerProps' => (bool) data_get($definition, 'web.player_props', false),
+            'hasPlayerProps' => (bool) ($web['player_props'] ?? false),
             'conferencePlayoffTeams' => $conferencePlayoffTeams,
             'injuries' => $injuries,
             'topTeams' => $topTeams,
@@ -60,10 +70,10 @@ class PublicSportPageController extends Controller
             'featuredProps' => $featuredProps,
             'links' => [
                 'predictions' => "/{$sport}/predictions",
-                'injuries' => "/{$sport}/injuries",
-                'teamMetrics' => "/{$sport}/team-metrics",
-                'playerStats' => "/{$sport}/player-stats",
-                'playerProps' => "/{$sport}/player-props",
+                'injuries' => isset($pages['injuries']) ? "/{$sport}/injuries" : null,
+                'teamMetrics' => isset($pages['team-metrics']) ? "/{$sport}/team-metrics" : null,
+                'playerStats' => isset($pages['player-stats']) ? "/{$sport}/player-stats" : null,
+                'playerProps' => ($web['player_props'] ?? false) ? "/{$sport}/player-props" : null,
             ],
             'summary' => [
                 'topInjuriesCount' => count($injuries['top']),
@@ -224,7 +234,7 @@ class PublicSportPageController extends Controller
         return $rows
             ->sortByDesc(fn (array $row) => (float) (data_get($row, 'points_per_game') ?? 0))
             ->values()
-            ->reduce(function (Collection $carry, array $row) {
+            ->reduce(function (Collection $carry, array $row) use ($sport) {
                 if ($carry->count() >= 10) {
                     return $carry;
                 }
@@ -239,6 +249,8 @@ class PublicSportPageController extends Controller
                     return $carry;
                 }
 
+                $headline = $this->playerHeadlineMetric($sport, $row);
+
                 return $carry->push([
                     'player_id' => $row['player']['id'] ?? $row['player_id'] ?? null,
                     'name' => $row['player']['full_name'] ?? $row['player']['name'] ?? 'Unknown Player',
@@ -246,8 +258,8 @@ class PublicSportPageController extends Controller
                     'position' => data_get($row, 'player.position'),
                     'headshot' => data_get($row, 'player.headshot_url') ?? data_get($row, 'player.headshot'),
                     'games_played' => $row['games_played'] ?? null,
-                    'headline_stat_label' => 'PPG',
-                    'headline_stat_value' => data_get($row, 'points_per_game'),
+                    'headline_stat_label' => $headline['label'],
+                    'headline_stat_value' => $headline['value'],
                 ]);
             }, collect())
             ->values()
@@ -257,68 +269,10 @@ class PublicSportPageController extends Controller
     /**
      * @return array<int, array<string, mixed>>
      */
-    private function featuredPredictions(string $sport, string $namespace): array
+    private function featuredPredictions(SportContext $context, SportGameQuery $games): array
     {
-        $predictionModel = $this->resolveModelClass($namespace, 'Prediction');
-        $gameModel = $this->resolveModelClass($namespace, 'Game');
-
-        if ($predictionModel === null || $gameModel === null) {
-            return [];
-        }
-
-        /** @var Model $gameInstance */
-        $gameInstance = new $gameModel;
-        /** @var Model $predictionInstance */
-        $predictionInstance = new $predictionModel;
-        $gameTable = $gameInstance->getTable();
-        $predictionTable = $predictionInstance->getTable();
-        $scheduledStatus = config("{$sport}.statuses.scheduled");
-        $inProgressStatus = config("{$sport}.statuses.in_progress");
-
-        $upcoming = $predictionModel::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', function ($query) use ($scheduledStatus, $inProgressStatus) {
-                $query->whereDate('game_date', '>=', now()->subDay()->toDateString())
-                    ->whereIn('status', array_values(array_filter([$scheduledStatus, $inProgressStatus])));
-            })
-            ->join($gameTable, "{$gameTable}.id", '=', "{$predictionTable}.game_id")
-            ->orderBy("{$gameTable}.game_date")
-            ->select("{$predictionTable}.*")
-            ->limit(5)
-            ->get();
-
-        $predictions = $upcoming->isNotEmpty()
-            ? $upcoming
-            : $predictionModel::query()
-                ->with(['game.homeTeam', 'game.awayTeam'])
-                ->latest()
-                ->limit(5)
-                ->get();
-
-        return $predictions
-            ->map(function ($prediction) use ($sport): array {
-                $game = $prediction->game;
-                $homeTeam = $game?->homeTeam;
-                $awayTeam = $game?->awayTeam;
-                $homeWinProbability = $this->homeWinProbability($prediction);
-                $pick = $homeWinProbability >= 0.5 ? $this->teamDisplayName($homeTeam) : $this->teamDisplayName($awayTeam);
-                $dateTime = GameDateTimePresenter::forSport($sport, $game?->game_date, $game?->game_time);
-
-                return [
-                    'id' => $prediction->id,
-                    'game_id' => $game?->id,
-                    'matchup' => trim($this->teamDisplayName($awayTeam).' at '.$this->teamDisplayName($homeTeam)),
-                    'game_date' => $dateTime['game_date'],
-                    'status' => $game?->status,
-                    'pick' => $pick,
-                    'home_team_abbreviation' => $homeTeam?->abbreviation,
-                    'away_team_abbreviation' => $awayTeam?->abbreviation,
-                    'predicted_spread' => $prediction->predicted_spread,
-                    'predicted_total' => $prediction->predicted_total,
-                    'confidence_score' => $prediction->confidence_score,
-                    'home_win_probability' => round($homeWinProbability * 100, 1),
-                ];
-            })
+        return $games->featuredPredictionSummaries($context)
+            ->map(fn ($game): array => $this->gameSummaries->featuredPrediction($game))
             ->all();
     }
 
@@ -336,6 +290,7 @@ class PublicSportPageController extends Controller
             'nfl' => 'NFL',
             'cbb' => 'CBB',
             'mlb' => 'MLB',
+            'wnba' => 'WNBA',
             default => null,
         };
 
@@ -345,10 +300,37 @@ class PublicSportPageController extends Controller
 
         $date = $this->defaultPropsDate($sportCode);
         $recommendations = $this->playerPropAnalyzer
-            ->analyzeProps(sport: $sportCode, minGames: 3, dateFilter: $date)
+            ->analyzeProps(
+                sport: $sportCode,
+                minGames: 3,
+                dateFilter: $date,
+                attachNarratives: false,
+            )
             ->take(5);
 
         return BettingRecommendationResource::collection($recommendations)->resolve();
+    }
+
+    /**
+     * @param  array<string, mixed>  $row
+     * @return array{label: string, value: mixed}
+     */
+    private function playerHeadlineMetric(string $sport, array $row): array
+    {
+        return match ($sport) {
+            'nfl', 'cfb' => [
+                'label' => 'Yds/G',
+                'value' => data_get($row, 'points_per_game'),
+            ],
+            'mlb' => [
+                'label' => 'H/G',
+                'value' => data_get($row, 'points_per_game'),
+            ],
+            default => [
+                'label' => 'PPG',
+                'value' => data_get($row, 'points_per_game'),
+            ],
+        };
     }
 
     /**
@@ -524,19 +506,6 @@ class PublicSportPageController extends Controller
         }
 
         return [];
-    }
-
-    private function homeWinProbability(mixed $prediction): float
-    {
-        $winProbability = data_get($prediction, 'win_probability');
-
-        if ($winProbability === null) {
-            return 0.5;
-        }
-
-        $value = (float) $winProbability;
-
-        return $value > 1 ? ($value / 100) : $value;
     }
 
     private function defaultPropsDate(string $sportCode): ?string

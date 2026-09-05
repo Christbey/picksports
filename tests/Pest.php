@@ -1,6 +1,11 @@
 <?php
 
+use App\Http\Resources\Sports\AbstractPredictionResource;
+use App\Models\User;
+use App\Services\Predictions\PredictionResourcePreparer;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Request;
 use Tests\TestCase;
 
 /*
@@ -47,4 +52,26 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/**
+ * Resolve a legacy sport prediction resource through its production preparer.
+ *
+ * @param  class-string<AbstractPredictionResource>  $resourceClass
+ * @return array<string, mixed>
+ */
+function resolvePreparedPredictionResource(
+    string $resourceClass,
+    Model $prediction,
+    string $sport,
+    Request $request,
+): array {
+    $user = $request->user();
+    app(PredictionResourcePreparer::class)->prepareOne(
+        $prediction,
+        $sport,
+        $user instanceof User ? $user : null,
+    );
+
+    return $resourceClass::make($prediction)->toArray($request);
 }

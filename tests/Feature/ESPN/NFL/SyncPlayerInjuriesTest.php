@@ -76,3 +76,61 @@ it('preserves each nfl player injury observation across repeated syncs', functio
     expect($currentInjury->status)->toBe('Out')
         ->and($currentInjury->is_active)->toBeTrue();
 });
+
+it('preserves current injuries when the provider does not return a payload', function () {
+    $team = Team::factory()->create(['espn_id' => '23']);
+    $player = Player::factory()->create(['team_id' => $team->id, 'espn_id' => 'provider-failure-player']);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $team->id,
+        'injury_key' => 'provider-failure-injury',
+        'status' => 'Out',
+        'is_active' => true,
+    ]);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'nfl';
+
+        public function getTeamInjuries(string $teamId): ?array
+        {
+            return null;
+        }
+
+        public function getRoster(string $teamId): ?array
+        {
+            return null;
+        }
+    };
+
+    expect((new SyncPlayerInjuries($service))->execute('23'))->toBe(0)
+        ->and(PlayerInjury::query()->sole()->is_active)->toBeTrue()
+        ->and(PlayerInjurySnapshot::query()->count())->toBe(0);
+});
+
+it('stores resolved active statuses as inactive and excludes them from snapshots', function () {
+    $team = Team::factory()->create(['espn_id' => '24']);
+    $player = Player::factory()->create(['team_id' => $team->id, 'espn_id' => 'active-player']);
+
+    $service = new class extends BaseEspnService
+    {
+        protected const SPORT_KEY = 'nfl';
+
+        public function getTeamInjuries(string $teamId): ?array
+        {
+            return [
+                'items' => [[
+                    'id' => 'resolved-injury',
+                    'athlete' => ['id' => 'active-player'],
+                    'status' => 'Active',
+                    'type' => ['name' => 'INJURY_STATUS_ACTIVE'],
+                    'date' => '2026-08-01T10:00:00Z',
+                ]],
+            ];
+        }
+    };
+
+    expect((new SyncPlayerInjuries($service))->execute('24'))->toBe(0)
+        ->and(PlayerInjury::query()->sole()->is_active)->toBeFalse()
+        ->and(PlayerInjurySnapshot::query()->sole()->entry_count)->toBe(0);
+});

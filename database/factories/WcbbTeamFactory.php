@@ -21,7 +21,7 @@ class WcbbTeamFactory extends Factory
     {
         return [
             'espn_id' => $this->faker->unique()->numberBetween(1, 999999),
-            'abbreviation' => $this->faker->lexify('???'),
+            'abbreviation' => strtoupper($this->faker->bothify('???####')),
             'school' => $this->faker->words(2, true),
             'mascot' => $this->faker->word(),
             'conference' => $this->faker->word(),

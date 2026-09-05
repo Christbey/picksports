@@ -175,6 +175,27 @@ return [
     */
 
     'predictions' => [
+        'canonical' => [
+            'elo_points_per_spread_point' => 25.0,
+            'metric_weight' => 0.50,
+            'minimum_metric_games' => 6,
+            'power_rating_weight' => 0.15,
+            'spread_output_regression_weight' => 0.10,
+            'spread_to_probability_coefficient' => 6.0,
+            'default_team_points' => 22.5,
+            'average_total' => 45.0,
+            'total_output_regression_weight' => 0.20,
+            'recent_spread_weight' => 0.10,
+            'turnover_spread_weight' => 0.20,
+            'fatigue_spread_weight' => 0.15,
+            'injury_rating_spread_weight' => 0.025,
+            'recent_total_weight' => 0.08,
+            'fatigue_total_weight' => 0.15,
+            'injury_out_spread_penalty' => 0.60,
+            'injury_questionable_spread_penalty' => 0.20,
+            'injury_out_total_penalty' => 0.25,
+            'injury_questionable_total_penalty' => 0.10,
+        ],
         'model_version' => env('NFL_MODEL_VERSION', 'nfl-historical-elo-v2'),
         'feature_version' => env('NFL_FEATURE_VERSION', 'nfl-pregame-ml-v3'),
         'blend_version' => env('NFL_BLEND_VERSION', 'nfl-multi-signal-v1'),
@@ -403,6 +424,7 @@ return [
             'doubtful_availability' => env('NFL_PLAYER_POSITION_GRADES_DOUBTFUL_AVAILABILITY', 0.25),
             'questionable_availability' => env('NFL_PLAYER_POSITION_GRADES_QUESTIONABLE_AVAILABILITY', 0.60),
             'probable_availability' => env('NFL_PLAYER_POSITION_GRADES_PROBABLE_AVAILABILITY', 0.90),
+            'ol_replacement_grade_gap' => env('NFL_PLAYER_POSITION_GRADES_OL_REPLACEMENT_GAP', 8.0),
         ],
 
         'line_matchup' => [

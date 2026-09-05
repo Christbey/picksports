@@ -23,7 +23,10 @@ class MlbGameFactory extends Factory
             'espn_event_id' => $this->faker->unique()->numerify('#########'),
             'espn_uid' => $this->faker->unique()->numerify('s:1~l:10~e:#########'),
             'season' => $this->faker->numberBetween(2020, 2025),
-            'week' => $this->faker->numberBetween(1, 26),
+            // Week 1 is used by the season-type resolver as a spring-training
+            // compatibility signal. The default factory state is regular season;
+            // tests that exercise week 1 should opt into it explicitly.
+            'week' => $this->faker->numberBetween(2, 26),
             'season_type' => config('mlb.season.types.regular'),
             'game_date' => $this->faker->date(),
             'game_time' => $this->faker->time(),

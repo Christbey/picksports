@@ -5,6 +5,7 @@ use App\AI\Agents\MarketReadinessAgent;
 use App\AI\Agents\ModelAuditAgent;
 use App\AI\Agents\PublishingGuardrailAgent;
 use App\AI\Agents\SportsDailyPredictionAnalysisAgent;
+use App\Models\AiGeneration;
 use App\Models\NBA\Game;
 use App\Models\NBA\Prediction;
 use App\Models\NBA\Team;
@@ -190,6 +191,7 @@ it('persists structured daily ai analysis for a slate prediction', function () {
     expect($exit)->toBe(0);
 
     $analysis = SportsAiPredictionAnalysis::query()->first();
+    $generation = AiGeneration::query()->first();
 
     expect($analysis)->not->toBeNull()
         ->and($analysis->sport)->toBe('nba')
@@ -216,7 +218,12 @@ it('persists structured daily ai analysis for a slate prediction', function () {
         ->and($analysis->metadata['publishing_enforcement']['enabled'])->toBeFalse()
         ->and($analysis->metadata['publishing_enforcement']['applied'])->toBeFalse()
         ->and($analysis->calculated_edge['spread_edge'])->toBe(0.9)
-        ->and($analysis->reason_codes)->toContain('model_home_edge');
+        ->and($analysis->reason_codes)->toContain('model_home_edge')
+        ->and($generation)->not->toBeNull()
+        ->and($generation->purpose)->toBe('daily_prediction_analysis')
+        ->and($generation->status)->toBe('completed')
+        ->and($generation->prompt_version)->toBe('daily-prediction-analysis-v1')
+        ->and($generation->output_hash)->not->toBeNull();
 });
 
 it('can enforce publishing guardrail downgrades when enabled', function () {

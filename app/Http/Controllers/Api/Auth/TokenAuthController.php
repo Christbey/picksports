@@ -5,13 +5,17 @@ namespace App\Http\Controllers\Api\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\Auth\LoginRequest;
 use App\Http\Resources\AuthUserResource;
+use App\Services\Auth\Native\DeviceSessionTokenService;
 use App\Services\Auth\TokenAuthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TokenAuthController extends Controller
 {
-    public function __construct(private readonly TokenAuthService $tokenAuthService) {}
+    public function __construct(
+        private readonly TokenAuthService $tokenAuthService,
+        private readonly DeviceSessionTokenService $deviceSessionTokenService,
+    ) {}
 
     public function login(LoginRequest $request): JsonResponse
     {
@@ -37,13 +41,16 @@ class TokenAuthController extends Controller
 
     public function logout(Request $request): JsonResponse
     {
-        $this->tokenAuthService->revokeCurrentToken($request->user());
+        if (! $this->deviceSessionTokenService->revokeCurrent($request->user())) {
+            $this->tokenAuthService->revokeCurrentToken($request->user());
+        }
 
         return response()->json(null, 204);
     }
 
     public function logoutAll(Request $request): JsonResponse
     {
+        $this->deviceSessionTokenService->revokeAll($request->user());
         $this->tokenAuthService->revokeAllTokens($request->user());
 
         return response()->json(null, 204);

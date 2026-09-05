@@ -3,6 +3,7 @@
 namespace App\Actions\ESPN;
 
 use App\Services\ESPN\BaseEspnService;
+use App\Services\Sports\SportEventIdentitySynchronizer;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGameDetails
@@ -32,6 +33,7 @@ abstract class AbstractSyncGameDetails
         }
 
         $gameUpdated = $this->updateGame($gameData, $game);
+        app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game->fresh());
 
         $result = [
             'plays' => $this->syncPlays->execute($eventId),
@@ -84,5 +86,12 @@ abstract class AbstractSyncGameDetails
         }
 
         return static::GAME_MODEL_CLASS;
+    }
+
+    protected function sportKey(): string
+    {
+        $parts = explode('\\', $this->gameModelClass());
+
+        return strtolower($parts[2] ?? '');
     }
 }

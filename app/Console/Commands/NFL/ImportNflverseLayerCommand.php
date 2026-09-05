@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
 use App\Models\NFL\Team;
+use App\Services\ProviderData\ProviderSourceStorage;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,7 @@ class ImportNflverseLayerCommand extends Command
         {--to-season= : Last season to import}
         {--limit= : Stop after this many imported rows}
         {--chunk=500 : Upsert batch size}
+        {--archive-source : Archive the immutable source file and omit repeated row payloads}
         {--without-raw-payload : Store mapped fields only and leave raw_payload null}
         {--dry-run : Parse and match rows without writing}';
 
@@ -39,8 +41,9 @@ class ImportNflverseLayerCommand extends Command
         'weekly-stats' => ['table' => 'nflverse_weekly_player_stats', 'key' => 'nflverse_weekly_stat_key', 'mapper' => 'mapWeeklyStat'],
     ];
 
-    public function handle(): int
+    public function handle(ProviderSourceStorage $sourceStorage): int
     {
+        $startedAt = Carbon::now();
         $dataset = (string) $this->argument('dataset');
         if (! isset($this->datasets[$dataset])) {
             $this->error('Dataset must be one of: '.implode(', ', array_keys($this->datasets)));
@@ -117,6 +120,26 @@ class ImportNflverseLayerCommand extends Command
 
         $imported += $this->flush($config['table'], $config['key'], $buffer);
         $this->closeCsv($reader);
+
+        if ($this->option('archive-source') && ! $this->option('dry-run')) {
+            $sourceFile = $sourceStorage->archive('nflverse', $dataset, $file, [
+                'from_season' => $this->option('from-season'),
+                'to_season' => $this->option('to-season'),
+            ]);
+            $sourceStorage->recordImport(
+                sourceFile: $sourceFile,
+                rowsRead: $rows,
+                rowsImported: $imported,
+                rowsSkipped: $skipped,
+                startedAt: $startedAt,
+                options: [
+                    'from_season' => $this->option('from-season'),
+                    'to_season' => $this->option('to-season'),
+                    'limit' => $limit,
+                    'raw_payloads_omitted' => true,
+                ],
+            );
+        }
 
         $this->info(sprintf(
             'nflverse %s: %d rows read, %d imported/upserted, %d skipped%s.',
@@ -705,7 +728,9 @@ class ImportNflverseLayerCommand extends Command
      */
     private function rawPayload(array $row): ?string
     {
-        return $this->option('without-raw-payload') ? null : json_encode($row);
+        return $this->option('without-raw-payload') || $this->option('archive-source')
+            ? null
+            : json_encode($row);
     }
 
     private function key(string $value): string

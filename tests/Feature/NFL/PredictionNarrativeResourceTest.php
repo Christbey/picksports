@@ -64,7 +64,8 @@ test('nfl prediction resource uses template narrative when no stored narrative m
     ]);
 
     $prediction = makeNflPredictionFixture();
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedNflRequest($user));
+    $request = makeAuthorizedNflRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nfl', $request);
 
     expect($data['narrative'])->toBeArray()
         ->and($data['narrative']['generated_by'])->toBe('template-generic-v1')
@@ -100,7 +101,8 @@ test('nfl prediction resource uses stored narrative when generic hash matches cu
         ],
     ])->save();
 
-    $data = PredictionResource::make($prediction)->toArray(makeAuthorizedNflRequest($user));
+    $request = makeAuthorizedNflRequest($user);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nfl', $request);
 
     expect($data['narrative'])->toBeArray()
         ->and($data['narrative']['generated_by'])->toBe('openai:gpt-4o-mini')
@@ -131,7 +133,13 @@ test('nfl prediction resource exposes depth chart context in api and template na
         ],
     ])->save();
 
-    $data = PredictionResource::make($prediction->fresh(['game.homeTeam', 'game.awayTeam']))->toArray(makeAuthorizedNflRequest($user));
+    $request = makeAuthorizedNflRequest($user);
+    $data = resolvePreparedPredictionResource(
+        PredictionResource::class,
+        $prediction->fresh(['game.homeTeam', 'game.awayTeam']),
+        'nfl',
+        $request,
+    );
 
     expect($data['depth_chart_context'])->toBeArray()
         ->and($data['depth_chart_context']['type'])->toBe('injury_weighting')

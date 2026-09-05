@@ -217,8 +217,9 @@ onMounted(() => {
 
     <PredictionsPageShell
         title="CBB Tournament Forecast"
-        breadcrumb-title="CBB Tournament Forecast"
-        breadcrumb-href="/cbb/tournament-forecast"
+        sport-title="CBB"
+        sport-href="/cbb/predictions"
+        page-title="Tournament Forecast"
         banner-storage-key="cbb-tournament-forecast-banner-dismissed"
         seo-description="March Madness field outlook with actual teams, regional placement, and championship probabilities."
     >

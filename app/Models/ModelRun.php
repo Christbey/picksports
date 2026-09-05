@@ -48,4 +48,9 @@ class ModelRun extends Model
     {
         return $this->hasMany(ShadowModelOutput::class, 'inference_run_id');
     }
+
+    public function canonicalPredictions(): HasMany
+    {
+        return $this->hasMany(CanonicalPrediction::class);
+    }
 }

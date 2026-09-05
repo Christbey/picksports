@@ -48,7 +48,7 @@ test('hides nfl live fields when game is not live', function () {
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nfl', $request);
 
     expect($data['live_predicted_spread'])->toBeNull()
         ->and($data['live_predicted_total'])->toBeNull()
@@ -90,7 +90,7 @@ test('includes nfl live fields when game is live', function () {
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nfl', $request);
 
     expect($data['live_predicted_spread'])->not->toBeNull()
         ->and($data['live_predicted_total'])->not->toBeNull()
@@ -159,7 +159,7 @@ test('includes nfl prediction analysis with betting value permission', function 
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'nfl', $request);
 
     expect($data['prediction_analysis']['trust_score'])->toBe(71.5)
         ->and($data['prediction_analysis']['model_signal_classification'])->toBe('strong_model_side')

@@ -236,6 +236,18 @@ return [
         'fatigue_total_weight' => 0.20,
         'injury_total_weight' => 0.015,
 
+        // Frozen defaults for the canonical snapshot-only rules release.
+        // These values are copied into a calculation release before use.
+        'canonical' => [
+            'metric_spread_weight' => env('NBA_CANONICAL_METRIC_SPREAD_WEIGHT', 0.45),
+            'metric_spread_min_games' => env('NBA_CANONICAL_METRIC_SPREAD_MIN_GAMES', 10),
+            'spread_output_regression_weight' => env('NBA_CANONICAL_SPREAD_REGRESSION_WEIGHT', 0.08),
+            'spread_to_probability_coefficient' => env('NBA_CANONICAL_PROBABILITY_COEFFICIENT', 6.5),
+            'average_total' => env('NBA_CANONICAL_AVERAGE_TOTAL', 228.5),
+            'total_tempo_regression_weight' => env('NBA_CANONICAL_TEMPO_REGRESSION_WEIGHT', 0.35),
+            'total_output_regression_weight' => env('NBA_CANONICAL_TOTAL_REGRESSION_WEIGHT', 0.15),
+        ],
+
         // Guarded rollout for true play-by-play EPA blend.
         'true_epa' => [
             'enabled' => env('NBA_TRUE_EPA_ENABLED', false),

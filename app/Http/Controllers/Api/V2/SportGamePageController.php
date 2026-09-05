@@ -179,7 +179,11 @@ class SportGamePageController extends Controller
             return null;
         }
 
-        return (new SportTeamMetricResource($metric, $context))->resolve($request);
+        return (new SportTeamMetricResource(
+            $metric,
+            $context,
+            $metrics->preparedRecord($context, $metric),
+        ))->resolve($request);
     }
 
     /**

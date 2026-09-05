@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\OAuthUser;
 use App\Models\User;
 
 return [
@@ -42,6 +43,13 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'api' => [
+            'driver' => 'passport',
+            'provider' => 'oauth_users',
+        ],
+        'developer-api' => [
+            'driver' => 'developer-api-token',
+        ],
     ],
 
     /*
@@ -65,6 +73,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', User::class),
+        ],
+        'oauth_users' => [
+            'driver' => 'eloquent',
+            'model' => OAuthUser::class,
         ],
 
         // 'users' => [

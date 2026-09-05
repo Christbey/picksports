@@ -2,10 +2,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 
 class CommandHeartbeat extends Model
 {
+    use MassPrunable;
+
     protected $fillable = [
         'sport',
         'command',
@@ -22,5 +26,12 @@ class CommandHeartbeat extends Model
             'metadata' => 'array',
             'ran_at' => 'datetime',
         ];
+    }
+
+    public function prunable(): Builder
+    {
+        $retentionDays = max(1, (int) config('retention.command_heartbeats_days', 90));
+
+        return static::query()->where('ran_at', '<=', now()->subDays($retentionDays));
     }
 }

@@ -21,7 +21,7 @@ class SportGameController extends Controller
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $filters = $request->validatedFilters();
-        $paginator = $games->paginate($context, $filters, $request->user(), 'summary');
+        $paginator = $games->paginateSummaries($context, $filters, $request->user(), 'summary');
 
         $paginator->setCollection(
             $paginator->getCollection()->map(fn ($game) => new SportGameResource($game, $context))
@@ -78,7 +78,7 @@ class SportGameController extends Controller
         $filters = array_merge($request->validatedFilters(), [
             'team_id' => (int) $team,
         ]);
-        $paginator = $games->paginate($context, $filters, $request->user(), 'recent');
+        $paginator = $games->paginateSummaries($context, $filters, $request->user(), 'recent');
 
         $paginator->setCollection(
             $paginator->getCollection()->map(fn ($game) => new SportGameResource($game, $context))

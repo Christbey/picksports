@@ -8,8 +8,9 @@ import { cfbPredictions } from '@/routes';
 <template>
     <PredictionsPageShell
         title="CFB Predictions"
-        breadcrumb-title="CFB Predictions"
-        :breadcrumb-href="cfbPredictions().url"
+        sport-title="CFB"
+        :sport-href="cfbPredictions().url"
+        page-title="Board"
         banner-storage-key="cfb-predictions-banner-dismissed"
         seo-description="College football predictions with model confidence, spread projections, and betting value analysis."
     >

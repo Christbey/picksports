@@ -2,6 +2,7 @@
 
 namespace App\Models\MLB;
 
+use App\Models\SportEvent;
 use Database\Factories\MlbGameFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -28,6 +29,7 @@ class Game extends Model
     }
 
     protected $fillable = [
+        'sport_event_id',
         'espn_event_id',
         'espn_uid',
         'season',
@@ -99,6 +101,11 @@ class Game extends Model
     public function homeTeam(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'home_team_id');
+    }
+
+    public function sportEvent(): BelongsTo
+    {
+        return $this->belongsTo(SportEvent::class);
     }
 
     public function awayTeam(): BelongsTo

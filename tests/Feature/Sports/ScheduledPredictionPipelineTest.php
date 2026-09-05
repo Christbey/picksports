@@ -76,6 +76,9 @@ it('refreshes MLB snapshots shadow inference and decisions after every odds sync
     $predictionRefresh = $events->first(
         fn ($event): bool => $event->description === 'MLB: Refresh Predictions After Odds Sync'
     );
+    $dailyPicksRefresh = $events->first(
+        fn ($event): bool => $event->description === 'MLB: Refresh Daily Picks After Odds Sync'
+    );
     $shadowRefresh = $events->first(
         fn ($event): bool => $event->description === 'MLB: Refresh Tabular Shadow After Odds Sync'
     );
@@ -89,6 +92,8 @@ it('refreshes MLB snapshots shadow inference and decisions after every odds sync
     expect((string) $predictionRefresh?->command)
         ->toContain('mlb:generate-predictions --season=')
         ->and($predictionRefresh?->expression)->toBe('30 8,12,16,20 * * *')
+        ->and((string) $dailyPicksRefresh?->command)->toContain('mlb:generate-daily-picks --today --season=')
+        ->and($dailyPicksRefresh?->expression)->toBe('35 8,12,16,20 * * *')
         ->and((string) $shadowRefresh?->command)->toContain('mlb:run-tabular-shadow --skip-decisions')
         ->and($shadowRefresh?->expression)->toBe('50 8,12,16,20 * * *')
         ->and((string) $periodRefresh?->command)->toContain('mlb:run-period-shadow --skip-decisions')
@@ -96,7 +101,7 @@ it('refreshes MLB snapshots shadow inference and decisions after every odds sync
         ->and((string) $decisionRefresh?->command)->toContain('sports:record-shadow-bet-decisions --sport=mlb')
         ->and($decisionRefresh?->expression)->toBe('58 8,12,16,20 * * *');
 
-    foreach ([$predictionRefresh, $shadowRefresh, $periodRefresh, $decisionRefresh] as $event) {
+    foreach ([$predictionRefresh, $dailyPicksRefresh, $shadowRefresh, $periodRefresh, $decisionRefresh] as $event) {
         expect($event)->not->toBeNull()
             ->and($event->withoutOverlapping)->toBeTrue()
             ->and($event->runInBackground)->toBeTrue();
@@ -108,6 +113,26 @@ it('refreshes MLB snapshots shadow inference and decisions after every odds sync
         expect($filters->getValue($event))->not->toBeEmpty()
             ->and($afterCallbacks->getValue($event))->toHaveCount(2);
     }
+});
+
+it('reconciles the previous MLB scoreboard before nightly grading', function () {
+    $events = collect(app(Schedule::class)->events());
+    $scoreboard = $events->first(
+        fn ($event): bool => $event->description === 'MLB: Reconcile Previous Day Scoreboard'
+    );
+    $lineScores = $events->first(
+        fn ($event): bool => $event->description === 'MLB: Repair Missing Line Scores'
+    );
+    $grading = $events->first(
+        fn ($event): bool => str_contains((string) $event->command, 'mlb:grade-predictions --season=')
+    );
+
+    expect($scoreboard)->not->toBeNull()
+        ->and((string) $scoreboard?->command)->toContain('espn:sync-mlb-games-scoreboard')
+        ->and((string) $scoreboard?->command)->toContain('--sync')
+        ->and($scoreboard?->expression)->toBe('5 4 * * *')
+        ->and($lineScores?->expression)->toBe('10 4 * * *')
+        ->and($grading?->expression)->toBe('30 4 * * *');
 });
 
 it('schedules bounded single-server weekly model training for MLB and NFL', function () {

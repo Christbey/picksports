@@ -18,6 +18,7 @@ use App\Models\WCBB\TeamMetric as WcbbTeamMetric;
 use App\Models\WNBA\Team as WnbaTeam;
 use App\Models\WNBA\TeamMetric as WnbaTeamMetric;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
 
@@ -374,6 +375,20 @@ it('derives mlb team metric records from completed games when stored rows are st
         'offensive_rating' => 132.4,
         'calculation_date' => '2026-06-12',
     ]);
+    createV2TeamMetricContractMetric(MlbTeamMetric::class, [
+        'team_id' => $opponent->id,
+        'season' => 2026,
+        'season_type' => (string) config('mlb.season.types.regular', 2),
+        'wins' => 0,
+        'losses' => 0,
+        'offensive_rating' => 128.1,
+        'calculation_date' => '2026-06-12',
+    ]);
+
+    $queries = [];
+    DB::listen(function ($query) use (&$queries): void {
+        $queries[] = $query->sql;
+    });
 
     $response = $this->getJson('/api/v2/sports/mlb/metrics/teams?season=2026&per_page=5')
         ->assertOk();
@@ -385,7 +400,8 @@ it('derives mlb team metric records from completed games when stored rows are st
         ->and($row['losses'])->toBe(1)
         ->and($row['games_played'])->toBe(2)
         ->and($row['record_label'])->toBe('1-1')
-        ->and($row['record']['source'])->toBe('derived_games');
+        ->and($row['record']['source'])->toBe('derived_games')
+        ->and(collect($queries)->filter(fn (string $query): bool => str_contains($query, 'select "id", "home_team_id"') && str_contains($query, 'from "mlb_games"'))->count())->toBe(1);
 });
 
 it('lists v2 team metric seasons and latest team metric with metadata', function (

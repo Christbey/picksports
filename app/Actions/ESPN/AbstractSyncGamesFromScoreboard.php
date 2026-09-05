@@ -5,6 +5,7 @@ namespace App\Actions\ESPN;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Services\ESPN\BaseEspnService;
 use App\Services\GameFinalizationDispatcher;
+use App\Services\Sports\SportEventIdentitySynchronizer;
 use App\Support\EspnGameStatusResolver;
 use Illuminate\Database\Eloquent\Model;
 
@@ -223,6 +224,8 @@ abstract class AbstractSyncGamesFromScoreboard
                 app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game, null);
             }
 
+            app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game);
+
             if ($game->home_team_id && $game->away_team_id) {
                 $this->updateLivePrediction->execute($game);
             }
@@ -373,6 +376,7 @@ abstract class AbstractSyncGamesFromScoreboard
 
         $game->update($updates);
         $this->touchSyncedGame($game);
+        app(SportEventIdentitySynchronizer::class)->sync($this->sportKey(), $game->fresh());
 
         app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
     }

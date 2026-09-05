@@ -18,6 +18,7 @@ use App\Models\NFL\TeamStat;
 use App\Models\PredictionFeatureSnapshot;
 use App\Support\NflBetRuleEngine;
 use App\Support\NflValidatedSignalCombos;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 
 uses()->group('nfl', 'predictions');
@@ -1288,7 +1289,7 @@ it('uses nflverse depth charts and weekly stats as qb form fallback', function (
         ->and((float) data_get($prediction->model_metadata, 'qb_form.away.prior_yards_per_attempt'))->toBe(5.0);
 });
 
-it('uses nflverse injury reports with depth rank weighting when active injuries are missing', function () {
+it('merges nflverse injury reports with partial espn injury state', function () {
     config([
         'nfl.predictions.true_epa.enabled' => false,
         'nfl.predictions.preseason_signal.enabled' => false,
@@ -1346,6 +1347,21 @@ it('uses nflverse injury reports with depth rank weighting when active injuries 
         'updated_at' => now(),
     ]);
 
+    $espnPlayer = Player::factory()->create([
+        'team_id' => $game->home_team_id,
+        'full_name' => 'Separate ESPN Player',
+        'position' => 'CB',
+    ]);
+    PlayerInjury::query()->create([
+        'player_id' => $espnPlayer->id,
+        'team_id' => $game->home_team_id,
+        'injury_key' => 'partial-espn-injury',
+        'status' => 'Questionable',
+        'injury_date' => '2025-09-10',
+        'source_updated_at' => '2025-09-12 12:00:00',
+        'is_active' => true,
+    ]);
+
     app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
 
     $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
@@ -1353,8 +1369,40 @@ it('uses nflverse injury reports with depth rank weighting when active injuries 
     expect(data_get($prediction->model_metadata, 'depth_chart_injuries.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'depth_chart_injuries.home_nflverse_rows'))->toBe(1)
         ->and(data_get($prediction->model_metadata, 'depth_chart_injuries.nflverse_source'))->toBe('nflverse_injuries')
+        ->and((float) data_get($prediction->model_metadata, 'depth_chart_injuries.home_questionable_weighted'))->toBeGreaterThan(0.0)
         ->and((float) data_get($prediction->model_metadata, 'depth_chart_injuries.home_out_weighted'))->toBeGreaterThan(1.0)
         ->and((float) data_get($prediction->model_metadata, 'depth_chart_injuries.spread_adjustment'))->toBeLessThan(0.0);
+});
+
+it('does not create injury reason codes from statuses learned after kickoff', function () {
+    config([
+        'nfl.predictions.true_epa.enabled' => false,
+        'nfl.predictions.depth_chart_injuries.enabled' => true,
+    ]);
+
+    $game = createNflPredictionTestGame();
+    $player = Player::factory()->create([
+        'team_id' => $game->home_team_id,
+        'position' => 'WR',
+    ]);
+    PlayerInjury::query()->create([
+        'player_id' => $player->id,
+        'team_id' => $game->home_team_id,
+        'injury_key' => 'learned-after-kickoff',
+        'status' => 'Out',
+        'injury_date' => Carbon::parse($game->game_date)->addDay()->toDateString(),
+        'source_updated_at' => Carbon::parse($game->game_date)->addDay(),
+        'is_active' => true,
+    ]);
+
+    app(GeneratePredictionFromHistoricalElo::class)->execute($game->fresh(['homeTeam', 'awayTeam']));
+
+    $prediction = Prediction::query()->where('game_id', $game->id)->firstOrFail();
+
+    expect(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))
+        ->not->toContain('wr1_out_risk')
+        ->and((float) data_get($prediction->model_metadata, 'depth_chart_injuries.home_out_weighted'))
+        ->toBe(0.0);
 });
 
 it('blends ol versus dl matchup using only prior team line stats', function () {

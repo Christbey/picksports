@@ -8,8 +8,9 @@ import { nflPredictions } from '@/routes';
 <template>
     <PredictionsPageShell
         title="NFL Predictions"
-        breadcrumb-title="NFL Predictions"
-        :breadcrumb-href="nflPredictions().url"
+        sport-title="NFL"
+        :sport-href="nflPredictions().url"
+        page-title="Board"
         banner-storage-key="nfl-predictions-banner-dismissed"
         seo-description="NFL predictions, spreads, totals, and confidence picks powered by PickSports analytics."
     >

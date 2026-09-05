@@ -270,8 +270,9 @@ onMounted(() => {
 
     <PredictionsPageShell
         title="MLB Futures"
-        breadcrumb-title="MLB Futures"
-        breadcrumb-href="/mlb/futures"
+        sport-title="MLB"
+        sport-href="/mlb/predictions"
+        page-title="Futures"
         banner-storage-key="mlb-futures-banner-dismissed"
         seo-description="MLB postseason forecast with playoff odds, LCS probability, World Series probability, and championship futures."
     >

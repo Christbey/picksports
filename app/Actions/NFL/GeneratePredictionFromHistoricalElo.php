@@ -26,6 +26,7 @@ use App\Support\Odds\MarketSpread;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 class GeneratePredictionFromHistoricalElo
@@ -2686,41 +2687,13 @@ class GeneratePredictionFromHistoricalElo
             return $counts;
         }
 
-        $asOf = $this->gameKickoffAt($game) ?? Carbon::parse($game->game_date)->startOfDay();
-        $snapshot = PlayerInjurySnapshot::query()
-            ->with('entries')
-            ->where('team_id', $teamId)
-            ->where('observed_at', '<=', $asOf)
-            ->where(function ($query) use ($asOf): void {
-                $query->whereNull('source_updated_at')
-                    ->orWhere('source_updated_at', '<=', $asOf);
-            })
-            ->latest('observed_at')
-            ->latest('id')
-            ->first();
-
-        if ($snapshot !== null) {
-            $injuries = $snapshot->entries;
-            $counts['snapshot_uuid'] = $snapshot->snapshot_uuid;
-            $counts['snapshot_observed_at'] = $snapshot->observed_at?->toIso8601String();
-            $counts['source'] = 'append_only_snapshot';
-        } else {
-            $injuries = PlayerInjury::query()
-                ->where('team_id', $teamId)
-                ->where('is_active', true)
-                ->whereNotNull('source_updated_at')
-                ->where('source_updated_at', '<=', $asOf)
-                ->where(function ($query) use ($asOf): void {
-                    $query->whereNull('injury_date')
-                        ->orWhereDate('injury_date', '<=', $asOf->toDateString());
-                })
-                ->get(['player_id', 'status', 'return_date', 'source_updated_at']);
-            $counts['snapshot_uuid'] = null;
-            $counts['snapshot_observed_at'] = null;
-            $counts['source'] = $injuries->isEmpty()
-                ? 'missing_point_in_time_injury_snapshot'
-                : 'timestamped_current_state';
-        }
+        $state = $this->pointInTimeInjuryStateForTeam($teamId, $game);
+        $asOf = $state['as_of'];
+        $injuries = $state['entries'];
+        $counts['snapshot_uuid'] = $state['snapshot_uuid'];
+        $counts['snapshot_observed_at'] = $state['snapshot_observed_at'];
+        $counts['source'] = $state['source'];
+        $coveredPlayerNames = [];
 
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
@@ -2732,6 +2705,11 @@ class GeneratePredictionFromHistoricalElo
                 continue;
             }
 
+            $playerName = $this->normalizedPlayerName($injury->player?->full_name);
+            if ($playerName !== null) {
+                $coveredPlayerNames[] = $playerName;
+            }
+
             $counts[$bucket] += $this->depthChartImpactService->injuryMultiplier(
                 'nfl',
                 $teamId,
@@ -2741,8 +2719,8 @@ class GeneratePredictionFromHistoricalElo
             );
         }
 
-        $nflverseCounts = $this->nflverseInjuryCountsForTeam($teamId, $season, $game);
-        if ($nflverseCounts['rows'] > 0 && ($counts['out'] + $counts['questionable']) <= 0.0) {
+        $nflverseCounts = $this->nflverseInjuryCountsForTeam($teamId, $season, $game, $coveredPlayerNames);
+        if ($nflverseCounts['rows'] > 0) {
             $counts['out'] += $nflverseCounts['out'];
             $counts['questionable'] += $nflverseCounts['questionable'];
             $counts['nflverse_rows'] = $nflverseCounts['rows'];
@@ -2756,10 +2734,71 @@ class GeneratePredictionFromHistoricalElo
     }
 
     /**
+     * @return array{
+     *     entries:Collection<int,Model>,
+     *     as_of:CarbonInterface,
+     *     source:string,
+     *     snapshot_uuid:?string,
+     *     snapshot_observed_at:?string
+     * }
+     */
+    protected function pointInTimeInjuryStateForTeam(int $teamId, Game $game): array
+    {
+        $asOf = $this->gameKickoffAt($game) ?? Carbon::parse($game->game_date)->startOfDay();
+        $snapshot = PlayerInjurySnapshot::query()
+            ->with('entries.player')
+            ->where('team_id', $teamId)
+            ->where('observed_at', '<=', $asOf)
+            ->where(function ($query) use ($asOf): void {
+                $query->whereNull('source_updated_at')
+                    ->orWhere('source_updated_at', '<=', $asOf);
+            })
+            ->latest('observed_at')
+            ->latest('id')
+            ->first();
+
+        if ($snapshot !== null) {
+            return [
+                'entries' => $snapshot->entries,
+                'as_of' => $asOf,
+                'source' => 'append_only_snapshot',
+                'snapshot_uuid' => $snapshot->snapshot_uuid,
+                'snapshot_observed_at' => $snapshot->observed_at?->toIso8601String(),
+            ];
+        }
+
+        $entries = PlayerInjury::query()
+            ->with('player')
+            ->where('team_id', $teamId)
+            ->where('is_active', true)
+            ->whereNotNull('source_updated_at')
+            ->where('source_updated_at', '<=', $asOf)
+            ->where(function ($query) use ($asOf): void {
+                $query->whereNull('injury_date')
+                    ->orWhereDate('injury_date', '<=', $asOf->toDateString());
+            })
+            ->get();
+
+        return [
+            'entries' => $entries,
+            'as_of' => $asOf,
+            'source' => $entries->isEmpty()
+                ? 'missing_point_in_time_injury_snapshot'
+                : 'timestamped_current_state',
+            'snapshot_uuid' => null,
+            'snapshot_observed_at' => null,
+        ];
+    }
+
+    /**
      * @return array{out:float,questionable:float,rows:int,positions:list<string>}
      */
-    protected function nflverseInjuryCountsForTeam(int $teamId, int $season, Game $game): array
-    {
+    protected function nflverseInjuryCountsForTeam(
+        int $teamId,
+        int $season,
+        Game $game,
+        array $excludedPlayerNames = [],
+    ): array {
         $empty = [
             'out' => 0.0,
             'questionable' => 0.0,
@@ -2796,14 +2835,19 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $counts = $empty;
-        $counts['rows'] = $rows->count();
 
         foreach ($rows as $row) {
+            $playerName = $this->normalizedPlayerName($row->full_name ?? null);
+            if ($playerName !== null && in_array($playerName, $excludedPlayerNames, true)) {
+                continue;
+            }
+
             $bucket = $this->nflverseInjuryStatusBucket($row);
             if ($bucket === null) {
                 continue;
             }
 
+            $counts['rows']++;
             $position = strtoupper((string) ($row->position ?? ''));
             $multiplier = $this->nflverseDepthInjuryMultiplier($team, (string) ($row->gsis_id ?? ''), $position, $game);
             $counts[$bucket] += $multiplier;
@@ -2814,9 +2858,15 @@ class GeneratePredictionFromHistoricalElo
 
         $counts['out'] = round($counts['out'], 2);
         $counts['questionable'] = round($counts['questionable'], 2);
-        $counts['positions'] = array_values(array_unique($counts['positions']));
 
         return $counts;
+    }
+
+    protected function normalizedPlayerName(mixed $name): ?string
+    {
+        $normalized = preg_replace('/[^a-z0-9]+/', '', strtolower(trim((string) $name)));
+
+        return $normalized === '' ? null : $normalized;
     }
 
     protected function nflverseInjuryStatusBucket(object $row): ?string
@@ -2844,15 +2894,8 @@ class GeneratePredictionFromHistoricalElo
 
     protected function nflverseDepthInjuryMultiplier(string $team, string $gsisId, string $position, Game $game): float
     {
-        $base = 1.0;
-        if ($position === 'QB') {
-            $base *= (float) config('nfl.predictions.depth_chart.qb_multiplier', 2.40);
-        } elseif (in_array($position, ['WR', 'RB', 'TE'], true)) {
-            $base *= (float) config('nfl.predictions.depth_chart.skill_multiplier', 1.45);
-        }
-
         if ($gsisId === '') {
-            return round($base, 2);
+            return 1.0;
         }
 
         $gameDate = $this->asDate($game->game_date);
@@ -2873,9 +2916,10 @@ class GeneratePredictionFromHistoricalElo
             ->first();
 
         if (! $entry) {
-            return round($base, 2);
+            return 1.0;
         }
 
+        $base = 1.0;
         $rank = is_numeric($entry->depth_rank ?? null) ? (int) $entry->depth_rank : null;
         if ($rank === 1) {
             $base *= (float) config('nfl.predictions.depth_chart.starter_multiplier', 1.35);
@@ -2883,10 +2927,16 @@ class GeneratePredictionFromHistoricalElo
             $base *= (float) config('nfl.predictions.depth_chart.rotation_multiplier', 1.10);
         }
 
+        if ($rank === 1 && $position === 'QB') {
+            $base = max($base, (float) config('nfl.predictions.depth_chart.qb_multiplier', 2.40));
+        } elseif ($rank !== null && $rank <= 2 && in_array($position, ['WR', 'RB', 'TE'], true)) {
+            $base = max($base, (float) config('nfl.predictions.depth_chart.skill_multiplier', 1.45));
+        }
+
         $role = strtoupper((string) ($entry->depth_position ?? $position));
         $roleMultipliers = (array) config('nfl.predictions.depth_chart.role_multipliers', []);
-        if (isset($roleMultipliers[$role]) && is_numeric($roleMultipliers[$role])) {
-            $base *= (float) $roleMultipliers[$role];
+        if ($rank === 1 && isset($roleMultipliers[$role]) && is_numeric($roleMultipliers[$role])) {
+            $base = max($base, (float) $roleMultipliers[$role]);
         }
 
         return round($base, 2);
@@ -4442,7 +4492,7 @@ class GeneratePredictionFromHistoricalElo
             ),
         ];
 
-        foreach (['QB', 'RB', 'WR_TE', 'DL_EDGE', 'LB', 'DB', 'ST'] as $group) {
+        foreach (['QB', 'OL', 'RB', 'WR_TE', 'DL_EDGE', 'LB', 'DB', 'ST'] as $group) {
             $edges[$group] = $this->nullableGradeDiff(
                 data_get($home, "groups.{$group}.grade"),
                 data_get($away, "groups.{$group}.grade")
@@ -4674,6 +4724,7 @@ class GeneratePredictionFromHistoricalElo
             $groupCodeMap = [
                 'overall' => 'overall_roster_grade',
                 'QB' => 'graded_qb_room',
+                'OL' => 'graded_offensive_line',
                 'RB' => 'graded_run_game',
                 'WR_TE' => 'graded_skill_group',
                 'DL_EDGE' => 'graded_defensive_front',
@@ -5595,25 +5646,33 @@ class GeneratePredictionFromHistoricalElo
             'unknown_return_days' => (int) config('nfl.predictions.injury_scope.unknown_return_days', 21),
         ];
 
-        $positions = PlayerInjury::query()
-            ->with('player')
-            ->where('team_id', $teamId)
-            ->where('is_active', true)
-            ->get()
-            ->filter(function (PlayerInjury $injury) use ($game, &$counts): bool {
+        $state = $this->pointInTimeInjuryStateForTeam($teamId, $game);
+        $coveredPlayerNames = [];
+        $positions = $state['entries']
+            ->filter(function (Model $injury) use ($game, &$counts): bool {
                 return $this->injuryStatusBucket((string) ($injury->status ?? '')) !== null
                     && $this->injuryAppliesToGame($injury, $game, $counts);
             })
-            ->map(fn (PlayerInjury $injury): string => strtoupper((string) ($injury->player?->position ?? '')))
+            ->map(function (Model $injury) use (&$coveredPlayerNames): string {
+                $playerName = $this->normalizedPlayerName($injury->player?->full_name);
+                if ($playerName !== null) {
+                    $coveredPlayerNames[] = $playerName;
+                }
+
+                return strtoupper((string) ($injury->player?->position ?? ''));
+            })
             ->filter()
             ->values()
             ->all();
 
-        if ($positions === []) {
-            $positions = $this->nflverseInjuryCountsForTeam($teamId, (int) $game->season, $game)['positions'] ?? [];
-        }
+        $nflversePositions = $this->nflverseInjuryCountsForTeam(
+            $teamId,
+            (int) $game->season,
+            $game,
+            $coveredPlayerNames,
+        )['positions'] ?? [];
 
-        return array_values(array_unique($positions));
+        return array_values(array_merge($positions, $nflversePositions));
     }
 
     /**

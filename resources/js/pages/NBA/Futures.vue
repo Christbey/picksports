@@ -368,8 +368,9 @@ watch(
 
     <PredictionsPageShell
         title="NBA Futures"
-        breadcrumb-title="NBA Futures"
-        breadcrumb-href="/nba/futures"
+        sport-title="NBA"
+        sport-href="/nba/predictions"
+        page-title="Futures"
         banner-storage-key="nba-futures-banner-dismissed"
         seo-description="NBA postseason forecast with playoff odds, conference finals odds, Finals probability, and championship futures."
     >

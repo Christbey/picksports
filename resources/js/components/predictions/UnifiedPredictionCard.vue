@@ -5,7 +5,9 @@ import {
     ChevronDown,
     ChevronRight,
     Clock,
+    ExternalLink,
     Gauge,
+    Globe2,
     Radio,
 } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
@@ -710,6 +712,39 @@ function aiAnalysis() {
     return props.prediction.ai_analysis ?? null;
 }
 
+function externalGameContext() {
+    return aiAnalysis()?.external_game_context ?? null;
+}
+
+function hasExternalGameContext(): boolean {
+    return externalGameContext() !== null;
+}
+
+function externalContextConfidenceLabel(): string | null {
+    const confidence = externalGameContext()?.confidence;
+
+    return typeof confidence === 'number'
+        ? `${Math.round(confidence)} Context Trust`
+        : null;
+}
+
+function externalContextAdjustmentLabel(): string | null {
+    const adjustment = externalGameContext()?.deterministic_adjustment;
+    if (!adjustment?.eligible) return null;
+
+    const parts = [];
+    if (typeof adjustment.home_margin_points === 'number') {
+        parts.push(
+            `Spread ${formatSignedNumber(adjustment.home_margin_points)} pts`,
+        );
+    }
+    if (typeof adjustment.total_points === 'number') {
+        parts.push(`Total ${formatSignedNumber(adjustment.total_points)} pts`);
+    }
+
+    return parts.length ? parts.join(' · ') : null;
+}
+
 function aiBetClassificationLabel(): string | null {
     const classification = aiAnalysis()?.bet_classification;
     if (!classification) return null;
@@ -1192,32 +1227,22 @@ const canSavePick = computed(
     () =>
         predictionType !== null &&
         predictionId() !== null &&
-        predictionModelClass() !== null,
+        predictionSport() !== null,
 );
 
 watch(
-    () =>
-        `${predictionModelClass() ?? 'unknown'}:${predictionId() ?? 'unknown'}`,
+    () => `${predictionSport() ?? 'unknown'}:${predictionId() ?? 'unknown'}`,
     () => {
         void loadTrackingSummary();
     },
     { immediate: true },
 );
 
-function predictionModelClass(): string | null {
+function predictionSport(): string | null {
     const sport = (props.sport ?? '').toLowerCase();
+    const supportedSports = ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb'];
 
-    const map: Record<string, string> = {
-        nba: 'App\\Models\\NBA\\Prediction',
-        nfl: 'App\\Models\\NFL\\Prediction',
-        cbb: 'App\\Models\\CBB\\Prediction',
-        wcbb: 'App\\Models\\WCBB\\Prediction',
-        mlb: 'App\\Models\\MLB\\Prediction',
-        cfb: 'App\\Models\\CFB\\Prediction',
-        wnba: 'App\\Models\\WNBA\\Prediction',
-    };
-
-    return map[sport] ?? null;
+    return supportedSports.includes(sport) ? sport : null;
 }
 
 function predictionId(): number | null {
@@ -1253,7 +1278,7 @@ function openSaveDialog(option: SavePickOption): void {
 
 function trackingKey(): string | null {
     const id = predictionId();
-    const type = predictionModelClass();
+    const type = predictionSport();
 
     if (id === null || type === null) {
         return null;
@@ -1281,7 +1306,7 @@ async function loadTrackingSummary(force = false): Promise<void> {
         const response = await api.userBets.index<UserBetsTrackingResponse>({
             query: {
                 prediction_id: predictionId(),
-                prediction_type: predictionModelClass(),
+                prediction_sport: predictionSport(),
             },
         });
 
@@ -1703,6 +1728,56 @@ function saveOptions(): SavePickOption[] {
                 </div>
             </Link>
 
+            <section
+                v-if="hasExternalGameContext()"
+                class="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3"
+                aria-label="Sourced game context"
+            >
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div
+                        class="flex items-center gap-2 text-xs font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-300"
+                    >
+                        <Globe2 class="h-3.5 w-3.5" />
+                        Current web context
+                    </div>
+                    <span
+                        v-if="externalContextConfidenceLabel()"
+                        class="rounded-full border border-violet-500/20 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:text-violet-300"
+                    >
+                        {{ externalContextConfidenceLabel() }}
+                    </span>
+                </div>
+                <p class="mt-2 text-sm text-foreground/90">
+                    {{ externalGameContext()?.summary }}
+                </p>
+                <p
+                    v-if="externalContextAdjustmentLabel()"
+                    class="mt-1 text-xs font-medium text-muted-foreground"
+                >
+                    Bounded model adjustment:
+                    {{ externalContextAdjustmentLabel() }}
+                </p>
+                <div
+                    v-if="externalGameContext()?.sources.length"
+                    class="mt-2 flex flex-wrap gap-x-3 gap-y-1"
+                >
+                    <a
+                        v-for="source in externalGameContext()?.sources.slice(
+                            0,
+                            3,
+                        )"
+                        :key="source.url"
+                        :href="source.url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="inline-flex items-center gap-1 text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
+                    >
+                        {{ source.publisher }}
+                        <ExternalLink class="h-3 w-3" />
+                    </a>
+                </div>
+            </section>
+
             <div
                 v-if="canSavePick && !isFinal()"
                 class="mt-4 border-t border-border/70 pt-4"
@@ -1780,10 +1855,10 @@ function saveOptions(): SavePickOption[] {
         </div>
 
         <SavePickDialog
-            v-if="predictionId() !== null && predictionModelClass()"
+            v-if="predictionId() !== null && predictionSport()"
             :open="isSaveDialogOpen"
             :prediction-id="predictionId()!"
-            :prediction-type="predictionModelClass()!"
+            :prediction-sport="predictionSport()!"
             :option="activeSaveOption"
             :existing-bet="
                 activeSaveOption ? trackedBetForOption(activeSaveOption) : null

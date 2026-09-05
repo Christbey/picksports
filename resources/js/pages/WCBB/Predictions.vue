@@ -8,8 +8,9 @@ import { wcbbPredictions } from '@/routes';
 <template>
     <PredictionsPageShell
         title="WCBB Predictions"
-        breadcrumb-title="WCBB Predictions"
-        :breadcrumb-href="wcbbPredictions().url"
+        sport-title="WCBB"
+        :sport-href="wcbbPredictions().url"
+        page-title="Board"
         banner-storage-key="wcbb-predictions-banner-dismissed"
         seo-description="Women's college basketball predictions and confidence-based picks from PickSports analytics."
     >

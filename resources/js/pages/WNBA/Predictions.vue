@@ -8,8 +8,9 @@ import { wnbaPredictions } from '@/routes';
 <template>
     <PredictionsPageShell
         title="WNBA Predictions"
-        breadcrumb-title="WNBA Predictions"
-        :breadcrumb-href="wnbaPredictions().url"
+        sport-title="WNBA"
+        :sport-href="wnbaPredictions().url"
+        page-title="Board"
         banner-storage-key="wnba-predictions-banner-dismissed"
         seo-description="WNBA predictions and betting insights with spread, total, and confidence model outputs."
     >

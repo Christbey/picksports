@@ -56,7 +56,7 @@ test('guests cannot access bet tracker API', function () {
 test('guests cannot access bet tracker API v2', function () {
     $response = $this->get('/api/v2/user-bets');
 
-    $response->assertRedirect();
+    $response->assertUnauthorized();
 });
 
 test('users can log a new bet via API', function () {
@@ -64,7 +64,7 @@ test('users can log a new bet via API', function () {
 
     $response = $this->actingAs($user)->post('/api/v1/user-bets', [
         'prediction_id' => 1,
-        'prediction_type' => 'App\Models\NBA\Prediction',
+        'prediction_sport' => 'nba',
         'bet_amount' => 100.00,
         'odds' => '-110',
         'bet_type' => 'spread',
@@ -105,7 +105,7 @@ test('users can log a new bet via API v2', function () {
 
     $response = $this->actingAs($user)->post('/api/v2/user-bets', [
         'prediction_id' => 1,
-        'prediction_type' => 'App\Models\NBA\Prediction',
+        'prediction_sport' => 'nba',
         'bet_amount' => 100.00,
         'odds' => '-110',
         'bet_type' => 'spread',
@@ -325,7 +325,7 @@ test('selection side must match bet type', function () {
 
     $response = $this->actingAs($user)->post('/api/v1/user-bets', [
         'prediction_id' => 1,
-        'prediction_type' => 'App\Models\NBA\Prediction',
+        'prediction_sport' => 'nba',
         'bet_amount' => 100.00,
         'odds' => '-110',
         'bet_type' => 'moneyline',

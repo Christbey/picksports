@@ -8,8 +8,9 @@ import { cbbPredictions } from '@/routes';
 <template>
     <PredictionsPageShell
         title="CBB Predictions"
-        breadcrumb-title="CBB Predictions"
-        :breadcrumb-href="cbbPredictions().url"
+        sport-title="CBB"
+        :sport-href="cbbPredictions().url"
+        page-title="Board"
         banner-storage-key="cbb-predictions-banner-dismissed"
         seo-description="College basketball predictions and model-driven picks for spreads, totals, and value edges."
     >

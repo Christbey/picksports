@@ -2,6 +2,7 @@
 
 namespace App\Models\CFB;
 
+use App\Models\SportEvent;
 use Database\Factories\CfbGameFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -22,6 +23,7 @@ class Game extends Model
     }
 
     protected $fillable = [
+        'sport_event_id',
         'espn_id',
         'espn_event_id',
         'espn_uid',
@@ -74,6 +76,11 @@ class Game extends Model
     public function homeTeam(): BelongsTo
     {
         return $this->belongsTo(Team::class, 'home_team_id');
+    }
+
+    public function sportEvent(): BelongsTo
+    {
+        return $this->belongsTo(SportEvent::class);
     }
 
     public function awayTeam(): BelongsTo

@@ -84,7 +84,7 @@ test('wnba prediction resource exposes betting value and stored ai analysis', fu
     $request = Request::create('/');
     $request->setUserResolver(fn () => $user);
 
-    $data = PredictionResource::make($prediction)->toArray($request);
+    $data = resolvePreparedPredictionResource(PredictionResource::class, $prediction, 'wnba', $request);
 
     expect($data['betting_value'])->toBeArray()
         ->and($data['betting_value'][0]['type'])->toBe('spread')

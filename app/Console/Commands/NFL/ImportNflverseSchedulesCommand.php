@@ -6,6 +6,7 @@ use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 use App\Models\NFL\GameWeather;
 use App\Models\NFL\Team;
+use App\Services\Sports\SportEventIdentitySynchronizer;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
@@ -90,6 +91,7 @@ class ImportNflverseSchedulesCommand extends Command
                 ]);
             }
 
+            app(SportEventIdentitySynchronizer::class)->sync('nfl', $game);
             $existing ? $updated++ : $imported++;
 
             if ($this->storeClosingLineSnapshot($game, $row)) {

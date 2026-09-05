@@ -295,8 +295,9 @@ onMounted(() => {
 
     <PredictionsPageShell
         title="WCBB Tournament Forecast"
-        breadcrumb-title="WCBB Tournament Forecast"
-        breadcrumb-href="/wcbb/tournament-forecast"
+        sport-title="WCBB"
+        sport-href="/wcbb/predictions"
+        page-title="Tournament Forecast"
         banner-storage-key="wcbb-tournament-forecast-banner-dismissed"
         seo-description="March Madness forecast with automatic bid probability, at-large probability, First Four risk, and championship odds."
     >

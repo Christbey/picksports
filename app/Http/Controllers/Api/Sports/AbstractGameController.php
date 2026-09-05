@@ -2,8 +2,12 @@
 
 namespace App\Http\Controllers\Api\Sports;
 
+use App\Models\User;
+use App\Services\Predictions\PredictionResourcePreparer;
 use App\Services\Sports\GameMatchupContextService;
 use App\Support\SportsViewCache;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -11,6 +15,10 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 abstract class AbstractGameController extends AbstractSportsApiController
 {
+    public function __construct(
+        private readonly PredictionResourcePreparer $predictionResourcePreparer,
+    ) {}
+
     protected const GAME_MODEL = '';
 
     protected const TEAM_MODEL = '';
@@ -44,6 +52,14 @@ abstract class AbstractGameController extends AbstractSportsApiController
         return static::GAME_RESOURCE;
     }
 
+    protected function sportSlug(): ?string
+    {
+        $parts = explode('\\', $this->getGameModel());
+        $modelNamespace = $parts[count($parts) - 2] ?? null;
+
+        return $modelNamespace ? strtolower($modelNamespace) : null;
+    }
+
     /**
      * @return array<int, string>
      */
@@ -64,6 +80,11 @@ abstract class AbstractGameController extends AbstractSportsApiController
     protected function additionalGameRelations(): array
     {
         return [];
+    }
+
+    protected function serializesPrediction(): bool
+    {
+        return false;
     }
 
     /**
@@ -96,6 +117,8 @@ abstract class AbstractGameController extends AbstractSportsApiController
             ->orderByDesc('game_date')
             ->paginate($this->getPerPage($request));
 
+        $this->prepareNestedPredictions($games->getCollection(), $request);
+
         return $resourceClass::collection($games);
     }
 
@@ -114,6 +137,7 @@ abstract class AbstractGameController extends AbstractSportsApiController
 
         $game = $query->findOrFail($gameId);
         $game->setAttribute('matchup_context', app(GameMatchupContextService::class)->forGame($game));
+        $this->prepareNestedPredictions(new Collection([$game]), request());
 
         return new $resourceClass($game);
     }
@@ -211,6 +235,8 @@ abstract class AbstractGameController extends AbstractSportsApiController
             ->oldest('game_date')
             ->paginate($perPage);
 
+        $this->prepareNestedPredictions($games->getCollection(), $request);
+
         return $resourceClass::collection($games);
     }
 
@@ -222,5 +248,41 @@ abstract class AbstractGameController extends AbstractSportsApiController
     protected function applyShowQueryFilters($query): void
     {
         //
+    }
+
+    /** @param Collection<int, Model> $games */
+    private function prepareNestedPredictions(Collection $games, Request $request): void
+    {
+        if (! $this->serializesPrediction()) {
+            return;
+        }
+
+        $predictions = new Collection;
+
+        foreach ($games as $game) {
+            if (! $game->relationLoaded('prediction')) {
+                continue;
+            }
+
+            $prediction = $game->getRelation('prediction');
+            if (! $prediction instanceof Model) {
+                continue;
+            }
+
+            $prediction->setRelation('game', $game);
+            $predictions->push($prediction);
+        }
+
+        if ($predictions->isEmpty()) {
+            return;
+        }
+
+        $user = $request->user();
+        $this->predictionResourcePreparer->prepare(
+            $predictions,
+            (string) $this->sportSlug(),
+            $user instanceof User ? $user : null,
+            includeGame: false,
+        );
     }
 }

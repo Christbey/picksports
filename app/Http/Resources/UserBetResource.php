@@ -14,11 +14,20 @@ class UserBetResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $predictionSport = $this->resource->normalizedPredictionSport();
+
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
             'prediction_id' => $this->prediction_id,
-            'prediction_type' => $this->prediction_type,
+            'prediction_sport' => $predictionSport?->value,
+            'prediction_reference' => $predictionSport !== null && $this->prediction_id !== null
+                ? [
+                    'sport' => $predictionSport->value,
+                    'id' => (int) $this->prediction_id,
+                    'event_id' => $this->whenLoaded('sportEvent', fn (): ?string => $this->sportEvent?->public_id),
+                ]
+                : null,
             'bet_amount' => $this->bet_amount,
             'odds' => $this->odds,
             'bet_type' => $this->bet_type,
@@ -32,7 +41,6 @@ class UserBetResource extends JsonResource
             'settled_at' => $this->settled_at?->toISOString(),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
-            'prediction' => $this->whenLoaded('prediction'),
         ];
     }
 }

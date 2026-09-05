@@ -221,6 +221,27 @@ return [
     */
 
     'predictions' => [
+        'canonical' => [
+            'elo_points_per_spread_point' => 25.0,
+            'metric_weight' => 0.50,
+            'minimum_metric_games' => 6,
+            'power_rating_weight' => 0.15,
+            'spread_output_regression_weight' => 0.10,
+            'spread_to_probability_coefficient' => 6.0,
+            'default_team_points' => 28.0,
+            'average_total' => 56.0,
+            'total_output_regression_weight' => 0.20,
+            'recent_spread_weight' => 0.10,
+            'turnover_spread_weight' => 0.20,
+            'fatigue_spread_weight' => 0.15,
+            'injury_rating_spread_weight' => 0.025,
+            'recent_total_weight' => 0.08,
+            'fatigue_total_weight' => 0.15,
+            'injury_out_spread_penalty' => 0.60,
+            'injury_questionable_spread_penalty' => 0.20,
+            'injury_out_total_penalty' => 0.25,
+            'injury_questionable_total_penalty' => 0.10,
+        ],
         /**
          * ELO points per predicted point spread
          * Calibrated to minimize spread prediction error

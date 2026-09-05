@@ -9,6 +9,7 @@ class SportsAiPredictionPayloadBuilder
 {
     public function __construct(
         private readonly SportsOperationalContextBuilder $operationalContextBuilder,
+        private readonly SportsExternalGameContextBuilder $externalGameContextBuilder,
     ) {}
 
     /**
@@ -29,8 +30,10 @@ class SportsAiPredictionPayloadBuilder
         $pickSide = $homeWinProbability !== null && $homeWinProbability >= 0.5 ? 'home' : 'away';
         $pickTeam = $pickSide === 'home' ? $homeTeam : $awayTeam;
 
+        $externalContext = $this->externalGameContextBuilder->build($sport, $game, $prediction);
+
         return [
-            'schema_version' => 'sports_ai_prediction_payload_v1',
+            'schema_version' => 'sports_ai_prediction_payload_v2',
             'sport' => $sport,
             'generated_at' => now()->toIso8601String(),
             'game' => [
@@ -66,6 +69,7 @@ class SportsAiPredictionPayloadBuilder
                 'market_context' => $this->arrayDataGet($prediction, 'model_metadata.market_context'),
             ],
             'operational_context' => $this->operationalContextBuilder->build($sport, $game),
+            'external_game_context' => $externalContext,
             'model_metadata' => $this->arrayAttribute($prediction, 'model_metadata'),
             'existing_narrative' => $this->arrayAttribute($prediction, 'narrative_json'),
             'raw_prediction_snapshot' => $this->predictionSnapshot($prediction),

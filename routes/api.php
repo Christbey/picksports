@@ -8,15 +8,17 @@ use Illuminate\Support\Facades\Route;
 // Load generic sport route definer
 $registerSportRoutes = require base_path('routes/api/sports.php');
 
-Route::prefix('v1')->group(function () use ($registerSportRoutes) {
+Route::prefix('v1')->name('v1.')->group(function () use ($registerSportRoutes) {
     $securityReportThrottle = app()->environment(['local', 'testing'])
         ? 'throttle:10000,1'
         : 'throttle:1000,1';
 
     Route::post('/security/reports/csp', [SecurityReportController::class, 'csp'])
-        ->middleware($securityReportThrottle);
+        ->middleware($securityReportThrottle)
+        ->name('security.reports.csp');
     Route::post('/security/reports/integrity', [SecurityReportController::class, 'integrity'])
-        ->middleware($securityReportThrottle);
+        ->middleware($securityReportThrottle)
+        ->name('security.reports.integrity');
 
     Route::prefix('auth')->name('auth.')->middleware('v1.auth-api-usage')->group(function (): void {
         Route::post('/login', [TokenAuthController::class, 'login'])

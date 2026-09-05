@@ -45,7 +45,13 @@ class PlayerPositionGradeService
             ->values()
             ->all();
         $overallGrade = $this->weightedGroupAverage(collect($groups));
-        $availability = $this->availabilityScenarios($teamId, $players, $overallGrade, $asOf);
+        $availability = $this->availabilityScenarios(
+            $teamId,
+            $players,
+            collect($groups),
+            $overallGrade,
+            $asOf,
+        );
 
         return [
             'team_id' => $teamId,
@@ -84,10 +90,12 @@ class PlayerPositionGradeService
     private function availabilityScenarios(
         int $teamId,
         Collection $players,
+        Collection $groups,
         ?float $overallGrade,
         CarbonInterface $asOf,
     ): array {
         $state = $this->injuryState($teamId, $asOf);
+        $groupReports = $groups->keyBy('group');
         $groupWeights = [
             'QB' => 0.22,
             'OL' => 0.18,
@@ -99,9 +107,27 @@ class PlayerPositionGradeService
             'ST' => 0.04,
         ];
         $impacts = collect($state['entries'])
-            ->map(function (Model $injury) use ($players, $groupWeights): ?array {
+            ->map(function (Model $injury) use ($players, $groupReports, $groupWeights, $asOf): ?array {
+                $returnDate = $injury->return_date ? Carbon::parse($injury->return_date) : null;
+                if ($returnDate?->lt($asOf->copy()->startOfDay())) {
+                    return null;
+                }
+
                 $player = $players->firstWhere('player_id', (int) $injury->player_id);
-                if (! is_array($player) || ! is_numeric($player['grade'] ?? null)) {
+                if (! is_array($player)) {
+                    return null;
+                }
+
+                $group = (string) $player['group'];
+                $groupReport = $groupReports->get($group);
+                $usesUnitGrade = ! is_numeric($player['grade'] ?? null)
+                    && $group === 'OL'
+                    && is_array($groupReport)
+                    && is_numeric($groupReport['grade'] ?? null);
+                $playerGrade = is_numeric($player['grade'] ?? null)
+                    ? (float) $player['grade']
+                    : ($usesUnitGrade ? (float) $groupReport['grade'] : null);
+                if ($playerGrade === null) {
                     return null;
                 }
 
@@ -110,19 +136,30 @@ class PlayerPositionGradeService
                     return null;
                 }
 
-                $replacement = $players
+                $replacementPool = $players
                     ->filter(fn (array $candidate): bool => $candidate['player_id'] !== $player['player_id']
                         && $candidate['group'] === $player['group']
-                        && (int) $candidate['depth_rank'] > (int) $player['depth_rank']
-                        && is_numeric($candidate['grade'] ?? null))
+                        && (int) $candidate['depth_rank'] > (int) $player['depth_rank']);
+                $samePositionReplacement = $replacementPool
+                    ->where('position', $player['position'])
                     ->sortBy('depth_rank')
                     ->first();
+                $replacement = $samePositionReplacement
+                    ?? $replacementPool->sortBy('depth_rank')->first();
                 $replacementGrade = is_array($replacement) && is_numeric($replacement['grade'] ?? null)
                     ? (float) $replacement['grade']
-                    : 50.0;
+                    : ($usesUnitGrade && is_array($replacement)
+                        ? max(35.0, $playerGrade - (float) config('nfl.predictions.player_position_grades.ol_replacement_grade_gap', 8.0))
+                        : 50.0);
                 $roleWeight = $player['is_starter'] ? 1.0 : ((int) $player['depth_rank'] <= 2 ? 0.35 : 0.10);
                 $groupWeight = $groupWeights[(string) $player['group']] ?? 0.0;
-                $outDelta = max(0.0, ((float) $player['grade'] - $replacementGrade) * $groupWeight * $roleWeight);
+                $outDelta = max(0.0, ($playerGrade - $replacementGrade) * $groupWeight * $roleWeight);
+                $playerConfidence = $usesUnitGrade
+                    ? (float) ($groupReport['grade_confidence'] ?? 0.0)
+                    : (float) ($player['grade_confidence'] ?? 0.0);
+                $replacementConfidence = is_array($replacement) && is_numeric($replacement['grade_confidence'] ?? null)
+                    ? (float) $replacement['grade_confidence']
+                    : ($usesUnitGrade ? $playerConfidence * 0.75 : 0.25);
 
                 return [
                     'player_id' => (int) $player['player_id'],
@@ -131,18 +168,17 @@ class PlayerPositionGradeService
                     'group' => $player['group'],
                     'status' => $injury->status,
                     'availability_probability' => round($availabilityProbability, 3),
-                    'player_grade' => round((float) $player['grade'], 1),
+                    'player_grade' => round($playerGrade, 1),
+                    'grade_source' => $usesUnitGrade ? 'offensive_line_unit_proxy' : 'player_production',
                     'replacement_player_id' => $replacement['player_id'] ?? null,
                     'replacement_player' => $replacement['player'] ?? null,
                     'replacement_grade' => round($replacementGrade, 1),
+                    'replacement_scope' => $samePositionReplacement !== null ? 'same_position' : 'position_group',
                     'if_out_grade_delta' => round(-$outDelta, 2),
                     'expected_grade_delta' => round(-$outDelta * (1.0 - $availabilityProbability), 2),
                     'usage_weight' => round($roleWeight, 2),
                     'usage_source' => 'depth_chart_role_proxy',
-                    'confidence' => round(min(
-                        (float) ($player['grade_confidence'] ?? 0.0),
-                        is_array($replacement) ? (float) ($replacement['grade_confidence'] ?? 0.0) : 0.25,
-                    ), 3),
+                    'confidence' => round(min($playerConfidence, $replacementConfidence), 3),
                 ];
             })
             ->filter()

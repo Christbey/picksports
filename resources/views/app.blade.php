@@ -235,6 +235,10 @@
         <link rel="dns-prefetch" href="//fonts.bunny.net">
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+        <style>
+            .beta-indicator { top: 5rem; }
+            @media (min-width: 640px) { .beta-indicator { top: 0.75rem; } }
+        </style>
         @if ($showAdsense)
             <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2394264248851783" crossorigin="anonymous"></script>
         @endif
@@ -272,7 +276,7 @@
         <!-- End Google Tag Manager (noscript) -->
         @if ($betaEnabled && $betaLabel !== '')
             <div
-                class="pointer-events-none fixed top-3 right-3 z-[100] rounded-full border border-amber-300 bg-amber-100/95 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/90 dark:text-amber-100"
+                class="beta-indicator pointer-events-none fixed right-3 z-[100] rounded-full border border-amber-300 bg-amber-100/95 px-2.5 py-1 text-[10px] font-bold tracking-[0.2em] text-amber-900 shadow-sm dark:border-amber-700 dark:bg-amber-900/90 dark:text-amber-100"
                 aria-label="Beta indicator"
             >
                 {{ $betaLabel }}

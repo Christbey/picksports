@@ -4,7 +4,9 @@ namespace App\Http\Controllers\Api\V2;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V2\SportPredictionIndexRequest;
+use App\Http\Resources\Api\V2\CanonicalSportPredictionResource;
 use App\Http\Resources\Api\V2\SportPredictionResource;
+use App\Services\Api\V2\CanonicalSportPredictionQuery;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPredictionPresentationService;
 use App\Services\Api\V2\SportPredictionQuery;
@@ -19,9 +21,28 @@ class SportPredictionController extends Controller
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
         SportPredictionPresentationService $presentations,
+        CanonicalSportPredictionQuery $canonicalPredictions,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $filters = $request->validatedFilters();
+
+        if ($canonicalPredictions->supports($context)) {
+            $paginator = $canonicalPredictions->paginate($context, $filters, $request->user());
+            $paginator->setCollection(
+                $paginator->getCollection()->map(fn ($prediction) => new CanonicalSportPredictionResource($prediction, $context))
+            );
+
+            return response()->json([
+                'data' => $paginator->getCollection()->values(),
+                'meta' => $this->collectionMeta($context->slug, $filters, [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ]) + ['prediction_source' => 'canonical'],
+            ]);
+        }
+
         $paginator = $predictions->paginate($context, $filters, $request->user());
         $presentationByPrediction = $presentations->forPredictions($context, $paginator->getCollection());
 
@@ -51,8 +72,20 @@ class SportPredictionController extends Controller
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
         SportPredictionPresentationService $presentations,
+        CanonicalSportPredictionQuery $canonicalPredictions,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+
+        if ($canonicalPredictions->supports($context)) {
+            return response()->json([
+                'data' => new CanonicalSportPredictionResource(
+                    $canonicalPredictions->find($context, $prediction, $request->user()),
+                    $context,
+                ),
+                'meta' => $this->itemMeta($context->slug) + ['prediction_source' => 'canonical'],
+            ]);
+        }
+
         $resolvedPrediction = $predictions->find($context, $prediction, $request->user());
 
         return response()->json([
@@ -70,8 +103,17 @@ class SportPredictionController extends Controller
         Request $request,
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
+        CanonicalSportPredictionQuery $canonicalPredictions,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+
+        if ($canonicalPredictions->supports($context)) {
+            return response()->json([
+                'data' => $canonicalPredictions->availableSeasons($context, $request->user()),
+                'meta' => $this->filterMeta($context->slug, 'sports.predictions.available-seasons')
+                    + ['prediction_source' => 'canonical'],
+            ]);
+        }
 
         return response()->json([
             'data' => $predictions->availableSeasons($context, $request->user()),
@@ -84,9 +126,18 @@ class SportPredictionController extends Controller
         SportPredictionIndexRequest $request,
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
+        CanonicalSportPredictionQuery $canonicalPredictions,
     ): JsonResponse {
         $context = $sports->resolve($sport);
         $filters = $request->validatedFilters();
+
+        if ($canonicalPredictions->supports($context)) {
+            return response()->json([
+                'data' => $canonicalPredictions->availableDates($context, $filters, $request->user()),
+                'meta' => $this->filterMeta($context->slug, 'sports.predictions.available-dates', $filters)
+                    + ['prediction_source' => 'canonical'],
+            ]);
+        }
 
         return response()->json([
             'data' => $predictions->availableDates($context, $filters, $request->user()),
@@ -101,8 +152,23 @@ class SportPredictionController extends Controller
         SportContextResolver $sports,
         SportPredictionQuery $predictions,
         SportPredictionPresentationService $presentations,
+        CanonicalSportPredictionQuery $canonicalPredictions,
     ): JsonResponse {
         $context = $sports->resolve($sport);
+
+        if ($canonicalPredictions->supports($context)) {
+            return response()->json([
+                'data' => new CanonicalSportPredictionResource(
+                    $canonicalPredictions->findForGame($context, $game, $request->user()),
+                    $context,
+                ),
+                'meta' => $this->itemMeta($context->slug) + [
+                    'game_id' => (int) $game,
+                    'prediction_source' => 'canonical',
+                ],
+            ]);
+        }
+
         $resolvedPrediction = $predictions->findForGame($context, $game, $request->user());
 
         return response()->json([

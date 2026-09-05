@@ -70,6 +70,41 @@ it('syncs games from ESPN scoreboard API for a specific date', function () {
         ->away_score->toBe(100);
 });
 
+it('can run the scoreboard sync inline without a queue worker', function () {
+    Http::fake([
+        '*site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=20260130*' => Http::response([
+            'events' => [
+                [
+                    'id' => '401585699',
+                    'uid' => 's:40~l:46~e:401585699',
+                    'date' => '2026-01-30T23:30Z',
+                    'name' => 'Atlanta Hawks at Boston Celtics',
+                    'shortName' => 'ATL @ BOS',
+                    'season' => ['year' => 2026, 'type' => 2],
+                    'week' => ['number' => 15],
+                    'competitions' => [[
+                        'competitors' => [
+                            ['team' => ['id' => '1'], 'homeAway' => 'home', 'score' => 110],
+                            ['team' => ['id' => '2'], 'homeAway' => 'away', 'score' => 100],
+                        ],
+                        'status' => ['type' => ['name' => 'STATUS_FINAL']],
+                    ]],
+                ],
+            ],
+        ]),
+    ]);
+
+    artisan('espn:sync-nba-games-scoreboard', [
+        'date' => '20260130',
+        '--sync' => true,
+    ])
+        ->expectsOutput('Running NBA games scoreboard sync job for date 20260130...')
+        ->expectsOutput('NBA games scoreboard sync job completed successfully.')
+        ->assertSuccessful();
+
+    expect(Game::where('espn_event_id', '401585699')->exists())->toBeTrue();
+});
+
 it('syncs games for today when no date is provided', function () {
     $today = date('Ymd');
 

@@ -34,7 +34,6 @@ class WeatherCompletenessCheck implements ValidationCheck
         $staleHours = (int) config('validation.thresholds.weather_completeness.stale_after_hours', 8);
         $warnPct = (float) config('validation.thresholds.weather_completeness.problem_warn_pct', 0.05);
         $failPct = (float) config('validation.thresholds.weather_completeness.problem_fail_pct', 0.20);
-        $activeStatuses = ['STATUS_SCHEDULED', 'STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'scheduled', 'in_progress'];
         $stageContext = app(SeasonStageService::class)->context($sport, null, null, $windowDays);
         $marketReadyGameIds = $stageContext->marketReadyGameIds;
         $hasRoofStatus = Schema::hasColumn($weatherTable, 'roof_status');
@@ -59,9 +58,7 @@ class WeatherCompletenessCheck implements ValidationCheck
 
         $games = DB::table($gamesTable)
             ->leftJoin($weatherTable, "{$weatherTable}.game_id", '=', "{$gamesTable}.id")
-            ->whereDate("{$gamesTable}.game_date", '>=', now()->startOfDay()->toDateString())
-            ->whereDate("{$gamesTable}.game_date", '<=', now()->copy()->addDays($windowDays)->toDateString())
-            ->whereIn("{$gamesTable}.status", $activeStatuses)
+            ->whereIn("{$gamesTable}.id", $stageContext->activeGameIds)
             ->get($select);
 
         $totalGames = $games->count();

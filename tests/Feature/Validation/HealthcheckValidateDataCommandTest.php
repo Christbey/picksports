@@ -632,6 +632,34 @@ test('weather completeness does not require roof status on nfl weather rows', fu
         ->and(data_get($result, 'metadata.games_with_unknown_roof_status'))->toBe(0);
 });
 
+test('weather completeness includes nfl sunday night games stored on the next utc date', function () {
+    $this->travelTo('2026-09-06 20:00:00');
+
+    $home = NflTeam::factory()->create();
+    $away = NflTeam::factory()->create();
+
+    $game = NflGame::factory()->create([
+        'espn_event_id' => '401999905',
+        'odds_api_event_id' => 'nfl-sunday-night',
+        'short_name' => 'DAL @ NYG',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'season' => 2026,
+        'season_type' => 2,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-09-14',
+        'game_time' => '00:20:00',
+    ]);
+
+    $result = app(WeatherCompletenessCheck::class)->run('nfl', config('validation.sports.nfl'));
+
+    expect($result['status'])->toBe('failing')
+        ->and(data_get($result, 'metadata.upcoming_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.market_ready_games'))->toBe(1)
+        ->and(data_get($result, 'metadata.games_missing_weather'))->toBe(1)
+        ->and(data_get($result, 'metadata.sample_missing_weather_game_ids'))->toContain($game->id);
+});
+
 test('team stat coverage does not fail nfl before the season has completed games', function () {
     $this->travelTo('2026-06-09 12:00:00');
 

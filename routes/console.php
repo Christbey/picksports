@@ -167,8 +167,11 @@ $scheduleOddsSyncWindow = function (
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
-        ->runInBackground();
+        // Laravel Cloud may terminate a detached scheduler child before
+        // `schedule:finish` releases its mutex. Keep these short API syncs in
+        // the scheduler process and bound crash recovery to one hour instead
+        // of Laravel's 24-hour default lock.
+        ->withoutOverlapping(60);
 
     $attachCommandHeartbeat($event, $command, $name);
 };

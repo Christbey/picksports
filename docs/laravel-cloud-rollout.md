@@ -10,6 +10,11 @@ This runbook preserves MySQL 8.4 for the first infrastructure move and treats ev
 - Private Laravel Object Storage for provider source files, datasets, model artifacts, evaluation reports, and historical exports.
 - Independent worker clusters for `sync`, `predictions`, `ml`, `ai`, `notifications`, and `webhooks` queues.
 - One scheduler process. Every scheduled event is guarded by `onOneServer()`.
+- Odds refresh commands run in the scheduler foreground with a 60-minute
+  `withoutOverlapping` lock. Do not add `runInBackground()` to these events:
+  detached scheduler children can be terminated before `schedule:finish`
+  releases their cache mutex, suppressing every later refresh for the default
+  24-hour lock lifetime.
 
 ## Environment contract
 

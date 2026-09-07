@@ -29,3 +29,18 @@ it('prunes retained command heartbeats once daily on one server', function () {
         ->and($event?->withoutOverlapping)->toBeTrue()
         ->and($event?->runInBackground)->toBeTrue();
 });
+
+it('runs odds refreshes in the foreground with bounded overlap locks', function () {
+    $events = collect(app(Schedule::class)->events())
+        ->filter(fn ($event): bool => str_ends_with((string) $event->description, 'Sync Odds'))
+        ->values();
+
+    expect($events)->toHaveCount(7);
+
+    foreach ($events as $event) {
+        expect($event->onOneServer)->toBeTrue()
+            ->and($event->withoutOverlapping)->toBeTrue()
+            ->and($event->expiresAt)->toBe(60)
+            ->and($event->runInBackground)->toBeFalse();
+    }
+});

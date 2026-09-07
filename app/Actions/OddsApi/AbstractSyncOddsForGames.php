@@ -306,15 +306,19 @@ abstract class AbstractSyncOddsForGames
         $query = $gameModel::query();
 
         if ($daysAhead !== null) {
-            $query->whereDate('game_date', '>=', now()->startOfDay()->toDateString())
-                ->whereDate('game_date', '<=', now()->startOfDay()->addDays($daysAhead)->toDateString())
-                ->whereIn('status', [
-                    'STATUS_SCHEDULED',
-                    'STATUS_DELAYED',
-                    'STATUS_IN_PROGRESS',
-                    'STATUS_HALFTIME',
-                    'STATUS_END_PERIOD',
-                ]);
+            $this->sportsDateWindowService ??= app(SportsDateWindowService::class);
+            $this->sportsDateWindowService->applyGameDateWindow(
+                $query,
+                $this->sportsDateWindowService->forwardWindow(daysForward: $daysAhead),
+            );
+
+            $query->whereIn('status', [
+                'STATUS_SCHEDULED',
+                'STATUS_DELAYED',
+                'STATUS_IN_PROGRESS',
+                'STATUS_HALFTIME',
+                'STATUS_END_PERIOD',
+            ]);
         }
 
         $seasonType = $this->seasonTypeForOddsSportKey($oddsSportKey);

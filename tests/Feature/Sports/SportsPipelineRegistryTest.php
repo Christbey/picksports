@@ -61,3 +61,17 @@ it('generates MLB daily picks after the canonical prediction pipeline', function
             '--season' => 2026,
         ]);
 });
+
+it('bounds the canonical nfl prediction refresh to the active seven day window', function () {
+    $registry = app(SportsPipelineRegistry::class);
+    $context = $registry->context(date: '2026-09-06', season: 2026);
+
+    $predictionStep = collect($registry->pipelineSteps('nfl', 'predict', $context))
+        ->firstWhere('command', 'nfl:generate-predictions');
+
+    expect($predictionStep['arguments'])->toBe([
+        '--season' => 2026,
+        '--from-date' => '2026-09-06',
+        '--to-date' => '2026-09-13',
+    ]);
+});

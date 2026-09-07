@@ -312,7 +312,11 @@ class SportsPipelineRegistry
                 $this->step('Grade predictions', 'nfl:grade-predictions', ['--season' => $season]),
                 $this->step('Calculate Elo', 'nfl:calculate-elo', ['--season' => $season]),
                 $this->step('Calculate team metrics', 'nfl:calculate-team-metrics', ['--season' => $season]),
-                $this->step('Generate predictions', 'nfl:generate-predictions', ['--season' => $season]),
+                $this->step('Generate predictions', 'nfl:generate-predictions', [
+                    '--season' => $season,
+                    '--from-date' => $context['reference_date']->toDateString(),
+                    '--to-date' => $context['reference_date']->copy()->addDays(7)->toDateString(),
+                ]),
             ],
             'mlb' => [
                 $this->step('Grade predictions', 'mlb:grade-predictions', ['--season' => $season]),

@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Models\NFL\Game;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
 use Illuminate\Console\Command;
 
@@ -16,7 +17,7 @@ class GeneratePredictionsCommand extends Command
 
     protected $description = 'Generate predictions for NFL games using current ELO ratings';
 
-    public function handle(): int
+    public function handle(SportsDateWindowService $dateWindows): int
     {
         $generatePrediction = app(GeneratePredictionFromHistoricalElo::class);
 
@@ -30,12 +31,15 @@ class GeneratePredictionsCommand extends Command
         $season = $this->option('season') ?? config('nfl.season.default');
         $query->where('season', $season);
 
-        if ($fromDate = $this->option('from-date')) {
-            $query->where('game_date', '>=', $fromDate);
-        }
+        $fromDate = $this->option('from-date');
+        $toDate = $this->option('to-date');
 
-        if ($toDate = $this->option('to-date')) {
-            $query->where('game_date', '<=', $toDate);
+        if ($fromDate && $toDate) {
+            $dateWindows->applyGameDateWindow($query, $dateWindows->forRange($fromDate, $toDate));
+        } else {
+            $query
+                ->when($fromDate, fn ($query, $date) => $query->whereDate('game_date', '>=', $date))
+                ->when($toDate, fn ($query, $date) => $query->whereDate('game_date', '<=', $date));
         }
 
         $games = $query->get();

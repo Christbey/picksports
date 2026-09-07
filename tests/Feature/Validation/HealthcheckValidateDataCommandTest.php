@@ -26,6 +26,7 @@ use App\Models\NFL\GameWeather as NflGameWeather;
 use App\Models\NFL\Player as NflPlayer;
 use App\Models\NFL\PlayerInjury as NflPlayerInjury;
 use App\Models\NFL\Team as NflTeam;
+use App\Models\NFL\TeamStat as NflTeamStat;
 use App\Models\User;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
@@ -655,6 +656,52 @@ test('team stat coverage does not fail nfl before the season has completed games
         ->and(data_get($result, 'metadata.stage_group'))->toBe('offseason')
         ->and(data_get($result, 'metadata.completed_games'))->toBe(0)
         ->and(data_get($result, 'metadata.teams_missing_stats'))->toBeGreaterThan(0);
+});
+
+test('team stat coverage ignores incomplete nfl preseason participation once the regular season starts', function () {
+    $this->travelTo('2026-09-06 12:00:00');
+
+    $preseasonHome = NflTeam::factory()->create();
+    $preseasonAway = NflTeam::factory()->create();
+    $regularHome = NflTeam::factory()->create();
+    $regularAway = NflTeam::factory()->create();
+
+    $preseasonGame = NflGame::factory()->create([
+        'home_team_id' => $preseasonHome->id,
+        'away_team_id' => $preseasonAway->id,
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.preseason'),
+        'status' => 'STATUS_FINAL',
+        'game_date' => now()->copy()->subWeek(),
+    ]);
+    NflTeamStat::factory()->create([
+        'game_id' => $preseasonGame->id,
+        'team_id' => $preseasonHome->id,
+        'team_type' => 'home',
+    ]);
+    NflTeamStat::factory()->create([
+        'game_id' => $preseasonGame->id,
+        'team_id' => $preseasonAway->id,
+        'team_type' => 'away',
+    ]);
+    NflGame::factory()->create([
+        'home_team_id' => $regularHome->id,
+        'away_team_id' => $regularAway->id,
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.regular'),
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->copy()->addDays(4),
+    ]);
+
+    $result = app(TeamStatCoverageCheck::class)
+        ->run('nfl', config('validation.sports.nfl'));
+
+    expect($result['status'])->toBe('passing')
+        ->and($result['message'])->toContain('current-season team stats are not expected yet')
+        ->and(data_get($result, 'metadata.stage_group'))->toBe('regular_season')
+        ->and(data_get($result, 'metadata.analytics_season_types'))->toContain(2, 3)
+        ->and(data_get($result, 'metadata.completed_games'))->toBe(0)
+        ->and(data_get($result, 'metadata.teams_with_stats'))->toBe(0);
 });
 
 test('game coverage does not fail cfb before the season schedule exists', function () {

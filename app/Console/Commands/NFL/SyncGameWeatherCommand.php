@@ -70,7 +70,19 @@ class SyncGameWeatherCommand extends Command
             }
 
             $row = GameWeather::query()->updateOrCreate(['game_id' => $game->id], $weather);
-            $row->wasRecentlyCreated ? $created++ : $updated++;
+            if ($row->wasRecentlyCreated) {
+                $created++;
+
+                continue;
+            }
+
+            // A successful forced refresh is fresh even when the provider returns
+            // values identical to the stored forecast (common for indoor venues).
+            if (! $row->wasChanged('updated_at')) {
+                $row->touch();
+            }
+
+            $updated++;
         }
 
         $this->info("NFL weather sync complete. Created {$created}, updated {$updated}, skipped {$skipped}.");

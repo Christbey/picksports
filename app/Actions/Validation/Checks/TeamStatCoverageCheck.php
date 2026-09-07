@@ -32,9 +32,9 @@ class TeamStatCoverageCheck implements ValidationCheck
         $stageContext = app(SeasonStageService::class)->context($sport);
         $season = (int) ($stageContext->season ?? now()->year);
         $eligibleTeamIds = $this->eligibleTeamIds($sport, $teamsTable, $season);
-        $totalTeams = $eligibleTeamIds->count();
+        $leagueTeams = $eligibleTeamIds->count();
 
-        if ($totalTeams === 0) {
+        if ($leagueTeams === 0) {
             return [
                 'check_type' => 'validation_team_stat_coverage',
                 'status' => 'failing',
@@ -47,36 +47,41 @@ class TeamStatCoverageCheck implements ValidationCheck
             ];
         }
 
-        $teamsWithStatsIds = DB::table($teamStatsTable)
+        $analyticsTypes = collect((array) config("{$sport}.season.analytics_types", []))
+            ->map(fn (mixed $type): int|string => is_numeric($type) ? (int) $type : (string) $type)
+            ->unique()
+            ->values()
+            ->all();
+        $filterAnalyticsTypes = $analyticsTypes !== [] && Schema::hasColumn($gamesTable, 'season_type');
+
+        $teamsWithStatsQuery = DB::table($teamStatsTable)
             ->join($gamesTable, "{$teamStatsTable}.game_id", '=', "{$gamesTable}.id")
-            ->where("{$gamesTable}.season", $season)
+            ->where("{$gamesTable}.season", $season);
+
+        if ($filterAnalyticsTypes) {
+            $teamsWithStatsQuery->whereIn("{$gamesTable}.season_type", $analyticsTypes);
+        }
+
+        $teamsWithStatsIds = $teamsWithStatsQuery
             ->distinct()
             ->pluck("{$teamStatsTable}.team_id");
 
-        $teamsWithStats = $teamsWithStatsIds->unique()->intersect($eligibleTeamIds)->count();
-        $missingTeams = max($totalTeams - $teamsWithStats, 0);
-        $missingPct = $totalTeams > 0 ? $missingTeams / $totalTeams : 1.0;
         $completedGamesQuery = DB::table($gamesTable)
             ->where('season', $season)
             ->whereIn('status', ['STATUS_FINAL', 'final', 'completed']);
 
+        if ($filterAnalyticsTypes) {
+            $completedGamesQuery->whereIn('season_type', $analyticsTypes);
+        }
+
         if ($sport === 'mlb') {
-            $analyticsTypes = collect((array) config('mlb.season.analytics_types', []))
-                ->flatMap(fn (mixed $type): array => [(string) $type, is_numeric($type) ? (int) $type : $type])
-                ->unique()
-                ->values()
-                ->all();
-
-            if ($analyticsTypes !== [] && Schema::hasColumn($gamesTable, 'season_type')) {
-                $completedGamesQuery->whereIn('season_type', $analyticsTypes);
-            }
-
             if (($openerDate = MlbRegularSeasonWindow::openerDate($season)) !== null && Schema::hasColumn($gamesTable, 'game_date')) {
                 $completedGamesQuery->whereDate('game_date', '>=', $openerDate);
             }
         }
 
         $completedGames = (clone $completedGamesQuery)->count();
+        $completedGameIds = (clone $completedGamesQuery)->pluck('id');
         $teamStatsByGame = DB::table($teamStatsTable)
             ->select('game_id', DB::raw('COUNT(DISTINCT team_id) as team_stats_count'))
             ->groupBy('game_id');
@@ -119,28 +124,44 @@ class TeamStatCoverageCheck implements ValidationCheck
             ])
             ->all();
 
-        if ($completedGames === 0 && in_array($stageContext->stageGroup, ['offseason', 'preseason', 'unknown'], true)) {
+        if ($completedGames === 0) {
+            $teamsWithStats = $teamsWithStatsIds->unique()->intersect($eligibleTeamIds)->count();
+
             return [
                 'check_type' => 'validation_team_stat_coverage',
                 'status' => 'passing',
-                'message' => "No completed {$sport} games found for {$season}; current-season team stats are not expected yet.",
+                'message' => "No completed analytics-eligible {$sport} games found for {$season}; current-season team stats are not expected yet.",
                 'metadata' => [
                     'season' => $season,
                     'stage' => $stageContext->stage,
                     'stage_group' => $stageContext->stageGroup,
-                    'total_teams' => $totalTeams,
+                    'analytics_season_types' => $analyticsTypes,
+                    'total_teams' => $leagueTeams,
                     'teams_with_stats' => $teamsWithStats,
-                    'teams_missing_stats' => $missingTeams,
+                    'teams_missing_stats' => max($leagueTeams - $teamsWithStats, 0),
                     'completed_games' => $completedGames,
                 ],
             ];
         }
 
+        $teamsWithCompletedGames = DB::table($gamesTable)
+            ->whereIn('id', $completedGameIds)
+            ->get(['home_team_id', 'away_team_id'])
+            ->flatMap(fn (object $game): array => [$game->home_team_id, $game->away_team_id])
+            ->filter()
+            ->unique()
+            ->intersect($eligibleTeamIds)
+            ->values();
+        $totalTeams = $teamsWithCompletedGames->count();
+        $teamsWithStats = $teamsWithStatsIds->unique()->intersect($teamsWithCompletedGames)->count();
+        $missingTeams = max($totalTeams - $teamsWithStats, 0);
+        $missingPct = $totalTeams > 0 ? $missingTeams / $totalTeams : 0.0;
+
         $warnPct = (float) config('validation.thresholds.team_stat_coverage.missing_teams_warn_pct', 0.0);
         $failPct = (float) config('validation.thresholds.team_stat_coverage.missing_teams_fail_pct', 0.05);
 
         $status = 'passing';
-        $message = "Team stat coverage looks healthy. {$teamsWithStats}/{$totalTeams} teams have stats this season.";
+        $message = "Team stat coverage looks healthy. {$teamsWithStats}/{$totalTeams} teams with completed games have stats this season.";
 
         if ($completedGamesMissingFullTeamStats > 0) {
             $status = 'failing';
@@ -159,6 +180,8 @@ class TeamStatCoverageCheck implements ValidationCheck
             'message' => $message,
             'metadata' => [
                 'season' => $season,
+                'analytics_season_types' => $analyticsTypes,
+                'league_teams' => $leagueTeams,
                 'total_teams' => $totalTeams,
                 'teams_with_stats' => $teamsWithStats,
                 'teams_missing_stats' => $missingTeams,

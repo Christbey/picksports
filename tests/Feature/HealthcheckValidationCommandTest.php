@@ -77,6 +77,6 @@ it('can pass team stat coverage validation when teams have stats for season game
         ->first();
 
     expect($statsCheck)->not->toBeNull();
-    expect($statsCheck->status)->toBe('failing');
-    expect($statsCheck->message)->toContain('missing team stats');
+    expect($statsCheck->status)->toBe('passing');
+    expect($statsCheck->message)->toContain('2/2 teams with completed games have stats');
 });

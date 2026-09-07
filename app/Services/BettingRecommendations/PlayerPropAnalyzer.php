@@ -370,6 +370,10 @@ class PlayerPropAnalyzer
      */
     protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport, bool $attachNarratives = true): ?array
     {
+        if (! is_numeric($prop->line)) {
+            return null;
+        }
+
         // Try to find player by name fuzzy matching
         $playerMatch = $this->findPlayerByName(
             name: $prop->player_name,
@@ -596,11 +600,11 @@ class PlayerPropAnalyzer
         $edgeProbability = 0.0;
         $minEdge = $profile['min_edge'];
 
-        if ($overEdgeProbability >= $minEdge) {
+        if ($overEdgeProbability >= $minEdge && $prop->over_price !== null) {
             $recommendation = 'Over';
             $odds = $prop->over_price;
             $edgeProbability = $overEdgeProbability;
-        } elseif ($underEdgeProbability >= $minEdge) {
+        } elseif ($underEdgeProbability >= $minEdge && $prop->under_price !== null) {
             $recommendation = 'Under';
             $odds = $prop->under_price;
             $edgeProbability = $underEdgeProbability;
@@ -922,8 +926,16 @@ class PlayerPropAnalyzer
         $over = $this->impliedProbabilityFromAmericanOdds($overOdds);
         $under = $this->impliedProbabilityFromAmericanOdds($underOdds);
 
-        if ($over === null || $under === null) {
+        if ($over === null && $under === null) {
             return 0.5;
+        }
+
+        if ($over === null) {
+            return 1 - $under;
+        }
+
+        if ($under === null) {
+            return $over;
         }
 
         $total = $over + $under;

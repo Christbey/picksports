@@ -1061,3 +1061,99 @@ test('analyzes nfl passing yard props with football usage context', function () 
         ->and(data_get($recommendations->first(), 'context.usage_context'))->toBe('passing_volume_trend')
         ->and(data_get($recommendations->first(), 'context.usage_factor'))->toBeGreaterThan(1.0);
 });
+
+test('ignores nfl props without a numeric line instead of aborting analysis', function () {
+    $homeTeam = NflTeam::factory()->create();
+    $awayTeam = NflTeam::factory()->create();
+    $game = NflGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-09-13',
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.regular', 2),
+    ]);
+    $player = NflPlayer::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Null Line Player',
+        'first_name' => 'Null Line',
+        'last_name' => 'Player',
+    ]);
+    $prop = NflPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => $player->full_name,
+        'market' => 'player_anytime_td',
+        'line' => null,
+        'over_price' => 125,
+        'bookmaker' => 'draftkings',
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->analyzeProps('NFL', 3, '2026-09-13');
+
+    $prop->refresh();
+
+    expect($recommendations)->toBeEmpty()
+        ->and($prop->recommended_side)->toBeNull();
+});
+
+test('analyzes a one-sided nfl anytime touchdown price as over 0.5', function () {
+    $homeTeam = NflTeam::factory()->create();
+    $awayTeam = NflTeam::factory()->create();
+    $game = NflGame::factory()->create([
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+        'status' => 'STATUS_SCHEDULED',
+        'game_date' => '2026-09-13',
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.regular', 2),
+    ]);
+    $player = NflPlayer::factory()->create([
+        'team_id' => $homeTeam->id,
+        'full_name' => 'Touchdown Scorer',
+        'first_name' => 'Touchdown',
+        'last_name' => 'Scorer',
+        'position' => 'RB',
+    ]);
+
+    for ($i = 0; $i < 12; $i++) {
+        $historicalGame = NflGame::factory()->create([
+            'home_team_id' => $homeTeam->id,
+            'away_team_id' => $awayTeam->id,
+            'status' => 'STATUS_FINAL',
+            'game_date' => now()->subDays($i + 7)->toDateString(),
+            'season' => 2026,
+            'season_type' => config('nfl.season.types.regular', 2),
+        ]);
+
+        NflPlayerStat::factory()->create([
+            'game_id' => $historicalGame->id,
+            'player_id' => $player->id,
+            'team_id' => $homeTeam->id,
+            'rushing_attempts' => 15,
+            'rushing_touchdowns' => 1,
+            'receiving_touchdowns' => 0,
+        ]);
+    }
+
+    $prop = NflPlayerProp::create([
+        'game_id' => $game->id,
+        'player_id' => $player->id,
+        'player_name' => $player->full_name,
+        'market' => 'player_anytime_td',
+        'line' => 0.5,
+        'over_price' => 125,
+        'under_price' => null,
+        'bookmaker' => 'draftkings',
+    ]);
+
+    $recommendations = (new PlayerPropAnalyzer)->analyzeProps('NFL', 3, '2026-09-13');
+
+    $prop->refresh();
+
+    expect($recommendations)->toHaveCount(1)
+        ->and($recommendations->first()['recommendation'])->toBe('Over')
+        ->and($recommendations->first()['odds'])->toBe(125)
+        ->and($recommendations->first()['market_over_probability'])->toBe(44.4)
+        ->and($prop->recommended_side)->toBe('Over');
+});

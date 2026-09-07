@@ -91,3 +91,69 @@ it('requests nfl football player prop markets and stores matched props', functio
         ->and($prop->market)->toBe('player_pass_yds')
         ->and((float) $prop->line)->toBe(250.5);
 });
+
+it('normalizes yes-only anytime touchdown outcomes into an over 0.5 market', function () {
+    $homeTeam = Team::factory()->create([
+        'location' => 'Kansas City',
+        'name' => 'Chiefs',
+        'abbreviation' => 'KC',
+    ]);
+    $awayTeam = Team::factory()->create([
+        'location' => 'Las Vegas',
+        'name' => 'Raiders',
+        'abbreviation' => 'LV',
+    ]);
+    $player = Player::factory()->create([
+        'team_id' => $homeTeam->id,
+        'first_name' => 'Isiah',
+        'last_name' => 'Pacheco',
+        'full_name' => 'Isiah Pacheco',
+        'position' => 'RB',
+    ]);
+
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => config('nfl.season.types.regular', 2),
+        'game_date' => '2026-09-13',
+        'game_time' => '19:20:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $homeTeam->id,
+        'away_team_id' => $awayTeam->id,
+    ]);
+
+    $oddsService = m::mock(OddsApiService::class);
+    $oddsService->shouldReceive('getOdds')->once()->andReturn([[
+        'id' => 'nfl-anytime-td-event',
+        'home_team' => 'Kansas City Chiefs',
+        'away_team' => 'Las Vegas Raiders',
+        'commence_time' => '2026-09-14T00:20:00Z',
+    ]]);
+    $oddsService->shouldReceive('fuzzyMatchTeams')->once()->andReturnTrue();
+    $oddsService->shouldReceive('getPlayerProps')->once()->andReturn([
+        'bookmakers' => [[
+            'key' => 'draftkings',
+            'markets' => [[
+                'key' => 'player_anytime_td',
+                'outcomes' => [[
+                    'name' => 'Yes',
+                    'description' => 'Isiah Pacheco',
+                    'price' => 125,
+                ]],
+            ]],
+        ]],
+    ]);
+    $oddsService->shouldReceive('mappedEspnPlayerId')->once()->andReturnNull();
+    $oddsService->shouldReceive('mappedEspnPlayerName')->once()->andReturnNull();
+
+    $stored = (new SyncPlayerPropsForGames($oddsService, app(SportsViewCache::class)))
+        ->execute(null, 'americanfootball_nfl');
+
+    $prop = PlayerProp::query()->first();
+
+    expect($stored)->toBe(1)
+        ->and($prop?->player_id)->toBe($player->id)
+        ->and($prop?->market)->toBe('player_anytime_td')
+        ->and((float) $prop?->line)->toBe(0.5)
+        ->and($prop?->over_price)->toBe(125)
+        ->and($prop?->under_price)->toBeNull();
+});

@@ -133,16 +133,16 @@ abstract class AbstractSyncPlayerPropsForGames
 
                 if (! isset($playerProps[$playerName])) {
                     $playerProps[$playerName] = [
-                        'line' => $outcome['point'] ?? null,
+                        'line' => $outcome['point'] ?? $this->defaultLineForMarket($marketKey),
                         'over' => null,
                         'under' => null,
                     ];
                 }
 
                 $outcomeType = strtolower($outcome['name'] ?? '');
-                if ($outcomeType === 'over') {
+                if (in_array($outcomeType, ['over', 'yes'], true)) {
                     $playerProps[$playerName]['over'] = $outcome['price'] ?? null;
-                } elseif ($outcomeType === 'under') {
+                } elseif (in_array($outcomeType, ['under', 'no'], true)) {
                     $playerProps[$playerName]['under'] = $outcome['price'] ?? null;
                 }
             }
@@ -167,6 +167,14 @@ abstract class AbstractSyncPlayerPropsForGames
         }
 
         return $stored;
+    }
+
+    protected function defaultLineForMarket(string $market): ?float
+    {
+        return match ($market) {
+            'player_anytime_td' => 0.5,
+            default => null,
+        };
     }
 
     protected function matchEvent(array $event, string $oddsSportKey): ?Model

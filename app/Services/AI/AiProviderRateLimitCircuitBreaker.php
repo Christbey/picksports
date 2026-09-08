@@ -24,7 +24,7 @@ class AiProviderRateLimitCircuitBreaker
             $quotaExhausted
                 ? 'ai.rate_limits.quota_cooldown_seconds'
                 : 'ai.rate_limits.cooldown_seconds',
-            $quotaExhausted ? 3600 : 900,
+            $quotaExhausted ? 86400 : 900,
         ));
         $blockedUntil = now()->addSeconds($seconds)->timestamp;
 

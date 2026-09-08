@@ -29,13 +29,13 @@ it('opens a shared provider cooldown after a narrative rate limit', function () 
 
 it('treats exhausted provider quota as a rate limit with the longer cooldown', function () {
     Cache::flush();
-    config()->set('ai.rate_limits.quota_cooldown_seconds', 3600);
+    config()->set('ai.rate_limits.quota_cooldown_seconds', 86400);
 
     $breaker = app(AiProviderRateLimitCircuitBreaker::class);
     $message = 'Provider failed with insufficient_quota.';
 
     expect($breaker->isRateLimitFailure($message))->toBeTrue()
         ->and($breaker->isQuotaExhausted($message))->toBeTrue()
-        ->and($breaker->trip('openai', true))->toBe(3600)
-        ->and($breaker->retryAfterSeconds('openai'))->toBeGreaterThanOrEqual(3599);
+        ->and($breaker->trip('openai', true))->toBe(86400)
+        ->and($breaker->retryAfterSeconds('openai'))->toBeGreaterThanOrEqual(86399);
 });

@@ -38,7 +38,9 @@ This runbook preserves MySQL 8.4 for the first infrastructure move and treats ev
   changed inputs per run and does not force unchanged work.
 - Provider rate limits open a shared cache-backed cooldown across workers. The
   default cooldown is 15 minutes (`AI_RATE_LIMIT_COOLDOWN_SECONDS=900`); hard
-  quota failures cool down for one hour (`AI_QUOTA_COOLDOWN_SECONDS=3600`).
+  quota failures cool down for 24 hours
+  (`AI_QUOTA_COOLDOWN_SECONDS=86400`). Clear that specific provider circuit
+  after replenishing credits when an immediate retry is required.
   Retries use exponential backoff and stop the batch without creating partial
   or invented context reports.
 - The weekly NFL reason-code report must select only its required prediction

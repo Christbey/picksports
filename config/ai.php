@@ -11,7 +11,7 @@ $config['providers']['openai']['url'] = env(
 
 $config['rate_limits'] = [
     'cooldown_seconds' => env('AI_RATE_LIMIT_COOLDOWN_SECONDS', 900),
-    'quota_cooldown_seconds' => env('AI_QUOTA_COOLDOWN_SECONDS', 3600),
+    'quota_cooldown_seconds' => env('AI_QUOTA_COOLDOWN_SECONDS', 86400),
 ];
 
 $config['features'] = [

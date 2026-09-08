@@ -53,7 +53,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.daily_prediction_analysis.provider', 'openai');
         $model ??= (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             $this->lastDailyPredictionAnalysisFailure = $this->providerAvailabilityMessage($provider);
 
             return null;
@@ -143,6 +143,8 @@ class SportsAiContentService
 
             return $analysis;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             if ($generation !== null && $generation->fresh()?->status === 'running') {
                 $recorder->fail(
                     $generation,
@@ -197,7 +199,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.model_audit_review.provider', 'openai');
         $model ??= (string) config('ai.features.model_audit_review.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -234,6 +236,8 @@ class SportsAiContentService
 
             return $assessment;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Model audit request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -267,7 +271,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.data_freshness_review.provider', 'openai');
         $model ??= (string) config('ai.features.data_freshness_review.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -304,6 +308,8 @@ class SportsAiContentService
 
             return $assessment;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Data freshness request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -337,7 +343,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.market_readiness_review.provider', 'openai');
         $model ??= (string) config('ai.features.market_readiness_review.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -374,6 +380,8 @@ class SportsAiContentService
 
             return $assessment;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Market readiness request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -417,7 +425,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.publishing_guardrail_review.provider', 'openai');
         $model ??= (string) config('ai.features.publishing_guardrail_review.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -454,6 +462,8 @@ class SportsAiContentService
 
             return $assessment;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Publishing guardrail request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -482,7 +492,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.sports_prediction_narratives.provider', 'openai');
         $model ??= (string) config('ai.features.sports_prediction_narratives.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -519,6 +529,8 @@ class SportsAiContentService
 
             return $payload;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Sports AI narrative request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -547,7 +559,7 @@ class SportsAiContentService
         $provider ??= (string) config('ai.features.player_prop_narratives.provider', 'openai');
         $model ??= (string) config('ai.features.player_prop_narratives.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -584,6 +596,8 @@ class SportsAiContentService
 
             return $payload;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Player prop AI narrative request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -612,7 +626,7 @@ class SportsAiContentService
         $provider = (string) config('ai.features.daily_digest_summary.provider', 'openai');
         $model = (string) config('ai.features.daily_digest_summary.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -643,6 +657,8 @@ class SportsAiContentService
 
             return $payload;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Daily digest AI summary request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -666,7 +682,7 @@ class SportsAiContentService
         $provider = (string) config('ai.features.validation_review_summary.provider', 'openai');
         $model = (string) config('ai.features.validation_review_summary.model', 'gpt-4o-mini');
 
-        if (! $this->providerIsConfigured($provider)) {
+        if (! $this->providerCanBeCalled($provider)) {
             return null;
         }
 
@@ -703,6 +719,8 @@ class SportsAiContentService
 
             return $payload;
         } catch (Throwable $exception) {
+            $this->recordProviderFailure($provider, $exception);
+
             logger()->warning('Validation review AI summary request threw exception.', [
                 'provider' => $provider,
                 'model' => $model,
@@ -727,14 +745,41 @@ class SportsAiContentService
 
     public function providerAvailabilityMessage(string $provider): ?string
     {
-        if ($this->providerIsConfigured($provider)) {
-            return null;
+        if (! $this->providerIsConfigured($provider)) {
+            return match ($provider) {
+                'openai' => 'OpenAI is not configured. Set OPENAI_API_KEY for the production environment and clear config cache.',
+                default => "AI provider [{$provider}] is not configured.",
+            };
         }
 
-        return match ($provider) {
-            'openai' => 'OpenAI is not configured. Set OPENAI_API_KEY for the production environment and clear config cache.',
-            default => "AI provider [{$provider}] is not configured.",
-        };
+        $retryAfter = app(AiProviderRateLimitCircuitBreaker::class)->retryAfterSeconds($provider);
+
+        return $retryAfter > 0
+            ? "AI provider [{$provider}] rate-limit cooldown is active for {$retryAfter} second(s)."
+            : null;
+    }
+
+    private function providerCanBeCalled(string $provider): bool
+    {
+        return $this->providerAvailabilityMessage($provider) === null;
+    }
+
+    private function recordProviderFailure(string $provider, Throwable $exception): void
+    {
+        $circuitBreaker = app(AiProviderRateLimitCircuitBreaker::class);
+        if (! $circuitBreaker->isRateLimitFailure($exception->getMessage())) {
+            return;
+        }
+
+        $cooldown = $circuitBreaker->trip(
+            $provider,
+            $circuitBreaker->isQuotaExhausted($exception->getMessage()),
+        );
+
+        logger()->warning('AI provider rate-limit circuit opened.', [
+            'provider' => $provider,
+            'cooldown_seconds' => $cooldown,
+        ]);
     }
 
     /**

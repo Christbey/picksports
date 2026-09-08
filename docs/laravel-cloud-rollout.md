@@ -15,6 +15,36 @@ This runbook preserves MySQL 8.4 for the first infrastructure move and treats ev
   detached scheduler children can be terminated before `schedule:finish`
   releases their cache mutex, suppressing every later refresh for the default
   24-hour lock lifetime.
+- Every shared schedule helper uses a bounded mutex lifetime: 10 minutes for
+  five-minute scoreboards, 25 minutes for half-hour syncs, 120 minutes for
+  daily and player-prop jobs, 5 minutes for every-minute jobs, and 360 minutes
+  for weekly audits. Never restore Laravel's implicit 1,440-minute default on
+  Cloud. A terminated background child must recover within the job's next
+  useful scheduling window.
+
+## Production AI workload contract
+
+- Keep `AI_SPORTS_NARRATIVE_PROVIDER=template` and
+  `AI_PLAYER_PROP_NARRATIVE_PROVIDER=template`. These jobs rewrite data the
+  application already has; they must not consume the OpenAI budget reserved
+  for sourced research.
+- Set `AI_NFL_GAME_CONTEXT_RESEARCH_ENABLED=true` and
+  `AI_DAILY_PREDICTION_ANALYSIS_ENABLED=true` only when the production OpenAI
+  key and budget are active. Both commands fail visibly when disabled so a
+  green scheduler heartbeat cannot imply that research was produced.
+- NFL context research scans the upcoming seven-day slate in batches of four.
+  Previously researched games do not consume a batch slot, and never-researched
+  games are prioritized. The downstream analysis also processes only four
+  changed inputs per run and does not force unchanged work.
+- Provider rate limits open a shared cache-backed cooldown across workers. The
+  default cooldown is 15 minutes (`AI_RATE_LIMIT_COOLDOWN_SECONDS=900`); hard
+  quota failures cool down for one hour (`AI_QUOTA_COOLDOWN_SECONDS=3600`).
+  Retries use exponential backoff and stop the batch without creating partial
+  or invented context reports.
+- The weekly NFL reason-code report must select only its required prediction
+  and final-score fields. Loading historical game odds, teams, and unrelated
+  model columns can exhaust a Cloud command instance and restart the app
+  cluster.
 
 ## Environment contract
 

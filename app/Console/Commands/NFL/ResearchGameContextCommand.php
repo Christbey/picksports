@@ -4,6 +4,7 @@ namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
 use App\Models\SportsGameContextReport;
+use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\NFL\NflWebContextResearchService;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Console\Command;
@@ -29,6 +30,7 @@ class ResearchGameContextCommand extends Command
     public function handle(
         NflWebContextResearchService $research,
         SportsDateWindowService $dateWindowService,
+        AiProviderRateLimitCircuitBreaker $rateLimitCircuitBreaker,
     ): int {
         if (! Schema::hasTable('sports_game_context_reports')) {
             $this->error('Missing sports_game_context_reports table. Run php artisan migrate first.');
@@ -37,9 +39,9 @@ class ResearchGameContextCommand extends Command
         }
 
         if (! config('ai.features.nfl_game_context_research.enabled', true)) {
-            $this->warn('NFL game-context web research is disabled.');
+            $this->error('NFL game-context web research is disabled. Set AI_NFL_GAME_CONTEXT_RESEARCH_ENABLED=true.');
 
-            return self::SUCCESS;
+            return self::FAILURE;
         }
 
         $start = $dateWindowService->parseLocalDate($this->option('date') ? (string) $this->option('date') : null);
@@ -49,8 +51,16 @@ class ResearchGameContextCommand extends Command
         $limit = max(1, (int) $this->option('limit'));
         $provider = $this->option('provider') ? (string) $this->option('provider') : null;
         $model = $this->option('model') ? (string) $this->option('model') : null;
+        $resolvedProvider = $provider ?: (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $rateLimitRetries = max(0, (int) $this->option('retry-rate-limit'));
         $rateLimitRetryDelay = max(1, (int) $this->option('retry-rate-limit-delay'));
+
+        $retryAfter = $rateLimitCircuitBreaker->retryAfterSeconds($resolvedProvider);
+        if ($retryAfter > 0) {
+            $this->error("AI provider [{$resolvedProvider}] rate-limit cooldown is active for {$retryAfter} second(s).");
+
+            return self::FAILURE;
+        }
 
         $games = Game::query()
             ->with(['homeTeam', 'awayTeam'])
@@ -59,13 +69,41 @@ class ResearchGameContextCommand extends Command
             ->when($season, fn ($query) => $query->where('season', (int) $season))
             ->orderBy('game_date')
             ->orderBy('game_time')
-            ->limit($limit)
             ->get();
 
-        $this->line('NFL: '.$games->count().' game(s) queued for sourced context research.');
+        $gameIds = $games->pluck('id');
+        $knownContextGameIds = SportsGameContextReport::query()
+            ->where('sport', 'nfl')
+            ->whereIn('game_id', $gameIds)
+            ->pluck('game_id')
+            ->flip();
+        $freshContextGameIds = SportsGameContextReport::query()
+            ->where('sport', 'nfl')
+            ->whereIn('game_id', $gameIds)
+            ->whereIn('status', ['ready', 'partial'])
+            ->where(function ($query): void {
+                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
+            })
+            ->pluck('game_id')
+            ->flip();
+
+        if (! $this->option('force')) {
+            $games = $games
+                ->sortBy(function (Game $game) use ($knownContextGameIds, $freshContextGameIds): int {
+                    if (! $knownContextGameIds->has($game->id)) {
+                        return 0;
+                    }
+
+                    return $freshContextGameIds->has($game->id) ? 2 : 1;
+                })
+                ->values();
+        }
+
+        $this->line('NFL: '.$games->count()." eligible game(s); researching at most {$limit} this run.");
         $saved = 0;
         $skipped = 0;
         $failed = 0;
+        $attempted = 0;
         $rateLimited = false;
         $estimatedCost = 0.0;
 
@@ -83,12 +121,18 @@ class ResearchGameContextCommand extends Command
                 continue;
             }
 
-            if (! $this->option('force') && $this->hasFreshContext((int) $game->id)) {
+            if (! $this->option('force') && $freshContextGameIds->has($game->id)) {
                 $this->line('  - fresh context already exists for '.$matchup);
                 $skipped++;
 
                 continue;
             }
+
+            if ($attempted >= $limit) {
+                break;
+            }
+
+            $attempted++;
 
             $result = null;
             $failure = null;
@@ -108,15 +152,16 @@ class ResearchGameContextCommand extends Command
                         break;
                     }
 
+                    $delay = min(300, $rateLimitRetryDelay * (2 ** $attempt));
                     $this->warn(sprintf(
                         '  - rate limited while researching %s; retrying in %d second(s) (%d/%d).',
                         $matchup,
-                        $rateLimitRetryDelay,
+                        $delay,
                         $attempt + 1,
                         $rateLimitRetries,
                     ));
 
-                    sleep($rateLimitRetryDelay);
+                    sleep($delay);
                 }
             }
 
@@ -148,6 +193,10 @@ class ResearchGameContextCommand extends Command
                 $failed++;
 
                 if ($this->isRateLimitFailure($failure)) {
+                    $rateLimitCircuitBreaker->trip(
+                        $resolvedProvider,
+                        $this->isNonRetryableQuotaFailure($failure),
+                    );
                     $rateLimited = true;
                     $reason = $this->isNonRetryableQuotaFailure($failure)
                         ? 'the provider account has no available quota'
@@ -163,18 +212,6 @@ class ResearchGameContextCommand extends Command
         }
 
         return $failed > 0 && $saved === 0 ? self::FAILURE : self::SUCCESS;
-    }
-
-    private function hasFreshContext(int $gameId): bool
-    {
-        return SportsGameContextReport::query()
-            ->where('sport', 'nfl')
-            ->where('game_id', $gameId)
-            ->whereIn('status', ['ready', 'partial'])
-            ->where(function ($query): void {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->exists();
     }
 
     private function kickoffHasPassed(Game $game): bool

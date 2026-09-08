@@ -230,7 +230,11 @@ class SportsAiPredictionPayloadBuilder
      */
     private function normalizeForHash(array $payload): array
     {
-        unset($payload['generated_at']);
+        unset(
+            $payload['generated_at'],
+            $payload['operational_context']['generated_at'],
+            $payload['operational_context']['data_freshness']['market_odds_age_minutes'],
+        );
 
         return $payload;
     }

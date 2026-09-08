@@ -23,6 +23,7 @@ test('generic prediction narrative job persists nfl narrative payload and metada
     config()->set('nba.prediction.narrative.provider', 'openai');
     config()->set('services.openai.api_key', 'test-openai-key');
     config()->set('ai.providers.openai.key', 'test-openai-key');
+    config()->set('ai.features.sports_prediction_narratives.provider', 'openai');
     config()->set('ai.features.sports_prediction_narratives.model', 'gpt-4o-mini');
 
     SportsPredictionNarrativeAgent::fake([

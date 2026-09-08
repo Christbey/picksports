@@ -13,6 +13,7 @@ use App\Models\SportsAiPredictionAnalysis;
 use App\Models\ValidationFinding;
 use App\Models\ValidationRun;
 use App\Services\AI\SportsAiContentService;
+use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use Illuminate\Support\Facades\Artisan;
 use Mockery as m;
 
@@ -409,5 +410,144 @@ it('retries daily prediction analysis when the provider rate limits', function (
     ])
         ->expectsOutputToContain('rate limited while analyzing BOS @ LAL; retrying in 1 second(s) (1/1).')
         ->expectsOutputToContain('stopping remaining AI daily prediction analysis for this run because the provider is rate limited.')
-        ->assertExitCode(0);
+        ->assertExitCode(1);
+});
+
+it('fails visibly when daily prediction analysis is disabled', function () {
+    config()->set('ai.features.daily_prediction_analysis.enabled', false);
+
+    $this->artisan('sports:ai-daily-predictions', ['--sport' => ['nfl']])
+        ->expectsOutputToContain('Daily prediction AI analysis is disabled')
+        ->assertExitCode(1);
+});
+
+it('fails before scanning predictions when the configured provider is unavailable', function () {
+    config()->set('ai.features.daily_prediction_analysis.enabled', true);
+
+    $aiContentService = m::mock(SportsAiContentService::class);
+    $aiContentService->shouldReceive('providerAvailabilityMessage')
+        ->once()
+        ->with('openai')
+        ->andReturn('AI provider [openai] rate-limit cooldown is active.');
+    $aiContentService->shouldNotReceive('generateDailyPredictionAnalysis');
+    $this->app->instance(SportsAiContentService::class, $aiContentService);
+
+    $this->artisan('sports:ai-daily-predictions', ['--sport' => ['nfl']])
+        ->expectsOutputToContain('rate-limit cooldown is active')
+        ->assertExitCode(1);
+});
+
+it('uses the batch limit for changed analyses instead of unchanged skipped predictions', function () {
+    config()->set('ai.features.daily_prediction_analysis.enabled', true);
+    config()->set('services.openai.api_key', 'test-openai-key');
+    config()->set('ai.providers.openai.key', 'test-openai-key');
+    config()->set('nfl.season.default', 2026);
+    $this->travelTo('2026-09-08 12:00:00');
+
+    $home = App\Models\NFL\Team::factory()->create(['abbreviation' => 'SEA']);
+    $away = App\Models\NFL\Team::factory()->create(['abbreviation' => 'NE']);
+
+    $makePrediction = function (string $matchup, string $time) use ($home, $away): App\Models\NFL\Prediction {
+        $game = App\Models\NFL\Game::factory()->create([
+            'season' => 2026,
+            'game_date' => '2026-09-08',
+            'game_time' => $time,
+            'status' => 'STATUS_SCHEDULED',
+            'short_name' => $matchup,
+            'home_team_id' => $home->id,
+            'away_team_id' => $away->id,
+        ]);
+
+        return App\Models\NFL\Prediction::factory()->create([
+            'game_id' => $game->id,
+            'predicted_spread' => 3.0,
+            'predicted_total' => 43.0,
+            'win_probability' => 0.6,
+            'confidence_score' => 62,
+        ])->load('game.homeTeam', 'game.awayTeam');
+    };
+
+    $unchanged = $makePrediction('NE @ SEA', '18:00:00');
+    $pending = $makePrediction('NE @ SEA late', '20:00:00');
+    $unchanged = App\Models\NFL\Prediction::query()
+        ->with(['game.homeTeam', 'game.awayTeam'])
+        ->findOrFail($unchanged->id);
+    $payloadBuilder = app(SportsAiPredictionPayloadBuilder::class);
+    $unchangedPayload = $payloadBuilder->build('nfl', $unchanged);
+
+    SportsAiPredictionAnalysis::query()->create([
+        'sport' => 'nfl',
+        'game_id' => $unchanged->game_id,
+        'prediction_id' => $unchanged->id,
+        'game_date' => '2026-09-08',
+        'as_of_date' => '2026-09-08',
+        'market' => 'game',
+        'input_hash' => $payloadBuilder->hash($unchangedPayload),
+        'raw_payload' => $unchangedPayload,
+        'recommendation' => 'pass',
+        'ai_confidence' => 50,
+        'analysis_confidence' => 50,
+        'bet_classification' => 'no_bet',
+        'summary' => 'Existing unchanged analysis.',
+    ]);
+
+    $aiContentService = m::mock(SportsAiContentService::class);
+    $aiContentService->shouldReceive('providerAvailabilityMessage')->once()->andReturnNull();
+    $aiContentService->shouldReceive('generateDailyPredictionAnalysis')->once()->andReturn([
+        'recommendation' => 'moneyline',
+        'bet_classification' => 'lean',
+        'ai_confidence' => 60,
+        'analysis_confidence' => 60,
+        'summary' => 'New analysis.',
+        'key_factors' => [],
+        'risk_flags' => [],
+        'reason_codes' => [],
+        'market_notes' => ['moneyline' => null, 'spread' => null, 'total' => null, 'props' => null],
+        'generated_by' => 'openai:gpt-4o-mini',
+    ]);
+    $aiContentService->shouldReceive('lastDailyPredictionAnalysisFailure')->once()->andReturnNull();
+    $aiContentService->shouldReceive('generateDataFreshnessAssessment')->once()->andReturnNull();
+    $aiContentService->shouldReceive('generateMarketReadinessAssessment')->once()->andReturnNull();
+    $aiContentService->shouldReceive('generateModelAuditAssessment')->once()->andReturnNull();
+    $aiContentService->shouldReceive('generatePublishingGuardrailAssessment')->once()->andReturnNull();
+    $this->app->instance(SportsAiContentService::class, $aiContentService);
+
+    $this->artisan('sports:ai-daily-predictions', [
+        '--sport' => ['nfl'],
+        '--date' => '2026-09-08',
+        '--season' => 2026,
+        '--limit' => 1,
+    ])->assertSuccessful();
+
+    expect(SportsAiPredictionAnalysis::query()->count())->toBe(2)
+        ->and(SportsAiPredictionAnalysis::query()->where('prediction_id', $pending->id)->exists())->toBeTrue();
+});
+
+it('keeps the prediction input hash stable as only generated time and odds age change', function () {
+    config()->set('nfl.season.default', 2026);
+    $this->travelTo('2026-09-08 12:00:00');
+
+    $home = App\Models\NFL\Team::factory()->create(['abbreviation' => 'SEA']);
+    $away = App\Models\NFL\Team::factory()->create(['abbreviation' => 'NE']);
+    $game = App\Models\NFL\Game::factory()->create([
+        'season' => 2026,
+        'game_date' => '2026-09-08',
+        'game_time' => '18:00:00',
+        'status' => 'STATUS_SCHEDULED',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+        'odds_updated_at' => '2026-09-08 10:00:00',
+    ]);
+    $prediction = App\Models\NFL\Prediction::factory()->create([
+        'game_id' => $game->id,
+        'predicted_spread' => 3.0,
+        'win_probability' => 0.6,
+    ])->load('game.homeTeam', 'game.awayTeam');
+
+    $payloadBuilder = app(SportsAiPredictionPayloadBuilder::class);
+    $initialHash = $payloadBuilder->hash($payloadBuilder->build('nfl', $prediction));
+
+    $this->travelTo('2026-09-08 12:10:00');
+
+    expect($payloadBuilder->hash($payloadBuilder->build('nfl', $prediction)))->toBe($initialHash);
 });

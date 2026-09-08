@@ -44,3 +44,44 @@ it('runs odds refreshes in the foreground with bounded overlap locks', function 
             ->and($event->runInBackground)->toBeFalse();
     }
 });
+
+it('bounds nfl pipeline locks so a terminated cloud child cannot suppress a full day', function () {
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+    $expectedLockMinutes = [
+        'NFL: Sync Current Week' => 120,
+        'NFL: Live Scoreboard Sync' => 10,
+        'NFL: Sync Game Details' => 25,
+        'NFL: Generate Predictions' => 120,
+        'NFL: Sync Player Props' => 120,
+        'NFL: Sync Injuries' => 25,
+    ];
+
+    foreach ($expectedLockMinutes as $name => $minutes) {
+        $event = $events->get($name);
+
+        expect($event)->not->toBeNull()
+            ->and($event->withoutOverlapping)->toBeTrue()
+            ->and($event->expiresAt)->toBe($minutes);
+    }
+});
+
+it('batches nfl web research and context analysis across the upcoming slate', function () {
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+    $research = $events->get('NFL: Research Sourced Game Context');
+    $analysis = $events->get('NFL: Context-Aware AI Prediction Analysis');
+
+    expect((string) $research?->command)
+        ->toContain('nfl:research-game-context')
+        ->toContain('--days-forward=7')
+        ->toContain('--limit=4')
+        ->toContain('--retry-rate-limit=2')
+        ->and($research?->expression)->toBe('35 8,11,14,17,20 * * *')
+        ->and($research?->expiresAt)->toBe(60)
+        ->and((string) $analysis?->command)
+        ->toContain('sports:ai-daily-predictions')
+        ->toContain('--days-forward=7')
+        ->toContain('--limit=4')
+        ->not->toContain('--force')
+        ->and($analysis?->expression)->toBe('50 8,11,14,17,20 * * *')
+        ->and($analysis?->expiresAt)->toBe(60);
+});

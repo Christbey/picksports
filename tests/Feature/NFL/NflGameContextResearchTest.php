@@ -14,6 +14,14 @@ use Mockery as m;
 
 uses()->group('nfl', 'ai');
 
+it('fails visibly when nfl context research is disabled', function () {
+    config()->set('ai.features.nfl_game_context_research.enabled', false);
+
+    $this->artisan('nfl:research-game-context')
+        ->expectsOutputToContain('NFL game-context web research is disabled')
+        ->assertExitCode(1);
+});
+
 it('enforces the OpenAI search budget and records measured usage with estimated cost', function () {
     config()->set('ai.providers.openai.key', 'test-openai-key');
     config()->set('ai.providers.openai.url', 'https://api.openai.com/v1');
@@ -286,6 +294,71 @@ it('does not expose expired web context as current prediction evidence', functio
     expect($payload['external_game_context']['available'])->toBeFalse()
         ->and($payload['external_game_context']['reason'])->toBe('no_fresh_research')
         ->and($payload['external_game_context']['risk_flags'])->toContain('missing_external_game_context');
+});
+
+it('uses the batch limit for new research instead of fresh skipped games', function () {
+    config()->set('ai.features.nfl_game_context_research.enabled', true);
+    config()->set('nfl.season.default', 2026);
+
+    $home = Team::factory()->create(['abbreviation' => 'NE']);
+    $away = Team::factory()->create(['abbreviation' => 'IND']);
+    $freshGame = Game::factory()->create([
+        'season' => 2026,
+        'game_date' => '2026-09-09',
+        'game_time' => '18:00:00',
+        'status' => 'STATUS_SCHEDULED',
+        'short_name' => 'IND @ NE',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+    ]);
+
+    SportsGameContextReport::query()->create([
+        'sport' => 'nfl',
+        'game_id' => $freshGame->id,
+        'status' => 'ready',
+        'prompt_version' => 'test',
+        'input_hash' => str_repeat('a', 64),
+        'confidence' => 80,
+        'summary' => 'Fresh sourced context.',
+        'facts' => [],
+        'sources' => [['url' => 'https://example.com/fresh']],
+        'researched_at' => now(),
+        'expires_at' => now()->addHour(),
+    ]);
+
+    $secondHome = Team::factory()->create(['abbreviation' => 'SEA']);
+    $secondAway = Team::factory()->create(['abbreviation' => 'DEN']);
+    Game::factory()->create([
+        'season' => 2026,
+        'game_date' => '2026-09-09',
+        'game_time' => '19:00:00',
+        'status' => 'STATUS_SCHEDULED',
+        'short_name' => 'DEN @ SEA',
+        'home_team_id' => $secondHome->id,
+        'away_team_id' => $secondAway->id,
+    ]);
+
+    $research = m::mock(NflWebContextResearchService::class);
+    $research->shouldReceive('research')
+        ->once()
+        ->withArgs(fn (Game $game): bool => $game->short_name === 'DEN @ SEA')
+        ->andReturn([
+            'report' => new SportsGameContextReport([
+                'status' => 'ready',
+                'confidence' => 75,
+                'sources' => [['url' => 'https://example.com/new']],
+            ]),
+            'generation' => null,
+        ]);
+    $this->app->instance(NflWebContextResearchService::class, $research);
+
+    $this->artisan('nfl:research-game-context', [
+        '--date' => '2026-09-09',
+        '--season' => 2026,
+        '--limit' => 1,
+    ])
+        ->expectsOutputToContain('saved DEN @ SEA')
+        ->assertSuccessful();
 });
 
 it('retries provider rate limits and stops before spending calls on the remaining slate', function () {

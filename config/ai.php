@@ -9,14 +9,19 @@ $config['providers']['openai']['url'] = env(
     env('OPENAI_URL', 'https://api.openai.com/v1')
 );
 
+$config['rate_limits'] = [
+    'cooldown_seconds' => env('AI_RATE_LIMIT_COOLDOWN_SECONDS', 900),
+    'quota_cooldown_seconds' => env('AI_QUOTA_COOLDOWN_SECONDS', 3600),
+];
+
 $config['features'] = [
     'sports_prediction_narratives' => [
-        'provider' => env('AI_SPORTS_NARRATIVE_PROVIDER', 'openai'),
+        'provider' => env('AI_SPORTS_NARRATIVE_PROVIDER', 'template'),
         'model' => env('AI_SPORTS_NARRATIVE_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
         'timeout_seconds' => env('AI_SPORTS_NARRATIVE_TIMEOUT_SECONDS', 8),
     ],
     'player_prop_narratives' => [
-        'provider' => env('AI_PLAYER_PROP_NARRATIVE_PROVIDER', 'openai'),
+        'provider' => env('AI_PLAYER_PROP_NARRATIVE_PROVIDER', 'template'),
         'model' => env('AI_PLAYER_PROP_NARRATIVE_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
         'timeout_seconds' => env('AI_PLAYER_PROP_NARRATIVE_TIMEOUT_SECONDS', 8),
     ],

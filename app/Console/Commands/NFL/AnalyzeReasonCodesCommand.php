@@ -48,7 +48,14 @@ class AnalyzeReasonCodesCommand extends Command
         }
 
         $predictions = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->select([
+                'id',
+                'game_id',
+                'predicted_spread',
+                'win_probability',
+                'model_metadata',
+            ])
+            ->with(['game:id,season,home_score,away_score'])
             ->whereHas('game', function ($query) use ($scope) {
                 $query->where('status', 'STATUS_FINAL');
 

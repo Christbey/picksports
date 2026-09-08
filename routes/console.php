@@ -114,7 +114,7 @@ $scheduleLiveScoreboardSync = function (
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
+        ->withoutOverlapping(10)
         ->runInBackground();
 
     $attachCommandHeartbeat($event, $resolvedCommand, $name);
@@ -131,7 +131,7 @@ $scheduleDailySeasonJob = function (
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
+        ->withoutOverlapping(120)
         ->runInBackground();
 
     $attachCommandHeartbeat($event, $command, $name);
@@ -150,7 +150,7 @@ $scheduleHalfHourlyWindowJob = function (
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
+        ->withoutOverlapping(25)
         ->runInBackground();
 
     $attachCommandHeartbeat($event, $command, $name);
@@ -188,7 +188,7 @@ $schedulePlayerPropsWindow = function (
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
+        ->withoutOverlapping(120)
         ->runInBackground();
 
     $attachCommandHeartbeat($event, $command, $name);
@@ -203,7 +203,7 @@ $scheduleEveryMinuteJob = function (
         ->everyMinute()
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
+        ->withoutOverlapping(5)
         ->runInBackground();
 
     if ($when) {
@@ -239,7 +239,7 @@ $scheduleWeeklySeasonJob = function (
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping()
+        ->withoutOverlapping(360)
         ->runInBackground();
 
     $attachCommandHeartbeat($event, $command, $name);
@@ -972,26 +972,26 @@ $scheduleHalfHourlyWindowJob(
     $nflInSeason,
     'NFL: Sync Injuries'
 );
-$nflGameContextResearchCommand = "nfl:research-game-context --season={$fallSeasonYear}";
+$nflGameContextResearchCommand = "nfl:research-game-context --season={$fallSeasonYear} --days-forward=7 --limit=4 --retry-rate-limit=2 --retry-rate-limit-delay=30";
 $nflGameContextResearchEvent = Schedule::command($nflGameContextResearchCommand)
-    ->cron('35 10,14,18 * * *')
+    ->cron('35 8,11,14,17,20 * * *')
     ->when($nflInSeason)
     ->name('NFL: Research Sourced Game Context')
     ->onOneServer()
-    ->withoutOverlapping(120)
+    ->withoutOverlapping(60)
     ->runInBackground();
 $attachCommandHeartbeat(
     $nflGameContextResearchEvent,
     $nflGameContextResearchCommand,
     'NFL: Research Sourced Game Context',
 );
-$nflContextAwareAnalysisCommand = "sports:ai-daily-predictions --sport=nfl --season={$fallSeasonYear} --force";
+$nflContextAwareAnalysisCommand = "sports:ai-daily-predictions --sport=nfl --season={$fallSeasonYear} --days-forward=7 --limit=4 --retry-rate-limit=2 --retry-rate-limit-delay=30";
 $nflContextAwareAnalysisEvent = Schedule::command($nflContextAwareAnalysisCommand)
-    ->cron('50 10,14,18 * * *')
+    ->cron('50 8,11,14,17,20 * * *')
     ->when($nflInSeason)
     ->name('NFL: Context-Aware AI Prediction Analysis')
     ->onOneServer()
-    ->withoutOverlapping(120)
+    ->withoutOverlapping(60)
     ->runInBackground();
 $attachCommandHeartbeat(
     $nflContextAwareAnalysisEvent,

@@ -49,6 +49,12 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         SportsAiPredictionPayloadBuilder $payloadBuilder,
         SportsAiContentService $aiContentService
     ): int {
+        if (! config('ai.features.daily_prediction_analysis.enabled', true)) {
+            $this->error('Daily prediction AI analysis is disabled. Set AI_DAILY_PREDICTION_ANALYSIS_ENABLED=true.');
+
+            return self::FAILURE;
+        }
+
         $sports = $this->sportsToAnalyze($registry);
         if ($sports === []) {
             $this->error('No supported sports selected.');
@@ -60,7 +66,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         $date = $this->option('date') ? $dateWindowService->parseLocalDate((string) $this->option('date')) : $dateWindowService->parseLocalDate();
         $endDate = $date->copy()->addDays(max(0, (int) $this->option('days-forward')));
         $limit = max(1, (int) $this->option('limit'));
-        $asOfDate = now()->toDateString();
+        $asOfDate = now()->startOfDay();
         $requestedProvider = $this->option('provider') ? (string) $this->option('provider') : (string) config('ai.features.daily_prediction_analysis.provider', 'openai');
         $requestedModel = $this->option('model') ? (string) $this->option('model') : (string) config('ai.features.daily_prediction_analysis.model', 'gpt-4o-mini');
         $rateLimitRetries = max(0, (int) $this->option('retry-rate-limit'));
@@ -80,11 +86,14 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
             : null;
 
         if ($providerUnavailable !== null) {
-            $this->warn($providerUnavailable);
+            $this->error($providerUnavailable);
+
+            return self::FAILURE;
         }
 
         foreach ($sports as $sport) {
-            $predictions = $this->predictionsForSport($sport, $date, $endDate, $limit);
+            $predictions = $this->predictionsForSport($sport, $date, $endDate);
+            $attempted = 0;
 
             $this->line(strtoupper($sport).': '.$predictions->count().' prediction(s) for '.$date->toDateString().($endDate->isSameDay($date) ? '' : ' through '.$endDate->toDateString()));
 
@@ -100,6 +109,11 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 $operationalContext = $payload['operational_context'] ?? [];
 
                 if ($this->option('dry-run')) {
+                    if ($attempted >= $limit) {
+                        break;
+                    }
+
+                    $attempted++;
                     $this->line('  - '.$this->matchup($prediction).' ['.$inputHash.']');
                     $processed++;
 
@@ -110,7 +124,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     ->where('sport', $sport)
                     ->where('prediction_id', (int) $prediction->id)
                     ->where('market', 'game')
-                    ->whereDate('as_of_date', $asOfDate)
+                    ->where('as_of_date', $asOfDate)
                     ->first();
 
                 if (! $this->option('force') && $existing && $existing->input_hash === $inputHash) {
@@ -118,6 +132,12 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
                     continue;
                 }
+
+                if ($attempted >= $limit) {
+                    break;
+                }
+
+                $attempted++;
 
                 $startedAt = microtime(true);
                 $analysis = null;
@@ -135,15 +155,16 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                         break;
                     }
 
+                    $delay = min(300, $rateLimitRetryDelay * (2 ** $attempt));
                     $this->warn(sprintf(
                         '  - rate limited while analyzing %s; retrying in %d second(s) (%d/%d).',
                         $this->matchup($prediction),
-                        $rateLimitRetryDelay,
+                        $delay,
                         $attempt + 1,
                         $rateLimitRetries,
                     ));
 
-                    sleep($rateLimitRetryDelay);
+                    sleep($delay);
                 }
 
                 $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
@@ -240,7 +261,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
 
         $this->info("AI daily prediction analysis complete. Processed {$processed}; skipped {$skipped}.");
 
-        return self::SUCCESS;
+        return $rateLimited && $processed === 0 ? self::FAILURE : self::SUCCESS;
     }
 
     /**
@@ -260,7 +281,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
         ));
     }
 
-    private function predictionsForSport(string $sport, CarbonInterface $date, CarbonInterface $endDate, int $limit)
+    private function predictionsForSport(string $sport, CarbonInterface $date, CarbonInterface $endDate)
     {
         /** @var class-string<Model> $modelClass */
         $modelClass = $this->predictionModels[$sport];
@@ -276,7 +297,6 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                 $dateWindowService->applyGameDateWindow($query, $window)
                     ->where('status', $scheduledStatus);
             })
-            ->limit($limit)
             ->get();
     }
 

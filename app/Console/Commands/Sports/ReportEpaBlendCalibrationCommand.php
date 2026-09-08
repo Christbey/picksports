@@ -47,7 +47,7 @@ class ReportEpaBlendCalibrationCommand extends Command
                 'p.actual_spread',
                 'p.predicted_total',
                 'p.actual_total',
-                'p.is_winner_correct',
+                'p.winner_correct',
                 'p.model_metadata',
                 'g.season',
             ]);
@@ -143,7 +143,7 @@ class ReportEpaBlendCalibrationCommand extends Command
                 $totalErrors[] = abs((float) $row->actual_total - (float) $row->predicted_total);
             }
 
-            $winnerCorrect += (int) ((bool) $row->is_winner_correct);
+            $winnerCorrect += (int) ((bool) $row->winner_correct);
         }
 
         $spreadMae = array_sum($spreadErrors) / max(1, count($spreadErrors));

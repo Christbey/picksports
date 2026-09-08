@@ -59,6 +59,7 @@ class ReadinessPassCommand extends Command
             $exitCode = $this->call($step['command'], $step['arguments']);
             $status = $exitCode === self::SUCCESS ? 'ok' : 'failed '.$exitCode;
             $results[] = [$step['label'], $status];
+            $this->releaseStepMemory();
 
             if ($exitCode !== self::SUCCESS) {
                 $failed = true;
@@ -74,6 +75,15 @@ class ReadinessPassCommand extends Command
         $this->table(['Step', 'Status'], $results);
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    private function releaseStepMemory(): void
+    {
+        gc_collect_cycles();
+
+        if (function_exists('gc_mem_caches')) {
+            gc_mem_caches();
+        }
     }
 
     /**

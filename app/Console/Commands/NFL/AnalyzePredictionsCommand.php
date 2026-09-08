@@ -25,8 +25,21 @@ class AnalyzePredictionsCommand extends Command
             return Command::FAILURE;
         }
 
+        $relations = ['game:id,season,game_date,home_team_id,away_team_id,home_score,away_score'];
+        if ($this->option('detailed')) {
+            $relations[] = 'game.homeTeam:id,abbreviation';
+            $relations[] = 'game.awayTeam:id,abbreviation';
+        }
+
         $predictions = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->select([
+                'id',
+                'game_id',
+                'predicted_spread',
+                'win_probability',
+                'model_metadata',
+            ])
+            ->with($relations)
             ->whereHas('game', function ($query) use ($scope) {
                 $query->where('status', 'STATUS_FINAL');
 

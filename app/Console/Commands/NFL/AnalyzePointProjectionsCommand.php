@@ -194,8 +194,25 @@ class AnalyzePointProjectionsCommand extends Command
      */
     private function loadRows(array $scope): Collection
     {
+        $includeLayers = (bool) $this->option('layers');
+        $predictionColumns = [
+            'id',
+            'game_id',
+            'predicted_spread',
+            'predicted_total',
+        ];
+
+        if ($includeLayers) {
+            $predictionColumns[] = 'model_metadata';
+        }
+
         $query = Prediction::query()
-            ->with(['game.homeTeam', 'game.awayTeam'])
+            ->select($predictionColumns)
+            ->with([
+                'game:id,season,week,game_date,home_team_id,away_team_id,home_score,away_score,odds_data',
+                'game.homeTeam:id,abbreviation',
+                'game.awayTeam:id,abbreviation',
+            ])
             ->whereNotNull('predicted_spread')
             ->whereNotNull('predicted_total')
             ->whereHas('game', function ($query) use ($scope): void {
@@ -215,59 +232,79 @@ class AnalyzePointProjectionsCommand extends Command
                     $query->where('season', '<=', $scope['to_season']);
                 }
             })
-            ->latest();
+            ->latest()
+            ->orderByDesc('id');
 
         $limit = (int) $this->option('limit');
         if ($limit > 0) {
-            $query->limit($limit);
+            return $query
+                ->limit($limit)
+                ->get()
+                ->map(fn (Prediction $prediction): ?array => $this->rowFromPrediction($prediction, $includeLayers))
+                ->filter()
+                ->values();
         }
 
-        return $query->get()
-            ->map(function (Prediction $prediction): ?array {
-                $game = $prediction->game;
-                if (! $game) {
-                    return null;
+        $rows = collect();
+
+        $query->chunk(250, function ($predictions) use ($rows, $includeLayers): void {
+            foreach ($predictions as $prediction) {
+                $row = $this->rowFromPrediction($prediction, $includeLayers);
+                if ($row !== null) {
+                    $rows->push($row);
                 }
+            }
+        });
 
-                $predictedSpread = (float) $prediction->predicted_spread;
-                $predictedTotal = (float) $prediction->predicted_total;
-                $actualSpread = (float) $game->home_score - (float) $game->away_score;
-                $actualTotal = (float) $game->home_score + (float) $game->away_score;
-                $predictedHomeScore = ($predictedTotal + $predictedSpread) / 2;
-                $predictedAwayScore = ($predictedTotal - $predictedSpread) / 2;
-                $market = $this->marketLines($game);
+        return $rows->values();
+    }
 
-                return [
-                    'date' => $game->game_date?->format('Y-m-d') ?? '',
-                    'season' => (int) $game->season,
-                    'week' => (int) $game->week,
-                    'home' => (string) ($game->homeTeam?->abbreviation ?? 'UNK'),
-                    'away' => (string) ($game->awayTeam?->abbreviation ?? 'UNK'),
-                    'home_score' => (float) $game->home_score,
-                    'away_score' => (float) $game->away_score,
-                    'pred_home_score' => $predictedHomeScore,
-                    'pred_away_score' => $predictedAwayScore,
-                    'actual_spread' => $actualSpread,
-                    'predicted_spread' => $predictedSpread,
-                    'spread_error' => abs($predictedSpread - $actualSpread),
-                    'spread_residual' => $predictedSpread - $actualSpread,
-                    'actual_total' => $actualTotal,
-                    'predicted_total' => $predictedTotal,
-                    'total_error' => abs($predictedTotal - $actualTotal),
-                    'total_residual' => $predictedTotal - $actualTotal,
-                    'home_score_error' => abs($predictedHomeScore - (float) $game->home_score),
-                    'home_score_residual' => $predictedHomeScore - (float) $game->home_score,
-                    'away_score_error' => abs($predictedAwayScore - (float) $game->away_score),
-                    'away_score_residual' => $predictedAwayScore - (float) $game->away_score,
-                    'score_error' => (abs($predictedHomeScore - (float) $game->home_score) + abs($predictedAwayScore - (float) $game->away_score)) / 2,
-                    'winner_correct' => ($actualSpread > 0 && $predictedSpread > 0) || ($actualSpread < 0 && $predictedSpread < 0),
-                    'market_spread' => $market['spread'],
-                    'market_total' => $market['total'],
-                    'metadata' => is_array($prediction->model_metadata) ? $prediction->model_metadata : [],
-                ];
-            })
-            ->filter()
-            ->values();
+    /**
+     * @return array<string,mixed>|null
+     */
+    private function rowFromPrediction(Prediction $prediction, bool $includeLayers): ?array
+    {
+        $game = $prediction->game;
+        if (! $game) {
+            return null;
+        }
+
+        $predictedSpread = (float) $prediction->predicted_spread;
+        $predictedTotal = (float) $prediction->predicted_total;
+        $actualSpread = (float) $game->home_score - (float) $game->away_score;
+        $actualTotal = (float) $game->home_score + (float) $game->away_score;
+        $predictedHomeScore = ($predictedTotal + $predictedSpread) / 2;
+        $predictedAwayScore = ($predictedTotal - $predictedSpread) / 2;
+        $market = $this->marketLines($game);
+
+        return [
+            'date' => $game->game_date?->format('Y-m-d') ?? '',
+            'season' => (int) $game->season,
+            'week' => (int) $game->week,
+            'home' => (string) ($game->homeTeam?->abbreviation ?? 'UNK'),
+            'away' => (string) ($game->awayTeam?->abbreviation ?? 'UNK'),
+            'home_score' => (float) $game->home_score,
+            'away_score' => (float) $game->away_score,
+            'pred_home_score' => $predictedHomeScore,
+            'pred_away_score' => $predictedAwayScore,
+            'actual_spread' => $actualSpread,
+            'predicted_spread' => $predictedSpread,
+            'spread_error' => abs($predictedSpread - $actualSpread),
+            'spread_residual' => $predictedSpread - $actualSpread,
+            'actual_total' => $actualTotal,
+            'predicted_total' => $predictedTotal,
+            'total_error' => abs($predictedTotal - $actualTotal),
+            'total_residual' => $predictedTotal - $actualTotal,
+            'home_score_error' => abs($predictedHomeScore - (float) $game->home_score),
+            'home_score_residual' => $predictedHomeScore - (float) $game->home_score,
+            'away_score_error' => abs($predictedAwayScore - (float) $game->away_score),
+            'away_score_residual' => $predictedAwayScore - (float) $game->away_score,
+            'score_error' => (abs($predictedHomeScore - (float) $game->home_score) + abs($predictedAwayScore - (float) $game->away_score)) / 2,
+            'winner_correct' => ($actualSpread > 0 && $predictedSpread > 0) || ($actualSpread < 0 && $predictedSpread < 0),
+            'market_spread' => $market['spread'],
+            'market_total' => $market['total'],
+            'metadata' => $includeLayers && is_array($prediction->model_metadata) ? $prediction->model_metadata : [],
+        ];
     }
 
     /**

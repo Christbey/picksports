@@ -45,6 +45,10 @@ This runbook preserves MySQL 8.4 for the first infrastructure move and treats ev
   and final-score fields. Loading historical game odds, teams, and unrelated
   model columns can exhaust a Cloud command instance and restart the app
   cluster.
+- The NFL point-projection audit loads historical predictions in chunks and
+  omits model metadata unless `--layers` is requested. The readiness parent
+  also releases allocator caches between embedded commands so one report's
+  hydrated history does not consume the next report's memory allowance.
 
 ## Environment contract
 

@@ -852,22 +852,32 @@ class SportsAiContentService
      */
     private function normalizeDailyPredictionAnalysisPayload(array $decoded): ?array
     {
-        $recommendation = trim((string) ($decoded['recommendation'] ?? ''));
-        $classification = trim((string) ($decoded['bet_classification'] ?? ''));
+        $recommendation = Str::of((string) ($decoded['recommendation'] ?? ''))
+            ->lower()
+            ->replace(' ', '_')
+            ->toString();
+        $classification = Str::of((string) ($decoded['bet_classification'] ?? ''))
+            ->lower()
+            ->replace(' ', '_')
+            ->toString();
         $summary = trim((string) ($decoded['summary'] ?? ''));
         $keyFactors = $this->stringList($decoded['key_factors'] ?? []);
         $riskFlags = $this->stringList($decoded['risk_flags'] ?? []);
         $reasonCodes = $this->stringList($decoded['reason_codes'] ?? []);
 
-        if ($recommendation === '' || $classification === '' || $summary === '' || $keyFactors === [] || $reasonCodes === []) {
+        if (! in_array($recommendation, ['moneyline', 'spread', 'total', 'prop', 'parlay_piece', 'pass'], true)
+            || ! in_array($classification, ['bet', 'lean', 'watch', 'pass'], true)
+            || $summary === ''
+            || $keyFactors === []
+            || $reasonCodes === []) {
             return null;
         }
 
         $marketNotes = is_array($decoded['market_notes'] ?? null) ? $decoded['market_notes'] : [];
 
         return [
-            'recommendation' => Str::of($recommendation)->lower()->replace(' ', '_')->toString(),
-            'bet_classification' => Str::of($classification)->lower()->replace(' ', '_')->toString(),
+            'recommendation' => $recommendation,
+            'bet_classification' => $classification,
             'ai_confidence' => $this->score($decoded['ai_confidence'] ?? 0),
             'analysis_confidence' => $this->score($decoded['analysis_confidence'] ?? 0),
             'summary' => $summary,
@@ -1222,6 +1232,8 @@ Analyze this daily sports prediction packet.
 Rules:
 - Use only the supplied JSON.
 - Treat calculated_model as the deterministic model output.
+- For NFL packets, decision_contract is the final deterministic authority for the maximum bet classification, recommended market, selection side, and line.
+- You may downgrade an NFL decision or pass because of sourced context, but never strengthen it or switch to another market or side.
 - When external_game_context is available, explicitly compare the base model with context_adjusted_model and cite its sourced facts in the reasoning.
 - Treat web market_snapshot as corroborating context only; the synced market_context remains authoritative for wager pricing.
 - If external game context is missing, expired, insufficient, or unsourced, add a risk flag and do not imply that current participation plans were considered.
@@ -1230,6 +1242,7 @@ Rules:
 - Separate calculated edge from analysis confidence.
 - Recommendation must be one of: moneyline, spread, total, prop, parlay_piece, pass.
 - Bet classification must be one of: bet, lean, watch, pass.
+- For NFL packets, use reason codes already present in decision_contract; keep explanatory prose in key factors and market notes.
 - Include risk flags whenever data is stale, missing, contradictory, or fragile.
 - Keep the summary concise and actionable for a daily betting workflow.
 

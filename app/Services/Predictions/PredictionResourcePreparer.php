@@ -26,6 +26,7 @@ final class PredictionResourcePreparer
         private readonly CalculateCbbBettingValue $cbbBettingValue,
         private readonly CalculateWnbaBettingValue $wnbaBettingValue,
         private readonly MlbMarketAwareProjectionService $mlbMarketProjection,
+        private readonly SportsAiPredictionPayloadBuilder $aiPayloadBuilder,
     ) {}
 
     /**
@@ -89,15 +90,38 @@ final class PredictionResourcePreparer
             return collect();
         }
 
-        return SportsAiPredictionAnalysis::query()
+        $analyses = SportsAiPredictionAnalysis::query()
             ->where('sport', $sport)
             ->whereIn('prediction_id', $predictions->modelKeys())
             ->where('market', 'game')
             ->orderByDesc('as_of_date')
             ->orderByDesc('created_at')
-            ->get()
-            ->unique('prediction_id')
-            ->keyBy(fn (SportsAiPredictionAnalysis $analysis): int => (int) $analysis->prediction_id);
+            ->get();
+
+        if ($sport !== 'nfl') {
+            return $analyses
+                ->unique('prediction_id')
+                ->keyBy(fn (SportsAiPredictionAnalysis $analysis): int => (int) $analysis->prediction_id);
+        }
+
+        $predictionsById = $predictions->keyBy(fn (Model $prediction): int => (int) $prediction->getKey());
+
+        return $analyses
+            ->groupBy(fn (SportsAiPredictionAnalysis $analysis): int => (int) $analysis->prediction_id)
+            ->map(function ($candidates, int $predictionId) use ($predictionsById): ?SportsAiPredictionAnalysis {
+                $prediction = $predictionsById->get($predictionId);
+                if (! $prediction) {
+                    return null;
+                }
+
+                $currentHash = $this->aiPayloadBuilder->hash(
+                    $this->aiPayloadBuilder->build('nfl', $prediction),
+                );
+
+                return $candidates->first(fn (SportsAiPredictionAnalysis $analysis): bool => $analysis->input_hash !== '' && hash_equals($analysis->input_hash, $currentHash)
+                );
+            })
+            ->filter();
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Models\NBA\Prediction;
 use App\Models\SportsAiPredictionAnalysis;
 use App\Services\AI\SportsAiContentService;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
+use App\Services\Predictions\SportsAiPublishingDecisionPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use App\Services\Sports\SportsPipelineRegistry;
 use Carbon\CarbonInterface;
@@ -47,6 +48,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
     public function handle(
         SportsPipelineRegistry $registry,
         SportsAiPredictionPayloadBuilder $payloadBuilder,
+        SportsAiPublishingDecisionPolicy $publishingDecisionPolicy,
         SportsAiContentService $aiContentService
     ): int {
         if (! config('ai.features.daily_prediction_analysis.enabled', true)) {
@@ -213,7 +215,12 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                     'model_audit' => $modelAudit,
                     'publishing_guardrail' => $publishingGuardrail,
                 ];
-                $publishingDecision = $this->effectivePublishingDecision($analysis, $publishingGuardrail);
+                $publishingDecision = $publishingDecisionPolicy->decide(
+                    $sport,
+                    $payload,
+                    $analysis,
+                    $publishingGuardrail,
+                );
 
                 [$generatedProvider, $generatedModel] = $this->providerModel((string) ($analysis['generated_by'] ?? ''));
 
@@ -235,12 +242,12 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                         'ai_confidence' => (int) $analysis['ai_confidence'],
                         'analysis_confidence' => (int) $analysis['analysis_confidence'],
                         'bet_classification' => $publishingDecision['bet_classification'],
-                        'summary' => (string) $analysis['summary'],
+                        'summary' => $publishingDecision['summary'],
                         'key_factors' => $analysis['key_factors'],
-                        'risk_flags' => $analysis['risk_flags'],
-                        'reason_codes' => $analysis['reason_codes'],
-                        'market_notes' => $analysis['market_notes'],
-                        'calculated_edge' => $payloadBuilder->calculatedEdge($prediction),
+                        'risk_flags' => $publishingDecision['risk_flags'],
+                        'reason_codes' => $publishingDecision['reason_codes'],
+                        'market_notes' => $publishingDecision['market_notes'],
+                        'calculated_edge' => $payloadBuilder->calculatedEdge($prediction, $sport),
                         'metadata' => [
                             'command' => 'sports:ai-daily-predictions',
                             'schema_version' => $payload['schema_version'] ?? null,
@@ -249,6 +256,7 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
                             'required_actions' => $operationalContext['required_actions'] ?? [],
                             'shadow_agents' => $shadowAgents,
                             'publishing_enforcement' => $publishingDecision['enforcement'],
+                            'ai_generated_summary' => (string) $analysis['summary'],
                         ],
                         'latency_ms' => $latencyMs,
                     ]
@@ -320,49 +328,6 @@ class AnalyzeDailyPredictionsWithAiCommand extends Command
             || str_contains($normalized, 'too many requests')
             || str_contains($normalized, 'code 429')
             || str_contains($normalized, 'status 429');
-    }
-
-    /**
-     * @param  array<string, mixed>  $analysis
-     * @param  array<string, mixed>|null  $publishingGuardrail
-     * @return array{recommendation:string,bet_classification:string,enforcement:array<string, mixed>}
-     */
-    private function effectivePublishingDecision(array $analysis, ?array $publishingGuardrail): array
-    {
-        $originalRecommendation = (string) $analysis['recommendation'];
-        $originalClassification = (string) $analysis['bet_classification'];
-        $enforced = (bool) config('ai.features.publishing_guardrail_review.enforced', false);
-        $decision = (string) data_get($publishingGuardrail, 'decision', 'shadow');
-        $guardrailClassification = (string) data_get($publishingGuardrail, 'publishable_classification', '');
-
-        $recommendation = $originalRecommendation;
-        $classification = $originalClassification;
-
-        if ($enforced && $publishingGuardrail) {
-            if (in_array($decision, ['downgrade', 'hold', 'block'], true) && $guardrailClassification !== '') {
-                $classification = $guardrailClassification;
-            }
-
-            if (in_array($decision, ['hold', 'block'], true)) {
-                $recommendation = 'pass';
-            }
-        }
-
-        return [
-            'recommendation' => $recommendation,
-            'bet_classification' => $classification,
-            'enforcement' => [
-                'enabled' => $enforced,
-                'applied' => $enforced && $publishingGuardrail !== null && (
-                    $recommendation !== $originalRecommendation || $classification !== $originalClassification
-                ),
-                'decision' => $decision,
-                'original_recommendation' => $originalRecommendation,
-                'original_bet_classification' => $originalClassification,
-                'effective_recommendation' => $recommendation,
-                'effective_bet_classification' => $classification,
-            ],
-        ];
     }
 
     /**

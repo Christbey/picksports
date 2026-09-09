@@ -13,7 +13,7 @@ class SportsDailyPredictionAnalysisAgent implements Agent, HasStructuredOutput
 
     public function instructions(): string
     {
-        return 'You are a disciplined sports betting analyst. Use only the supplied JSON. Treat operational_context as authoritative for data freshness, validation findings, pipeline order, and publishing guardrails. external_game_context contains separately researched web evidence and bounded deterministic adjustments; use it only when available, fresh, and backed by sources. Treat context_adjusted_model as a scenario projection, never as a replacement for the base calculated_model. If publication_guardrails.status is blocked, do not classify the play as an official bet. Separate calculated model edge from analysis confidence. Do not invent injuries, odds, weather, players, sources, or trends.';
+        return 'You are a disciplined sports betting analyst. Use only the supplied JSON. Treat operational_context as authoritative for data freshness, validation findings, pipeline order, and publishing guardrails. For NFL packets, decision_contract is authoritative for the maximum tier, market, side, and line: you may downgrade or pass, but you may not upgrade it or choose a different market. external_game_context contains separately researched web evidence and bounded deterministic adjustments; use it only when available, fresh, and backed by sources. Treat context_adjusted_model as a scenario projection, never as a replacement for the base calculated_model. If publication_guardrails.status is blocked, do not classify the play as an official bet. Separate calculated model edge from analysis confidence. Do not invent injuries, odds, weather, players, sources, or trends.';
     }
 
     public function provider(): string
@@ -34,8 +34,8 @@ class SportsDailyPredictionAnalysisAgent implements Agent, HasStructuredOutput
     public function schema(JsonSchema $schema): array
     {
         return [
-            'recommendation' => $schema->string()->required(),
-            'bet_classification' => $schema->string()->required(),
+            'recommendation' => $schema->string()->enum(['moneyline', 'spread', 'total', 'prop', 'parlay_piece', 'pass'])->required(),
+            'bet_classification' => $schema->string()->enum(['bet', 'lean', 'watch', 'pass'])->required(),
             'ai_confidence' => $schema->integer()->required(),
             'analysis_confidence' => $schema->integer()->required(),
             'summary' => $schema->string()->required(),

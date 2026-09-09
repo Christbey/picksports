@@ -256,7 +256,7 @@ it('researches sourced nfl context and applies bounded adjustments to the ai pac
 
     expect($report->sources[0]['url'])->toBe('https://example.com/team-report')
         ->and($report->facts[0]['source_urls'])->toBe(['https://example.com/team-report'])
-        ->and($payload['schema_version'])->toBe('sports_ai_prediction_payload_v2')
+        ->and($payload['schema_version'])->toBe('sports_ai_prediction_payload_v3')
         ->and($payload['external_game_context']['available'])->toBeTrue()
         ->and($payload['external_game_context']['deterministic_adjustment']['home_margin_points'])->toBe(2.5)
         ->and($payload['external_game_context']['deterministic_adjustment']['components']['qb_rotation_quality'])->toBe(0.0)

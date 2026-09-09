@@ -29,11 +29,12 @@ class SportsAiPredictionPayloadBuilder
         $homeWinProbability = $this->floatAttribute($prediction, 'win_probability');
         $pickSide = $homeWinProbability !== null && $homeWinProbability >= 0.5 ? 'home' : 'away';
         $pickTeam = $pickSide === 'home' ? $homeTeam : $awayTeam;
+        $calculatedEdge = $this->calculatedEdge($prediction, $sport);
 
         $externalContext = $this->externalGameContextBuilder->build($sport, $game, $prediction);
 
         return [
-            'schema_version' => 'sports_ai_prediction_payload_v2',
+            'schema_version' => $sport === 'nfl' ? 'sports_ai_prediction_payload_v3' : 'sports_ai_prediction_payload_v2',
             'sport' => $sport,
             'generated_at' => now()->toIso8601String(),
             'game' => [
@@ -58,11 +59,15 @@ class SportsAiPredictionPayloadBuilder
                 'home_win_probability' => $homeWinProbability,
                 'pick_win_probability' => $homeWinProbability !== null ? max($homeWinProbability, 1 - $homeWinProbability) : null,
                 'confidence_score' => $this->floatAttribute($prediction, 'confidence_score'),
-                'vegas_spread' => $this->floatAttribute($prediction, 'vegas_spread'),
+                'vegas_spread' => $calculatedEdge['vegas_spread'],
                 'model_version' => $this->attribute($prediction, 'model_version'),
                 'feature_version' => $this->attribute($prediction, 'feature_version'),
                 'blend_version' => $this->attribute($prediction, 'blend_version'),
             ],
+            ...($sport === 'nfl' ? [
+                'calculated_edge' => $calculatedEdge,
+                'decision_contract' => $this->decisionContract($sport, $prediction, $game, $externalContext),
+            ] : []),
             'market_context' => [
                 'odds_updated_at' => $this->attribute($game, 'odds_updated_at'),
                 'odds_markets' => $this->summarizeOdds($this->arrayAttribute($game, 'odds_data')),
@@ -93,15 +98,42 @@ class SportsAiPredictionPayloadBuilder
     /**
      * @return array<string, mixed>
      */
-    public function calculatedEdge(Model $prediction): array
+    public function calculatedEdge(Model $prediction, ?string $sport = null): array
     {
         $homeWinProbability = $this->floatAttribute($prediction, 'win_probability');
-        $vegasSpread = $this->floatAttribute($prediction, 'vegas_spread');
         $predictedSpread = $this->floatAttribute($prediction, 'predicted_spread');
+        $predictedTotal = $this->floatAttribute($prediction, 'predicted_total');
+        $sport = strtolower((string) $sport);
+
+        if ($sport === 'nfl') {
+            $marketSpread = $this->number(data_get($prediction, 'model_metadata.analysis_layer.calculated_edge.market_spread'));
+            $marketTotal = $this->number(data_get($prediction, 'model_metadata.analysis_layer.calculated_edge.market_total'));
+            $spreadEdge = $this->number(data_get($prediction, 'model_metadata.analysis_layer.calculated_edge.spread_points'))
+                ?? ($predictedSpread !== null && $marketSpread !== null ? $predictedSpread - $marketSpread : null);
+            $totalEdge = $this->number(data_get($prediction, 'model_metadata.analysis_layer.calculated_edge.total_points'))
+                ?? ($predictedTotal !== null && $marketTotal !== null ? $predictedTotal - $marketTotal : null);
+
+            return [
+                'sign_convention' => 'positive_home_margin',
+                'predicted_spread' => $predictedSpread,
+                'predicted_total' => $predictedTotal,
+                'home_win_probability' => $homeWinProbability,
+                'pick_win_probability' => $homeWinProbability !== null ? max($homeWinProbability, 1 - $homeWinProbability) : null,
+                'confidence_score' => $this->floatAttribute($prediction, 'confidence_score'),
+                'vegas_spread' => $marketSpread !== null ? round(-$marketSpread, 3) : null,
+                'market_spread_home_margin' => $marketSpread !== null ? round($marketSpread, 3) : null,
+                'market_total' => $marketTotal !== null ? round($marketTotal, 3) : null,
+                'spread_edge' => $spreadEdge !== null ? round($spreadEdge, 3) : null,
+                'total_edge' => $totalEdge !== null ? round($totalEdge, 3) : null,
+            ];
+        }
+
+        $vegasSpread = $this->floatAttribute($prediction, 'vegas_spread');
 
         return [
+            'sign_convention' => 'sportsbook_home_spread',
             'predicted_spread' => $predictedSpread,
-            'predicted_total' => $this->floatAttribute($prediction, 'predicted_total'),
+            'predicted_total' => $predictedTotal,
             'home_win_probability' => $homeWinProbability,
             'pick_win_probability' => $homeWinProbability !== null ? max($homeWinProbability, 1 - $homeWinProbability) : null,
             'confidence_score' => $this->floatAttribute($prediction, 'confidence_score'),
@@ -110,6 +142,243 @@ class SportsAiPredictionPayloadBuilder
                 ? round($predictedSpread + $vegasSpread, 2)
                 : null,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function decisionContract(
+        string $sport,
+        Model $prediction,
+        ?Model $game,
+        array $externalContext,
+    ): ?array {
+        if ($sport !== 'nfl') {
+            return null;
+        }
+
+        $analysis = (array) data_get($prediction, 'model_metadata.analysis_layer', []);
+        $proSignal = (array) ($analysis['pro_signal_layer'] ?? []);
+        $baseEdges = $this->calculatedEdge($prediction, 'nfl');
+        $decisionEdges = $this->nflContextAdjustedEdges($baseEdges, $externalContext);
+        $baseClassification = $this->nflClassification((string) ($analysis['bet_classification'] ?? ''));
+        $proClassification = $this->nflClassification((string) ($proSignal['tier'] ?? ''));
+        $classification = $this->lowerClassification($baseClassification, $proClassification);
+        $recommendedMarkets = collect((array) ($proSignal['recommended_markets'] ?? []))
+            ->filter(fn ($market): bool => is_array($market))
+            ->sortByDesc(fn (array $market): int => (int) ($market['score'] ?? 0))
+            ->values();
+        $eligibleMarkets = [];
+
+        foreach ($recommendedMarkets as $market) {
+            $candidate = $this->nflMarketCandidate(
+                (string) ($market['market'] ?? ''),
+                (int) ($market['score'] ?? 0),
+                (string) ($market['tier'] ?? ''),
+                $decisionEdges,
+                $baseEdges,
+                $prediction,
+                $game,
+            );
+
+            if ($candidate !== null) {
+                $eligibleMarkets[] = $candidate;
+            }
+        }
+
+        $selected = $this->classificationRank($classification) >= $this->classificationRank('lean')
+            ? ($eligibleMarkets[0] ?? null)
+            : null;
+
+        if ($selected === null && $this->classificationRank($classification) >= $this->classificationRank('lean')) {
+            $classification = 'watch';
+        }
+
+        return [
+            'schema_version' => 'nfl_deterministic_decision_v1',
+            'authority' => 'nfl_analysis_and_pro_signal_consensus',
+            'classification' => $classification,
+            'recommendation' => $selected['market'] ?? 'pass',
+            'selection' => $selected,
+            'eligible_markets' => $eligibleMarkets,
+            'base_classification' => $baseClassification,
+            'pro_classification' => $proClassification,
+            'moneyline_play_enabled' => (bool) config('nfl.betting.moneyline.play_enabled', false),
+            'context_report_id' => $externalContext['report_id'] ?? null,
+            'context_adjustment_applied' => ($decisionEdges['context_adjustment_applied'] ?? false) === true,
+            'base_edge' => [
+                'spread' => $baseEdges['spread_edge'] ?? null,
+                'total' => $baseEdges['total_edge'] ?? null,
+            ],
+            'context_adjusted_edge' => [
+                'spread' => $decisionEdges['spread_edge'] ?? null,
+                'total' => $decisionEdges['total_edge'] ?? null,
+            ],
+            'thresholds' => [
+                'spread_edge' => (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0),
+                'total_edge' => (float) config('nfl.predictions.analysis_layer.min_total_edge', 3.0),
+            ],
+            'reason_codes' => array_values(array_unique(array_filter([
+                ...(array) ($analysis['reason_codes'] ?? []),
+                ...(array) ($proSignal['reason_codes'] ?? []),
+            ], 'is_string'))),
+            'risk_flags' => array_values(array_unique(array_filter([
+                ...(array) ($analysis['risk_flags'] ?? []),
+                ...(array) ($proSignal['risk_flags'] ?? []),
+            ], 'is_string'))),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $edges
+     * @param  array<string, mixed>  $baseEdges
+     * @return array<string, mixed>|null
+     */
+    private function nflMarketCandidate(
+        string $market,
+        int $score,
+        string $tier,
+        array $edges,
+        array $baseEdges,
+        Model $prediction,
+        ?Model $game,
+    ): ?array {
+        $market = strtolower($market);
+        $tier = $this->nflClassification($tier);
+        $homeTeam = $game?->homeTeam;
+        $awayTeam = $game?->awayTeam;
+
+        if ($market === 'winner') {
+            if (! config('nfl.betting.moneyline.play_enabled', false)) {
+                return null;
+            }
+
+            $homeWinProbability = $this->floatAttribute($prediction, 'win_probability');
+            if ($homeWinProbability === null) {
+                return null;
+            }
+
+            $side = $homeWinProbability >= 0.5 ? 'home' : 'away';
+
+            return [
+                'market' => 'moneyline',
+                'side' => $side,
+                'direction' => null,
+                'team' => $this->teamName($side === 'home' ? $homeTeam : $awayTeam),
+                'line' => null,
+                'price' => null,
+                'edge' => null,
+                'score' => $score,
+                'tier' => $tier,
+            ];
+        }
+
+        if ($market === 'spread') {
+            $edge = $this->number($edges['spread_edge'] ?? null);
+            $marketSpread = $this->number($edges['market_spread_home_margin'] ?? null);
+            if ($edge === null || $marketSpread === null || abs($edge) < (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0)) {
+                return null;
+            }
+
+            $side = $edge >= 0 ? 'home' : 'away';
+
+            return [
+                'market' => 'spread',
+                'side' => $side,
+                'direction' => null,
+                'team' => $this->teamName($side === 'home' ? $homeTeam : $awayTeam),
+                'line' => round($side === 'home' ? -$marketSpread : $marketSpread, 3),
+                'price' => $this->number(data_get($prediction, 'model_metadata.analysis_layer.pro_signal_layer.market_context.spread_price')),
+                'edge' => round($edge, 3),
+                'model_edge' => $this->number($baseEdges['spread_edge'] ?? null),
+                'context_adjusted_edge' => round($edge, 3),
+                'score' => $score,
+                'tier' => $tier,
+            ];
+        }
+
+        if ($market === 'total') {
+            $edge = $this->number($edges['total_edge'] ?? null);
+            $marketTotal = $this->number($edges['market_total'] ?? null);
+            if ($edge === null || $marketTotal === null || abs($edge) < (float) config('nfl.predictions.analysis_layer.min_total_edge', 3.0)) {
+                return null;
+            }
+
+            return [
+                'market' => 'total',
+                'side' => null,
+                'direction' => $edge >= 0 ? 'over' : 'under',
+                'team' => null,
+                'line' => round($marketTotal, 3),
+                'price' => null,
+                'edge' => round($edge, 3),
+                'model_edge' => $this->number($baseEdges['total_edge'] ?? null),
+                'context_adjusted_edge' => round($edge, 3),
+                'score' => $score,
+                'tier' => $tier,
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $baseEdges
+     * @param  array<string, mixed>  $externalContext
+     * @return array<string, mixed>
+     */
+    private function nflContextAdjustedEdges(array $baseEdges, array $externalContext): array
+    {
+        $contextEligible = ($externalContext['available'] ?? false) === true
+            && data_get($externalContext, 'deterministic_adjustment.eligible') === true;
+        $contextSpread = $contextEligible
+            ? $this->number(data_get($externalContext, 'context_adjusted_model.predicted_spread'))
+            : null;
+        $contextTotal = $contextEligible
+            ? $this->number(data_get($externalContext, 'context_adjusted_model.predicted_total'))
+            : null;
+        $marketSpread = $this->number($baseEdges['market_spread_home_margin'] ?? null);
+        $marketTotal = $this->number($baseEdges['market_total'] ?? null);
+
+        return [
+            ...$baseEdges,
+            'predicted_spread' => $contextSpread ?? ($baseEdges['predicted_spread'] ?? null),
+            'predicted_total' => $contextTotal ?? ($baseEdges['predicted_total'] ?? null),
+            'spread_edge' => $contextSpread !== null && $marketSpread !== null
+                ? round($contextSpread - $marketSpread, 3)
+                : ($baseEdges['spread_edge'] ?? null),
+            'total_edge' => $contextTotal !== null && $marketTotal !== null
+                ? round($contextTotal - $marketTotal, 3)
+                : ($baseEdges['total_edge'] ?? null),
+            'context_adjustment_applied' => $contextSpread !== null || $contextTotal !== null,
+        ];
+    }
+
+    private function nflClassification(string $classification): string
+    {
+        $classification = strtolower(trim($classification));
+
+        return match (true) {
+            in_array($classification, ['bet', 'official_candidate'], true) => 'bet',
+            $classification === 'lean' => 'lean',
+            $classification === 'watch' || $classification === 'watchlist' || str_contains($classification, 'watchlist') => 'watch',
+            default => 'pass',
+        };
+    }
+
+    private function lowerClassification(string $first, string $second): string
+    {
+        return $this->classificationRank($first) <= $this->classificationRank($second) ? $first : $second;
+    }
+
+    private function classificationRank(string $classification): int
+    {
+        return match ($classification) {
+            'bet' => 3,
+            'lean' => 2,
+            'watch' => 1,
+            default => 0,
+        };
     }
 
     /**
@@ -201,6 +470,11 @@ class SportsAiPredictionPayloadBuilder
     {
         $value = $this->attribute($model, $key);
 
+        return is_numeric($value) ? (float) $value : null;
+    }
+
+    private function number(mixed $value): ?float
+    {
         return is_numeric($value) ? (float) $value : null;
     }
 

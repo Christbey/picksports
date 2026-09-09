@@ -51,6 +51,7 @@ function nflAiSafetyFixture(): Prediction
         'win_probability' => 0.58,
         'confidence_score' => 55.1,
         'model_metadata' => [
+            'unused_bulk_metadata' => str_repeat('x', 10_000),
             'analysis_layer' => [
                 'bet_classification' => 'lean',
                 'calculated_edge' => [
@@ -88,6 +89,9 @@ test('nfl payload publishes a normalized deterministic market contract', functio
         ->and($payload['calculated_edge']['vegas_spread'])->toBe(-3.5)
         ->and($payload['calculated_edge']['spread_edge'])->toBe(-0.5)
         ->and($payload['calculated_edge']['total_edge'])->toBe(-4.0)
+        ->and($payload['model_metadata'])->not->toHaveKey('unused_bulk_metadata')
+        ->and($payload['raw_prediction_snapshot'])->not->toHaveKey('model_metadata')
+        ->and(strlen(json_encode($payload, JSON_THROW_ON_ERROR)))->toBeLessThan(20_000)
         ->and($payload['decision_contract']['classification'])->toBe('lean')
         ->and($payload['decision_contract']['recommendation'])->toBe('total')
         ->and($payload['decision_contract']['selection']['direction'])->toBe('under')

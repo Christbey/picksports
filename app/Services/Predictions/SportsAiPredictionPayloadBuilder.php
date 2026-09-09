@@ -75,9 +75,11 @@ class SportsAiPredictionPayloadBuilder
             ],
             'operational_context' => $this->operationalContextBuilder->build($sport, $game),
             'external_game_context' => $externalContext,
-            'model_metadata' => $this->arrayAttribute($prediction, 'model_metadata'),
+            'model_metadata' => $this->modelMetadataPayload($sport, $prediction),
             'existing_narrative' => $this->arrayAttribute($prediction, 'narrative_json'),
-            'raw_prediction_snapshot' => $this->predictionSnapshot($prediction),
+            'raw_prediction_snapshot' => $sport === 'nfl'
+                ? $this->compactNflPredictionSnapshot($prediction)
+                : $this->predictionSnapshot($prediction),
         ];
     }
 
@@ -463,6 +465,75 @@ class SportsAiPredictionPayloadBuilder
                 'narrative_generated_at',
             ])
             ->all();
+    }
+
+    /** @return array<string, mixed>|null */
+    private function modelMetadataPayload(string $sport, Model $prediction): ?array
+    {
+        $metadata = $this->arrayAttribute($prediction, 'model_metadata');
+        if ($sport !== 'nfl' || $metadata === null) {
+            return $metadata;
+        }
+
+        $analysis = (array) ($metadata['analysis_layer'] ?? []);
+        $proSignal = (array) ($analysis['pro_signal_layer'] ?? []);
+
+        return [
+            'schema_version' => 'nfl_ai_model_evidence_v1',
+            'analysis_layer' => [
+                'applied' => $analysis['applied'] ?? false,
+                'trust_score' => $analysis['trust_score'] ?? null,
+                'bet_classification' => $analysis['bet_classification'] ?? null,
+                'model_signal_classification' => $analysis['model_signal_classification'] ?? null,
+                'calculated_edge' => $analysis['calculated_edge'] ?? [],
+                'analysis_confidence' => $analysis['analysis_confidence'] ?? [],
+                'reason_codes' => array_values((array) ($analysis['reason_codes'] ?? [])),
+                'risk_flags' => array_values((array) ($analysis['risk_flags'] ?? [])),
+                'bet_rule_evaluation' => $analysis['bet_rule_evaluation'] ?? [],
+                'validated_signals' => array_slice((array) ($analysis['validated_signals'] ?? []), 0, 5),
+                'best_validated_signal' => $analysis['best_validated_signal'] ?? null,
+                'pro_signal_layer' => [
+                    'version' => $proSignal['version'] ?? null,
+                    'score' => $proSignal['score'] ?? null,
+                    'tier' => $proSignal['tier'] ?? null,
+                    'market_scores' => $proSignal['market_scores'] ?? [],
+                    'recommended_markets' => array_values((array) ($proSignal['recommended_markets'] ?? [])),
+                    'market_context' => $proSignal['market_context'] ?? [],
+                    'number_discipline' => $proSignal['number_discipline'] ?? [],
+                    'market_movement' => $proSignal['market_movement'] ?? [],
+                    'football_context' => $proSignal['football_context'] ?? [],
+                    'injury_replacement' => $proSignal['injury_replacement'] ?? [],
+                    'weather_roof' => $proSignal['weather_roof'] ?? [],
+                    'efficiency_mismatch' => $proSignal['efficiency_mismatch'] ?? [],
+                    'regression_context' => $proSignal['regression_context'] ?? [],
+                    'reason_codes' => array_values((array) ($proSignal['reason_codes'] ?? [])),
+                    'risk_flags' => array_values((array) ($proSignal['risk_flags'] ?? [])),
+                    'score_components' => $proSignal['score_components'] ?? [],
+                ],
+            ],
+            'calibration' => [
+                'win_probability' => $metadata['adaptive_win_probability_calibration'] ?? null,
+                'point_projection' => $metadata['adaptive_point_calibration'] ?? null,
+            ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function compactNflPredictionSnapshot(Model $prediction): array
+    {
+        return [
+            'id' => $prediction->getKey(),
+            'game_id' => $this->attribute($prediction, 'game_id'),
+            'home_elo' => $this->floatAttribute($prediction, 'home_elo'),
+            'away_elo' => $this->floatAttribute($prediction, 'away_elo'),
+            'predicted_spread' => $this->floatAttribute($prediction, 'predicted_spread'),
+            'predicted_total' => $this->floatAttribute($prediction, 'predicted_total'),
+            'win_probability' => $this->floatAttribute($prediction, 'win_probability'),
+            'confidence_score' => $this->floatAttribute($prediction, 'confidence_score'),
+            'model_version' => $this->attribute($prediction, 'model_version'),
+            'feature_version' => $this->attribute($prediction, 'feature_version'),
+            'blend_version' => $this->attribute($prediction, 'blend_version'),
+        ];
     }
 
     private function attribute(?Model $model, string $key): mixed

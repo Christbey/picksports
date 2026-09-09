@@ -30,6 +30,7 @@ Totals use `total_edge = predicted_total - market_total`. Positive selects the o
 - `watch` and `pass` publish with `recommendation=pass`; they are not wager instructions.
 - NFL moneyline cannot be selected while `NFL_MONEYLINE_PLAY_ENABLED=false`.
 - Generated prose and reason codes cannot replace the canonical contract fields.
+- The NFL AI packet contains compact model evidence and one compact prediction snapshot. Full `model_metadata` is not duplicated into the provider request.
 - Stale rows remain stored for audit history but are withheld from the prediction API until analysis is regenerated from the current input hash.
 
 After a payload schema or decision-policy release, regenerate NFL daily analysis in batches. Until a current hash exists for a game, the API intentionally returns no AI analysis for that prediction.

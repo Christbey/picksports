@@ -141,6 +141,36 @@ test('bounded sourced context can invalidate but not create an nfl wager', funct
         ->and($payload['decision_contract']['recommendation'])->toBe('pass');
 });
 
+test('zero point context adjustments preserve the authoritative model edge precision', function () {
+    $prediction = nflAiSafetyFixture();
+    SportsGameContextReport::query()->create([
+        'sport' => 'nfl',
+        'game_id' => $prediction->game_id,
+        'status' => 'ready',
+        'prompt_version' => 'test',
+        'input_hash' => str_repeat('c', 64),
+        'confidence' => 85,
+        'summary' => 'Sourced context has no numeric impact.',
+        'team_context' => [],
+        'situational_context' => [],
+        'facts' => [[
+            'category' => 'schedule_note',
+            'team_side' => 'game',
+            'certainty' => 'confirmed',
+            'source_urls' => ['https://example.com/schedule'],
+        ]],
+        'sources' => [['url' => 'https://example.com/schedule']],
+        'researched_at' => now(),
+        'expires_at' => now()->addHours(4),
+    ]);
+
+    $payload = app(SportsAiPredictionPayloadBuilder::class)->build('nfl', $prediction);
+
+    expect($payload['decision_contract']['context_adjustment_applied'])->toBeFalse()
+        ->and($payload['decision_contract']['context_adjusted_edge']['spread'])->toBe(-0.5)
+        ->and($payload['decision_contract']['context_adjusted_edge']['total'])->toBe(-4.0);
+});
+
 test('deterministic nfl contract overrides a stronger ai tier and wrong market', function () {
     $prediction = nflAiSafetyFixture();
     $payload = app(SportsAiPredictionPayloadBuilder::class)->build('nfl', $prediction);

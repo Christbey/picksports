@@ -331,26 +331,34 @@ class SportsAiPredictionPayloadBuilder
     {
         $contextEligible = ($externalContext['available'] ?? false) === true
             && data_get($externalContext, 'deterministic_adjustment.eligible') === true;
-        $contextSpread = $contextEligible
-            ? $this->number(data_get($externalContext, 'context_adjusted_model.predicted_spread'))
+        $spreadAdjustment = $contextEligible
+            ? $this->number(data_get($externalContext, 'deterministic_adjustment.home_margin_points'))
             : null;
-        $contextTotal = $contextEligible
-            ? $this->number(data_get($externalContext, 'context_adjusted_model.predicted_total'))
+        $totalAdjustment = $contextEligible
+            ? $this->number(data_get($externalContext, 'deterministic_adjustment.total_points'))
             : null;
-        $marketSpread = $this->number($baseEdges['market_spread_home_margin'] ?? null);
-        $marketTotal = $this->number($baseEdges['market_total'] ?? null);
+        $spreadAdjusted = $spreadAdjustment !== null && abs($spreadAdjustment) > 0.0001;
+        $totalAdjusted = $totalAdjustment !== null && abs($totalAdjustment) > 0.0001;
+        $basePredictedSpread = $this->number($baseEdges['predicted_spread'] ?? null);
+        $basePredictedTotal = $this->number($baseEdges['predicted_total'] ?? null);
+        $baseSpreadEdge = $this->number($baseEdges['spread_edge'] ?? null);
+        $baseTotalEdge = $this->number($baseEdges['total_edge'] ?? null);
 
         return [
             ...$baseEdges,
-            'predicted_spread' => $contextSpread ?? ($baseEdges['predicted_spread'] ?? null),
-            'predicted_total' => $contextTotal ?? ($baseEdges['predicted_total'] ?? null),
-            'spread_edge' => $contextSpread !== null && $marketSpread !== null
-                ? round($contextSpread - $marketSpread, 3)
+            'predicted_spread' => $spreadAdjusted && $basePredictedSpread !== null
+                ? round($basePredictedSpread + $spreadAdjustment, 3)
+                : ($baseEdges['predicted_spread'] ?? null),
+            'predicted_total' => $totalAdjusted && $basePredictedTotal !== null
+                ? round($basePredictedTotal + $totalAdjustment, 3)
+                : ($baseEdges['predicted_total'] ?? null),
+            'spread_edge' => $spreadAdjusted && $baseSpreadEdge !== null
+                ? round($baseSpreadEdge + $spreadAdjustment, 3)
                 : ($baseEdges['spread_edge'] ?? null),
-            'total_edge' => $contextTotal !== null && $marketTotal !== null
-                ? round($contextTotal - $marketTotal, 3)
+            'total_edge' => $totalAdjusted && $baseTotalEdge !== null
+                ? round($baseTotalEdge + $totalAdjustment, 3)
                 : ($baseEdges['total_edge'] ?? null),
-            'context_adjustment_applied' => $contextSpread !== null || $contextTotal !== null,
+            'context_adjustment_applied' => $spreadAdjusted || $totalAdjusted,
         ];
     }
 

@@ -148,7 +148,11 @@ it('enforces the OpenAI search budget and records measured usage with estimated 
             && $data['max_output_tokens'] === 6000
             && $data['reasoning']['effort'] === 'none'
             && $data['store'] === false
-            && $data['text']['format']['type'] === 'json_schema';
+            && $data['text']['format']['type'] === 'json_schema'
+            && str_contains($data['input'], '"season_type_label": "preseason"')
+            && str_contains($data['input'], '"kickoff_at_utc": "2026-08-13T19:00:00+00:00"')
+            && str_contains($data['input'], '"kickoff_at_local": "2026-08-13T14:00:00-05:00"')
+            && str_contains($data['input'], 'This is a preseason game.');
     });
 
     $generation = AiGeneration::query()->where('purpose', 'nfl_game_context_research')->firstOrFail();
@@ -163,6 +167,32 @@ it('enforces the OpenAI search budget and records measured usage with estimated 
         ->and(data_get($generation->metadata, 'web_search_calls'))->toBe(2)
         ->and(data_get($generation->metadata, 'search_cap'))->toBe(5)
         ->and(data_get($generation->metadata, 'provider_response_id'))->toBe('resp_test_nfl_context');
+});
+
+it('uses regular-season evidence guidance for regular-season games', function () {
+    config()->set('sports.business_timezone', 'America/Chicago');
+
+    $home = Team::factory()->create(['abbreviation' => 'KC']);
+    $away = Team::factory()->create(['abbreviation' => 'DEN']);
+    $game = Game::factory()->create([
+        'season' => 2026,
+        'season_type' => '2',
+        'week' => 1,
+        'game_date' => '2026-09-10',
+        'game_time' => '00:20:00',
+        'home_team_id' => $home->id,
+        'away_team_id' => $away->id,
+    ]);
+    $service = app(NflWebContextResearchService::class);
+    $input = (new ReflectionMethod($service, 'input'))->invoke($service, $game->load('homeTeam', 'awayTeam'));
+    $prompt = (new ReflectionMethod($service, 'prompt'))->invoke($service, $input);
+
+    expect($input['season_type_label'])->toBe('regular_season')
+        ->and($input['kickoff_at_utc'])->toBe('2026-09-10T00:20:00+00:00')
+        ->and($input['kickoff_at_local'])->toBe('2026-09-09T19:20:00-05:00')
+        ->and($prompt)->toContain('This is a regular-season game.')
+        ->and($prompt)->toContain('Do not use preseason rotation framing.')
+        ->and($prompt)->not->toContain('A team\'s regular-season quality is not evidence that its starters will play.');
 });
 
 it('researches sourced nfl context and applies bounded adjustments to the ai packet', function () {

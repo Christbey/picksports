@@ -39,14 +39,14 @@ $config['features'] = [
     ],
     'daily_prediction_analysis' => [
         'enabled' => (bool) env('AI_DAILY_PREDICTION_ANALYSIS_ENABLED', true),
-        'prompt_version' => env('AI_DAILY_PREDICTION_ANALYSIS_PROMPT_VERSION', 'daily-prediction-analysis-v1'),
+        'prompt_version' => env('AI_DAILY_PREDICTION_ANALYSIS_PROMPT_VERSION', 'daily-prediction-analysis-v2'),
         'provider' => env('AI_DAILY_PREDICTION_ANALYSIS_PROVIDER', 'openai'),
         'model' => env('AI_DAILY_PREDICTION_ANALYSIS_MODEL', env('OPENAI_MODEL', 'gpt-4o-mini')),
         'timeout_seconds' => env('AI_DAILY_PREDICTION_ANALYSIS_TIMEOUT_SECONDS', 12),
     ],
     'nfl_game_context_research' => [
         'enabled' => (bool) env('AI_NFL_GAME_CONTEXT_RESEARCH_ENABLED', true),
-        'prompt_version' => env('AI_NFL_GAME_CONTEXT_RESEARCH_PROMPT_VERSION', 'nfl-game-context-research-v1'),
+        'prompt_version' => env('AI_NFL_GAME_CONTEXT_RESEARCH_PROMPT_VERSION', 'nfl-game-context-research-v2'),
         'provider' => env('AI_NFL_GAME_CONTEXT_RESEARCH_PROVIDER', 'openai'),
         'model' => env('AI_NFL_GAME_CONTEXT_RESEARCH_MODEL', 'gpt-5.6-luna'),
         'timeout_seconds' => env('AI_NFL_GAME_CONTEXT_RESEARCH_TIMEOUT_SECONDS', 60),

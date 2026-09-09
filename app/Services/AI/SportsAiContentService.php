@@ -64,7 +64,7 @@ class SportsAiContentService
         $generation = Schema::hasTable('ai_generations')
             ? $recorder->start(
                 purpose: 'daily_prediction_analysis',
-                promptVersion: (string) config('ai.features.daily_prediction_analysis.prompt_version', 'daily-prediction-analysis-v1'),
+                promptVersion: (string) config('ai.features.daily_prediction_analysis.prompt_version', 'daily-prediction-analysis-v2'),
                 provider: $provider,
                 model: $model,
                 input: $payload,

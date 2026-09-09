@@ -30,7 +30,7 @@ class NflWebContextResearchService
         $prompt = $this->prompt($input);
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $model ??= (string) config('ai.features.nfl_game_context_research.model', 'gpt-5.6-luna');
-        $promptVersion = (string) config('ai.features.nfl_game_context_research.prompt_version', 'nfl-game-context-research-v1');
+        $promptVersion = (string) config('ai.features.nfl_game_context_research.prompt_version', 'nfl-game-context-research-v2');
         $generation = Schema::hasTable('ai_generations')
             ? $this->generationRecorder->start(
                 purpose: 'nfl_game_context_research',
@@ -173,14 +173,21 @@ class NflWebContextResearchService
     /** @return array<string, mixed> */
     private function input(Game $game): array
     {
+        $dateWindow = app(SportsDateWindowService::class);
+        $kickoffUtc = $dateWindow->gameDateTimeUtc($game->game_date, $game->game_time);
+
         return [
             'as_of' => now()->toIso8601String(),
             'game_id' => (int) $game->getKey(),
             'season' => is_numeric($game->season) ? (int) $game->season : $game->season,
             'season_type' => $game->season_type,
+            'season_type_label' => $this->seasonTypeLabel($game->season_type),
             'week' => $game->week,
-            'game_date' => app(SportsDateWindowService::class)->gameDateForDisplay($game->game_date, $game->game_time),
+            'game_date' => $dateWindow->gameDateForDisplay($game->game_date, $game->game_time),
             'game_time' => $game->game_time,
+            'kickoff_at_utc' => $kickoffUtc?->toIso8601String(),
+            'kickoff_at_local' => $kickoffUtc?->setTimezone($dateWindow->timezone())->toIso8601String(),
+            'business_timezone' => $dateWindow->timezone(),
             'venue' => $game->venue_name,
             'home_team' => [
                 'name' => $this->teamName($game->homeTeam),
@@ -201,11 +208,17 @@ class NflWebContextResearchService
     private function prompt(array $input): string
     {
         $json = json_encode($input, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $seasonGuidance = match ($input['season_type_label'] ?? 'unknown') {
+            'preseason' => 'This is a preseason game. Participation plans and quarterback rotations matter more than regular-season depth-chart labels. Search specifically for each head coach\'s latest participation announcement and credible same-day reporting. A team\'s regular-season quality is not evidence that its starters will play.',
+            'regular_season' => 'This is a regular-season game. Do not use preseason rotation framing. Prioritize official injury designations, practice participation, confirmed starting quarterbacks, travel/rest, weather, and current market movement.',
+            'postseason' => 'This is a postseason game. Do not use preseason rotation framing. Prioritize official injury designations, practice participation, confirmed starting quarterbacks, weather, and current market movement; treat rest decisions as material only when directly sourced.',
+            default => 'The season type is uncertain. Do not assume preseason participation patterns. State uncertainty and prioritize directly sourced current injury, quarterback, weather, and market facts.',
+        };
 
         return <<<PROMPT
 Research the current web context for this NFL game as of the supplied timestamp.
 
-For preseason games, participation plans and quarterback rotations matter more than regular-season depth-chart labels. Search specifically for each head coach's latest participation announcement and credible same-day reporting. A team's regular-season quality is not evidence that its starters will play.
+{$seasonGuidance}
 
 Allowed normalized values:
 - starter_participation: full, extended, limited, none, unknown
@@ -385,5 +398,17 @@ PROMPT;
         }
 
         return trim(((string) $team->location).' '.((string) $team->name)) ?: null;
+    }
+
+    private function seasonTypeLabel(mixed $seasonType): string
+    {
+        $seasonType = is_numeric($seasonType) ? (int) $seasonType : strtolower(trim((string) $seasonType));
+
+        return match ($seasonType) {
+            1, 'preseason' => 'preseason',
+            2, 'regular', 'regular_season' => 'regular_season',
+            3, 'postseason', 'playoffs' => 'postseason',
+            default => 'unknown',
+        };
     }
 }

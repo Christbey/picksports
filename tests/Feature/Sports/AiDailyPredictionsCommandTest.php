@@ -223,7 +223,7 @@ it('persists structured daily ai analysis for a slate prediction', function () {
         ->and($generation)->not->toBeNull()
         ->and($generation->purpose)->toBe('daily_prediction_analysis')
         ->and($generation->status)->toBe('completed')
-        ->and($generation->prompt_version)->toBe('daily-prediction-analysis-v1')
+        ->and($generation->prompt_version)->toBe('daily-prediction-analysis-v2')
         ->and($generation->output_hash)->not->toBeNull();
 });
 

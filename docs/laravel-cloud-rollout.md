@@ -24,6 +24,13 @@ This runbook preserves MySQL 8.4 for the first infrastructure move and treats ev
 
 ## Production AI workload contract
 
+- Use `php artisan ai:status` (or `php artisan ai:status --json`) for AI
+  production checks. It reports only allowlisted operational settings,
+  credential presence, and provider circuit state. Never run
+  `php artisan config:show ai` in shared terminals, deployment logs, support
+  transcripts, or automated reports because Laravel includes provider secret
+  values in that configuration tree. Rotate a provider key immediately if a
+  broad configuration dump is captured or shared.
 - Keep `AI_SPORTS_NARRATIVE_PROVIDER=template` and
   `AI_PLAYER_PROP_NARRATIVE_PROVIDER=template`. These jobs rewrite data the
   application already has; they must not consume the OpenAI budget reserved

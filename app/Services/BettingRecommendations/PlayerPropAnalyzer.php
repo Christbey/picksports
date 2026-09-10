@@ -423,6 +423,9 @@ class PlayerPropAnalyzer
             market: $prop->market,
             sportConfig: $sportConfig
         );
+        if ($context['availability']['unavailable'] ?? false) {
+            return null;
+        }
         $dataQualityScore = $this->calculateDataQualityScore(
             seasonSample: $timesCoveredSeason['games'] ?? 0,
             recentSample: $timesCoveredLast5['games'] ?? 0,
@@ -481,6 +484,14 @@ class PlayerPropAnalyzer
             'consistency' => $consistency,
         ];
         $analysis['confidence_decomposition']['schema_version'] = self::SIGNAL_MODEL_VERSION;
+        if (isset($context['availability'])) {
+            $analysis['confidence_decomposition']['availability'] = $context['availability'];
+            $analysis['reasoning'][] = sprintf(
+                'NFL availability: %s; workload multiplier %.3f.',
+                str_replace('_', ' ', $context['availability']['reason']),
+                $context['availability']['factor'],
+            );
+        }
         $analysis['confidence_decomposition']['signal_quality'] = $this->signalQuality(
             confidence: (int) $analysis['confidence'],
             dataQualityScore: $dataQualityScore,
@@ -1047,7 +1058,7 @@ class PlayerPropAnalyzer
     }
 
     /**
-     * @return array{pace_factor: float, opponent_factor: float, minutes_factor: float, usage_factor: float, usage_context: string, combined_factor: float}
+     * @return array{pace_factor: float, opponent_factor: float, minutes_factor: float, usage_factor: float, usage_context: string, combined_factor: float, availability?: array}
      */
     protected function buildContextAdjustments(
         Model $game,
@@ -1061,6 +1072,10 @@ class PlayerPropAnalyzer
         $opponentFactor = 1.0;
         $usageContext = $this->usageContextFactor($playerId, $market, $sportConfig);
         $minutesFactor = $usageContext['factor'];
+        $availability = ($sportConfig['odds_sport_key'] ?? '') === 'americanfootball_nfl'
+            ? app(NflPropAvailabilityContext::class)->resolve($game, $playerId, $market)
+            : null;
+        $minutesFactor *= $availability['factor'] ?? 1.0;
 
         if (isset($sportConfig['team_metric_model'])) {
             $teamMetricModel = $sportConfig['team_metric_model'];
@@ -1111,6 +1126,7 @@ class PlayerPropAnalyzer
             'usage_factor' => round($minutesFactor, 3),
             'usage_context' => $usageContext['label'],
             'combined_factor' => round($combined, 3),
+            ...($availability !== null ? ['availability' => $availability] : []),
         ];
     }
 
@@ -1328,6 +1344,16 @@ class PlayerPropAnalyzer
             return null;
         }
 
+        if (strtoupper($sport) === 'NFL') {
+            if (! $player instanceof Model) {
+                return null;
+            }
+            $availability = app(NflPropAvailabilityContext::class)->resolve($game, (int) $player->id, (string) $prop->market);
+            if ($availability['unavailable'] || data_get($prop->confidence_decomposition, 'availability.fingerprint') !== $availability['fingerprint']) {
+                return null;
+            }
+        }
+
         return [
             'prop' => $prop,
             'player' => $player instanceof Model ? $player : [
@@ -1369,6 +1395,7 @@ class PlayerPropAnalyzer
                 'usage_factor' => 1.0,
                 'usage_context' => 'stored_context_factor',
                 'combined_factor' => $contextFactor,
+                ...(isset($availability) ? ['availability' => $availability] : []),
             ] : null,
             'data_quality_score' => $prop->data_quality_score,
             'match_quality_score' => $prop->match_quality_score,

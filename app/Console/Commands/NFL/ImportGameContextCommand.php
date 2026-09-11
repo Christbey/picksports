@@ -146,7 +146,10 @@ class ImportGameContextCommand extends Command
         }
         $fact['published_at'] = empty($values['published_at']) ? null : CarbonImmutable::parse($values['published_at'], 'UTC')->setTimezone(config('app.timezone'))->toDateTimeString();
         $fact['evidence'] = $evidence;
-        $fact['evidence_hash'] = hash('sha256', json_encode($fact, JSON_THROW_ON_ERROR));
+        $identity = $fact;
+        // Unrelated article widgets can change without changing the injury evidence.
+        unset($identity['evidence']['source_sha256']);
+        $fact['evidence_hash'] = hash('sha256', json_encode($identity, JSON_THROW_ON_ERROR));
         $fact['recorded_at'] = now();
 
         return $fact;

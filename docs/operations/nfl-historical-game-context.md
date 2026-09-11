@@ -23,6 +23,8 @@ curl -fL https://github.com/nflverse/nflverse-data/releases/download/injuries/in
 php artisan nfl:import-game-context injuries /tmp/nfl-context-injuries-2024.csv --schedules=/tmp/nfl-context-games.csv --source-url=https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_2024.csv --from-season=2024 --to-season=2024
 
 php artisan nfl:import-game-context evidence database/data/nfl/2025-sf-lar-context.json --schedules=/tmp/nfl-context-games.csv
+php artisan nfl:prepare-injury-archive database/data/nfl/nfl-com-injury-manifest.json /tmp/nfl-official-context.json
+php artisan nfl:import-game-context evidence /tmp/nfl-official-context.json --schedules=/tmp/nfl-context-games.csv --from-season=2023 --to-season=2025
 php artisan nfl:game-context-coverage --from-season=2023
 ```
 
@@ -30,8 +32,16 @@ Curated JSON uses `season`, `game_type` (`REG`, `WC`, `DIV`, `CON`, `SB`), archi
 
 ## Source limitations and outstanding coverage
 
-[nflverse documents that its injury provider stopped after 2024](https://nflreadr.nflverse.com/articles/nflverse_data_schedule.html). The downloaded 2023 file contains regular season and Wild Card reports; the 2024 file includes all postseason rounds. Neither implies every injury or IR absence was reported. Preseason is absent from the schedule source. 2025 onward needs archived official team/NFL reports or another historically timestamped provider; do not backfill it from today's injury API.
+[nflverse documents that its injury provider stopped after 2024](https://nflreadr.nflverse.com/articles/nflverse_data_schedule.html). The downloaded 2023 file contains regular season and Wild Card reports; the 2024 file includes all postseason rounds. Neither implies every injury or IR absence was reported. Preseason is absent from the schedule source. The reviewed NFL.com manifest supplements this with all 18 weeks and all four playoff rounds of 2025, plus the 2023 Divisional, Championship, and Super Bowl reports. Do not backfill historical games from today's injury API.
 
-`database/data/nfl/2025-sf-lar-context.json` supplies the verified October 2 and November 9, 2025 Purdy cases plus selected reported injuries. Purdy's October report says Out (toe). November's report says Questionable (toe), followed by an official inactive announcement. Each assertion has its own source URL and original timestamp. This is selected evidence, not complete 2025 league coverage.
+`database/data/nfl/2025-sf-lar-context.json` supplies the verified October 2 and November 9, 2025 Purdy cases plus selected reported injuries. Purdy's October report says Out (toe). November's report says Questionable (toe), followed by an official inactive announcement. Each assertion has its own source URL and original timestamp. These selected facts supplement the league-wide archive and preserve the separate inactive announcements.
 
 Coverage counts are team-games with at least one fact, not completeness claims. The report separately counts team-games with no injury evidence, including preseason and missing seasons. Ongoing ingestion of these historical facts is manual; current injury snapshots continue through the existing ingestion jobs.
+
+## Official NFL archive validation
+
+`nfl:prepare-injury-archive` fetches only the reviewed official URLs in the manifest. It validates the article season, week/round, team headings, and player-list format, then checks a SHA-256 of the extracted evidence against the reviewed manifest. A changed report fails preparation before replacing the output file. HTML widgets may change without invalidating the extracted content. Each record retains the full HTML hash and original injury-list text. The latest article update time is used, since the first publication may predate subsequent report changes.
+
+The parser tolerates whitespace, dual positions, missing positions (kept null), inconsistent separators, and two reviewed missing-parenthesis typos (Sauce Gardner/calf and Skyy Moore/knee); the original text stays available. It never infers a participation result or a missing injury reason. The manifest contains 25 reports and 2,802 designation facts: 2,744 for 2025 and 58 for the missing 2023 postseason rounds.
+
+The initial production import covers completed 2023–2025 seasons. Preseason and the ongoing 2026 season are not included in this historical backfill; their existing current-injury/snapshot jobs remain separate. A team with no designation list in an archived article still has unknown completeness, not a certified healthy roster.

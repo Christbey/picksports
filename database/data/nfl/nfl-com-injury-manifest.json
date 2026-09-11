@@ -1,0 +1,177 @@
+[
+    {
+        "url": "https://www.nfl.com/news/nfl-week-5-injury-report-player-statuses-for-all-14-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 5,
+        "facts_sha256": "51276b25aad4aa88b1147fa0608036d3c6d42686a25a2c837fa0cc48882f7559"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-6-injury-report-player-statuses-for-all-15-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 6,
+        "facts_sha256": "e31e50a59df4e33f11c06e3586f1e2cb15a8725f9e091c8fe5908b7e5ab435a3"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-7-injury-report-player-statuses-for-all-15-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 7,
+        "facts_sha256": "523ee44c4b028f727bf1250226866963940e3c4280930e0d484e6616cf0c4fbd"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-8-injury-report-player-statuses-for-all-13-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 8,
+        "facts_sha256": "4c46bf1c2b9f0c0b5600ce0d57104c97b33fc5d2c37d7bcdcf09363d3d49e73b"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-9-injury-report-player-statuses-for-all-14-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 9,
+        "facts_sha256": "0cf3168c014c614b3cc65df98a86ce5528fda5838d0839470daabd3a233afbc0"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-10-injury-report-player-statuses-for-all-14-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 10,
+        "facts_sha256": "1828f2206eb45e787b21a1f7eb120e12d729144a8ba456ace5c00e8916ca6398"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-11-injury-report-player-statuses-for-all-15-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 11,
+        "facts_sha256": "c4be59ff0badaaaadc3324ea5e08d63db45480059d448991a0408ba4e2451d9b"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-12-injury-report-player-statuses-for-all-14-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 12,
+        "facts_sha256": "c58dbeba1cd66ce513a1e9eff23d8373cc23bb1811e329ff402e622fc6d55e9e"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-13-injury-report-player-statuses-for-all-14-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 13,
+        "facts_sha256": "cbadc595f59697ee0451b7819a853c21c651d0449db9ff3bdf7b2ce39570d6ee"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-14-injury-report-player-statuses-for-all-14-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 14,
+        "facts_sha256": "4f91a8667b393e8585fb40647e99a2ecbb5cb055431a279dfe0256f24c3f7dce"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-15-injury-report-player-statuses-for-all-16-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 15,
+        "facts_sha256": "08ecaaa2aab64f1a33aaa5da8b476b354b4552baa77d990102f30dc2a577ab94"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-16-injury-report-player-statuses-for-all-16-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 16,
+        "facts_sha256": "c67dc9eec2656add86b1be29250d2087ae6d813663c038998c8b16e256dcc574"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-17-injury-report-player-statuses-for-all-16-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 17,
+        "facts_sha256": "9bcdb9f15cffeadbb4446a2688a4615f913efaf3715f1dbf193b2baed8a4818b"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-1-injury-report-player-statuses-for-all-16-games-2025-season",
+        "season": 2025,
+        "type": "REG",
+        "week": 1,
+        "facts_sha256": "9d03623dcb6d097fc39f0795f24bfaee8b18f1e0421a5a6ca604542b1b11e08e"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-2-injury-report-player-statuses-2025-season",
+        "season": 2025,
+        "type": "REG",
+        "week": 2,
+        "facts_sha256": "542948ddb7c81c8416c2abb89b5013d77af053f1f281dee1bc6b172a6972115b"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-3-injury-report-player-statuses-2025-season",
+        "season": 2025,
+        "type": "REG",
+        "week": 3,
+        "facts_sha256": "303279b4608d564a98bef72ad23d7f1f2aec4283fe2f74fe10b381112fe57ac7"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-4-injury-report-player-statuses-2025-season",
+        "season": 2025,
+        "type": "REG",
+        "week": 4,
+        "facts_sha256": "b44d09f60d7205505dec27c229d29d7e5ad48ecdd40135b58a7a120adffc1bcd"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-week-18-injury-report-player-statuses-for-all-16-games",
+        "season": 2025,
+        "type": "REG",
+        "week": 18,
+        "facts_sha256": "120cc2c36e90f48d35a64d3dff580c648760183732f427ebe2afba77c180e5c9"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-wild-card-weekend-injury-report-player-statuses-for-all-six-games-2025",
+        "season": 2025,
+        "type": "WC",
+        "week": 19,
+        "facts_sha256": "b6d0d4c42e1089ae779b0f1b6e5676607b41645f5227a6582df74d5052df6e51"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-divisional-round-injury-report-player-statuses-for-all-four-games",
+        "season": 2025,
+        "type": "DIV",
+        "week": 20,
+        "facts_sha256": "09eafd205496ee59a453e9993736465591ea1202061b56f4477bb1ab6cbc6179"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-championship-sunday-injury-report-patriots-broncos-rams-seahawks",
+        "season": 2025,
+        "type": "CON",
+        "week": 21,
+        "facts_sha256": "9a708fc6229ad7f52979af23db554f924776969ef400310888b30cd181a3e957"
+    },
+    {
+        "url": "https://www.nfl.com/news/super-bowl-lx-injury-report-seattle-seahawks-vs-new-england-patriots",
+        "season": 2025,
+        "type": "SB",
+        "week": 22,
+        "facts_sha256": "2b55835b6059e904b2b5425d53ae7f12319de606a709239f4305443671f7eb29"
+    },
+    {
+        "url": "https://www.nfl.com/news/2023-nfl-divisional-round-injury-report",
+        "season": 2023,
+        "type": "DIV",
+        "week": 20,
+        "facts_sha256": "dbf0d4995875a3d4b489e540b6bd5ebd02a76c0b8b88c62f2ab6a3909ced6a0d"
+    },
+    {
+        "url": "https://www.nfl.com/news/nfl-playoffs-championship-sunday-injury-report",
+        "season": 2023,
+        "type": "CON",
+        "week": 21,
+        "facts_sha256": "4f03e3ebe23d67d7cc69488c6cc75611bfcd8dc83d2d5f8d2ba86579afa7fea2"
+    },
+    {
+        "url": "https://www.nfl.com/news/super-bowl-lviii-injury-report-san-francisco-49ers-vs-kansas-city-chiefs",
+        "season": 2023,
+        "type": "SB",
+        "week": 22,
+        "facts_sha256": "102b83bac5dcfe948b07a0734c86999ea233a2981d65fbc7378e166c4cbac89b"
+    }
+]

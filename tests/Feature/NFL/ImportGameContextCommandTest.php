@@ -81,3 +81,15 @@ it('uses the archive postseason round rather than ESPN postseason week numbering
     artisan('nfl:import-game-context', ['dataset' => 'injuries', 'file' => $this->input, ...$this->contextOptions])->assertSuccessful();
     expect(GameContextFact::first()->game_id)->toBe($this->game->id);
 });
+
+it('does not duplicate unchanged facts when unrelated source HTML changes', function () {
+    $row = ['season' => 2025, 'game_type' => 'REG', 'week' => 5, 'team' => 'SF', 'kind' => 'injury_report', 'subject' => 'Brock Purdy', 'designation' => 'Out', 'source_url' => 'https://www.nfl.com/news/report', 'source_sha256' => 'first-html-hash'];
+    file_put_contents($this->input, json_encode([$row]));
+    $args = ['dataset' => 'evidence', 'file' => $this->input, ...$this->contextOptions];
+    artisan('nfl:import-game-context', $args)->assertSuccessful();
+    $recordedAt = GameContextFact::first()->recorded_at;
+    $row['source_sha256'] = 'changed-widget-hash';
+    file_put_contents($this->input, json_encode([$row]));
+    artisan('nfl:import-game-context', $args)->assertSuccessful();
+    expect(GameContextFact::count())->toBe(1)->and(GameContextFact::first()->recorded_at->eq($recordedAt))->toBeTrue();
+});

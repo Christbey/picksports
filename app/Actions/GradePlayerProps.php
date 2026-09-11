@@ -87,6 +87,7 @@ class GradePlayerProps
         if ($props->isEmpty()) {
             return [
                 'graded' => 0,
+                'skipped' => 0,
                 'total_props' => 0,
                 'hit_rate' => 0,
                 'avg_error' => 0,
@@ -100,13 +101,17 @@ class GradePlayerProps
         $errors = [];
 
         foreach ($props as $prop) {
+            if (! is_numeric($prop->line)) {
+                continue;
+            }
             $actualValue = $this->getActualValue($prop);
 
             if ($actualValue === null) {
                 continue; // Skip if we can't find the actual stat
             }
 
-            $hitOver = $actualValue > $prop->line;
+            $hitOver = $this->sportFromProp($prop) === 'americanfootball_nfl' && $actualValue === (float) $prop->line
+                ? null : $actualValue > $prop->line;
             $error = abs($actualValue - $prop->line);
 
             // Update prop with grading results
@@ -131,6 +136,7 @@ class GradePlayerProps
 
         return [
             'graded' => $graded,
+            'skipped' => $props->count() - $graded,
             'total_props' => $graded,
             'hit_rate' => $graded > 0 ? round(($hitCount / $graded) * 100, 1) : 0,
             'avg_error' => $graded > 0 ? round(array_sum($errors) / count($errors), 2) : 0,
@@ -173,6 +179,9 @@ class GradePlayerProps
 
     protected function getActualValue(Model $prop): ?float
     {
+        if ($this->sportFromProp($prop) === 'americanfootball_nfl') {
+            return $this->getNflActualValue($prop);
+        }
         // Get the stat column name from market
         $statColumn = $this->getStatColumn($prop->market);
 
@@ -189,6 +198,48 @@ class GradePlayerProps
         }
 
         return (float) $playerStat->{$statColumn};
+    }
+
+    protected function getNflActualValue(Model $prop): ?float
+    {
+        $stat = $this->findPlayerStat($prop);
+        if (! $stat) {
+            return null;
+        }
+        $field = match ($prop->market) {
+            'player_pass_yds' => 'passing_yards',
+            'player_pass_attempts' => 'passing_attempts',
+            'player_pass_completions' => 'passing_completions',
+            'player_pass_tds' => 'passing_touchdowns',
+            'player_pass_interceptions' => 'interceptions_thrown',
+            'player_rush_yds' => 'rushing_yards',
+            'player_rush_attempts' => 'rushing_attempts',
+            'player_receptions' => 'receptions',
+            'player_reception_yds' => 'receiving_yards',
+            default => null,
+        };
+        if ($field !== null) {
+            // An absent category is not proof of zero or participation.
+            return is_numeric($stat->{$field}) ? (float) $stat->{$field} : null;
+        }
+        if ($prop->market !== 'player_anytime_td') {
+            return null;
+        }
+
+        $categories = ['rushing_attempts' => 'rushing_touchdowns', 'receptions' => 'receiving_touchdowns',
+            'kickoff_returns' => 'kickoff_return_touchdowns', 'punt_returns' => 'punt_return_touchdowns'];
+        $participated = (int) $stat->passing_attempts > 0 || (int) $stat->receiving_targets > 0;
+        $touchdowns = 0;
+        foreach ($categories as $usage => $tds) {
+            $participated = $participated || (int) $stat->{$usage} > 0;
+            if ((int) $stat->{$usage} > 0 && ! is_numeric($stat->{$tds})) {
+                return null;
+            }
+            $touchdowns += (int) $stat->{$tds};
+        }
+
+        // Passing TDs are not scored by the passer. Nonparticipants remain pending.
+        return $participated ? (float) $touchdowns : null;
     }
 
     protected function getStatColumn(string $market): ?string
@@ -245,6 +296,14 @@ class GradePlayerProps
         $stats = $playerStatModel::where('game_id', $gameId)
             ->with('player')
             ->get();
+
+        if ($playerStatModel === \App\Models\NFL\PlayerStat::class) {
+            $normalize = fn (string $name): string => preg_replace('/[^a-z0-9]/', '', strtolower($name));
+            $matches = $stats->filter(fn ($stat) => $stat->player
+                && $normalize((string) $stat->player->full_name) === $normalize($playerName));
+
+            return $matches->count() === 1 ? $matches->first() : null;
+        }
 
         $bestMatch = null;
         $highestSimilarity = 0;

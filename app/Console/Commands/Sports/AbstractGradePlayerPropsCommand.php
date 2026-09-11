@@ -40,8 +40,12 @@ abstract class AbstractGradePlayerPropsCommand extends Command
 
         $results = $gradePlayerProps->execute($this->sportKey(), $season);
 
+        if (($results['skipped'] ?? 0) > 0) {
+            $this->warn("{$results['skipped']} props remain pending: unsupported market, missing line, or insufficient player statistics.");
+        }
+
         if ($results['graded'] === 0) {
-            $this->warn('No ungraded player props found for completed games.');
+            $this->warn('No additional player props could be graded for completed games.');
 
             return self::SUCCESS;
         }

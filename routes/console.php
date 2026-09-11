@@ -950,6 +950,7 @@ $scheduleSportPipeline(
 );
 $nflCanonicalPipelineEnabled = fn (): bool => $nflInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false);
+$scheduleDailySeasonJob("nfl:grade-player-props --season={$fallSeasonYear}", '08:40', $nflInSeason, 'NFL: Grade Player Props');
 $scheduleDailySeasonJob("nfl:evaluate-canonical-predictions --season={$fallSeasonYear}", '08:35', $nflCanonicalPipelineEnabled, 'NFL: Evaluate Canonical Predictions');
 $scheduleDailySeasonJob("nfl:generate-canonical-predictions --season={$fallSeasonYear}", '10:05', $nflCanonicalPipelineEnabled, 'NFL: Generate Canonical Predictions');
 $scheduleWeeklySeasonJob(

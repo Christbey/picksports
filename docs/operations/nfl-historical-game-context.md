@@ -44,4 +44,11 @@ Coverage counts are team-games with at least one fact, not completeness claims. 
 
 The parser tolerates whitespace, dual positions, missing positions (kept null), inconsistent separators, and two reviewed missing-parenthesis typos (Sauce Gardner/calf and Skyy Moore/knee); the original text stays available. It never infers a participation result or a missing injury reason. The manifest contains 25 reports and 2,802 designation facts: 2,744 for 2025 and 58 for the missing 2023 postseason rounds.
 
-The initial production import covers completed 2023–2025 seasons. Preseason and the ongoing 2026 season are not included in this historical backfill; their existing current-injury/snapshot jobs remain separate. A team with no designation list in an archived article still has unknown completeness, not a certified healthy roster.
+The initial production import covers completed 2023–2025 seasons. The completed September 9, 2026 Patriots–Seahawks opener is also documented in the checked-in `2026-ne-sea` files: two coaches, five pregame injury entries, and Darnold's hip injury with `evidence.phase=in_game`. Its article update time is after kickoff, so it cannot enter a pregame cutoff query. Preseason and other ongoing 2026 games remain outside this historical import; their current-injury/snapshot jobs remain separate. A team with no designation list in an archived article still has unknown completeness, not a certified healthy roster.
+
+To reproduce the 2026 opener addition:
+
+```sh
+php artisan nfl:import-game-context schedules database/data/nfl/2026-ne-sea-schedule.csv --from-season=2026 --to-season=2026 --source-url=https://raw.githubusercontent.com/nflverse/nfldata/master/data/games.csv
+php artisan nfl:import-game-context evidence database/data/nfl/2026-ne-sea-context.json --schedules=database/data/nfl/2026-ne-sea-schedule.csv --from-season=2026 --to-season=2026
+```

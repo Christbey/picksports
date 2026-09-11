@@ -100,6 +100,11 @@ class Game extends Model
         return $this->hasMany(PlayerStat::class, 'game_id');
     }
 
+    public function contextFacts(): HasMany
+    {
+        return $this->hasMany(GameContextFact::class, 'game_id');
+    }
+
     public function teamStats(): HasMany
     {
         return $this->hasMany(TeamStat::class, 'game_id');

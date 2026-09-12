@@ -29,6 +29,12 @@ The board is `/cfb/player-props`; authenticated API endpoints include `/api/v2/s
 
 ## Readiness checks
 
-The initial production audit on September 12, 2026 found 71 mapped games, zero CFB players, and zero CFB player-stat rows. Fetching alone was therefore insufficient. After deployment, verify imported quote counts, linked players, available stat samples, and actual board recommendations separately. Monitor the command's `failed`, `empty`, `linked`, `stat_rows`, and `recommendations` counts; do not equate stored quotes with scored recommendations.
+The initial production audit on September 12, 2026 found 71 mapped UTC-dated games, zero CFB players, and zero CFB player-stat rows. Fetching alone was therefore insufficient. After deployment, verify imported quote counts, linked players, available stat samples, and actual board recommendations separately. Monitor the command's `failed`, `empty`, `linked`, `stat_rows`, and `recommendations` counts; do not equate stored quotes with scored recommendations.
 
 Coverage tests: `tests/Feature/CFB/PlayerPropsPipelineTest.php` exercises fetching, alternate lines, idempotency, preserved grades, API failures, empty responses, playoff dates, grading, eligibility, historical leakage prevention, authenticated endpoints, and roster-before-stats preparation.
+
+### Initial live verification
+
+The September 12 Central-date run checked 80 upcoming mapped games: 221 quotes across 27 games, 53 games without supported quotes, and zero API/preparation failures. Preparation populated 5,399 players and 6,718 player-stat rows across 265 games. The final audit found 192 linked props, 83 scored props, and one recommendation above the board threshold; 29 unmatched quotes stayed withheld. These are point-in-time counts, not guarantees of future market coverage or betting accuracy.
+
+Board eligibility is evaluated before the CFB result limit, so stale high-confidence quotes cannot crowd out valid lower-ranked picks. Final-game detail ingestion and this board-limit behavior both have regression coverage.

@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\ESPN\CFB\SyncGameDetails;
 use App\Actions\GradePlayerProps;
 use App\Actions\OddsApi\CFB\SyncPlayerPropsForGames;
 use App\Models\CFB\Game;
@@ -170,4 +171,34 @@ test('preparation imports roster before box scores and links previously unknown 
     $this->artisan('cfb:prepare-player-props', ['--date' => '2026-09-12'])->assertSuccessful();
     expect(PlayerStat::count())->toBe(3)->and($prop->fresh()->player_id)->not->toBeNull();
     expect((float) data_get($prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toBe(300.0);
+});
+
+test('expired high-confidence college quotes do not hide eligible lower-ranked picks at the board limit', function () {
+    $snapshot = ['recommended_side' => 'Over', 'confidence_score' => 90, 'predicted_over_probability' => 70,
+        'confidence_decomposition' => ['schema_version' => 'player-prop-signal-v2', 'stat_summary' => ['season_avg' => 300], 'cover_record' => ['season' => ['games' => 6]]]];
+    $expired = ($this->prop)();
+    $expired->update([...$snapshot, 'fetched_at' => now()->subHours(2)]);
+    $current = ($this->prop)();
+    $current->update([...$snapshot, 'confidence_score' => 70]);
+    $board = app(PlayerPropAnalyzer::class)->precomputedRecommendations(sport: 'CFB', gameFilter: $this->game->id, limit: 1);
+    expect($board)->toHaveCount(1)->and($board->first()['prop']->id)->toBe($current->id);
+});
+
+test('grades college props immediately after final game details ingest player stats', function () {
+    $this->game->update(['status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 17]);
+    $prop = ($this->prop)('player_pass_yds', 200.5);
+    PlayerStat::factory()->create(['game_id' => $this->game->id, 'player_id' => $this->player->id, 'team_id' => $this->team->id, 'passing_yards' => 250]);
+    $service = Mockery::mock(EspnService::class);
+    $service->shouldReceive('getGame')->with($this->game->espn_event_id)->andReturn(['boxscore' => [], 'header' => ['competitions' => [[
+        'status' => ['type' => ['name' => 'STATUS_FINAL']],
+        'competitors' => [['homeAway' => 'home', 'score' => '24'], ['homeAway' => 'away', 'score' => '17']],
+    ]]]]);
+    $stats = Mockery::mock();
+    $stats->shouldReceive('execute')->once()->andReturn(1);
+    $teams = Mockery::mock();
+    $teams->shouldReceive('execute')->once()->andReturn(2);
+    $plays = Mockery::mock();
+    $plays->shouldReceive('execute')->once()->andReturn(1);
+    (new SyncGameDetails($service, $stats, $teams, $plays))->execute($this->game->espn_event_id);
+    expect($prop->fresh()->graded_at)->not->toBeNull()->and($prop->fresh()->hit_over)->toBeTrue();
 });

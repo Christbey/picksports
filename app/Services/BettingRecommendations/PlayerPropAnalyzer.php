@@ -329,12 +329,13 @@ class PlayerPropAnalyzer
             ->orderByDesc('confidence_score')
             ->orderByDesc('edge_probability')
             ->orderByDesc('fetched_at')
-            ->limit(max(1, min($limit, 150)))
+            ->when($sport !== 'CFB', fn ($query) => $query->limit(max(1, min($limit, 150))))
             ->get();
 
         return $props
             ->map(fn (Model $prop): ?array => $this->precomputedRecommendationPayload($prop, $sport))
             ->filter()
+            ->take(max(1, min($limit, 150)))
             ->values();
     }
 

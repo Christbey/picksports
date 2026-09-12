@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import GamePlayerPropsCard from '@/components/game-page/GamePlayerPropsCard.vue';
+import CfbLiveBettingCard from '@/components/game-page/CfbLiveBettingCard.vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import NflGameEnhancements from '@/components/game-page/NflGameEnhancements.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
@@ -24,6 +25,7 @@ const {
         </template>
 
         <template #afterLinescore>
+            <CfbLiveBettingCard :game-id="gameId" />
             <BettingPlanCard
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"
             />

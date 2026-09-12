@@ -1064,7 +1064,7 @@ $scheduleSportPipeline(
     '03:25',
     'CFB: Sync Current Week',
     'espn:sync-cfb-games-scoreboard',
-    '12:00',
+    '10:00',
     '02:00',
     'CFB: Live Scoreboard Sync',
     'espn:sync-cfb-game-details',
@@ -1175,3 +1175,11 @@ Schedule::command('cfb:sync-player-props --prepare')
     ->onOneServer()
     ->name('CFB: Sync and Analyze Player Props');
 $scheduleDailySeasonJob("cfb:grade-player-props --season={$fallSeasonYear}", '08:40', $cfbInSeason, 'CFB: Grade Player Props');
+
+Schedule::command('cfb:sync-live-betting')
+    ->everyTwoMinutes()
+    ->when($cfbInSeason)
+    ->withoutOverlapping(10)
+    ->onOneServer()
+    ->runInBackground()
+    ->name('CFB: Capture Live Betting Snapshots');

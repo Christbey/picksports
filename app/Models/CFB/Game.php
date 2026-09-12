@@ -93,6 +93,11 @@ class Game extends Model
         return $this->hasMany(Play::class, 'game_id');
     }
 
+    public function liveSnapshots(): HasMany
+    {
+        return $this->hasMany(LivePredictionSnapshot::class, 'game_id');
+    }
+
     public function playerProps(): HasMany
     {
         return $this->hasMany(PlayerProp::class, 'game_id');

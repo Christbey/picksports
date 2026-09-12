@@ -2,6 +2,7 @@
 
 namespace App\Actions\ESPN\CFB;
 
+use App\Actions\CFB\UpdateLivePrediction;
 use App\Actions\ESPN\AbstractSummaryUpdatingSyncGameDetails;
 use App\Actions\GradePlayerProps;
 use App\Models\CFB\Game;
@@ -20,6 +21,10 @@ class SyncGameDetails extends AbstractSummaryUpdatingSyncGameDetails
             if ($grading['graded'] > 0) {
                 app(SportsViewCache::class)->bustSegment(SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE);
             }
+        }
+
+        if ($game && ($game->liveSnapshots()->exists() || in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'], true))) {
+            app(UpdateLivePrediction::class)->execute($game);
         }
 
         return $result;

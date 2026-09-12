@@ -16,6 +16,11 @@ class EspnService extends BaseEspnService
 
     protected const SCOREBOARD_EVENT_GROUPS = 80;
 
+    public function getLiveGame(string $eventId): ?array
+    {
+        return $this->get($this->buildUrl('site', 'summary', ['eventId' => $eventId]), false);
+    }
+
     public function getTeamsPage(int $page = 1): ?array
     {
         $limit = $this->teamsLimit ?? 500;

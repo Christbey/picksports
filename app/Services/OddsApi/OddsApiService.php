@@ -102,6 +102,7 @@ class OddsApiService
         string $eventId,
         array $markets,
         string $bookmaker = 'draftkings',
+        bool $useCache = true,
     ): ?array {
         if ($markets === []) {
             return null;
@@ -114,7 +115,7 @@ class OddsApiService
             'markets' => implode(',', array_values(array_unique($markets))),
             'bookmakers' => $bookmaker,
             'oddsFormat' => 'american',
-        ]));
+        ]), $useCache);
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Auth\TokenAuthController;
 use App\Http\Controllers\Api\CBB\BracketController as CbbBracketController;
 use App\Http\Controllers\Api\GroupController;
 use App\Http\Controllers\Api\V2\Admin\PayloadInspectorController;
+use App\Http\Controllers\Api\V2\CfbLiveBettingController;
 use App\Http\Controllers\Api\V2\DeveloperSandboxController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\MlbDailyPickController;
@@ -167,6 +168,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
             Route::get('/games/{game}', [SportGameController::class, 'show'])->name('games.show');
             Route::get('/games/{game}/depth-charts', [SportDepthChartController::class, 'gameShow'])->name('games.depth-charts.show');
             Route::get('/games/{game}/prediction', [SportPredictionController::class, 'gamePrediction'])->name('games.prediction.show');
+            Route::get('/games/{game}/live-betting', CfbLiveBettingController::class)->name('games.live-betting.show');
             Route::get('/games/{game}/player-props', [SportPlayerPropController::class, 'gameIndex'])->name('games.player-props.index');
 
             Route::get('/teams', [SportTeamController::class, 'index'])->name('teams.index');

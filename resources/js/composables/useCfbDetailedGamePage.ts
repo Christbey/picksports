@@ -240,8 +240,27 @@ export function useCfbDetailedGamePage(gameId: number) {
         }
     };
 
-    onMounted(load);
-    onBeforeUnmount(() => requestController.abort());
+    let scoreboardTimer: ReturnType<typeof setInterval> | undefined;
+    onMounted(() => {
+        void load();
+        scoreboardTimer = setInterval(async () => {
+            if (document.hidden || currentGame.value.status === 'STATUS_FINAL')
+                return;
+            try {
+                const response = await api.games.show('cfb', gameId, {
+                    init: { signal: requestController.signal },
+                });
+                if (response?.data)
+                    currentGame.value = response.data as unknown as NflPageGame;
+            } catch {
+                /* Keep the last scoreboard until the next refresh. */
+            }
+        }, 30000);
+    });
+    onBeforeUnmount(() => {
+        requestController.abort();
+        if (scoreboardTimer) clearInterval(scoreboardTimer);
+    });
 
     const awayLabel = computed(() => awayTeam.value?.abbreviation || null);
     const homeLabel = computed(() => homeTeam.value?.abbreviation || null);

@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Schema;
 class AnalyzePlayerPropsCommand extends Command
 {
     protected $signature = 'sports:analyze-player-props
-        {--sport= : Sport to analyze: mlb, nba, nfl, cbb, wnba}
+        {--sport= : Sport to analyze: mlb, nba, nfl, cbb, cfb, wnba}
         {--season= : Optional season filter}
         {--min-games=3 : Minimum player game sample}
         {--window-days= : Active game window length}
@@ -30,6 +30,7 @@ class AnalyzePlayerPropsCommand extends Command
         'nba' => 'NBA',
         'nfl' => 'NFL',
         'cbb' => 'CBB',
+        'cfb' => 'CFB',
         'wnba' => 'WNBA',
     ];
 

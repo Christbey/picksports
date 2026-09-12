@@ -2,7 +2,9 @@
 
 namespace App\Services\Api\V2;
 
+use App\Models\CFB\Game;
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
+use App\Services\BettingRecommendations\CfbPropEligibility;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,6 +43,7 @@ class SportPlayerPropQuery
         $table = (new $propModel)->getTable();
 
         return $propModel::query()
+            ->when($context->slug === 'cfb' && ($filters['only_ungraded'] ?? false), fn ($q) => $q->where('is_current', true))
             ->with($this->relationsFor($propModel, $context))
             ->when(($filters['game_id'] ?? null) && $this->hasColumn($table, 'game_id'), fn (Builder $query): Builder => $query->where('game_id', $filters['game_id']))
             ->when(($filters['player_id'] ?? null) && $this->hasColumn($table, 'player_id'), fn (Builder $query): Builder => $query->where('player_id', $filters['player_id']))
@@ -87,6 +90,12 @@ class SportPlayerPropQuery
 
     private function whereGameDate(Builder $query, string $operator, string $date): Builder
     {
-        return $query->whereHas('game', fn (Builder $query): Builder => $query->whereDate('game_date', $operator, $date));
+        return $query->whereHas('game', function (Builder $query) use ($operator, $date): Builder {
+            if ($operator === '=' && $query->getModel() instanceof Game) {
+                return CfbPropEligibility::onDate($query, $date);
+            }
+
+            return $query->whereDate('game_date', $operator, $date);
+        });
     }
 }

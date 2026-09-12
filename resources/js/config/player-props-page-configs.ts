@@ -23,6 +23,12 @@ const configs: Record<string, PlayerPropsPageConfig> = {
             'Data-driven player prop bets based on statistical analysis and recent form',
         sportSlug: 'wnba',
     },
+    CFB: {
+        sportLabel: 'College Football',
+        description:
+            'Passing, rushing, and receiving yardage props for college football and the playoffs',
+        sportSlug: 'cfb',
+    },
     NFL: {
         sportLabel: 'NFL',
         description:

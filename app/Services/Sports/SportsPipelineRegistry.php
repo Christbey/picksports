@@ -280,6 +280,7 @@ class SportsPipelineRegistry
                     '--force' => true,
                 ]),
                 $this->step('Sync odds', 'cfb:sync-odds'),
+                $this->step('Sync player props', 'cfb:sync-player-props', ['--prepare' => true]),
             ],
             default => [],
         };

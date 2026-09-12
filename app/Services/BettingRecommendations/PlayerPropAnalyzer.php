@@ -2,6 +2,11 @@
 
 namespace App\Services\BettingRecommendations;
 
+use App\Models\CFB\Game;
+use App\Models\CFB\Player;
+use App\Models\CFB\PlayerProp;
+use App\Models\CFB\PlayerStat;
+use App\Models\CFB\Team;
 use App\Services\OddsApi\OddsApiService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -248,6 +253,8 @@ class PlayerPropAnalyzer
     /**
      * Analyze player props for any sport and generate betting recommendations
      */
+    protected ?PlayerProp $cfbAnalysisProp = null;
+
     public function analyzeProps(
         string $sport = 'NBA',
         ?int $minGames = 3,
@@ -262,9 +269,10 @@ class PlayerPropAnalyzer
 
         // Get player props filtered by date/game selection
         $props = $playerPropModel::query()
+            ->when($sport === 'CFB', fn ($query) => $query->where('is_current', true))
             ->whereHas('game', function ($q) use ($dateFilter, $gameFilter) {
                 if ($dateFilter) {
-                    $q->whereDate('game_date', $dateFilter);
+                    $this->wherePropGameDate($q, $dateFilter);
                 }
 
                 if ($gameFilter) {
@@ -278,6 +286,9 @@ class PlayerPropAnalyzer
         $recommendations = collect();
 
         foreach ($props as $prop) {
+            if ($prop instanceof PlayerProp && $prop->graded_at) {
+                continue;
+            }
             $recommendation = $this->analyzeProp($prop, $minGames, $sportConfig, $sport, $attachNarratives);
 
             if ($recommendation && $recommendation['confidence'] >= 60) {
@@ -301,11 +312,12 @@ class PlayerPropAnalyzer
         $playerPropModel = $sportConfig['player_prop_model'];
 
         $props = $playerPropModel::query()
+            ->when($sport === 'CFB', fn ($query) => $query->where('is_current', true))
             ->whereNotNull('recommended_side')
             ->where('confidence_score', '>=', 60)
             ->whereHas('game', function ($query) use ($dateFilter, $gameFilter): void {
                 if ($dateFilter) {
-                    $query->whereDate('game_date', $dateFilter);
+                    $this->wherePropGameDate($query, $dateFilter);
                 }
 
                 if ($gameFilter) {
@@ -339,9 +351,10 @@ class PlayerPropAnalyzer
         $playerPropModel = $sportConfig['player_prop_model'];
 
         $baseQuery = $playerPropModel::query()
+            ->when($sport === 'CFB', fn ($query) => $query->where('is_current', true))
             ->whereHas('game', function ($query) use ($dateFilter, $gameFilter): void {
                 if ($dateFilter) {
-                    $query->whereDate('game_date', $dateFilter);
+                    $this->wherePropGameDate($query, $dateFilter);
                 }
 
                 if ($gameFilter) {
@@ -370,6 +383,10 @@ class PlayerPropAnalyzer
      */
     protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport, bool $attachNarratives = true): ?array
     {
+        $this->cfbAnalysisProp = $prop instanceof PlayerProp ? $prop : null;
+        if ($this->cfbAnalysisProp && ! CfbPropEligibility::eligible($this->cfbAnalysisProp)) {
+            return null;
+        }
         if (! is_numeric($prop->line)) {
             return null;
         }
@@ -484,6 +501,14 @@ class PlayerPropAnalyzer
             'consistency' => $consistency,
         ];
         $analysis['confidence_decomposition']['schema_version'] = self::SIGNAL_MODEL_VERSION;
+        if ($this->cfbAnalysisProp) {
+            $analysis['confidence_decomposition']['cfb_context'] = [
+                'history' => 'prior_reported_current_team_current_or_previous_season',
+                'availability' => 'own_player_injury_exclusion_only',
+                'teammate_workload_adjusted' => false,
+            ];
+            $analysis['reasoning'][] = 'College football: prior current-team stats; no teammate injury or depth-chart workload adjustment.';
+        }
         if (isset($context['availability'])) {
             $analysis['confidence_decomposition']['availability'] = $context['availability'];
             $analysis['reasoning'][] = sprintf(
@@ -1317,6 +1342,9 @@ class PlayerPropAnalyzer
 
     protected function precomputedRecommendationPayload(Model $prop, string $sport): ?array
     {
+        if ($prop instanceof PlayerProp && ! CfbPropEligibility::eligible($prop)) {
+            return null;
+        }
         $player = $prop->player ?? null;
         $game = $prop->game ?? null;
         $side = is_string($prop->recommended_side)
@@ -1387,7 +1415,7 @@ class PlayerPropAnalyzer
             'model_over_probability' => $modelOverProbability,
             'market_over_probability' => $marketOverProbability,
             'edge_probability' => $edgeProbability,
-            'reasoning' => $this->precomputedReasoning($prop, $side, $modelOverProbability, $marketOverProbability, $edgeProbability),
+            'reasoning' => [...$this->precomputedReasoning($prop, $side, $modelOverProbability, $marketOverProbability, $edgeProbability), ...($prop instanceof PlayerProp ? ['College football: prior current-team stats; no teammate injury or depth-chart workload adjustment.'] : [])],
             'context' => $contextFactor !== null ? [
                 'pace_factor' => 1.0,
                 'opponent_factor' => 1.0,
@@ -1932,6 +1960,7 @@ class PlayerPropAnalyzer
         return match (strtoupper($sport)) {
             'MLB' => 162,
             'NFL' => 17,
+            'CFB' => 16,
             'WNBA' => 44,
             'CBB' => 40,
             default => 82,
@@ -2039,6 +2068,14 @@ class PlayerPropAnalyzer
 
         return $playerStatModel::where('player_id', $playerId)
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
+            ->when($playerStatModel === PlayerStat::class && $this->cfbAnalysisProp !== null, function ($query) {
+                $prop = $this->cfbAnalysisProp;
+                $query->where('team_id', $prop->player->team_id)
+                    ->whereNotNull($this->getStatFieldForMarket($prop->market))
+                    ->whereHas('game', fn ($q) => $q->whereDate('game_date', '<', $prop->game->game_date)
+                        ->where('season', '>=', (int) $prop->game->season - 1)
+                        ->whereIn('season_type', [2, 3]));
+            })
             ->orderByDesc(
                 DB::table($gameTable)
                     ->select("{$gameTable}.game_date")
@@ -2054,6 +2091,11 @@ class PlayerPropAnalyzer
     protected function findPlayerByName(string $name, string $playerModel, string $oddsSportKey, ?Model $game = null): ?array
     {
         $baseQuery = $this->playerBaseQuery($playerModel, $game);
+        if ($oddsSportKey === 'americanfootball_ncaaf') {
+            $player = $game instanceof Game ? CfbPropEligibility::matchPlayer($game, $name) : null;
+
+            return $player ? ['player' => $player, 'match_quality_score' => 100] : null;
+        }
         $mappedPlayerId = $this->oddsApiService?->mappedEspnPlayerId($oddsSportKey, $name);
 
         if ($mappedPlayerId) {
@@ -2257,6 +2299,14 @@ class PlayerPropAnalyzer
                 'player_prop_model' => 'App\\Models\\MLB\\PlayerProp',
                 'odds_sport_key' => 'baseball_mlb',
             ],
+            'CFB' => [
+                'game_model' => Game::class,
+                'player_model' => Player::class,
+                'player_stat_model' => PlayerStat::class,
+                'team_model' => Team::class,
+                'player_prop_model' => PlayerProp::class,
+                'odds_sport_key' => 'americanfootball_ncaaf',
+            ],
             'NFL' => [
                 'game_model' => 'App\\Models\\NFL\\Game',
                 'player_model' => 'App\\Models\\NFL\\Player',
@@ -2295,10 +2345,23 @@ class PlayerPropAnalyzer
     /**
      * Get available game dates for sport (for filter dropdown)
      */
+    protected function wherePropGameDate(Builder $query, string $date): Builder
+    {
+        return $query->getModel() instanceof Game
+            ? CfbPropEligibility::onDate($query, $date)
+            : $query->whereDate('game_date', $date);
+    }
+
     public function getAvailableDatesForSport(string $sport): Collection
     {
         $sportConfig = $this->getSportConfig($sport);
         $gameModel = $sportConfig['game_model'];
+
+        if ($sport === 'CFB') {
+            return $gameModel::whereHas('playerProps')->get()
+                ->map(fn ($game) => CfbPropEligibility::kickoff($game)->setTimezone('America/Chicago')->toDateString())
+                ->unique()->sort()->values()->map(fn ($date) => ['value' => $date, 'label' => Carbon::parse($date)->format('l, F j, Y')]);
+        }
 
         return $gameModel::query()
             ->whereHas('playerProps')
@@ -2329,7 +2392,7 @@ class PlayerPropAnalyzer
             ->with(['homeTeam', 'awayTeam']);
 
         if ($date) {
-            $query->whereDate('game_date', $date);
+            $this->wherePropGameDate($query, $date);
         }
 
         return $query->orderBy('game_date')
@@ -2340,7 +2403,12 @@ class PlayerPropAnalyzer
                 $gameDate = Carbon::parse($game->game_date)->toDateString();
 
                 // Parse the time separately
-                $gameTime = Carbon::parse($game->game_time);
+                $gameTime = $game instanceof Game
+                    ? CfbPropEligibility::kickoff($game)->setTimezone('America/Chicago')
+                    : Carbon::parse($game->game_time);
+                if ($game instanceof Game) {
+                    $gameDate = $gameTime->toDateString();
+                }
 
                 return [
                     'id' => $game->id,
@@ -2366,7 +2434,7 @@ class PlayerPropAnalyzer
         if ($date || $game) {
             $query->whereHas('game', function ($q) use ($date, $game) {
                 if ($date) {
-                    $q->whereDate('game_date', $date);
+                    $this->wherePropGameDate($q, $date);
                 }
                 if ($game) {
                     $q->where('id', $game);

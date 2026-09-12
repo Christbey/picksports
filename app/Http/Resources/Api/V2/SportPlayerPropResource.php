@@ -24,6 +24,7 @@ class SportPlayerPropResource extends JsonResource
         return [
             'id' => $this->attribute('id'),
             'sport' => $this->context->slug,
+            ...($this->context->slug === 'cfb' ? ['is_current' => (bool) $this->attribute('is_current')] : []),
             'game_id' => $this->attribute('game_id'),
             'player_id' => $this->attribute('player_id'),
             'player_name' => $this->attribute('player_name'),

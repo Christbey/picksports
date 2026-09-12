@@ -1164,3 +1164,14 @@ $adminEmailReportEvent = Schedule::command('alerts:send-admin-email-report')
     ->withoutOverlapping()
     ->runInBackground();
 $attachCommandHeartbeat($adminEmailReportEvent, 'alerts:send-admin-email-report', 'Alerts: Send Admin Email Report');
+
+// College football prop refresh includes January playoff games; the command scores after import.
+Schedule::command('cfb:sync-player-props --prepare')
+    ->hourlyAt(15)
+    ->timezone('America/Chicago')
+    ->between('07:00', '23:00')
+    ->when($cfbInSeason)
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->name('CFB: Sync and Analyze Player Props');
+$scheduleDailySeasonJob("cfb:grade-player-props --season={$fallSeasonYear}", '08:40', $cfbInSeason, 'CFB: Grade Player Props');

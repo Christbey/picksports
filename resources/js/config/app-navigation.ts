@@ -54,8 +54,9 @@ const footballIconProps = { icon: faFootball };
 const basketballIconProps = { icon: faBasketball };
 const baseballIconProps = { icon: faBaseball };
 
-const playerPropsHref = (sport: 'nfl' | 'nba' | 'wnba' | 'mlb' | 'cbb') =>
-    `/${sport}/player-props`;
+const playerPropsHref = (
+    sport: 'nfl' | 'nba' | 'wnba' | 'mlb' | 'cbb' | 'cfb',
+) => `/${sport}/player-props`;
 
 export const platformNavItems: NavItem[] = [
     {
@@ -137,6 +138,7 @@ const sports: SeasonalNavItem[] = [
         activeMonths: [1, 8, 9, 10, 11, 12],
         items: [
             { title: 'Board', href: cfbPredictions() },
+            { title: 'Player Props', href: playerPropsHref('cfb') },
             { title: 'Player Stats', href: cfbPlayerStats() },
             { title: 'Injuries', href: cfbInjuries() },
         ],

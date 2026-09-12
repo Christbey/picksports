@@ -4,6 +4,7 @@ namespace App\Services\Sports\SeasonStage;
 
 use App\Services\Sports\DateWindow;
 use App\Services\Sports\SportsDateWindowService;
+use App\Support\SportCatalog;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
@@ -392,7 +393,7 @@ class SeasonStageService
             'active_games' => $activeGameCount,
             'expect_full_league_slate' => $stageGroup === 'regular_season',
             'expect_futures_for_remaining_teams_only' => $stageGroup === 'championship',
-            'expect_player_props' => in_array($sport, ['mlb', 'nba', 'nfl', 'cbb', 'wnba'], true) && $activeGameCount > 0,
+            'expect_player_props' => in_array($sport, SportCatalog::PLAYER_PROPS, true) && $activeGameCount > 0,
             'expect_weather' => in_array($sport, ['mlb', 'nfl'], true) && $activeGameCount > 0,
             'validation_mode' => $stageGroup === 'unknown' ? 'conservative_warning' : 'stage_aware',
         ];

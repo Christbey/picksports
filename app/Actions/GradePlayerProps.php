@@ -5,6 +5,7 @@ namespace App\Actions;
 use App\Models\NBA\Game;
 use App\Models\NBA\PlayerProp;
 use App\Models\NBA\PlayerStat;
+use App\Services\BettingRecommendations\CfbPropEligibility;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -30,6 +31,11 @@ class GradePlayerProps
             'game_model' => \App\Models\WNBA\Game::class,
             'player_stat_model' => \App\Models\WNBA\PlayerStat::class,
             'player_prop_model' => \App\Models\WNBA\PlayerProp::class,
+        ],
+        'americanfootball_ncaaf' => [
+            'game_model' => \App\Models\CFB\Game::class,
+            'player_stat_model' => \App\Models\CFB\PlayerStat::class,
+            'player_prop_model' => \App\Models\CFB\PlayerProp::class,
         ],
         'americanfootball_nfl' => [
             'game_model' => \App\Models\NFL\Game::class,
@@ -110,7 +116,7 @@ class GradePlayerProps
                 continue; // Skip if we can't find the actual stat
             }
 
-            $hitOver = $this->sportFromProp($prop) === 'americanfootball_nfl' && $actualValue === (float) $prop->line
+            $hitOver = in_array($this->sportFromProp($prop), ['americanfootball_nfl', 'americanfootball_ncaaf'], true) && $actualValue === (float) $prop->line
                 ? null : $actualValue > $prop->line;
             $error = abs($actualValue - $prop->line);
 
@@ -179,6 +185,13 @@ class GradePlayerProps
 
     protected function getActualValue(Model $prop): ?float
     {
+        if ($this->sportFromProp($prop) === 'americanfootball_ncaaf') {
+            if (! in_array($prop->market, CfbPropEligibility::MARKETS, true)) {
+                return null;
+            }
+
+            return $this->getNflActualValue($prop);
+        }
         if ($this->sportFromProp($prop) === 'americanfootball_nfl') {
             return $this->getNflActualValue($prop);
         }
@@ -297,7 +310,7 @@ class GradePlayerProps
             ->with('player')
             ->get();
 
-        if ($playerStatModel === \App\Models\NFL\PlayerStat::class) {
+        if (in_array($playerStatModel, [\App\Models\NFL\PlayerStat::class, \App\Models\CFB\PlayerStat::class], true)) {
             $normalize = fn (string $name): string => preg_replace('/[^a-z0-9]/', '', strtolower($name));
             $matches = $stats->filter(fn ($stat) => $stat->player
                 && $normalize((string) $stat->player->full_name) === $normalize($playerName));
@@ -452,6 +465,7 @@ class GradePlayerProps
             \App\Models\CBB\PlayerProp::class => 'basketball_ncaab',
             \App\Models\WNBA\PlayerProp::class => 'basketball_wnba',
             \App\Models\NFL\PlayerProp::class => 'americanfootball_nfl',
+            \App\Models\CFB\PlayerProp::class => 'americanfootball_ncaaf',
             \App\Models\MLB\PlayerProp::class => 'baseball_mlb',
             default => '',
         };

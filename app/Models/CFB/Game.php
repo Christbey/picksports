@@ -93,6 +93,11 @@ class Game extends Model
         return $this->hasMany(Play::class, 'game_id');
     }
 
+    public function playerProps(): HasMany
+    {
+        return $this->hasMany(PlayerProp::class, 'game_id');
+    }
+
     public function playerStats(): HasMany
     {
         return $this->hasMany(PlayerStat::class, 'game_id');

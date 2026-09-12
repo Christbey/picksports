@@ -107,6 +107,7 @@ class PlayerPropController extends AbstractSportsApiController
         return match ($sportSlug) {
             'nba' => 'NBA',
             'cbb' => 'CBB',
+            'cfb' => 'CFB',
             'nfl' => 'NFL',
             'mlb' => 'MLB',
             'wnba' => 'WNBA',

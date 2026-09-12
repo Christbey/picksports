@@ -23,6 +23,11 @@ class BettingRecommendationsController extends Controller
         return $this->renderPlayerProps('NFL', $request, 'NFL/PlayerProps');
     }
 
+    public function cfb(Request $request): Response
+    {
+        return $this->renderPlayerProps('CFB', $request, 'CFB/PlayerProps');
+    }
+
     public function cbb(Request $request): Response
     {
         return $this->renderPlayerProps('CBB', $request, 'CBB/PlayerProps');

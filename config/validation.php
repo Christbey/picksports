@@ -71,7 +71,7 @@ return [
             ],
         ],
         'cfb' => [
-            'tables' => ['teams' => 'cfb_teams', 'games' => 'cfb_games', 'team_stats' => 'cfb_team_stats', 'player_stats' => 'cfb_player_stats', 'plays' => 'cfb_plays', 'injuries' => 'cfb_player_injuries'],
+            'tables' => ['teams' => 'cfb_teams', 'games' => 'cfb_games', 'team_stats' => 'cfb_team_stats', 'player_stats' => 'cfb_player_stats', 'plays' => 'cfb_plays', 'injuries' => 'cfb_player_injuries', 'player_props' => 'cfb_player_props'],
             'models' => ['game' => App\Models\CFB\Game::class],
             'active_months' => [8, 9, 10, 11, 12, 1],
             'expected_games_per_day' => 10,

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import GamePlayerPropsCard from '@/components/game-page/GamePlayerPropsCard.vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import NflGameEnhancements from '@/components/game-page/NflGameEnhancements.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
@@ -30,6 +31,7 @@ const {
         </template>
 
         <template #afterTrends>
+            <GamePlayerPropsCard sport-slug="cfb" :game-id="gameId" />
             <NflGameEnhancements v-bind="recentSectionProps" />
         </template>
     </SportDetailedGamePage>

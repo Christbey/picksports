@@ -10,5 +10,5 @@ class SportCatalog
 
     public const TEAM_METRICS = ['mlb', 'nba', 'cbb', 'wcbb', 'wnba'];
 
-    public const PLAYER_PROPS = ['mlb', 'nba', 'nfl', 'cbb', 'wnba'];
+    public const PLAYER_PROPS = ['mlb', 'nba', 'nfl', 'cbb', 'cfb', 'wnba'];
 }

@@ -46,7 +46,7 @@ return [
             'web' => [
                 'predictions_page' => 'CFB/Predictions',
                 'requires_prediction_permission' => false,
-                'player_props' => false,
+                'player_props' => true,
                 'pages' => [
                     'player-stats' => 'CFB/PlayerStats',
                     'injuries' => 'CFB/Injuries',

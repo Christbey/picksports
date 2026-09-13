@@ -976,7 +976,7 @@ $scheduleHalfHourlyWindowJob(
 $nflGameContextResearchCommand = "nfl:research-game-context --season={$fallSeasonYear} --days-forward=7 --limit=4 --retry-rate-limit=2 --retry-rate-limit-delay=30";
 $nflGameContextResearchEvent = Schedule::command($nflGameContextResearchCommand)
     ->cron('35 8,11,14,17,20 * * *')
-    ->when($nflInSeason)
+    ->when(fn () => $nflInSeason() && ! config('nfl_research.enabled'))
     ->name('NFL: Research Sourced Game Context')
     ->onOneServer()
     ->withoutOverlapping(60)
@@ -1183,3 +1183,14 @@ Schedule::command('cfb:sync-live-betting')
     ->onOneServer()
     ->runInBackground()
     ->name('CFB: Capture Live Betting Snapshots');
+
+// Official evidence ingestion and immutable research revisions are separate from canonical predictions.
+Schedule::command('nfl:research-pipeline --days-forward=2 --ingest-only')
+    ->everyFifteenMinutes()->when(fn () => config('nfl_research.enabled'))
+    ->onOneServer()->withoutOverlapping(20)->runInBackground();
+Schedule::command('nfl:research-pipeline --days-forward=1 --no-ingest --limit=16')
+    ->cron('7,22,37,52 * * * *')->when(fn () => config('nfl_research.enabled'))
+    ->onOneServer()->withoutOverlapping(55)->runInBackground();
+Schedule::command('nfl:research-pipeline --grade')
+    ->hourlyAt(55)->when(fn () => config('nfl_research.enabled'))
+    ->onOneServer()->withoutOverlapping(30)->runInBackground();

@@ -7,6 +7,7 @@ use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
+use App\Models\NFL\Player;
 use App\Models\NFL\PlayerInjury;
 use App\Models\NFL\PlayerInjurySnapshot;
 use App\Models\NFL\PlayerStat;
@@ -17,6 +18,7 @@ use App\Services\NFL\NflFullHistoricalShadowInferenceService;
 use App\Services\NFL\NflMlFeatureVectorBuilder;
 use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\PlayerPositionGradeService;
+use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Services\Sports\DepthChartImpactService;
 use App\Support\NflBetRuleEngine;
@@ -238,7 +240,7 @@ class GeneratePredictionFromHistoricalElo
         $profileSuffix = $historicalProfile !== 'configured' && $historicalProfile !== 'pregame'
             ? '-'.$historicalProfile
             : '';
-        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').$profileSuffix;
+        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v1'.$profileSuffix;
         $featureVersion = (string) config('nfl.predictions.feature_version', 'nfl-pregame-ml-v3');
         $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$profileSuffix;
         $baselineOutputs = [
@@ -2690,10 +2692,24 @@ class GeneratePredictionFromHistoricalElo
         $state = $this->pointInTimeInjuryStateForTeam($teamId, $game);
         $asOf = $state['as_of'];
         $injuries = $state['entries'];
+        foreach ((array) $game->getAttribute('research_availability') as $fact) {
+            if (($fact['team_id'] ?? null) !== $teamId || Carbon::parse($fact['observed_at'])->gt($asOf) || Carbon::parse($fact['published_at'])->gt($asOf)) {
+                continue;
+            }
+            $existing = $injuries->firstWhere('player_id', $fact['player_id']);
+            if ($existing?->source_updated_at && Carbon::parse($existing->source_updated_at)->gt(Carbon::parse($fact['published_at']))) {
+                continue;
+            }
+            $injuries = $injuries->reject(fn ($row) => (int) $row->player_id === (int) $fact['player_id']);
+            $entry = new PlayerInjury(['player_id' => $fact['player_id'], 'team_id' => $teamId, 'status' => $fact['status'], 'injury_date' => $fact['published_at'], 'source_updated_at' => $fact['published_at'], 'is_active' => true]);
+            $entry->setRelation('player', Player::find($fact['player_id']));
+            $injuries->push($entry);
+            $state['source'] .= '+verified_research';
+        }
         $counts['snapshot_uuid'] = $state['snapshot_uuid'];
         $counts['snapshot_observed_at'] = $state['snapshot_observed_at'];
         $counts['source'] = $state['source'];
-        $coveredPlayerNames = [];
+        $coveredPlayerNames = collect((array) $game->getAttribute('research_availability'))->where('team_id', $teamId)->where('status', 'Available')->pluck('player_name')->map(fn ($name) => $this->normalizedPlayerName($name))->filter()->all();
 
         foreach ($injuries as $injury) {
             $bucket = $this->injuryStatusBucket((string) ($injury->status ?? ''));
@@ -3006,6 +3022,7 @@ class GeneratePredictionFromHistoricalElo
             ->with('teamStats')
             ->where('season', (int) $game->season)
             ->where('status', 'STATUS_FINAL')
+            ->whereIn('season_type', ['2', 'regular'])
             ->whereNotNull('home_score')
             ->whereNotNull('away_score')
             ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
@@ -3082,6 +3099,7 @@ class GeneratePredictionFromHistoricalElo
             ->with('teamStats')
             ->where('season', (int) $game->season)
             ->where('status', 'STATUS_FINAL')
+            ->whereIn('season_type', ['2', 'regular'])
             ->whereNotNull('home_score')
             ->whereNotNull('away_score')
             ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
@@ -3795,6 +3813,7 @@ class GeneratePredictionFromHistoricalElo
             ->with('teamStats')
             ->where('season', (int) $game->season)
             ->where('status', 'STATUS_FINAL')
+            ->whereIn('season_type', ['2', 'regular'])
             ->whereNotNull('home_score')
             ->whereNotNull('away_score')
             ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
@@ -3812,6 +3831,7 @@ class GeneratePredictionFromHistoricalElo
                 ->with('teamStats')
                 ->where('season', (int) $game->season - 1)
                 ->where('status', 'STATUS_FINAL')
+                ->whereIn('season_type', ['2', 'regular'])
                 ->whereNotNull('home_score')
                 ->whereNotNull('away_score')
                 ->where(function ($query) use ($teamId): void {
@@ -3940,6 +3960,7 @@ class GeneratePredictionFromHistoricalElo
             'experience_bucket' => $this->qbExperienceBucket($experience, (int) $prior['games']),
             'game_attempts' => (int) ($qbStat->passing_attempts ?? 0),
             'prior_games' => (int) $prior['games'],
+            'prior_current_team_games' => $prior['current_team_games'] ?? null,
             'prior_attempts' => (int) $prior['attempts'],
             'prior_yards_per_attempt' => round((float) $prior['yards_per_attempt'], 3),
             'prior_td_rate' => round((float) $prior['td_rate'], 4),
@@ -4014,6 +4035,7 @@ class GeneratePredictionFromHistoricalElo
             'depth_chart_name' => $entry->depth_chart_name,
             'depth_chart_updated_at' => $entry->source_updated_at?->toDateTimeString(),
             'prior_games' => (int) $prior['games'],
+            'prior_current_team_games' => $prior['current_team_games'] ?? null,
             'prior_attempts' => (int) $prior['attempts'],
             'prior_yards_per_attempt' => round((float) $prior['yards_per_attempt'], 3),
             'prior_td_rate' => round((float) $prior['td_rate'], 4),
@@ -4061,6 +4083,7 @@ class GeneratePredictionFromHistoricalElo
             'game_attempts' => 0,
             'projected_from_prior_game' => true,
             'prior_games' => (int) $prior['games'],
+            'prior_current_team_games' => $prior['current_team_games'] ?? null,
             'prior_attempts' => (int) $prior['attempts'],
             'prior_yards_per_attempt' => round((float) $prior['yards_per_attempt'], 3),
             'prior_td_rate' => round((float) $prior['td_rate'], 4),
@@ -4231,6 +4254,7 @@ class GeneratePredictionFromHistoricalElo
             'source' => 'nflverse_weekly_player_stats',
             'prior_source' => 'nflverse_weekly_player_stats',
             'prior_games' => (int) $prior['games'],
+            'prior_current_team_games' => $prior['current_team_games'] ?? null,
             'prior_attempts' => (int) $prior['attempts'],
             'prior_yards_per_attempt' => round((float) $prior['yards_per_attempt'], 3),
             'prior_td_rate' => round((float) $prior['td_rate'], 4),
@@ -4254,6 +4278,7 @@ class GeneratePredictionFromHistoricalElo
             ->where('nflverse_weekly_player_stats.player_id', $playerId)
             ->where('nflverse_weekly_player_stats.passing_attempts', '>', 0)
             ->where('nfl_games.status', 'STATUS_FINAL')
+            ->whereIn('nfl_games.season_type', ['2', 'regular'])
             ->when($date, fn ($query) => $query->whereDate('nfl_games.game_date', '<', $date->toDateString()))
             ->get([
                 'nflverse_weekly_player_stats.passing_attempts',
@@ -4299,11 +4324,12 @@ class GeneratePredictionFromHistoricalElo
         $rows = PlayerStat::query()
             ->join('nfl_games', 'nfl_games.id', '=', 'nfl_player_stats.game_id')
             ->where('nfl_player_stats.player_id', $playerId)
-            ->where('nfl_player_stats.team_id', $teamId)
             ->where('nfl_player_stats.passing_attempts', '>', 0)
             ->when($date, fn ($query) => $query->whereDate('nfl_games.game_date', '<', $date->toDateString()))
             ->where('nfl_games.status', 'STATUS_FINAL')
+            ->whereIn('nfl_games.season_type', ['2', 'regular'])
             ->get([
+                'nfl_player_stats.team_id',
                 'nfl_player_stats.passing_attempts',
                 'nfl_player_stats.passing_yards',
                 'nfl_player_stats.passing_touchdowns',
@@ -4323,6 +4349,7 @@ class GeneratePredictionFromHistoricalElo
 
         return [
             'games' => $games,
+            'current_team_games' => $rows->where('team_id', $teamId)->count(),
             'attempts' => $attempts,
             'yards' => $yards,
             'touchdowns' => $touchdowns,
@@ -4395,7 +4422,7 @@ class GeneratePredictionFromHistoricalElo
 
         return match (true) {
             $experience <= 0 => 'rookie',
-            $experience === 1 || $priorGames < 12 => 'first_year_starter',
+            $experience === 1 => 'first_year_starter',
             $experience >= 8 => 'elite_veteran',
             $experience >= 3 => 'veteran',
             default => 'developing',
@@ -4596,6 +4623,11 @@ class GeneratePredictionFromHistoricalElo
         ]));
         $analysis['reason_code_metadata'] = $this->reasonCodeCatalog->metadataForCodes($analysis['reason_codes']);
 
+        $analysis['eligibility'] = app(RecommendationEligibility::class)->evaluate($analysis, $this->lastModelMetadata);
+        $analysis['raw_bet_classification'] = $analysis['bet_classification'];
+        if ($analysis['bet_classification'] === 'bet' && ! $analysis['eligibility']['eligible']) {
+            $analysis['bet_classification'] = 'research_hold';
+        }
         $this->lastModelMetadata['analysis_layer'] = $analysis;
     }
 

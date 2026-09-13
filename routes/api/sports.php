@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\CFB\FpiRatingController;
 use App\Http\Controllers\Api\MLB\SignalController as MlbSignalController;
 use App\Http\Controllers\Api\NBA\PlayoffForecastController;
 use App\Http\Controllers\Api\NBA\SignalController as NbaSignalController;
+use App\Http\Controllers\Api\NFL\ResearchController;
 use App\Http\Controllers\Api\NFL\SignalController as NflSignalController;
 use App\Http\Controllers\Api\Sports\InjuryController;
 use App\Http\Controllers\Api\Sports\PlayerPropController;
@@ -61,6 +62,10 @@ return function (string $sport, string $namespace) {
     $registerAdditionalGetRoutes([
         ['teams/{team}/players', $controllers['player'], 'byTeam', 'teams.players'],
     ]);
+
+    if ($sport === 'nfl') {
+        Route::middleware(['auth:sanctum', ...$sportAccessMiddleware, 'permission:view-prediction-spread', 'permission:view-prediction-win-probability', 'permission:view-prediction-betting-value'])->get('games/{game}/research', [ResearchController::class, 'show'])->name('games.research');
+    }
 
     // Games
     $registerIndexShowResource('games', $controllers['game']);

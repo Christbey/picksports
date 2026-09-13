@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
+import NflResearchBrief from '@/components/game-page/NflResearchBrief.vue';
 import NflGameEnhancements from '@/components/game-page/NflGameEnhancements.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useNflDetailedGamePage } from '@/composables/useNflDetailedGamePage';
@@ -46,6 +47,7 @@ const homeInjuries = computed(
         </template>
 
         <template #afterLinescore>
+            <NflResearchBrief :game-id="gameId" />
             <BettingPlanCard
                 :betting-plan="pageProps.prediction?.narrative?.betting_plan"
             />

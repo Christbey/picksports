@@ -35,6 +35,20 @@ class NflPropAvailabilityContext
         $injuries = PlayerInjury::query()->where('team_id', $player->team_id)
             ->where('is_active', true)->where('updated_at', '>=', now()->subHours(12))
             ->where('updated_at', '<=', now())->get();
+        foreach ((array) $game->getAttribute('research_availability') as $fact) {
+            if ((int) $fact['team_id'] !== (int) $player->team_id) {
+                continue;
+            }
+            $existing = $injuries->firstWhere('player_id', $fact['player_id']);
+            if ($existing?->source_updated_at && $existing->source_updated_at->gt(Carbon::parse($fact['published_at']))) {
+                continue;
+            }
+            $injuries = $injuries->reject(fn ($i) => (int) $i->player_id === (int) $fact['player_id']);
+            if ($fact['status'] === 'Available') {
+                continue;
+            }
+            $injuries->push(new PlayerInjury(['player_id' => $fact['player_id'], 'team_id' => $fact['team_id'], 'status' => $fact['status'], 'injury_date' => ($fact['injury_onset_known'] ?? true) ? $fact['published_at'] : null]));
+        }
         $ownInjuries = $injuries->where('player_id', $playerId);
         $context['player_statuses'] = $ownInjuries->pluck('status')->sort()->values()->all();
         if ($ownInjuries->contains(fn ($injury) => $this->isOut($injury->status))) {
@@ -119,7 +133,7 @@ class NflPropAvailabilityContext
     {
         $stats = PlayerStat::query()->join('nfl_games as g', 'g.id', '=', 'nfl_player_stats.game_id')
             ->where('nfl_player_stats.player_id', $playerId)->where('nfl_player_stats.team_id', $teamId)
-            ->where('g.status', 'STATUS_FINAL')->whereIn('g.season_type', [2, 3])
+            ->where('g.status', 'STATUS_FINAL')->whereIn('g.season_type', ['2', 'regular'])
             ->where('g.season', '>=', (int) $game->season - 1)
             ->where('g.game_date', '<', Carbon::parse($game->game_date)->toDateString())
             ->where('g.game_date', '<', now()->utc()->toDateString())

@@ -11,6 +11,7 @@ use App\Services\OddsApi\OddsApiService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -255,6 +256,37 @@ class PlayerPropAnalyzer
      */
     protected ?PlayerProp $cfbAnalysisProp = null;
 
+    protected ?Model $nflAnalysisProp = null;
+
+    protected bool $persistSnapshots = true;
+
+    public function previewNflGame(\App\Models\NFL\Game $game): array
+    {
+        $this->persistSnapshots = false;
+        try {
+            $rows = [];
+            $config = $this->getSportConfig('NFL');
+            $props = \App\Models\NFL\PlayerProp::where('game_id', $game->id)->whereNull('graded_at')->where('fetched_at', '>=', now()->subMinutes(30))->get();
+            foreach ($props as $prop) {
+                $prop->setRelation('game', $game);
+                $r = $this->analyzeProp($prop, 3, $config, 'NFL', false);
+                $rows[] = [
+                    'prop_id' => $prop->id, 'player_id' => $prop->player_id, 'player_name' => $prop->player_name,
+                    'market' => $prop->market, 'line' => (float) $prop->line, 'bookmaker' => $prop->bookmaker,
+                    'over_price' => $prop->over_price, 'under_price' => $prop->under_price, 'fetched_at' => $prop->fetched_at?->toIso8601String(),
+                    'baseline' => $prop->only(['recommended_side', 'predicted_over_probability', 'confidence_score']),
+                    'revised' => $r ? Arr::only($r, ['recommendation', 'odds', 'confidence', 'season_avg', 'recent_avg', 'model_over_probability', 'context', 'reasoning']) : null,
+                    'status' => $r ? 'research_candidate' : 'hold',
+                ];
+            }
+
+            return $rows;
+        } finally {
+            $this->persistSnapshots = true;
+            $this->nflAnalysisProp = null;
+        }
+    }
+
     public function analyzeProps(
         string $sport = 'NBA',
         ?int $minGames = 3,
@@ -385,6 +417,7 @@ class PlayerPropAnalyzer
     protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport, bool $attachNarratives = true): ?array
     {
         $this->cfbAnalysisProp = $prop instanceof PlayerProp ? $prop : null;
+        $this->nflAnalysisProp = $sport === 'NFL' ? $prop : null;
         if ($this->cfbAnalysisProp && ! CfbPropEligibility::eligible($this->cfbAnalysisProp)) {
             return null;
         }
@@ -1307,6 +1340,9 @@ class PlayerPropAnalyzer
         int $matchQualityScore,
         float $contextFactor
     ): void {
+        if (! $this->persistSnapshots) {
+            return;
+        }
         $prop->forceFill([
             'recommended_side' => $analysis['recommendation'] ?? null,
             'confidence_score' => $analysis['confidence'] ?? null,
@@ -2069,6 +2105,7 @@ class PlayerPropAnalyzer
 
         return $playerStatModel::where('player_id', $playerId)
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
+            ->when($playerStatModel === \App\Models\NFL\PlayerStat::class, fn ($q) => $q->whereHas('game', fn ($g) => $g->whereIn('season_type', ['2', 'regular'])->when($this->nflAnalysisProp?->game, fn ($g) => $g->whereDate('game_date', '<', $this->nflAnalysisProp->game->game_date))))
             ->when($playerStatModel === PlayerStat::class && $this->cfbAnalysisProp !== null, function ($query) {
                 $prop = $this->cfbAnalysisProp;
                 $query->where('team_id', $prop->player->team_id)

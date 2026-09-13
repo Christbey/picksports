@@ -2,7 +2,9 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\NFL\ResearchRevision;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use JsonException;
 
 class SportsAiPredictionPayloadBuilder
@@ -75,6 +77,9 @@ class SportsAiPredictionPayloadBuilder
             ],
             'operational_context' => $this->operationalContextBuilder->build($sport, $game),
             'external_game_context' => $externalContext,
+            'researched_revision' => $sport === 'nfl' && $game && Schema::hasTable('nfl_research_revisions')
+                ? ResearchRevision::where('game_id', $game->id)->latest('id')->first()?->only(['id', 'created_at', 'revised', 'brief'])
+                : null,
             'model_metadata' => $this->modelMetadataPayload($sport, $prediction),
             'existing_narrative' => $this->arrayAttribute($prediction, 'narrative_json'),
             'raw_prediction_snapshot' => $sport === 'nfl'

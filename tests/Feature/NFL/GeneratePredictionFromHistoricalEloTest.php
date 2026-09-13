@@ -91,7 +91,7 @@ it('falls back to legacy elo-only prediction when true epa metrics are unavailab
     expect(data_get($legacy->model_metadata, 'true_epa.enabled'))->toBeFalse()
         ->and(data_get($legacy->model_metadata, 'true_epa.applied'))->toBeFalse()
         ->and(data_get($legacy->model_metadata, 'true_epa.reason'))->toBe('feature_disabled')
-        ->and($legacy->model_version)->toBe('nfl-historical-elo-v2')
+        ->and($legacy->model_version)->toBe('nfl-historical-elo-v2-career-regular-v1')
         ->and($legacy->feature_version)->toBe('nfl-pregame-ml-v3')
         ->and($legacy->blend_version)->toBe('nfl-multi-signal-v1')
         ->and(PredictionFeatureSnapshot::query()->where('prediction_id', $legacy->id)->exists())->toBeTrue()

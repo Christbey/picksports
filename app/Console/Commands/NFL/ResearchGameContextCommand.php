@@ -78,14 +78,10 @@ class ResearchGameContextCommand extends Command
             ->pluck('game_id')
             ->flip();
         $freshContextGameIds = SportsGameContextReport::query()
-            ->where('sport', 'nfl')
-            ->whereIn('game_id', $gameIds)
-            ->whereIn('status', ['ready', 'partial'])
-            ->where(function ($query): void {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
-            ->pluck('game_id')
-            ->flip();
+            ->where('sport', 'nfl')->whereIn('game_id', $gameIds)
+            ->latest('id')->get()->unique('game_id')
+            ->filter(fn ($report) => $report->status === 'ready' && $report->expires_at && $report->expires_at->isFuture())
+            ->pluck('game_id')->flip();
 
         if (! $this->option('force')) {
             $games = $games

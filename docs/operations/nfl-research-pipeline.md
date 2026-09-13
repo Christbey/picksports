@@ -62,3 +62,14 @@ The aggregate command selects the latest graded pregame revision per game and on
 Deploy the additive migration before running the pipeline. Run source ingestion, inspect failures and document counts, then capture initial revisions and check the original prediction IDs/values remain unchanged. Verify source coverage, both teams' evidence, exact current-team QB sample, reserve player linkage, API authorization and scheduled command registration.
 
 To stop new pipeline runs, set `NFL_RESEARCH_PIPELINE_ENABLED=false`; preserved documents/revisions remain readable. Model fixes require a code rollback if reverting them. Disabling ingestion alone must never promote stale recommendations.
+
+### Initial production verification — September 12, 2026 (Central)
+
+- Additive tables migrated and all three scheduled jobs registered with the pipeline enabled.
+- All 40 endpoints for the ten audited teams passed after excluding newsroom navigation/category pages; 212 document versions were captured at the audit checkpoint.
+- The existing market import updated 14 games and stored 980 player props.
+- Revised briefs for the five audited games preserve original game forecast values and timestamps. Current-market revisions include prop snapshots; the earlier revision without fresh props remains preserved.
+- Daniel Jones has 56 prior regular-season appearances in the available database, including 13 with Indianapolis. Cross-team history is no longer discarded. This is the available database sample, not a claim of complete career coverage.
+- Verified reserve evidence includes Eli Stowers, Micah Parsons and Josh Jacobs. Unmatched reserve identities, missing true EPA and unresolved research keep recommendations on hold; source ingestion success does not override those gates.
+- Explicit cycle collection reduced the sampled ingestion process from roughly 36–38 MB before collection to 24–26 MB afterward. Sources release HTTP/DOM cycles between polls to support full-slate runs.
+- Validation: 227 backend tests / 1,350 assertions, frontend type check and production build passed.

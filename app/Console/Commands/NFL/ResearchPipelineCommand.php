@@ -69,6 +69,8 @@ class ResearchPipelineCommand extends Command
             } catch (Throwable $e) {
                 $failed = true;
                 $this->error('Game '.$game->id.' research failed: '.class_basename($e));
+            } finally {
+                gc_collect_cycles();
             }
         }
 

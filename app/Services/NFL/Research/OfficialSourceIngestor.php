@@ -28,6 +28,9 @@ class OfficialSourceIngestor
                 } catch (Throwable $e) {
                     $source->update(['checked_at' => now(), 'error' => class_basename($e)]);
                     $results[$source->key] = ['error' => class_basename($e)];
+                } finally {
+                    // Release HTTP/DOM cycles between sources on full-slate command runs.
+                    gc_collect_cycles();
                 }
             }
         }

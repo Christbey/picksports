@@ -7,6 +7,7 @@ use App\Models\NFL\Game;
 use App\Models\NFL\GameWeather;
 use App\Models\NFL\Team;
 use App\Services\Sports\SportEventIdentitySynchronizer;
+use App\Support\NflGameStateGuard;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
@@ -80,6 +81,7 @@ class ImportNflverseSchedulesCommand extends Command
             $attributes = $this->gameAttributes($row, $homeTeam, $awayTeam, $nflverseGameId);
             if ($existing) {
                 unset($attributes['espn_event_id'], $attributes['espn_uid']);
+                $attributes = NflGameStateGuard::preserve($existing, $attributes);
                 $existing->fill($attributes);
                 $existing->nflverse_game_id = $nflverseGameId;
                 $existing->save();

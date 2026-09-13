@@ -7,6 +7,7 @@ use App\Services\ESPN\BaseEspnService;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\Sports\SportEventIdentitySynchronizer;
 use App\Support\EspnGameStatusResolver;
+use App\Support\NflGameStateGuard;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGames
@@ -147,6 +148,7 @@ abstract class AbstractSyncGames
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
             if ($existingGame) {
                 $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
+                $attributes = NflGameStateGuard::preserve($existingGame, $attributes);
                 $attributes['status'] = $this->statusResolver->resolveForUpdate(
                     (string) ($existingGame->status ?? ''),
                     (string) ($attributes['status'] ?? ''),

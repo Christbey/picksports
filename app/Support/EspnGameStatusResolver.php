@@ -39,6 +39,11 @@ class EspnGameStatusResolver
 
     public function rank(?string $status, string $sport): int
     {
+        // Halftime/end-period are live phases, not irreversible lifecycle advances.
+        if ($sport === 'nfl' && in_array($status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'], true)) {
+            return 30;
+        }
+
         if ($status === null || $status === '') {
             return 0;
         }

@@ -108,3 +108,18 @@ it('enriches existing espn games instead of duplicating them', function () {
         ->and($game->home_qb_name)->toBe('Patrick Mahomes')
         ->and($game->odds_data)->not->toBeNull();
 });
+
+it('does not reset a completed ESPN game when an unscored schedule is imported', function () {
+    $home = Team::factory()->create(['abbreviation' => 'KC']);
+    $away = Team::factory()->create(['abbreviation' => 'DEN']);
+    $game = Game::factory()->create(['espn_event_id' => '401999999', 'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 17, 'period' => 4]);
+    $path = tempnam(sys_get_temp_dir(), 'nfl-stale-');
+    File::put($path, "game_id,season,game_type,week,gameday,gametime,away_team,home_team,away_score,home_score,espn,home_coach\n2026_01_DEN_KC,2026,REG,1,2026-09-13,13:00,DEN,KC,,,401999999,Andy Reid\n");
+    try {
+        artisan('nfl:import-nflverse-schedules', ['file' => $path])->assertExitCode(0);
+        $game->refresh();
+        expect($game->status)->toBe('STATUS_FINAL')->and($game->home_score)->toBe(24)->and($game->away_score)->toBe(17)->and($game->period)->toBe(4)->and($game->home_coach)->toBe('Andy Reid');
+    } finally {
+        unlink($path);
+    }
+});

@@ -3,6 +3,7 @@
 namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\Game;
+use App\Support\NflGameStateGuard;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\File;
 
@@ -112,6 +113,10 @@ class ImportGamesFromJsonCommand extends Command
             'venue_state' => $data['venue_state'] ?? null,
             'broadcast_networks' => $this->parseBroadcastNetworks($data['referees'] ?? null),
         ];
+
+        if ($existingGame) {
+            $gameAttributes = NflGameStateGuard::preserve($existingGame, $gameAttributes);
+        }
 
         Game::updateOrCreate(
             ['espn_event_id' => (string) $data['espn_event_id']],

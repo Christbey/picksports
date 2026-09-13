@@ -5,6 +5,7 @@ namespace App\Actions\ESPN\Concerns;
 use App\DataTransferObjects\ESPN\GameData;
 use App\Services\GameFinalizationDispatcher;
 use App\Support\EspnGameStatusResolver;
+use App\Support\NflGameStateGuard;
 use Illuminate\Database\Eloquent\Model;
 
 trait UpdatesGameFromSummary
@@ -38,8 +39,8 @@ trait UpdatesGameFromSummary
             $sport,
         );
 
-        $game->update([
-            'status' => $resolvedStatus,
+        $updates = [
+            'status' => $normalizedStatus,
             'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : null,
             'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : null,
             'home_linescores' => $homeTeam['linescores'] ?? null,
@@ -47,7 +48,10 @@ trait UpdatesGameFromSummary
             'period' => isset($status['period']) ? (int) $status['period'] : null,
             'game_clock' => $status['displayClock'] ?? null,
             'broadcast_networks' => ! empty($broadcastNetworks) ? $broadcastNetworks : null,
-        ]);
+        ];
+        $updates = NflGameStateGuard::preserve($game, $updates);
+        $updates['status'] = $resolvedStatus;
+        $game->update($updates);
 
         app(GameFinalizationDispatcher::class)->dispatchIfFinalizedTransition($game->fresh(), $previousStatus);
 

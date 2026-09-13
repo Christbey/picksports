@@ -7,6 +7,7 @@ use App\Services\ESPN\BaseEspnService;
 use App\Services\GameFinalizationDispatcher;
 use App\Services\Sports\SportEventIdentitySynchronizer;
 use App\Support\EspnGameStatusResolver;
+use App\Support\NflGameStateGuard;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGamesFromScoreboard
@@ -196,6 +197,7 @@ abstract class AbstractSyncGamesFromScoreboard
             $existingGame = $gameModel::query()->where($uniqueKey, $dto->espnEventId)->first();
             if ($existingGame) {
                 $attributes = $this->preserveExistingTeamSlots($attributes, $existingGame);
+                $attributes = NflGameStateGuard::preserve($existingGame, $attributes);
                 $attributes['status'] = $this->statusResolver->resolveForUpdate(
                     (string) ($existingGame->status ?? ''),
                     (string) ($attributes['status'] ?? ''),
@@ -353,7 +355,7 @@ abstract class AbstractSyncGamesFromScoreboard
         );
 
         $updates = [
-            'status' => $resolvedStatus,
+            'status' => $normalizedStatus,
             'home_score' => isset($homeTeam['score']) ? (int) $homeTeam['score'] : $game->home_score,
             'away_score' => isset($awayTeam['score']) ? (int) $awayTeam['score'] : $game->away_score,
             'home_linescores' => $homeTeam['linescores'] ?? $game->home_linescores,
@@ -361,6 +363,9 @@ abstract class AbstractSyncGamesFromScoreboard
             'period' => isset($status['period']) ? (int) $status['period'] : $game->period,
             'game_clock' => $status['displayClock'] ?? $game->game_clock,
         ];
+
+        $updates = NflGameStateGuard::preserve($game, $updates);
+        $updates['status'] = $resolvedStatus;
 
         $summaryDate = $this->extractSummaryDate($header, $competition);
         if ($summaryDate !== null) {

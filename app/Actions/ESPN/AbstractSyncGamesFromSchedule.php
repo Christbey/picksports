@@ -6,6 +6,7 @@ use App\DataTransferObjects\ESPN\GameData;
 use App\Services\ESPN\BaseEspnService;
 use App\Services\Sports\SportEventIdentitySynchronizer;
 use App\Support\EspnGameStatusResolver;
+use App\Support\NflGameStateGuard;
 use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractSyncGamesFromSchedule
@@ -91,6 +92,9 @@ abstract class AbstractSyncGamesFromSchedule
                     $updateAttributes = $homeTeam && $awayTeam
                         ? $this->existingGameAttributes($dto, $game, $homeTeam, $awayTeam, $existingGame)
                         : $attributes;
+
+                    $updateAttributes['status'] = $dto->status;
+                    $updateAttributes = NflGameStateGuard::preserve($existingGame, $updateAttributes);
 
                     if (array_key_exists('status', $attributes)) {
                         $updateAttributes['status'] = $attributes['status'];

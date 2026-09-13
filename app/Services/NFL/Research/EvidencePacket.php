@@ -103,7 +103,7 @@ class EvidencePacket
     public function contextHash(array $packet): string
     {
         return hash('sha256', json_encode([
-            'version' => 2,
+            'version' => 3,
             'holds' => $packet['holds'],
             'availability' => array_map(fn ($fact) => [$fact['player_id'], $fact['status'], $fact['document_id']], $packet['availability']),
         ]));

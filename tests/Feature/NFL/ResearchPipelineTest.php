@@ -133,6 +133,13 @@ it('keeps legacy and malformed uncertainty blocking while accepting explicit sco
     expect($result['unresolved'][0]['blocking'])->toBeTrue()->and($result['unresolved'][1]['blocking'])->toBeTrue()->and($result['unresolved'][2]['scope'])->toBe('props')->and($result['unresolved'][3]['blocking'])->toBeFalse();
 });
 
+it('labels home and away probabilities explicitly for an away favorite', function () {
+    $game = researchGame();
+    $result = app(NflWebContextResearchService::class)->namedTeamProjections($game, ['predicted_spread' => -5.7, 'win_probability' => .358]);
+    expect($result['home'])->toBe(['team' => 'PHI', 'projected_winning_margin' => -5.7, 'win_probability' => .358]);
+    expect($result['away'])->toBe(['team' => 'WAS', 'projected_winning_margin' => 5.7, 'win_probability' => .642]);
+});
+
 it('saves revised forecasts idempotently without overwriting the original', function () {
     $game = researchGame();
     $original = Prediction::factory()->create(['game_id' => $game->id, 'predicted_spread' => 3, 'predicted_total' => 40]);

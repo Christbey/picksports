@@ -41,7 +41,8 @@ class EvidencePacket
                     if (! preg_match('/reserve|physically unable|exempt|suspend/i', $row['roster_status']) || preg_match('/practice squad/i', $row['roster_status'])) {
                         continue;
                     }
-                    $matches = $players->where('team_id', $teamId)->filter(fn ($p) => mb_strtolower(trim($p->full_name)) === mb_strtolower(trim($row['player_name'])));
+                    $normalize = fn ($name) => preg_replace('/[^\p{L}\p{N}]/u', '', mb_strtolower($name));
+                    $matches = $players->where('team_id', $teamId)->filter(fn ($p) => $normalize($p->full_name) === $normalize($row['player_name']));
                     if ($matches->count() !== 1) {
                         $holds[] = 'unlinked_reserve_player:'.$row['player_name'];
 

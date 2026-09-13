@@ -67,6 +67,18 @@ it('rejects entity XML and unapproved source hosts without fetching them', funct
     Http::assertSentCount(1);
 });
 
+it('skips newsroom categories without letting navigation crowd out current articles', function () {
+    $source = ResearchSource::create(['key' => 'DET:newsroom', 'team' => 'DET', 'kind' => 'newsroom', 'url' => 'https://www.detroitlions.com/news/']);
+    Http::fake([
+        '*/news/' => Http::response('<nav><a href="/news/signup">Signup</a></nav><main><a href="/news/category">Category</a><a href="/news/injury-update">Injury update</a></main>'),
+        '*/news/category' => Http::response('<main></main>'),
+        '*/news/injury-update' => Http::response('<meta property="article:published_time" content="'.now()->subHour()->toIso8601String().'"><article>'.str_repeat('Official current injury update. ', 4).'</article>'),
+    ]);
+    app(OfficialSourceIngestor::class)->poll($source);
+    expect(ResearchDocument::count())->toBe(1)->and($source->fresh()->error)->toBeNull();
+    Http::assertNotSent(fn ($request) => str_contains($request->url(), '/signup'));
+});
+
 it('reconciles a verified IR transaction against a stale questionable claim', function () {
     $game = researchGame();
     $player = Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Eli Stowers']);
@@ -133,9 +145,9 @@ it('never follows a source redirect to a private or unapproved host', function (
 
 it('keeps reserve observations separate from injury onset to avoid inventing vacated usage', function () {
     $game = researchGame();
-    $p = Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Reserve Player']);
+    $p = Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'DJ Montgomery']);
     $s = ResearchSource::create(['key' => 'PHI:roster', 'team' => 'PHI', 'kind' => 'roster', 'url' => 'https://www.philadelphiaeagles.com/team/players-roster/', 'succeeded_at' => now()]);
-    ResearchDocument::create(['source_id' => $s->id, 'team' => 'PHI', 'url' => $s->url, 'url_hash' => str_repeat('d', 64), 'content_hash' => str_repeat('e', 64), 'title' => 'Official roster', 'body' => 'Roster', 'structured' => [['player_name' => $p->full_name, 'roster_status' => 'Reserve/Injured']], 'observed_at' => now()->subDays(3)]);
+    ResearchDocument::create(['source_id' => $s->id, 'team' => 'PHI', 'url' => $s->url, 'url_hash' => str_repeat('d', 64), 'content_hash' => str_repeat('e', 64), 'title' => 'Official roster', 'body' => 'Roster', 'structured' => [['player_name' => 'D.J. Montgomery', 'roster_status' => 'Reserve/Injured']], 'observed_at' => now()->subDays(3)]);
     $packet = app(EvidencePacket::class)->forGame($game);
     expect($packet['availability'][0]['injury_onset_known'])->toBeFalse()->and($packet['availability'][0]['status'])->toBe('Out');
 });

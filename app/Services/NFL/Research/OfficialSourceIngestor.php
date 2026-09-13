@@ -75,6 +75,9 @@ class OfficialSourceIngestor
             }
         } elseif ($source->kind === 'newsroom') {
             $dom = $this->html($body);
+            foreach ((new DOMXPath($dom))->query('//nav|//header|//footer') as $navigation) {
+                $navigation->parentNode?->removeChild($navigation);
+            }
             $urls = [];
             foreach ($dom->getElementsByTagName('a') as $link) {
                 $url = $link->getAttribute('href');
@@ -114,6 +117,10 @@ class OfficialSourceIngestor
                 } catch (Throwable) { /* Keep feed timestamp. */
                 }
             }
+        }
+        // Newsroom navigation also links to categories, media guides and signup pages.
+        if ($source->kind === 'newsroom' && ! $published) {
+            return 0;
         }
         if ($published && ($published->isFuture() || $published->lt(now()->subDays(config('nfl_research.lookback_days', 14))))) {
             return 0;

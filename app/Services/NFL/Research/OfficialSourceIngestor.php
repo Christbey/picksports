@@ -2,11 +2,15 @@
 
 namespace App\Services\NFL\Research;
 
+use App\Jobs\ESPN\NFL\FetchPlayers;
+use App\Models\NFL\Player;
 use App\Models\NFL\ResearchDocument;
 use App\Models\NFL\ResearchSource;
+use App\Models\NFL\Team;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
@@ -97,6 +101,7 @@ class OfficialSourceIngestor
         } elseif ($source->kind === 'roster') {
             $rows = $this->roster($body);
             $changed += $this->save($source, $source->url, 'Official roster and reserve lists', json_encode($rows), null, $rows);
+            $this->refreshUnmatchedRoster($source->team, $rows);
         } else {
             $changed += $this->save($source, $source->url, 'Official injury report', $this->text($body), null);
         }
@@ -161,6 +166,19 @@ class OfficialSourceIngestor
         }
 
         return $rows;
+    }
+
+    public function refreshUnmatchedRoster(string $abbreviation, array $rows): void
+    {
+        $team = Team::whereIn('abbreviation', $abbreviation === 'WAS' ? ['WAS', 'WSH'] : [$abbreviation])->first();
+        if (! $team?->espn_id) {
+            return;
+        }
+        $names = Player::where('team_id', $team->id)->pluck('full_name')->map(fn ($name) => EvidencePacket::normalizePlayerName($name));
+        $missing = collect($rows)->contains(fn ($row) => ! $names->contains(EvidencePacket::normalizePlayerName($row['player_name'])));
+        if ($missing && Cache::add('nfl-research-roster-refresh:'.$team->id, true, now()->addHour())) {
+            FetchPlayers::dispatch((string) $team->espn_id);
+        }
     }
 
     private function allowed(string $url): bool

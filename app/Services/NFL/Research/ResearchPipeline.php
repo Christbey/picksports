@@ -33,7 +33,7 @@ class ResearchPipeline
             $game->setAttribute('research_candidate', [...$preview['outputs'], 'model_metadata' => $preview['model_metadata']]);
             $report = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
             $ids = array_column(app(EvidencePacket::class)->researchDocuments($packet), 'id');
-            $changed = $report && ($ids !== data_get($report->raw_payload, 'document_ids', []) || hash('sha256', json_encode($preview['outputs'])) !== data_get($report->raw_payload, 'candidate_hash'));
+            $changed = $report && ($ids !== data_get($report->raw_payload, 'document_ids', []) || app(EvidencePacket::class)->contextHash($packet) !== data_get($report->raw_payload, 'evidence_context_hash') || hash('sha256', json_encode($preview['outputs'])) !== data_get($report->raw_payload, 'candidate_hash'));
             if ($research && (! $report || ($report->status !== 'ready' && $report->researched_at->lt(now()->subMinutes(45))) || ! $report->expires_at || $report->expires_at->lte(now()) || $changed)) {
                 $report = app(NflWebContextResearchService::class)->research($game)['report'];
             }
@@ -54,7 +54,7 @@ class ResearchPipeline
             if (empty($decision['supporting']) || empty($decision['opposing'])) {
                 $holds[] = 'two_sided_research_missing';
             }
-            if (! empty($decision['unresolved'])) {
+            if (collect($decision['unresolved'] ?? [])->contains(fn ($item) => ($item['blocking'] ?? true) && ($item['scope'] ?? 'game') === 'game')) {
                 $holds[] = 'unresolved_research_questions';
             }
             $analysis = data_get($preview, 'model_metadata.analysis_layer', []);
@@ -66,6 +66,10 @@ class ResearchPipeline
                 $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], [...$holds, 'spread_quote_missing']);
             }
             $props = app(PlayerPropAnalyzer::class)->previewNflGame($game);
+            $propHolds = collect($decision['unresolved'] ?? [])->filter(fn ($item) => ($item['blocking'] ?? true) && ($item['scope'] ?? 'game') === 'props')->values()->all();
+            if ($propHolds !== []) {
+                $props = array_map(fn ($prop) => [...$prop, 'status' => 'hold', 'research_holds' => $propHolds], $props);
+            }
             $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
             $brief = [
                 'game' => $game->short_name ?: $game->name,

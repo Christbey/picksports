@@ -55,7 +55,12 @@ INSTRUCTIONS;
         ])->withoutAdditionalProperties()->required();
 
         return [
-            'decision_research' => $schema->object(collect(['supporting', 'opposing', 'prop_angles', 'unresolved'])->mapWithKeys(fn ($key) => [$key => $schema->array()->items($schema->object(['claim' => $schema->string()->required(), 'source_url' => $schema->string()->required(), 'interpretation' => $schema->string()->required()])->withoutAdditionalProperties())->max(6)->required()])->all())->withoutAdditionalProperties()->required(),
+            'decision_research' => $schema->object(collect(['supporting', 'opposing', 'prop_angles', 'unresolved'])->mapWithKeys(fn ($key) => [$key => $schema->array()->items($schema->object([
+                'claim' => $schema->string()->required(),
+                'source_url' => $schema->string()->required(),
+                'interpretation' => $schema->string()->required(),
+                ...($key === 'unresolved' ? ['scope' => $schema->string()->enum(['game', 'props', 'informational'])->required(), 'blocking' => $schema->boolean()->required()] : []),
+            ])->withoutAdditionalProperties())->max(6)->required()])->all())->withoutAdditionalProperties()->required(),
             'status' => $schema->string()->required(),
             'confidence' => $schema->integer()->required(),
             'summary' => $schema->string()->required(),

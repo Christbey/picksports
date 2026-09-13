@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
+use App\Jobs\ESPN\NFL\FetchPlayers;
 use App\Models\NFL\Game;
 use App\Models\NFL\Player;
 use App\Models\NFL\PlayerStat;
@@ -10,11 +11,13 @@ use App\Models\NFL\ResearchRevision;
 use App\Models\NFL\ResearchSource;
 use App\Models\NFL\Team;
 use App\Models\User;
+use App\Services\NFL\NflWebContextResearchService;
 use App\Services\NFL\Research\EvidencePacket;
 use App\Services\NFL\Research\OfficialSourceIngestor;
 use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\NFL\Research\ResearchPipeline;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Spatie\Permission\Models\Permission;
 
@@ -43,7 +46,7 @@ it('holds a general bet when a specialist disagrees or QB history is missing', f
     expect($s->evaluate($a, [])['eligible'])->toBeTrue();
     expect($s->evaluate($a, ['qb_form' => ['reason' => 'insufficient_prior_attempts']])['eligible'])->toBeFalse();
     $a['pro_signal_layer']['market_scores']['spread']['tier'] = 'pass';
-    expect($s->evaluate($a, [])['eligible'])->toBeFalse();
+    expect($s->evaluate($a, [])['eligible'])->toBeFalse()->and($s->evaluate($a, [])['status'])->toBe('pass')->and($s->evaluate($a, [], ['market_stale'])['status'])->toBe('hold');
 });
 
 it('ingests unordered RSS and records edits as immutable source versions', function () {
@@ -89,6 +92,45 @@ it('reconciles a verified IR transaction against a stale questionable claim', fu
     expect($packet['availability'])->toHaveCount(1)->and($packet['availability'][0]['player_id'])->toBe($player->id);
     $result = $service->reconcile(['status' => 'ready', 'facts' => [['claim' => 'Eli Stowers is questionable']], 'risk_flags' => []], $packet);
     expect($result['status'])->toBe('partial')->and(implode(' ', $result['risk_flags']))->toContain('source_conflict');
+});
+
+it('does not confuse unavailable or a negated clearance with a positive availability claim', function () {
+    $service = app(EvidencePacket::class);
+    foreach (['Micah Parsons is unavailable.', 'Micah Parsons is not available.', 'Micah Parsons is on PUP; Other Player is available.', 'Micah Parsons is out. Other Player will play.'] as $claim) {
+        expect($service->contradictsUnavailable($claim, 'Micah Parsons'))->toBeFalse();
+    }
+    expect($service->contradictsUnavailable('Micah Parsons is questionable.', 'Micah Parsons'))->toBeTrue();
+    expect($service->contradictsUnavailable('Micah Parsons will play.', 'Micah Parsons'))->toBeTrue();
+});
+
+it('invalidates research when a player match is repaired but not just when a source is rechecked', function () {
+    $service = app(EvidencePacket::class);
+    $packet = ['holds' => ['unlinked_reserve_player:Test'], 'availability' => []];
+    $old = $service->contextHash($packet);
+    $packet = ['holds' => [], 'availability' => [['player_id' => 1, 'status' => 'Out', 'document_id' => 7, 'observed_at' => now()->toIso8601String()]]];
+    $fixed = $service->contextHash($packet);
+    $packet['availability'][0]['observed_at'] = now()->addMinute()->toIso8601String();
+    expect($fixed)->not->toBe($old)->and($service->contextHash($packet))->toBe($fixed);
+});
+
+it('matches accent variants and queues only one roster refresh for missing identities', function () {
+    Queue::fake();
+    $game = researchGame();
+    Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Audric Estime']);
+    $service = app(OfficialSourceIngestor::class);
+    $service->refreshUnmatchedRoster('PHI', [['player_name' => 'Audric Estimé']]);
+    Queue::assertNothingPushed();
+    $service->refreshUnmatchedRoster('PHI', [['player_name' => 'Missing Player']]);
+    $service->refreshUnmatchedRoster('PHI', [['player_name' => 'Missing Player']]);
+    Queue::assertPushed(FetchPlayers::class, 1);
+});
+
+it('keeps legacy and malformed uncertainty blocking while accepting explicit scoped uncertainty', function () {
+    $service = app(NflWebContextResearchService::class);
+    $method = new ReflectionMethod($service, 'decisionResearch');
+    $base = ['claim' => 'Unknown status', 'source_url' => 'https://example.com', 'interpretation' => 'Unknown'];
+    $result = $method->invoke($service, ['unresolved' => [$base, [...$base, 'scope' => 'invalid', 'blocking' => false], [...$base, 'scope' => 'props', 'blocking' => true], [...$base, 'scope' => 'informational', 'blocking' => false]]], ['https://example.com']);
+    expect($result['unresolved'][0]['blocking'])->toBeTrue()->and($result['unresolved'][1]['blocking'])->toBeTrue()->and($result['unresolved'][2]['scope'])->toBe('props')->and($result['unresolved'][3]['blocking'])->toBeFalse();
 });
 
 it('saves revised forecasts idempotently without overwriting the original', function () {

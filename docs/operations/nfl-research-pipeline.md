@@ -37,6 +37,8 @@ Roster tables are parsed using captions and exact player-name links. IR, PUP and
 
 A narrow grammar recognizes explicit official unavailable-status and reserve-activation headlines. Broader prose remains sourced research for interpretation, not an automatic numeric status change. Contradictory generated claims are marked superseded/uncertain, with the authoritative document reference, and the report remains partial. Source observations and original documents remain available for audit.
 
+Names normalize punctuation and accents within the current team, while ambiguous matches remain blocked. Official roster ingestion queues the existing ESPN roster refresh when identities are missing, at most once per team per hour. Evidence changes—including repaired identity matches—expire cached research without treating an unchanged source recheck as new evidence. Conflict checks distinguish “unavailable” and negative clearance statements from positive availability claims.
+
 Research prompts explicitly request supporting evidence, counterarguments, prop context and unresolved questions. Supplied source text is untrusted evidence, not instructions. Supplied document provenance is distinct from provider web-search citations. Report freshness does not establish factual completeness.
 
 ## Model changes and eligibility
@@ -44,6 +46,8 @@ Research prompts explicitly request supporting evidence, counterarguments, prop 
 QB history is filtered by player identity across teams and by regular-season games, with a separate current-team sample count. Veteran experience is no longer downgraded simply because the retrieved sample is small. QB, trench, selected team-efficiency and NFL prop-history queries exclude preseason; the deliberately separate preseason signal remains a distinct component.
 
 `RecommendationEligibility` produces one spread eligibility result from the general model and specialist tiers. A conflicting pass/watchlist, missing QB history, stale/missing sources, missing market, unresolved research or incomplete two-sided evidence holds the researched recommendation. A raw general `bet` cannot conceal a specialist rejection. This conservative policy is a gate, not a learned probability calibration.
+
+Eligibility now distinguishes `hold` (incomplete material data/research), `pass` (data complete but model criteria reject the pick), and `candidate` (both pass). Responses include separate data and model reasons. Unresolved research identifies game, prop or informational scope and whether it blocks assessment. Exact future snap counts, absent regular-season joint-practice evidence and inability to reproduce our prices on secondary sites do not alone block game research. Material questionable-player availability still can. Legacy or malformed uncertainty remains blocking. Prop-specific blocking uncertainty holds the prop previews separately.
 
 Only the pipeline's preview receives verified availability overlays. It reuses existing configured injury/depth weights and the existing conservative prop usage heuristic. AI prose does not add points, invent routes, or assume a replacement inherits all vacated targets. Prop previews use fresh stored quotes, regular-season history and a game-date cutoff; they do not overwrite the original prop snapshot.
 
@@ -73,3 +77,7 @@ To stop new pipeline runs, set `NFL_RESEARCH_PIPELINE_ENABLED=false`; preserved 
 - Verified reserve evidence includes Eli Stowers, Micah Parsons and Josh Jacobs. Unmatched reserve identities, missing true EPA and unresolved research keep recommendations on hold; source ingestion success does not override those gates.
 - Explicit cycle collection reduced the sampled ingestion process from roughly 36–38 MB before collection to 24–26 MB afterward. Sources release HTTP/DOM cycles between polls to support full-slate runs.
 - Validation: 227 backend tests / 1,350 assertions, frontend type check and production build passed.
+
+### Hold remediation
+
+The production `nflverse_pbp_plays` table was empty. Imported 48,771 plays from the official [2025 nflverse play-by-play release](https://github.com/nflverse/nflverse-data/releases/tag/pbp), including 48,201 EPA values; all imported plays linked to existing games. All five audited games then applied the configured historical EPA fallback. Model version `career-regular-v2` also excludes postseason from this regular-season EPA profile. Refreshed 775 ESPN player records across the ten teams, repairing missing identities and stale team assignments. Original predictions are preserved; research must be rerun to capture these corrected inputs.

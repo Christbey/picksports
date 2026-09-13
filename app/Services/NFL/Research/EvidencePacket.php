@@ -7,6 +7,7 @@ use App\Models\NFL\Player;
 use App\Models\NFL\ResearchDocument;
 use App\Models\NFL\ResearchSource;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class EvidencePacket
 {
@@ -41,8 +42,7 @@ class EvidencePacket
                     if (! preg_match('/reserve|physically unable|exempt|suspend/i', $row['roster_status']) || preg_match('/practice squad/i', $row['roster_status'])) {
                         continue;
                     }
-                    $normalize = fn ($name) => preg_replace('/[^\p{L}\p{N}]/u', '', mb_strtolower($name));
-                    $matches = $players->where('team_id', $teamId)->filter(fn ($p) => $normalize($p->full_name) === $normalize($row['player_name']));
+                    $matches = $players->where('team_id', $teamId)->filter(fn ($p) => self::normalizePlayerName($p->full_name) === self::normalizePlayerName($row['player_name']));
                     if ($matches->count() !== 1) {
                         $holds[] = 'unlinked_reserve_player:'.$row['player_name'];
 
@@ -100,11 +100,40 @@ class EvidencePacket
         })->values()->all();
     }
 
+    public function contextHash(array $packet): string
+    {
+        return hash('sha256', json_encode([
+            'version' => 2,
+            'holds' => $packet['holds'],
+            'availability' => array_map(fn ($fact) => [$fact['player_id'], $fact['status'], $fact['document_id']], $packet['availability']),
+        ]));
+    }
+
+    public static function normalizePlayerName(string $name): string
+    {
+        return preg_replace('/[^a-z0-9]/', '', strtolower(Str::ascii($name)));
+    }
+
+    public function contradictsUnavailable(string $claim, string $name): bool
+    {
+        $start = mb_stripos($claim, $name);
+        if ($start === false) {
+            return false;
+        }
+        $afterName = mb_substr($claim, $start + mb_strlen($name));
+        $clause = preg_split('/[;.!?](?:\s|$)/u', $afterName, 2)[0];
+        if (preg_match('/\b(?:unavailable|out|inactive|PUP|injured reserve)\b|\b(?:not|never)\s+(?:be\s+)?(?:available|cleared|playing)|\bwill not play\b/iu', $clause)) {
+            return false;
+        }
+
+        return (bool) preg_match('/\b(?:questionable|available|cleared|will play)\b/iu', $clause);
+    }
+
     public function reconcile(array $payload, array $packet): array
     {
         foreach ($packet['availability'] as $fact) {
             foreach ($payload['facts'] ?? [] as $index => $claim) {
-                if ($fact['status'] === 'Out' && stripos($claim['claim'], $fact['player_name']) !== false && preg_match('/questionable|available|cleared|will play/i', $claim['claim'])) {
+                if ($fact['status'] === 'Out' && $this->contradictsUnavailable($claim['claim'], $fact['player_name'])) {
                     $payload['facts'][$index]['certainty'] = 'uncertain';
                     $payload['facts'][$index]['superseded_by_document_id'] = $fact['document_id'];
                     $payload['summary'] = ($payload['summary'] ?? '').' Verified correction: '.$fact['player_name'].' is '.$fact['status'].'.';

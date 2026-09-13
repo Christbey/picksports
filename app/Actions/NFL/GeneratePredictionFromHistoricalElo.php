@@ -240,7 +240,7 @@ class GeneratePredictionFromHistoricalElo
         $profileSuffix = $historicalProfile !== 'configured' && $historicalProfile !== 'pregame'
             ? '-'.$historicalProfile
             : '';
-        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v1'.$profileSuffix;
+        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2'.$profileSuffix;
         $featureVersion = (string) config('nfl.predictions.feature_version', 'nfl-pregame-ml-v3');
         $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$profileSuffix;
         $baselineOutputs = [
@@ -3338,6 +3338,7 @@ class GeneratePredictionFromHistoricalElo
             ->join('nfl_games', 'nfl_games.id', '=', 'nflverse_pbp_plays.nfl_game_id')
             ->where('nflverse_pbp_plays.season', $season)
             ->where('nfl_games.status', 'STATUS_FINAL')
+            ->whereIn('nfl_games.season_type', ['2', 'regular'])
             ->whereNotNull('nflverse_pbp_plays.epa')
             ->whereIn('nflverse_pbp_plays.play_type', ['pass', 'run'])
             ->when($beforeDate, fn ($query) => $query->whereDate('nfl_games.game_date', '<', $beforeDate->toDateString()));

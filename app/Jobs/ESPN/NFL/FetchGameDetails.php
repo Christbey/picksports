@@ -19,6 +19,8 @@ class FetchGameDetails implements ShouldBeUnique, ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    public int $uniqueFor = 3600;
+
     public function __construct(
         public string $eventId
     ) {}

@@ -421,7 +421,7 @@ $scheduleSportPipeline(
     '18:00',
     '03:00',
     'NBA: Live Scoreboard Sync',
-    'espn:sync-nba-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-nba-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '18:00',
     '03:00',
     'NBA: Sync Game Details',
@@ -547,7 +547,7 @@ $scheduleSportPipeline(
     '12:00',
     '01:00',
     'CBB: Live Scoreboard Sync',
-    'espn:sync-cbb-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-cbb-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '14:00',
     '02:00',
     'CBB: Sync Game Details',
@@ -621,7 +621,7 @@ $wcbbTeamSchedulesEvent = Schedule::command("espn:sync-wcbb-schedules --season={
 $attachCommandHeartbeat($wcbbTeamSchedulesEvent, "espn:sync-wcbb-schedules --season={$fallSeasonYear}", 'WCBB: Sync All Team Schedules');
 
 $scheduleDailySeasonJob('espn:sync-wcbb-teams', '02:45', $wcbbInSeason, 'WCBB: Sync Teams (Daily)');
-$scheduleDailySeasonJob('espn:sync-wcbb-game-details --lookback-days=7 --limit=100 --latest', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');
+$scheduleDailySeasonJob('espn:sync-wcbb-game-details --lookback-days=7 --days-forward=1 --limit=100 --latest', '03:15', $wcbbInSeason, 'WCBB: Sync Game Details (Daily)');
 
 $scheduleSportPipeline(
     'espn:sync-wcbb-current',
@@ -631,7 +631,7 @@ $scheduleSportPipeline(
     '12:00',
     '01:00',
     'WCBB: Live Scoreboard Sync',
-    'espn:sync-wcbb-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-wcbb-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '14:00',
     '02:00',
     'WCBB: Sync Game Details',
@@ -688,7 +688,7 @@ $scheduleSportPipeline(
     '13:00',
     '04:00',
     'MLB: Live Scoreboard Sync',
-    'espn:sync-mlb-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-mlb-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '16:00',
     '04:00',
     'MLB: Sync Game Details',
@@ -949,7 +949,7 @@ $scheduleSportPipeline(
     '19:00',
     '23:00',
     'WNBA: Live Scoreboard Sync',
-    'espn:sync-wnba-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-wnba-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '19:00',
     '23:00',
     'WNBA: Sync Game Details',
@@ -1008,7 +1008,7 @@ $scheduleSportPipeline(
     '06:00',
     '02:00',
     'NFL: Live Scoreboard Sync',
-    'espn:sync-nfl-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-nfl-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '06:00',
     '02:00',
     'NFL: Sync Game Details',
@@ -1164,7 +1164,7 @@ $scheduleSportPipeline(
     '10:00',
     '02:00',
     'CFB: Live Scoreboard Sync',
-    'espn:sync-cfb-game-details --lookback-days=7 --limit=50 --latest',
+    'espn:sync-cfb-game-details --lookback-days=7 --days-forward=1 --limit=50 --latest',
     '14:00',
     '02:00',
     'CFB: Sync Game Details',

@@ -331,6 +331,28 @@ it('can limit refresh existing sweep to a recent lookback window', function () {
     );
 });
 
+it('can keep sweep mode out of the distant future schedule', function () {
+    Queue::fake();
+
+    $futureGame = Game::factory()->create([
+        'espn_event_id' => '401585699',
+        'game_date' => now()->addDays(10),
+        'home_team_id' => $this->homeTeam->id,
+        'away_team_id' => $this->awayTeam->id,
+        'status' => 'STATUS_FINAL',
+    ]);
+
+    artisan('espn:sync-nba-game-details', [
+        '--days-forward' => 1,
+    ])->assertSuccessful();
+
+    Queue::assertPushed(FetchGameDetails::class, 1);
+    Queue::assertNotPushed(
+        FetchGameDetails::class,
+        fn (FetchGameDetails $job) => $job->eventId === $futureGame->espn_event_id
+    );
+});
+
 it('can refresh games that already have player stats', function () {
     Queue::fake();
 

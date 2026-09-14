@@ -24,6 +24,7 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
             ->when($this->requiresFinalStatus(), fn ($query) => $query->where('status', 'STATUS_FINAL'))
             ->whereNotNull('espn_event_id')
             ->when($this->lookbackDays() !== null, fn ($query) => $query->whereDate('game_date', '>=', now()->copy()->subDays($this->lookbackDays())->toDateString()))
+            ->when($this->daysForward() !== null, fn ($query) => $query->whereDate('game_date', '<=', now()->copy()->addDays($this->daysForward())->toDateString()))
             ->when(! $this->option('refresh-existing'), fn ($query) => $query->where(fn ($query) => $this->whereMissingDetails($query, $gameModel)))
             ->orderBy('game_date', $this->option('latest') ? 'desc' : 'asc')
             ->get();
@@ -83,6 +84,17 @@ abstract class AbstractSyncMissingPlayerStatsGameDetailsCommand extends Abstract
         }
 
         return max(1, (int) $value);
+    }
+
+    protected function daysForward(): ?int
+    {
+        $value = $this->option('days-forward');
+
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return max(0, (int) $value);
     }
 
     /**

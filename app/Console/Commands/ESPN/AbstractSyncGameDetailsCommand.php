@@ -116,6 +116,7 @@ abstract class AbstractSyncGameDetailsCommand extends Command
             "%s\n {eventId? : The ESPN event ID (optional - syncs all completed games without stats if not provided)}
             {--refresh-existing : Include games that already have player stats so stale box scores can be refreshed}
             {--lookback-days= : Limit sweep mode to games on or after this many days ago}
+            {--days-forward= : Limit sweep mode to games no later than this many days from now}
             {--limit=0 : Limit number of games dispatched in sweep mode}
             {--latest : Dispatch newest matching games first in sweep mode}
             {--sync : Run matching game detail jobs inline instead of dispatching them to the queue}

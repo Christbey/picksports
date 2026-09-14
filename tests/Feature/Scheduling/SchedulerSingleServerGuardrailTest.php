@@ -100,12 +100,12 @@ it('staggers provider syncs instead of starting every sport together', function 
         ->and($events->get('CFB: Sync Injuries')?->expression)->toBe('26,56 * * * *')
         ->and($events->get('MLB: Sync Game Details')?->expression)->toBe('12,42 * * * *')
         ->and((string) $events->get('MLB: Sync Game Details')?->command)
-        ->toContain('--lookback-days=7', '--limit=50', '--latest')
+        ->toContain('--lookback-days=7', '--days-forward=1', '--limit=50', '--latest')
         ->and($events->get('MLB: Sync Injuries')?->expression)->toBe('14,44 * * * *')
         ->and($events->get('MLB: Refresh Probable Pitchers')?->expression)->toBe('17,47 * * * *')
         ->and($events->get('NFL: Sync Game Details')?->expression)->toBe('19,49 * * * *')
         ->and((string) $events->get('NFL: Sync Game Details')?->command)
-        ->toContain('--lookback-days=7', '--limit=50', '--latest')
+        ->toContain('--lookback-days=7', '--days-forward=1', '--limit=50', '--latest')
         ->and($events->get('NFL: Sync Injuries')?->expression)->toBe('23,53 * * * *');
 });
 

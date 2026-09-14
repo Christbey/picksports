@@ -4,6 +4,7 @@ namespace App\Console\Commands\Sports;
 
 use App\Console\Commands\Concerns\ResolvesRequiredConfig;
 use App\Support\SportsViewCache;
+use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 
 abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
@@ -39,10 +40,18 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
         $this->info("Generating predictions for scheduled games in the {$season} season...");
 
         $generatePrediction = app($this->generateActionClass());
-        $generated = $generatePrediction->executeForAllScheduledGames((int) $season);
+        $daysForward = max(0, (int) $this->option('days-forward'));
+        $businessTimezone = config('sports.business_timezone', config('app.timezone'));
+        $fromDate = now($businessTimezone)->startOfDay();
+        $toDate = $fromDate->copy()->addDays($daysForward)->endOfDay();
+        $generated = $generatePrediction->executeForAllScheduledGames(
+            (int) $season,
+            $fromDate,
+            $toDate,
+        );
 
         $this->info("Predictions generated for {$generated} scheduled games.");
-        $this->afterPredictionsGenerated((int) $season, $generated);
+        $this->afterPredictionsGenerated((int) $season, $generated, $fromDate, $toDate);
         if ($generated > 0) {
             app(SportsViewCache::class)->bustSegments([
                 SportsViewCache::SEGMENT_DASHBOARD,
@@ -57,8 +66,12 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
         return self::SUCCESS;
     }
 
-    protected function afterPredictionsGenerated(int $season, int $generated): void
-    {
+    protected function afterPredictionsGenerated(
+        int $season,
+        int $generated,
+        CarbonInterface $fromDate,
+        CarbonInterface $toDate,
+    ): void {
         // Sport commands may materialize derived presentation data in one batch.
     }
 
@@ -73,7 +86,7 @@ abstract class AbstractGenerateSeasonScheduledPredictionsCommand extends Command
     protected function buildSignature(): string
     {
         return sprintf(
-            "%s\n {--season= : %s}",
+            "%s\n {--season= : %s}\n {--days-forward=2 : Include games through this many days after today}",
             $this->commandName(),
             static::SEASON_OPTION_DESCRIPTION
         );

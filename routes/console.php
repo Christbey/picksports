@@ -700,7 +700,6 @@ $scheduleSportPipeline(
         'grade-predictions' => '04:30',
         'calculate-elo' => '05:00',
         'calculate-team-metrics' => '05:30',
-        'generate-predictions' => '06:00',
     ],
     'mlb:sync-odds',
     'MLB: Sync Odds',
@@ -720,6 +719,12 @@ $scheduleSportPipeline(
             'name' => 'MLB: Sync Game Weather',
         ],
     ]
+);
+$scheduleDailySeasonJob(
+    "mlb:generate-predictions --season={$currentYear} --days-forward=2",
+    '06:00',
+    $mlbInSeason,
+    'MLB: Generate Predictions',
 );
 $mlbCanonicalPipelineEnabled = fn (): bool => $mlbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.mlb', false);
@@ -840,7 +845,7 @@ $mlbPostOddsRefreshJobs = [
         'name' => 'MLB: Sync Inning Odds',
     ],
     [
-        'command' => "mlb:generate-predictions --season={$currentYear}",
+        'command' => "mlb:generate-predictions --season={$currentYear} --days-forward=2",
         'minute' => 30,
         'name' => 'MLB: Refresh Predictions After Odds Sync',
     ],

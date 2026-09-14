@@ -117,6 +117,7 @@ it('keeps routine sentinels observational and bounds expensive prediction work',
         ->toContain('--from-date=')
         ->toContain('--to-date=')
         ->and((string) $events->get('NFL: Generate Canonical Predictions')?->command)->toContain('--days-forward=8')
+        ->and((string) $events->get('MLB: Generate Predictions')?->command)->toContain('--days-forward=2')
         ->and((string) $events->get('CFB: Generate Canonical Predictions')?->command)
         ->toContain('--week=')
         ->toContain('--days-forward=8');

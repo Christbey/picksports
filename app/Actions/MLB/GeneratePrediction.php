@@ -19,6 +19,7 @@ use App\Services\Sports\DepthChartImpactService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\MlbRegularSeasonWindow;
 use App\Support\Odds\MarketSpread;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -577,11 +578,16 @@ class GeneratePrediction extends AbstractPredictionGenerator
         return (float) config('mlb.prediction.total_model.base_runs', config('mlb.elo.average_runs_per_game')) + $eloAdjustment;
     }
 
-    public function executeForAllScheduledGames(int $season): int
-    {
+    public function executeForAllScheduledGames(
+        int $season,
+        ?CarbonInterface $fromDate = null,
+        ?CarbonInterface $toDate = null,
+    ): int {
         $games = Game::query()
             ->where('season', $season)
             ->where('status', 'STATUS_SCHEDULED')
+            ->when($fromDate, fn ($query, CarbonInterface $date) => $query->whereDate('game_date', '>=', $date->toDateString()))
+            ->when($toDate, fn ($query, CarbonInterface $date) => $query->whereDate('game_date', '<=', $date->toDateString()))
             ->when(
                 config('mlb.season.analytics_types'),
                 fn ($query, $types) => $query->whereIn('season_type', $types)

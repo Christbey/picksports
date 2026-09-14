@@ -6,6 +6,7 @@ use App\Actions\MLB\GeneratePrediction;
 use App\Console\Commands\Sports\AbstractGenerateSeasonScheduledPredictionsCommand;
 use App\Models\MLB\Game;
 use App\Services\MLB\MlbPeriodFeatureStore;
+use Carbon\CarbonInterface;
 
 class GeneratePredictionsCommand extends AbstractGenerateSeasonScheduledPredictionsCommand
 {
@@ -17,8 +18,12 @@ class GeneratePredictionsCommand extends AbstractGenerateSeasonScheduledPredicti
 
     protected const GENERATE_ACTION_CLASS = GeneratePrediction::class;
 
-    protected function afterPredictionsGenerated(int $season, int $generated): void
-    {
+    protected function afterPredictionsGenerated(
+        int $season,
+        int $generated,
+        CarbonInterface $fromDate,
+        CarbonInterface $toDate,
+    ): void {
         if ($generated < 1) {
             return;
         }
@@ -26,6 +31,7 @@ class GeneratePredictionsCommand extends AbstractGenerateSeasonScheduledPredicti
         $games = Game::query()
             ->where('season', $season)
             ->where('status', config('mlb.statuses.scheduled', 'STATUS_SCHEDULED'))
+            ->whereBetween('game_date', [$fromDate->toDateString(), $toDate->toDateString()])
             ->whereHas('prediction')
             ->orderBy('game_date')
             ->orderBy('game_time')

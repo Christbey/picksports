@@ -4,6 +4,7 @@ use App\Services\CommandHeartbeatService;
 use App\Support\CFB\CfbWeek;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Str;
 
@@ -36,6 +37,22 @@ $cfbInSeason = $inSeasonMonths([8, 9, 10, 11, 12, 1]); // Aug-Jan
 $currentYear = (int) now()->year;
 $fallSeasonYear = now()->month <= 2 ? $currentYear - 1 : $currentYear;
 $cfbCurrentRegularSeasonWeek = CfbWeek::productWeekForDate($fallSeasonYear, now());
+
+// Spread provider-heavy jobs across each cadence. The active leagues otherwise
+// all start at :00/:30 and compete for the same small application instance.
+$scheduleMinuteOffsets = [
+    'live' => ['nba' => 0, 'cbb' => 1, 'wcbb' => 2, 'mlb' => 0, 'wnba' => 1, 'nfl' => 3, 'cfb' => 4],
+    'game_details' => ['nba' => 0, 'cbb' => 4, 'wcbb' => 8, 'mlb' => 12, 'wnba' => 16, 'nfl' => 20, 'cfb' => 24],
+    'injuries' => ['nba' => 2, 'cbb' => 6, 'wcbb' => 10, 'mlb' => 14, 'wnba' => 18, 'nfl' => 22, 'cfb' => 26],
+    'probable_pitchers' => ['mlb' => 17],
+    'odds' => ['mlb' => 0, 'wnba' => 5, 'nfl' => 10, 'cfb' => 15, 'nba' => 20, 'cbb' => 25, 'wcbb' => 30],
+    'player_props' => ['mlb' => 0, 'wnba' => 5, 'nfl' => 10, 'nba' => 15, 'cbb' => 20, 'wcbb' => 25],
+];
+$resolveScheduleMinute = function (string $command, string $cadence) use ($scheduleMinuteOffsets): int {
+    $sport = app(CommandHeartbeatService::class)->inferSportFromCommand($command);
+
+    return (int) data_get($scheduleMinuteOffsets, "{$cadence}.{$sport}", 0);
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -81,21 +98,41 @@ $resolveExternalHeartbeatUrl = function (string $sourceName) use ($legacyLiveSco
 $attachCommandHeartbeat = function ($event, string $command, string $sourceName) use ($resolveExternalHeartbeatUrl): void {
     $service = app(CommandHeartbeatService::class);
     $sport = $service->inferSportFromCommand($command);
+    $startedAtCacheKey = 'scheduled-command-started:'.sha1($sourceName.'|'.$command);
+
+    $event->before(function () use ($startedAtCacheKey): void {
+        Cache::put($startedAtCacheKey, (int) round(microtime(true) * 1000), now()->addHours(8));
+    });
+
+    $metadata = function () use ($event, $sourceName, $startedAtCacheKey): array {
+        $startedAtMs = Cache::pull($startedAtCacheKey);
+
+        return [
+            'scheduled_name' => $sourceName,
+            'exit_code' => $event->exitCode,
+            'duration_ms' => is_numeric($startedAtMs)
+                ? max(0, (int) round(microtime(true) * 1000) - (int) $startedAtMs)
+                : null,
+        ];
+    };
 
     if ($externalHeartbeatUrl = $resolveExternalHeartbeatUrl($sourceName)) {
         $event->pingOnSuccess($externalHeartbeatUrl);
     }
 
-    $event->onSuccess(function () use ($service, $command, $sport, $sourceName) {
-        $service->recordSuccess($command, $sport, 'schedule', [
-            'scheduled_name' => $sourceName,
-        ]);
+    $event->onSuccess(function () use ($service, $command, $sport, $metadata) {
+        $service->recordSuccess($command, $sport, 'schedule', $metadata());
     });
 
-    $event->onFailure(function () use ($service, $command, $sport, $sourceName) {
-        $service->recordFailure($command, $sport, 'schedule', null, [
-            'scheduled_name' => $sourceName,
-        ]);
+    $event->onFailure(function () use ($service, $command, $sport, $metadata) {
+        $details = $metadata();
+        $service->recordFailure(
+            $command,
+            $sport,
+            'schedule',
+            'Scheduled command exited with code '.($details['exit_code'] ?? 'unknown'),
+            $details,
+        );
     });
 };
 
@@ -105,11 +142,12 @@ $scheduleLiveScoreboardSync = function (
     string $betweenEnd,
     callable $inSeason,
     string $name
-) use ($attachCommandHeartbeat) {
+) use ($attachCommandHeartbeat, $resolveScheduleMinute) {
     $resolvedCommand = "{$command} ".date('Ymd');
+    $minute = $resolveScheduleMinute($command, 'live');
 
     $event = Schedule::command($resolvedCommand)
-        ->everyFiveMinutes()
+        ->cron("{$minute}-59/5 * * * *")
         ->between($betweenStart, $betweenEnd)
         ->when($inSeason)
         ->name($name)
@@ -142,10 +180,13 @@ $scheduleHalfHourlyWindowJob = function (
     string $betweenStart,
     string $betweenEnd,
     callable $inSeason,
-    string $name
-) use ($attachCommandHeartbeat) {
+    string $name,
+    string $offsetGroup = 'game_details',
+) use ($attachCommandHeartbeat, $resolveScheduleMinute) {
+    $minute = $resolveScheduleMinute($command, $offsetGroup);
+
     $event = Schedule::command($command)
-        ->everyThirtyMinutes()
+        ->cron("{$minute},".($minute + 30).' * * * *')
         ->between($betweenStart, $betweenEnd)
         ->when($inSeason)
         ->name($name)
@@ -160,10 +201,11 @@ $scheduleOddsSyncWindow = function (
     string $command,
     callable $inSeason,
     string $name
-) use ($attachCommandHeartbeat) {
+) use ($attachCommandHeartbeat, $resolveScheduleMinute) {
+    $minute = $resolveScheduleMinute($command, 'odds');
+
     $event = Schedule::command($command)
-        ->everyFourHours()
-        ->between('08:00', '23:00')
+        ->cron("{$minute} 8,12,16,20 * * *")
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
@@ -182,9 +224,11 @@ $schedulePlayerPropsWindow = function (
     int $secondHour,
     callable $inSeason,
     string $name
-) use ($attachCommandHeartbeat) {
+) use ($attachCommandHeartbeat, $resolveScheduleMinute) {
+    $minute = $resolveScheduleMinute($command, 'player_props');
+
     $event = Schedule::command($command)
-        ->twiceDaily($firstHour, $secondHour)
+        ->cron("{$minute} {$firstHour},{$secondHour} * * *")
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
@@ -250,13 +294,18 @@ $scheduleEpaLifecycle = function (
     string $label,
     callable $seasonResolver,
     callable $inSeason
-) use ($scheduleDailySeasonJob, $scheduleWeeklySeasonJob) {
+) use ($scheduleWeeklySeasonJob) {
     $season = (int) $seasonResolver();
     $fromSeason = $season - 1;
+    $baselineTimes = ['nba' => '00:20', 'cbb' => '00:40', 'wcbb' => '01:00', 'nfl' => '01:20'];
+    $calibrationTimes = ['nba' => '01:50', 'cbb' => '02:10', 'wcbb' => '02:30', 'nfl' => '02:50'];
 
-    $scheduleDailySeasonJob(
+    // The source season is immutable once the target season begins. Rebuilding
+    // it daily only repeats hundreds of game/play queries with identical output.
+    $scheduleWeeklySeasonJob(
         "sports:build-epa-state-baseline {$sport} --season={$season} --from-season={$fromSeason}",
-        '02:20',
+        1,
+        $baselineTimes[$sport] ?? '01:20',
         $inSeason,
         "{$label}: Build EPA State Baseline"
     );
@@ -264,10 +313,28 @@ $scheduleEpaLifecycle = function (
     $scheduleWeeklySeasonJob(
         "sports:report-epa-blend-calibration {$sport} --season={$season}",
         1,
-        '02:50',
+        $calibrationTimes[$sport] ?? '02:50',
         $inSeason,
         "{$label}: Report EPA Blend Calibration"
     );
+};
+
+$scheduleIncrementalPlayEpa = function (
+    string $sport,
+    string $label,
+    int $season,
+    callable $inSeason,
+    int $minute
+) use ($attachCommandHeartbeat): void {
+    $command = "{$sport}:calculate-play-epa --season={$season} --limit=4";
+    $event = Schedule::command($command)
+        ->cron("{$minute},".($minute + 30).' * * * *')
+        ->when($inSeason)
+        ->name("{$label}: Calculate Incremental Play EPA")
+        ->onOneServer()
+        ->withoutOverlapping(20);
+
+    $attachCommandHeartbeat($event, $command, "{$label}: Calculate Incremental Play EPA");
 };
 
 $scheduleSportPipeline = function (
@@ -403,9 +470,11 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $nbaInSeason,
-    'NBA: Sync Injuries'
+    'NBA: Sync Injuries',
+    'injuries',
 );
 $scheduleEpaLifecycle('nba', 'NBA', fn () => $fallSeasonYear, $nbaInSeason);
+$scheduleIncrementalPlayEpa('nba', 'NBA', $fallSeasonYear, $nbaInSeason, 7);
 $scheduleDailySeasonJob(
     'sports:settle-bet-decisions --sport=nba',
     '03:45',
@@ -535,9 +604,11 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $cbbInSeason,
-    'CBB: Sync Injuries'
+    'CBB: Sync Injuries',
+    'injuries',
 );
 $scheduleEpaLifecycle('cbb', 'CBB', fn () => $fallSeasonYear, $cbbInSeason);
+$scheduleIncrementalPlayEpa('cbb', 'CBB', $fallSeasonYear, $cbbInSeason, 12);
 
 // WCBB
 $wcbbTeamSchedulesEvent = Schedule::command("espn:sync-wcbb-schedules --season={$fallSeasonYear}")
@@ -602,9 +673,11 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $wcbbInSeason,
-    'WCBB: Sync Injuries'
+    'WCBB: Sync Injuries',
+    'injuries',
 );
 $scheduleEpaLifecycle('wcbb', 'WCBB', fn () => $fallSeasonYear, $wcbbInSeason);
+$scheduleIncrementalPlayEpa('wcbb', 'WCBB', $fallSeasonYear, $wcbbInSeason, 17);
 
 // MLB
 $scheduleSportPipeline(
@@ -828,7 +901,7 @@ $operationsSentinelSchedules = [
 
 foreach ($operationsSentinelSchedules as $sentinelSchedule) {
     $scheduleDailySeasonJob(
-        "sports:operations-sentinel --sport={$sentinelSchedule['sport']} --season={$sentinelSchedule['season']}",
+        "sports:operations-sentinel --sport={$sentinelSchedule['sport']} --season={$sentinelSchedule['season']} --validate-only --skip-ai-review",
         $sentinelSchedule['time'],
         $sentinelSchedule['in_season'],
         "{$sentinelSchedule['label']}: Operations Sentinel"
@@ -850,14 +923,16 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $mlbInSeason,
-    'MLB: Sync Injuries'
+    'MLB: Sync Injuries',
+    'injuries',
 );
 $scheduleHalfHourlyWindowJob(
     'mlb:refresh-probable-pitchers --days-ahead=2',
     '06:00',
     '23:00',
     $mlbInSeason,
-    'MLB: Refresh Probable Pitchers'
+    'MLB: Refresh Probable Pitchers',
+    'probable_pitchers',
 );
 
 // WNBA
@@ -901,7 +976,8 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $wnbaInSeason,
-    'WNBA: Sync Injuries'
+    'WNBA: Sync Injuries',
+    'injuries',
 );
 $wnbaCanonicalPipelineEnabled = fn (): bool => $wnbaInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.wnba', false);
@@ -920,7 +996,7 @@ $scheduleDailySeasonJob(
 
 // NFL
 $scheduleSportPipeline(
-    'espn:sync-nfl-current',
+    'espn:sync-nfl-current --skip-teams',
     '08:00',
     'NFL: Sync Current Week',
     'espn:sync-nfl-games-scoreboard',
@@ -939,7 +1015,6 @@ $scheduleSportPipeline(
         'grade-predictions' => '08:30',
         'calculate-elo' => '09:00',
         'calculate-team-metrics' => '09:30',
-        'generate-predictions' => '10:00',
     ],
     'nfl:sync-odds',
     'NFL: Sync Odds',
@@ -948,11 +1023,26 @@ $scheduleSportPipeline(
     15,
     'NFL: Sync Player Props'
 );
+$nflPredictionWindowStart = now(config('sports.business_timezone', config('app.timezone')))->toDateString();
+$nflPredictionWindowEnd = now(config('sports.business_timezone', config('app.timezone')))->addDays(8)->toDateString();
+$scheduleDailySeasonJob(
+    "nfl:generate-predictions --season={$fallSeasonYear} --from-date={$nflPredictionWindowStart} --to-date={$nflPredictionWindowEnd}",
+    '10:00',
+    $nflInSeason,
+    'NFL: Generate Predictions',
+);
 $nflCanonicalPipelineEnabled = fn (): bool => $nflInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false);
 $scheduleDailySeasonJob("nfl:grade-player-props --season={$fallSeasonYear}", '08:40', $nflInSeason, 'NFL: Grade Player Props');
 $scheduleDailySeasonJob("nfl:evaluate-canonical-predictions --season={$fallSeasonYear}", '08:35', $nflCanonicalPipelineEnabled, 'NFL: Evaluate Canonical Predictions');
-$scheduleDailySeasonJob("nfl:generate-canonical-predictions --season={$fallSeasonYear}", '10:05', $nflCanonicalPipelineEnabled, 'NFL: Generate Canonical Predictions');
+$scheduleDailySeasonJob("nfl:generate-canonical-predictions --season={$fallSeasonYear} --days-forward=8", '10:05', $nflCanonicalPipelineEnabled, 'NFL: Generate Canonical Predictions');
+$scheduleWeeklySeasonJob(
+    'espn:sync-nfl-teams',
+    3,
+    '00:40',
+    $nflInSeason,
+    'NFL: Refresh Teams Weekly',
+);
 $scheduleWeeklySeasonJob(
     "espn:sync-nfl-depth-charts --season={$fallSeasonYear}",
     1,
@@ -971,7 +1061,8 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $nflInSeason,
-    'NFL: Sync Injuries'
+    'NFL: Sync Injuries',
+    'injuries',
 );
 $nflGameContextResearchCommand = "nfl:research-game-context --season={$fallSeasonYear} --days-forward=7 --limit=4 --retry-rate-limit=2 --retry-rate-limit-delay=30";
 $nflGameContextResearchEvent = Schedule::command($nflGameContextResearchCommand)
@@ -1005,6 +1096,7 @@ $scheduleOddsSyncWindow(
     'NFL: Sync Futures Odds'
 );
 $scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
+$scheduleIncrementalPlayEpa('nfl', 'NFL', $fallSeasonYear, $nflInSeason, 22);
 $scheduleDailySeasonJob(
     'sports:settle-bet-decisions --sport=nfl',
     '08:45',
@@ -1037,7 +1129,7 @@ $scheduleWeeklySeasonJob(
     'NFL: Weekly Signal Grade Report'
 );
 $scheduleWeeklySeasonJob(
-    "nfl:readiness-pass --from-season=2009 --to-season={$fallSeasonYear} --current-season={$fallSeasonYear} --skip-backfill --reason-code-max-size=1 --spread-backtest-limit=0",
+    "nfl:readiness-pass --from-season=2021 --to-season={$fallSeasonYear} --current-season={$fallSeasonYear} --skip-backfill --reason-code-max-size=1 --spread-backtest-limit=2500",
     2,
     '11:35',
     $nflInSeason,
@@ -1060,7 +1152,7 @@ $attachCommandHeartbeat(
 
 // CFB
 $scheduleSportPipeline(
-    'espn:sync-cfb-current',
+    'espn:sync-cfb-current --skip-teams',
     '03:25',
     'CFB: Sync Current Week',
     'espn:sync-cfb-games-scoreboard',
@@ -1099,7 +1191,14 @@ $cfbCanonicalPipelineEnabled = fn (): bool => $cfbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.cfb', false);
 $scheduleDailySeasonJob("cfb:evaluate-canonical-predictions --season={$fallSeasonYear}", '03:05', $cfbCanonicalPipelineEnabled, 'CFB: Evaluate Canonical Predictions');
 $scheduleDailySeasonJob('sports:settle-bet-decisions --sport=cfb', '03:10', $cfbCanonicalPipelineEnabled, 'CFB: Settle Model Decisions');
-$scheduleDailySeasonJob("cfb:generate-canonical-predictions --season={$fallSeasonYear}", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
+$scheduleDailySeasonJob("cfb:generate-canonical-predictions --season={$fallSeasonYear} --week={$cfbCurrentRegularSeasonWeek} --days-forward=8", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
+$scheduleWeeklySeasonJob(
+    'espn:sync-cfb-teams',
+    3,
+    '00:10',
+    $cfbInSeason,
+    'CFB: Refresh Teams Weekly',
+);
 $scheduleDailySeasonJob("cfb:record-moneyline-calibration-shadow --season={$fallSeasonYear}", '08:10', $cfbCanonicalPipelineEnabled, 'CFB: Record Moneyline Calibration Shadow');
 $scheduleDailySeasonJob('sports:record-shadow-bet-decisions --sport=cfb', '08:15', $cfbCanonicalPipelineEnabled, 'CFB: Record Shadow Bet Decisions');
 $scheduleHalfHourlyWindowJob(
@@ -1107,14 +1206,28 @@ $scheduleHalfHourlyWindowJob(
     '08:00',
     '23:00',
     $cfbInSeason,
-    'CFB: Sync Injuries'
+    'CFB: Sync Injuries',
+    'injuries',
 );
+$scheduleIncrementalPlayEpa('cfb', 'CFB', $fallSeasonYear, $cfbInSeason, 27);
 
 /*
 |--------------------------------------------------------------------------
 | Maintenance
 |--------------------------------------------------------------------------
 */
+
+$reconcileStaleAiCommand = 'ai:reconcile-stale-generations --minutes=15 --limit=500';
+$reconcileStaleAiEvent = Schedule::command($reconcileStaleAiCommand)
+    ->hourlyAt(42)
+    ->name('Maintenance: Reconcile Stale AI Generations')
+    ->onOneServer()
+    ->withoutOverlapping(10);
+$attachCommandHeartbeat(
+    $reconcileStaleAiEvent,
+    $reconcileStaleAiCommand,
+    'Maintenance: Reconcile Stale AI Generations',
+);
 
 $pruneFailedJobsEvent = Schedule::command('queue:prune-failed --hours=168')
     ->dailyAt('03:20')

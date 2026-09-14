@@ -8,7 +8,7 @@ use App\Models\NFL\Game;
 
 class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredictionsCommand
 {
-    protected $signature = 'nfl:generate-canonical-predictions {--game=} {--season=} {--date=} {--draft}';
+    protected $signature = 'nfl:generate-canonical-predictions {--game=} {--season=} {--date=} {--days-forward=} {--draft}';
 
     protected $description = 'Generate canonical NFL predictions';
 

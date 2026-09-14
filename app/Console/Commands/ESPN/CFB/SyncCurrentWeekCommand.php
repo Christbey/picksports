@@ -32,8 +32,12 @@ class SyncCurrentWeekCommand extends AbstractSyncCurrentWeekNumberCommand
         $sport = $this->sportCode();
         $season = $this->resolveSeason();
 
-        $this->info("Syncing {$sport} teams...");
-        $this->dispatchTeamsSync();
+        if ($this->option('skip-teams')) {
+            $this->line("Skipping {$sport} team refresh; syncing the current game window only.");
+        } else {
+            $this->info("Syncing {$sport} teams...");
+            $this->dispatchTeamsSync();
+        }
 
         $windows = $this->resolveCurrentWindows($season);
 

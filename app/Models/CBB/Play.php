@@ -35,6 +35,7 @@ class Play extends Model
         'expected_points_before',
         'expected_points_after',
         'true_epa',
+        'epa_calculated_at',
     ];
 
     protected function casts(): array
@@ -49,6 +50,7 @@ class Play extends Model
             'expected_points_before' => 'decimal:3',
             'expected_points_after' => 'decimal:3',
             'true_epa' => 'decimal:3',
+            'epa_calculated_at' => 'datetime',
         ];
     }
 

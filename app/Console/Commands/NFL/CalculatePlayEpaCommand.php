@@ -27,7 +27,10 @@ class CalculatePlayEpaCommand extends Command
         $dryRun = (bool) $this->option('dry-run');
 
         $query = Game::query()
-            ->whereHas('plays')
+            ->whereHas('plays', fn ($query) => $query->when(
+                ! $rebuild,
+                fn ($query) => $query->whereNull('epa_calculated_at')
+            ))
             ->orderByDesc('game_date');
 
         if ($season !== null && $season !== '') {
@@ -73,6 +76,8 @@ class CalculatePlayEpaCommand extends Command
                     'home_score',
                     'away_score',
                     'possession_team_id',
+                    'is_epa_eligible',
+                    'epa_calculated_at',
                     'true_epa',
                 ]);
 
@@ -100,13 +105,11 @@ class CalculatePlayEpaCommand extends Command
                     'expected_points_before' => $result['ep_before'],
                     'expected_points_after' => $result['ep_after'],
                     'true_epa' => $result['epa'],
+                    'epa_calculated_at' => now(),
                 ];
 
-                if (! $rebuild) {
-                    $alreadyScored = $play->true_epa !== null;
-                    if ($alreadyScored) {
-                        continue;
-                    }
+                if (! $rebuild && $play->epa_calculated_at !== null) {
+                    continue;
                 }
 
                 $playsUpdated++;

@@ -11,7 +11,13 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
         $gameClass = $this->gameClass();
         $query = $gameClass::query()->with(['sportEvent', 'homeTeam', 'awayTeam'])
             ->whereNotNull('sport_event_id')
-            ->whereHas('sportEvent', fn ($query) => $query->where('starts_at', '>=', now()))
+            ->whereHas('sportEvent', function ($query): void {
+                $query->where('starts_at', '>=', now());
+
+                if ($this->getDefinition()->hasOption('days-forward') && filled($this->option('days-forward'))) {
+                    $query->where('starts_at', '<=', now()->addDays(max(1, (int) $this->option('days-forward'))));
+                }
+            })
             ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
             ->orderBy('game_date')->orderBy('id');
         if (filled($this->option('game'))) {

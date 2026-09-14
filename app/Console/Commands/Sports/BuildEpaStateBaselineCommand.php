@@ -54,77 +54,95 @@ class BuildEpaStateBaselineCommand extends Command
         $gameModel = $models['game_model'];
         $playModel = $models['play_model'];
 
-        $gameQuery = $gameModel::query()
+        $sourceGameQuery = $gameModel::query()
             ->where('season', $fromSeason)
-            ->where('status', 'STATUS_FINAL')
-            ->orderByDesc('game_date');
+            ->where('status', 'STATUS_FINAL');
 
         if ($limitGames > 0) {
-            $gameQuery->limit($limitGames);
+            $sourceGameIds = (clone $sourceGameQuery)
+                ->orderByDesc('game_date')
+                ->limit($limitGames)
+                ->pluck('id');
+            $sourceGameQuery = $gameModel::query()->whereKey($sourceGameIds->all());
         }
 
-        $games = $gameQuery->get(['id']);
-        if ($games->isEmpty()) {
+        $sourceGameCount = (clone $sourceGameQuery)->count();
+        if ($sourceGameCount === 0) {
             $this->warn('No source games found for baseline build.');
 
             return self::SUCCESS;
         }
 
         $this->info("Building {$sport} EPA state baseline from season {$fromSeason} -> target {$targetSeason}");
-        $this->line('Source games: '.$games->count());
-        $bar = $this->output->createProgressBar($games->count());
+        $this->line('Source games: '.$sourceGameCount);
+        $bar = $this->output->createProgressBar($sourceGameCount);
         $bar->start();
 
         $stateBuckets = [];
+        $playColumns = [
+            'id',
+            'game_id',
+            'period',
+            'clock',
+            'play_type',
+            'play_text',
+            'down',
+            'distance',
+            'yards_to_endzone',
+            'home_score',
+            'away_score',
+            'possession_team_id',
+            'expected_points_before',
+        ];
 
-        foreach ($games as $game) {
-            $plays = $playModel::query()
-                ->where('game_id', (int) $game->id)
+        // Eager-load plays in bounded game chunks. The prior implementation ran
+        // one play query per source game, which made a season baseline an N+1
+        // workload and put unnecessary pressure on the production database.
+        $sourceGameQuery
+            ->with(['plays' => fn ($query) => $query
                 ->where('is_epa_eligible', true)
                 ->whereNotNull('possession_team_id')
                 ->whereNotNull('expected_points_before')
                 ->orderBy('sequence_number')
                 ->orderBy('id')
-                ->get([
-                    'id',
-                    'period',
-                    'clock',
-                    'play_type',
-                    'play_text',
-                    'down',
-                    'distance',
-                    'yards_to_endzone',
-                    'home_score',
-                    'away_score',
-                    'possession_team_id',
-                    'expected_points_before',
-                ]);
+                ->select($playColumns)])
+            ->select('id')
+            ->chunkById(100, function ($games) use (
+                $sport,
+                $nflCalculator,
+                $basketballCalculator,
+                &$stateBuckets,
+                $bar
+            ): void {
+                foreach ($games as $game) {
+                    $plays = $game->plays;
 
-            if ($plays->isEmpty()) {
-                $bar->advance();
+                    if ($plays->isEmpty()) {
+                        $bar->advance();
 
-                continue;
-            }
+                        continue;
+                    }
 
-            if ($sport === 'nfl') {
-                foreach ($plays as $play) {
-                    $stateKey = $nflCalculator->stateKeyForPlay($play);
-                    $this->pushStateSample($stateBuckets, $stateKey, (float) $play->expected_points_before);
+                    if ($sport === 'nfl') {
+                        foreach ($plays as $play) {
+                            $stateKey = $nflCalculator->stateKeyForPlay($play);
+                            $this->pushStateSample($stateBuckets, $stateKey, (float) $play->expected_points_before);
+                        }
+
+                        $bar->advance();
+
+                        continue;
+                    }
+
+                    [$halfMode, $periodDurationSeconds] = $basketballCalculator->derivePeriodContext($plays);
+                    foreach ($plays as $play) {
+                        $stateKey = $basketballCalculator->stateKeyForPlay($play, $halfMode, $periodDurationSeconds);
+                        $this->pushStateSample($stateBuckets, $stateKey, (float) $play->expected_points_before);
+                    }
+
+                    $bar->advance();
                 }
-
-                $bar->advance();
-
-                continue;
-            }
-
-            [$halfMode, $periodDurationSeconds] = $basketballCalculator->derivePeriodContext($plays);
-            foreach ($plays as $play) {
-                $stateKey = $basketballCalculator->stateKeyForPlay($play, $halfMode, $periodDurationSeconds);
-                $this->pushStateSample($stateBuckets, $stateKey, (float) $play->expected_points_before);
-            }
-
-            $bar->advance();
-        }
+            });
 
         $bar->finish();
         $this->newLine(2);

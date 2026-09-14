@@ -35,6 +35,8 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
             'home_score',
             'away_score',
             'possession_team_id',
+            'is_epa_eligible',
+            'epa_calculated_at',
             'true_epa',
         ];
     }
@@ -51,7 +53,10 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
         $playModel = $this->playModelClass();
 
         $query = $gameModel::query()
-            ->whereHas('plays')
+            ->whereHas('plays', fn ($query) => $query->when(
+                ! $rebuild,
+                fn ($query) => $query->whereNull('epa_calculated_at')
+            ))
             ->orderByDesc('game_date');
 
         if ($season !== null && $season !== '') {
@@ -112,9 +117,10 @@ abstract class AbstractBasketballCalculatePlayEpaCommand extends Command
                     'expected_points_before' => $result['ep_before'],
                     'expected_points_after' => $result['ep_after'],
                     'true_epa' => $result['epa'],
+                    'epa_calculated_at' => now(),
                 ];
 
-                if (! $rebuild && $play->true_epa !== null) {
+                if (! $rebuild && $play->epa_calculated_at !== null) {
                     continue;
                 }
 

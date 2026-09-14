@@ -8,7 +8,7 @@ use App\Models\CFB\Game;
 
 class GenerateCanonicalPredictionsCommand extends AbstractGenerateCanonicalPredictionsCommand
 {
-    protected $signature = 'cfb:generate-canonical-predictions {--game=} {--season=} {--week=} {--date=} {--draft}';
+    protected $signature = 'cfb:generate-canonical-predictions {--game=} {--season=} {--week=} {--date=} {--days-forward=} {--draft}';
 
     protected $description = 'Generate canonical CFB predictions';
 

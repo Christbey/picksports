@@ -29,7 +29,7 @@ abstract class AbstractSyncCurrentWeekNumberCommand extends Command
 
     public function __construct()
     {
-        $this->signature = $this->commandName();
+        $this->signature = $this->commandName()."\n {--skip-teams : Skip the slower all-teams refresh and only sync the current game window}";
         $this->description = "Sync {$this->sportCode()} teams and current week games from ESPN API";
 
         parent::__construct();
@@ -39,8 +39,12 @@ abstract class AbstractSyncCurrentWeekNumberCommand extends Command
     {
         $sport = $this->sportCode();
 
-        $this->info("Syncing {$sport} teams...");
-        $this->dispatchTeamsSync();
+        if ($this->option('skip-teams')) {
+            $this->line("Skipping {$sport} team refresh; syncing the current game window only.");
+        } else {
+            $this->info("Syncing {$sport} teams...");
+            $this->dispatchTeamsSync();
+        }
 
         $currentYear = (int) date('Y');
         $currentWeek = $this->getCurrentWeek();

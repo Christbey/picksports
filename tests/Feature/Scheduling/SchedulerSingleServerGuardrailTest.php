@@ -100,7 +100,9 @@ it('staggers provider syncs instead of starting every sport together', function 
         ->and($events->get('CFB: Sync Injuries')?->expression)->toBe('26,56 * * * *')
         ->and($events->get('MLB: Sync Game Details')?->expression)->toBe('12,42 * * * *')
         ->and($events->get('MLB: Sync Injuries')?->expression)->toBe('14,44 * * * *')
-        ->and($events->get('MLB: Refresh Probable Pitchers')?->expression)->toBe('17,47 * * * *');
+        ->and($events->get('MLB: Refresh Probable Pitchers')?->expression)->toBe('17,47 * * * *')
+        ->and($events->get('NFL: Sync Game Details')?->expression)->toBe('19,49 * * * *')
+        ->and($events->get('NFL: Sync Injuries')?->expression)->toBe('23,53 * * * *');
 });
 
 it('keeps routine sentinels observational and bounds expensive prediction work', function () {
@@ -128,7 +130,7 @@ it('runs incremental epa and stale ai reconciliation in bounded foreground passe
     expect((string) $nflEpa?->command)
         ->toContain('nfl:calculate-play-epa')
         ->toContain('--limit=4')
-        ->and($nflEpa?->expression)->toBe('22,52 * * * *')
+        ->and($nflEpa?->expression)->toBe('28,58 * * * *')
         ->and($nflEpa?->expiresAt)->toBe(20)
         ->and($nflEpa?->runInBackground)->toBeFalse()
         ->and((string) $aiReconciliation?->command)->toContain('--minutes=15')

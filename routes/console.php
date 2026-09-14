@@ -42,8 +42,8 @@ $cfbCurrentRegularSeasonWeek = CfbWeek::productWeekForDate($fallSeasonYear, now(
 // all start at :00/:30 and compete for the same small application instance.
 $scheduleMinuteOffsets = [
     'live' => ['nba' => 0, 'cbb' => 1, 'wcbb' => 2, 'mlb' => 0, 'wnba' => 1, 'nfl' => 3, 'cfb' => 4],
-    'game_details' => ['nba' => 0, 'cbb' => 4, 'wcbb' => 8, 'mlb' => 12, 'wnba' => 16, 'nfl' => 20, 'cfb' => 24],
-    'injuries' => ['nba' => 2, 'cbb' => 6, 'wcbb' => 10, 'mlb' => 14, 'wnba' => 18, 'nfl' => 22, 'cfb' => 26],
+    'game_details' => ['nba' => 0, 'cbb' => 4, 'wcbb' => 8, 'mlb' => 12, 'wnba' => 16, 'nfl' => 19, 'cfb' => 24],
+    'injuries' => ['nba' => 2, 'cbb' => 6, 'wcbb' => 10, 'mlb' => 14, 'wnba' => 18, 'nfl' => 23, 'cfb' => 26],
     'probable_pitchers' => ['mlb' => 17],
     'odds' => ['mlb' => 0, 'wnba' => 5, 'nfl' => 10, 'cfb' => 15, 'nba' => 20, 'cbb' => 25, 'wcbb' => 30],
     'player_props' => ['mlb' => 0, 'wnba' => 5, 'nfl' => 10, 'nba' => 15, 'cbb' => 20, 'wcbb' => 25],
@@ -1096,7 +1096,7 @@ $scheduleOddsSyncWindow(
     'NFL: Sync Futures Odds'
 );
 $scheduleEpaLifecycle('nfl', 'NFL', fn () => $fallSeasonYear, $nflInSeason);
-$scheduleIncrementalPlayEpa('nfl', 'NFL', $fallSeasonYear, $nflInSeason, 22);
+$scheduleIncrementalPlayEpa('nfl', 'NFL', $fallSeasonYear, $nflInSeason, 28);
 $scheduleDailySeasonJob(
     'sports:settle-bet-decisions --sport=nfl',
     '08:45',

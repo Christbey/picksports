@@ -82,6 +82,7 @@ test('schema health verifies an exact baseline and reports identity mismatches',
     expect($fingerprintExitCode)->toBe(0)
         ->and($healthyExitCode)->toBe(0)
         ->and($healthy['healthy'])->toBeTrue()
+        ->and($healthy['server_version'])->toBeString()->not->toBeEmpty()
         ->and(collect($healthy['checks'])->pluck('status')->unique()->all())->toBe(['pass'])
         ->and($wrongDatabaseExitCode)->toBe(1)
         ->and($wrongDatabase['healthy'])->toBeFalse()

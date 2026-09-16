@@ -2,6 +2,7 @@
 
 namespace App\Services\ESPN;
 
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
@@ -29,6 +30,12 @@ class BaseEspnService
 
     protected int $cacheMinutes = 5;
 
+    protected bool $cacheEnabled = true;
+
+    protected int $maxCachePayloadBytes = 131072;
+
+    protected int $maxScoreboardCachePayloadBytes = 2097152;
+
     protected ?int $teamsLimit = null;
 
     protected bool $scoreboardUseCache = true;
@@ -51,6 +58,13 @@ class BaseEspnService
 
         $this->sport = $resolvedSport;
         $this->config = config("espn.leagues.{$resolvedSport}");
+        $this->cacheEnabled = (bool) config('espn.cache.enabled', true);
+        $this->cacheMinutes = max(1, (int) config('espn.cache.ttl_minutes', 5));
+        $this->maxCachePayloadBytes = max(0, (int) config('espn.cache.max_payload_bytes', 131072));
+        $this->maxScoreboardCachePayloadBytes = max(
+            0,
+            (int) config('espn.cache.scoreboard_max_payload_bytes', 2097152),
+        );
         $this->teamsLimit = static::TEAMS_LIMIT;
         $this->scoreboardUseCache = static::SCOREBOARD_USE_CACHE;
         $this->scoreboardEventLimit = static::SCOREBOARD_EVENT_LIMIT;
@@ -167,12 +181,22 @@ class BaseEspnService
         $query = $this->scoreboardQueryParams($date);
         $url = $this->buildUrl('site', 'scoreboard').$this->buildQueryString($query);
 
-        return $this->get($url, $this->scoreboardUsesCache());
+        return $this->get(
+            $url,
+            $this->scoreboardUsesCache(),
+            $this->maxScoreboardCachePayloadBytes,
+        );
     }
 
     public function getGame(string $eventId): ?array
     {
-        return $this->get($this->buildUrl('site', 'summary', ['eventId' => $eventId]));
+        // Summaries are large, event-specific snapshots that are immediately
+        // persisted by their callers. Caching thousands of them creates a
+        // short-lived Redis memory spike without providing meaningful reuse.
+        return $this->get(
+            $this->buildUrl('site', 'summary', ['eventId' => $eventId]),
+            false,
+        );
     }
 
     public function getStandings(): ?array
@@ -191,7 +215,9 @@ class BaseEspnService
             'competitionId' => $competitionId,
         ]);
 
-        return $this->get($url);
+        // Play-by-play is both large and mutable while a game is live. Always
+        // fetch it from ESPN so Redis is not used as a transient payload store.
+        return $this->get($url, false);
     }
 
     public function getGames(int $season, int $seasonType, int $week): ?array
@@ -243,21 +269,26 @@ class BaseEspnService
         return $url.$path;
     }
 
-    protected function get(string $url, bool $useCache = true): ?array
-    {
-        if ($useCache) {
+    protected function get(
+        string $url,
+        bool $useCache = true,
+        ?int $maxPayloadBytes = null,
+    ): ?array {
+        if ($useCache && $this->cacheEnabled) {
             $cacheKey = "espn.{$this->sport}.".md5($url);
+            $cache = $this->cacheRepository();
 
-            $cached = Cache::get($cacheKey);
+            $cached = $cache->get($cacheKey);
             if ($cached !== null) {
                 return $cached;
             }
 
             $result = $this->fetchFromApi($url);
 
-            // Only cache successful responses, never cache null (API errors/rate limits)
-            if ($result !== null) {
-                Cache::put($cacheKey, $result, now()->addMinutes($this->cacheMinutes));
+            // Never cache errors/rate limits or responses large enough to put
+            // pressure on the shared Redis instance.
+            if ($result !== null && $this->isCacheablePayload($result, $maxPayloadBytes)) {
+                $cache->put($cacheKey, $result, now()->addMinutes($this->cacheMinutes));
             }
 
             return $result;
@@ -298,7 +329,35 @@ class BaseEspnService
 
     public function clearCache(): void
     {
-        Cache::tags(["espn.{$this->sport}"])->flush();
+        $cache = Cache::store();
+
+        if ($cache->supportsTags()) {
+            $cache->tags([$this->cacheTag()])->flush();
+        }
+    }
+
+    protected function cacheRepository(): CacheRepository
+    {
+        $cache = Cache::store();
+
+        return $cache->supportsTags()
+            ? $cache->tags([$this->cacheTag()])
+            : $cache;
+    }
+
+    protected function cacheTag(): string
+    {
+        return "espn.{$this->sport}";
+    }
+
+    /**
+     * @param  array<mixed>  $payload
+     */
+    protected function isCacheablePayload(array $payload, ?int $maxPayloadBytes = null): bool
+    {
+        $limit = $maxPayloadBytes ?? $this->maxCachePayloadBytes;
+
+        return $limit > 0 && strlen(serialize($payload)) <= $limit;
     }
 
     /**

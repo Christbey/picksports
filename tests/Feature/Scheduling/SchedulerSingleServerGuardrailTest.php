@@ -31,6 +31,34 @@ it('prunes retained command heartbeats once daily on one server', function () {
         ->and($event?->runInBackground)->toBeTrue();
 });
 
+it('runs the infrastructure health check hourly with a bounded single-server lock', function () {
+    $event = collect(app(Schedule::class)->events())->first(
+        fn ($event): bool => $event->description === 'Infrastructure: Health Check'
+    );
+
+    expect($event)->not->toBeNull()
+        ->and((string) $event?->command)->toContain('infrastructure:health')
+        ->and($event?->expression)->toBe('47 * * * *')
+        ->and($event?->onOneServer)->toBeTrue()
+        ->and($event?->withoutOverlapping)->toBeTrue()
+        ->and($event?->expiresAt)->toBe(10)
+        ->and($event?->runInBackground)->toBeFalse();
+});
+
+it('prunes expired redis tag references daily', function () {
+    $event = collect(app(Schedule::class)->events())->first(
+        fn ($event): bool => $event->description === 'Cache: Prune Stale Tags'
+    );
+
+    expect($event)->not->toBeNull()
+        ->and((string) $event?->command)->toContain('cache:prune-stale-tags')
+        ->and($event?->expression)->toBe('15 3 * * *')
+        ->and($event?->onOneServer)->toBeTrue()
+        ->and($event?->withoutOverlapping)->toBeTrue()
+        ->and($event?->expiresAt)->toBe(30)
+        ->and($event?->runInBackground)->toBeFalse();
+});
+
 it('runs odds refreshes in the foreground with bounded overlap locks', function () {
     $events = collect(app(Schedule::class)->events())
         ->filter(fn ($event): bool => str_ends_with((string) $event->description, 'Sync Odds'))

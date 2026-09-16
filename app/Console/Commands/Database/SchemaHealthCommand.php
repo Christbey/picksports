@@ -48,6 +48,7 @@ class SchemaHealthCommand extends Command
                     'healthy' => $result['healthy'],
                     'database' => $current['database'],
                     'driver' => $current['driver'],
+                    'server_version' => $current['server_version'],
                     'fingerprint' => $current['fingerprint'],
                     'checks' => $result['checks'],
                 ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

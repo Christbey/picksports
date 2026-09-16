@@ -3,21 +3,17 @@
 namespace App\Jobs\ESPN\CBB;
 
 use App\Actions\ESPN\CBB\SyncTeamSchedule;
+use App\Jobs\ESPN\BulkEspnJob;
 use App\Services\ESPN\CBB\EspnService;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class FetchTeamSchedule implements ShouldQueue
+class FetchTeamSchedule extends BulkEspnJob
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
     public function __construct(
         public string $teamEspnId
-    ) {}
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): void
     {

@@ -16,6 +16,24 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Response Cache Safety
+    |--------------------------------------------------------------------------
+    |
+    | Small, reusable ESPN responses reduce upstream traffic. Large, one-off
+    | responses can evict queues and locks when cache and queue share Redis, so
+    | they are admitted only below these serialized-size ceilings. Game
+    | summaries and play-by-play are intentionally never cached.
+    |
+    */
+    'cache' => [
+        'enabled' => env('ESPN_CACHE_ENABLED', true),
+        'ttl_minutes' => env('ESPN_CACHE_TTL_MINUTES', 5),
+        'max_payload_bytes' => env('ESPN_CACHE_MAX_PAYLOAD_BYTES', 131072),
+        'scoreboard_max_payload_bytes' => env('ESPN_SCOREBOARD_CACHE_MAX_PAYLOAD_BYTES', 2097152),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Sports / Leagues we support
     |--------------------------------------------------------------------------
     */

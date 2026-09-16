@@ -3,22 +3,18 @@
 namespace App\Jobs\ESPN\NBA;
 
 use App\Actions\ESPN\NBA\SyncTeamDepthCharts;
+use App\Jobs\ESPN\BulkEspnJob;
 use App\Services\ESPN\NBA\EspnService;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class FetchTeamDepthCharts implements ShouldQueue
+class FetchTeamDepthCharts extends BulkEspnJob
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
     public function __construct(
         public ?string $teamEspnId = null,
         public int $season = 0,
-    ) {}
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): void
     {

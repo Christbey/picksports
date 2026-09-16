@@ -17,6 +17,38 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Production Worker Contracts
+    |--------------------------------------------------------------------------
+    |
+    | Every queue explicitly selected by application code must have a matching
+    | long-lived worker. These values document and test the Laravel Cloud
+    | process contract; worker process flags remain the deployment authority.
+    |
+    */
+
+    'worker_contracts' => [
+        'default' => [
+            'purpose' => 'Live scoreboards, game details, grading, narratives, and notifications',
+            'timeout' => 120,
+            'tries' => 3,
+            'backoff' => 15,
+            'max_jobs' => 500,
+            'max_time' => 3600,
+            'memory' => 384,
+        ],
+        'sync' => [
+            'purpose' => 'Bulk ESPN teams, rosters, schedules, depth charts, and historical backfills',
+            'timeout' => 1800,
+            'tries' => 3,
+            'backoff' => 30,
+            'max_jobs' => 100,
+            'max_time' => 3600,
+            'memory' => 768,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Queue Connections
     |--------------------------------------------------------------------------
     |

@@ -11,7 +11,10 @@ class DatabaseFingerprint
 {
     public const FORMAT_VERSION = 1;
 
-    public function __construct(private readonly DatabaseManager $database) {}
+    public function __construct(
+        private readonly DatabaseManager $database,
+        private readonly DatabaseServerVersionResolver $serverVersionResolver,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -72,7 +75,7 @@ class DatabaseFingerprint
             'connection' => $connection->getName(),
             'database' => $connection->getDatabaseName(),
             'driver' => $driver,
-            'server_version' => $connection->getServerVersion(),
+            'server_version' => $this->serverVersionResolver->resolve($connection),
             'laravel_version' => app()->version(),
             'row_count_mode' => $rowCountMode,
             'migration_state' => $migrationState,

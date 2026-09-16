@@ -3,23 +3,17 @@
 namespace App\Jobs\ESPN\CFB;
 
 use App\Actions\ESPN\CFB\SyncPlayers;
+use App\Jobs\ESPN\BulkEspnJob;
 use App\Services\ESPN\CFB\EspnService;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class FetchPlayers implements ShouldQueue
+class FetchPlayers extends BulkEspnJob
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
-    public int $timeout = 1800;
-
     public function __construct(
         public ?string $teamEspnId = null
-    ) {}
+    ) {
+        parent::__construct();
+    }
 
     public function handle(): void
     {

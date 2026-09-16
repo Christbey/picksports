@@ -44,6 +44,7 @@ class PruneStaleFootballGameDetailsJobsCommand extends Command
         $upperDate = now()->addDays(max(0, (int) $this->option('days-forward')))->toDateString();
         $redis = $queue->getConnection();
         $queueKey = $queue->getQueue('default');
+        $notifyKey = $queueKey.':notify';
         $rawPayloads = $redis->lrange($queueKey, 0, -1);
         $jobsByUuid = [];
         $report = [];
@@ -130,10 +131,19 @@ for _, value in ipairs(values) do
     end
 end
 
+-- RedisQueue writes one anonymous notification token for every ready job.
+-- Remove the same number of tokens as payloads while this queue mutation is
+-- still atomic, without disturbing delayed, reserved, or unrelated jobs.
+local notifyCount = redis.call('llen', KEYS[2])
+local trimCount = math.min(#removed, notifyCount)
+if trimCount > 0 then
+    redis.call('ltrim', KEYS[2], trimCount, -1)
+end
+
 return removed
 LUA;
 
-        $removedUuids = $redis->eval($lua, 1, $queueKey, ...array_keys($jobsByUuid));
+        $removedUuids = $redis->eval($lua, 2, $queueKey, $notifyKey, ...array_keys($jobsByUuid));
         $removedJobs = collect($removedUuids)
             ->map(fn (string $uuid) => $jobsByUuid[$uuid] ?? null)
             ->filter()
@@ -141,7 +151,7 @@ LUA;
             ->values();
 
         $this->releaseUniqueLocks($removedJobs->all());
-        $this->info("Removed {$removedJobs->count()} stale ready job(s) and released their unique locks.");
+        $this->info('Removed '.count($removedUuids).' stale ready job(s) and released their unique locks.');
 
         return self::SUCCESS;
     }

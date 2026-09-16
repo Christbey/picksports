@@ -74,7 +74,7 @@ class HistoricalBackfillService
             if ($sync) {
                 $job->handle();
             } else {
-                Bus::dispatch($job);
+                Bus::dispatch($job->onQueue('sync'));
             }
 
             $days++;
@@ -156,7 +156,7 @@ class HistoricalBackfillService
             if ($sync) {
                 $job->handle();
             } else {
-                Bus::dispatch($job);
+                Bus::dispatch($job->onQueue('sync'));
             }
 
             $processed++;

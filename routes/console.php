@@ -1222,6 +1222,30 @@ $scheduleIncrementalPlayEpa('cfb', 'CFB', $fallSeasonYear, $cfbInSeason, 27);
 |--------------------------------------------------------------------------
 */
 
+$infrastructureHealthCommand = 'infrastructure:health';
+$infrastructureHealthEvent = Schedule::command($infrastructureHealthCommand)
+    ->hourlyAt(47)
+    ->name('Infrastructure: Health Check')
+    ->onOneServer()
+    ->withoutOverlapping(10);
+$attachCommandHeartbeat(
+    $infrastructureHealthEvent,
+    $infrastructureHealthCommand,
+    'Infrastructure: Health Check',
+);
+
+$pruneStaleCacheTagsCommand = 'cache:prune-stale-tags';
+$pruneStaleCacheTagsEvent = Schedule::command($pruneStaleCacheTagsCommand)
+    ->dailyAt('03:15')
+    ->name('Cache: Prune Stale Tags')
+    ->onOneServer()
+    ->withoutOverlapping(30);
+$attachCommandHeartbeat(
+    $pruneStaleCacheTagsEvent,
+    $pruneStaleCacheTagsCommand,
+    'Cache: Prune Stale Tags',
+);
+
 $reconcileStaleAiCommand = 'ai:reconcile-stale-generations --minutes=15 --limit=500';
 $reconcileStaleAiEvent = Schedule::command($reconcileStaleAiCommand)
     ->hourlyAt(42)

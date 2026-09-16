@@ -5,6 +5,7 @@ use App\Jobs\ESPN\CBB\FetchPlayers;
 use App\Jobs\ESPN\CBB\FetchTeams;
 use App\Jobs\ESPN\CBB\FetchTeamSchedule;
 use App\Jobs\ESPN\CFB\FetchGameDetails;
+use App\Jobs\ESPN\CFB\FetchPlayerInjuries;
 use App\Jobs\ESPN\MLB\FetchTeamDepthCharts;
 use Illuminate\Support\Facades\File;
 use Tests\TestCase;
@@ -30,6 +31,7 @@ it('isolates bulk ESPN imports on the sync queue with bounded execution policy',
     'WNBA teams' => [App\Jobs\ESPN\WNBA\FetchTeams::class],
     'CBB players' => [FetchPlayers::class, ['1']],
     'CFB players' => [App\Jobs\ESPN\CFB\FetchPlayers::class, ['1']],
+    'CFB league injury import' => [FetchPlayerInjuries::class],
     'MLB players' => [App\Jobs\ESPN\MLB\FetchPlayers::class, ['1']],
     'NBA players' => [App\Jobs\ESPN\NBA\FetchPlayers::class, ['1']],
     'NFL players' => [App\Jobs\ESPN\NFL\FetchPlayers::class, ['1']],

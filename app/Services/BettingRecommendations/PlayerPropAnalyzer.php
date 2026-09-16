@@ -7,6 +7,7 @@ use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Team;
+use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\OddsApi\OddsApiService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
@@ -258,6 +259,21 @@ class PlayerPropAnalyzer
 
     protected ?Model $nflAnalysisProp = null;
 
+    private ?string $nflAnalysisHold = null;
+
+    private function holdNflAnalysis(string $reason): null
+    {
+        $this->nflAnalysisHold = $reason;
+
+        return null;
+    }
+
+    private function nflDisposition(Model $prop, string $status, ?string $reason = null): array
+    {
+        return ['status' => $status, 'reason' => $reason, 'evaluated_at' => now()->toIso8601String(),
+            'quote_fingerprint' => app(NflPlayerPropCoverage::class)->quoteFingerprint($prop)];
+    }
+
     protected bool $persistSnapshots = true;
 
     public function previewNflGame(\App\Models\NFL\Game $game): array
@@ -327,6 +343,11 @@ class PlayerPropAnalyzer
                 $recommendations->push($recommendation);
             } elseif ($recommendation === null) {
                 $this->clearPredictionSnapshot($prop);
+                if ($sport === 'NFL' && $this->nflAnalysisHold !== null && $this->persistSnapshots) {
+                    $prop->forceFill(['confidence_decomposition' => [
+                        'analysis_disposition' => $this->nflDisposition($prop, 'hold', $this->nflAnalysisHold),
+                    ]])->saveQuietly();
+                }
             }
         }
 
@@ -416,13 +437,14 @@ class PlayerPropAnalyzer
      */
     protected function analyzeProp(Model $prop, int $minGames, array $sportConfig, string $sport, bool $attachNarratives = true): ?array
     {
+        $this->nflAnalysisHold = null;
         $this->cfbAnalysisProp = $prop instanceof PlayerProp ? $prop : null;
         $this->nflAnalysisProp = $sport === 'NFL' ? $prop : null;
         if ($this->cfbAnalysisProp && ! CfbPropEligibility::eligible($this->cfbAnalysisProp)) {
             return null;
         }
         if (! is_numeric($prop->line)) {
-            return null;
+            return $this->holdNflAnalysis('invalid_line');
         }
 
         // Try to find player by name fuzzy matching
@@ -434,7 +456,7 @@ class PlayerPropAnalyzer
         );
 
         if (! $playerMatch) {
-            return null;
+            return $this->holdNflAnalysis('player_unmatched');
         }
 
         $player = $playerMatch['player'];
@@ -444,7 +466,7 @@ class PlayerPropAnalyzer
         $statField = $this->getStatFieldForMarket($prop->market);
 
         if (! $statField) {
-            return null;
+            return $this->holdNflAnalysis('unsupported_market');
         }
 
         $game = $prop->game;
@@ -475,7 +497,7 @@ class PlayerPropAnalyzer
             sportConfig: $sportConfig
         );
         if ($context['availability']['unavailable'] ?? false) {
-            return null;
+            return $this->holdNflAnalysis('player_unavailable');
         }
         $dataQualityScore = $this->calculateDataQualityScore(
             seasonSample: $timesCoveredSeason['games'] ?? 0,
@@ -487,7 +509,7 @@ class PlayerPropAnalyzer
         );
 
         if ($seasonAvg === null) {
-            return null;
+            return $this->holdNflAnalysis('insufficient_history');
         }
 
         // Calculate edge and confidence with advanced factors
@@ -510,7 +532,7 @@ class PlayerPropAnalyzer
         );
 
         if (! $analysis['recommendation']) {
-            return null;
+            return $this->holdNflAnalysis('no_edge');
         }
 
         $coverRecord = $this->buildCoverRecord(
@@ -1342,6 +1364,9 @@ class PlayerPropAnalyzer
     ): void {
         if (! $this->persistSnapshots) {
             return;
+        }
+        if ($prop->getTable() === 'nfl_player_props') {
+            $analysis['confidence_decomposition']['analysis_disposition'] = $this->nflDisposition($prop, 'scored');
         }
         $prop->forceFill([
             'recommended_side' => $analysis['recommendation'] ?? null,

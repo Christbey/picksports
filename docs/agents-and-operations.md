@@ -18,6 +18,18 @@ Deterministic services own truth:
 
 AI should not decide whether a game is final, calculate model edge from scratch, invent injury context, infer missing odds, or override validation facts. AI can say what the facts mean, what outputs should be blocked, and what action should happen next.
 
+## Production-First Prediction Reviews
+
+When answering live questions such as "How do predictions look today?", use this evidence order:
+
+1. Inspect the repository commands, models, and sport runbook to identify the authoritative score, prediction, evaluation, and settlement paths.
+2. Run the repository's scoreboard synchronization command in the Laravel Cloud production environment before reading or reporting results.
+3. Run the production grading, canonical evaluation, and decision-settlement commands required by the sport runbook. Verify that every command finishes successfully and record its output.
+4. Query production data for the requested sports-date window. Local databases and development snapshots must not support claims about live scores, prediction performance, bet results, or ROI.
+5. Use web research only after the production record is current, and only to add sourced context that the codebase does not contain. Web results must not replace or override production scores, predictions, evaluations, or settlements.
+
+Report canonical evaluations as the official prediction record. Label legacy grading as a compatibility metric, never as the canonical public record. Always report the W-L-P record for the relevant set of settled predictions or model decisions, including shadow decisions where `is_bet=false`, and label the population clearly. Track profitability separately: `profit_units` represents qualified tracked-bet results, while `metadata.shadow_profit_units` preserves counterfactual profit for shadow and no-bet decisions. Do not describe either field as proof of a real-money sportsbook wager without a separate execution record.
+
 ## Current Agent Inventory
 
 | Agent | Class | Trigger | Purpose | Output Location |

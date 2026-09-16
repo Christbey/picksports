@@ -93,6 +93,12 @@ class NflSignalGradeReportService
                     'nfl_signal_grades.nfl_signal_observation_id',
                     '=',
                     'nfl_signal_observations.id'
+                )
+                ->leftJoin(
+                    'bet_decisions',
+                    'bet_decisions.id',
+                    '=',
+                    'nfl_signal_grades.bet_decision_id'
                 ),
             $filters
         );
@@ -157,12 +163,43 @@ class NflSignalGradeReportService
             DB::raw($this->winMetric('outcome', 'total').' AS total_wins'),
             DB::raw(
                 "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
-                    AND nfl_signal_grades.is_actual_bet = 1 THEN 1 ELSE 0 END) AS settlement_sample"
+                    AND bet_decisions.is_bet = 1
+                    AND nfl_signal_grades.result_status IN ('win', 'loss', 'push')
+                    THEN 1 ELSE 0 END) AS settlement_sample"
+            ),
+            DB::raw(
+                "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
+                    AND bet_decisions.is_bet = 1
+                    THEN nfl_signal_grades.profit_units ELSE 0 END) AS profit_units"
+            ),
+            DB::raw(
+                "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
+                    AND bet_decisions.is_bet = 1
+                    AND nfl_signal_grades.result_status = 'win'
+                    THEN 1 ELSE 0 END) AS settlement_wins"
+            ),
+            DB::raw(
+                "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
+                    AND bet_decisions.is_bet = 1
+                    AND nfl_signal_grades.result_status = 'loss'
+                    THEN 1 ELSE 0 END) AS settlement_losses"
+            ),
+            DB::raw(
+                "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
+                    AND bet_decisions.is_bet = 1
+                    AND nfl_signal_grades.result_status = 'push'
+                    THEN 1 ELSE 0 END) AS settlement_pushes"
             ),
             DB::raw(
                 "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
                     AND nfl_signal_grades.is_actual_bet = 1
-                    THEN nfl_signal_grades.profit_units ELSE 0 END) AS profit_units"
+                    AND nfl_signal_grades.result_status IN ('win', 'loss', 'push')
+                    THEN 1 ELSE 0 END) AS actual_settlement_sample"
+            ),
+            DB::raw(
+                "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
+                    AND nfl_signal_grades.is_actual_bet = 1
+                    THEN nfl_signal_grades.profit_units ELSE 0 END) AS actual_profit_units"
             ),
             DB::raw(
                 "SUM(CASE WHEN nfl_signal_grades.evaluation_source = 'settlement'
@@ -269,6 +306,7 @@ class NflSignalGradeReportService
         $atsSample = (int) ($row->ats_sample ?? 0);
         $totalSample = (int) ($row->total_sample ?? 0);
         $settlementSample = (int) ($row->settlement_sample ?? 0);
+        $actualSettlementSample = (int) ($row->actual_settlement_sample ?? 0);
         $shadowSettlementSample = (int) ($row->shadow_settlement_sample ?? 0);
 
         return [
@@ -282,8 +320,15 @@ class NflSignalGradeReportService
             'total_sample' => $totalSample,
             'total_hit_rate' => $this->rate((int) ($row->total_wins ?? 0), $totalSample),
             'settlement_sample' => $settlementSample,
+            'settlement_wins' => (int) ($row->settlement_wins ?? 0),
+            'settlement_losses' => (int) ($row->settlement_losses ?? 0),
+            'settlement_pushes' => (int) ($row->settlement_pushes ?? 0),
             'roi' => $settlementSample > 0
                 ? round((float) $row->profit_units / $settlementSample, 6)
+                : null,
+            'actual_settlement_sample' => $actualSettlementSample,
+            'actual_roi' => $actualSettlementSample > 0
+                ? round((float) $row->actual_profit_units / $actualSettlementSample, 6)
                 : null,
             'shadow_settlement_sample' => $shadowSettlementSample,
             'shadow_roi' => $shadowSettlementSample > 0

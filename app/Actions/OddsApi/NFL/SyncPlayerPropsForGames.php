@@ -6,6 +6,7 @@ use App\Actions\OddsApi\AbstractSportKeySyncPlayerPropsForGames;
 use App\Models\NFL\Game;
 use App\Models\NFL\Player;
 use App\Models\NFL\PlayerProp;
+use App\Services\NFL\Predictions\NflPregameHorizon;
 
 class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
 {
@@ -20,6 +21,13 @@ class SyncPlayerPropsForGames extends AbstractSportKeySyncPlayerPropsForGames
     protected const PLAYER_PROP_MODEL_CLASS = PlayerProp::class;
 
     protected const PLAYER_MODEL_CLASS = Player::class;
+
+    protected function resolveSeasonTypeCandidates(int|string $seasonType): array
+    {
+        return (int) $seasonType === (int) config('nfl.season.types.regular', 2)
+            ? NflPregameHorizon::seasonTypes()
+            : parent::resolveSeasonTypeCandidates($seasonType);
+    }
 
     protected function seasonTypeForOddsSportKey(string $oddsSportKey): ?int
     {

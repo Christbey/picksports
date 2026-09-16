@@ -52,9 +52,11 @@ return [
             'injuries_command' => 'espn:sync-nfl-injuries',
             'futures_enabled' => true,
             'pipeline_order' => [
-                ['label' => 'details before predictions', 'upstream' => ['espn:sync-nfl-game-details%'], 'downstream' => ['nfl:generate-predictions%'], 'recommended_action' => 'nfl:generate-predictions'],
-                ['label' => 'weather before predictions', 'upstream' => ['nfl:sync-game-weather%'], 'downstream' => ['nfl:generate-predictions%'], 'recommended_action' => 'nfl:generate-predictions'],
-                ['label' => 'odds before player props', 'upstream' => ['nfl:sync-odds%'], 'downstream' => ['nfl:sync-player-props%'], 'recommended_action' => 'nfl:sync-player-props'],
+                // Predictions consume calculated metrics, not the heartbeat of
+                // every unchanged ESPN poll. Props have their own quote and
+                // scoring freshness check; game odds are not a prop input.
+                ['label' => 'metrics before predictions', 'upstream' => ['nfl:calculate-team-metrics%'], 'downstream' => ['nfl:generate-predictions%'], 'recommended_action' => 'nfl:run-pregame-pipeline', 'refresh_grace_minutes' => 75],
+                ['label' => 'weather before predictions', 'upstream' => ['nfl:sync-game-weather%'], 'downstream' => ['nfl:generate-predictions%'], 'recommended_action' => 'nfl:run-pregame-pipeline', 'refresh_grace_minutes' => 75],
             ],
         ],
         'cbb' => [

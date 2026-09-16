@@ -9,12 +9,15 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
     public function handle(): int
     {
         $gameClass = $this->gameClass();
+        $horizon = $this->generationHorizon();
         $query = $gameClass::query()->with(['sportEvent', 'homeTeam', 'awayTeam'])
             ->whereNotNull('sport_event_id')
-            ->whereHas('sportEvent', function ($query): void {
-                $query->where('starts_at', '>=', now());
+            ->whereHas('sportEvent', function ($query) use ($horizon): void {
+                $query->where('starts_at', '>=', $horizon['start'] ?? now());
 
-                if ($this->getDefinition()->hasOption('days-forward') && filled($this->option('days-forward'))) {
+                if ($horizon !== null) {
+                    $query->where('starts_at', '<=', $horizon['end']);
+                } elseif ($this->getDefinition()->hasOption('days-forward') && filled($this->option('days-forward'))) {
                     $query->where('starts_at', '<=', now()->addDays(max(1, (int) $this->option('days-forward'))));
                 }
             })
@@ -26,10 +29,13 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
         if (filled($this->option('season'))) {
             $query->where('season', (int) $this->option('season'));
         }
+        if ($this->allowedSeasonTypes() !== null) {
+            $query->whereIn('season_type', $this->allowedSeasonTypes());
+        }
         if ($this->getDefinition()->hasOption('week') && filled($this->option('week'))) {
             $query->where('week', (int) $this->option('week'));
         }
-        if (filled($this->option('date'))) {
+        if ($horizon === null && filled($this->option('date'))) {
             $query->whereDate('game_date', (string) $this->option('date'));
         }
         $games = $query->get();
@@ -63,4 +69,16 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
     abstract protected function generatorClass(): string;
 
     abstract protected function sportLabel(): string;
+
+    /** @return list<string>|null */
+    protected function allowedSeasonTypes(): ?array
+    {
+        return null;
+    }
+
+    /** @return array{start: mixed, end: mixed}|null */
+    protected function generationHorizon(): ?array
+    {
+        return null;
+    }
 }

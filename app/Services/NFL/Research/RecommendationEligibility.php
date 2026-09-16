@@ -7,6 +7,10 @@ class RecommendationEligibility
     public function evaluate(array $analysis, array $metadata, array $holds = []): array
     {
         $modelReasons = [];
+        if (data_get($metadata, 'true_epa.enabled') === true
+            && data_get($metadata, 'true_epa.applied') !== true) {
+            $holds[] = 'missing_true_epa';
+        }
         if (($analysis['raw_bet_classification'] ?? $analysis['bet_classification'] ?? null) !== 'bet') {
             $modelReasons[] = 'general_model_does_not_approve';
         }

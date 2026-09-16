@@ -1,6 +1,9 @@
 <?php
 
 use App\Models\CommandHeartbeat;
+use App\Models\NFL\Game;
+use App\Models\NFL\Team;
+use App\Models\SportEvent;
 use Illuminate\Console\Scheduling\Schedule;
 
 uses()->group('scheduling');
@@ -64,7 +67,7 @@ it('runs odds refreshes in the foreground with bounded overlap locks', function 
         ->filter(fn ($event): bool => str_ends_with((string) $event->description, 'Sync Odds'))
         ->values();
 
-    expect($events)->toHaveCount(7);
+    expect($events)->toHaveCount(6);
 
     foreach ($events as $event) {
         expect($event->onOneServer)->toBeTrue()
@@ -80,7 +83,7 @@ it('bounds nfl pipeline locks so a terminated cloud child cannot suppress a full
         'NFL: Sync Current Week' => 120,
         'NFL: Live Scoreboard Sync' => 10,
         'NFL: Sync Game Details' => 25,
-        'NFL: Generate Predictions' => 120,
+        'NFL: Pregame Pipeline' => 120,
         'NFL: Sync Player Props' => 120,
         'NFL: Sync Injuries' => 25,
     ];
@@ -115,6 +118,31 @@ it('batches nfl web research and context analysis across the upcoming slate', fu
         ->and($analysis?->expiresAt)->toBe(60);
 });
 
+it('rotates official nfl research across the full seven-day slate in bounded batches', function () {
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+    $ingestion = $events->get('NFL: Ingest Research Evidence');
+    $revisions = $events->get('NFL: Build Research Revisions');
+    $grading = $events->get('NFL: Grade Research Revisions');
+
+    expect((string) $ingestion?->command)
+        ->toContain('nfl:research-pipeline', '--days-forward=7', '--limit=8', '--ingest-only')
+        ->and($ingestion?->expression)->toBe('*/15 * * * *')
+        ->and($ingestion?->expiresAt)->toBe(20)
+        ->and((string) $revisions?->command)
+        ->toContain('nfl:research-pipeline', '--days-forward=7', '--no-ingest', '--limit=4')
+        ->and($revisions?->expression)->toBe('7,22,37,52 * * * *')
+        ->and($revisions?->expiresAt)->toBe(55)
+        ->and((string) $grading?->command)->toContain(
+            'nfl:research-pipeline',
+            '--grade',
+            '--grade-limit=250',
+            '--grade-batch-size=50',
+            '--grade-retry-after-minutes=55',
+        )
+        ->and($grading?->expression)->toBe('55 * * * *')
+        ->and($grading?->expiresAt)->toBe(30);
+});
+
 it('staggers provider syncs instead of starting every sport together', function () {
     $events = collect(app(Schedule::class)->events())->keyBy('description');
 
@@ -123,7 +151,7 @@ it('staggers provider syncs instead of starting every sport together', function 
         ->and($events->get('NFL: Live Scoreboard Sync')?->expression)->toBe('3-59/5 * * * *')
         ->and($events->get('CFB: Live Scoreboard Sync')?->expression)->toBe('4-59/5 * * * *')
         ->and($events->get('MLB: Sync Odds')?->expression)->toBe('0 8,12,16,20 * * *')
-        ->and($events->get('NFL: Sync Odds')?->expression)->toBe('10 8,12,16,20 * * *')
+        ->and($events->get('NFL: Pregame Pipeline')?->expression)->toBe('20 6-23 * * *')
         ->and($events->get('CFB: Sync Game Details')?->expression)->toBe('24,54 * * * *')
         ->and($events->get('CFB: Sync Injuries')?->expression)->toBe('26,56 * * * *')
         ->and($events->get('MLB: Sync Game Details')?->expression)->toBe('12,42 * * * *')
@@ -145,14 +173,68 @@ it('keeps routine sentinels observational and bounds expensive prediction work',
         ->toContain('--skip-ai-review')
         ->and((string) $events->get('NFL: Sync Current Week')?->command)->toContain('--skip-teams')
         ->and((string) $events->get('CFB: Sync Current Week')?->command)->toContain('--skip-teams')
-        ->and((string) $events->get('NFL: Generate Predictions')?->command)
-        ->toContain('--from-date=')
-        ->toContain('--to-date=')
-        ->and((string) $events->get('NFL: Generate Canonical Predictions')?->command)->toContain('--days-forward=8')
+        ->and((string) $events->get('NFL: Pregame Pipeline')?->command)
+        ->toContain('nfl:run-pregame-pipeline')
+        ->toContain('--days-forward=8')
         ->and((string) $events->get('MLB: Generate Predictions')?->command)->toContain('--days-forward=2')
         ->and((string) $events->get('CFB: Generate Canonical Predictions')?->command)
         ->toContain('--week=')
         ->toContain('--days-forward=8');
+});
+
+it('runs the nfl canonical readiness sentinel even when canonical generation is disabled', function () {
+    config()->set('prediction_lifecycle.canonical_pipeline.nfl', false);
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+    $event = $events->get('NFL: Canonical Cutover Readiness Sentinel');
+    $pipeline = $events->get('NFL: Pregame Pipeline');
+
+    expect($pipeline)->not->toBeNull()
+        ->and((string) $pipeline?->command)->toContain('nfl:run-pregame-pipeline', '--days-forward=8')
+        ->and($pipeline?->expression)->toBe('20 6-23 * * *')
+        ->and($pipeline?->expiresAt)->toBe(120)
+        ->and($pipeline?->runInBackground)->toBeFalse();
+
+    expect($event)->not->toBeNull()
+        ->and((string) $event?->command)
+        ->toContain('nfl:report-canonical-cutover-readiness', '--days-forward=8', '--fail-on-not-ready')
+        ->and($event?->expression)->toBe('50 10 * * *')
+        ->and($event?->onOneServer)->toBeTrue()
+        ->and($event?->withoutOverlapping)->toBeTrue()
+        ->and($event?->expiresAt)->toBe(120)
+        ->and($event?->runInBackground)->toBeFalse()
+        ->and($event?->mutexName())->toBe('nfl-canonical-generation-readiness')
+        ->and($pipeline?->mutexName())->toBe($event?->mutexName());
+});
+
+it('lets the ordered nfl pipeline own odds refreshes and keeps weather inside its freshness window', function () {
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+
+    expect($events->has('NFL: Sync Odds'))->toBeFalse()
+        ->and($events->get('NFL: Sync Game Weather')?->expression)->toBe('5 6,10,14,18,22 * * *')
+        ->and((string) $events->get('NFL: Sync Game Weather')?->command)->toContain('--days-forward=8', '--force')
+        ->and($events->get('NFL: Sync Game Weather')?->runInBackground)->toBeFalse();
+});
+
+it('adds hourly nfl passes near kickoff while retaining bounded core passes on quieter days', function () {
+    $pipeline = collect(app(Schedule::class)->events())->firstWhere('description', 'NFL: Pregame Pipeline');
+    $this->travelTo('2026-09-16 11:20:00');
+    expect($pipeline->filtersPass(app()))->toBeFalse();
+    $this->travelTo('2026-09-16 12:20:00');
+    expect($pipeline->filtersPass(app()))->toBeTrue();
+
+    $this->travelTo('2027-01-17 11:20:00');
+    $event = SportEvent::factory()->create([
+        'sport' => 'nfl', 'season' => 2026, 'season_type' => '3',
+        'starts_at' => now()->addHours(2), 'status' => 'STATUS_SCHEDULED',
+    ]);
+    Game::factory()->create([
+        'sport_event_id' => $event->id,
+        'home_team_id' => Team::factory()->create()->id,
+        'away_team_id' => Team::factory()->create()->id,
+        'season' => 2026, 'season_type' => '3', 'status' => 'STATUS_SCHEDULED',
+        'game_date' => now()->addHours(2),
+    ]);
+    expect($pipeline->filtersPass(app()))->toBeTrue();
 });
 
 it('runs incremental epa and stale ai reconciliation in bounded foreground passes', function () {

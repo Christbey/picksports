@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports;
 
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Support\SportCatalog;
 use App\Support\SportsViewCache;
@@ -109,6 +110,11 @@ class AnalyzePlayerPropsCommand extends Command
 
         if (! is_string($propsTable) || ! Schema::hasTable($propsTable)) {
             return $gameIds;
+        }
+
+        if ($sport === 'nfl') {
+            return collect($gameIds)->filter(fn (int $gameId): bool => app(NflPlayerPropCoverage::class)->forGame($gameId)['unprocessed_quotes'] > 0
+            )->values()->all();
         }
 
         return collect($gameIds)

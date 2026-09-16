@@ -14,6 +14,7 @@ use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
+use App\Services\NFL\GameWeatherService;
 use App\Services\NFL\NflFullHistoricalShadowInferenceService;
 use App\Services\NFL\NflMlFeatureVectorBuilder;
 use App\Services\NFL\NflProSignalLayer;
@@ -1246,6 +1247,24 @@ class GeneratePredictionFromHistoricalElo
             return [$predictedSpread, $winProbability, $predictedTotal];
         }
 
+        if (! $weather->updated_at || $weather->updated_at->lt(now()->subHours(max(1, (int) config('validation.thresholds.weather_completeness.stale_after_hours', 8))))) {
+            $this->lastModelMetadata['actual_weather']['reason'] = 'stale_weather';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
+        if (data_get($weather->raw_payload, 'provenance.roof_status') === 'unknown_retractable') {
+            $this->lastModelMetadata['actual_weather']['reason'] = 'unconfirmed_retractable_roof';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
+        if (data_get($weather->raw_payload, 'provenance.roof_status') === 'covered_open_air') {
+            $this->lastModelMetadata['actual_weather']['reason'] = 'covered_open_air_weather_uncalibrated';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
         if ((bool) $weather->is_indoor) {
             $this->lastModelMetadata['actual_weather'] = [
                 'enabled' => true,
@@ -1253,6 +1272,12 @@ class GeneratePredictionFromHistoricalElo
                 'reason' => 'indoor_venue',
                 'is_indoor' => true,
             ];
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+
+        if (! is_numeric($weather->temperature_f) || ! is_numeric($weather->wind_speed_mph) || ! is_numeric($weather->precipitation_inches)) {
+            $this->lastModelMetadata['actual_weather']['reason'] = 'incomplete_weather';
 
             return [$predictedSpread, $winProbability, $predictedTotal];
         }
@@ -1272,7 +1297,7 @@ class GeneratePredictionFromHistoricalElo
         if ($precip >= (float) config('nfl.predictions.actual_weather.precip_under_threshold_inches', 0.03)) {
             $adjustment += $precip * (float) config('nfl.predictions.actual_weather.precip_total_weight', -18.0);
         }
-        if ($temperature > 0 && $temperature <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
+        if ($temperature <= (float) config('nfl.predictions.actual_weather.cold_under_threshold_f', 32)) {
             $adjustment += (float) config('nfl.predictions.actual_weather.cold_total_adjustment', -1.0);
         }
         if ($temperature >= (float) config('nfl.predictions.actual_weather.heat_under_threshold_f', 88)) {
@@ -1633,6 +1658,16 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function weatherTotalContext(Game $game): array
     {
+        $roofStatus = app(GameWeatherService::class)->roofStatus($game);
+        if (in_array($roofStatus, ['unknown_retractable', 'covered_open_air'], true)) {
+            return [
+                'applied' => false,
+                'reason' => 'unconfirmed_outdoor_exposure',
+                'venue_name' => $game->venue_name,
+                'roof_status' => $roofStatus,
+                'total_adjustment' => 0.0,
+            ];
+        }
         if ($this->isIndoorVenue($game)) {
             return [
                 'applied' => false,
@@ -3793,14 +3828,7 @@ class GeneratePredictionFromHistoricalElo
 
     protected function isIndoorVenue(Game $game): bool
     {
-        $venue = strtolower((string) ($game->venue_name ?? ''));
-        foreach ((array) config('nfl.predictions.contextual_factors.indoor_venue_keywords', []) as $keyword) {
-            if ($keyword !== '' && str_contains($venue, strtolower((string) $keyword))) {
-                return true;
-            }
-        }
-
-        return false;
+        return in_array(app(GameWeatherService::class)->roofStatus($game), ['closed', 'fixed'], true);
     }
 
     /**

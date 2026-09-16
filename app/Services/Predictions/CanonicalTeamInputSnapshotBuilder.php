@@ -107,7 +107,7 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
             ->whereDate('calculation_date', '<=', $cutoffAt->toDateString());
 
         if ($this->teamMetricsUseSeasonType() && filled($game->getAttribute('season_type'))) {
-            $query->where('season_type', (string) $game->getAttribute('season_type'));
+            $query->whereIn('season_type', $this->teamMetricSeasonTypes($game));
         }
 
         $metric = $query->orderByDesc('calculation_date')->orderByDesc('id')->first();
@@ -130,7 +130,13 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
             ->orderByDesc('id')
             ->first();
 
-        return $previousSeasonMetric;
+        if ($previousSeasonMetric !== null) {
+            return $previousSeasonMetric;
+        }
+
+        return $metric !== null && $this->metricHasFallbackUsableInputs($metric)
+            ? $metric
+            : null;
     }
 
     /** @return Collection<int, Model> */
@@ -251,9 +257,20 @@ abstract class CanonicalTeamInputSnapshotBuilder implements EventInputSnapshotBu
         return true;
     }
 
+    /** @return list<string> */
+    protected function teamMetricSeasonTypes(Model $game): array
+    {
+        return [(string) $game->getAttribute('season_type')];
+    }
+
     protected function metricHasUsableSample(Model $metric): bool
     {
         return true;
+    }
+
+    protected function metricHasFallbackUsableInputs(Model $metric): bool
+    {
+        return false;
     }
 
     /** @return array<string, mixed> */

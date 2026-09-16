@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\NFL\Game;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -82,6 +83,11 @@ class NflSignalObservation extends Model
     public function grades(): HasMany
     {
         return $this->hasMany(NflSignalGrade::class);
+    }
+
+    public function game(): BelongsTo
+    {
+        return $this->belongsTo(Game::class, 'game_id');
     }
 
     public function scopePregameSafe(Builder $query): Builder

@@ -72,6 +72,13 @@ class PipelineOrderCheck implements ValidationCheck
                     continue;
                 }
 
+                $graceMinutes = max(0, (int) ($rule['refresh_grace_minutes'] ?? 0));
+                $firstUnconsumedAt = $graceMinutes > 0
+                    ? $this->firstSuccessAfter($sport, $upstream, $downstreamHeartbeat->ran_at)
+                    : null;
+                $withinGrace = $firstUnconsumedAt !== null
+                    && $firstUnconsumedAt->gt(now()->subMinutes($graceMinutes));
+
                 $violations[] = [
                     'label' => $label,
                     'upstream_command' => $upstreamHeartbeat->command,
@@ -79,7 +86,11 @@ class PipelineOrderCheck implements ValidationCheck
                     'downstream_command' => $downstreamHeartbeat->command,
                     'downstream_ran_at' => $downstreamHeartbeat->ran_at->toDateTimeString(),
                     'recommended_action' => $recommendedAction,
-                    'severity' => $ruleSeverity,
+                    // Allow the next ordered refresh to consume new inputs,
+                    // while retaining a visible advisory during that interval.
+                    'severity' => $withinGrace ? 'warning' : $ruleSeverity,
+                    'refresh_grace_minutes' => $graceMinutes,
+                    'first_unconsumed_upstream_at' => $firstUnconsumedAt?->toDateTimeString(),
                     'temporal_scope' => $temporalScope,
                 ];
             }
@@ -138,6 +149,22 @@ class PipelineOrderCheck implements ValidationCheck
             })
             ->latest('ran_at')
             ->first();
+    }
+
+    /** @param array<int, string> $patterns */
+    private function firstSuccessAfter(string $sport, array $patterns, CarbonInterface $after): ?CarbonInterface
+    {
+        return CommandHeartbeat::query()
+            ->where('sport', $sport)
+            ->where('status', 'success')
+            ->where('ran_at', '>', $after)
+            ->where(function (Builder $query) use ($patterns): void {
+                foreach ($patterns as $pattern) {
+                    $query->orWhere('command', 'like', $pattern);
+                }
+            })
+            ->oldest('ran_at')
+            ->first()?->ran_at;
     }
 
     /**

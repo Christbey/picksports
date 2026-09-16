@@ -16,7 +16,7 @@ afterEach(function () {
     m::close();
 });
 
-it('requests nfl football player prop markets and stores matched props', function () {
+it('requests nfl football player prop markets for regular and postseason games', function (string $seasonType) {
     $homeTeam = Team::factory()->create([
         'location' => 'Kansas City',
         'name' => 'Chiefs',
@@ -37,7 +37,7 @@ it('requests nfl football player prop markets and stores matched props', functio
 
     $game = Game::factory()->create([
         'season' => 2026,
-        'season_type' => config('nfl.season.types.regular', 2),
+        'season_type' => $seasonType,
         'game_date' => '2026-09-13',
         'game_time' => '19:20:00',
         'status' => 'STATUS_SCHEDULED',
@@ -90,7 +90,7 @@ it('requests nfl football player prop markets and stores matched props', functio
         ->and($prop->player_id)->toBe($player->id)
         ->and($prop->market)->toBe('player_pass_yds')
         ->and((float) $prop->line)->toBe(250.5);
-});
+})->with(['regular' => '2', 'postseason' => '3']);
 
 it('normalizes yes-only anytime touchdown outcomes into an over 0.5 market', function () {
     $homeTeam = Team::factory()->create([

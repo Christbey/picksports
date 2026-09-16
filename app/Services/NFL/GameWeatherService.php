@@ -6,6 +6,7 @@ use App\Models\NFL\Game;
 use App\Services\Sports\SportsDateWindowService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 class GameWeatherService
 {
@@ -20,10 +21,12 @@ class GameWeatherService
     {
         if ($this->isIndoorVenue($game)) {
             return [
-                'provider' => 'open_meteo',
+                'provider' => 'venue_metadata',
                 'is_indoor' => true,
                 'location_source' => 'indoor_venue',
                 'observed_at' => $this->gameDateTime($game)?->toDateTimeString(),
+                ...array_fill_keys(['latitude', 'longitude', 'temperature_f', 'feels_like_f', 'wind_speed_mph', 'wind_gust_mph', 'wind_direction_degrees', 'precipitation_probability', 'precipitation_inches', 'humidity_percent', 'condition_code'], null),
+                'raw_payload' => ['roof_status' => 'closed_or_fixed', 'venue_name' => $game->venue_name, 'retrieved_at' => now()->toIso8601String()],
             ];
         }
 
@@ -77,6 +80,18 @@ class GameWeatherService
             $localGameTime,
             $payloadTimezone,
         );
+        // An HTTP 200 without kickoff-hour measurements is not a fresh forecast.
+        if ($hourIndex === null
+            || ! is_numeric($this->hourlyValue($payload, 'temperature_2m', $hourIndex))
+            || ! is_numeric($this->hourlyValue($payload, 'wind_speed_10m', $hourIndex))
+            || ! is_numeric($this->hourlyValue($payload, 'precipitation', $hourIndex))) {
+            return null;
+        }
+        $payload['provenance'] = [
+            'source_url' => (string) config('services.open_meteo.forecast_url'),
+            'retrieved_at' => now()->toIso8601String(),
+            'roof_status' => $this->roofStatus($game),
+        ];
 
         return [
             'provider' => 'open_meteo',
@@ -107,9 +122,10 @@ class GameWeatherService
     {
         $coordinates = (array) config('nfl.predictions.actual_weather.venue_coordinates', []);
         $keys = array_filter([
-            strtoupper((string) ($game->homeTeam?->abbreviation ?? '')),
             strtolower((string) ($game->venue_name ?? '')),
             strtolower(trim((string) ($game->venue_city ?? '').', '.(string) ($game->venue_state ?? ''))),
+            // The designated home team can play abroad or at a neutral venue.
+            ! $game->neutral_site ? strtoupper((string) ($game->homeTeam?->abbreviation ?? '')) : null,
         ]);
 
         foreach ($keys as $key) {
@@ -177,20 +193,27 @@ class GameWeatherService
     /**
      * @param  array<int, mixed>  $times
      */
-    protected function nearestHourlyIndex(array $times, Carbon $target, string $timezone): int
+    protected function nearestHourlyIndex(array $times, Carbon $target, string $timezone): ?int
     {
-        $bestIndex = 0;
+        $bestIndex = null;
         $bestDiff = PHP_INT_MAX;
 
         foreach ($times as $index => $time) {
-            $diff = abs(Carbon::parse((string) $time, $timezone)->diffInMinutes($target, false));
+            if (! is_string($time) || trim($time) === '') {
+                continue;
+            }
+            try {
+                $diff = abs(Carbon::parse($time, $timezone)->diffInMinutes($target, false));
+            } catch (Throwable) {
+                continue;
+            }
             if ($diff < $bestDiff) {
                 $bestDiff = $diff;
                 $bestIndex = (int) $index;
             }
         }
 
-        return $bestIndex;
+        return $bestDiff <= 60 ? $bestIndex : null;
     }
 
     protected function hourlyValue(array $payload, string $key, int $index): mixed
@@ -200,13 +223,34 @@ class GameWeatherService
 
     protected function isIndoorVenue(Game $game): bool
     {
+        return in_array($this->roofStatus($game), ['closed', 'fixed'], true);
+    }
+
+    public function roofStatus(Game $game): string
+    {
+        $roof = strtolower(trim((string) $game->roof));
+        if (in_array($roof, ['closed', 'dome', 'indoors', 'indoor'], true)) {
+            return 'closed';
+        }
+        if (in_array($roof, ['open', 'outdoors', 'outdoor'], true)) {
+            return 'open';
+        }
         $venue = strtolower((string) ($game->venue_name ?? ''));
-        foreach ((array) config('nfl.predictions.contextual_factors.indoor_venue_keywords', []) as $keyword) {
+        if (str_contains($venue, 'sofi')) {
+            return 'covered_open_air';
+        }
+        foreach (['state farm stadium', 'at&t stadium', 'lucas oil', 'mercedes-benz stadium', 'nrg stadium'] as $keyword) {
+            if (str_contains($venue, $keyword)) {
+                return 'unknown_retractable';
+            }
+        }
+        // Covered/open-sided facilities are not equivalent to climate-controlled domes.
+        foreach (['superdome', 'ford field', 'u.s. bank', 'us bank', 'allegiant'] as $keyword) {
             if ($keyword !== '' && str_contains($venue, strtolower((string) $keyword))) {
-                return true;
+                return 'fixed';
             }
         }
 
-        return false;
+        return 'outdoor_or_unconfirmed';
     }
 }

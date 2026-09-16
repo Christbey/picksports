@@ -14,7 +14,7 @@ afterEach(function () {
     m::close();
 });
 
-it('matches an nfl event on the local final day when its stored utc date is the next day', function () {
+it('matches regular and postseason nfl events across the local date boundary', function (string $seasonType) {
     $this->travelTo('2026-09-06 20:00:00');
 
     $homeTeam = Team::factory()->create([
@@ -30,7 +30,7 @@ it('matches an nfl event on the local final day when its stored utc date is the 
 
     $game = Game::factory()->create([
         'season' => 2026,
-        'season_type' => '2',
+        'season_type' => $seasonType,
         'week' => 1,
         'game_date' => '2026-09-14',
         'game_time' => '00:20:00',
@@ -91,4 +91,4 @@ it('matches an nfl event on the local final day when its stored utc date is the 
     expect($updated)->toBe(1)
         ->and($game->odds_api_event_id)->toBe('nfl-dal-nyg')
         ->and($game->odds_updated_at)->not->toBeNull();
-});
+})->with(['regular' => '2', 'postseason' => '3']);

@@ -3,21 +3,25 @@
 namespace App\Jobs\ESPN\CFB;
 
 use App\Actions\ESPN\CFB\SyncPlayerInjuries;
+use App\Jobs\ESPN\BulkEspnJob;
 use App\Services\ESPN\CFB\EspnService;
-use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Foundation\Bus\Dispatchable;
-use Illuminate\Queue\InteractsWithQueue;
-use Illuminate\Queue\SerializesModels;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Support\Facades\Log;
 
-class FetchPlayerInjuries implements ShouldQueue
+class FetchPlayerInjuries extends BulkEspnJob implements ShouldBeUnique
 {
-    use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
-
     public function __construct(
         public ?string $teamEspnId = null
-    ) {}
+    ) {
+        parent::__construct();
+    }
+
+    public int $uniqueFor = 2100;
+
+    public function uniqueId(): string
+    {
+        return $this->teamEspnId ?: 'all-teams';
+    }
 
     public function handle(): void
     {

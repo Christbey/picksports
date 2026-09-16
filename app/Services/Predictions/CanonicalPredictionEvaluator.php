@@ -13,6 +13,8 @@ class CanonicalPredictionEvaluator
 {
     public const SCORING_VERSION = 'canonical-v1';
 
+    public const NFL_MARKET_SCORING_VERSION = 'canonical-nfl-market-v2';
+
     public function __construct(private readonly CanonicalPayloadHasher $hasher) {}
 
     public function evaluate(
@@ -28,16 +30,17 @@ class CanonicalPredictionEvaluator
             throw new PredictionLifecycleException('Only published canonical prediction revisions can be evaluated.');
         }
 
-        $prediction->loadMissing('markets');
+        $prediction->loadMissing('markets', 'calculationRun.inputSnapshot');
         $metrics = $this->score($prediction, $result);
+        $scoringVersion = $this->scoringVersion($prediction);
         $evaluationHash = $this->hasher->hash([
             'prediction' => $prediction->public_id,
             'prediction_output' => $prediction->output_hash,
             'result' => $result->result_hash,
-            'scoring_version' => self::SCORING_VERSION,
+            'scoring_version' => $scoringVersion,
         ]);
 
-        return DB::transaction(function () use ($prediction, $result, $metrics, $evaluationHash): PredictionEvaluation {
+        return DB::transaction(function () use ($prediction, $result, $metrics, $evaluationHash, $scoringVersion): PredictionEvaluation {
             CanonicalPrediction::query()->lockForUpdate()->findOrFail($prediction->getKey());
 
             $existing = PredictionEvaluation::query()
@@ -61,7 +64,7 @@ class CanonicalPredictionEvaluator
                 'supersedes_prediction_evaluation_id' => $latest?->getKey(),
                 'sport' => $prediction->sport,
                 'prediction_phase' => $prediction->phase,
-                'scoring_version' => self::SCORING_VERSION,
+                'scoring_version' => $scoringVersion,
                 'evaluation_hash' => $evaluationHash,
                 'prediction_table' => null,
                 'prediction_id' => null,
@@ -99,15 +102,32 @@ class CanonicalPredictionEvaluator
 
         $actualHomeMargin = $result->home_score - $result->away_score;
 
-        if ($actualHomeMargin === 0) {
+        if ($actualHomeMargin === 0 && $prediction->sport !== 'nfl') {
             throw new PredictionLifecycleException('Canonical winner evaluation does not support tied final results.');
         }
 
         $actualTotal = $result->home_score + $result->away_score;
-        $actualHomeWin = $actualHomeMargin > 0 ? 1.0 : 0.0;
+        $actualHomeWin = $actualHomeMargin === 0 ? null : ($actualHomeMargin > 0 ? 1.0 : 0.0);
         $predictedHomeMargin = -$homeLine;
         $spreadSignedError = $actualHomeMargin - $predictedHomeMargin;
         $totalSignedError = $actualTotal - $predictedTotal;
+
+        $marketComparison = [
+            'home_win_probability' => round($homeWinProbability, 6),
+            'home_spread_line' => round($homeLine, 4),
+            'predicted_total' => round($predictedTotal, 4),
+            'spread_convention' => $spreadConvention,
+        ];
+
+        if ($prediction->sport === 'nfl') {
+            $marketComparison['pregame_market'] = $this->nflPregameMarketComparison(
+                $prediction,
+                $actualHomeMargin,
+                $actualTotal,
+                $predictedHomeMargin,
+                $predictedTotal,
+            );
+        }
 
         return [
             'actuals' => [
@@ -115,12 +135,12 @@ class CanonicalPredictionEvaluator
                 'away_score' => $result->away_score,
                 'home_margin' => $actualHomeMargin,
                 'total_points' => $actualTotal,
-                'winner' => $actualHomeWin === 1.0 ? 'home' : 'away',
+                'winner' => $actualHomeWin === null ? 'tie' : ($actualHomeWin === 1.0 ? 'home' : 'away'),
             ],
             'errors' => [
-                'winner_correct' => ($homeWinProbability >= 0.5) === ($actualHomeWin === 1.0),
-                'brier_score' => round(($homeWinProbability - $actualHomeWin) ** 2, 8),
-                'log_loss' => round(-(($actualHomeWin * log($homeWinProbability))
+                'winner_correct' => $actualHomeWin === null ? null : ($homeWinProbability >= 0.5) === ($actualHomeWin === 1.0),
+                'brier_score' => $actualHomeWin === null ? null : round(($homeWinProbability - $actualHomeWin) ** 2, 8),
+                'log_loss' => $actualHomeWin === null ? null : round(-(($actualHomeWin * log($homeWinProbability))
                     + ((1 - $actualHomeWin) * log(1 - $homeWinProbability))), 8),
                 'predicted_home_margin' => round($predictedHomeMargin, 4),
                 'home_margin_signed_error' => round($spreadSignedError, 4),
@@ -129,13 +149,108 @@ class CanonicalPredictionEvaluator
                 'total_signed_error' => round($totalSignedError, 4),
                 'total_absolute_error' => round(abs($totalSignedError), 4),
             ],
-            'market_comparison' => [
-                'home_win_probability' => round($homeWinProbability, 6),
-                'home_spread_line' => round($homeLine, 4),
-                'predicted_total' => round($predictedTotal, 4),
-                'spread_convention' => $spreadConvention,
+            'market_comparison' => $marketComparison,
+        ];
+    }
+
+    private function scoringVersion(CanonicalPrediction $prediction): string
+    {
+        return $prediction->sport === 'nfl'
+            && data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'pregame_market.available') === true
+                ? self::NFL_MARKET_SCORING_VERSION
+                : self::SCORING_VERSION;
+    }
+
+    /** @return array<string, mixed> */
+    private function nflPregameMarketComparison(
+        CanonicalPrediction $prediction,
+        int $actualHomeMargin,
+        int $actualTotal,
+        float $predictedHomeMargin,
+        float $predictedTotal,
+    ): array {
+        $snapshot = (array) data_get(
+            $prediction->calculationRun?->inputSnapshot?->inputs,
+            'pregame_market',
+            [],
+        );
+        $spread = (array) data_get($snapshot, 'consensus.spread', []);
+        $total = (array) data_get($snapshot, 'consensus.total', []);
+        $marketHomeLine = $this->optionalNumber($spread['line'] ?? null);
+        $marketAwayLine = $this->optionalNumber(data_get($spread, 'opposite_quote.line'));
+        $marketTotal = $this->optionalNumber($total['line'] ?? null);
+        $spreadEdge = $marketHomeLine === null
+            ? null
+            : $predictedHomeMargin - (-$marketHomeLine);
+        $spreadSide = $spreadEdge === null || abs($spreadEdge) < 0.000001
+            ? null
+            : ($spreadEdge > 0 ? 'home' : 'away');
+        $spreadSelectionLine = match ($spreadSide) {
+            'home' => $marketHomeLine,
+            'away' => $marketAwayLine ?? ($marketHomeLine === null ? null : -$marketHomeLine),
+            default => null,
+        };
+        $spreadResultValue = match ($spreadSide) {
+            'home' => $spreadSelectionLine === null ? null : $actualHomeMargin + $spreadSelectionLine,
+            'away' => $spreadSelectionLine === null ? null : -$actualHomeMargin + $spreadSelectionLine,
+            default => null,
+        };
+        $totalEdge = $marketTotal === null ? null : $predictedTotal - $marketTotal;
+        $totalSide = $totalEdge === null || abs($totalEdge) < 0.000001
+            ? null
+            : ($totalEdge > 0 ? 'over' : 'under');
+        $totalResultValue = match ($totalSide) {
+            'over' => $marketTotal === null ? null : $actualTotal - $marketTotal,
+            'under' => $marketTotal === null ? null : $marketTotal - $actualTotal,
+            default => null,
+        };
+
+        return [
+            'available' => ($snapshot['available'] ?? false) === true,
+            'source' => $snapshot['source'] ?? null,
+            'event_input_snapshot_id' => $prediction->calculationRun?->inputSnapshot?->public_id,
+            'game_odds_snapshot_id' => $snapshot['game_odds_snapshot_id'] ?? null,
+            'captured_at' => $snapshot['captured_at'] ?? null,
+            'spread' => [
+                'market_home_line' => $marketHomeLine,
+                'model_home_margin' => round($predictedHomeMargin, 4),
+                'edge_points' => $spreadEdge === null ? null : round($spreadEdge, 4),
+                'selection' => $spreadSide,
+                'selection_line' => $spreadSelectionLine,
+                'result_value' => $spreadResultValue,
+                'result' => $this->grade($spreadResultValue),
+                'market_quote_id' => $spread['market_quote_id'] ?? null,
+                'quote_hash' => $spread['quote_hash'] ?? null,
+            ],
+            'total' => [
+                'market_line' => $marketTotal,
+                'model_total' => round($predictedTotal, 4),
+                'edge_points' => $totalEdge === null ? null : round($totalEdge, 4),
+                'selection' => $totalSide,
+                'result_value' => $totalResultValue,
+                'result' => $this->grade($totalResultValue),
+                'market_quote_id' => $total['market_quote_id'] ?? null,
+                'quote_hash' => $total['quote_hash'] ?? null,
             ],
         ];
+    }
+
+    private function grade(?float $resultValue): ?string
+    {
+        if ($resultValue === null) {
+            return null;
+        }
+
+        return match (true) {
+            abs($resultValue) < 0.000001 => 'push',
+            $resultValue > 0 => 'win',
+            default => 'loss',
+        };
+    }
+
+    private function optionalNumber(mixed $value): ?float
+    {
+        return is_numeric($value) ? (float) $value : null;
     }
 
     private function market(CanonicalPrediction $prediction, string $type, string $selection): PredictionMarket

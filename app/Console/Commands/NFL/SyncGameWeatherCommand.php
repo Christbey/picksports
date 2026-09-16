@@ -7,6 +7,7 @@ use App\Models\NFL\GameWeather;
 use App\Services\NFL\GameWeatherService;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Console\Command;
+use Throwable;
 
 class SyncGameWeatherCommand extends Command
 {
@@ -17,14 +18,14 @@ class SyncGameWeatherCommand extends Command
         {--days-back= : Sync games this many days before today}
         {--days-forward= : Sync games this many days after today}
         {--game-id= : Sync a single game id}
-        {--force : Refresh existing rows}';
+        {--force : Refresh even recent rows}';
 
     protected $description = 'Sync kickoff weather for NFL games';
 
     public function handle(GameWeatherService $weatherService, SportsDateWindowService $dateWindows): int
     {
         $query = Game::query()
-            ->with(['homeTeam', 'awayTeam'])
+            ->with(['homeTeam', 'awayTeam', 'weather'])
             ->when($this->option('game-id'), fn ($query, $id) => $query->whereKey((int) $id))
             ->when($this->option('season'), fn ($query, $season) => $query->where('season', (int) $season));
 
@@ -54,17 +55,28 @@ class SyncGameWeatherCommand extends Command
         $created = 0;
         $updated = 0;
         $skipped = 0;
+        $failed = 0;
 
         foreach ($games as $game) {
-            if (! $this->option('force') && GameWeather::query()->where('game_id', $game->id)->exists()) {
+            $freshAfter = now()->subHours(max(1, (int) config('validation.thresholds.weather_completeness.stale_after_hours', 8)));
+            if (! $this->option('force') && $game->weather?->updated_at?->gt($freshAfter)) {
                 $skipped++;
 
                 continue;
             }
 
-            $weather = $weatherService->fetch($game);
-            if ($weather === null) {
-                $skipped++;
+            try {
+                $weather = $weatherService->fetch($game);
+                if ($weather === null) {
+                    $failed++;
+                    $this->warn("Game {$game->id}: no usable kickoff weather returned; existing data preserved.");
+
+                    continue;
+                }
+            } catch (Throwable $exception) {
+                $failed++;
+                report($exception);
+                $this->warn("Game {$game->id}: weather refresh failed (".class_basename($exception).'); existing data preserved.');
 
                 continue;
             }
@@ -86,7 +98,10 @@ class SyncGameWeatherCommand extends Command
         }
 
         $this->info("NFL weather sync complete. Created {$created}, updated {$updated}, skipped {$skipped}.");
+        if ($failed > 0) {
+            $this->error("Failed to refresh {$failed} NFL weather record(s).");
+        }
 
-        return Command::SUCCESS;
+        return $failed > 0 ? Command::FAILURE : Command::SUCCESS;
     }
 }

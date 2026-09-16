@@ -253,6 +253,7 @@ class MarketQuoteRecorder
                         $row = $this->quoteRow(
                             $snapshot,
                             $bookmaker,
+                            $market,
                             $rawMarketKey,
                             $marketKey,
                             $marketKind,
@@ -385,6 +386,7 @@ class MarketQuoteRecorder
     private function quoteRow(
         GameOddsSnapshot $snapshot,
         array $bookmaker,
+        array $market,
         string $rawMarketKey,
         string $marketKey,
         ?string $marketKind,
@@ -434,6 +436,13 @@ class MarketQuoteRecorder
                 json_encode($identity),
             ),
             'metadata' => [
+                'provider_observed_at' => $this->nullableString(
+                    $market['last_update']
+                        ?? $bookmaker['last_update']
+                        ?? data_get($outcome, 'raw.last_update'),
+                ),
+                'provider_bookmaker_last_update' => $this->nullableString($bookmaker['last_update'] ?? null),
+                'provider_market_last_update' => $this->nullableString($market['last_update'] ?? null),
                 'market_type' => match ($marketKey) {
                     'h2h' => 'moneyline',
                     'spreads' => 'run_line',

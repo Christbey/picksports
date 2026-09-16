@@ -110,7 +110,9 @@ it('falls back to legacy elo-only prediction when true epa metrics are unavailab
         ->and((float) $blendedWithoutMetrics->predicted_total)->toBe((float) $legacy->predicted_total)
         ->and(data_get($blendedWithoutMetrics->model_metadata, 'true_epa.enabled'))->toBeTrue()
         ->and(data_get($blendedWithoutMetrics->model_metadata, 'true_epa.applied'))->toBeFalse()
-        ->and(data_get($blendedWithoutMetrics->model_metadata, 'true_epa.reason'))->toBe('missing_team_metrics');
+        ->and(data_get($blendedWithoutMetrics->model_metadata, 'true_epa.reason'))->toBe('missing_team_metrics')
+        ->and(data_get($blendedWithoutMetrics->model_metadata, 'analysis_layer.eligibility.status'))->toBe('hold')
+        ->and(data_get($blendedWithoutMetrics->model_metadata, 'analysis_layer.eligibility.data_reasons'))->toContain('missing_true_epa');
 });
 
 it('uses stored nfl weather to adjust game totals', function () {

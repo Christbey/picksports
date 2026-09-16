@@ -43,6 +43,7 @@ class Game extends Model
         'game_clock',
         'home_score',
         'away_score',
+        'result_updated_at',
         'home_qb_id',
         'home_qb_name',
         'away_qb_id',
@@ -67,6 +68,7 @@ class Game extends Model
             'game_date' => 'datetime',
             'completed_at' => 'datetime',
             'odds_updated_at' => 'datetime',
+            'result_updated_at' => 'datetime',
             'home_linescores' => 'array',
             'away_linescores' => 'array',
             'broadcast_networks' => 'array',
@@ -123,6 +125,15 @@ class Game extends Model
     public function playerProps(): HasMany
     {
         return $this->hasMany(PlayerProp::class, 'game_id');
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Game $game): void {
+            if ($game->isDirty(['status', 'home_score', 'away_score'])) {
+                $game->result_updated_at = $game->freshTimestamp();
+            }
+        });
     }
 
     protected static function newFactory(): NflGameFactory

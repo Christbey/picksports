@@ -77,6 +77,18 @@ it('enforces the OpenAI search budget and records measured usage with estimated 
             'published_at' => '2026-08-13T09:00:00-05:00',
             'source_type' => 'official',
         ]],
+        'decision_research' => [
+            'supporting' => [[
+                'claim' => 'The stronger home quarterback rotation supports the home projection.',
+                'source_url' => 'https://example.com/official-update',
+            ]],
+            'opposing' => [[
+                'claim' => 'Limited home starter participation increases preseason variance.',
+                'source_url' => 'https://example.com/official-update',
+            ]],
+            'prop_angles' => [],
+            'unresolved' => [],
+        ],
         'risk_flags' => ['preseason_rotation_volatility'],
     ];
 

@@ -59,7 +59,8 @@ class ReportSignalGradesCommand extends Command
                 'Winner',
                 'ATS',
                 'Total',
-                'ROI',
+                'Tracked W-L-P',
+                'Model ROI',
                 'CLV',
                 'Brier Lift',
                 'Spread Lift',
@@ -74,6 +75,7 @@ class ReportSignalGradesCommand extends Command
                 $this->rate($row['winner_accuracy'], $row['winner_sample']),
                 $this->rate($row['ats_hit_rate'], $row['ats_sample']),
                 $this->rate($row['total_hit_rate'], $row['total_sample']),
+                $this->record($row),
                 $this->percentage($row['roi']),
                 $this->number($row['avg_clv']),
                 $this->number($row['avg_calibration_lift']),
@@ -87,7 +89,7 @@ class ReportSignalGradesCommand extends Command
         $this->newLine();
         $this->info('Season windows');
         $this->table(
-            ['Type', 'Signal', 'Season', 'N', 'Winner', 'ATS', 'Total', 'ROI', 'CLV'],
+            ['Type', 'Signal', 'Season', 'N', 'Winner', 'ATS', 'Total', 'Tracked W-L-P', 'Model ROI', 'CLV'],
             collect($report['windows'])->map(fn (array $row): array => [
                 $row['signal_type'],
                 $row['signal_key'],
@@ -96,6 +98,7 @@ class ReportSignalGradesCommand extends Command
                 $this->rate($row['winner_accuracy'], $row['winner_sample']),
                 $this->rate($row['ats_hit_rate'], $row['ats_sample']),
                 $this->rate($row['total_hit_rate'], $row['total_sample']),
+                $this->record($row),
                 $this->percentage($row['roi']),
                 $this->number($row['avg_clv']),
             ])->all()
@@ -147,5 +150,16 @@ class ReportSignalGradesCommand extends Command
     private function number(?float $value): string
     {
         return $value === null ? 'n/a' : (string) round($value, 4);
+    }
+
+    /** @param array<string,mixed> $row */
+    private function record(array $row): string
+    {
+        return sprintf(
+            '%d-%d-%d',
+            (int) ($row['settlement_wins'] ?? 0),
+            (int) ($row['settlement_losses'] ?? 0),
+            (int) ($row['settlement_pushes'] ?? 0),
+        );
     }
 }

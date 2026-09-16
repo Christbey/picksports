@@ -13,6 +13,16 @@ class NflGameStateGuard
             return $attributes;
         }
 
+        // ESPN's core schedule and summary endpoints omit metadata that is
+        // present on the scoreboard. Absence is not a venue/identity change.
+        foreach (['name', 'short_name', 'venue_name', 'venue_city', 'venue_state', 'stadium_id', 'roof', 'surface', 'broadcast_networks'] as $field) {
+            if (array_key_exists($field, $attributes)
+                && ($attributes[$field] === null || $attributes[$field] === '' || $attributes[$field] === [])
+                && filled($game->{$field})) {
+                unset($attributes[$field]);
+            }
+        }
+
         $resolver = app(EspnGameStatusResolver::class);
         $current = (string) $game->status;
         $incoming = (string) ($attributes['status'] ?? '');

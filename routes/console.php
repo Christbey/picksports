@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\NFL\Game;
 use App\Services\CommandHeartbeatService;
+use App\Services\NFL\Predictions\NflPregameHorizon;
 use App\Support\CFB\CfbWeek;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
@@ -162,17 +164,23 @@ $scheduleDailySeasonJob = function (
     string $command,
     string $time,
     callable $inSeason,
-    string $name
+    string $name,
+    bool $runInBackground = true,
 ) use ($attachCommandHeartbeat) {
     $event = Schedule::command($command)
         ->dailyAt($time)
         ->when($inSeason)
         ->name($name)
         ->onOneServer()
-        ->withoutOverlapping(120)
-        ->runInBackground();
+        ->withoutOverlapping(120);
+
+    if ($runInBackground) {
+        $event->runInBackground();
+    }
 
     $attachCommandHeartbeat($event, $command, $name);
+
+    return $event;
 };
 
 $scheduleHalfHourlyWindowJob = function (
@@ -259,7 +267,7 @@ $scheduleEveryMinuteJob = function (
 
 $schedulePreModelJobs = function (
     callable $inSeason,
-    array $preMetricJobs = []
+    array $preMetricJobs = [],
 ) use ($scheduleDailySeasonJob) {
     foreach ($preMetricJobs as $job) {
         $scheduleDailySeasonJob(
@@ -360,7 +368,8 @@ $scheduleSportPipeline = function (
     ?int $playerPropsFirstHour = null,
     ?int $playerPropsSecondHour = null,
     ?string $playerPropsName = null,
-    array $preMetricJobs = []
+    array $preMetricJobs = [],
+    bool $scheduleStandaloneOdds = true,
 ) use (
     $scheduleDailySeasonJob,
     $scheduleLiveScoreboardSync,
@@ -393,7 +402,9 @@ $scheduleSportPipeline = function (
 
     $schedulePreModelJobs($inSeason, $preMetricJobs);
 
-    $scheduleOddsSyncWindow($oddsCommand, $inSeason, $oddsName);
+    if ($scheduleStandaloneOdds) {
+        $scheduleOddsSyncWindow($oddsCommand, $inSeason, $oddsName);
+    }
 
     if ($playerPropsCommand && $playerPropsFirstHour !== null && $playerPropsSecondHour !== null && $playerPropsName) {
         $schedulePlayerPropsWindow(
@@ -1026,21 +1037,42 @@ $scheduleSportPipeline(
     'nfl:sync-player-props',
     10,
     15,
-    'NFL: Sync Player Props'
+    'NFL: Sync Player Props',
+    scheduleStandaloneOdds: false,
 );
-$nflPredictionWindowStart = now(config('sports.business_timezone', config('app.timezone')))->toDateString();
-$nflPredictionWindowEnd = now(config('sports.business_timezone', config('app.timezone')))->addDays(8)->toDateString();
-$scheduleDailySeasonJob(
-    "nfl:generate-predictions --season={$fallSeasonYear} --from-date={$nflPredictionWindowStart} --to-date={$nflPredictionWindowEnd}",
-    '10:00',
-    $nflInSeason,
-    'NFL: Generate Predictions',
+$nflPregamePipelineCommand = "nfl:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8";
+$nflPregamePipelineEvent = Schedule::command($nflPregamePipelineCommand)
+    ->cron('20 6-23 * * *')
+    ->when($nflInSeason)
+    ->when(fn (): bool => in_array(now()->hour, [10, 12, 16, 20], true)
+        || Game::query()
+            ->where('season', $fallSeasonYear)
+            ->whereIn('season_type', NflPregameHorizon::seasonTypes())
+            ->whereIn('status', ['STATUS_SCHEDULED', 'STATUS_DELAYED'])
+            ->whereHas('sportEvent', fn ($query) => $query->whereBetween('starts_at', [now(), now()->addDay()]))
+            ->exists())
+    ->name('NFL: Pregame Pipeline')
+    ->onOneServer()
+    ->withoutOverlapping(120);
+$attachCommandHeartbeat(
+    $nflPregamePipelineEvent,
+    $nflPregamePipelineCommand,
+    'NFL: Pregame Pipeline',
 );
 $nflCanonicalPipelineEnabled = fn (): bool => $nflInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.nfl', false);
 $scheduleDailySeasonJob("nfl:grade-player-props --season={$fallSeasonYear}", '08:40', $nflInSeason, 'NFL: Grade Player Props');
 $scheduleDailySeasonJob("nfl:evaluate-canonical-predictions --season={$fallSeasonYear}", '08:35', $nflCanonicalPipelineEnabled, 'NFL: Evaluate Canonical Predictions');
-$scheduleDailySeasonJob("nfl:generate-canonical-predictions --season={$fallSeasonYear} --days-forward=8", '10:05', $nflCanonicalPipelineEnabled, 'NFL: Generate Canonical Predictions');
+$nflCanonicalLifecycleMutex = 'nfl-canonical-generation-readiness';
+$nflPregamePipelineEvent->createMutexNameUsing($nflCanonicalLifecycleMutex);
+$nflCanonicalReadinessEvent = $scheduleDailySeasonJob(
+    "nfl:report-canonical-cutover-readiness --season={$fallSeasonYear} --days-forward=8 --fail-on-not-ready",
+    '10:50',
+    $nflInSeason,
+    'NFL: Canonical Cutover Readiness Sentinel',
+    false,
+);
+$nflCanonicalReadinessEvent->createMutexNameUsing($nflCanonicalLifecycleMutex);
 $scheduleWeeklySeasonJob(
     'espn:sync-nfl-teams',
     3,
@@ -1055,12 +1087,14 @@ $scheduleWeeklySeasonJob(
     $nflDepthChartSeason,
     'NFL: Sync Depth Charts'
 );
-$scheduleDailySeasonJob(
-    "nfl:sync-game-weather --season={$fallSeasonYear} --days-back=0 --days-forward=7 --force",
-    '09:45',
-    $nflInSeason,
-    'NFL: Sync Game Weather'
-);
+$nflWeatherCommand = "nfl:sync-game-weather --season={$fallSeasonYear} --days-back=0 --days-forward=8 --force";
+$nflWeatherEvent = Schedule::command($nflWeatherCommand)
+    ->cron('5 6,10,14,18,22 * * *')
+    ->when($nflInSeason)
+    ->name('NFL: Sync Game Weather')
+    ->onOneServer()
+    ->withoutOverlapping(60);
+$attachCommandHeartbeat($nflWeatherEvent, $nflWeatherCommand, 'NFL: Sync Game Weather');
 $scheduleHalfHourlyWindowJob(
     'espn:sync-nfl-injuries',
     '08:00',
@@ -1108,12 +1142,14 @@ $scheduleDailySeasonJob(
     $nflInSeason,
     'NFL: Settle Model Decisions'
 );
-$scheduleDailySeasonJob(
-    "nfl:grade-signal-observations --season={$fallSeasonYear}",
-    '09:05',
-    $nflInSeason,
-    'NFL: Grade Signal Observations'
-);
+$nflSignalGradingCommand = "nfl:grade-signal-observations --season={$fallSeasonYear} --limit=1000 --batch-size=250";
+$nflSignalGradingEvent = Schedule::command($nflSignalGradingCommand)
+    ->hourlyAt(35)
+    ->when($nflInSeason)
+    ->name('NFL: Grade Signal Observations')
+    ->onOneServer()
+    ->withoutOverlapping(30);
+$attachCommandHeartbeat($nflSignalGradingEvent, $nflSignalGradingCommand, 'NFL: Grade Signal Observations');
 $scheduleDailySeasonJob(
     'sports:record-shadow-bet-decisions --sport=nfl',
     '10:15',
@@ -1327,12 +1363,44 @@ Schedule::command('cfb:sync-live-betting')
     ->name('CFB: Capture Live Betting Snapshots');
 
 // Official evidence ingestion and immutable research revisions are separate from canonical predictions.
-Schedule::command('nfl:research-pipeline --days-forward=2 --ingest-only')
-    ->everyFifteenMinutes()->when(fn () => config('nfl_research.enabled'))
-    ->onOneServer()->withoutOverlapping(20)->runInBackground();
-Schedule::command('nfl:research-pipeline --days-forward=1 --no-ingest --limit=16')
-    ->cron('7,22,37,52 * * * *')->when(fn () => config('nfl_research.enabled'))
-    ->onOneServer()->withoutOverlapping(55)->runInBackground();
-Schedule::command('nfl:research-pipeline --grade')
-    ->hourlyAt(55)->when(fn () => config('nfl_research.enabled'))
-    ->onOneServer()->withoutOverlapping(30)->runInBackground();
+$nflResearchIngestionCommand = 'nfl:research-pipeline --days-forward=7 --limit=8 --ingest-only';
+$nflResearchIngestionEvent = Schedule::command($nflResearchIngestionCommand)
+    ->everyFifteenMinutes()
+    ->when(fn () => $nflInSeason() && config('nfl_research.enabled'))
+    ->name('NFL: Ingest Research Evidence')
+    ->onOneServer()
+    ->withoutOverlapping(20)
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $nflResearchIngestionEvent,
+    $nflResearchIngestionCommand,
+    'NFL: Ingest Research Evidence',
+);
+
+$nflResearchRevisionCommand = 'nfl:research-pipeline --days-forward=7 --no-ingest --limit=4';
+$nflResearchRevisionEvent = Schedule::command($nflResearchRevisionCommand)
+    ->cron('7,22,37,52 * * * *')
+    ->when(fn () => $nflInSeason() && config('nfl_research.enabled'))
+    ->name('NFL: Build Research Revisions')
+    ->onOneServer()
+    ->withoutOverlapping(55)
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $nflResearchRevisionEvent,
+    $nflResearchRevisionCommand,
+    'NFL: Build Research Revisions',
+);
+
+$nflResearchGradingCommand = 'nfl:research-pipeline --grade --grade-limit=250 --grade-batch-size=50 --grade-retry-after-minutes=55';
+$nflResearchGradingEvent = Schedule::command($nflResearchGradingCommand)
+    ->hourlyAt(55)
+    ->when(fn () => $nflInSeason() && config('nfl_research.enabled'))
+    ->name('NFL: Grade Research Revisions')
+    ->onOneServer()
+    ->withoutOverlapping(30)
+    ->runInBackground();
+$attachCommandHeartbeat(
+    $nflResearchGradingEvent,
+    $nflResearchGradingCommand,
+    'NFL: Grade Research Revisions',
+);

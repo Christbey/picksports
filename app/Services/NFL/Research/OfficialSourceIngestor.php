@@ -7,6 +7,7 @@ use App\Models\NFL\Player;
 use App\Models\NFL\ResearchDocument;
 use App\Models\NFL\ResearchSource;
 use App\Models\NFL\Team;
+use Carbon\CarbonInterface;
 use DOMDocument;
 use DOMXPath;
 use Illuminate\Support\Carbon;
@@ -17,16 +18,32 @@ use Throwable;
 
 class OfficialSourceIngestor
 {
+    private ?CarbonInterface $deadline = null;
+
     public function sync(?array $teams = null): array
     {
+        $this->deadline = now()->addSeconds(max(1, (int) config('nfl_research.ingestion_max_seconds', 180)));
         $results = [];
         foreach (config('nfl_research.teams', []) as $team => $host) {
             if ($teams !== null && ! in_array($team, $teams, true)) {
                 continue;
             }
             // Newsroom fallback also discovers transactions missing from a valid RSS feed.
-            foreach (['rss' => '/rss/news', 'newsroom' => '/news/', 'injury' => '/team/injury-report/', 'roster' => '/team/players-roster/'] as $kind => $path) {
-                $source = ResearchSource::firstOrCreate(['key' => $team.':'.$kind], ['team' => $team, 'url' => 'https://'.$host.$path, 'kind' => $kind]);
+            $sources = collect(['rss' => '/rss/news', 'newsroom' => '/news/', 'injury' => '/team/injury-report/', 'roster' => '/team/players-roster/'])
+                ->map(fn (string $path, string $kind): ResearchSource => ResearchSource::firstOrCreate(['key' => $team.':'.$kind], ['team' => $team, 'url' => 'https://'.$host.$path, 'kind' => $kind]))
+                ->sortBy(fn (ResearchSource $source): string => ($source->checked_at?->toIso8601String() ?? '0000').'|'.$source->kind);
+            foreach ($sources as $source) {
+                if (now()->gte($this->deadline)) {
+                    $results['batch'] = ['deferred' => true, 'reason' => 'time_budget_exhausted'];
+
+                    break 2;
+                }
+                if ($source->checked_at?->gt(now()->subMinutes(max(1, (int) config('nfl_research.poll_minutes', 15))))
+                    && (! in_array($source->kind, ['roster', 'injury'], true) || $source->current_document_id)) {
+                    $results[$source->key] = $source->error ? ['error' => $source->error, 'cached_attempt' => true] : ['changed' => 0, 'fresh' => true];
+
+                    continue;
+                }
                 try {
                     $results[$source->key] = $this->poll($source);
                 } catch (Throwable $e) {
@@ -38,6 +55,7 @@ class OfficialSourceIngestor
                 }
             }
         }
+        $this->deadline = null;
 
         return $results;
     }
@@ -45,8 +63,16 @@ class OfficialSourceIngestor
     public function poll(ResearchSource $source): array
     {
         $headers = array_filter(['If-None-Match' => $source->etag, 'If-Modified-Since' => $source->last_modified]);
+        if (in_array($source->kind, ['roster', 'injury'], true) && ! $source->current_document_id) {
+            // A first deployment needs an exact body before establishing which
+            // immutable document a conditional 304 subsequently confirms.
+            $headers = [];
+        }
         $response = $this->fetch($source->url, $headers);
         if ($response->status() === 304) {
+            if (in_array($source->kind, ['roster', 'injury'], true) && ! $source->current_document_id) {
+                throw new RuntimeException('Conditional source response has no confirmed document');
+            }
             $source->update(['checked_at' => now(), 'succeeded_at' => now(), 'error' => null]);
 
             return ['changed' => 0];
@@ -143,6 +169,9 @@ class OfficialSourceIngestor
             throw new RuntimeException('Empty source document');
         }
         $doc = ResearchDocument::firstOrCreate(['url_hash' => hash('sha256', $url), 'content_hash' => hash('sha256', $body)], ['source_id' => $source->id, 'team' => $source->team, 'url' => $url, 'title' => mb_substr($title, 0, 2000), 'body' => $body, 'structured' => $structured, 'published_at' => $published, 'observed_at' => now()]);
+        if (in_array($source->kind, ['roster', 'injury'], true)) {
+            $source->update(['current_document_id' => $doc->id]);
+        }
 
         return (int) $doc->wasRecentlyCreated;
     }
@@ -191,6 +220,9 @@ class OfficialSourceIngestor
 
     private function fetch(string $url, array $headers = [])
     {
+        if ($this->deadline && now()->gte($this->deadline)) {
+            throw new RuntimeException('Research ingestion time budget exhausted');
+        }
         if (! $this->allowed($url)) {
             throw new RuntimeException('Source host not allowed');
         }

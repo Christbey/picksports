@@ -4,18 +4,21 @@ use App\Actions\NFL\GeneratePredictionFromHistoricalElo;
 use App\Jobs\ESPN\NFL\FetchPlayers;
 use App\Models\NFL\Game;
 use App\Models\NFL\Player;
+use App\Models\NFL\PlayerProp;
 use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Prediction;
 use App\Models\NFL\ResearchDocument;
 use App\Models\NFL\ResearchRevision;
 use App\Models\NFL\ResearchSource;
 use App\Models\NFL\Team;
+use App\Models\SportsGameContextReport;
 use App\Models\User;
 use App\Services\NFL\NflWebContextResearchService;
 use App\Services\NFL\Research\EvidencePacket;
 use App\Services\NFL\Research\OfficialSourceIngestor;
 use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\NFL\Research\ResearchPipeline;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
@@ -47,6 +50,11 @@ it('holds a general bet when a specialist disagrees or QB history is missing', f
     expect($s->evaluate($a, ['qb_form' => ['reason' => 'insufficient_prior_attempts']])['eligible'])->toBeFalse();
     $a['pro_signal_layer']['market_scores']['spread']['tier'] = 'pass';
     expect($s->evaluate($a, [])['eligible'])->toBeFalse()->and($s->evaluate($a, [])['status'])->toBe('pass')->and($s->evaluate($a, [], ['market_stale'])['status'])->toBe('hold');
+
+    $a['pro_signal_layer']['market_scores']['spread']['tier'] = 'official_candidate';
+    $missingEpa = $s->evaluate($a, ['true_epa' => ['enabled' => true, 'applied' => false, 'reason' => 'missing_team_metrics']]);
+    expect($missingEpa['status'])->toBe('hold')
+        ->and($missingEpa['data_reasons'])->toContain('missing_true_epa');
 });
 
 it('ingests unordered RSS and records edits as immutable source versions', function () {
@@ -133,6 +141,174 @@ it('keeps legacy and malformed uncertainty blocking while accepting explicit sco
     expect($result['unresolved'][0]['blocking'])->toBeTrue()->and($result['unresolved'][1]['blocking'])->toBeTrue()->and($result['unresolved'][2]['scope'])->toBe('props')->and($result['unresolved'][3]['blocking'])->toBeFalse();
 });
 
+it('requires sourced arguments on both sides before marking research ready', function () {
+    $service = app(NflWebContextResearchService::class);
+    $method = new ReflectionMethod($service, 'enforceTwoSidedEvidence');
+    $oneSided = $method->invoke($service, [
+        'status' => 'ready',
+        'risk_flags' => [],
+        'decision_research' => [
+            'supporting' => [['claim' => 'Support', 'source_url' => 'https://example.com/support']],
+            'opposing' => [],
+        ],
+    ]);
+    $twoSided = $method->invoke($service, [
+        'status' => 'ready',
+        'risk_flags' => [],
+        'decision_research' => [
+            'supporting' => [['claim' => 'Support', 'source_url' => 'https://example.com/support']],
+            'opposing' => [['claim' => 'Oppose', 'source_url' => 'https://example.com/oppose']],
+        ],
+    ]);
+
+    expect($oneSided['status'])->toBe('partial')
+        ->and($oneSided['risk_flags'])->toContain('two_sided_research_missing')
+        ->and($twoSided['status'])->toBe('ready')
+        ->and($twoSided['decision_research']['supporting'][0]['source_url'])->toBe('https://example.com/support')
+        ->and($twoSided['decision_research']['opposing'][0]['source_url'])->toBe('https://example.com/oppose');
+});
+
+it('buckets immaterial forecast drift without hiding a meaningful move', function () {
+    $pipeline = app(ResearchPipeline::class);
+    $base = [
+        'predicted_spread' => 5.01,
+        'predicted_total' => 42.01,
+        'win_probability' => .601,
+        'model_metadata' => ['true_epa' => ['enabled' => true, 'applied' => true]],
+    ];
+
+    expect($pipeline->candidateContextHash($base))
+        ->toBe($pipeline->candidateContextHash([...$base, 'predicted_spread' => 5.20, 'predicted_total' => 42.20, 'win_probability' => .603]))
+        ->not->toBe($pipeline->candidateContextHash([...$base, 'predicted_spread' => 5.51]));
+});
+
+it('changes the material revision hash for meaningful research prose but ignores cosmetic drift', function () {
+    $pipeline = app(ResearchPipeline::class);
+    $method = new ReflectionMethod($pipeline, 'revisionHash');
+    $method->setAccessible(true);
+    $preview = [
+        'outputs' => ['predicted_spread' => 3.5, 'predicted_total' => 44.5, 'win_probability' => .61],
+        'model_metadata' => [],
+        'model_version' => 'test-v1',
+    ];
+    $brief = [
+        'supporting' => [[
+            'source_url' => 'https://example.com/game',
+            'scope' => 'game',
+            'claim' => 'The quarterback practiced in full.',
+            'interpretation' => 'That raises the passing floor.',
+        ]],
+        'opposing' => [[
+            'source_url' => 'https://example.com/game',
+            'scope' => 'game',
+            'claim' => 'The left tackle is questionable.',
+        ]],
+        'unresolved' => [[
+            'source_url' => 'https://example.com/game',
+            'scope' => 'game',
+            'blocking' => true,
+            'question' => 'Will the left tackle play?',
+        ]],
+        'facts' => [[
+            'category' => 'injury',
+            'team_side' => 'home',
+            'certainty' => 'confirmed',
+            'claim' => 'The quarterback practiced in full.',
+            'source_urls' => ['https://example.com/game'],
+            'effective_at' => '2026-09-14T15:00:00Z',
+            'observed_at' => '2026-09-14T15:05:00Z',
+        ]],
+        'risk_flags' => [],
+    ];
+    $hash = fn (array $materialBrief): string => $method->invoke(
+        $pipeline,
+        $preview,
+        ['documents' => [], 'availability' => []],
+        [],
+        ['status' => 'candidate', 'data_reasons' => [], 'model_reasons' => []],
+        [],
+        $materialBrief,
+    );
+    $cosmetic = $brief;
+    $cosmetic['supporting'][0]['claim'] = '  THE quarterback practiced in FULL!!! ';
+    $cosmetic['unresolved'][0]['question'] = 'will the LEFT tackle play';
+    $cosmetic['facts'][0]['claim'] = 'The quarterback practiced in full';
+    $cosmetic['facts'][0]['observed_at'] = '2026-09-14T15:15:00Z';
+    $changedClaim = $brief;
+    $changedClaim['supporting'][0]['claim'] = 'The quarterback did not practice.';
+    $changedQuestion = $brief;
+    $changedQuestion['unresolved'][0]['question'] = 'Will the left tackle start?';
+    $changedFact = $brief;
+    $changedFact['facts'][0]['claim'] = 'The quarterback was limited.';
+
+    expect($hash($cosmetic))->toBe($hash($brief))
+        ->and($hash($changedClaim))->not->toBe($hash($brief))
+        ->and($hash($changedQuestion))->not->toBe($hash($brief))
+        ->and($hash($changedFact))->not->toBe($hash($brief));
+});
+
+it('uses the quote timestamp rather than a container refresh to judge market freshness', function () {
+    config(['nfl_research.market_freshness_minutes' => 30]);
+    $game = researchGame(['odds_updated_at' => now()]);
+    $pipeline = app(ResearchPipeline::class);
+    $stale = [
+        ['bookmaker' => 'book', 'side' => 'home', 'line' => -3.5, 'price' => -110, 'observed_at' => now()->subHour()->toIso8601String()],
+        ['bookmaker' => 'book', 'side' => 'away', 'line' => 3.5, 'price' => -110, 'observed_at' => now()->subHour()->toIso8601String()],
+    ];
+    $freshOneSided = [[...$stale[0], 'observed_at' => now()->subMinutes(5)->toIso8601String()]];
+    $freshPaired = [
+        ...$freshOneSided,
+        [...$stale[1], 'observed_at' => now()->subMinutes(5)->toIso8601String()],
+    ];
+
+    expect($pipeline->marketIsFresh($game, $stale))->toBeFalse()
+        ->and($pipeline->marketIsFresh($game, $freshOneSided))->toBeFalse()
+        ->and($pipeline->marketIsFresh($game, $freshPaired))->toBeTrue();
+});
+
+it('persists and hashes only fresh paired research spread quotes', function () {
+    config(['nfl_research.market_freshness_minutes' => 30]);
+    $freshAt = now()->subMinutes(5)->toIso8601String();
+    $staleAt = now()->subHours(2)->toIso8601String();
+    $game = researchGame([
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'home_team' => 'Philadelphia Eagles',
+            'bookmakers' => [
+                ['key' => 'paired', 'markets' => [[
+                    'key' => 'spreads',
+                    'last_update' => $freshAt,
+                    'outcomes' => [
+                        ['name' => 'Philadelphia Eagles', 'point' => -3.5, 'price' => -110],
+                        ['name' => 'Washington Commanders', 'point' => 3.5, 'price' => -110],
+                    ],
+                ]]],
+                ['key' => 'one-sided', 'markets' => [[
+                    'key' => 'spreads',
+                    'last_update' => $freshAt,
+                    'outcomes' => [
+                        ['name' => 'Philadelphia Eagles', 'point' => -4.0, 'price' => -105],
+                    ],
+                ]]],
+                ['key' => 'stale', 'markets' => [[
+                    'key' => 'spreads',
+                    'last_update' => $staleAt,
+                    'outcomes' => [
+                        ['name' => 'Philadelphia Eagles', 'point' => -3.0, 'price' => -110],
+                        ['name' => 'Washington Commanders', 'point' => 3.0, 'price' => -110],
+                    ],
+                ]]],
+            ],
+        ],
+    ]);
+
+    $quotes = app(ResearchPipeline::class)->quotes($game);
+
+    expect($quotes)->toHaveCount(2)
+        ->and(collect($quotes)->pluck('bookmaker')->unique()->values()->all())->toBe(['paired'])
+        ->and(collect($quotes)->pluck('side')->sort()->values()->all())->toBe(['away', 'home']);
+});
+
 it('labels home and away probabilities explicitly for an away favorite', function () {
     $game = researchGame();
     $result = app(NflWebContextResearchService::class)->namedTeamProjections($game, ['predicted_spread' => -5.7, 'win_probability' => .358]);
@@ -160,6 +336,35 @@ it('does not generate a pregame revision after kickoff', function () {
     expect(app(ResearchPipeline::class)->review($game, false))->toBeNull();
 });
 
+it('rotates small research batches so every eligible game is covered', function () {
+    config(['nfl_research.enabled' => true]);
+    $alreadyReviewed = researchGame();
+    $nextGame = researchGame();
+    SportsGameContextReport::query()->create([
+        'sport' => 'nfl',
+        'game_id' => $alreadyReviewed->id,
+        'prompt_version' => 'test',
+        'input_hash' => hash('sha256', 'test'),
+        'researched_at' => now(),
+    ]);
+
+    $this->mock(ResearchPipeline::class, function ($mock) use ($nextGame) {
+        $mock->shouldReceive('review')
+            ->once()
+            ->with(Mockery::on(fn (Game $game): bool => $game->is($nextGame)), false)
+            ->andReturnNull();
+    });
+
+    $this->artisan('nfl:research-pipeline', [
+        '--date' => now()->addDay()->toDateString(),
+        '--days-forward' => 0,
+        '--limit' => 1,
+        '--no-ingest' => true,
+        '--no-web' => true,
+    ])->expectsOutput('NFL research coverage: 2 eligible game(s); reviewing 1 this run; 1 remain for the next batch.')
+        ->assertSuccessful();
+});
+
 it('does not equate reserve activation with clearance to play', function () {
     $game = researchGame();
     Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Test Player']);
@@ -176,6 +381,264 @@ it('grades winner probability and spread pushes separately for each preserved va
     $r = ResearchRevision::create(['game_id' => $game->id, 'input_hash' => str_repeat('c', 64), 'baseline' => ['predicted_spread' => 2, 'predicted_total' => 40, 'win_probability' => .5], 'revised' => ['predicted_spread' => 5, 'predicted_total' => 44, 'win_probability' => .6], 'evidence' => [], 'brief' => ['eligibility' => ['eligible' => false]], 'market' => [['bookmaker' => 'fanduel', 'side' => 'home', 'line' => -3, 'price' => -110], ['bookmaker' => 'fanduel', 'side' => 'away', 'line' => 3, 'price' => -110]], 'created_at' => now()->subDay()]);
     app(ResearchPipeline::class)->grade($r);
     expect(data_get($r->fresh()->evaluation, 'variants.revised.quotes.0.result'))->toBe('push')->and(data_get($r->evaluation, 'variants.revised.total_absolute_error'))->toBe(1)->and(data_get($r->evaluation, 'variants.baseline.total_absolute_error'))->toBe(5);
+});
+
+it('keeps a revision ungraded until every captured player prop has official results', function () {
+    $game = researchGame(['status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 21]);
+    $prop = PlayerProp::query()->create([
+        'game_id' => $game->id,
+        'player_name' => 'Test Player',
+        'market' => 'player_pass_yds',
+        'line' => 250.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+    $revision = ResearchRevision::query()->create([
+        'game_id' => $game->id,
+        'input_hash' => hash('sha256', 'pending-prop'),
+        'baseline' => ['predicted_spread' => 2, 'predicted_total' => 40, 'win_probability' => .5],
+        'revised' => ['predicted_spread' => 5, 'predicted_total' => 44, 'win_probability' => .6],
+        'evidence' => [],
+        'brief' => ['eligibility' => ['eligible' => false], 'player_props' => [[
+            'prop_id' => $prop->id,
+            'line' => 250.5,
+            'over_price' => -110,
+            'under_price' => -110,
+            'baseline' => ['recommended_side' => 'over'],
+            'revised' => ['recommendation' => 'over'],
+        ]]],
+        'market' => [],
+        'created_at' => now()->subDay(),
+    ]);
+
+    expect(app(ResearchPipeline::class)->grade($revision))->toBeFalse()
+        ->and($revision->fresh()->graded_at)->toBeNull()
+        ->and(data_get($revision->fresh()->evaluation, 'player_props.0.status'))->toBe('pending_player_stats');
+
+    $prop->update(['actual_value' => 275, 'graded_at' => now()]);
+
+    expect(app(ResearchPipeline::class)->grade($revision->fresh()))->toBeTrue()
+        ->and($revision->fresh()->graded_at)->not->toBeNull()
+        ->and(data_get($revision->fresh()->evaluation, 'player_props.0.status'))->toBe('graded');
+});
+
+it('regrades research revisions after a same-second official score correction', function () {
+    config(['nfl_research.enabled' => true]);
+    Carbon::setTestNow('2026-09-16 12:00:00');
+    $game = researchGame(['status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 21]);
+    $revision = ResearchRevision::create([
+        'game_id' => $game->id, 'input_hash' => hash('sha256', 'corrected-result'),
+        'baseline' => ['predicted_spread' => 2, 'predicted_total' => 40, 'win_probability' => .5],
+        'revised' => ['predicted_spread' => 5, 'predicted_total' => 44, 'win_probability' => .6],
+        'evidence' => [], 'brief' => [], 'market' => [], 'created_at' => now()->subDay(),
+    ]);
+    app(ResearchPipeline::class)->grade($revision);
+    $game->update(['away_score' => 27]);
+    $this->artisan('nfl:research-pipeline', ['--grade' => true])
+        ->expectsOutput('Inspected 1 final ungraded research revision(s); completed 1, pending 0.')
+        ->assertSuccessful();
+    expect(data_get($revision->fresh()->evaluation, 'actual_margin'))->toBe(-3)
+        ->and(data_get($revision->fresh()->evaluation, 'actual_total'))->toBe(51);
+    Carbon::setTestNow();
+});
+
+it('the grade command skips already completed research revisions', function () {
+    config(['nfl_research.enabled' => true]);
+    $game = researchGame(['status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 21]);
+    ResearchRevision::query()->create([
+        'game_id' => $game->id,
+        'input_hash' => hash('sha256', 'already-graded'),
+        'baseline' => [],
+        'revised' => [],
+        'evidence' => [],
+        'brief' => [],
+        'market' => [],
+        'evaluation' => [],
+        'created_at' => now()->subDay(),
+        'graded_at' => now(),
+    ]);
+    $pending = ResearchRevision::query()->create([
+        'game_id' => $game->id,
+        'input_hash' => hash('sha256', 'not-yet-graded'),
+        'baseline' => [],
+        'revised' => [],
+        'evidence' => [],
+        'brief' => [],
+        'market' => [],
+        'created_at' => now(),
+    ]);
+    $this->mock(ResearchPipeline::class, function ($mock) use ($pending) {
+        $mock->shouldReceive('grade')->once()->with(Mockery::on(fn (ResearchRevision $revision): bool => $revision->is($pending)))->andReturnTrue();
+    });
+
+    $this->artisan('nfl:research-pipeline', ['--grade' => true])
+        ->expectsOutput('Inspected 1 final ungraded research revision(s); completed 1, pending 0.')
+        ->assertSuccessful();
+});
+
+it('bounds research grading and never spends the batch on future games', function () {
+    config(['nfl_research.enabled' => true]);
+    $futureGame = researchGame([
+        'status' => 'STATUS_SCHEDULED',
+        'home_score' => null,
+        'away_score' => null,
+    ]);
+    $firstFinalGame = researchGame([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 24,
+        'away_score' => 21,
+    ]);
+    $secondFinalGame = researchGame([
+        'status' => 'STATUS_FINAL',
+        'home_score' => 27,
+        'away_score' => 20,
+    ]);
+    $future = ResearchRevision::query()->create([
+        'game_id' => $futureGame->id,
+        'input_hash' => hash('sha256', 'future-ungraded'),
+        'baseline' => [],
+        'revised' => [],
+        'evidence' => [],
+        'brief' => [],
+        'market' => [],
+        'created_at' => now()->subDays(3),
+    ]);
+    $first = ResearchRevision::query()->create([
+        'game_id' => $firstFinalGame->id,
+        'input_hash' => hash('sha256', 'first-final-ungraded'),
+        'baseline' => [],
+        'revised' => [],
+        'evidence' => [],
+        'brief' => [],
+        'market' => [],
+        'created_at' => now()->subDays(2),
+    ]);
+    $second = ResearchRevision::query()->create([
+        'game_id' => $secondFinalGame->id,
+        'input_hash' => hash('sha256', 'second-final-ungraded'),
+        'baseline' => [],
+        'revised' => [],
+        'evidence' => [],
+        'brief' => [],
+        'market' => [],
+        'created_at' => now()->subDay(),
+    ]);
+
+    $this->mock(ResearchPipeline::class, function ($mock) use ($first) {
+        $mock->shouldReceive('grade')
+            ->once()
+            ->with(Mockery::on(fn (ResearchRevision $revision): bool => $revision->is($first)))
+            ->andReturnTrue();
+    });
+
+    $this->artisan('nfl:research-pipeline', [
+        '--grade' => true,
+        '--grade-limit' => 1,
+        '--grade-batch-size' => 1,
+    ])
+        ->expectsOutput('Inspected 1 final ungraded research revision(s); completed 1, pending 0.')
+        ->assertSuccessful();
+
+    expect($future->fresh()->graded_at)->toBeNull()
+        ->and($second->fresh()->graded_at)->toBeNull();
+});
+
+it('rotates pending prop revisions behind never-attempted final revisions and retries after the cooldown', function () {
+    config([
+        'nfl_research.enabled' => true,
+        'nfl_research.grading.retry_after_minutes' => 55,
+    ]);
+    $pendingGame = researchGame(['status' => 'STATUS_FINAL', 'home_score' => 24, 'away_score' => 21]);
+    $nextGame = researchGame(['status' => 'STATUS_FINAL', 'home_score' => 20, 'away_score' => 17]);
+    $prop = PlayerProp::query()->create([
+        'game_id' => $pendingGame->id,
+        'player_name' => 'Pending Player',
+        'market' => 'player_pass_yds',
+        'line' => 250.5,
+        'over_price' => -110,
+        'under_price' => -110,
+    ]);
+    $pending = ResearchRevision::query()->create([
+        'game_id' => $pendingGame->id,
+        'input_hash' => hash('sha256', 'rotation-pending'),
+        'baseline' => ['predicted_spread' => 2, 'predicted_total' => 40, 'win_probability' => .5],
+        'revised' => ['predicted_spread' => 3, 'predicted_total' => 42, 'win_probability' => .6],
+        'evidence' => [],
+        'brief' => ['player_props' => [[
+            'prop_id' => $prop->id,
+            'line' => 250.5,
+            'over_price' => -110,
+            'under_price' => -110,
+            'baseline' => ['recommended_side' => 'over'],
+            'revised' => ['recommendation' => 'over'],
+        ]]],
+        'market' => [],
+        'created_at' => now()->subDays(2),
+    ]);
+    $next = ResearchRevision::query()->create([
+        'game_id' => $nextGame->id,
+        'input_hash' => hash('sha256', 'rotation-next'),
+        'baseline' => ['predicted_spread' => 1, 'predicted_total' => 37, 'win_probability' => .55],
+        'revised' => ['predicted_spread' => 2, 'predicted_total' => 38, 'win_probability' => .57],
+        'evidence' => [],
+        'brief' => [],
+        'market' => [],
+        'created_at' => now()->subDay(),
+    ]);
+    $options = [
+        '--grade' => true,
+        '--grade-limit' => 1,
+        '--grade-batch-size' => 1,
+    ];
+
+    $this->artisan('nfl:research-pipeline', $options)
+        ->expectsOutput('Inspected 1 final ungraded research revision(s); completed 0, pending 1.')
+        ->assertSuccessful();
+    expect($pending->fresh()->grade_attempted_at)->not->toBeNull()
+        ->and($pending->fresh()->graded_at)->toBeNull()
+        ->and($next->fresh()->grade_attempted_at)->toBeNull();
+
+    $this->artisan('nfl:research-pipeline', $options)
+        ->expectsOutput('Inspected 1 final ungraded research revision(s); completed 1, pending 0.')
+        ->assertSuccessful();
+    expect($next->fresh()->graded_at)->not->toBeNull();
+
+    $this->artisan('nfl:research-pipeline', $options)
+        ->expectsOutput('Inspected 0 final ungraded research revision(s); completed 0, pending 0.')
+        ->assertSuccessful();
+
+    $prop->update(['actual_value' => 275, 'graded_at' => now()]);
+    $this->travel(56)->minutes();
+
+    $this->artisan('nfl:research-pipeline', $options)
+        ->expectsOutput('Inspected 1 final ungraded research revision(s); completed 1, pending 0.')
+        ->assertSuccessful();
+    expect($pending->fresh()->graded_at)->not->toBeNull();
+});
+
+it('rejects invalid research grading batch limits', function () {
+    config(['nfl_research.enabled' => true]);
+
+    $this->artisan('nfl:research-pipeline', [
+        '--grade' => true,
+        '--grade-limit' => 0,
+    ])
+        ->expectsOutput('--grade-limit must be at least 1.')
+        ->assertFailed();
+
+    $this->artisan('nfl:research-pipeline', [
+        '--grade' => true,
+        '--grade-batch-size' => 0,
+    ])
+        ->expectsOutput('--grade-batch-size must be at least 1.')
+        ->assertFailed();
+
+    $this->artisan('nfl:research-pipeline', [
+        '--grade' => true,
+        '--grade-retry-after-minutes' => -1,
+    ])
+        ->expectsOutput('--grade-retry-after-minutes cannot be negative.')
+        ->assertFailed();
 });
 
 it('reads reserve table captions without mistaking photo links or active players for unavailable players', function () {

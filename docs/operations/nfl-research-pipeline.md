@@ -8,9 +8,9 @@ The pipeline gathers official evidence, researches both sides of a model candida
 
 Scheduled jobs:
 
-- Every 15 minutes: ingest the next two days of official RSS, newsroom fallbacks, injury pages and rosters.
-- At minutes 7, 22, 37 and 52: review games in the next day, regenerate research when supplied documents change or context expires, and append revised forecasts. Partial reports retry after 45 minutes unless new documents arrive sooner. A per-game lock prevents overlapping research.
-- Hourly at minute 55: grade completed-game revisions, including props whose official actual values have since arrived.
+- Every 15 minutes: ingest eight unseen or oldest-due teams across the next seven days. The full 32-team slate rotates within an hour while each run stays bounded.
+- At minutes 7, 22, 37 and 52: review four unseen or oldest-due games per run across the next seven days. This bounded, fair rotation covers the weekly slate without repeatedly revising the same near-term games. Regenerate research only when material supplied evidence changes or context expires. Partial reports retry after the configured delay unless new documents arrive sooner. A per-game lock prevents overlapping research.
+- Hourly at minute 55: inspect at most 250 ungraded revisions whose linked game is final with both scores, in 50-row database batches. Future and in-progress games never consume the batch. Grade attempts are persisted in the database: never-attempted finals run first, then the oldest eligible attempt. A pending prop revision moves to the back of the queue and becomes eligible again after the 55-minute cooldown, so it cannot repeatedly consume the first page or starve newer finals.
 
 The older standalone research schedule is disabled while the new pipeline is enabled. Existing AI daily analysis remains and receives the latest researched revision, explicitly separate from the canonical prediction.
 
@@ -18,7 +18,7 @@ Commands:
 
 ```sh
 php artisan nfl:research-pipeline --date=2026-09-13 --days-forward=0 --ingest-only
-php artisan nfl:research-pipeline --date=2026-09-13 --days-forward=0 --no-ingest
+php artisan nfl:research-pipeline --date=2026-09-13 --days-forward=7 --no-ingest --limit=4
 php artisan nfl:research-pipeline --date=2026-09-13 --days-forward=0 --no-ingest --no-web
 php artisan nfl:research-pipeline --date=2026-09-13 --days-forward=0 --briefs
 php artisan nfl:research-pipeline --grade
@@ -26,6 +26,14 @@ php artisan nfl:research-evaluation --book=fanduel
 ```
 
 `--no-web` permits a safe numerical preview but holds eligibility if research is missing, changed or stale. `--briefs` reads stored reports without network requests or prediction writes. Ingestion failures are recorded per source and cause nonzero command exit; one source failure does not terminate the remaining source checks.
+
+Research grading accepts `--grade-limit` and `--grade-batch-size`; production
+defaults are controlled by `NFL_RESEARCH_GRADING_MAX_PER_RUN` and
+`NFL_RESEARCH_GRADING_BATCH_SIZE`. The hard application ceiling is controlled by
+`NFL_RESEARCH_GRADING_HARD_MAX_PER_RUN`. Pending retries are controlled by
+`NFL_RESEARCH_GRADING_RETRY_AFTER_MINUTES` (or
+`--grade-retry-after-minutes` for an individual run). The selected IDs are capped
+before they are loaded in database batches, so a run cannot grow beyond its limit.
 
 ## Evidence and reconciliation
 
@@ -53,7 +61,7 @@ Only the pipeline's preview receives verified availability overlays. It reuses e
 
 ## Revisions, interface and evaluation
 
-`nfl_research_revisions` records the original baseline, revised outputs, source identifiers, market quotes, eligibility, two-sided brief and player-prop snapshots. The first captured baseline remains fixed for later revisions even if the canonical model subsequently changes. Duplicate input hashes do not create duplicate revisions. Pregame capture stops at kickoff.
+`nfl_research_revisions` records the original baseline, revised outputs, source identifiers, market quotes, eligibility, two-sided brief and player-prop snapshots. The first captured baseline remains fixed for later revisions even if the canonical model subsequently changes. Duplicate input hashes do not create duplicate revisions. The material hash includes normalized supporting/opposing claims, unresolved questions and sourced facts; meaningful prose changes create a revision even when their URL and scope are unchanged, while casing, punctuation, whitespace and transient timestamps do not. Pregame capture stops at kickoff.
 
 NFL game pages show research, counterarguments, uncertainties and forecast history. `/api/v1/nfl/games/{game}/research` requires authentication and the existing NFL, spread, win-probability and betting-value permissions, subject to the application's configured tier bypass policy. API output excludes full article bodies. The AI prediction payload includes the latest revision separately from the canonical decision contract.
 
@@ -62,6 +70,24 @@ Evaluation stores paired spread/total errors, Brier scores (ties excluded), hypo
 The aggregate command selects the latest graded pregame revision per game and one selected bookmaker, avoiding treating repeated revisions or books as independent observations. Its all-model ROI includes held leans and is labeled accordingly. Interpret results as descriptive paired comparisons, not causal proof of a particular injury adjustment. Live revisions are not mixed with pregame revisions. No historical results are backfilled using future news.
 
 ## Deployment and verification
+
+### September 16 reliability changes
+
+The default research horizon is seven days. Small batches rotate by normalized UTC attempt timestamps, including failed attempts, so the same first games cannot consume every run. The web research service honors the shared AI provider cooldown from every entry point, including research revisions. Exhausted quota creates a failed generation and stops further provider calls; it never creates a substitute report. An unresolved question with an unverified URL remains explicitly unverified and cannot disappear from eligibility checks.
+
+Source completeness requires current official roster and injury endpoints for each team, plus at least one current official news-discovery channel (RSS or newsroom). RSS and newsroom are alternatives, so a broken optional feed cannot override the other channel's successful evidence. Every endpoint's freshness and error remain visible in the brief. Ingestion has a configurable `NFL_RESEARCH_INGESTION_MAX_SECONDS` budget (180 seconds by default, plus an in-flight request), skips recently checked sources and resumes with the oldest/unattempted sources. A deferred batch is incomplete work and must be resumed; verify actual team coverage rather than assuming a fixed number of batches finished the slate.
+
+Research quote freshness defaults to 60 minutes (`NFL_RESEARCH_MARKET_FRESHNESS_MINUTES`), aligned with canonical market capture and the four rotating batches after an hourly odds refresh. Freshness still uses the actual quote observation timestamp, never the container's updated timestamp. The older 30-minute setting systematically left later batches held even within the same complete-slate cycle. During longer intervals without an odds refresh, market-stale holds remain correct; news research may proceed without pretending that prices are current.
+
+The additive `current_document_id` source pointer preserves which exact immutable roster/injury document a successful fetch confirmed. It changes even when content reverts to a previously observed version; original document timestamps and article publication dates never change. Current confirmed roster documents remain usable beyond the news lookback window, so an unchanged reserve list does not silently disappear after 14 days. Sources without a pointer request the body before accepting conditional responses. Run the migration before ingestion/research.
+
+The research packet now includes timestamped synced weather, line matchups, rest/travel context and model weather metadata. The prompt distinguishes early-season sample uncertainty, pressure/protection matchups, usage changes and roof announcements. These are sourced analysis inputs; prose remains excluded from numerical forecast adjustments.
+
+Weather must be refreshed only after venue metadata exists. ESPN summary payloads supply the venue under `gameInfo.venue`; NFL details sync now restores it and sync guards preserve known names/locations when a partial endpoint omits them. A missing forecast or a per-game provider error makes the weather command fail after processing the rest of its scope. Existing failed rows remain unchanged. Default runs refresh stale rows; `--force` also refreshes recent rows. HTTP success without numeric kickoff-hour temperature, wind and precipitation is rejected.
+
+[Open-Meteo's hourly forecast contract](https://open-meteo.com/en/docs) distinguishes the forecast hour from retrieval time. Selection uses venue-local time and rejects measurements more than an hour from kickoff. Neutral venues take priority over designated home-team coordinates. Retractable stadiums require an explicit roof state before numerical weather adjustments. [SoFi's official venue description](https://www.sofistadium.com/stadium/private-events/holiday-party) identifies a covered, open-air venue: it is neither assumed climate-controlled nor assigned uncalibrated outdoor wind/rain adjustments. Stale or incomplete weather is excluded from numerical adjustments, and subzero temperatures remain valid cold-weather input.
+
+For recovery: repair/sync details for the upcoming window, refresh weather, then regenerate model inputs before reviewing research. Verify per-game source coverage, weather freshness, revisions and eligibility reasons; a successful scheduler heartbeat alone does not establish complete coverage.
 
 Deploy the additive migration before running the pipeline. Run source ingestion, inspect failures and document counts, then capture initial revisions and check the original prediction IDs/values remain unchanged. Verify source coverage, both teams' evidence, exact current-team QB sample, reserve player linkage, API authorization and scheduled command registration.
 

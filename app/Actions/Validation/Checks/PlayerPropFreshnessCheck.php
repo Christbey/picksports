@@ -3,6 +3,7 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\Sports\SeasonStage\SeasonStageService;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Facades\DB;
@@ -53,11 +54,17 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         $staleGameIds = [];
         $unscoredGameIds = [];
         $sampleGames = [];
+        $quoteCoverage = [];
+        $dataHoldGames = 0;
 
         foreach ($games as $game) {
             $reasons = [];
             $latestFetchedAt = DB::table($propsTable)->where('game_id', $game->id)->max('fetched_at');
             $hoursUntilStart = $this->hoursUntilStart($dates, $game);
+            $coverage = $sport === 'nfl' ? app(NflPlayerPropCoverage::class)->forGame((int) $game->id, $staleHours) : null;
+            if ($coverage !== null) {
+                $quoteCoverage[] = ['game_id' => (int) $game->id, ...$coverage];
+            }
 
             if (! $latestFetchedAt) {
                 $missingProps++;
@@ -84,17 +91,22 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 continue;
             }
 
-            if (now()->parse($latestFetchedAt)->lt(now()->subHours($staleHours))) {
+            if (($coverage !== null && $coverage['stale_quotes'] > 0)
+                || now()->parse($latestFetchedAt)->lt(now()->subHours($staleHours))) {
                 $staleProps++;
                 $freshnessFlaggedGameIds[] = (int) $game->id;
                 $staleGameIds[] = (int) $game->id;
                 $reasons[] = 'stale_player_props';
             }
 
-            if (! $this->hasRecommendationReadyProps($propsTable, (int) $game->id)) {
+            if ($coverage !== null ? $coverage['unprocessed_quotes'] > 0 : ! $this->hasRecommendationReadyProps($propsTable, (int) $game->id)) {
                 $unscoredProps++;
                 $unscoredGameIds[] = (int) $game->id;
                 $reasons[] = 'unscored_player_props';
+            }
+            if ($coverage !== null && $coverage['data_hold_quotes'] > 0) {
+                $dataHoldGames++;
+                $reasons[] = 'evaluated_player_props_held_for_data_or_availability';
             }
 
             if ($reasons !== []) {
@@ -120,6 +132,9 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         } elseif ($unscoredProps > 0) {
             $status = 'warning';
             $message = "Player props are fresh for {$marketReadyGames} market-ready active games; {$unscoredProps} game(s) have props without recommendation-ready outputs.";
+        } elseif ($dataHoldGames > 0) {
+            $status = 'warning';
+            $message = "Player props were evaluated; {$dataHoldGames} game(s) include explicit data or availability holds.";
         } elseif ($missingProps > 0) {
             $message = "Player props are recommendation-ready where available; {$missingProps}/{$marketReadyGames} market-ready active games are outside the expected prop window or provider has not posted props.";
         }
@@ -142,6 +157,19 @@ class PlayerPropFreshnessCheck implements ValidationCheck
                 'provider_unavailable_expected_window_games' => $providerUnavailableExpected,
                 'games_with_stale_player_props' => $staleProps,
                 'games_with_unscored_player_props' => $unscoredProps,
+                ...($sport === 'nfl' ? [
+                    'games_with_evaluated_data_holds' => $dataHoldGames,
+                    'quote_coverage' => collect($quoteCoverage)->reduce(function (array $totals, array $game): array {
+                        foreach ($game as $key => $value) {
+                            if ($key !== 'game_id') {
+                                $totals[$key] = ($totals[$key] ?? 0) + $value;
+                            }
+                        }
+
+                        return $totals;
+                    }, []),
+                    'sample_quote_coverage' => array_slice($quoteCoverage, 0, 5),
+                ] : []),
                 'sample_game_ids' => array_slice(array_values(array_unique($freshnessFlaggedGameIds)), 0, 5),
                 'sample_missing_game_ids' => array_slice(array_values(array_unique($missingGameIds)), 0, 5),
                 'sample_expected_missing_game_ids' => array_slice(array_values(array_unique($expectedMissingGameIds)), 0, 5),

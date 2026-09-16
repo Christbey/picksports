@@ -9,6 +9,7 @@ use App\Models\NBA\Game;
 use App\Support\MLB\MlbLineScores;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class SettleBetDecisionsCommand extends Command
 {
@@ -31,7 +32,23 @@ class SettleBetDecisionsCommand extends Command
     public function handle(): int
     {
         $query = BetDecision::query()
-            ->whereDoesntHave('settlement')
+            ->where(function ($pending): void {
+                $pending->whereDoesntHave('settlement')
+                    ->orWhere(fn ($decision) => $decision->where('sport', 'nfl')
+                        ->whereHas('settlement', fn ($settlement) => $settlement->whereExists(function ($game): void {
+                            $game->selectRaw('1')->from('nfl_games as corrected_game')
+                                ->whereColumn('corrected_game.id', 'bet_decisions.game_id')
+                                ->where('corrected_game.status', config('nfl.statuses.final', 'STATUS_FINAL'))
+                                ->whereNotNull('corrected_game.home_score')->whereNotNull('corrected_game.away_score')
+                                ->where(function ($changed): void {
+                                    $changed->whereNull('bet_settlements.metadata->home_score')
+                                        ->orWhereNull('bet_settlements.metadata->away_score')
+                                        ->orWhereColumn('bet_settlements.metadata->home_score', '<>', 'corrected_game.home_score')
+                                        ->orWhereColumn('bet_settlements.metadata->away_score', '<>', 'corrected_game.away_score');
+                                });
+                        })));
+            })
+            ->whereNotIn('status', ['held_candidate', 'model_hold'])
             ->when($this->option('sport'), fn ($builder) => $builder->where('sport', strtolower((string) $this->option('sport'))))
             ->orderBy('id');
 
@@ -40,6 +57,7 @@ class SettleBetDecisionsCommand extends Command
         }
 
         $settled = 0;
+        $corrected = 0;
         foreach ($query->get() as $decision) {
             $marketType = $this->marketType($decision);
             $gameModel = $this->gameModels[$decision->sport] ?? null;
@@ -73,44 +91,89 @@ class SettleBetDecisionsCommand extends Command
             $closingQuote = $closingQuoteSelection['quote'];
             $clv = $this->closingLineValue($decision, $closingQuote, $marketType);
 
-            $settlement = BetSettlement::query()->firstOrCreate(
-                ['bet_decision_id' => $decision->id],
-                [
-                    'result_status' => $grade['push'] ? 'push' : ($grade['won'] ? 'win' : 'loss'),
-                    'result_value' => $grade['result_value'],
-                    'profit_units' => $decision->is_bet ? $shadowProfit : 0.0,
-                    'closing_price' => $closingQuote?->price,
-                    'closing_line' => $closingQuote?->line,
-                    'clv' => $clv['value'],
-                    'graded_at' => now(),
-                    'settled_at' => now(),
-                    'metadata' => [
-                        'market_type' => $marketType,
-                        'side' => $decision->side,
-                        'entry_line' => is_numeric($decision->line) ? (float) $decision->line : null,
-                        'selected_result_value' => $grade['selected_result_value'],
-                        'shadow_profit_units' => $shadowProfit,
-                        'actual_bet_placed' => (bool) $decision->is_bet,
-                        'home_score' => $homeScore,
-                        'away_score' => $awayScore,
-                        'home_margin' => $homeMargin,
-                        'total_score' => $totalScore,
-                        'period_innings' => $scores['innings'],
-                        'closing_quote_id' => $closingQuote?->id,
-                        'closing_quote_captured_at' => $closingQuote?->captured_at?->toIso8601String(),
-                        'closing_quote_selection' => $closingQuoteSelection['selection'],
-                        'entry_bookmaker' => $decision->bookmaker,
-                        'closing_bookmaker' => $closingQuote?->bookmaker_key
-                            ?? $closingQuote?->bookmaker_title,
-                        'consensus_bookmaker_count' => $closingQuoteSelection['bookmaker_count'],
-                        'clv_type' => $clv['type'],
-                    ],
+            $values = [
+                'result_status' => $grade['push'] ? 'push' : ($grade['won'] ? 'win' : 'loss'),
+                'result_value' => $grade['result_value'],
+                'profit_units' => $decision->is_bet ? $shadowProfit : 0.0,
+                'closing_price' => $closingQuote?->price,
+                'closing_line' => $closingQuote?->line,
+                'clv' => $clv['value'],
+                'graded_at' => now(),
+                'settled_at' => now(),
+                'metadata' => [
+                    'market_type' => $marketType,
+                    'side' => $decision->side,
+                    'entry_line' => is_numeric($decision->line) ? (float) $decision->line : null,
+                    'selected_result_value' => $grade['selected_result_value'],
+                    'shadow_profit_units' => $shadowProfit,
+                    'tracked_bet' => (bool) $decision->is_bet,
+                    'actual_bet_placed' => (bool) $decision->is_bet
+                        && ! (bool) $decision->is_tracking_only,
+                    'execution_status' => data_get($decision->explanation, 'execution_status'),
+                    'home_score' => $homeScore,
+                    'away_score' => $awayScore,
+                    'home_margin' => $homeMargin,
+                    'total_score' => $totalScore,
+                    'period_innings' => $scores['innings'],
+                    'closing_quote_id' => $closingQuote?->id,
+                    'closing_quote_captured_at' => $closingQuote?->captured_at?->toIso8601String(),
+                    'closing_quote_selection' => $closingQuoteSelection['selection'],
+                    'entry_bookmaker' => $decision->bookmaker,
+                    'closing_bookmaker' => $closingQuote?->bookmaker_key
+                        ?? $closingQuote?->bookmaker_title,
+                    'consensus_bookmaker_count' => $closingQuoteSelection['bookmaker_count'],
+                    'clv_type' => $clv['type'],
                 ],
-            );
+            ];
+            $settlement = DB::transaction(function () use ($decision, $values): BetSettlement {
+                $existing = BetSettlement::query()->where('bet_decision_id', $decision->id)->lockForUpdate()->first();
+                if ($existing === null) {
+                    return BetSettlement::query()->firstOrCreate(['bet_decision_id' => $decision->id], $values);
+                }
+                if ($decision->sport !== 'nfl'
+                    || (data_get($existing->metadata, 'home_score') == $values['metadata']['home_score']
+                        && data_get($existing->metadata, 'away_score') == $values['metadata']['away_score']
+                        && data_get($existing->metadata, 'home_score') !== null
+                        && data_get($existing->metadata, 'away_score') !== null)) {
+                    return $existing;
+                }
+                $values['metadata']['result_corrections'] = [
+                    ...(array) data_get($existing->metadata, 'result_corrections', []),
+                    [
+                        'corrected_at' => now()->toIso8601String(),
+                        'previous_home_score' => data_get($existing->metadata, 'home_score'),
+                        'previous_away_score' => data_get($existing->metadata, 'away_score'),
+                        'previous_result_status' => $existing->result_status,
+                        'previous_result_value' => $existing->result_value,
+                        'previous_profit_units' => $existing->profit_units,
+                        'previous_shadow_profit_units' => data_get($existing->metadata, 'shadow_profit_units'),
+                        'previous_graded_at' => $existing->graded_at?->toIso8601String(),
+                        'new_home_score' => $values['metadata']['home_score'],
+                        'new_away_score' => $values['metadata']['away_score'],
+                        'reason' => 'official_final_score_correction',
+                    ],
+                ];
+                // Preserve when the decision was first settled and the original
+                // closing-market observation; only the official outcome changed.
+                foreach (['closing_price', 'closing_line', 'clv', 'settled_at'] as $column) {
+                    $values[$column] = $existing->{$column};
+                }
+                foreach (['closing_quote_id', 'closing_quote_captured_at', 'closing_quote_selection',
+                    'closing_bookmaker', 'consensus_bookmaker_count', 'clv_type'] as $key) {
+                    $values['metadata'][$key] = data_get($existing->metadata, $key);
+                }
+                $existing->update($values);
+
+                return $existing;
+            });
             $settled += $settlement->wasRecentlyCreated ? 1 : 0;
+            $corrected += ! $settlement->wasRecentlyCreated && $settlement->wasChanged() ? 1 : 0;
         }
 
         $this->info("Settled {$settled} decision(s).");
+        if ($corrected > 0) {
+            $this->info("Corrected {$corrected} NFL settlement(s) from changed official final scores.");
+        }
 
         return self::SUCCESS;
     }

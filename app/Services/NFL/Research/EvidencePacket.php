@@ -17,12 +17,32 @@ class EvidencePacket
             return ['documents' => [], 'availability' => [], 'holds' => ['source_ingestion_not_installed']];
         }
         $teams = array_map(fn ($t) => $t === 'WSH' ? 'WAS' : $t, [$game->homeTeam?->abbreviation, $game->awayTeam?->abbreviation]);
-        $documents = ResearchDocument::whereIn('team', $teams)->where('observed_at', '<=', now())->where('observed_at', '>=', now()->subDays(180))
-            ->orderByDesc('observed_at')->orderByDesc('id')->get()->unique('url_hash')->values();
+        $sources = ResearchSource::whereIn('team', $teams)->get()->groupBy('team');
+        $currentDocumentIds = $sources->flatten()->whereIn('kind', ['roster', 'injury'])->pluck('current_document_id')->filter()->map(fn ($id): int => (int) $id)->all();
+        $documents = ResearchDocument::whereIn('team', $teams)->where('observed_at', '<=', now())
+            ->where(fn ($query) => $query->where('observed_at', '>=', now()->subDays(max(1, (int) config('nfl_research.lookback_days', 14))))->orWhereIn('id', $currentDocumentIds))
+            ->orderByDesc('observed_at')->orderByDesc('id')->get()
+            ->sortByDesc(fn (ResearchDocument $document): bool => in_array((int) $document->id, $currentDocumentIds, true))
+            ->unique('url_hash')->values();
         $holds = [];
+        $sourceFreshnessMinutes = max(1, (int) config('nfl_research.source_freshness_minutes', 45));
+        $coverage = [];
         foreach ($teams as $team) {
-            foreach (['rss', 'newsroom', 'roster', 'injury'] as $kind) {
-                if (! ResearchSource::where('team', $team)->where('kind', $kind)->whereNull('error')->where('succeeded_at', '>=', now()->subMinutes(45))->exists()) {
+            $teamSources = $sources->get($team, collect());
+            $freshKinds = $teamSources->filter(fn (ResearchSource $source): bool => ! $source->error && $source->succeeded_at?->gte(now()->subMinutes($sourceFreshnessMinutes)))->pluck('kind');
+            $coverage[$team] = $teamSources->mapWithKeys(fn (ResearchSource $source): array => [$source->kind => [
+                'fresh' => $freshKinds->contains($source->kind),
+                'url' => $source->url,
+                'error' => $source->error,
+                'succeeded_at' => $source->succeeded_at?->toIso8601String(),
+            ]])->all();
+            // RSS and newsroom are alternate discovery channels. Availability
+            // requires independent current roster and injury coverage.
+            if ($freshKinds->intersect(['rss', 'newsroom'])->isEmpty()) {
+                $holds[] = 'stale_or_missing_news_'.$team;
+            }
+            foreach (['roster', 'injury'] as $kind) {
+                if (! $freshKinds->contains($kind)) {
                     $holds[] = 'stale_or_missing_'.$kind.'_'.$team;
                 }
             }
@@ -32,7 +52,7 @@ class EvidencePacket
         foreach ($documents as $document) {
             if (is_array($document->structured)) {
                 $source = ResearchSource::find($document->source_id);
-                if (! $source?->succeeded_at || $source->succeeded_at->lt(now()->subMinutes(45)) || $source->error) {
+                if (! $source?->succeeded_at || $source->succeeded_at->lt(now()->subMinutes($sourceFreshnessMinutes)) || $source->error) {
                     $holds[] = 'stale_roster_'.$document->team;
 
                     continue;
@@ -90,7 +110,7 @@ class EvidencePacket
             }
         }
 
-        return ['documents' => $documents->map(fn ($d) => ['id' => $d->id, 'team' => $d->team, 'url' => $d->url, 'title' => $d->title, 'published_at' => $d->published_at?->toIso8601String(), 'observed_at' => $d->observed_at->toIso8601String(), 'content_hash' => $d->content_hash, 'structured' => $d->structured, 'text' => mb_substr($d->body, 0, 12000)])->all(), 'availability' => array_values($availability), 'holds' => $holds];
+        return ['documents' => $documents->map(fn ($d) => ['id' => $d->id, 'team' => $d->team, 'url' => $d->url, 'title' => $d->title, 'published_at' => $d->published_at?->toIso8601String(), 'observed_at' => $d->observed_at->toIso8601String(), 'content_hash' => $d->content_hash, 'structured' => $d->structured, 'text' => mb_substr($d->body, 0, 12000)])->all(), 'availability' => array_values($availability), 'holds' => $holds, 'source_coverage' => $coverage];
     }
 
     public function researchDocuments(array $packet): array

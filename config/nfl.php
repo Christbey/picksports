@@ -271,6 +271,7 @@ return [
         */
         'true_epa' => [
             'enabled' => env('NFL_TRUE_EPA_ENABLED', true),
+            'backfill_before_generation' => env('NFL_TRUE_EPA_BACKFILL_BEFORE_GENERATION', true),
             'blend_weight' => env('NFL_TRUE_EPA_BLEND_WEIGHT', 0.35),
             'spread_points_per_epa' => env('NFL_TRUE_EPA_SPREAD_POINTS_PER_EPA', 14.0),
             'win_prob_max_adjustment' => env('NFL_TRUE_EPA_WIN_PROB_MAX_ADJ', 0.12),
@@ -338,6 +339,13 @@ return [
             'enabled' => env('NFL_MARKET_BLEND_ENABLED', true),
             'spread_model_weight' => env('NFL_MARKET_BLEND_SPREAD_WEIGHT', 0.5),
             'total_model_weight' => env('NFL_MARKET_BLEND_TOTAL_WEIGHT', 0.6),
+        ],
+
+        'pregame_market' => [
+            // Canonical inputs and released decisions must not freeze an old
+            // quote merely because it was observed before kickoff.
+            'maximum_quote_age_minutes' => env('NFL_PREGAME_MARKET_MAXIMUM_QUOTE_AGE_MINUTES', 60),
+            'maximum_prediction_age_minutes' => env('NFL_PREGAME_MAXIMUM_PREDICTION_AGE_MINUTES', 360),
         ],
 
         'spread_to_probability_coefficient' => env('NFL_SPREAD_TO_PROBABILITY_COEFFICIENT', 7.0),
@@ -1371,6 +1379,12 @@ return [
         'week_one_cover_min_edge' => env('NFL_SIGNALS_WEEK_ONE_COVER_MIN_EDGE', 1.5),
         'min_streak_length' => env('NFL_SIGNALS_MIN_STREAK_LENGTH', 3),
         'odds_stale_hours' => env('NFL_SIGNALS_ODDS_STALE_HOURS', 24),
+    ],
+
+    'signal_grading' => [
+        'batch_size' => env('NFL_SIGNAL_GRADING_BATCH_SIZE', 250),
+        'max_per_run' => env('NFL_SIGNAL_GRADING_MAX_PER_RUN', 1000),
+        'hard_max_per_run' => env('NFL_SIGNAL_GRADING_HARD_MAX_PER_RUN', 5000),
     ],
 
     /*

@@ -17,8 +17,12 @@ use App\Models\SportEventResult;
 use App\Models\User;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbCanonicalCutoverReadinessService;
+use App\Services\NFL\NflPredictionDispositionRecorder;
 use App\Services\NFL\Predictions\NflCalculationReleaseRegistrar;
 use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
+use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
+use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
 
 dataset('canonical football sports', [
@@ -72,6 +76,9 @@ function canonicalFootballFixture(array $definition): array
         if ($definition['metric_season_type']) {
             $attributes['season_type'] = 'regular';
             $attributes['predictive_rating'] = $net;
+            $attributes['offensive_true_epa_per_play'] = $team->is($home) ? 0.12 : 0.04;
+            $attributes['defensive_true_epa_per_play'] = $team->is($home) ? -0.02 : 0.01;
+            $attributes['net_true_epa_per_play'] = $team->is($home) ? 0.14 : 0.03;
         } else {
             $attributes['power_rating'] = $net;
             $attributes['fpi'] = $net;
@@ -86,7 +93,77 @@ function canonicalFootballFixture(array $definition): array
         'home_score' => null, 'away_score' => null, 'neutral_site' => false,
     ]);
 
-    return compact('event', 'game', 'home', 'away');
+    $fixture = compact('event', 'game', 'home', 'away');
+    if ($definition['sport'] === 'nfl') {
+        recordCanonicalFootballNflMarket($fixture);
+    }
+
+    return $fixture;
+}
+
+/** @param array<string,mixed> $fixture */
+function recordCanonicalFootballNflMarket(array $fixture): void
+{
+    $oddsData = [
+        'home_team' => 'Chicago Bears',
+        'away_team' => 'Detroit Lions',
+        'bookmakers' => [[
+            'key' => 'testbook',
+            'title' => 'Test Book',
+            'last_update' => now()->subMinute()->toIso8601String(),
+            'markets' => [[
+                'key' => 'spreads',
+                'outcomes' => [
+                    ['name' => 'Chicago Bears', 'point' => -3.0, 'price' => -110],
+                    ['name' => 'Detroit Lions', 'point' => 3.0, 'price' => -110],
+                ],
+            ], [
+                'key' => 'totals',
+                'outcomes' => [
+                    ['name' => 'Over', 'point' => 44.5, 'price' => -110],
+                    ['name' => 'Under', 'point' => 44.5, 'price' => -110],
+                ],
+            ]],
+        ]],
+    ];
+    app(GameOddsSnapshotRecorder::class)->record(
+        'nfl',
+        $fixture['game'],
+        ['id' => 'nfl-readiness-fixture', 'commence_time' => $fixture['event']->starts_at->toIso8601String()],
+        $oddsData,
+        Carbon::parse(now()->subMinute()),
+        'test',
+    );
+}
+
+/** @param array<string,mixed> $fixture */
+function prepareNflCanonicalReadinessFixture(array $fixture): void
+{
+    recordCanonicalFootballNflMarket($fixture);
+    $prediction = App\Models\NFL\Prediction::factory()->create([
+        'game_id' => $fixture['game']->getKey(),
+        'model_metadata' => [
+            'true_epa' => ['enabled' => true, 'applied' => true, 'reason' => 'applied'],
+            'analysis_layer' => [
+                'applied' => true,
+                'eligibility' => ['status' => 'candidate', 'eligible' => true, 'data_reasons' => []],
+            ],
+        ],
+    ]);
+    app(PredictionFeatureSnapshotRecorder::class)->record(
+        $prediction,
+        $fixture['game'],
+        'nfl',
+        $prediction->only(['predicted_spread', 'predicted_total', 'win_probability', 'confidence_score', 'model_metadata']),
+        [
+            'run_type' => 'pregame_prediction',
+            'pregame_safe' => true,
+            'availability_status' => 'observed_pregame',
+            'generated_at' => now()->subSecond(),
+            'features_available_at' => now()->subSecond(),
+        ],
+    );
+    app(NflPredictionDispositionRecorder::class)->record($prediction);
 }
 
 it('generates reproducible canonical football predictions without legacy writes', function (array $definition) {
@@ -171,6 +248,42 @@ it('uses the football scoring baseline when no team has a completed metric sampl
     $total = $prediction->markets->where('market_type', 'total')->where('selection', 'combined')->sole();
 
     expect((float) $total->projected_line)->toBe(56.0);
+});
+
+it('retains preseason CFB power ratings before either team has a completed-game sample', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+    $fixture['home']->update(['elo_rating' => 1500]);
+    $fixture['away']->update(['elo_rating' => 1500]);
+    TeamMetric::query()->where('team_id', $fixture['home']->getKey())->update([
+        'wins' => 0,
+        'losses' => 0,
+        'power_rating' => 14,
+        'fpi' => 14,
+    ]);
+    TeamMetric::query()->where('team_id', $fixture['away']->getKey())->update([
+        'wins' => 0,
+        'losses' => 0,
+        'power_rating' => -10,
+        'fpi' => -10,
+    ]);
+
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $spread = $prediction->markets
+        ->where('market_type', 'spread')
+        ->where('selection', 'home')
+        ->sole();
+
+    expect(data_get($prediction->calculationRun->inputSnapshot->inputs, 'home.metrics.fpi'))->toBe(14)
+        ->and(data_get($prediction->calculationRun->inputSnapshot->inputs, 'away.metrics.fpi'))->toBe(-10)
+        ->and((float) $spread->projected_line)->toBe(-5.2);
 });
 
 it('can generate and verify only the requested CFB week', function () {
@@ -360,6 +473,55 @@ it('keeps a large CFB spread disagreement on watch when team samples do not supp
         ->assertJsonPath('data.0.value_signal.best.statistical_support.away_sample_games', 1);
 });
 
+it('suppresses a CFB spread disagreement when the model has only default inputs', function () {
+    $definition = [
+        'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
+        'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
+        'generator' => GenerateCanonicalPrediction::class, 'registrar' => CfbCalculationReleaseRegistrar::class,
+        'readiness' => CfbCanonicalCutoverReadinessService::class, 'team_names' => ['school' => 'University', 'mascot' => 'Hawks'],
+        'metric_season_type' => false,
+    ];
+    $fixture = canonicalFootballFixture($definition);
+    $fixture['home']->update(['elo_rating' => 1500]);
+    $fixture['away']->update(['elo_rating' => 1500]);
+    TeamMetric::query()->update(['wins' => 0, 'losses' => 0]);
+    app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
+    $modelHomeLine = (float) $prediction->markets
+        ->where('market_type', 'spread')
+        ->where('selection', 'home')
+        ->sole()
+        ->projected_line;
+    $marketHomeLine = $modelHomeLine - 14;
+    $fixture['game']->update([
+        'odds_updated_at' => now(),
+        'odds_data' => [
+            'bookmakers' => [[
+                'key' => 'consensus',
+                'markets' => [[
+                    'key' => 'spreads',
+                    'outcomes' => [
+                        ['name' => 'University', 'point' => $marketHomeLine],
+                        ['name' => 'College', 'point' => -$marketHomeLine],
+                    ],
+                ]],
+            ]],
+        ],
+    ]);
+
+    $user = User::factory()->create();
+    config()->set('subscriptions.enforce_tiers', true);
+    config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
+    config()->set('prediction_lifecycle.canonical_reads.cfb', true);
+    Sanctum::actingAs($user);
+
+    $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')
+        ->assertOk()
+        ->assertJsonPath('data.0.value_signal.has_playable_value', false)
+        ->assertJsonPath('data.0.value_signal.play_count', 0)
+        ->assertJsonPath('data.0.value_signal.best', null);
+});
+
 it('runs canonical football commands and evaluation idempotently', function (array $definition) {
     $fixture = canonicalFootballFixture($definition);
     $sport = $definition['sport'];
@@ -377,7 +539,17 @@ it('runs canonical football commands and evaluation idempotently', function (arr
 })->with('canonical football sports');
 
 it('serves strict football reads only after readiness passes', function (array $definition) {
+    if ($definition['sport'] === 'nfl') {
+        config()->set('prediction_lifecycle.canonical_pipeline.nfl', true);
+        config()->set('nfl.predictions.true_epa.enabled', true);
+        config()->set('nfl.predictions.true_epa.backfill_before_generation', true);
+        config()->set('nfl_research.enabled', true);
+    }
+
     $fixture = canonicalFootballFixture($definition);
+    if ($definition['sport'] === 'nfl') {
+        prepareNflCanonicalReadinessFixture($fixture);
+    }
     $historical = canonicalFootballFixture([
         ...$definition,
         'home_abbreviation' => 'HIS',

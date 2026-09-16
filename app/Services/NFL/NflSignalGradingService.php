@@ -8,6 +8,7 @@ use App\Models\NflSignalGrade;
 use App\Models\NflSignalObservation;
 use App\Models\PredictionFeatureSnapshot;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class NflSignalGradingService
 {
@@ -22,11 +23,49 @@ class NflSignalGradingService
     private array $decisions = [];
 
     /**
+     * Keep source loading proportional to batches, and release caches between
+     * batches so a historical catch-up never retains the season in memory.
+     *
+     * @param  Collection<int,NflSignalObservation>  $observations
+     */
+    public function prepareBatch(Collection $observations): void
+    {
+        $this->games = Game::query()->whereIn('id', $observations->pluck('game_id')->unique())
+            ->get()->keyBy('id')->all();
+        $snapshotIds = $observations->pluck('prediction_feature_snapshot_id')->unique();
+        $this->decisions = $snapshotIds->mapWithKeys(fn ($id) => [$id => collect()])->all();
+        foreach (BetDecision::query()->with('settlement')->where('sport', 'nfl')
+            ->whereIn('prediction_feature_snapshot_id', $snapshotIds)->whereHas('settlement')->get()
+            ->groupBy('prediction_feature_snapshot_id') as $id => $decisions) {
+            $this->decisions[$id] = $decisions;
+        }
+    }
+
+    /**
      * @return array{created:int,updated:int,skipped:bool}
      */
     public function grade(NflSignalObservation $observation): array
     {
-        $observation->loadMissing('featureSnapshot');
+        return $this->gradeObservation($observation, false);
+    }
+
+    /**
+     * Grade only outcome or settlement sources that have not been graded yet or
+     * changed after their latest persisted grade.
+     *
+     * @return array{created:int,updated:int,skipped:bool,up_to_date:bool}
+     */
+    public function gradePending(NflSignalObservation $observation): array
+    {
+        return $this->gradeObservation($observation, true);
+    }
+
+    /**
+     * @return array{created:int,updated:int,skipped:bool,up_to_date:bool}
+     */
+    private function gradeObservation(NflSignalObservation $observation, bool $pendingOnly): array
+    {
+        $observation->loadMissing(['featureSnapshot', 'grades']);
         $snapshot = $observation->featureSnapshot;
         if (! array_key_exists($observation->game_id, $this->games)) {
             $this->games[$observation->game_id] = Game::query()->find($observation->game_id);
@@ -42,7 +81,7 @@ class NflSignalGradingService
             || $game->home_score === null
             || $game->away_score === null
         ) {
-            return ['created' => 0, 'updated' => 0, 'skipped' => true];
+            return ['created' => 0, 'updated' => 0, 'skipped' => true, 'up_to_date' => false];
         }
 
         $created = 0;
@@ -50,8 +89,11 @@ class NflSignalGradingService
         $actualHomeMargin = (float) $game->home_score - (float) $game->away_score;
         $actualTotal = (float) $game->home_score + (float) $game->away_score;
 
-        foreach ($this->outcomeGrades($observation, $snapshot, $actualHomeMargin, $actualTotal) as $grade) {
-            $this->persistGrade($observation, $grade, $created, $updated);
+        $outcomes = $this->outcomeGrades($observation, $snapshot, $actualHomeMargin, $actualTotal);
+        $gradeOutcomes = ! $pendingOnly || $this->outcomeGradesArePending($observation, $outcomes);
+        $grades = [];
+        if ($gradeOutcomes) {
+            $grades = $outcomes;
         }
 
         if (! array_key_exists($snapshot->id, $this->decisions)) {
@@ -69,8 +111,12 @@ class NflSignalGradingService
                 continue;
             }
 
+            if ($pendingOnly && ! $this->settlementGradeIsPending($observation, $decision)) {
+                continue;
+            }
+
             $resultStatus = $this->normalizeResultStatus($settlement->result_status);
-            $this->persistGrade($observation, [
+            $grades[] = [
                 'bet_decision_id' => $decision->id,
                 'bet_settlement_id' => $settlement->id,
                 'evaluation_key' => 'settlement:'.$decision->id,
@@ -89,7 +135,8 @@ class NflSignalGradingService
                 'profit_units' => $this->number($settlement->profit_units),
                 'shadow_profit_units' => $this->number(data_get($settlement->metadata, 'shadow_profit_units')),
                 'clv' => $this->number($settlement->clv),
-                'is_actual_bet' => (bool) $decision->is_bet,
+                'is_actual_bet' => (bool) $decision->is_bet
+                    && ! (bool) $decision->is_tracking_only,
                 'graded_at' => $settlement->graded_at ?? now(),
                 'metadata' => [
                     'decision_hash' => $decision->decision_hash,
@@ -97,11 +144,87 @@ class NflSignalGradingService
                     'closing_line' => $this->number($settlement->closing_line),
                     'closing_price' => $settlement->closing_price,
                     'bookmaker' => $decision->bookmaker,
+                    'tracked_bet' => (bool) $decision->is_bet,
+                    'actual_bet_placed' => (bool) $decision->is_bet
+                        && ! (bool) $decision->is_tracking_only,
                 ],
-            ], $created, $updated);
+            ];
         }
 
-        return ['created' => $created, 'updated' => $updated, 'skipped' => false];
+        // A checkpoint is committed with every applicable outcome. A killed
+        // worker cannot leave a partially graded observation marked complete.
+        DB::transaction(function () use ($observation, $game, $outcomes, $grades, &$created, &$updated): void {
+            $this->persistGrades($observation, $grades, $created, $updated);
+            DB::table('nfl_signal_grading_states')->upsert([[
+                'nfl_signal_observation_id' => $observation->id,
+                'home_score' => $game->home_score,
+                'away_score' => $game->away_score,
+                'outcome_grade_count' => count($outcomes),
+                'completed_at' => now(),
+            ]], ['nfl_signal_observation_id']);
+        });
+        $observation->unsetRelation('grades');
+
+        return [
+            'created' => $created,
+            'updated' => $updated,
+            'skipped' => false,
+            'up_to_date' => ! $gradeOutcomes && $created === 0 && $updated === 0,
+        ];
+    }
+
+    private function outcomeGradesArePending(NflSignalObservation $observation, array $expected): bool
+    {
+        $outcomeGrades = $observation->grades
+            ->where('evaluation_source', 'outcome');
+
+        foreach ($expected as $grade) {
+            $existing = $outcomeGrades->firstWhere('evaluation_key', $grade['evaluation_key']);
+            if ($existing === null || (float) $existing->actual_value !== (float) $grade['actual_value']) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function settlementGradeIsPending(
+        NflSignalObservation $observation,
+        BetDecision $decision
+    ): bool {
+        $settlement = $decision->settlement;
+        if ($settlement === null) {
+            return false;
+        }
+
+        $grade = $observation->grades
+            ->first(fn (NflSignalGrade $candidate): bool => (int) $candidate->bet_settlement_id === (int) $settlement->id
+            );
+
+        if ($grade === null || $grade->updated_at === null) {
+            return true;
+        }
+
+        if ($grade->result_status !== $this->normalizeResultStatus($settlement->result_status)) {
+            return true;
+        }
+        foreach ([
+            [$settlement->result_value, $grade->actual_value],
+            [$settlement->profit_units, $grade->profit_units],
+            [$settlement->clv, $grade->clv],
+            [$decision->price, $grade->price],
+            [$decision->line, $grade->line],
+        ] as [$source, $persisted]) {
+            if ($this->number($source) !== $this->number($persisted)) {
+                return true;
+            }
+        }
+
+        $sourceUpdatedAt = collect([$decision->updated_at, $settlement->updated_at])
+            ->filter()
+            ->max();
+
+        return $sourceUpdatedAt !== null && $sourceUpdatedAt->isAfter($grade->updated_at);
     }
 
     /**
@@ -243,27 +366,34 @@ class NflSignalGradingService
     }
 
     /**
-     * @param  array<string,mixed>  $grade
+     * @param  list<array<string,mixed>>  $grades
      */
-    private function persistGrade(
+    private function persistGrades(
         NflSignalObservation $observation,
-        array $grade,
+        array $grades,
         int &$created,
         int &$updated
     ): void {
-        $record = NflSignalGrade::query()->updateOrCreate(
-            [
-                'nfl_signal_observation_id' => $observation->id,
-                'evaluation_key' => $grade['evaluation_key'],
-            ],
-            $grade
-        );
-
-        if ($record->wasRecentlyCreated) {
-            $created++;
-        } else {
-            $updated++;
+        if ($grades === []) {
+            return;
         }
+        $columns = array_keys(array_merge(...$grades));
+        $defaults = array_fill_keys($columns, null);
+        $rows = [];
+        foreach ($grades as $grade) {
+            $existing = $observation->grades->firstWhere('evaluation_key', $grade['evaluation_key']);
+            $created += (int) ($existing === null);
+            $updated += (int) ($existing !== null);
+            $row = array_replace($defaults, $grade, [
+                'nfl_signal_observation_id' => $observation->id,
+                'metadata' => json_encode($grade['metadata'] ?? [], JSON_THROW_ON_ERROR),
+                'created_at' => $existing?->created_at ?? now(),
+                'updated_at' => now(),
+            ]);
+            $rows[] = $row;
+        }
+        DB::table('nfl_signal_grades')->upsert($rows, ['nfl_signal_observation_id', 'evaluation_key'],
+            array_values(array_diff(array_keys($rows[0]), ['nfl_signal_observation_id', 'evaluation_key', 'created_at'])));
     }
 
     private function evaluationDirection(

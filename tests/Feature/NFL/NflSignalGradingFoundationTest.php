@@ -13,6 +13,7 @@ use App\Services\NFL\NflSignalGradingService;
 use App\Services\NFL\NflSignalObservationMaterializer;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 function createSignalSnapshot(array $overrides = []): PredictionFeatureSnapshot
@@ -118,8 +119,12 @@ function createSignalSnapshot(array $overrides = []): PredictionFeatureSnapshot
     ]);
 }
 
-function createSignalSettlement(PredictionFeatureSnapshot $snapshot, bool $isBet = true): BetSettlement
-{
+function createSignalSettlement(
+    PredictionFeatureSnapshot $snapshot,
+    bool $isBet = true,
+    bool $trackingOnly = false,
+    string $resultStatus = 'win',
+): BetSettlement {
     $decision = BetDecision::query()->create([
         'decision_run_id' => (string) Str::uuid(),
         'model_run_id' => $snapshot->model_run_id,
@@ -135,7 +140,7 @@ function createSignalSettlement(PredictionFeatureSnapshot $snapshot, bool $isBet
         'price' => 100,
         'status' => 'bet',
         'is_public' => false,
-        'is_tracking_only' => ! $isBet,
+        'is_tracking_only' => $trackingOnly || ! $isBet,
         'is_bet' => $isBet,
         'pregame_safe' => true,
         'decided_at' => $snapshot->generated_at,
@@ -145,14 +150,24 @@ function createSignalSettlement(PredictionFeatureSnapshot $snapshot, bool $isBet
 
     return BetSettlement::query()->create([
         'bet_decision_id' => $decision->id,
-        'result_status' => 'win',
+        'result_status' => $resultStatus,
         'result_value' => 7,
-        'profit_units' => $isBet ? 1.0 : 0.0,
+        'profit_units' => $isBet
+            ? match ($resultStatus) {
+                'win' => 1.0,
+                'loss' => -1.0,
+                default => 0.0,
+            }
+            : 0.0,
         'closing_price' => -105,
         'clv' => 0.02,
         'graded_at' => now(),
         'settled_at' => now(),
-        'metadata' => ['shadow_profit_units' => 1.0],
+        'metadata' => ['shadow_profit_units' => match ($resultStatus) {
+            'win' => 1.0,
+            'loss' => -1.0,
+            default => 0.0,
+        }],
     ]);
 }
 
@@ -247,7 +262,11 @@ it('reports settlement metrics and chronological season stability', function () 
         ->and($signal['ats_sample'])->toBe(2)
         ->and($signal['total_sample'])->toBe(2)
         ->and($signal['settlement_sample'])->toBe(2)
+        ->and($signal['settlement_wins'])->toBe(2)
+        ->and($signal['settlement_losses'])->toBe(0)
         ->and($signal['roi'])->toBe(1.0)
+        ->and($signal['actual_settlement_sample'])->toBe(2)
+        ->and($signal['actual_roi'])->toBe(1.0)
         ->and($signal['avg_clv'])->toBe(0.02)
         ->and($signal['window_count'])->toBe(2)
         ->and($signal['winner_accuracy_range'])->toBe(1.0)
@@ -289,6 +308,62 @@ it('keeps unfinished outcomes ungraded and shadow ROI separate from actual ROI',
         ->and($signal['shadow_roi'])->toBe(1.0);
 });
 
+it('reports tracking-only released bets as model W-L and profit without calling them actual wagers', function () {
+    $snapshot = createSignalSnapshot(['season' => 2026]);
+    createSignalSettlement($snapshot, isBet: true, trackingOnly: true);
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+    $observation = NflSignalObservation::query()
+        ->where('prediction_feature_snapshot_id', $snapshot->id)
+        ->where('signal_type', 'reason_code')
+        ->where('signal_key', 'qb_form_home_edge')
+        ->firstOrFail();
+
+    app(NflSignalGradingService::class)->grade($observation);
+
+    $settlementGrade = $observation->grades()
+        ->where('evaluation_source', 'settlement')
+        ->firstOrFail();
+    $signal = app(NflSignalGradeReportService::class)->report([
+        'signal_type' => 'reason_code',
+        'signal_key' => 'qb_form_home_edge',
+    ])['signals'][0];
+
+    expect($settlementGrade->is_actual_bet)->toBeFalse()
+        ->and(data_get($settlementGrade->metadata, 'tracked_bet'))->toBeTrue()
+        ->and(data_get($settlementGrade->metadata, 'actual_bet_placed'))->toBeFalse()
+        ->and($signal['settlement_sample'])->toBe(1)
+        ->and($signal['settlement_wins'])->toBe(1)
+        ->and($signal['settlement_losses'])->toBe(0)
+        ->and($signal['roi'])->toBe(1.0)
+        ->and($signal['actual_settlement_sample'])->toBe(0)
+        ->and($signal['actual_roi'])->toBeNull();
+});
+
+it('includes pushes in tracked and actual ROI denominators', function () {
+    $snapshot = createSignalSnapshot(['season' => 2026]);
+    createSignalSettlement($snapshot, resultStatus: 'push');
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+    $observation = NflSignalObservation::query()
+        ->where('prediction_feature_snapshot_id', $snapshot->id)
+        ->where('signal_type', 'reason_code')
+        ->where('signal_key', 'qb_form_home_edge')
+        ->firstOrFail();
+    app(NflSignalGradingService::class)->grade($observation);
+
+    $signal = app(NflSignalGradeReportService::class)->report([
+        'signal_type' => 'reason_code',
+        'signal_key' => 'qb_form_home_edge',
+    ])['signals'][0];
+
+    expect($signal['settlement_sample'])->toBe(1)
+        ->and($signal['settlement_wins'])->toBe(0)
+        ->and($signal['settlement_losses'])->toBe(0)
+        ->and($signal['settlement_pushes'])->toBe(1)
+        ->and($signal['roi'])->toBe(0.0)
+        ->and($signal['actual_settlement_sample'])->toBe(1)
+        ->and($signal['actual_roi'])->toBe(0.0);
+});
+
 it('runs the materialize grade and JSON report commands', function () {
     $snapshot = createSignalSnapshot();
     createSignalSettlement($snapshot);
@@ -309,4 +384,145 @@ it('runs the materialize grade and JSON report commands', function () {
 
     expect(data_get($report, 'signals.0.signal_key'))->toBe('qb_form_home_edge')
         ->and(data_get($report, 'signals.0.winner_accuracy'))->toBe(1);
+});
+
+it('grades only missing or stale signal work on repeated command runs', function () {
+    $snapshot = createSignalSnapshot();
+    $settlement = createSignalSettlement($snapshot);
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+
+    expect(Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('Graded 6 NFL signal observation(s) from pending work')
+        ->and(NflSignalObservation::query()->withCount('grades')->get()->sum('grades_count'))->toBe(24);
+
+    Carbon::setTestNow(now()->addSecond());
+
+    expect(Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('Graded 0 NFL signal observation(s) from pending work')
+        ->and($output)->toContain('0 refreshed');
+
+    Game::query()->findOrFail($snapshot->game_id)->update(['odds_data' => ['live' => true]]);
+
+    expect(Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]))->toBe(0);
+    expect(Artisan::output())->toContain('Graded 0 NFL signal observation(s) from pending work');
+
+    Carbon::setTestNow(now()->addSecond());
+    $settlement->update(['closing_price' => -110]);
+
+    expect(Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('Graded 6 NFL signal observation(s) from pending work')
+        ->and($output)->toContain('6 refreshed');
+
+    Carbon::setTestNow();
+});
+
+it('regrades finalized signal outcomes only when the stored result changes', function () {
+    $snapshot = createSignalSnapshot();
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    Carbon::setTestNow(now()->addSecond());
+    Game::query()->findOrFail($snapshot->game_id)->update(['home_score' => 28]);
+
+    expect(Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]))->toBe(0);
+    $output = Artisan::output();
+    expect($output)->toContain('Graded 6 NFL signal observation(s) from pending work')
+        ->and($output)->toContain('18 refreshed');
+
+    Carbon::setTestNow();
+});
+
+it('caps signal grading work and leaves the remainder for the next run', function () {
+    config()->set('nfl.signal_grading.max_per_run', 3);
+    $snapshot = createSignalSnapshot();
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+
+    expect(Artisan::call('nfl:grade-signal-observations', [
+        '--season' => 2024,
+        '--batch-size' => 2,
+    ]))->toBe(0);
+
+    $output = Artisan::output();
+    expect($output)->toContain('Graded 3 NFL signal observation(s) from pending work')
+        ->and($output)->toContain('pending work remains for the next run')
+        ->and(NflSignalObservation::query()->withCount('grades')->get()->sum('grades_count'))->toBe(9);
+
+    expect(Artisan::call('nfl:grade-signal-observations', [
+        '--season' => 2024,
+        '--batch-size' => 2,
+    ]))->toBe(0);
+
+    expect(Artisan::output())->toContain('Graded 3 NFL signal observation(s) from pending work')
+        ->and(NflSignalObservation::query()->withCount('grades')->get()->sum('grades_count'))->toBe(18);
+});
+
+it('recovers interrupted outcome sets and detects score corrections within the same second', function () {
+    Carbon::setTestNow('2026-09-16 12:00:00');
+    $snapshot = createSignalSnapshot();
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+
+    $observation = NflSignalObservation::query()->firstOrFail();
+    $observation->grades()->where('evaluation_key', 'outcome:total')->delete();
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 1 NFL signal observation(s)', '1 grade row(s) created')
+        ->and($observation->grades()->count())->toBe(3);
+
+    // The correction and earlier grading deliberately share the same timestamp.
+    Game::query()->findOrFail($snapshot->game_id)->update(['home_score' => 13]);
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 6 NFL signal observation(s)', '18 refreshed')
+        ->and((float) $observation->grades()->where('evaluation_key', 'outcome:winner')->value('actual_value'))->toBe(-7.0);
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 0 NFL signal observation(s)');
+    Carbon::setTestNow();
+});
+
+it('checkpoints observations without applicable outcomes so they cannot starve a bounded queue', function () {
+    $snapshot = createSignalSnapshot();
+    DB::table('prediction_feature_snapshots')->where('id', $snapshot->id)->update(['outputs' => '{}']);
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot->fresh());
+    config()->set('nfl.signal_grading.max_per_run', 3);
+
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 3 NFL signal observation(s)');
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 3 NFL signal observation(s)');
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 0 NFL signal observation(s)')
+        ->and(DB::table('nfl_signal_grading_states')->count())->toBe(6);
+});
+
+it('refreshes corrected settlement results even when their timestamp is unchanged', function () {
+    Carbon::setTestNow('2026-09-16 12:00:00');
+    $snapshot = createSignalSnapshot();
+    $settlement = createSignalSettlement($snapshot);
+    app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    $settlement->update(['result_status' => 'loss', 'profit_units' => -1]);
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 6 NFL signal observation(s)', '6 refreshed')
+        ->and(DB::table('nfl_signal_grades')->where('evaluation_source', 'settlement')->where('result_status', 'loss')->count())->toBe(6);
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024]);
+    expect(Artisan::output())->toContain('Graded 0 NFL signal observation(s)');
+    Carbon::setTestNow();
+});
+
+it('writes all outcome grades in one statement and preloads sources once per batch', function () {
+    foreach (range(1, 4) as $number) {
+        app(NflSignalObservationMaterializer::class)->materialize(createSignalSnapshot());
+    }
+    DB::enableQueryLog();
+    DB::flushQueryLog();
+    Artisan::call('nfl:grade-signal-observations', ['--season' => 2024, '--batch-size' => 100]);
+    $queries = collect(DB::getQueryLog())->pluck('query');
+    DB::disableQueryLog();
+
+    expect($queries->filter(fn (string $sql) => str_starts_with($sql, 'insert into "nfl_signal_grades"'))->count())->toBe(24)
+        ->and($queries->filter(fn (string $sql) => str_starts_with($sql, 'select * from "nfl_games"'))->count())->toBe(1)
+        ->and($queries->filter(fn (string $sql) => str_starts_with($sql, 'select * from "bet_decisions"'))->count())->toBe(1)
+        ->and(DB::table('nfl_signal_grades')->count())->toBe(72);
 });

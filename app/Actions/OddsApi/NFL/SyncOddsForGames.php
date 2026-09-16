@@ -4,6 +4,7 @@ namespace App\Actions\OddsApi\NFL;
 
 use App\Actions\OddsApi\AbstractSyncOddsForGames;
 use App\Models\NFL\Game;
+use App\Services\NFL\Predictions\NflPregameHorizon;
 
 class SyncOddsForGames extends AbstractSyncOddsForGames
 {
@@ -12,6 +13,13 @@ class SyncOddsForGames extends AbstractSyncOddsForGames
     protected const PRESEASON_SPORT_KEY = 'americanfootball_nfl_preseason';
 
     protected const GAME_MODEL_CLASS = Game::class;
+
+    protected function resolveSeasonTypeCandidates(int|string $seasonType): array
+    {
+        return (int) $seasonType === (int) config('nfl.season.types.regular', 2)
+            ? NflPregameHorizon::seasonTypes()
+            : parent::resolveSeasonTypeCandidates($seasonType);
+    }
 
     protected function seasonTypeForOddsSportKey(string $oddsSportKey): ?int
     {

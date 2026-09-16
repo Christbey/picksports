@@ -342,6 +342,22 @@ php artisan nfl:grade-signal-observations --season=2026
 php artisan nfl:report-signal-grades --from-season=2021 --to-season=2026
 ```
 
+NFL signal grading is incremental and bounded. The scheduled command selects
+only finalized observations with missing outcome grades, an NFL result change,
+or a new/changed settlement. Updating live odds on `nfl_games` does not make a
+historical grade stale. Defaults are 250 rows per database batch and 1,000
+observations per run; the hard ceiling is 5,000. Use `--refresh` only for an
+intentional, bounded rebuild, for example:
+
+```bash
+php artisan nfl:grade-signal-observations --season=2026 --limit=1000 --batch-size=250
+php artisan nfl:grade-signal-observations --season=2026 --refresh --limit=1000
+```
+
+If the command reports pending work remains, let the next scheduled run drain
+it or repeat the same bounded command. Do not use an unbounded full-season
+refresh in Laravel Cloud.
+
 A tracking bet requires that promotion was already active at decision time, the
 feature snapshot was pregame safe, the quote existed at decision time, and edge
 met the configured threshold. Historical promotion cannot create a
@@ -351,6 +367,121 @@ Decisions are never public. Settlements retain actual profit, counterfactual
 shadow profit, closing-line value, calibration error, and no-bet reasons. NBA
 and NFL decision and settlement jobs run after their scheduled prediction and
 grading stages.
+
+### NFL production rollout
+
+The confirmed Week 1 Laravel Cloud configuration incident and the exact Week 1
+repair, Week 2 activation, verification, and rollback sequence are maintained in
+the [NFL canonical production incident runbook](operations/nfl-production-incident-runbook.md).
+
+NFL canonical generation is deliberately opt-in. Set these Laravel Cloud
+environment values while keeping canonical reads on the legacy path:
+
+```dotenv
+PREDICTION_LIFECYCLE_NFL_CANONICAL_PIPELINE=true
+PREDICTION_LIFECYCLE_NFL_CANONICAL_READS=false
+NFL_TRUE_EPA_ENABLED=true
+NFL_TRUE_EPA_BACKFILL_BEFORE_GENERATION=true
+NFL_PREGAME_MARKET_MAXIMUM_QUOTE_AGE_MINUTES=60
+NFL_PREGAME_MAXIMUM_PREDICTION_AGE_MINUTES=360
+NFL_RESEARCH_PIPELINE_ENABLED=true
+```
+
+Deploy the additive migrations, clear cached configuration, and perform the
+pregame production pass:
+
+```bash
+php artisan migrate --force
+php artisan config:clear
+php artisan nfl:register-calculation-release --release-version=1.1.0 --replace-active --effective-at=<timestamp-before-kickoff>
+php artisan nfl:sync-odds --days=8
+php artisan nfl:research-pipeline --days-forward=7 --limit=8 --ingest-only
+php artisan nfl:research-pipeline --days-forward=7 --no-ingest --limit=4
+php artisan nfl:run-pregame-pipeline --season=2026 --days-forward=8
+php artisan nfl:report-canonical-cutover-readiness --season=2026 --fail-on-not-ready
+```
+
+Regular-season and postseason NFL games are included; preseason is excluded.
+Keep `PREDICTION_LIFECYCLE_NFL_CANONICAL_READS=false`: data readiness proves
+operational coverage, not that the separate canonical model improves the richer
+legacy model. Promote reads only after explicit model comparison and API review.
+Never backdate a calculation release or create a canonical prediction
+for a game that has already kicked off.
+
+Canonical NFL input snapshots freeze the selected pregame quotes and canonical
+evaluation grades ATS/total comparisons from those immutable inputs. Mutable
+`nfl_games.odds_data` is only the current market container and must not be used
+to reconstruct a historical line. A canonical NFL market input is available
+only when the provider `last_update` timestamp is within
+`NFL_PREGAME_MARKET_MAXIMUM_QUOTE_AGE_MINUTES` and the same captured market has
+complete, priced home/away spread and over/under total pairs. That provider
+timestamp is persisted in each quote's metadata and is preferred for freshness;
+when the feed omits it, the persisted ingestion `captured_at` is the
+authoritative conservative observation proxy. The readiness report applies the
+same freshness and pair-coverage contract to every upcoming
+regular-season or postseason slate game as of that immutable canonical snapshot's capture
+time; a valid frozen input does not become invalid merely because wall-clock
+time later exceeds the quote-age window. Separately, readiness rejects legacy
+or canonical forecasts older than the configured six-hour forecast limit.
+Successful fresh fetches of unchanged NFL markets periodically create a new
+immutable observation without replacing the older entry record.
+
+The legacy NFL prediction remains the current deterministic pro-signal
+authority during cutover. The true-EPA blend is applied by this legacy
+prediction/recommendation layer; the canonical forecast calculator does not
+currently apply true EPA to its projected score, spread, total, or win
+probability. Canonical predictions provide immutable forecast and grading
+lineage, while legacy predictions provide the true-EPA and recommendation
+disposition used to decide whether a tracking selection may be released.
+Readiness therefore requires every slate game to have either `true_epa.applied`
+or an explicit `analysis_layer.eligibility.status=hold` with
+`missing_true_epa` so missing data is never silent. A hold is auditable but is
+never recommendation-eligible: it blocks final cutover readiness, and
+`nfl:generate-predictions` exits nonzero after reporting the held game IDs so
+production cannot silently treat the slate as complete.
+
+The ordered production chain refreshes eight days of odds, generates legacy
+forecasts and dispositions, then records canonical forecasts and checks readiness.
+It runs at 10:20, 12:20, 16:20, and 20:20, plus hourly at :20 from 06:00–23:00
+when a kickoff is within 24 hours. The standalone NFL odds job is removed to
+avoid duplicate calls. Weather refreshes at 06:05, 10:05, 14:05, 18:05, and 22:05.
+Stages stay in the scheduler process. An explicit legacy hold does not suppress
+canonical observations for other games, but the overall pipeline still fails.
+The independent 10:50 sentinel remains enabled even when canonical writes are
+disabled and shares the pipeline overlap mutex. Signal grading runs hourly at
+:35 with a 1,000-observation limit and 250-row batches.
+
+Every generated legacy forecast also records a disposition for each market
+without an official candidate: `model_no_bet` when a real pregame market and
+feature snapshot are available, otherwise `model_hold` with evidence gaps.
+Both have `is_bet=false`. Complete no-bet observations receive counterfactual
+W-L after final scores; held observations are excluded from settlement.
+Dispositions are immutable per feature snapshot and quote, and later official
+release preserves the earlier pass or hold history.
+
+Immediately after generation, an eligible
+`official_candidate` with an exact, already-observed pregame quote creates at
+most one private tracking decision per prediction and market. AI availability
+is not a prerequisite. The quote must still be within the configured maximum
+age and have a same-book, two-sided counterpart for the selected market. These
+decisions set `is_bet=true` for W-L and
+model-profit tracking but retain `is_tracking_only=true`, `is_public=false`,
+and `explanation.execution_status=not_recorded`; they are not evidence that a
+sportsbook wager was executed. Settlement metadata reports those concepts
+separately as `tracked_bet` and `actual_bet_placed`. NFL signal reports show
+tracked model selections as W-L-P plus model ROI, even when no wager was
+executed; `actual_settlement_sample` and `actual_roi` remain separate JSON
+fields and only include non-tracking wagers.
+
+After scores are final, let the scheduler settle and grade incrementally or run
+the bounded sequence manually:
+
+```bash
+php artisan sports:settle-bet-decisions --sport=nfl
+php artisan nfl:materialize-signal-observations --season=2026
+php artisan nfl:grade-signal-observations --season=2026 --limit=1000 --batch-size=250
+php artisan nfl:report-signal-grades --season=2026 --json
+```
 
 ## Current Research Result
 

@@ -8,9 +8,9 @@ class NflCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 {
     public const CALCULATOR_NAME = 'nfl-pregame-rules';
 
-    public const INPUT_SCHEMA_VERSION = 'nfl-pregame-v1';
+    public const INPUT_SCHEMA_VERSION = 'nfl-pregame-v2';
 
-    public const SEMANTIC_VERSION = '1.0.0';
+    public const SEMANTIC_VERSION = '1.1.0';
 
     public function sport(): string
     {

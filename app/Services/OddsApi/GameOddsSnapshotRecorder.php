@@ -31,7 +31,17 @@ class GameOddsSnapshotRecorder
             ->first();
 
         if ($latestSnapshot && (string) $latestSnapshot->payload_hash === $payloadHash) {
-            return null;
+            // A fresh successful fetch can confirm an unchanged market. Keep
+            // that observation immutable instead of letting deduplication make
+            // NFL quotes permanently stale after their first capture.
+            $refreshAfterMinutes = max(1, (int) floor(
+                (int) config('nfl.predictions.pregame_market.maximum_quote_age_minutes', 60) / 2,
+            ));
+            if ($sport !== 'nfl'
+                || $latestSnapshot->captured_at === null
+                || $latestSnapshot->captured_at->gt($capturedAt->copy()->subMinutes($refreshAfterMinutes))) {
+                return null;
+            }
         }
 
         $snapshot = GameOddsSnapshot::query()->create([

@@ -134,6 +134,7 @@ class ResearchPipeline
                 'probability' => $this->bucket($candidate['win_probability'] ?? null, (float) config('nfl_research.material_revision.probability_increment', 0.01)),
             ],
             'true_epa' => Arr::only((array) data_get($metadata, 'true_epa', []), ['enabled', 'applied', 'reason', 'source']),
+            'quarterbacks' => collect(['home', 'away'])->mapWithKeys(fn ($side) => [$side => Arr::only((array) data_get($metadata, 'qb_form.'.$side, []), ['qb_id', 'qb_name', 'reason', 'replaced_unavailable_qb_ids'])])->all(),
             'analysis' => [
                 'classification' => data_get($metadata, 'analysis_layer.bet_classification'),
                 'raw_classification' => data_get($metadata, 'analysis_layer.raw_bet_classification'),

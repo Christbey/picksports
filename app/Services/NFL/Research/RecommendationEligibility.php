@@ -22,6 +22,9 @@ class RecommendationEligibility
         if (data_get($metadata, 'qb_form.reason') === 'insufficient_prior_attempts') {
             $holds[] = 'missing_quarterback_history';
         }
+        if (data_get($metadata, 'qb_form.enabled') === true && data_get($metadata, 'qb_form.reason') === 'missing_game_qb_identity') {
+            $holds[] = 'missing_quarterback_identity';
+        }
 
         return [
             'eligible' => $holds === [] && $modelReasons === [],

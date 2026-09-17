@@ -19,6 +19,7 @@ use App\Services\NFL\NflFullHistoricalShadowInferenceService;
 use App\Services\NFL\NflMlFeatureVectorBuilder;
 use App\Services\NFL\NflProSignalLayer;
 use App\Services\NFL\PlayerPositionGradeService;
+use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use App\Services\Sports\DepthChartImpactService;
@@ -4006,6 +4007,9 @@ class GeneratePredictionFromHistoricalElo
     protected function projectedQbContextFromDepthChart(Game $game, int $teamId): ?array
     {
         $asOf = $this->gameKickoffAt($game) ?? Carbon::parse($game->game_date)->startOfDay();
+        $asOf = $asOf->gt(now()) ? now() : $asOf;
+        $availability = app(QuarterbackAvailability::class);
+        $unavailable = $availability->forGame($game, $teamId);
         $historicalProfile = (string) config('nfl.predictions.historical_profile', 'configured');
         $historicalReconstruction = (string) $game->status === 'STATUS_FINAL'
             && $historicalProfile !== 'configured';
@@ -4021,28 +4025,37 @@ class GeneratePredictionFromHistoricalElo
             ->latest('observed_at')
             ->latest('id')
             ->first();
-        $entry = $snapshot?->entries
+        $candidates = $snapshot?->entries
             ->filter(fn ($candidate): bool => strtoupper((string) (
                 $candidate->position_code ?: $candidate->position_slot_key
             )) === 'QB')
-            ->sortByDesc('is_starter')
-            ->sortBy('depth_rank')
-            ->sortBy('slot_order')
-            ->first();
+            ->sortBy([['depth_rank', 'asc'], ['slot_order', 'asc']]);
 
-        if (! $entry) {
-            $entry = DepthChartEntry::query()
+        if ($candidates === null || $candidates->isEmpty()) {
+            $candidates = DepthChartEntry::query()
                 ->with('player')
                 ->where('team_id', $teamId)
                 ->where('season', (int) $game->season)
                 ->where('position_code', 'QB')
-                ->where('is_starter', true)
                 ->when($historicalReconstruction, fn ($query) => $query
                     ->whereNotNull('source_updated_at')
                     ->where('source_updated_at', '<=', $asOf))
+                ->where(fn ($query) => $query->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $asOf))
                 ->orderBy('depth_rank')
                 ->orderBy('slot_order')
-                ->first();
+                ->get();
+        }
+
+        $excluded = $candidates->filter(fn ($candidate) => $availability->excludes($unavailable, $candidate->player_id, $candidate->player?->full_name));
+        $entry = $candidates->first(fn ($candidate) => ! $availability->excludes($unavailable, $candidate->player_id, $candidate->player?->full_name));
+        if (! $entry && $excluded->isNotEmpty()) {
+            return ['qb_id' => null, 'reason' => 'no_available_depth_chart_qb', 'availability_exclusions' => $unavailable];
+        }
+        if ($entry && $excluded->isNotEmpty() && (! is_numeric($entry->depth_rank)
+            || $candidates->filter(fn ($candidate) => $candidate->depth_rank === $entry->depth_rank
+                && ! $availability->excludes($unavailable, $candidate->player_id, $candidate->player?->full_name))
+                ->pluck('player_id')->unique()->count() > 1)) {
+            return ['qb_id' => null, 'reason' => 'ambiguous_available_depth_chart_qb', 'availability_exclusions' => $unavailable];
         }
 
         if (! $entry || ! $entry->player_id) {
@@ -4060,6 +4073,8 @@ class GeneratePredictionFromHistoricalElo
             'experience_bucket' => $this->qbExperienceBucket($experience, (int) $prior['games']),
             'game_attempts' => 0,
             'projected_from_depth_chart' => true,
+            'availability_exclusions' => $unavailable,
+            'replaced_unavailable_qb_ids' => $excluded->filter(fn ($candidate) => $candidate->depth_rank <= $entry->depth_rank)->pluck('player_id')->unique()->values()->all(),
             'depth_chart_snapshot_uuid' => $snapshot?->snapshot_uuid,
             'depth_chart_name' => $entry->depth_chart_name,
             'depth_chart_updated_at' => $entry->source_updated_at?->toDateTimeString(),
@@ -4098,6 +4113,12 @@ class GeneratePredictionFromHistoricalElo
 
         if (! $qbStat) {
             return $this->projectedQbContextFromNflversePriorGames($game, $teamId);
+        }
+
+        $availability = app(QuarterbackAvailability::class);
+        $unavailable = $availability->forGame($game, $teamId);
+        if ($availability->excludes($unavailable, $qbStat->player_id, $qbStat->player?->full_name)) {
+            return ['qb_id' => null, 'reason' => 'prior_game_qb_unavailable', 'availability_exclusions' => $unavailable];
         }
 
         $prior = $this->priorQbStats((int) $qbStat->player_id, $teamId, $game);
@@ -4166,7 +4187,7 @@ class GeneratePredictionFromHistoricalElo
         }
 
         $gameDate = $this->asDate($game->game_date);
-        $entry = DB::table('nflverse_depth_charts')
+        $entries = DB::table('nflverse_depth_charts')
             ->where('season', (int) $game->season)
             ->where(function ($query) use ($game): void {
                 $query->whereNull('week')
@@ -4183,13 +4204,32 @@ class GeneratePredictionFromHistoricalElo
                     return;
                 }
 
+                $asOf = $asOf->gt(now()) ? now() : $asOf;
                 $query->whereNull('source_updated_at')
                     ->orWhere('source_updated_at', '<=', $asOf->toDateTimeString());
             })
             ->orderByDesc('source_updated_at')
             ->orderByDesc('week')
             ->orderBy('depth_rank')
-            ->first();
+            ->get()->unique('gsis_id');
+
+        if ($entries->whereNotNull('week')->isNotEmpty()) {
+            $entries = $entries->where('week', $entries->max('week'));
+        }
+        $entries = $entries->sortBy('depth_rank');
+
+        $availability = app(QuarterbackAvailability::class);
+        $unavailable = $availability->forGame($game, $teamId);
+        $excluded = $entries->filter(fn ($row) => $availability->excludes($unavailable, null, $row->full_name));
+        $entry = $entries->first(fn ($row) => ! $availability->excludes($unavailable, null, $row->full_name));
+        if (! $entry && $entries->isNotEmpty()) {
+            return ['qb_id' => null, 'reason' => 'no_available_depth_chart_qb', 'availability_exclusions' => $unavailable];
+        }
+        if ($entry && $excluded->isNotEmpty() && (! is_numeric($entry->depth_rank)
+            || $entries->filter(fn ($row) => $row->depth_rank === $entry->depth_rank
+                && ! $availability->excludes($unavailable, null, $row->full_name))->count() > 1)) {
+            return ['qb_id' => null, 'reason' => 'ambiguous_available_depth_chart_qb', 'availability_exclusions' => $unavailable];
+        }
 
         if (! $entry || ! $entry->gsis_id) {
             return null;
@@ -4203,6 +4243,7 @@ class GeneratePredictionFromHistoricalElo
                 'qb_name' => $entry->full_name,
                 'game_attempts' => 0,
                 'projected_from_nflverse_depth_chart' => true,
+                'availability_exclusions' => $unavailable,
                 'depth_chart_name' => $entry->formation ?? $entry->depth_team,
                 'depth_chart_updated_at' => $entry->source_updated_at,
                 'depth_rank' => $entry->depth_rank !== null ? (int) $entry->depth_rank : null,
@@ -4240,6 +4281,12 @@ class GeneratePredictionFromHistoricalElo
 
         if (! $row || ! $row->player_id) {
             return null;
+        }
+
+        $availability = app(QuarterbackAvailability::class);
+        $unavailable = $availability->forGame($game, $teamId);
+        if ($availability->excludes($unavailable, null, $row->player_display_name ?? $row->player_name ?? null)) {
+            return ['qb_id' => null, 'reason' => 'prior_game_qb_unavailable', 'availability_exclusions' => $unavailable];
         }
 
         return $this->nflverseQbContextFromWeeklyRow($row, $game, $team, [

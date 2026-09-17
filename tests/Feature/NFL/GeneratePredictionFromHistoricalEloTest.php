@@ -1004,7 +1004,7 @@ it('uses synced nfl depth chart starter as upcoming qb identity', function () {
             'depth_rank' => 1,
             'slot_order' => 1,
             'is_starter' => true,
-            'source_updated_at' => now(),
+            'source_updated_at' => Carbon::parse($game->game_date)->subDay(),
         ]);
     }
 

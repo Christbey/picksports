@@ -111,6 +111,31 @@ To stop new pipeline runs, set `NFL_RESEARCH_PIPELINE_ENABLED=false`; preserved 
 The production `nflverse_pbp_plays` table was empty. Imported 48,771 plays from the official [2025 nflverse play-by-play release](https://github.com/nflverse/nflverse-data/releases/tag/pbp), including 48,201 EPA values; all imported plays linked to existing games. All five audited games then applied the configured historical EPA fallback. Model version `career-regular-v2` also excludes postseason from this regular-season EPA profile. Refreshed 775 ESPN player records across the ten teams, repairing missing identities and stale team assignments. Original predictions are preserved; research must be rerun to capture these corrected inputs.
 # Research uncertainty policy (September 16, 2026)
 
+## Injury-aware quarterback selection
+
+QB identity selection now reads the latest injury snapshot known at the earlier
+of prediction time and kickoff, before choosing from the ranked depth chart.
+Confirmed Out/Inactive/reserve/suspension statuses exclude that player; practice
+participation, Questionable, Doubtful and Probable do not automatically replace
+the starter. Injury and expected-return dates are scoped to the business-date
+game; stale short-term designations do not persist indefinitely. Reserve status
+can persist until superseded by a newer snapshot or verified availability fact.
+
+The selected backup uses his own prior passing history and existing model
+weights. Metadata preserves injury evidence, snapshot identifiers, and excluded
+QB identities. The NFLverse depth and prior-game fallback paths also reject
+known unavailable quarterbacks. If no ranked replacement is available, or
+replacement ranks are ambiguous, QB identity remains missing and recommendation
+eligibility holds. Insufficient backup history remains a separate hold. Final
+game statistics are not rewritten, and injury evidence observed after kickoff
+is excluded from historical pregame selection.
+
+QB identity is included in research invalidation, independent of rounded margin
+and probability changes. After an injury-driven change, run the existing ordered
+pregame generation command and research pipeline; do not manually replace player
+names in prediction rows or clear a report's conflict flag. Regression coverage:
+`tests/Feature/NFL/QuarterbackAvailabilityTest.php`.
+
 The research packet includes fresh same-book paired spread, total, and moneyline
 quotes. Stale, future-dated, malformed, unpaired, or mismatched total prices are
 not sent as usable prices. Secondary web prices never replace these inputs.

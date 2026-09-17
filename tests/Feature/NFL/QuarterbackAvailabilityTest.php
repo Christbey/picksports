@@ -201,3 +201,15 @@ it('honors a newer verified clearance without letting older research override th
     $game->setAttribute('research_availability', [$fact]);
     expect(projectedQb($game)['qb_id'])->toBe($starter->id);
 });
+
+it('uses current-week nflverse injuries without crossing season types', function () {
+    [$game, $starter, $backup] = qbAvailabilityFixture();
+    DB::table('nflverse_injuries')->insert(['nflverse_injury_key' => hash('sha256', 'injury'), 'season' => 2026,
+        'week' => 2, 'season_type' => 'PRE', 'team' => 'SEA', 'position' => 'QB', 'full_name' => $starter->full_name,
+        'report_status' => 'Out', 'source_updated_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+    expect(projectedQb($game)['qb_id'])->toBe($starter->id);
+    DB::table('nflverse_injuries')->update(['season_type' => 'REG']);
+    expect(projectedQb($game)['qb_id'])->toBe($backup->id);
+    DB::table('nflverse_injuries')->update(['source_updated_at' => now()->subDays(10)]);
+    expect(projectedQb($game)['qb_id'])->toBe($starter->id);
+});

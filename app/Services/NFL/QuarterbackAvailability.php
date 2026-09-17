@@ -54,10 +54,21 @@ class QuarterbackAvailability
 
         // Same-week secondary evidence also protects nflverse-only QB identities.
         $team = strtoupper((string) ($teamId === (int) $game->home_team_id ? $game->homeTeam?->abbreviation : $game->awayTeam?->abbreviation));
+        $seasonTypes = match (strtolower((string) $game->season_type)) {
+            '1', 'pre', 'preseason' => ['PRE', 'preseason', '1'],
+            '2', 'reg', 'regular', 'regular_season' => ['REG', 'regular', 'regular_season', '2'],
+            '3', 'post', 'postseason' => ['POST', 'postseason', '3'],
+            default => [(string) $game->season_type],
+        };
         foreach (DB::table('nflverse_injuries')->where('season', $game->season)->where('week', $game->week)
+            ->whereIn('season_type', $seasonTypes)
             ->whereIn('team', in_array($team, ['WAS', 'WSH'], true) ? ['WAS', 'WSH'] : [$team])->where('position', 'QB')
             ->whereNotNull('source_updated_at')->where('source_updated_at', '<=', $cutoff)
             ->where('updated_at', '<=', $cutoff)->get() as $row) {
+            if (! $this->reserveStatus((string) $row->report_status)
+                && Carbon::parse($row->source_updated_at)->lt($cutoff->copy()->subDays(7))) {
+                continue;
+            }
             $records[] = ['player_id' => null, 'player_name' => $row->full_name, 'status' => $row->report_status,
                 'source' => 'nflverse_injuries', 'snapshot_uuid' => null,
                 'published_at' => Carbon::parse($row->source_updated_at)->toIso8601String()];

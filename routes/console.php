@@ -1154,7 +1154,9 @@ $scheduleDailySeasonJob(
 );
 $nflSignalGradingCommand = "nfl:grade-signal-observations --season={$fallSeasonYear} --limit=1000 --batch-size=250";
 $nflSignalGradingEvent = Schedule::command($nflSignalGradingCommand)
-    ->hourlyAt(35)
+    // A Sunday slate can produce over 27,000 observations. Keep batches small
+    // without stretching a normal slate into more than a day of grading lag.
+    ->cron('5,20,35,50 * * * *')
     ->when($nflInSeason)
     ->name('NFL: Grade Signal Observations')
     ->onOneServer()

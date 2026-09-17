@@ -448,8 +448,10 @@ avoid duplicate calls. Weather refreshes at 06:05, 10:05, 14:05, 18:05, and 22:0
 Stages stay in the scheduler process. An explicit legacy hold does not suppress
 canonical observations for other games, but the overall pipeline still fails.
 The independent 10:50 sentinel remains enabled even when canonical writes are
-disabled and shares the pipeline overlap mutex. Signal grading runs hourly at
-:35 with a 1,000-observation limit and 250-row batches.
+disabled and shares the pipeline overlap mutex. Signal grading runs at
+:05/:20/:35/:50 with a 1,000-observation limit and 250-row batches. This provides
+4,000 observations/hour of scheduled capacity instead of allowing a roughly
+27,000-observation Sunday slate to require over a day to drain.
 
 Every generated legacy forecast also records a disposition for each market
 without an official candidate: `model_no_bet` when a real pregame market and

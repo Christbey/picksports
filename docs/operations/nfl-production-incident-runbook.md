@@ -177,7 +177,7 @@ cloud command:run production --cmd="php artisan schedule:list"
   horizon and regular-season plus postseason eligibility
 - `NFL: Canonical Cutover Readiness Sentinel` at 10:50
 - Weather at 06:05, 10:05, 14:05, 18:05 and 22:05
-- Signal grading hourly at :35, limited to 1,000 observations in 250-row batches
+- Signal grading at :05/:20/:35/:50, limited to 1,000 observations in 250-row batches
 - bounded research grading at minute 55 with `--grade-limit=250` and
   `--grade-batch-size=50`
 

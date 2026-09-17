@@ -62,6 +62,20 @@ it('prunes expired redis tag references daily', function () {
         ->and($event?->runInBackground)->toBeFalse();
 });
 
+it('drains nfl signal grading in bounded quarter-hour batches', function () {
+    $event = collect(app(Schedule::class)->events())->first(
+        fn ($event): bool => $event->description === 'NFL: Grade Signal Observations'
+    );
+
+    expect($event)->not->toBeNull()
+        ->and((string) $event?->command)->toContain('nfl:grade-signal-observations', '--limit=1000', '--batch-size=250')
+        ->and($event?->expression)->toBe('5,20,35,50 * * * *')
+        ->and($event?->onOneServer)->toBeTrue()
+        ->and($event?->withoutOverlapping)->toBeTrue()
+        ->and($event?->expiresAt)->toBe(30)
+        ->and($event?->runInBackground)->toBeFalse();
+});
+
 it('runs odds refreshes in the foreground with bounded overlap locks', function () {
     $events = collect(app(Schedule::class)->events())
         ->filter(fn ($event): bool => str_ends_with((string) $event->description, 'Sync Odds'))

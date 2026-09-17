@@ -82,7 +82,7 @@ class GameDateTimePresenter
 
     private static function displayTimezoneForSport(string $sport): ?string
     {
-        if (! in_array($sport, ['cfb', 'wnba'], true)) {
+        if (! in_array($sport, ['nfl', 'cfb', 'wnba'], true)) {
             return null;
         }
 

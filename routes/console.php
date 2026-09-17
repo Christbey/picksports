@@ -1087,6 +1087,16 @@ $scheduleWeeklySeasonJob(
     $nflDepthChartSeason,
     'NFL: Sync Depth Charts'
 );
+$nflPregameMetadataCommand = "espn:sync-nfl-pregame-metadata --season={$fallSeasonYear} --days-forward=8 --limit=32";
+$nflPregameMetadataEvent = Schedule::command($nflPregameMetadataCommand)
+    ->cron('55 5,9,13,17,21 * * *')
+    ->when($nflInSeason)
+    ->name('NFL: Sync Pregame Metadata')
+    ->onOneServer()
+    ->withoutOverlapping(30)
+    ->runInBackground();
+$attachCommandHeartbeat($nflPregameMetadataEvent, $nflPregameMetadataCommand, 'NFL: Sync Pregame Metadata');
+
 $nflWeatherCommand = "nfl:sync-game-weather --season={$fallSeasonYear} --days-back=0 --days-forward=8 --force";
 $nflWeatherEvent = Schedule::command($nflWeatherCommand)
     ->cron('5 6,10,14,18,22 * * *')

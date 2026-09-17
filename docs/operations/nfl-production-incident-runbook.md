@@ -128,7 +128,7 @@ activation.
 Refresh production inputs and generate in the same order used by the scheduler:
 
 ```bash
-cloud command:run production --cmd="php artisan espn:sync-nfl-game-details --lookback-days=0 --days-forward=8 --limit=32 --sync"
+cloud command:run production --cmd="php artisan espn:sync-nfl-pregame-metadata --season=2026 --days-forward=8 --limit=32"
 cloud command:run production --cmd="php artisan nfl:sync-game-weather --season=2026 --days-back=0 --days-forward=8 --force"
 cloud command:run production --cmd="php artisan nfl:research-pipeline --days-forward=7 --limit=8 --ingest-only"
 cloud command:run production --cmd="php artisan nfl:research-pipeline --days-forward=7 --no-ingest --limit=4"

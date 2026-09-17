@@ -396,6 +396,33 @@ it('marks high raw prediction confidence as watch when sample context is missing
         ->assertJsonPath('data.confidence_context.reason_codes.0', 'sample_context_missing');
 });
 
+it('presents nfl Thursday kickoff consistently in prediction game and available-date contracts', function () {
+    v2PredictionContractActingAsBypassUser();
+    config()->set('trends.timezones.nfl.display', 'America/New_York');
+    [$game, $prediction] = v2PredictionContractCreateGamePrediction(
+        NflTeam::class,
+        NflGame::class,
+        NflPrediction::class,
+        [
+            'season' => 2026,
+            'week' => 2,
+            'game_date' => '2026-09-18 00:00:00',
+            'game_time' => '00:15:00',
+            'status' => 'STATUS_SCHEDULED',
+        ],
+    );
+    foreach (["/api/v2/sports/nfl/predictions/{$prediction->id}", "/api/v2/sports/nfl/games/{$game->id}/prediction"] as $url) {
+        $this->getJson($url)->assertOk()
+            ->assertJsonPath('data.game.game_date', '2026-09-17')
+            ->assertJsonPath('data.game.game_time', '20:15:00');
+    }
+    $this->getJson("/api/v2/sports/nfl/games/{$game->id}")->assertOk()
+        ->assertJsonPath('data.game_date', '2026-09-17')
+        ->assertJsonPath('data.game_time', '20:15:00');
+    $this->getJson('/api/v2/sports/nfl/predictions/available-dates?season=2026')->assertOk()
+        ->assertJsonPath('data.0', '2026-09-17');
+});
+
 it('presents cfb v2 prediction game dates in eastern football time', function () {
     v2PredictionContractActingAsBypassUser();
 

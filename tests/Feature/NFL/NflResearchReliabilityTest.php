@@ -13,7 +13,9 @@ use App\Services\NFL\OpenAiNflGameContextResearchClient;
 use App\Services\NFL\Research\EvidencePacket;
 use App\Services\NFL\Research\OfficialSourceIngestor;
 use App\Services\NFL\Research\ResearchPipeline;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 
 uses()->group('nfl', 'research');
 
@@ -167,4 +169,19 @@ it('keeps the exact confirmed roster across the season and content reversions wi
         ->and($packet['availability'][0]['player_id'])->toBe($player->id)
         ->and($packet['availability'][0]['status'])->toBe('Out');
     $this->assertDatabaseCount('nfl_research_documents', 2);
+});
+
+it('passes the configured research timeout without retrying potentially paid timed-out requests', function () {
+    config(['ai.providers.openai.key' => 'test-key', 'ai.features.nfl_game_context_research.timeout_seconds' => 120]);
+    $attempts = 0;
+    Http::fake(function ($request, array $options) use (&$attempts) {
+        $attempts++;
+        expect($options['timeout'])->toBe(120);
+
+        throw new ConnectionException('Research request timed out.');
+    });
+
+    expect(fn () => app(OpenAiNflGameContextResearchClient::class)->research('Sourced game context', 'gpt-5.6-luna'))
+        ->toThrow(ConnectionException::class);
+    expect($attempts)->toBe(1);
 });

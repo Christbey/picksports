@@ -68,7 +68,7 @@ class OpenAiNflGameContextResearchClient
             ->withToken($apiKey)
             ->acceptJson()
             ->asJson()
-            ->timeout(max(1, (int) config('ai.features.nfl_game_context_research.timeout_seconds', 60)))
+            ->timeout(max(1, (int) config('ai.features.nfl_game_context_research.timeout_seconds', 120)))
             ->post('responses', $payload);
 
         if ($response->failed()) {

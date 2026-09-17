@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources;
 
+use App\Models\NFL\Game as NflGame;
+use App\Services\BettingRecommendations\NflPropGameTime;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -76,6 +78,7 @@ class BettingRecommendationResource extends JsonResource
                 'away_team' => $game->awayTeam?->name,
                 'date' => $game->game_date,
                 'time' => $game->game_time,
+                ...($game instanceof NflGame ? app(NflPropGameTime::class)->forGame($game) : []),
             ],
             'bookmaker' => $prop->bookmaker,
         ];

@@ -2,6 +2,12 @@
 
 The pipeline gathers official evidence, researches both sides of a model candidate, captures revised game and player-prop forecasts, and evaluates the preserved variants. It does not place bets. New narrative-derived point adjustments are not calibrated or automatically invented.
 
+## Player-prop kickoff display
+
+NFL game dates and times are stored as UTC components. The player-prop board must combine them before converting to `sports.business_timezone` (production: `America/Chicago`). `NflPropGameTime` supplies explicit UTC `starts_at`, local `date`, and DST-aware kickoff labels to both matchup options and recommendation cards. The Vue shell renders those labels without reinterpreting a bare clock time in the browser timezone.
+
+Date options, default slate selection, matchup filters, recommendation filters, market filters, and diagnostics use the business date. For example, `2026-09-18 00:15:00 UTC` belongs to Thursday, September 17 at **7:15 PM CDT**, not Friday at 12:15 AM. Winter games use CST automatically. The legacy `time` field remains raw UTC for compatibility; display consumers should use the explicit labels or timezone-qualified `starts_at`. Missing kickoff times display `Time TBD`.
+
 ## Operation
 
 `NFL_RESEARCH_PIPELINE_ENABLED` defaults to true. The configuration lists the official domains for all 32 teams; only teams with scheduled games in the selected date window are polled. The original five-game audit directly verified ten news feeds. Source health is checked at runtime for every configured team, rather than assuming the common feed path works everywhere.

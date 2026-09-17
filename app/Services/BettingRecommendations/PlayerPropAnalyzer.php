@@ -9,6 +9,7 @@ use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Team;
 use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\OddsApi\OddsApiService;
+use App\Services\Sports\SportsDateWindowService;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -2410,6 +2411,12 @@ class PlayerPropAnalyzer
      */
     protected function wherePropGameDate(Builder $query, string $date): Builder
     {
+        if ($query->getModel() instanceof \App\Models\NFL\Game) {
+            $dates = app(SportsDateWindowService::class);
+
+            return $dates->applyGameDateWindow($query, $dates->forDate($date));
+        }
+
         return $query->getModel() instanceof Game
             ? CfbPropEligibility::onDate($query, $date)
             : $query->whereDate('game_date', $date);
@@ -2419,6 +2426,15 @@ class PlayerPropAnalyzer
     {
         $sportConfig = $this->getSportConfig($sport);
         $gameModel = $sportConfig['game_model'];
+
+        if ($sport === 'NFL') {
+            $times = app(NflPropGameTime::class);
+
+            return $gameModel::whereHas('playerProps')->get(['id', 'game_date', 'game_time'])
+                ->map(fn ($game) => $times->forGame($game)['date'])
+                ->filter()->unique()->sort()->values()
+                ->map(fn ($date) => ['value' => $date, 'label' => Carbon::parse($date)->format('l, F j, Y')]);
+        }
 
         if ($sport === 'CFB') {
             return $gameModel::whereHas('playerProps')->get()
@@ -2462,6 +2478,21 @@ class PlayerPropAnalyzer
             ->orderBy('game_time')
             ->get()
             ->map(function ($game) {
+                if ($game instanceof \App\Models\NFL\Game) {
+                    $schedule = app(NflPropGameTime::class)->forGame($game);
+
+                    return [
+                        'id' => $game->id,
+                        'label' => sprintf('%s @ %s - %s',
+                            $game->awayTeam->abbreviation ?? $game->awayTeam->name,
+                            $game->homeTeam->abbreviation ?? $game->homeTeam->name,
+                            $schedule['time_label']),
+                        ...$schedule,
+                        // Preserve the legacy raw UTC field; display the explicit labels.
+                        'time' => $game->game_time,
+                    ];
+                }
+
                 // Ensure we get just the date part (Y-m-d)
                 $gameDate = Carbon::parse($game->game_date)->toDateString();
 

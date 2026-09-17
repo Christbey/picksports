@@ -101,6 +101,9 @@ type Recommendation = {
         away_team: string;
         date: string;
         time: string;
+        starts_at?: string | null;
+        kickoff_label?: string;
+        timezone?: string;
     };
     bookmaker: string;
 };
@@ -683,6 +686,19 @@ onBeforeUnmount(() => {
                                         >
                                             {{ rec.game?.away_team }} @
                                             {{ rec.game?.home_team }}
+                                        </CardDescription>
+                                        <CardDescription
+                                            v-if="rec.game?.kickoff_label"
+                                            class="text-xs"
+                                        >
+                                            <time
+                                                :datetime="
+                                                    rec.game.starts_at ??
+                                                    undefined
+                                                "
+                                            >
+                                                {{ rec.game.kickoff_label }}
+                                            </time>
                                         </CardDescription>
                                     </div>
                                 </div>

@@ -9,6 +9,7 @@ use App\Http\Resources\BettingRecommendationResource;
 use App\Services\Api\V2\SportContextResolver;
 use App\Services\Api\V2\SportPlayerPropQuery;
 use App\Services\BettingRecommendations\PlayerPropAnalyzer;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\SportsViewCache;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -212,7 +213,7 @@ class SportPlayerPropController extends Controller
             return $requestedDate;
         }
 
-        $today = Carbon::today()->toDateString();
+        $today = Carbon::today(app(SportsDateWindowService::class)->timezone())->toDateString();
         $dateValues = $dates->pluck('value');
 
         if ($dateValues->contains($today)) {

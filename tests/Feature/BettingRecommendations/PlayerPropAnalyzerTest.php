@@ -1105,6 +1105,7 @@ test('analyzes a one-sided nfl anytime touchdown price as over 0.5', function ()
         'away_team_id' => $awayTeam->id,
         'status' => 'STATUS_SCHEDULED',
         'game_date' => '2026-09-13',
+        'game_time' => '17:00:00',
         'season' => 2026,
         'season_type' => config('nfl.season.types.regular', 2),
     ]);

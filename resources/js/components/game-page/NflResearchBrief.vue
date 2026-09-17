@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
-type Argument = { claim: string; interpretation: string; source_url: string };
+type Argument = {
+    claim: string;
+    interpretation: string;
+    source_url: string | null;
+    scope?: string;
+    blocking?: boolean;
+};
 type Forecast = { predicted_spread: number; predicted_total: number };
 type Revision = {
     id: number;
@@ -20,7 +26,8 @@ const props = defineProps<{ gameId: number }>();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
-const sourceUrl = (url: string) => (/^https:\/\//i.test(url) ? url : undefined);
+const sourceUrl = (url: string | null) =>
+    url && /^https:\/\//i.test(url) ? url : undefined;
 onMounted(async () => {
     try {
         const response = await fetch(
@@ -57,8 +64,13 @@ onMounted(async () => {
         </p>
         <template v-else>
             <p class="mt-2 text-sm">
-                Latest assessment:
+                Latest spread assessment:
                 <strong>{{ revisions[0].brief.eligibility.status }}</strong>
+            </p>
+            <p class="text-sm text-muted-foreground">
+                Forecasts remain visible during holds. A pass means no approved
+                betting edge, not missing research. Market-specific holds are
+                identified below.
             </p>
             <p class="text-sm text-muted-foreground">
                 {{ new Date(revisions[0].created_at).toLocaleString() }} ·
@@ -91,7 +103,8 @@ onMounted(async () => {
                                 supporting: 'Supporting evidence',
                                 opposing: 'Counterarguments',
                                 prop_angles: 'Player prop context',
-                                unresolved: 'Still uncertain',
+                                unresolved:
+                                    'Assumptions and unresolved questions',
                             }[group]
                         }}
                     </h3>
@@ -107,10 +120,27 @@ onMounted(async () => {
                             :key="index"
                         >
                             <p>{{ item.claim }}</p>
+                            <p
+                                v-if="group === 'unresolved'"
+                                class="font-medium"
+                            >
+                                {{
+                                    item.blocking === false
+                                        ? 'Nonblocking assumption'
+                                        : 'Hold'
+                                }}
+                                ·
+                                {{
+                                    item.scope === 'game' || !item.scope
+                                        ? 'Whole game'
+                                        : item.scope
+                                }}
+                            </p>
                             <p class="text-muted-foreground">
                                 {{ item.interpretation }}
                             </p>
                             <a
+                                v-if="sourceUrl(item.source_url)"
                                 :href="sourceUrl(item.source_url)"
                                 target="_blank"
                                 rel="noopener noreferrer"

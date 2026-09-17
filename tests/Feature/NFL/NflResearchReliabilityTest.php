@@ -185,3 +185,76 @@ it('passes the configured research timeout without retrying potentially paid tim
         ->toThrow(ConnectionException::class);
     expect($attempts)->toBe(1);
 });
+
+it('matches omitted generational suffixes only when the current-team identity is unique', function () {
+    $game = reliabilityResearchGame()->load('homeTeam', 'awayTeam');
+    $player = Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Keir Thomas II']);
+    $source = ResearchSource::create(['key' => 'suffix:roster', 'team' => $game->homeTeam->abbreviation, 'kind' => 'roster', 'url' => 'https://example.com/roster', 'succeeded_at' => now()]);
+    $document = ResearchDocument::create([
+        'source_id' => $source->id, 'team' => $source->team, 'url' => $source->url,
+        'url_hash' => hash('sha256', $source->url), 'content_hash' => hash('sha256', 'suffix'),
+        'title' => 'Roster', 'body' => 'Official roster', 'observed_at' => now(),
+        'structured' => [['player_name' => 'Keir Thomas', 'roster_status' => 'Reserve/Injured']],
+    ]);
+    $source->update(['current_document_id' => $document->id]);
+    expect(app(EvidencePacket::class)->forGame($game)['availability'][0]['player_id'])->toBe($player->id);
+
+    Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Keir Thomas Jr.']);
+    $packet = app(EvidencePacket::class)->forGame($game);
+    expect($packet['availability'])->toBeEmpty()->and($packet['holds'])->toContain('unlinked_reserve_player:Keir Thomas');
+    expect(EvidencePacket::normalizePlayerName('Kelvin Gilliam Jr.'))->toBe(EvidencePacket::normalizePlayerName('Kelvin Gilliam'))
+        ->and(EvidencePacket::normalizePlayerName('Zachary Carter'))->not->toBe(EvidencePacket::normalizePlayerName('Zach Carter'));
+});
+
+it('uses a roster-provided canonical profile path without guessing nickname aliases or crossing teams', function () {
+    expect(EvidencePacket::rosterIdentityKeys(['player_name' => 'Zach Carter', 'profile_path' => '/team/players-roster/zachary-carter/']))
+        ->toBe(['zachcarter', 'zacharycarter']);
+    expect(EvidencePacket::rosterIdentityKeys(['player_name' => 'Zach Carter', 'profile_path' => 'https://untrusted.example/team/players-roster/zachary-carter/']))
+        ->toBe(['zachcarter']);
+
+    $game = reliabilityResearchGame()->load('homeTeam', 'awayTeam');
+    $player = Player::factory()->create(['team_id' => $game->home_team_id, 'full_name' => 'Zachary Carter']);
+    $source = ResearchSource::create(['key' => 'profile:roster', 'team' => $game->homeTeam->abbreviation, 'kind' => 'roster', 'url' => 'https://example.com/roster', 'succeeded_at' => now()]);
+    ResearchDocument::create([
+        'source_id' => $source->id, 'team' => $source->team, 'url' => $source->url,
+        'url_hash' => hash('sha256', $source->url), 'content_hash' => hash('sha256', 'profile'),
+        'title' => 'Roster', 'body' => 'Official roster', 'observed_at' => now(),
+        'structured' => [['player_name' => 'Zach Carter', 'profile_path' => '/team/players-roster/zachary-carter/', 'roster_status' => 'Reserve/Injured']],
+    ]);
+    expect(app(EvidencePacket::class)->forGame($game)['availability'][0]['player_id'])->toBe($player->id);
+
+    $player->update(['team_id' => $game->away_team_id]);
+    $packet = app(EvidencePacket::class)->forGame($game);
+    expect($packet['availability'])->toBeEmpty()->and($packet['holds'])->toContain('unlinked_reserve_player:Zach Carter');
+});
+
+it('preserves official roster profile paths when parsing identities', function () {
+    $active = str_repeat('<tr><td><a>Active Player</a></td></tr>', 30);
+    $html = '<table><caption>Active</caption><tbody>'.$active.'</tbody></table><table><caption>Reserve/Injured</caption><tbody><tr><td><a href="/team/players-roster/zachary-carter/">Zach Carter</a></td></tr></tbody></table>';
+
+    $rows = app(OfficialSourceIngestor::class)->roster($html);
+    expect($rows[30]['profile_path'])->toBe('/team/players-roster/zachary-carter/');
+});
+
+it('fetches the complete roster once when an older document lacks canonical profile paths', function () {
+    config(['nfl_research.teams' => ['ARI' => 'www.azcardinals.com']]);
+    $source = ResearchSource::create(['key' => 'ARI:roster', 'team' => 'ARI', 'kind' => 'roster', 'url' => 'https://www.azcardinals.com/team/players-roster/', 'etag' => 'old-etag']);
+    $document = ResearchDocument::create([
+        'source_id' => $source->id, 'team' => 'ARI', 'url' => $source->url,
+        'url_hash' => hash('sha256', $source->url), 'content_hash' => hash('sha256', 'old-roster'),
+        'title' => 'Roster', 'body' => 'Roster', 'observed_at' => now(),
+        'structured' => [['player_name' => 'Zach Carter', 'roster_status' => 'Reserve/Injured']],
+    ]);
+    $source->update(['current_document_id' => $document->id]);
+    $html = '<table><caption>Active</caption><tbody>'.str_repeat('<tr><td><a href="/team/players-roster/example-player/">Example Player</a></td></tr>', 30).'</tbody></table>';
+    Http::fakeSequence()->push($html, 200, ['ETag' => 'current-etag'])->push('', 304);
+    $ingestor = app(OfficialSourceIngestor::class);
+
+    $ingestor->poll($source);
+    $ingestor->poll($source->fresh());
+
+    $requests = Http::recorded();
+    expect($requests[0][0]->hasHeader('If-None-Match'))->toBeFalse()
+        ->and($requests[1][0]->header('If-None-Match'))->toBe(['current-etag'])
+        ->and($source->fresh()->current_document_id)->not->toBe($document->id);
+});

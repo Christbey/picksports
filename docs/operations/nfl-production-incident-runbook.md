@@ -200,6 +200,14 @@ must remain visible as a hold; it must never produce fabricated analysis. Check
 document URLs, observed timestamps, revision status, holds, and actual game
 coverage, not command exit status alone.
 
+Full and data validation include `validation_nfl_research_coverage`. Missing or
+stale research and broken revision evidence fail within 24 hours of kickoff and
+warn farther out. Fresh partial reports and explicit data holds remain warnings;
+a model pass with complete evidence is not an operational failure. The check
+uses batched database reads and never calls a research provider. When an older
+revision's evidence expires, the research pipeline records a new immutable
+revision linked to refreshed evidence, even if the model conclusion is unchanged.
+
 The signal grading checkpoint migration bootstraps incrementally. Repeated
 bounded grading runs should drain pending observations and then report no work.
 Corrected scores, partial grade rows and changed settlements reopen affected

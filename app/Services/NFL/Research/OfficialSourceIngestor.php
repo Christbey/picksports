@@ -68,6 +68,13 @@ class OfficialSourceIngestor
             // immutable document a conditional 304 subsequently confirms.
             $headers = [];
         }
+        if ($source->kind === 'roster' && $source->current_document_id) {
+            $current = ResearchDocument::find($source->current_document_id);
+            if (! collect($current?->structured ?? [])->contains(fn ($row): bool => isset($row['profile_path']))) {
+                // Reparse pre-upgrade documents once to retain canonical links.
+                $headers = [];
+            }
+        }
         $response = $this->fetch($source->url, $headers);
         if ($response->status() === 304) {
             if (in_array($source->kind, ['roster', 'injury'], true) && ! $source->current_document_id) {
@@ -184,9 +191,17 @@ class OfficialSourceIngestor
         foreach ($xp->query('//table') as $table) {
             $heading = trim($xp->query('./caption', $table)->item(0)?->textContent ?? $xp->query('preceding::*[self::h2 or self::h3 or self::h4][1]', $table)->item(0)?->textContent ?? '');
             foreach ($xp->query('.//tbody/tr', $table) as $tr) {
-                $name = trim($xp->query('./td[1]//a[normalize-space(.) != ""]', $tr)->item(0)?->textContent ?? '');
+                $link = $xp->query('./td[1]//a[normalize-space(.) != ""]', $tr)->item(0);
+                $name = trim($link?->textContent ?? '');
                 if ($name !== '') {
-                    $rows[] = ['player_name' => preg_replace('/\s+/u', ' ', $name), 'roster_status' => $heading];
+                    $row = ['player_name' => preg_replace('/\s+/u', ' ', $name), 'roster_status' => $heading];
+                    $href = $link?->getAttribute('href') ?? '';
+                    // Preserve a roster's own canonical profile link as an
+                    // identity hint, never synthesize nickname substitutions.
+                    if (preg_match('~^/team/players-roster/[a-z0-9-]+/?$~i', $href)) {
+                        $row['profile_path'] = $href;
+                    }
+                    $rows[] = $row;
                 }
             }
         }
@@ -204,7 +219,7 @@ class OfficialSourceIngestor
             return;
         }
         $names = Player::where('team_id', $team->id)->pluck('full_name')->map(fn ($name) => EvidencePacket::normalizePlayerName($name));
-        $missing = collect($rows)->contains(fn ($row) => ! $names->contains(EvidencePacket::normalizePlayerName($row['player_name'])));
+        $missing = collect($rows)->contains(fn ($row) => $names->intersect(EvidencePacket::rosterIdentityKeys($row))->isEmpty());
         if ($missing && Cache::add('nfl-research-roster-refresh:'.$team->id, true, now()->addHour())) {
             FetchPlayers::dispatch((string) $team->espn_id);
         }

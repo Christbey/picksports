@@ -8,6 +8,7 @@ use App\Actions\Validation\Checks\FuturesOddsFreshnessCheck;
 use App\Actions\Validation\Checks\GameCoverageCheck;
 use App\Actions\Validation\Checks\InjuryFreshnessCheck;
 use App\Actions\Validation\Checks\LivePredictionFreshnessCheck;
+use App\Actions\Validation\Checks\NflResearchCoverageCheck;
 use App\Actions\Validation\Checks\OddsCompletenessCheck;
 use App\Actions\Validation\Checks\PastScheduledGameStatusCheck;
 use App\Actions\Validation\Checks\PipelineOrderCheck;
@@ -48,6 +49,7 @@ class SportValidator
         $weatherCompleteness = new WeatherCompletenessCheck;
         $pipelineOrder = new PipelineOrderCheck;
         $finalizedDataCompleteness = new FinalizedDataCompletenessCheck;
+        $nflResearchCoverage = new NflResearchCoverageCheck;
 
         $this->fullChecks = [
             $gameCoverage,
@@ -65,6 +67,7 @@ class SportValidator
             $weatherCompleteness,
             $pipelineOrder,
             $finalizedDataCompleteness,
+            $nflResearchCoverage,
         ];
 
         $this->dataChecks = [
@@ -81,6 +84,7 @@ class SportValidator
             $futuresOddsFreshness,
             $weatherCompleteness,
             $finalizedDataCompleteness,
+            $nflResearchCoverage,
         ];
     }
 

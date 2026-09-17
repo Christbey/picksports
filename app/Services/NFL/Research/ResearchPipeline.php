@@ -97,7 +97,14 @@ class ResearchPipeline
             ];
             $evidence = ['documents' => array_map(fn ($d) => array_diff_key($d, ['text' => true]), $selectedDocuments), 'availability' => $packet['availability'], 'report_id' => $report?->id];
             $materialHash = $this->revisionHash($preview, $evidence, $market, $eligibility, $props, $brief);
-            if ($previous && data_get($previous->brief, 'material_hash', $previous->input_hash) === $materialHash) {
+            // Preserve semantic deduplication while its immutable evidence is
+            // current. Once that report expires, link the refreshed evidence in
+            // a new revision even when the model recommendation is unchanged.
+            $renewEvidence = $previous && $report && $previous->report_id !== $report->id
+                && $report->expires_at?->gt(now())
+                && ! SportsGameContextReport::query()->where('sport', 'nfl')->where('game_id', $game->id)
+                    ->whereKey($previous->report_id)->where('expires_at', '>', now())->exists();
+            if ($previous && ! $renewEvidence && data_get($previous->brief, 'material_hash', $previous->input_hash) === $materialHash) {
                 return $previous;
             }
             $brief['material_hash'] = $materialHash;

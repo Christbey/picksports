@@ -62,7 +62,8 @@ class EvidencePacket
                     if (! preg_match('/reserve|physically unable|exempt|suspend/i', $row['roster_status']) || preg_match('/practice squad/i', $row['roster_status'])) {
                         continue;
                     }
-                    $matches = $players->where('team_id', $teamId)->filter(fn ($p) => self::normalizePlayerName($p->full_name) === self::normalizePlayerName($row['player_name']));
+                    $identityKeys = self::rosterIdentityKeys($row);
+                    $matches = $players->where('team_id', $teamId)->filter(fn ($p) => in_array(self::normalizePlayerName($p->full_name), $identityKeys, true));
                     if ($matches->count() !== 1) {
                         $holds[] = 'unlinked_reserve_player:'.$row['player_name'];
 
@@ -131,7 +132,24 @@ class EvidencePacket
 
     public static function normalizePlayerName(string $name): string
     {
-        return preg_replace('/[^a-z0-9]/', '', strtolower(Str::ascii($name)));
+        $name = strtolower(Str::ascii($name));
+        // Providers disagree on generational suffixes. Matching still requires
+        // exactly one player on the source team; collisions remain unresolved.
+        $name = preg_replace('/(?:[\s,]+)(?:jr|sr|ii|iii|iv|v)\.?$/i', '', trim($name));
+
+        return preg_replace('/[^a-z0-9]/', '', $name);
+    }
+
+    /** @return list<string> */
+    public static function rosterIdentityKeys(array $row): array
+    {
+        $keys = [self::normalizePlayerName((string) ($row['player_name'] ?? ''))];
+        $profile = (string) ($row['profile_path'] ?? '');
+        if (preg_match('~^/team/players-roster/([a-z0-9-]+)/?$~i', $profile, $match)) {
+            $keys[] = self::normalizePlayerName(str_replace('-', ' ', $match[1]));
+        }
+
+        return array_values(array_unique(array_filter($keys)));
     }
 
     public function contradictsUnavailable(string $claim, string $name): bool

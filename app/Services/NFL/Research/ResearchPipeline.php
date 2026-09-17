@@ -61,7 +61,7 @@ class ResearchPipeline
             if (empty($decision['supporting']) || empty($decision['opposing'])) {
                 $holds[] = 'two_sided_research_missing';
             }
-            if (collect($decision['unresolved'] ?? [])->contains(fn ($item) => ($item['blocking'] ?? true) && ($item['scope'] ?? 'game') === 'game')) {
+            if (app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], 'spread') !== []) {
                 $holds[] = 'unresolved_research_questions';
             }
             $analysis = data_get($preview, 'model_metadata.analysis_layer', []);
@@ -72,7 +72,7 @@ class ResearchPipeline
                 $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], [...$holds, 'spread_quote_missing']);
             }
             $props = app(PlayerPropAnalyzer::class)->previewNflGame($game);
-            $propHolds = collect($decision['unresolved'] ?? [])->filter(fn ($item) => ($item['blocking'] ?? true) && ($item['scope'] ?? 'game') === 'props')->values()->all();
+            $propHolds = app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], 'props');
             if ($propHolds !== []) {
                 $props = array_map(fn ($prop) => [...$prop, 'status' => 'hold', 'research_holds' => $propHolds], $props);
             }
@@ -86,6 +86,7 @@ class ResearchPipeline
                 'player_props' => $props,
                 'prop_angles' => $decision['prop_angles'] ?? [],
                 'unresolved' => $decision['unresolved'] ?? [],
+                'market_holds' => collect(['spread', 'total', 'moneyline', 'props'])->mapWithKeys(fn ($scope) => [$scope => app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], $scope)])->all(),
                 'facts' => $report?->facts ?? [],
                 'risk_flags' => $report?->risk_flags ?? [],
                 'model_signals' => ['qb' => data_get($preview, 'model_metadata.qb_form'), 'trenches' => data_get($preview, 'model_metadata.line_matchup'), 'injuries' => data_get($preview, 'model_metadata.depth_chart_injuries')],
@@ -125,7 +126,8 @@ class ResearchPipeline
         $metadata = (array) ($candidate['model_metadata'] ?? []);
 
         return hash('sha256', json_encode([
-            'version' => 2,
+            'version' => 3,
+            'uncertainty_policy_version' => ResearchUncertaintyPolicy::VERSION,
             'outputs' => [
                 'spread' => $this->bucket($candidate['predicted_spread'] ?? null, (float) config('nfl_research.material_revision.spread_increment', 0.5)),
                 'total' => $this->bucket($candidate['predicted_total'] ?? null, (float) config('nfl_research.material_revision.total_increment', 0.5)),
@@ -271,6 +273,51 @@ class ResearchPipeline
         }
 
         return $this->freshPairedSpreadQuotes($quotes);
+    }
+
+    /** Fresh, same-book paired prices; never substitute web lines for the feed. */
+    public function additionalMarketQuotes(Game $game, string $key): array
+    {
+        if (! in_array($key, ['totals', 'h2h'], true)) {
+            return [];
+        }
+        $result = [];
+        $freshAfter = now()->subMinutes(max(1, (int) config('nfl_research.market_freshness_minutes', 60)));
+        foreach (data_get($game->odds_data, 'bookmakers', []) as $book) {
+            if (empty($book['key'])) {
+                continue;
+            }
+            foreach ($book['markets'] ?? [] as $market) {
+                if (($market['key'] ?? null) !== $key) {
+                    continue;
+                }
+                $observedAt = $market['last_update'] ?? $game->odds_updated_at?->toIso8601String();
+                try {
+                    if (! is_string($observedAt) || ! Carbon::parse($observedAt)->betweenIncluded($freshAfter, now())) {
+                        continue;
+                    }
+                } catch (Throwable) {
+                    continue;
+                }
+                $names = $key === 'totals'
+                    ? ['over' => 'Over', 'under' => 'Under']
+                    : ['home' => data_get($game->odds_data, 'home_team'), 'away' => data_get($game->odds_data, 'away_team')];
+                $pair = [];
+                foreach ($names as $side => $name) {
+                    $outcome = collect($market['outcomes'] ?? [])->first(fn ($row) => $name && ($row['name'] ?? null) === $name);
+                    if (! is_numeric($outcome['price'] ?? null) || abs((float) $outcome['price']) < 100
+                        || ($key === 'totals' && ! is_numeric($outcome['point'] ?? null))) {
+                        continue;
+                    }
+                    $pair[] = ['bookmaker' => $book['key'], 'side' => $side, 'line' => $key === 'totals' ? (float) $outcome['point'] : null, 'price' => (int) $outcome['price'], 'observed_at' => $observedAt];
+                }
+                if (count($pair) === 2 && ($key !== 'totals' || abs($pair[0]['line'] - $pair[1]['line']) <= 0.001)) {
+                    array_push($result, ...$pair);
+                }
+            }
+        }
+
+        return $result;
     }
 
     /** @param array<int, array<string, mixed>>|null $quotes */

@@ -9,6 +9,7 @@ use App\Services\AI\AiGenerationRecorder;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\NFL\Research\EvidencePacket;
 use App\Services\NFL\Research\ResearchPipeline;
+use App\Services\NFL\Research\ResearchUncertaintyPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Schema;
@@ -132,6 +133,7 @@ class NflWebContextResearchService
             }
             $payload['decision_research'] = $this->decisionResearch($decoded['decision_research'] ?? [], array_column($payload['sources'], 'url'));
             $payload = $this->enforceTwoSidedEvidence($payload);
+            $payload = app(ResearchUncertaintyPolicy::class)->applyStatus($payload);
             $payload['candidate_hash'] = app(ResearchPipeline::class)->candidateContextHash($input['model_candidate'] ?? []);
             $payload['document_ids'] = array_column($input['official_documents'], 'id');
             $payload['evidence_context_hash'] = app(EvidencePacket::class)->contextHash($packet);
@@ -239,11 +241,11 @@ class NflWebContextResearchService
                 return $row;
             })->take(6)->values()->all();
         $result['unresolved'] = array_map(function ($item) {
-            $validScope = in_array($item['scope'] ?? null, ['game', 'props', 'informational'], true);
+            $validScope = in_array($item['scope'] ?? null, ['game', 'spread', 'total', 'moneyline', 'props', 'informational'], true);
             $item['scope'] = $validScope ? $item['scope'] : 'game';
             $item['blocking'] = $validScope && is_bool($item['blocking'] ?? null) ? $item['blocking'] : true;
 
-            return $item;
+            return $validScope ? app(ResearchUncertaintyPolicy::class)->normalize($item) : $item;
         }, $result['unresolved']);
 
         return $result;
@@ -301,6 +303,8 @@ class NflWebContextResearchService
                 'updated_at' => $game->odds_updated_at?->toIso8601String(),
                 'fresh' => $researchPipeline->marketIsFresh($game, $spreadQuotes),
                 'spread_quotes' => $spreadQuotes,
+                'total_quotes' => $researchPipeline->additionalMarketQuotes($game, 'totals'),
+                'moneyline_quotes' => $researchPipeline->additionalMarketQuotes($game, 'h2h'),
             ],
             'venue' => $game->venue_name,
             'synced_weather' => $weather ? [
@@ -365,6 +369,10 @@ Evaluate matchup mechanisms: offensive-line availability against pressure, quart
 For unresolved questions, specify scope (game, props, informational) and blocking. Blocking means a missing or conflicting fact materially prevents assessing that market, such as an unresolved starting QB or key injured starter. Exact future snap counts, routes, targets and carries are never knowable before kickoff; their absence alone is not a game blocker. Do not require proof of no QB rotation in a regular-season game unless a credible source raises a rotation concern. Missing joint-practice evidence is informational for regular-season games. Our supplied market quotes are authoritative for application prices; inability to reproduce them from secondary websites is not a blocker. A normal forecast's uncertainty is not itself a weather blocker. The absence of the future inactive list alone is not a blocker, but a specific material questionable player's unresolved availability can be. Report status assesses game-context completeness: ready is allowed with documented nonblocking or prop-only uncertainty. Preserve real evidence gaps; never relabel a material injury question just to clear a hold.
 
 Model conventions: predicted_spread is projected HOME score minus AWAY score, not a sportsbook handicap. win_probability is always the HOME team's probability, never automatically the favorite's probability. Use named_team_projections to associate each margin and probability with the correct team. A negative home margin and home probability below 0.5 consistently favor the away team. Do not invent a model inconsistency by reversing home and away.
+
+Uncertainty classification is separate from betting edge. Use routine_starter_confirmation only when the listed regular/postseason starter has no credible injury, benching, competition or rotation concern: absence of a weekly re-announcement is not a blocker. Use future_report only for the ordinary absence of a not-yet-published final report or inactive list, NOT a specific unresolved material injury. Use future_usage for inherently unknowable future snap/target/carry counts and forecast_variance for ordinary forecast uncertainty. These four categories are nonblocking; explain assumptions and conditional scenarios without inventing numerical confidence adjustments. Preseason participation uncertainty, an actual QB competition, or a specific consequential injury belongs to material_availability. Explain which named player's status changes which market and why; a list of limited players alone does not establish a whole-game blocker. If credible news contradicts the model's actual QB/player input, use model_input_conflict and retain a game hold until verified and recomputed. Never resolve that conflict by changing a narrative label. Missing or conflicting source evidence is source_gap, not normal variance.
+
+Use spread, total, moneyline or props scope when only that market is affected; game means a material problem affecting the whole forecast. market_data_gap must identify the affected market. Synced spread_quotes, total_quotes and moneyline_quotes are fresh paired application prices, each with bookmaker and observation time. Missing total quotes must not block spread analysis, and vice versa. Do not claim a market is absent when its supplied quote array is nonempty. Report ready means sourced game analysis is usable, not that there is a betting edge or every prop is clear. Keep specific holds and assumptions visible even when other markets are usable.
 
 Game packet:
 {$json}

@@ -2,6 +2,7 @@
 
 namespace App\AI\Agents;
 
+use App\Services\NFL\Research\ResearchUncertaintyPolicy;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Ai\Contracts\Agent;
 use Laravel\Ai\Contracts\HasStructuredOutput;
@@ -59,7 +60,11 @@ INSTRUCTIONS;
                 'claim' => $schema->string()->required(),
                 'source_url' => $schema->string()->required(),
                 'interpretation' => $schema->string()->required(),
-                ...($key === 'unresolved' ? ['scope' => $schema->string()->enum(['game', 'props', 'informational'])->required(), 'blocking' => $schema->boolean()->required()] : []),
+                ...($key === 'unresolved' ? [
+                    'scope' => $schema->string()->enum(['game', 'spread', 'total', 'moneyline', 'props', 'informational'])->required(),
+                    'blocking' => $schema->boolean()->required(),
+                    'reason_code' => $schema->string()->enum(ResearchUncertaintyPolicy::REASONS)->required(),
+                ] : []),
             ])->withoutAdditionalProperties())->max(6)->required()])->all())->withoutAdditionalProperties()->required(),
             'status' => $schema->string()->required(),
             'confidence' => $schema->integer()->required(),

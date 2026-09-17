@@ -109,3 +109,33 @@ To stop new pipeline runs, set `NFL_RESEARCH_PIPELINE_ENABLED=false`; preserved 
 ### Hold remediation
 
 The production `nflverse_pbp_plays` table was empty. Imported 48,771 plays from the official [2025 nflverse play-by-play release](https://github.com/nflverse/nflverse-data/releases/tag/pbp), including 48,201 EPA values; all imported plays linked to existing games. All five audited games then applied the configured historical EPA fallback. Model version `career-regular-v2` also excludes postseason from this regular-season EPA profile. Refreshed 775 ESPN player records across the ten teams, repairing missing identities and stale team assignments. Original predictions are preserved; research must be rerun to capture these corrected inputs.
+# Research uncertainty policy (September 16, 2026)
+
+The research packet includes fresh same-book paired spread, total, and moneyline
+quotes. Stale, future-dated, malformed, unpaired, or mismatched total prices are
+not sent as usable prices. Secondary web prices never replace these inputs.
+
+Structured unresolved questions carry a `reason_code` and market `scope`.
+`routine_starter_confirmation`, `future_report`, `future_usage`, and
+`forecast_variance` describe ordinary pregame assumptions, not hard blockers.
+They must not be used for a specific injury, real QB competition, preseason
+participation plan, or conflicting model input. `material_availability` and
+`source_gap` retain material holds. `model_input_conflict` always holds every
+market (including props) until verified and recomputed. A total-only gap holds
+the total, not the spread; the existing research eligibility is spread-specific.
+The brief exposes `market_holds` for every market, not blanket approval of totals
+or moneylines from the spread eligibility flag.
+
+Application code preserves the researcher's requested blocking flag and status
+when it changes them. It only promotes classified non-game-blocking research
+when both teams have cited facts, supporting and opposing evidence exist, and
+no source conflict is recorded. Unknown/legacy questions are never silently
+cleared. A candidate-context policy version invalidates old reports for fresh
+research; historical reports and revisions remain immutable. `ready` describes
+usable research, not betting edge or guaranteed player availability. No
+uncalibrated confidence boost or narrative-driven numeric adjustment is added.
+
+Regression coverage: `tests/Feature/NFL/ResearchUncertaintyPolicyTest.php`.
+The required enum schema follows OpenAI's
+[Structured Outputs guidance](https://developers.openai.com/api/docs/guides/structured-outputs);
+the existing model, search budget and API timeout are unchanged.

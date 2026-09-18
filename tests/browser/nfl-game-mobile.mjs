@@ -104,6 +104,44 @@ try {
         await assertVisible(
             page.getByText('Prediction Model', { exact: true }),
         );
+        await assertVisible(page.getByText('Model total', { exact: true }));
+        await assertVisible(page.getByText('48.5', { exact: true }));
+        await assertVisible(page.getByText('1500', { exact: true }), false);
+        await assertVisible(
+            page.getByText('Total Yards', { exact: true }),
+            false,
+        );
+        await page
+            .locator('summary')
+            .filter({ hasText: 'Team ratings (Elo)' })
+            .click();
+        await assertVisible(page.getByText('1500', { exact: true }));
+        await page
+            .locator('summary')
+            .filter({ hasText: 'Team ratings (Elo)' })
+            .click();
+        await page
+            .locator('summary')
+            .filter({ hasText: 'Box score & game statistics' })
+            .click();
+        await assertVisible(page.getByText('Total Yards', { exact: true }));
+        assert.equal(
+            await page
+                .locator('.ui-table-wrap')
+                .evaluateAll((elements) =>
+                    elements.every(
+                        (element) =>
+                            element.scrollWidth <= element.clientWidth + 1,
+                    ),
+                ),
+            true,
+            'Box score needs no horizontal swipe',
+        );
+        await checkWidth();
+        await page
+            .locator('summary')
+            .filter({ hasText: 'Box score & game statistics' })
+            .click();
         await assertVisible(
             page.getByText('Trends & Matchup History', { exact: true }),
             false,

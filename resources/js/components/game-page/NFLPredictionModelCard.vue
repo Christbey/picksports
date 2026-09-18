@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { NflPagePrediction } from '@/types';
 
-defineProps<{
+const props = defineProps<{
     prediction: NflPagePrediction;
     awayLabel?: string | null;
     homeLabel?: string | null;
@@ -12,16 +13,26 @@ defineProps<{
     ) => string;
     formatSpread: (spread: number | string) => string;
 }>();
-
-const homeSpreadLine = (prediction: NflPagePrediction): number =>
-    -Number(prediction.predicted_spread);
-
-const favoriteLabel = (
-    prediction: NflPagePrediction,
-    home?: string | null,
-    away?: string | null,
-): string =>
-    Number(prediction.predicted_spread) > 0 ? home || 'Home' : away || 'Away';
+const finite = (value: unknown): number | null => {
+    if (typeof value !== 'number' && typeof value !== 'string') return null;
+    if (typeof value === 'string' && !value.trim()) return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+};
+const margin = computed(() => finite(props.prediction.predicted_spread));
+const total = computed(() => {
+    const value = finite(props.prediction.predicted_total);
+    return value !== null && value >= 0 ? value : null;
+});
+const probability = computed(() => {
+    const value = finite(props.prediction.win_probability);
+    return value !== null && value >= 0 && value <= 1 ? value : null;
+});
+const favorite = computed(() => {
+    if (margin.value === null) return 'Unavailable';
+    if (margin.value === 0) return 'Even matchup';
+    return `${margin.value > 0 ? props.homeLabel || 'Home' : props.awayLabel || 'Away'} favored`;
+});
 </script>
 
 <template>
@@ -29,103 +40,99 @@ const favoriteLabel = (
         <CardHeader>
             <div class="ui-kicker">Forecast</div>
             <CardTitle class="tracking-tight">Prediction Model</CardTitle>
+            <p class="text-xs text-muted-foreground">
+                Model estimates, not sportsbook lines or an approved bet.
+            </p>
         </CardHeader>
-        <CardContent>
-            <div class="mb-6">
+        <CardContent class="space-y-4">
+            <div class="grid grid-cols-2 gap-3">
                 <div
-                    class="mb-2 flex items-center justify-between text-sm font-medium"
+                    class="ui-surface-subtle border-primary/25 bg-primary/8 p-3 text-center"
                 >
-                    <span
-                        >{{ awayLabel }}
-                        {{
-                            formatNumber(
-                                (1 - Number(prediction.win_probability)) * 100,
-                                0,
-                            )
-                        }}%</span
-                    >
-                    <span
-                        >{{ homeLabel }}
-                        {{
-                            formatNumber(
-                                Number(prediction.win_probability) * 100,
-                                0,
-                            )
-                        }}%</span
-                    >
-                </div>
-                <div class="flex h-3 overflow-hidden rounded-full">
+                    <div class="text-sm text-muted-foreground">
+                        {{ homeLabel || 'Home' }} model spread
+                    </div>
                     <div
-                        class="bg-green-500 transition-all dark:bg-green-600"
-                        :style="{
-                            width: `${(1 - Number(prediction.win_probability)) * 100}%`,
-                        }"
-                    ></div>
-                    <div
-                        class="bg-green-800 transition-all dark:bg-green-400"
-                        :style="{
-                            width: `${Number(prediction.win_probability) * 100}%`,
-                        }"
-                    ></div>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <div class="ui-surface-subtle p-3 text-center">
-                    <div class="text-sm text-muted-foreground">Away ELO</div>
-                    <div class="text-2xl font-semibold tracking-tight">
-                        {{ formatNumber(prediction.away_elo, 0) }}
+                        class="text-2xl font-semibold tracking-tight text-primary"
+                    >
+                        {{ margin === null ? '—' : formatSpread(-margin) }}
                     </div>
                     <div class="mt-0.5 text-xs text-muted-foreground">
-                        {{ awayLabel }}
-                    </div>
-                </div>
-                <div class="ui-surface-subtle p-3 text-center">
-                    <div class="text-sm text-muted-foreground">Home ELO</div>
-                    <div class="text-2xl font-semibold tracking-tight">
-                        {{ formatNumber(prediction.home_elo, 0) }}
-                    </div>
-                    <div class="mt-0.5 text-xs text-muted-foreground">
-                        {{ homeLabel }}
+                        {{ favorite }}
                     </div>
                 </div>
                 <div
                     class="ui-surface-subtle border-primary/25 bg-primary/8 p-3 text-center"
                 >
-                    <div class="text-sm text-muted-foreground">Home Spread</div>
+                    <div class="text-sm text-muted-foreground">Model total</div>
                     <div
                         class="text-2xl font-semibold tracking-tight text-primary"
                     >
-                        {{
-                            prediction.predicted_spread !== undefined
-                                ? formatSpread(homeSpreadLine(prediction))
-                                : '-'
-                        }}
+                        {{ total === null ? '—' : formatNumber(total) }}
                     </div>
                     <div class="mt-0.5 text-xs text-muted-foreground">
-                        {{ favoriteLabel(prediction, homeLabel, awayLabel) }}
-                        favored
-                    </div>
-                </div>
-                <div
-                    class="ui-surface-subtle border-primary/25 bg-primary/8 p-3 text-center"
-                >
-                    <div class="text-sm text-muted-foreground">Win Prob</div>
-                    <div
-                        class="text-2xl font-semibold tracking-tight text-primary"
-                    >
-                        {{
-                            formatNumber(
-                                Number(prediction.win_probability) * 100,
-                                1,
-                            )
-                        }}%
-                    </div>
-                    <div class="mt-0.5 text-xs text-muted-foreground">
-                        {{ homeLabel }}
+                        Combined points
                     </div>
                 </div>
             </div>
+            <div v-if="probability !== null">
+                <p class="mb-2 text-xs text-muted-foreground">
+                    Model win probability
+                </p>
+                <div
+                    class="mb-2 flex items-center justify-between gap-3 text-sm font-medium"
+                >
+                    <span
+                        >{{ awayLabel || 'Away' }}
+                        {{ formatNumber((1 - probability) * 100, 1) }}%</span
+                    >
+                    <span
+                        >{{ homeLabel || 'Home' }}
+                        {{ formatNumber(probability * 100, 1) }}%</span
+                    >
+                </div>
+                <div
+                    aria-hidden="true"
+                    class="flex h-2 overflow-hidden rounded-full"
+                >
+                    <div
+                        class="bg-green-500 dark:bg-green-600"
+                        :style="{ width: `${(1 - probability) * 100}%` }"
+                    />
+                    <div
+                        class="bg-green-800 dark:bg-green-400"
+                        :style="{ width: `${probability * 100}%` }"
+                    />
+                </div>
+            </div>
+            <p v-else class="text-sm text-muted-foreground">
+                Win probability unavailable.
+            </p>
+            <details class="rounded-lg border px-3">
+                <summary
+                    class="min-h-11 cursor-pointer content-center text-sm font-medium"
+                >
+                    Team ratings (Elo)
+                </summary>
+                <dl class="grid grid-cols-2 gap-3 pb-3 text-sm">
+                    <div>
+                        <dt class="text-muted-foreground">
+                            {{ awayLabel || 'Away' }}
+                        </dt>
+                        <dd class="font-semibold">
+                            {{ formatNumber(finite(prediction.away_elo), 0) }}
+                        </dd>
+                    </div>
+                    <div>
+                        <dt class="text-muted-foreground">
+                            {{ homeLabel || 'Home' }}
+                        </dt>
+                        <dd class="font-semibold">
+                            {{ formatNumber(finite(prediction.home_elo), 0) }}
+                        </dd>
+                    </div>
+                </dl>
+            </details>
         </CardContent>
     </Card>
 </template>

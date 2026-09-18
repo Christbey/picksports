@@ -3,6 +3,8 @@
 Below 768px, the NFL game page uses a fixed bottom selector: Overview, Research, Trends, and Roster. The selector respects the device safe area and has 44px minimum touch targets. Changing sections scrolls to the content start. Bottom spacing keeps the last content reachable above the selector.
 
 - Overview leads with the prediction instead of dozens of starter cards. Research status and all eligibility reasons remain visible, even when evidence is collapsed. Empty betting plans are omitted.
+- The forecast prioritizes home-team model spread and combined-points total. Win probability is displayed once; Elo ratings and box-score details are collapsed. Model lines are explicitly distinguished from sportsbook lines and approved bets. Missing/nonfinite probabilities remain unavailable, valid zero values are retained, and a zero margin is labeled an even matchup.
+- Expanded box-score values wrap within the phone width instead of requiring a 600px horizontal swipe. Trend counts share one compact row; narrow pattern badges can wrap.
 - Research keeps supporting evidence, counterarguments, prop context, unresolved questions and forecast history in native, keyboard-accessible disclosures. Citations remain attached to their claims.
 - Roster contains availability/injuries and an initially collapsed depth chart.
 - Trends preserves all history windows, sample sizes and head-to-head context. Mobile selects one team's evidence table at a time; desktop displays both.

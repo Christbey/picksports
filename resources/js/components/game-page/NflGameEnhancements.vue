@@ -89,13 +89,23 @@ const props = withDefaults(
     />
 
     <template v-else-if="section === 'analysis'">
-        <NFLBoxScoreCard
+        <details
             v-if="homeTeamStats && awayTeamStats"
-            :away-label="awayLabel"
-            :home-label="homeLabel"
-            :away-team-stats="awayTeamStats"
-            :home-team-stats="homeTeamStats"
-        />
+            class="min-w-0 rounded-xl border bg-card p-4"
+        >
+            <summary
+                class="min-h-11 cursor-pointer content-center font-semibold"
+            >
+                Box score &amp; game statistics
+            </summary>
+            <NFLBoxScoreCard
+                class="mt-3"
+                :away-label="awayLabel"
+                :home-label="homeLabel"
+                :away-team-stats="awayTeamStats"
+                :home-team-stats="homeTeamStats"
+            />
+        </details>
 
         <LiveBettingAnalysisCard
             :has-live-prediction="hasLivePrediction"

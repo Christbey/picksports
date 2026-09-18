@@ -75,8 +75,11 @@ onMounted(async () => {
                 identified below.
             </p>
             <p class="text-sm text-muted-foreground">
-                {{ new Date(revisions[0].created_at).toLocaleString() }} ·
-                Original forecasts remain available below.
+                Recorded
+                {{ new Date(revisions[0].created_at).toLocaleString() }}.
+                <span :class="mobileCompact ? 'hidden md:inline' : ''"
+                    >Original forecasts are in Forecast history.</span
+                >
             </p>
             <ul
                 v-if="revisions[0].brief.eligibility.reasons.length"

@@ -393,7 +393,12 @@ const displayTitle = computed(() =>
                     class="flex gap-2 text-xs"
                 >
                     <Badge variant="secondary">
-                        {{ allTrendCategories.length }} categories
+                        {{ allTrendCategories.length }}
+                        {{
+                            allTrendCategories.length === 1
+                                ? 'category'
+                                : 'categories'
+                        }}
                     </Badge>
                     <Badge variant="outline">
                         {{
@@ -435,7 +440,7 @@ const displayTitle = computed(() =>
                 "
                 class="space-y-4"
             >
-                <div class="grid gap-2 sm:grid-cols-3">
+                <div class="grid grid-cols-3 gap-2">
                     <div
                         class="rounded-lg border border-border/70 bg-muted/30 px-3 py-2"
                     >
@@ -581,7 +586,9 @@ const displayTitle = computed(() =>
                                 insight.tone === 'risk',
                         }"
                     >
-                        <div class="flex items-start justify-between gap-2">
+                        <div
+                            class="flex flex-wrap items-start justify-between gap-2"
+                        >
                             <div class="min-w-0">
                                 <p
                                     class="text-xs tracking-wide text-muted-foreground uppercase"

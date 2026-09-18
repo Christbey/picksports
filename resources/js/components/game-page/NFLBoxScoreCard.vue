@@ -26,9 +26,9 @@ const rows = computed(() =>
         </CardHeader>
         <CardContent>
             <div class="ui-table-wrap">
-                <div class="min-w-[600px] space-y-4">
+                <div class="min-w-0 space-y-3">
                     <div
-                        class="grid grid-cols-7 gap-2 border-b bg-muted/30 px-2 py-2 text-sm font-medium"
+                        class="grid grid-cols-7 gap-2 border-b bg-muted/30 py-2 text-xs font-medium sm:text-sm"
                     >
                         <div class="col-span-2 text-right">{{ awayLabel }}</div>
                         <div class="col-span-3 text-center">Stat</div>
@@ -37,7 +37,7 @@ const rows = computed(() =>
                     <div
                         v-for="row in rows"
                         :key="row.label"
-                        class="grid grid-cols-7 items-center gap-2 text-sm"
+                        class="grid grid-cols-7 items-center gap-2 text-xs break-words sm:text-sm"
                     >
                         <div
                             class="col-span-2 text-right font-medium"

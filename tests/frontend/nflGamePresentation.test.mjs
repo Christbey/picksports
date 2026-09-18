@@ -108,6 +108,72 @@ after(async () => {
     await server?.close();
 });
 
+const forecastHtml = async (prediction) => {
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NFLPredictionModelCard.vue',
+    );
+    return renderToString(
+        createSSRApp(component, {
+            prediction,
+            awayLabel: 'DET',
+            homeLabel: 'BUF',
+            formatNumber: (value, decimals = 1) =>
+                value == null ? '—' : Number(value).toFixed(decimals),
+            formatSpread: (value) =>
+                Number(value) > 0
+                    ? `+${Number(value).toFixed(1)}`
+                    : Number(value).toFixed(1),
+        }),
+    );
+};
+
+test('forecast leads with model spread and total, preserves sign and marks even matchups', async () => {
+    const html = await forecastHtml({
+        predicted_spread: 3.5,
+        predicted_total: 48.5,
+        win_probability: 0.63,
+    });
+    assert.match(html, /BUF model spread/);
+    assert.match(html, /-3\.5/);
+    assert.match(html, /48\.5/);
+    assert.match(html, /BUF favored/);
+    assert.match(html, /63\.0%/);
+    assert.match(html, /37\.0%/);
+    assert.match(html, /not sportsbook lines or an approved bet/);
+    assert.doesNotMatch(html, /<details[^>]*\bopen\b/);
+    const even = await forecastHtml({
+        predicted_spread: 0,
+        predicted_total: 0,
+        win_probability: 0,
+    });
+    assert.match(even, /Even matchup/);
+    assert.doesNotMatch(even, /favored|Win probability unavailable/);
+    const away = await forecastHtml({ predicted_spread: -3.5 });
+    assert.match(away, /\+3\.5/);
+    assert.match(away, /DET favored/);
+});
+
+test('missing or invalid forecast values never become zero, a favorite or a fake probability', async () => {
+    for (const invalid of [null, undefined, '', ' ', 'bad', NaN, Infinity]) {
+        const html = await forecastHtml({
+            predicted_spread: invalid,
+            predicted_total: invalid,
+            win_probability: invalid,
+        });
+        assert.match(html, /Win probability unavailable/);
+        assert.doesNotMatch(
+            html,
+            /NaN|Infinity|favored|Even matchup|width:|0\.0%/,
+        );
+    }
+    for (const invalid of [-0.1, 1.1, 63]) {
+        assert.match(
+            await forecastHtml({ win_probability: invalid }),
+            /Win probability unavailable/,
+        );
+    }
+});
+
 test('injury panel does not show an empty report alongside one to three injuries', async () => {
     const { default: component } = await server.ssrLoadModule(
         '/resources/js/components/game-page/InjuryReportCard.vue',

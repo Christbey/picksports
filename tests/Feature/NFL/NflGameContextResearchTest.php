@@ -7,6 +7,8 @@ use App\Models\NFL\Prediction;
 use App\Models\NFL\Team;
 use App\Models\SportsGameContextReport;
 use App\Services\NFL\NflWebContextResearchService;
+use App\Services\NFL\Research\EvidencePacket;
+use App\Services\NFL\Research\ResearchRefreshPolicy;
 use App\Services\Predictions\SportsAiPredictionPayloadBuilder;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -161,9 +163,9 @@ it('enforces the OpenAI search budget and records measured usage with estimated 
             && $data['reasoning']['effort'] === 'none'
             && $data['store'] === false
             && $data['text']['format']['type'] === 'json_schema'
-            && str_contains($data['input'], '"season_type_label": "preseason"')
-            && str_contains($data['input'], '"kickoff_at_utc": "2026-08-13T19:00:00+00:00"')
-            && str_contains($data['input'], '"kickoff_at_local": "2026-08-13T14:00:00-05:00"')
+            && str_contains($data['input'], '"season_type_label":"preseason"')
+            && str_contains($data['input'], '"kickoff_at_utc":"2026-08-13T19:00:00+00:00"')
+            && str_contains($data['input'], '"kickoff_at_local":"2026-08-13T14:00:00-05:00"')
             && str_contains($data['input'], 'This is a preseason game.');
     });
 
@@ -208,6 +210,7 @@ it('uses regular-season evidence guidance for regular-season games', function ()
 });
 
 it('researches sourced nfl context and applies bounded adjustments to the ai packet', function () {
+    $this->travelTo('2026-08-13 10:00:00');
     config()->set('services.openai.api_key', 'test-openai-key');
     config()->set('ai.providers.openai.key', 'test-openai-key');
     config()->set('ai.features.nfl_game_context_research.enabled', true);
@@ -362,6 +365,9 @@ it('uses the batch limit for new research instead of fresh skipped games', funct
         'input_hash' => str_repeat('a', 64),
         'confidence' => 80,
         'summary' => 'Fresh sourced context.',
+        'raw_payload' => ['research_fingerprint' => app(ResearchRefreshPolicy::class)->fingerprint(
+            $freshGame->load('homeTeam', 'awayTeam'), app(EvidencePacket::class)->forGame($freshGame),
+        )],
         'facts' => [],
         'sources' => [['url' => 'https://example.com/fresh']],
         'researched_at' => now(),

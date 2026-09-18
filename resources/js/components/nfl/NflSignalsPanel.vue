@@ -26,9 +26,10 @@ interface SignalRow {
 interface SignalsPayload {
     season: number;
     as_of_date: string;
+    week: number | null;
     super_bowl: SignalRow[];
-    week_one_winners: SignalRow[];
-    week_one_covers: SignalRow[];
+    winners: SignalRow[];
+    covers: SignalRow[];
     streaks: SignalRow[];
 }
 
@@ -52,18 +53,22 @@ const signalGroups = computed(() => [
             `${formatWins(row.projected_wins)} wins · ${labelize(row.signal)}`,
     },
     {
-        key: 'week_one_winners',
-        title: 'Week 1 Winners',
+        key: 'winners',
+        title: payload.value?.week
+            ? `Week ${payload.value.week} Winner Context`
+            : 'Upcoming Winners',
         icon: ShieldCheck,
-        rows: payload.value?.week_one_winners ?? [],
+        rows: payload.value?.winners ?? [],
         metric: (row: SignalRow) => formatPercent(row.win_probability),
         detail: (row: SignalRow) => row.matchup ?? '',
     },
     {
-        key: 'week_one_covers',
-        title: 'Week 1 Covers',
+        key: 'covers',
+        title: payload.value?.week
+            ? `Week ${payload.value.week} Spread Edges`
+            : 'Upcoming Spread Edges',
         icon: TrendingUp,
-        rows: payload.value?.week_one_covers ?? [],
+        rows: payload.value?.covers ?? [],
         metric: (row: SignalRow) =>
             row.edge_points != null
                 ? `${row.edge_points.toFixed(1)} pts`
@@ -125,8 +130,9 @@ onMounted(loadSignals);
         <div>
             <h2 class="text-lg font-semibold">NFL Signals</h2>
             <p class="text-sm text-muted-foreground">
-                Futures, Week 1, cover edges, and streak context from the live
-                model.
+                Futures, upcoming-week model context, spread edges, and
+                regular-season streaks. These are analysis signals, not
+                confirmed wagers.
             </p>
         </div>
 

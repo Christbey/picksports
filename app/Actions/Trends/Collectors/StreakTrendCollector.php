@@ -20,7 +20,7 @@ class StreakTrendCollector extends TrendCollector
             $messages[] = "The {$this->teamAbbr} are on a {$winStreak}-game winning streak";
         }
 
-        $lossStreak = $this->calculateStreak(fn ($g) => ! $this->won($g));
+        $lossStreak = $this->calculateStreak(fn ($g) => $this->margin($g) < 0);
         if ($lossStreak >= 3) {
             $messages[] = "The {$this->teamAbbr} are on a {$lossStreak}-game losing streak";
         }
@@ -28,18 +28,18 @@ class StreakTrendCollector extends TrendCollector
         $homeGames = $this->games->filter(fn ($g) => $this->isHome($g));
         if ($homeGames->count() >= 3) {
             $homeWins = $homeGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($homeWins, $homeGames->count())} at home in their last {$homeGames->count()} home games";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($homeGames)} at home in their last {$homeGames->count()} home games";
         }
 
         $awayGames = $this->games->filter(fn ($g) => ! $this->isHome($g));
         if ($awayGames->count() >= 3) {
             $awayWins = $awayGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($awayWins, $awayGames->count())} on the road in their last {$awayGames->count()} road games";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($awayGames)} on the road in their last {$awayGames->count()} road games";
         }
 
         $atsStreak = $this->calculateATSStreak();
         if (abs($atsStreak) >= 3) {
-            $type = $atsStreak > 0 ? 'ATS covers' : 'ATS misses';
+            $type = $atsStreak > 0 ? 'above-model-margin' : 'below-model-margin';
             $messages[] = "The {$this->teamAbbr} are on a ".abs($atsStreak)."-game {$type} streak";
         }
 
@@ -53,18 +53,21 @@ class StreakTrendCollector extends TrendCollector
 
         foreach ($this->games->sortByDesc('game_date') as $game) {
             if (! $game->relationLoaded('prediction') || ! $game->prediction) {
-                continue;
+                break;
             }
 
             $spread = $game->prediction->predicted_spread ?? null;
             if ($spread === null) {
-                continue;
+                break;
             }
 
             $actualMargin = $this->margin($game);
 
-            $adjustedMargin = $this->isHome($game) ? $actualMargin : -$actualMargin;
-            $covered = $adjustedMargin > -$spread;
+            $modelMargin = $this->modelTeamMargin($game);
+            if (abs($actualMargin - $modelMargin) < 0.00001) {
+                break;
+            }
+            $covered = $actualMargin > $modelMargin;
 
             if ($direction === null) {
                 $direction = $covered;

@@ -21,12 +21,12 @@ class TimeBasedTrendCollector extends TrendCollector
         $earlyGames = $this->games->filter(function ($game) use ($earlyHour) {
             $hour = $this->getGameHour($game);
 
-            return $hour !== null && $hour <= $earlyHour;
+            return $hour !== null && $hour < $earlyHour;
         });
 
         if ($earlyGames->count() >= 3) {
             $earlyWins = $earlyGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($earlyWins, $earlyGames->count())} in early games (before {$earlyHour}:00)";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($earlyGames)} in early games (before {$earlyHour}:00)";
         }
 
         $lateGames = $this->games->filter(function ($game) use ($lateHour) {
@@ -37,7 +37,7 @@ class TimeBasedTrendCollector extends TrendCollector
 
         if ($lateGames->count() >= 3) {
             $lateWins = $lateGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($lateWins, $lateGames->count())} in late/night games (after {$lateHour}:00)";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($lateGames)} in late/night games (after {$lateHour}:00)";
         }
 
         return $messages;
@@ -52,7 +52,11 @@ class TimeBasedTrendCollector extends TrendCollector
         try {
             $sourceTimezone = config("trends.timezones.{$this->league}.source", 'UTC');
             $displayTimezone = config("trends.timezones.{$this->league}.display", $sourceTimezone);
-            $time = Carbon::parse($game->game_time, $sourceTimezone)->setTimezone($displayTimezone);
+            if (empty($game->game_date)) {
+                return null;
+            }
+            $date = Carbon::parse($game->game_date)->toDateString();
+            $time = Carbon::parse($date.' '.$game->game_time, $sourceTimezone)->setTimezone($displayTimezone);
 
             return $time->hour;
         } catch (\Exception) {

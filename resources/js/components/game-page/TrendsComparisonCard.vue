@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
+import NflTeamEvidencePanel from '@/components/game-page/NflTeamEvidencePanel.vue';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -45,6 +46,34 @@ const props = defineProps<{
     matchupContext?: MatchupContextData | null;
     emptyText: string;
 }>();
+
+const selectedWindow = ref('recent_5');
+const hasEvidence = computed(
+    () =>
+        !!(props.homeTrends?.team_evidence || props.awayTrends?.team_evidence),
+);
+const homeView = computed(() =>
+    hasEvidence.value
+        ? (props.homeTrends?.team_evidence?.windows[selectedWindow.value] ??
+          null)
+        : props.homeTrends,
+);
+const awayView = computed(() =>
+    hasEvidence.value
+        ? (props.awayTrends?.team_evidence?.windows[selectedWindow.value] ??
+          null)
+        : props.awayTrends,
+);
+const allTrendCategories = computed(() =>
+    hasEvidence.value
+        ? [
+              ...new Set([
+                  ...Object.keys(homeView.value?.trends ?? {}),
+                  ...Object.keys(awayView.value?.trends ?? {}),
+              ]),
+          ]
+        : props.allTrendCategories,
+);
 
 const percentFromMessage = (message: string): number | null => {
     const matches = [...message.matchAll(/(\d+(?:\.\d+)?)%/g)];
@@ -253,8 +282,8 @@ const trendInsights = computed<TrendInsight[]>(() => {
         });
     };
 
-    append('away', props.awayTrends);
-    append('home', props.homeTrends);
+    append('away', awayView.value);
+    append('home', homeView.value);
 
     return insights.sort((a, b) => b.score - a.score);
 });
@@ -368,8 +397,8 @@ const displayTitle = computed(() =>
                     </Badge>
                     <Badge variant="outline">
                         {{
-                            signalCountForSide(awayTrends) +
-                            signalCountForSide(homeTrends)
+                            signalCountForSide(awayView) +
+                            signalCountForSide(homeView)
                         }}
                         signals
                     </Badge>
@@ -385,6 +414,15 @@ const displayTitle = computed(() =>
             </p>
         </CardHeader>
         <CardContent class="px-4 pb-4 md:px-5">
+            <NflTeamEvidencePanel
+                v-if="hasEvidence && !trendsLoading"
+                v-model:window="selectedWindow"
+                class="mb-4"
+                :home="props.homeTrends?.team_evidence"
+                :away="props.awayTrends?.team_evidence"
+                :home-label="homeLabel || 'Home'"
+                :away-label="awayLabel || 'Away'"
+            />
             <div v-if="trendsLoading" class="space-y-4">
                 <Skeleton class="h-16 w-full" />
                 <Skeleton class="h-16 w-full" />
@@ -419,7 +457,7 @@ const displayTitle = computed(() =>
                             {{ awayLabel || 'Away' }} Signals
                         </p>
                         <p class="mt-1 text-xl font-semibold">
-                            {{ signalCountForSide(awayTrends) }}
+                            {{ signalCountForSide(awayView) }}
                         </p>
                     </div>
                     <div
@@ -431,7 +469,7 @@ const displayTitle = computed(() =>
                             {{ homeLabel || 'Home' }} Signals
                         </p>
                         <p class="mt-1 text-xl font-semibold">
-                            {{ signalCountForSide(homeTrends) }}
+                            {{ signalCountForSide(homeView) }}
                         </p>
                     </div>
                 </div>
@@ -595,7 +633,11 @@ const displayTitle = computed(() =>
                 </div>
 
                 <div
-                    v-if="topMatchupEdges && topMatchupEdges.length > 0"
+                    v-if="
+                        !hasEvidence &&
+                        topMatchupEdges &&
+                        topMatchupEdges.length > 0
+                    "
                     class="rounded-lg border border-border/70 bg-muted/25 p-3"
                 >
                     <h4 class="mb-2 text-sm font-semibold">
@@ -629,17 +671,17 @@ const displayTitle = computed(() =>
                             </h4>
                             <p class="text-xs text-muted-foreground">
                                 {{ awayLabel || 'Away' }}
-                                {{ signalsForCategory(awayTrends, category) }}
+                                {{ signalsForCategory(awayView, category) }}
                                 / {{ homeLabel || 'Home' }}
-                                {{ signalsForCategory(homeTrends, category) }}
+                                {{ signalsForCategory(homeView, category) }}
                             </p>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
                             <Badge variant="outline" class="text-[11px]">
                                 {{
                                     totalForCategory(
-                                        awayTrends,
-                                        homeTrends,
+                                        awayView,
+                                        homeView,
                                         category,
                                     )
                                 }}
@@ -679,17 +721,17 @@ const displayTitle = computed(() =>
                                 </div>
                                 <span class="text-xs text-muted-foreground"
                                     >{{
-                                        signalsForCategory(awayTrends, category)
+                                        signalsForCategory(awayView, category)
                                     }}
                                     signals</span
                                 >
                             </div>
                             <ul
-                                v-if="awayTrends?.trends?.[category]?.length"
+                                v-if="awayView?.trends?.[category]?.length"
                                 class="space-y-1 text-sm"
                             >
                                 <li
-                                    v-for="(trend, idx) in awayTrends.trends[
+                                    v-for="(trend, idx) in awayView.trends[
                                         category
                                     ]"
                                     :key="idx"
@@ -716,17 +758,17 @@ const displayTitle = computed(() =>
                                 </div>
                                 <span class="text-xs text-muted-foreground"
                                     >{{
-                                        signalsForCategory(homeTrends, category)
+                                        signalsForCategory(homeView, category)
                                     }}
                                     signals</span
                                 >
                             </div>
                             <ul
-                                v-if="homeTrends?.trends?.[category]?.length"
+                                v-if="homeView?.trends?.[category]?.length"
                                 class="space-y-1 text-sm"
                             >
                                 <li
-                                    v-for="(trend, idx) in homeTrends.trends[
+                                    v-for="(trend, idx) in homeView.trends[
                                         category
                                     ]"
                                     :key="idx"

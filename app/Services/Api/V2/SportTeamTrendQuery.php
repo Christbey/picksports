@@ -3,6 +3,7 @@
 namespace App\Services\Api\V2;
 
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
+use App\Services\NFL\NflTeamEvidenceService;
 use App\Services\Trends\TrendSignalScorer;
 use App\Support\SportsViewCache;
 use App\Support\UserTierResolver;
@@ -36,10 +37,15 @@ class SportTeamTrendQuery
         $beforeDate = isset($filters['before_date']) ? (string) $filters['before_date'] : null;
         $gamesParam = isset($filters['games']) ? strtolower(trim((string) $filters['games'])) : '';
         $userTier = $this->tierResolver->resolveTierSlug($user);
+        $profile = $context->slug === 'nfl' && ($filters['profile'] ?? null) === 'team_analysis';
+        if ($profile) {
+            $season ??= (int) config('nfl.season.default');
+            $beforeDate ??= now()->utc()->toIso8601String();
+        }
 
         $cacheKey = $this->sportsViewCache->contextHash([
             'contract' => 'sports.teams.trends.show',
-            'sample_contract_version' => 2,
+            'sample_contract_version' => 3,
             'sport' => $context->slug,
             'team_id' => $teamId,
             'season' => $season,
@@ -47,15 +53,26 @@ class SportTeamTrendQuery
             'before_date' => $beforeDate,
             'games' => $gamesParam !== '' ? $gamesParam : (int) config('trends.defaults.sample_size', 20),
             'tier' => $userTier,
+            'profile' => $profile,
         ]);
 
         return $this->sportsViewCache->remember(
             segment: 'team_trends',
             key: $cacheKey,
             ttlSeconds: (int) config('sports_view_cache.ttl.team_trends_seconds', 120),
-            resolver: function () use ($teamModel, $calculatorClass, $context, $teamId, $season, $seasonType, $beforeDate, $gamesParam, $userTier): array {
+            resolver: function () use ($teamModel, $calculatorClass, $context, $teamId, $season, $seasonType, $beforeDate, $gamesParam, $userTier, $profile): array {
                 /** @var Model $team */
                 $team = $teamModel::query()->findOrFail($teamId);
+                if ($profile) {
+                    $evidence = app(NflTeamEvidenceService::class)->build($team, $season, $beforeDate);
+
+                    return [
+                        ...$evidence['windows']['recent_5'],
+                        'team_name' => $team->getAttribute('display_name') ?? $team->getAttribute('name'),
+                        'user_tier' => $userTier,
+                        'team_evidence' => $evidence,
+                    ];
+                }
                 $calculator = app($calculatorClass);
                 $isSeasonSample = in_array($gamesParam, ['season', 'all'], true);
 

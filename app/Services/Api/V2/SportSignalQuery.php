@@ -30,6 +30,7 @@ class SportSignalQuery
 
         $cacheKey = $this->sportsViewCache->contextHash([
             'contract' => 'sports.signals.index',
+            'signal_contract_version' => 2,
             'sport' => $context->slug,
             'season' => $season,
             'as_of_date' => $asOfDate->toDateString(),

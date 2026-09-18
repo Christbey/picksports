@@ -30,6 +30,7 @@ class NflSignalGradeReportService
                 'nfl_signal_observations.signal_key',
             ])
             ->selectRaw('COUNT(DISTINCT nfl_signal_observations.id) as observation_count')
+            ->selectRaw('COUNT(DISTINCT nfl_signal_observations.game_id) as unique_game_count')
             ->addSelect($this->metricSelects())
             ->groupBy([
                 'nfl_signal_observations.signal_type',
@@ -43,7 +44,7 @@ class NflSignalGradeReportService
             ->values();
 
         if ($summaryRows->isEmpty()) {
-            return ['signals' => [], 'windows' => []];
+            return ['signals' => [], 'windows' => [], 'sample_unit' => $filters['sample_unit'] ?? 'game'];
         }
 
         $windows = $this->windowRows($filters, $summaryRows);
@@ -78,6 +79,9 @@ class NflSignalGradeReportService
         return [
             'signals' => $signals,
             'windows' => $windows->values()->all(),
+            'sample_unit' => $filters['sample_unit'] ?? 'game',
+            'selection_policy' => ($filters['sample_unit'] ?? 'game') === 'observation'
+                ? 'all_observations' : 'latest_graded_observation_per_game_and_signal',
         ];
     }
 
@@ -86,7 +90,7 @@ class NflSignalGradeReportService
      */
     private function aggregateQuery(array $filters): Builder
     {
-        return $this->applyFilters(
+        $query = $this->applyFilters(
             NflSignalObservation::query()
                 ->leftJoin(
                     'nfl_signal_grades',
@@ -102,6 +106,31 @@ class NflSignalGradeReportService
                 ),
             $filters
         );
+
+        if (($filters['sample_unit'] ?? 'game') !== 'observation') {
+            // Rerunning the model is not another independent game outcome.
+            $query->where(function ($scope) use ($filters): void {
+                // Keep exact settlements from earlier runs; only outcome samples deduplicate.
+                $scope->where('nfl_signal_grades.evaluation_source', 'settlement')
+                    ->orWhereNotExists(function ($newer) use ($filters): void {
+                        $newer->selectRaw('1')->from('nfl_signal_observations as newer')
+                            ->whereColumn('newer.game_id', 'nfl_signal_observations.game_id')
+                            ->whereColumn('newer.signal_type', 'nfl_signal_observations.signal_type')
+                            ->whereColumn('newer.signal_key', 'nfl_signal_observations.signal_key')
+                            ->when((bool) ($filters['pregame_safe'] ?? true), fn ($q) => $q->where('newer.pregame_safe', true))
+                            ->whereExists(fn ($q) => $q->selectRaw('1')->from('nfl_signal_grades as newer_grade')
+                                ->whereColumn('newer_grade.nfl_signal_observation_id', 'newer.id')
+                                ->where('newer_grade.evaluation_source', 'outcome'))
+                            ->where(function ($q): void {
+                                $q->whereColumn('newer.observed_at', '>', 'nfl_signal_observations.observed_at')
+                                    ->orWhere(fn ($q) => $q->whereColumn('newer.observed_at', 'nfl_signal_observations.observed_at')
+                                        ->whereColumn('newer.id', '>', 'nfl_signal_observations.id'));
+                            });
+                    });
+            });
+        }
+
+        return $query;
     }
 
     /**
@@ -270,6 +299,7 @@ class NflSignalGradeReportService
                 'nfl_signal_observations.season',
             ])
             ->selectRaw('COUNT(DISTINCT nfl_signal_observations.id) as observation_count')
+            ->selectRaw('COUNT(DISTINCT nfl_signal_observations.game_id) as unique_game_count')
             ->addSelect($this->metricSelects())
             ->groupBy([
                 'nfl_signal_observations.signal_type',
@@ -313,6 +343,7 @@ class NflSignalGradeReportService
             'signal_type' => (string) $row->signal_type,
             'signal_key' => (string) $row->signal_key,
             'observation_count' => (int) $row->observation_count,
+            'unique_game_count' => (int) ($row->unique_game_count ?? 0),
             'winner_sample' => $winnerSample,
             'winner_accuracy' => $this->rate((int) ($row->winner_wins ?? 0), $winnerSample),
             'ats_sample' => $atsSample,

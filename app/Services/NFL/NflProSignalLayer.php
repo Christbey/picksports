@@ -102,7 +102,7 @@ class NflProSignalLayer
         );
 
         return [
-            'version' => 'nfl-pro-signal-layer-v1',
+            'version' => 'nfl-pro-signal-layer-v2',
             'score' => $score,
             'tier' => $this->tier($score),
             'market_scores' => $marketScores,
@@ -175,7 +175,7 @@ class NflProSignalLayer
     ): array {
         $winnerComponents = [
             'base' => 18,
-            'win_probability' => (int) max(0, min(34, floor(($winProbability - 0.5) * 100))),
+            'win_probability' => (int) max(0, min(34, floor((max($winProbability, 1 - $winProbability) - 0.5) * 100))),
             'spread_edge' => $spreadEdge !== null && abs($spreadEdge) >= 4.0 ? 8 : ($spreadEdge !== null && abs($spreadEdge) >= 2.0 ? 4 : 0),
             'key_number_10_context' => in_array(10, $crossedKeyNumbers, true) ? 5 : 0,
             'qb_context' => abs((float) data_get($metadata, 'qb_form.signal_spread', 0.0)) >= 1.0 ? 6 : 0,
@@ -297,11 +297,17 @@ class NflProSignalLayer
      */
     private function crossedKeyNumbers(float $marketSpread, float $modelSpread, array $keyNumbers): array
     {
-        $market = abs($marketSpread);
-        $model = abs($modelSpread);
-
         return collect($keyNumbers)
-            ->filter(fn (int $key): bool => ($market < $key && $model >= $key) || ($market > $key && $model <= $key))
+            ->filter(function (int $key) use ($marketSpread, $modelSpread): bool {
+                foreach ([$key, -$key] as $signedKey) {
+                    if (($marketSpread < $signedKey && $modelSpread >= $signedKey)
+                        || ($marketSpread > $signedKey && $modelSpread <= $signedKey)) {
+                        return true;
+                    }
+                }
+
+                return false;
+            })
             ->values()
             ->all();
     }
@@ -867,8 +873,8 @@ class NflProSignalLayer
     private function spreadClv(string $pickSide, float $entrySpread, float $closingSpread): float
     {
         return $pickSide === 'home'
-            ? $entrySpread - $closingSpread
-            : $closingSpread - $entrySpread;
+            ? $closingSpread - $entrySpread
+            : $entrySpread - $closingSpread;
     }
 
     private function spreadBookRange(Game $game): ?float

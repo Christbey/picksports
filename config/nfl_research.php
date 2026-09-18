@@ -2,6 +2,18 @@
 
 return [
     'enabled' => (bool) env('NFL_RESEARCH_PIPELINE_ENABLED', true),
+    'cost_control' => [
+        // Rolling 24-hour, estimated admission budgets, not a provider billing guarantee.
+        'daily_budget_usd' => env('NFL_RESEARCH_DAILY_BUDGET_USD', 5),
+        'game_daily_budget_usd' => env('NFL_RESEARCH_GAME_DAILY_BUDGET_USD', 0.75),
+        'game_daily_attempts' => env('NFL_RESEARCH_GAME_DAILY_ATTEMPTS', 8),
+        'reservation_usd' => env('NFL_RESEARCH_RESERVATION_USD', 0.15),
+        'minimum_interval_minutes' => env('NFL_RESEARCH_MINIMUM_INTERVAL_MINUTES', 15),
+        'retry_unchanged_minutes' => env('NFL_RESEARCH_RETRY_UNCHANGED_MINUTES', 360),
+        'early_minutes' => env('NFL_RESEARCH_EARLY_FRESHNESS_MINUTES', 1440),
+        'standard_minutes' => env('AI_NFL_GAME_CONTEXT_RESEARCH_FRESHNESS_MINUTES', 360),
+        'pregame_minutes' => env('NFL_RESEARCH_PREGAME_FRESHNESS_MINUTES', 90),
+    ],
     'poll_minutes' => 15,
     'ingestion_max_seconds' => env('NFL_RESEARCH_INGESTION_MAX_SECONDS', 180),
     'max_articles_per_source' => 12,

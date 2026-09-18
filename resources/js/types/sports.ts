@@ -514,6 +514,8 @@ export interface RecentGameListItem {
 }
 
 export interface TeamTrendData {
+    team_evidence?: NflTeamEvidence;
+    evidence?: NflEvidenceWindow;
     team_id?: number;
     team_abbreviation?: string;
     team_name?: string;
@@ -527,6 +529,41 @@ export interface TeamTrendData {
         primary_signal?: TeamTrendSignal | null;
     };
     locked_trends: Record<string, string>;
+}
+
+export interface NflEvidenceMetric {
+    value: number | null;
+    sample_size: number;
+    aggregation?: string;
+}
+
+export interface NflEvidenceWindow {
+    label: string;
+    sample_size: number;
+    game_ids: number[];
+    seasons: number[];
+    from_date: string | null;
+    through_date: string | null;
+    latest_source_update: string | null;
+    record: { wins: number; losses: number; ties: number };
+    metrics: Record<string, NflEvidenceMetric>;
+}
+
+export interface NflTeamEvidence {
+    version: string;
+    cutoff_at: string;
+    generated_at: string;
+    source: string;
+    windows: Record<string, TeamTrendData>;
+    changes: Array<{
+        metric: string;
+        recent: NflEvidenceMetric;
+        baseline: NflEvidenceMetric;
+        delta: number | null;
+        status: string;
+    }>;
+    comparison_baseline: NflEvidenceWindow;
+    limitations: string[];
 }
 
 export interface TeamTrendSignal {

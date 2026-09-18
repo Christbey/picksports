@@ -312,7 +312,7 @@ export function useNflGamePage(gameId: number) {
 
     const trendsSubtitle = computed(
         () =>
-            `${currentGame.value.season} ${weekLabel.value.startsWith('Preseason') ? 'Preseason' : currentGame.value.season_type === '3' ? 'Postseason' : 'Regular Season'} · ${awayTeam.value?.abbreviation ?? 'Away'}: ${awayTrends.value?.sample_size ?? 0} games · ${homeTeam.value?.abbreviation ?? 'Home'}: ${homeTrends.value?.sample_size ?? 0} games · before kickoff`,
+            `Regular-season team evidence · cutoff: ${formatDateLong(currentGame.value.game_date ?? '')} kickoff · recent form, season and prior seasons shown separately`,
     );
 
     const {
@@ -377,6 +377,7 @@ export function useNflGamePage(gameId: number) {
             const homeTeamId = homeTeam.value?.id;
             const awayTeamId = awayTeam.value?.id;
             const trendQuery = {
+                profile: 'team_analysis',
                 games: 'season',
                 season: currentGame.value.season,
                 season_type: currentGame.value.season_type,

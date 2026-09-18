@@ -37,7 +37,7 @@ class ScoringPatternTrendCollector extends TrendCollector
             $teamFirstSegment = $this->firstSegmentTotal($team);
             $oppFirstSegment = $this->firstSegmentTotal($opp);
 
-            return $teamFirstSegment > $oppFirstSegment && ! $this->won($game);
+            return $teamFirstSegment > $oppFirstSegment && $this->margin($game) < 0;
         });
 
         if ($blownLeads >= 3) {

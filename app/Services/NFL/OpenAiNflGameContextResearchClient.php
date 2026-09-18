@@ -3,6 +3,7 @@
 namespace App\Services\NFL;
 
 use App\AI\Agents\NflGameContextResearchAgent;
+use App\Services\NFL\Research\ResearchResponseException;
 use Illuminate\JsonSchema\JsonSchemaTypeFactory;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\ObjectSchema;
@@ -88,27 +89,39 @@ class OpenAiNflGameContextResearchClient
             throw new RuntimeException('OpenAI Responses API returned an invalid response body.');
         }
 
+        $telemetry = $this->telemetry($body, $model);
+        if (isset($body['status']) && $body['status'] !== 'completed') {
+            throw new ResearchResponseException('OpenAI Responses API did not complete the research response.', $telemetry);
+        }
         $outputText = $this->outputText($body);
         if ($outputText === null) {
-            throw new RuntimeException('OpenAI Responses API returned no structured output text.');
+            throw new ResearchResponseException('OpenAI Responses API returned no structured output text.', $telemetry);
         }
 
         try {
             $structured = json_decode($outputText, true, flags: JSON_THROW_ON_ERROR);
         } catch (Throwable $exception) {
-            throw new RuntimeException('OpenAI Responses API returned invalid structured JSON.', previous: $exception);
+            throw new ResearchResponseException('OpenAI Responses API returned invalid structured JSON.', $telemetry, $exception);
         }
 
         if (! is_array($structured)) {
-            throw new RuntimeException('OpenAI Responses API returned an unexpected structured payload.');
+            throw new ResearchResponseException('OpenAI Responses API returned an unexpected structured payload.', $telemetry);
         }
 
         return [
+            ...$telemetry,
             'structured' => $structured,
             'citation_urls' => $this->citationUrls($body),
+        ];
+    }
+
+    private function telemetry(array $body, string $model): array
+    {
+        return [
             'provider' => 'openai',
             'model' => (string) ($body['model'] ?? $model),
             'response_id' => isset($body['id']) ? (string) $body['id'] : null,
+            'usage_available' => isset($body['usage']['input_tokens'], $body['usage']['output_tokens']),
             'usage' => [
                 'input' => max(0, (int) data_get($body, 'usage.input_tokens', 0)),
                 'output' => max(0, (int) data_get($body, 'usage.output_tokens', 0)),

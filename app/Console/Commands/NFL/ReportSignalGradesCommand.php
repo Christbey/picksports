@@ -15,6 +15,7 @@ class ReportSignalGradesCommand extends Command
         {--signal-type= : Restrict report to one signal type}
         {--signal-key= : Restrict report to one signal key}
         {--include-unsafe : Include observations not verified as pregame-safe}
+        {--sample-unit=game : game for independent outcomes; observation for run diagnostics}
         {--limit=100 : Maximum signal rows}
         {--json : Emit the full report as JSON}';
 
@@ -24,6 +25,9 @@ class ReportSignalGradesCommand extends Command
     {
         try {
             [$fromSeason, $toSeason] = $this->seasonScope();
+            if (! in_array($this->option('sample-unit'), ['game', 'observation'], true)) {
+                throw new InvalidArgumentException('sample-unit must be game or observation.');
+            }
         } catch (InvalidArgumentException $exception) {
             $this->error($exception->getMessage());
 
@@ -37,6 +41,7 @@ class ReportSignalGradesCommand extends Command
             'signal_key' => $this->option('signal-key'),
             'pregame_safe' => ! (bool) $this->option('include-unsafe'),
             'limit' => (int) $this->option('limit'),
+            'sample_unit' => $this->option('sample-unit'),
         ]);
 
         if ((bool) $this->option('json')) {
@@ -51,6 +56,7 @@ class ReportSignalGradesCommand extends Command
             return self::SUCCESS;
         }
 
+        $this->info('Outcome sample unit: '.$report['sample_unit'].'. All exact decision settlements are retained.');
         $this->table(
             [
                 'Type',

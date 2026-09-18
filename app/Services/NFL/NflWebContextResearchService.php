@@ -3,16 +3,21 @@
 namespace App\Services\NFL;
 
 use App\AI\Agents\NflGameContextResearchAgent;
+use App\Models\AiGeneration;
 use App\Models\NFL\Game;
 use App\Models\SportsGameContextReport;
 use App\Services\AI\AiGenerationRecorder;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\NFL\Research\EvidencePacket;
+use App\Services\NFL\Research\ResearchDeferred;
 use App\Services\NFL\Research\ResearchPipeline;
+use App\Services\NFL\Research\ResearchRefreshPolicy;
+use App\Services\NFL\Research\ResearchResponseException;
+use App\Services\NFL\Research\ResearchSpendGuard;
 use App\Services\NFL\Research\ResearchUncertaintyPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Arr;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Laravel\Ai\Responses\StructuredAgentResponse;
 use RuntimeException;
@@ -28,7 +33,22 @@ class NflWebContextResearchService
     /**
      * @return array<string, mixed>
      */
-    public function research(Game $game, ?string $provider = null, ?string $model = null): array
+    public function research(Game $game, ?string $provider = null, ?string $model = null, bool $force = false): array
+    {
+        // Every caller shares this lock; scheduler locks alone do not protect manual runs.
+        $lock = Cache::lock('nfl-paid-research-game:'.$game->id,
+            max(300, (int) config('ai.features.nfl_game_context_research.timeout_seconds', 120) + 120));
+        if (! $lock->get()) {
+            throw new ResearchDeferred('research_game_already_running');
+        }
+        try {
+            return $this->researchLocked($game, $provider, $model, $force);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function researchLocked(Game $game, ?string $provider, ?string $model, bool $force): array
     {
         if (! config('ai.features.nfl_game_context_research.enabled', true)) {
             throw new RuntimeException('NFL game-context web research is disabled.');
@@ -36,13 +56,20 @@ class NflWebContextResearchService
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $circuitBreaker = app(AiProviderRateLimitCircuitBreaker::class);
         $retryAfter = $circuitBreaker->retryAfterSeconds($provider);
+        $game->loadMissing(['homeTeam', 'awayTeam']);
+        $packet = app(EvidencePacket::class)->forGame($game);
+        $policy = app(ResearchRefreshPolicy::class);
+        $fingerprint = $policy->fingerprint($game, $packet);
+        $existing = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
+        if (! $force && $policy->current($existing, $game, $fingerprint)) {
+            return ['report' => $existing, 'payload' => $existing->raw_payload, 'generation' => null, 'reused' => true];
+        }
         if ($retryAfter > 0) {
             throw new RuntimeException("AI provider [{$provider}] rate-limit cooldown is active for {$retryAfter} second(s).");
         }
-        $game->loadMissing(['homeTeam', 'awayTeam']);
         $input = $this->input($game);
-        $packet = app(EvidencePacket::class)->forGame($game);
         $input['official_documents'] = app(EvidencePacket::class)->researchDocuments($packet);
+        $input['synced_injuries'] = $policy->injuries($game);
         $input['verified_availability'] = $packet['availability'];
         $input['official_source_coverage'] = $packet['source_coverage'] ?? [];
         $input['model_candidate'] = $game->getAttribute('research_candidate') ?? $game->prediction?->only(['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']);
@@ -64,8 +91,8 @@ class NflWebContextResearchService
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $model ??= (string) config('ai.features.nfl_game_context_research.model', 'gpt-5.6-luna');
         $promptVersion = (string) config('ai.features.nfl_game_context_research.prompt_version', 'nfl-game-context-research-v2');
-        $generation = Schema::hasTable('ai_generations')
-            ? $this->generationRecorder->start(
+        $generation = app(ResearchSpendGuard::class)->reserve($game, $fingerprint, $provider, $model,
+            fn (array $reservation) => $this->generationRecorder->start(
                 purpose: 'nfl_game_context_research',
                 promptVersion: $promptVersion,
                 provider: $provider,
@@ -74,15 +101,21 @@ class NflWebContextResearchService
                 contextType: 'nfl_game',
                 contextId: (string) $game->getKey(),
                 metadata: [
+                    ...$reservation,
+                    'previous_report_id' => $existing?->id,
+                    'refresh_reason' => $force ? 'manual_force' : (! $existing ? 'initial_research'
+                        : (data_get($existing->raw_payload, 'research_fingerprint') !== $fingerprint ? 'evidence_changed'
+                            : ($existing->status !== 'ready' ? 'incomplete_retry' : 'freshness_expired'))),
                     'search_cap' => max(1, (int) config('ai.features.nfl_game_context_research.max_searches', 5)),
                 ],
-            )
-            : null;
+            ));
         $startedAt = microtime(true);
+        $telemetry = null;
 
         try {
             if ($provider === 'openai' && ! NflGameContextResearchAgent::isFaked()) {
                 $result = $this->openAiClient->research($prompt, $model);
+                $telemetry = $result;
                 $decoded = $result['structured'];
                 $providerCitationUrls = $result['citation_urls'];
                 $generatedProvider = $result['provider'];
@@ -137,6 +170,7 @@ class NflWebContextResearchService
             $payload['candidate_hash'] = app(ResearchPipeline::class)->candidateContextHash($input['model_candidate'] ?? []);
             $payload['document_ids'] = array_column($input['official_documents'], 'id');
             $payload['evidence_context_hash'] = app(EvidencePacket::class)->contextHash($packet);
+            $payload['research_fingerprint'] = $fingerprint;
             $latencyMs = (int) round((microtime(true) - $startedAt) * 1000);
             $researchedAt = now();
 
@@ -159,7 +193,7 @@ class NflWebContextResearchService
                 'risk_flags' => $payload['risk_flags'],
                 'raw_payload' => $payload,
                 'researched_at' => $researchedAt,
-                'expires_at' => $researchedAt->copy()->addMinutes((int) config('ai.features.nfl_game_context_research.freshness_minutes', 360)),
+                'expires_at' => $policy->expiresAt($game),
                 'latency_ms' => $latencyMs,
             ]);
 
@@ -169,19 +203,24 @@ class NflWebContextResearchService
                     output: $payload,
                     latencyMs: $latencyMs,
                     tokens: $usage,
-                    costUsd: $this->estimatedOpenAiCost($generatedProvider, $generatedModel, $usage, $webSearchCalls),
+                    costUsd: ($telemetry['usage_available'] ?? true)
+                        ? $this->estimatedOpenAiCost($generatedProvider, $generatedModel, $usage, $webSearchCalls) : null,
                     metadata: [
                         'provider_response_id' => $responseId,
                         'report_id' => (int) $report->getKey(),
                         'web_search_calls' => $webSearchCalls,
                         'reasoning_tokens' => $usage['reasoning'],
-                        'cost_basis' => $webSearchCalls === null ? null : 'configured_pricing_estimate',
+                        'cost_basis' => $webSearchCalls === null || ! ($telemetry['usage_available'] ?? true) ? 'unknown_reserved' : 'configured_pricing_estimate',
                     ],
                 );
             }
 
             return ['report' => $report, 'payload' => $payload, 'generation' => $generation];
         } catch (Throwable $exception) {
+            $telemetry = $exception instanceof ResearchResponseException ? $exception->telemetry : $telemetry;
+            if ($telemetry && $generation->fresh()?->status === 'running') {
+                $this->recordFailedUsage($generation, $telemetry);
+            }
             if ($circuitBreaker->isRateLimitFailure($exception->getMessage())) {
                 $circuitBreaker->trip($provider, $circuitBreaker->isQuotaExhausted($exception->getMessage()));
             }
@@ -196,6 +235,24 @@ class NflWebContextResearchService
 
             throw $exception;
         }
+    }
+
+    private function recordFailedUsage(AiGeneration $generation, array $telemetry): void
+    {
+        $usage = $telemetry['usage'];
+        $available = $telemetry['usage_available'] ?? false;
+        $generation->forceFill([
+            'input_tokens' => $available ? $usage['input'] : null,
+            'output_tokens' => $available ? $usage['output'] : null,
+            'cached_input_tokens' => $available ? $usage['cached_input'] : null,
+            'cost_usd' => $available ? $this->estimatedOpenAiCost($telemetry['provider'], $telemetry['model'], $usage, $telemetry['web_search_calls']) : null,
+            'metadata' => array_merge($generation->metadata ?? [], [
+                'provider_response_id' => $telemetry['response_id'],
+                'web_search_calls' => $telemetry['web_search_calls'],
+                'reasoning_tokens' => $usage['reasoning'],
+                'cost_basis' => $available ? 'configured_pricing_estimate' : 'unknown_reserved',
+            ]),
+        ])->save();
     }
 
     /**
@@ -338,7 +395,8 @@ class NflWebContextResearchService
     /** @param array<string, mixed> $input */
     private function prompt(array $input): string
     {
-        $json = json_encode($input, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        // Preserve every selected fact; whitespace is not useful research context.
+        $json = json_encode($input, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         $seasonGuidance = match ($input['season_type_label'] ?? 'unknown') {
             'preseason' => 'This is a preseason game. Participation plans and quarterback rotations matter more than regular-season depth-chart labels. Search specifically for each head coach\'s latest participation announcement and credible same-day reporting. A team\'s regular-season quality is not evidence that its starters will play.',
             'regular_season' => 'This is a regular-season game. Do not use preseason rotation framing. Prioritize official injury designations, practice participation, confirmed starting quarterbacks, travel/rest, weather, and current market movement.',

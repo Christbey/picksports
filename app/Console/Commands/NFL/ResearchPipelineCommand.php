@@ -128,6 +128,10 @@ class ResearchPipelineCommand extends Command
             foreach ($games as $game) {
                 $revision = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
                 if ($revision) {
+                    if ($reason = data_get($revision->brief, 'research_refresh.deferred_reason')) {
+                        $failed = true;
+                        $this->warn('Game '.$game->id.' paid research deferred: '.$reason.'. Existing evidence has not been revalidated.');
+                    }
                     $this->line(json_encode(['revision_id' => $revision->id, 'baseline' => $revision->baseline, 'revised' => $revision->revised, 'brief' => $revision->brief, 'market' => $revision->market], JSON_UNESCAPED_SLASHES));
                 }
             }

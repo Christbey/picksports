@@ -2,7 +2,10 @@
 
 namespace App\Services\Predictions;
 
+use App\Models\NFL\Game as NflGame;
 use App\Models\SportsGameContextReport;
+use App\Services\NFL\Research\EvidencePacket;
+use App\Services\NFL\Research\ResearchRefreshPolicy;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Schema;
 
@@ -18,16 +21,22 @@ class SportsExternalGameContextBuilder
         $report = SportsGameContextReport::query()
             ->where('sport', strtolower($sport))
             ->where('game_id', (int) $game->getKey())
-            ->whereIn('status', ['ready', 'partial'])
-            ->where(function ($query): void {
-                $query->whereNull('expires_at')->orWhere('expires_at', '>', now());
-            })
             ->latest('researched_at')
             ->latest('id')
             ->first();
 
-        if (! $report) {
+        if (! $report || ! in_array($report->status, ['ready', 'partial'], true)
+            || ($report->expires_at && $report->expires_at->lte(now()))) {
             return $this->unavailable('no_fresh_research');
+        }
+
+        if ($game instanceof NflGame && data_get($report->raw_payload, 'research_fingerprint')) {
+            $game->loadMissing(['homeTeam', 'awayTeam']);
+            $policy = app(ResearchRefreshPolicy::class);
+            if ($report->researched_at->lte(now()->subMinutes($policy->freshnessMinutes($game)))
+                || data_get($report->raw_payload, 'research_fingerprint') !== $policy->fingerprint($game, app(EvidencePacket::class)->forGame($game))) {
+                return $this->unavailable('research_evidence_changed_or_stale');
+            }
         }
 
         $adjustments = strtolower($sport) === 'nfl'

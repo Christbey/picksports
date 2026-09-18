@@ -21,6 +21,7 @@ class SportTeamTrendRequest extends FormRequest
             'season' => ['sometimes', 'integer', 'min:2000', 'max:2100'],
             'season_type' => ['sometimes', 'string', 'max:100'],
             'before_date' => ['sometimes', 'date'],
+            'profile' => ['sometimes', 'in:team_analysis'],
         ];
     }
 
@@ -34,6 +35,7 @@ class SportTeamTrendRequest extends FormRequest
             'season',
             'season_type',
             'before_date',
+            'profile',
         ]);
 
         if (array_key_exists('games', $filters)) {

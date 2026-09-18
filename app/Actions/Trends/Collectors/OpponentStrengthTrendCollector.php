@@ -24,7 +24,7 @@ class OpponentStrengthTrendCollector extends TrendCollector
 
         if ($gamesVsTopElo->count() >= 3) {
             $winsVsTop = $gamesVsTopElo->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($winsVsTop, $gamesVsTopElo->count())} against opponents with pregame Elo 1550+";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($gamesVsTopElo)} against opponents with pregame Elo 1550+";
         }
 
         $gamesVsBelowAverageElo = $gamesWithPregameElo->filter(
@@ -33,7 +33,7 @@ class OpponentStrengthTrendCollector extends TrendCollector
 
         if ($gamesVsBelowAverageElo->count() >= 3) {
             $wins = $gamesVsBelowAverageElo->filter(fn ($game): bool => $this->won($game))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($wins, $gamesVsBelowAverageElo->count())} against opponents with pregame Elo below 1500";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($gamesVsBelowAverageElo)} against opponents with pregame Elo below 1500";
         }
 
         return $messages;
@@ -46,8 +46,8 @@ class OpponentStrengthTrendCollector extends TrendCollector
         }
 
         $value = $this->isHome($game)
-            ? $game->prediction->away_team_elo
-            : $game->prediction->home_team_elo;
+            ? ($game->prediction->away_elo ?? $game->prediction->away_team_elo)
+            : ($game->prediction->home_elo ?? $game->prediction->home_team_elo);
 
         return is_numeric($value) ? (float) $value : null;
     }

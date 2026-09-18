@@ -28,18 +28,19 @@ class ConferenceTrendCollector extends TrendCollector
 
             if ($conferenceGames->count() >= 3) {
                 $conferenceWins = $conferenceGames->filter(fn ($g) => $this->won($g))->count();
-                $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($conferenceWins, $conferenceGames->count())} in {$sameGroupLabel} games";
+                $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($conferenceGames)} in {$sameGroupLabel} games";
             }
 
             $nonConferenceGames = $this->games->filter(function ($game) use ($teamConference) {
                 $opponent = $this->isHome($game) ? $game->awayTeam : $game->homeTeam;
 
-                return $opponent && $this->opponentConferenceValue($opponent) !== $teamConference;
+                return $opponent && $this->opponentConferenceValue($opponent) !== null
+                    && $this->opponentConferenceValue($opponent) !== $teamConference;
             });
 
             if ($nonConferenceGames->count() >= 3) {
                 $nonConferenceWins = $nonConferenceGames->filter(fn ($g) => $this->won($g))->count();
-                $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($nonConferenceWins, $nonConferenceGames->count())} in {$otherGroupLabel} games";
+                $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($nonConferenceGames)} in {$otherGroupLabel} games";
             }
         }
 
@@ -47,12 +48,14 @@ class ConferenceTrendCollector extends TrendCollector
             $divisionGames = $this->games->filter(function ($game) use ($teamDivision) {
                 $opponent = $this->isHome($game) ? $game->awayTeam : $game->homeTeam;
 
-                return $opponent && $this->opponentDivisionValue($opponent) === $teamDivision;
+                return $opponent && $this->opponentDivisionValue($opponent) === $teamDivision
+                    && ($this->league !== 'nfl' || ($this->teamConferenceValue() !== null
+                        && $this->opponentConferenceValue($opponent) === $this->teamConferenceValue()));
             });
 
             if ($divisionGames->count() >= 2) {
                 $divisionWins = $divisionGames->filter(fn ($g) => $this->won($g))->count();
-                $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($divisionWins, $divisionGames->count())} in division games";
+                $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($divisionGames)} in division games";
             }
         }
 

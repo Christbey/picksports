@@ -40,12 +40,12 @@ class RestScheduleTrendCollector extends TrendCollector
 
         if ($shortRestGames->count() >= 3) {
             $shortRestWins = $shortRestGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($shortRestWins, $shortRestGames->count())} on short rest ({$shortRestDays} days or less)";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($shortRestGames)} on short rest ({$shortRestDays} days or less)";
         }
 
         if ($longRestGames->count() >= 3) {
             $longRestWins = $longRestGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($longRestWins, $longRestGames->count())} on extended rest (more than {$shortRestDays} days)";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($longRestGames)} on extended rest (more than {$shortRestDays} days)";
         }
 
         return $messages;
@@ -57,7 +57,7 @@ class RestScheduleTrendCollector extends TrendCollector
             $prevDate = Carbon::parse($prevGame->game_date);
             $currentDate = Carbon::parse($currentGame->game_date);
 
-            return $currentDate->diffInDays($prevDate);
+            return (int) $prevDate->diffInDays($currentDate);
         } catch (\Exception) {
             return null;
         }

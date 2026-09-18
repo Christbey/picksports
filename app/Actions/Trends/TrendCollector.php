@@ -39,6 +39,11 @@ abstract class TrendCollector
             ->filter(fn (object $game): bool => $this->hasCompleteScore($game))
             ->values();
 
+        if ($league === 'nfl' && in_array($this->key(), ['quarters', 'halves', 'first_score', 'scoring_patterns'], true)) {
+            $this->games = $this->games->filter(fn ($game) => count($this->teamLinescores($game)) >= 4
+                && count($this->opponentLinescores($game)) >= 4)->values();
+        }
+
         return $this;
     }
 
@@ -74,6 +79,26 @@ abstract class TrendCollector
     protected function won(object $game): bool
     {
         return $this->teamScore($game) > $this->opponentScore($game);
+    }
+
+    protected function teamRecord(Collection $games): string
+    {
+        $wins = $games->filter(fn ($game) => $this->won($game))->count();
+        $ties = $games->filter(fn ($game) => $this->margin($game) === 0)->count();
+
+        return $this->formatRecord($wins, $games->count(), $ties);
+    }
+
+    protected function modelTeamMargin(object $game): ?float
+    {
+        if (! $game->relationLoaded('prediction') || ! is_numeric($game->prediction?->predicted_spread)) {
+            return null;
+        }
+        $spread = (float) $game->prediction->predicted_spread;
+        // NFL stores home-minus-away projected points, not a book handicap.
+        $homeMargin = $this->league === 'nfl' ? $spread : -$spread;
+
+        return $this->isHome($game) ? $homeMargin : -$homeMargin;
     }
 
     protected function margin(object $game): int
@@ -119,12 +144,14 @@ abstract class TrendCollector
         ];
     }
 
-    protected function formatRecord(int $wins, int $total): string
+    protected function formatRecord(int $wins, int $total, int $ties = 0): string
     {
-        $losses = $total - $wins;
+        $losses = $total - $wins - $ties;
         $pct = $total > 0 ? round(($wins / $total) * 100) : 0;
 
-        return "{$wins}-{$losses} ({$pct}%)";
+        $record = $ties > 0 ? "{$wins}-{$losses}-{$ties}" : "{$wins}-{$losses}";
+
+        return "{$record} ({$pct}%)";
     }
 
     protected function percentage(int $count, int $total): float
@@ -180,6 +207,36 @@ abstract class TrendCollector
 
         if (empty($data)) {
             return [];
+        }
+
+        if ($this->league === 'nfl') {
+            if (! is_array($data)) {
+                return [];
+            }
+            $result = [];
+            foreach ($data as $index => $period) {
+                if (is_array($period)) {
+                    $index = isset($period['period']) ? (int) $period['period'] - 1 : $index;
+                    $value = $period['value'] ?? $period['displayValue'] ?? null;
+                } else {
+                    $value = $period;
+                    if (is_string($index) && preg_match('/^Q([1-4])$/', $index, $match)) {
+                        $index = (int) $match[1] - 1;
+                    }
+                }
+                if (is_numeric($index) && is_numeric($value) && (float) $value >= 0) {
+                    $result[(int) $index] = (int) $value;
+                }
+            }
+            // Never infer unreported quarters or renumber a sparse ESPN array.
+            foreach ([0, 1, 2, 3] as $quarter) {
+                if (! array_key_exists($quarter, $result)) {
+                    return [];
+                }
+            }
+            ksort($result);
+
+            return $result;
         }
 
         // Check if it's keyed by quarter name (Q1, Q2, Q3, Q4)

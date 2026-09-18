@@ -21,9 +21,9 @@ class MomentumTrendCollector extends TrendCollector
 
         if ($recentCount >= 3) {
             if ($recentWins >= 4) {
-                $messages[] = "The {$this->teamAbbr} are hot, going {$recentWins}-".($recentCount - $recentWins).' in their last '.$recentCount.' games';
+                $messages[] = "The {$this->teamAbbr} are hot, going ".$this->teamRecord($recentGames).' in their last '.$recentCount.' games';
             } elseif ($recentWins <= 1) {
-                $messages[] = "The {$this->teamAbbr} are struggling, going {$recentWins}-".($recentCount - $recentWins).' in their last '.$recentCount.' games';
+                $messages[] = "The {$this->teamAbbr} are struggling, going ".$this->teamRecord($recentGames).' in their last '.$recentCount.' games';
             }
         }
 

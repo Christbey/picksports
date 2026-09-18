@@ -172,16 +172,17 @@ class TrendSignalScorer
 
     protected function extractPercentage(string $message): ?float
     {
+        // Thresholds such as "40%+ in 8 of 10 games" are not occurrence rates.
+        $ratio = $this->extractRatio($message);
+        if ($ratio !== null) {
+            return round(($ratio['successes'] / $ratio['attempts']) * 100, 1);
+        }
+
         if (preg_match('/(\d+(?:\.\d+)?)%/', $message, $match)) {
             return $this->validPercentage((float) $match[1]);
         }
 
-        $ratio = $this->extractRatio($message);
-        if ($ratio === null || $ratio['attempts'] === 0) {
-            return null;
-        }
-
-        return round(($ratio['successes'] / $ratio['attempts']) * 100, 1);
+        return null;
     }
 
     protected function validPercentage(float $percentage): ?float

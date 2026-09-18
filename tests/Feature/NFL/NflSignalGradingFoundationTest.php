@@ -200,6 +200,55 @@ it('materializes every NFL snapshot signal atomically with immutable lineage', f
         ->toThrow(LogicException::class, 'immutable');
 });
 
+it('counts one independent game outcome across reruns while retaining all exact settlements', function () {
+    $first = createSignalSnapshot();
+    $second = $first->replicate();
+    $second->snapshot_run_id = (string) Str::uuid();
+    $second->generated_at = $first->generated_at->copy()->addMinutes(10);
+    $second->save();
+
+    foreach ([$first, $second] as $snapshot) {
+        createSignalSettlement($snapshot);
+        app(NflSignalObservationMaterializer::class)->materialize($snapshot);
+        $observation = NflSignalObservation::where('prediction_feature_snapshot_id', $snapshot->id)
+            ->where('signal_type', 'reason_code')->where('signal_key', 'qb_form_home_edge')->firstOrFail();
+        app(NflSignalGradingService::class)->grade($observation);
+    }
+    $filters = ['signal_type' => 'reason_code', 'signal_key' => 'qb_form_home_edge'];
+    $service = app(NflSignalGradeReportService::class);
+    $report = $service->report($filters);
+    expect($report['sample_unit'])->toBe('game')
+        ->and($report['signals'][0]['winner_sample'])->toBe(1)
+        ->and($report['signals'][0]['ats_sample'])->toBe(1)
+        ->and($report['signals'][0]['unique_game_count'])->toBe(1)
+        ->and($report['signals'][0]['actual_settlement_sample'])->toBe(2)
+        ->and($report['signals'][0]['settlement_sample'])->toBe(2)
+        ->and($service->report($filters + ['sample_unit' => 'observation'])['signals'][0]['winner_sample'])->toBe(2);
+});
+
+it('does not let a newer unsafe or ungraded run erase a valid graded sample', function () {
+    $first = createSignalSnapshot();
+    app(NflSignalObservationMaterializer::class)->materialize($first);
+    $observation = NflSignalObservation::where('prediction_feature_snapshot_id', $first->id)
+        ->where('signal_type', 'reason_code')->where('signal_key', 'qb_form_home_edge')->firstOrFail();
+    app(NflSignalGradingService::class)->grade($observation);
+    foreach ([true, false] as $safe) {
+        $newer = $first->replicate();
+        $newer->snapshot_run_id = (string) Str::uuid();
+        $newer->generated_at = $first->generated_at->copy()->addMinutes(15);
+        $newer->pregame_safe = $safe;
+        $newer->save();
+        app(NflSignalObservationMaterializer::class)->materialize($newer);
+        if (! $safe) {
+            $unsafeObservation = NflSignalObservation::where('prediction_feature_snapshot_id', $newer->id)
+                ->where('signal_type', 'reason_code')->where('signal_key', 'qb_form_home_edge')->firstOrFail();
+            app(NflSignalGradingService::class)->grade($unsafeObservation);
+        }
+    }
+    $report = app(NflSignalGradeReportService::class)->report(['signal_type' => 'reason_code', 'signal_key' => 'qb_form_home_edge']);
+    expect($report['signals'][0]['winner_sample'])->toBe(1);
+});
+
 it('grades winner spread total and exact settlement outcomes idempotently', function () {
     $snapshot = createSignalSnapshot();
     createSignalSettlement($snapshot);

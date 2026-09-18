@@ -231,7 +231,7 @@ it('adds v2 market injury weather efficiency and regression context', function (
         ->and(data_get($layer, 'market_movement.steam_freshness'))->toBeTrue()
         ->and(data_get($layer, 'market_movement.market_setter_slow_book_gap'))->toBeTrue()
         ->and(data_get($layer, 'market_movement.buyback_resistance'))->toBeTrue()
-        ->and(data_get($layer, 'market_movement.closing_line_value_points'))->toBe(0.5)
+        ->and(data_get($layer, 'market_movement.closing_line_value_points'))->toBe(-0.5)
         ->and(data_get($layer, 'injury_replacement.qb_replacement_edge'))->toBeTrue()
         ->and(data_get($layer, 'weather_roof.weather_total_suppression'))->toBeTrue()
         ->and(data_get($layer, 'efficiency_mismatch.epa_edge'))->toBeTrue()
@@ -239,7 +239,7 @@ it('adds v2 market injury weather efficiency and regression context', function (
         ->and(data_get($layer, 'market_scores.spread.components.market_overreaction_penalty'))->toBe(-12)
         ->and(data_get($layer, 'market_scores.total.components.weather_edge_alignment'))->toBe(6)
         ->and(data_get($layer, 'reason_codes'))->toContain('low_total_key_number_boost')
-        ->and(data_get($layer, 'reason_codes'))->toContain('positive_clv_profile')
+        ->and(data_get($layer, 'reason_codes'))->toContain('negative_clv_profile')
         ->and(data_get($layer, 'reason_codes'))->toContain('qb_replacement_value_edge')
         ->and(data_get($layer, 'reason_codes'))->toContain('efficiency_mismatch_edge');
 });
@@ -480,9 +480,9 @@ it('buckets line movement and closing line value for market validation', functio
     expect(data_get($layer, 'market_movement.line_movement_points'))->toBe(2.0)
         ->and(data_get($layer, 'market_movement.line_movement_bucket'))->toBe('two_plus')
         ->and(data_get($layer, 'market_movement.line_move_toward_pick'))->toBeTrue()
-        ->and(data_get($layer, 'market_movement.closing_line_value_points'))->toBe(1.5)
-        ->and(data_get($layer, 'market_movement.closing_line_value_bucket'))->toBe('positive_one_plus')
+        ->and(data_get($layer, 'market_movement.closing_line_value_points'))->toBe(-1.5)
+        ->and(data_get($layer, 'market_movement.closing_line_value_bucket'))->toBe('negative_one_plus')
         ->and(data_get($layer, 'reason_codes'))->toContain('line_move_bucket_two_plus')
         ->and(data_get($layer, 'reason_codes'))->toContain('line_move_toward_model_pick')
-        ->and(data_get($layer, 'reason_codes'))->toContain('clv_bucket_positive_one_plus');
+        ->and(data_get($layer, 'reason_codes'))->toContain('clv_bucket_negative_one_plus');
 });

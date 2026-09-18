@@ -178,6 +178,7 @@ type SignalGradeRow = {
     signal_type: string;
     signal_key: string;
     observation_count: number;
+    unique_game_count: number;
     winner_sample: number;
     winner_accuracy: number | null;
     ats_sample: number;
@@ -1435,6 +1436,12 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                         </TabsContent>
 
                         <TabsContent value="signals" class="space-y-5">
+                            <p class="text-sm text-muted-foreground">
+                                Outcome rates use the latest graded pregame
+                                observation per game and signal. Repeated model
+                                runs do not add independent games. All recorded
+                                decision settlements remain in profit tracking.
+                            </p>
                             <section class="overflow-hidden rounded-md border">
                                 <div
                                     class="flex flex-col gap-3 border-b bg-muted/40 px-4 py-3 lg:flex-row lg:items-center lg:justify-between"
@@ -1566,7 +1573,8 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                                                 <td
                                                     class="px-4 py-3 tabular-nums"
                                                 >
-                                                    {{ row.observation_count }}
+                                                    {{ row.unique_game_count }}
+                                                    games
                                                 </td>
                                                 <td class="px-4 py-3">
                                                     <div
@@ -1822,7 +1830,7 @@ function signalIsSelected(row: SignalGradeRow): boolean {
                                                     class="px-4 py-3 tabular-nums"
                                                 >
                                                     {{
-                                                        window.observation_count
+                                                        window.unique_game_count
                                                     }}
                                                 </td>
                                                 <td

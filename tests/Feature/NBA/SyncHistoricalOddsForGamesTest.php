@@ -86,7 +86,7 @@ it('records a historical nba odds snapshot without overwriting current odds by d
     $oddsService = m::mock(OddsApiService::class);
     $oddsService->shouldReceive('getHistoricalOdds')
         ->once()
-        ->with('basketball_nba', '2025-12-24T23:10:00Z')
+        ->with('basketball_nba', '2025-12-24T17:10:00Z')
         ->andReturn([
             'timestamp' => '2025-12-24T17:05:37Z',
             'data' => [$historicalEvent],
@@ -187,7 +187,7 @@ it('can hydrate current odds from a historical snapshot when requested', functio
     $oddsService = m::mock(OddsApiService::class);
     $oddsService->shouldReceive('getHistoricalOdds')
         ->once()
-        ->with('basketball_nba', '2025-12-24T23:10:00Z')
+        ->with('basketball_nba', '2025-12-24T17:10:00Z')
         ->andReturn([
             'timestamp' => '2025-12-24T17:05:37Z',
             'data' => [$historicalEvent],

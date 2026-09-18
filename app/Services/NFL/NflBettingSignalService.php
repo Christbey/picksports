@@ -9,6 +9,7 @@ use App\Services\Sports\FuturesEdgeService;
 use App\Services\Sports\FuturesOddsLookupService;
 use App\Support\NflReasonCodeCatalog;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Collection;
 
 class NflBettingSignalService
 {
@@ -25,19 +26,26 @@ class NflBettingSignalService
     public function signals(int $season, ?CarbonInterface $asOfDate = null): array
     {
         $asOfDate ??= now();
-        $weekOneGames = $this->weekOnePredictionRows($season);
+        $slateGames = $this->slatePredictionRows($season, $asOfDate);
+        $week = $slateGames[0]->game->week ?? null;
 
         return [
             'season' => $season,
             'as_of_date' => $asOfDate->toDateString(),
+            'week' => $week,
+            'slate_scope' => 'next_scheduled_week',
             'framework' => $this->frameworkSummary(),
-            'odds_health' => $this->oddsHealth($weekOneGames),
+            'odds_health' => $this->oddsHealth($slateGames),
             'bet_filter' => $this->betFilterSummary(),
-            'recommended_bets' => $this->recommendedBets($weekOneGames),
-            'pass_summary' => $this->passSummary($weekOneGames),
+            'recommended_bets' => $this->recommendedBets($slateGames),
+            'watchlist' => $this->recommendedBets($slateGames, true),
+            'pass_summary' => $this->passSummary($slateGames),
             'super_bowl' => $this->superBowlSignals($season, $asOfDate),
-            'week_one_winners' => $this->weekOneWinnerSignals($weekOneGames),
-            'week_one_covers' => $this->weekOneCoverSignals($weekOneGames),
+            'winners' => $this->slateWinnerSignals($slateGames),
+            'covers' => $this->slateCoverSignals($slateGames),
+            // Legacy keys must never mislabel a later week's slate as Week 1.
+            'week_one_winners' => (int) $week === 1 ? $this->slateWinnerSignals($slateGames) : [],
+            'week_one_covers' => (int) $week === 1 ? $this->slateCoverSignals($slateGames) : [],
             'streaks' => $this->streakSignals($season, $asOfDate),
         ];
     }
@@ -118,7 +126,7 @@ class NflBettingSignalService
             $totals += $hasTotal ? 1 : 0;
 
             $updatedAt = $game?->odds_updated_at ?? null;
-            if ($updatedAt && $updatedAt->lt(now()->subHours((int) config('nfl.signals.odds_stale_hours', 24)))) {
+            if (! $updatedAt || $updatedAt->lt(now()->subHours((int) config('nfl.signals.odds_stale_hours', 24)))) {
                 $stale++;
             }
 
@@ -158,7 +166,7 @@ class NflBettingSignalService
      * @param  array<int,Prediction>  $predictions
      * @return array<int,array<string,mixed>>
      */
-    protected function recommendedBets(array $predictions): array
+    protected function recommendedBets(array $predictions, bool $watchlist = false): array
     {
         $rows = [];
 
@@ -168,18 +176,31 @@ class NflBettingSignalService
             if ($classification === '' || str_starts_with($classification, 'no_bet')) {
                 continue;
             }
+            if ($watchlist ? $classification === 'bet' : $classification !== 'bet') {
+                continue;
+            }
+            if (array_intersect(['stale_line_edge', 'low_data_quality', 'conflicting_signals'], (array) ($analysis['risk_flags'] ?? []))) {
+                continue;
+            }
 
             $game = $prediction->game;
             if (! $game) {
                 continue;
             }
 
-            $homeWinProbability = (float) $prediction->win_probability;
-            $pickSide = $homeWinProbability >= 0.5 ? 'home' : 'away';
-            $pickTeam = $pickSide === 'home' ? $game->homeTeam : $game->awayTeam;
             $spreadEdge = data_get($analysis, 'calculated_edge.spread_points');
             $totalEdge = data_get($analysis, 'calculated_edge.total_points');
-            $market = is_numeric($spreadEdge) && abs((float) $spreadEdge) >= abs((float) $totalEdge) ? 'spread' : 'moneyline';
+            $hasSpread = is_numeric($spreadEdge) && (float) $spreadEdge !== 0.0
+                && is_numeric(data_get($analysis, 'calculated_edge.market_spread'));
+            $hasTotal = is_numeric($totalEdge) && (float) $totalEdge !== 0.0
+                && is_numeric(data_get($analysis, 'calculated_edge.market_total'));
+            if (! $hasSpread && ! $hasTotal) {
+                continue;
+            }
+            $market = $hasSpread && (! $hasTotal || abs((float) $spreadEdge) >= abs((float) $totalEdge)) ? 'spread' : 'total';
+            $edge = (float) ($market === 'spread' ? $spreadEdge : $totalEdge);
+            $pickSide = $market === 'spread' ? ($edge > 0 ? 'home' : 'away') : ($edge > 0 ? 'over' : 'under');
+            $pickTeam = $market === 'total' ? null : ($pickSide === 'home' ? $game->homeTeam : $game->awayTeam);
             $reasonCodes = array_slice((array) ($analysis['reason_codes'] ?? []), 0, 8);
 
             $rows[] = [
@@ -192,7 +213,9 @@ class NflBettingSignalService
                 'team_name' => $this->teamName($pickTeam),
                 'score' => data_get($analysis, 'trust_score') !== null ? (float) data_get($analysis, 'trust_score') : null,
                 'classification' => $classification,
-                'edge_points' => is_numeric($spreadEdge) ? round(abs((float) $spreadEdge), 2) : null,
+                'edge_points' => round(abs($edge), 2),
+                'line' => (float) data_get($analysis, $market === 'spread' ? 'calculated_edge.market_spread' : 'calculated_edge.market_total'),
+                'line_convention' => $market === 'spread' ? 'home_margin_positive_home' : 'total_points',
                 'reason_codes' => $reasonCodes,
                 'reason_code_metadata' => $this->reasonCodeMetadata($analysis, $reasonCodes),
                 'risk_flags' => array_slice((array) ($analysis['risk_flags'] ?? []), 0, 8),
@@ -375,17 +398,31 @@ class NflBettingSignalService
     /**
      * @return array<int,Prediction>
      */
-    protected function weekOnePredictionRows(int $season): array
+    protected function slatePredictionRows(int $season, CarbonInterface $asOfDate): array
     {
+        $utc = $asOfDate->copy()->utc();
+        $eligible = fn ($query) => $query->where('season', $season)
+            ->whereIn('season_type', ['2', '3', 'Regular Season', 'Postseason'])
+            ->where('status', 'STATUS_SCHEDULED')
+            ->where(function ($query) use ($utc): void {
+                $query->whereDate('game_date', '>', $utc->toDateString())
+                    ->orWhere(fn ($query) => $query->whereDate('game_date', $utc->toDateString())
+                        ->where('game_time', '>', $utc->format('H:i:s')));
+            });
+        $next = $eligible(Game::query())->orderBy('game_date')->orderBy('game_time')->first();
+        if (! $next) {
+            return [];
+        }
+
         return Prediction::query()
             ->with(['game.homeTeam', 'game.awayTeam'])
-            ->whereHas('game', function ($query) use ($season): void {
-                $query->where('season', $season)
-                    ->whereIn('season_type', ['2', 2, 'Regular Season'])
-                    ->where('week', 1);
+            ->whereHas('game', function ($query) use ($eligible, $next): void {
+                $eligible($query)->where('week', $next->week)->where('season_type', $next->season_type);
             })
+            ->orderByDesc('updated_at')->orderByDesc('id')
             ->get()
             ->filter(fn (Prediction $prediction): bool => $prediction->game !== null)
+            ->unique('game_id')
             ->values()
             ->all();
     }
@@ -394,7 +431,7 @@ class NflBettingSignalService
      * @param  array<int,Prediction>  $predictions
      * @return array<int,array<string,mixed>>
      */
-    protected function weekOneWinnerSignals(array $predictions): array
+    protected function slateWinnerSignals(array $predictions): array
     {
         $signals = array_map(function (Prediction $prediction): array {
             $game = $prediction->game;
@@ -404,7 +441,7 @@ class NflBettingSignalService
             $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
 
             return [
-                'type' => 'week_one_winner',
+                'type' => 'winner',
                 'game_id' => (int) $game->id,
                 'game_date' => $game->game_date?->toDateString(),
                 'matchup' => (string) ($game->short_name ?: $game->name),
@@ -415,7 +452,7 @@ class NflBettingSignalService
                 'trust_score' => data_get($analysis, 'trust_score') !== null ? (float) data_get($analysis, 'trust_score') : null,
                 'bet_classification' => $analysis['bet_classification'] ?? null,
                 'reason_codes' => array_values(array_unique(array_merge(
-                    ['week_one_winner_signal'],
+                    ['slate_winner_signal'],
                     array_slice((array) ($analysis['reason_codes'] ?? []), 0, 8),
                 ))),
             ];
@@ -431,7 +468,7 @@ class NflBettingSignalService
      * @param  array<int,Prediction>  $predictions
      * @return array<int,array<string,mixed>>
      */
-    protected function weekOneCoverSignals(array $predictions): array
+    protected function slateCoverSignals(array $predictions): array
     {
         $signals = [];
 
@@ -453,7 +490,7 @@ class NflBettingSignalService
             $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
 
             $signals[] = [
-                'type' => 'week_one_cover',
+                'type' => 'spread',
                 'game_id' => (int) $game->id,
                 'game_date' => $game->game_date?->toDateString(),
                 'matchup' => (string) ($game->short_name ?: $game->name),
@@ -466,7 +503,7 @@ class NflBettingSignalService
                 'trust_score' => data_get($analysis, 'trust_score') !== null ? (float) data_get($analysis, 'trust_score') : null,
                 'bet_classification' => $analysis['bet_classification'] ?? null,
                 'reason_codes' => array_values(array_unique(array_merge(
-                    ['week_one_cover_signal', $pickSide.'_week_one_cover_edge'],
+                    ['slate_cover_signal', $pickSide.'_cover_edge'],
                     array_slice((array) ($analysis['reason_codes'] ?? []), 0, 8),
                 ))),
             ];
@@ -484,10 +521,30 @@ class NflBettingSignalService
     protected function streakSignals(int $season, CarbonInterface $asOfDate): array
     {
         $signals = [];
-
+        // One bounded history load for all teams and all three markets.
+        $games = Game::query()
+            ->select(['id', 'home_team_id', 'away_team_id', 'game_date', 'game_time', 'home_score', 'away_score', 'short_name', 'name'])
+            ->with(['prediction' => fn ($query) => $query->select([
+                'id', 'game_id',
+                'model_metadata->analysis_layer->calculated_edge->market_spread as signal_market_spread',
+                'model_metadata->analysis_layer->calculated_edge->market_total as signal_market_total',
+            ])])
+            ->where('status', 'STATUS_FINAL')
+            ->whereIn('season_type', ['2', 'Regular Season'])
+            ->whereBetween('season', [$season - 1, $season])
+            ->whereDate('game_date', '<=', $asOfDate->copy()->utc()->toDateString())
+            ->orderByDesc('game_date')->orderByDesc('id')->get();
+        $byTeam = [];
+        foreach ($games as $game) {
+            foreach ([$game->home_team_id, $game->away_team_id] as $teamId) {
+                if (count($byTeam[$teamId] ?? []) < 12) {
+                    $byTeam[$teamId][] = $game;
+                }
+            }
+        }
         foreach (Team::query()->orderBy('abbreviation')->get() as $team) {
             foreach ([null, 'ats', 'total'] as $market) {
-                $streak = $this->teamResultStreak((int) $team->id, $asOfDate, $market);
+                $streak = $this->teamResultStreak((int) $team->id, $asOfDate, $market, collect($byTeam[$team->id] ?? []));
                 if ($streak === null || (int) $streak['length'] < (int) config('nfl.signals.min_streak_length', 3)) {
                     continue;
                 }
@@ -498,6 +555,7 @@ class NflBettingSignalService
                     'team_name' => $this->teamName($team),
                     'team_abbreviation' => (string) ($team->abbreviation ?? ''),
                     'season_context' => $season,
+                    'history_scope' => 'regular_season_current_and_previous',
                 ];
             }
         }
@@ -511,11 +569,12 @@ class NflBettingSignalService
     /**
      * @return array<string,mixed>|null
      */
-    protected function teamResultStreak(int $teamId, CarbonInterface $asOfDate, ?string $market): ?array
+    protected function teamResultStreak(int $teamId, CarbonInterface $asOfDate, ?string $market, ?Collection $history = null): ?array
     {
-        $games = Game::query()
+        $games = $history ?? Game::query()
             ->with('prediction')
             ->where('status', 'STATUS_FINAL')
+            ->whereIn('season_type', ['2', 'Regular Season'])
             ->whereDate('game_date', '<=', $asOfDate->toDateString())
             ->where(function ($query) use ($teamId): void {
                 $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
@@ -537,7 +596,8 @@ class NflBettingSignalService
             };
 
             if ($result === null) {
-                continue;
+                // Missing evidence, ties and pushes interrupt a consecutive run.
+                break;
             }
 
             $streakKey ??= $result;
@@ -584,12 +644,16 @@ class NflBettingSignalService
 
     protected function atsResult(Game $game, int $teamId): ?string
     {
-        $marketSpread = data_get($game->prediction?->model_metadata, 'analysis_layer.calculated_edge.market_spread');
+        $marketSpread = $game->prediction?->getAttribute('signal_market_spread')
+            ?? data_get($game->prediction?->model_metadata, 'analysis_layer.calculated_edge.market_spread');
         if ($game->home_score === null || $game->away_score === null || ! is_numeric($marketSpread)) {
             return null;
         }
 
         $homeMargin = (int) $game->home_score - (int) $game->away_score;
+        if (abs($homeMargin - (float) $marketSpread) < 0.00001) {
+            return null;
+        }
         $homeCovered = $homeMargin > (float) $marketSpread;
 
         return ($game->home_team_id === $teamId) === $homeCovered ? 'cover' : 'failed_cover';
@@ -597,12 +661,16 @@ class NflBettingSignalService
 
     protected function totalResult(Game $game): ?string
     {
-        $marketTotal = data_get($game->prediction?->model_metadata, 'analysis_layer.calculated_edge.market_total');
+        $marketTotal = $game->prediction?->getAttribute('signal_market_total')
+            ?? data_get($game->prediction?->model_metadata, 'analysis_layer.calculated_edge.market_total');
         if ($game->home_score === null || $game->away_score === null || ! is_numeric($marketTotal)) {
             return null;
         }
 
         $actualTotal = (int) $game->home_score + (int) $game->away_score;
+        if (abs($actualTotal - (float) $marketTotal) < 0.00001) {
+            return null;
+        }
 
         return $actualTotal > (float) $marketTotal ? 'over' : 'under';
     }

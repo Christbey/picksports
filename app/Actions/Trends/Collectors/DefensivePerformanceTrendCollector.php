@@ -31,6 +31,9 @@ class DefensivePerformanceTrendCollector extends TrendCollector
 
         $shutoutPeriods = $this->games->sum(function ($game) {
             $opp = $this->opponentLinescores($game);
+            if ($this->league === 'nfl') {
+                $opp = array_slice($opp, 0, 4);
+            }
             $shutouts = 0;
             foreach ($opp as $score) {
                 if ($score === 0) {
@@ -53,7 +56,7 @@ class DefensivePerformanceTrendCollector extends TrendCollector
         $gamesWithStats = $this->games->filter(fn ($g) => $this->opponentStats($g) !== null);
 
         if ($gamesWithStats->count() >= 3) {
-            $avgYardsAllowed = $gamesWithStats->avg(fn ($g) => $this->opponentStats($g)->total_yards ?? 0);
+            $avgYardsAllowed = $gamesWithStats->avg(fn ($g) => $this->opponentStats($g)->total_yards);
             if ($avgYardsAllowed > 0) {
                 $messages[] = "The {$this->teamAbbr} defense allows ".number_format($avgYardsAllowed, 1).' total yards per game';
             }

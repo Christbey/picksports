@@ -205,6 +205,7 @@ test('initial requests use explicit regular-season phase and UTC kickoff, not th
     assert.equal(count('trends'), 2);
     for (const { args } of calls.filter((call) => call.name === 'trends')) {
         assert.deepEqual(args[2].query, {
+            profile: 'team_analysis',
             games: 'season',
             season: 2026,
             season_type: '2',

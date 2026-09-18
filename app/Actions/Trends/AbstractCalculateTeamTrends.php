@@ -45,6 +45,14 @@ abstract class AbstractCalculateTeamTrends
 
         $games = $this->fetchRecentGames($team, $gameCount, $season, $seasonType, $beforeDate);
 
+        return $this->summarizeGames($team, $games);
+    }
+
+    /**
+     * @return array{trends: array<string, array<int, string>>, locked: array<string, string>, sample_size: int}
+     */
+    public function summarizeGames(object $team, Collection $games): array
+    {
         if ($games->isEmpty()) {
             return ['trends' => [], 'locked' => [], 'sample_size' => 0];
         }
@@ -87,7 +95,13 @@ abstract class AbstractCalculateTeamTrends
             && array_key_exists('quarters', $trends)
             && array_key_exists('first_score', $trends)
         ) {
-            unset($trends['first_score']);
+            // Keep conditional Q1 -> final-result records; remove only the
+            // unconditional Q1 comparison already covered by the quarter card.
+            $trends['first_score'] = array_values(array_filter($trends['first_score'],
+                fn (string $message): bool => str_starts_with($message, 'When ')));
+            if ($trends['first_score'] === []) {
+                unset($trends['first_score']);
+            }
         }
 
         $maxPerCategory = (int) config('trends.defaults.max_messages_per_category', 4);
@@ -151,7 +165,7 @@ abstract class AbstractCalculateTeamTrends
 
     protected function applyBeforeDateFilter(Builder $query, string $beforeDate): Builder
     {
-        $cutoff = Carbon::parse($beforeDate);
+        $cutoff = Carbon::parse($beforeDate, 'UTC')->utc();
         $date = $cutoff->toDateString();
         $hasTime = preg_match('/[T ]\d{1,2}:\d{2}/', $beforeDate) === 1;
 

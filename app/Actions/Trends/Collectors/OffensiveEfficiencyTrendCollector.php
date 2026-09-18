@@ -41,13 +41,15 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
             return $messages;
         }
 
-        $avgYards = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->total_yards ?? 0);
+        $avgYards = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->total_yards);
         if ($avgYards > 0) {
             $messages[] = "The {$this->teamAbbr} average ".number_format($avgYards, 1).' total yards per game';
         }
 
-        $avgPassYards = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->passing_yards ?? 0);
-        $avgRushYards = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->rushing_yards ?? 0);
+        $pairedYards = $gamesWithStats->filter(fn ($g) => is_numeric($this->teamStats($g)->passing_yards)
+            && is_numeric($this->teamStats($g)->rushing_yards));
+        $avgPassYards = $pairedYards->avg(fn ($g) => $this->teamStats($g)->passing_yards);
+        $avgRushYards = $pairedYards->avg(fn ($g) => $this->teamStats($g)->rushing_yards);
 
         if ($avgPassYards > 0 && $avgRushYards > 0) {
             if ($avgPassYards > $avgRushYards * 1.5) {
@@ -57,12 +59,18 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
             }
         }
 
-        $avgFirstDowns = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->first_downs ?? 0);
+        $avgFirstDowns = $gamesWithStats->avg(fn ($g) => $this->teamStats($g)->first_downs);
         if ($avgFirstDowns >= 15) {
             $messages[] = "The {$this->teamAbbr} average ".number_format($avgFirstDowns, 1).' first downs per game';
         }
 
-        $turnoversLow = $gamesWithStats->filter(function ($g) {
+        $turnoverGames = $gamesWithStats->filter(function ($g) {
+            $stats = $this->teamStats($g);
+
+            return is_numeric($stats->interceptions_thrown ?? $stats->interceptions)
+                && is_numeric($stats->fumbles_lost);
+        });
+        $turnoversLow = $turnoverGames->filter(function ($g) {
             $stats = $this->teamStats($g);
             $interceptions = $stats->interceptions_thrown ?? $stats->interceptions ?? 0;
             $turnovers = ($stats->fumbles_lost ?? 0) + $interceptions;
@@ -70,8 +78,8 @@ class OffensiveEfficiencyTrendCollector extends TrendCollector
             return $turnovers <= 1;
         })->count();
 
-        if ($this->isSignificant($turnoversLow, $gamesWithStats->count())) {
-            $messages[] = "The {$this->teamAbbr} have had 1 or fewer turnovers in {$turnoversLow} of their last {$gamesWithStats->count()} games";
+        if ($turnoverGames->isNotEmpty() && $this->isSignificant($turnoversLow, $turnoverGames->count())) {
+            $messages[] = "The {$this->teamAbbr} have had 1 or fewer turnovers in {$turnoversLow} of {$turnoverGames->count()} games with recorded turnover stats";
         }
 
         return $messages;

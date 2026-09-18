@@ -171,7 +171,7 @@ abstract class AbstractSyncHistoricalOddsForGames extends AbstractSyncOddsForGam
             return null;
         }
 
-        return $scheduledTime->copy()->subHours(max(0, $hoursBefore));
+        return Carbon::instance($scheduledTime)->subHours(max(0, $hoursBefore));
     }
 
     /**

@@ -24,6 +24,7 @@ use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
 use App\Models\NFL\Game;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
 
 class CalculateTeamTrends extends AbstractCalculateTeamTrends
 {
@@ -32,6 +33,15 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
     protected const GAME_MODEL = Game::class;
 
     protected const DEFAULT_GAME_COUNT = 16;
+
+    public function evidenceGames(object $team, int $season, string $beforeDate): Collection
+    {
+        return $this->baseGamesQuery($team, null, '2', $beforeDate)
+            ->whereBetween('season', [$season - 3, $season])
+            ->whereNotNull('home_score')->whereNotNull('away_score')
+            ->with($this->gameRelations())
+            ->orderByDesc('game_date')->orderByDesc('game_time')->orderByDesc('id')->get();
+    }
 
     protected function baseGamesQuery(
         object $team,

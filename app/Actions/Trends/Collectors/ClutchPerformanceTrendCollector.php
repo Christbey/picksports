@@ -24,7 +24,7 @@ class ClutchPerformanceTrendCollector extends TrendCollector
 
         if ($closeGames->count() >= 3) {
             $closeWins = $closeGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($closeWins, $closeGames->count())} in close games (decided by {$closeMargin} {$this->scoringUnit()} or less)";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($closeGames)} in close games (decided by {$closeMargin} {$this->scoringUnit()} or less)";
 
             $clutchPct = $this->percentage($closeWins, $closeGames->count());
             if ($clutchPct >= 70) {
@@ -38,6 +38,9 @@ class ClutchPerformanceTrendCollector extends TrendCollector
             $latePeriodClutch = $this->games->filter(function ($game) use ($closeMargin) {
                 $team = $this->teamLinescores($game);
                 $opp = $this->opponentLinescores($game);
+                if ($this->league === 'nfl' && (count($team) < 4 || count($opp) < 4)) {
+                    return false;
+                }
 
                 if ($this->isCollegeBasketball()) {
                     $wasTight = abs(($team[0] ?? 0) - ($opp[0] ?? 0)) <= $closeMargin;

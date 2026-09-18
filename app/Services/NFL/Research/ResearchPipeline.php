@@ -39,16 +39,27 @@ class ResearchPipeline
             $game->setAttribute('research_candidate', [...$preview['outputs'], 'model_metadata' => $preview['model_metadata']]);
             $report = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
             $selectedDocuments = app(EvidencePacket::class)->researchDocuments($packet);
-            $ids = array_column($selectedDocuments, 'id');
             $candidateHash = $this->candidateContextHash([...$preview['outputs'], 'model_metadata' => $preview['model_metadata']]);
-            $changed = $report && ($ids !== data_get($report->raw_payload, 'document_ids', []) || app(EvidencePacket::class)->contextHash($packet) !== data_get($report->raw_payload, 'evidence_context_hash') || $candidateHash !== data_get($report->raw_payload, 'candidate_hash'));
-            if ($research && (! $report || ($report->status !== 'ready' && $report->researched_at->lt(now()->subMinutes(45))) || ! $report->expires_at || $report->expires_at->lte(now()) || $changed)) {
-                $report = app(NflWebContextResearchService::class)->research($game)['report'];
-                $changed = false;
+            $policy = app(ResearchRefreshPolicy::class);
+            $fingerprint = $policy->fingerprint($game, $packet);
+            $deferred = null;
+            if ($research && ! $policy->current($report, $game, $fingerprint)) {
+                try {
+                    $report = app(NflWebContextResearchService::class)->research($game)['report'];
+                } catch (ResearchDeferred $exception) {
+                    $deferred = $exception->getMessage();
+                }
             }
             $holds = $packet['holds'];
-            if (! $report || $report->status !== 'ready' || ! $report->expires_at || $report->expires_at->lte(now()) || $changed) {
+            if (! $policy->current($report, $game, $fingerprint)) {
                 $holds[] = 'research_incomplete_or_stale';
+            }
+            if ($deferred) {
+                $holds[] = $deferred;
+            }
+            // Reusing facts is not revalidating old pro/con arguments against a new forecast.
+            if ($report && $candidateHash !== data_get($report->raw_payload, 'candidate_hash')) {
+                $holds[] = 'research_candidate_changed';
             }
             if (! $game->prediction) {
                 $holds[] = 'original_prediction_missing';
@@ -72,7 +83,8 @@ class ResearchPipeline
                 $eligibility = app(RecommendationEligibility::class)->evaluate($analysis, $preview['model_metadata'], [...$holds, 'spread_quote_missing']);
             }
             $props = app(PlayerPropAnalyzer::class)->previewNflGame($game);
-            $propHolds = app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], 'props');
+            $researchHolds = array_values(array_filter($holds, fn (string $hold): bool => str_starts_with($hold, 'research_')));
+            $propHolds = array_values(array_unique([...$researchHolds, ...app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], 'props')]));
             if ($propHolds !== []) {
                 $props = array_map(fn ($prop) => [...$prop, 'status' => 'hold', 'research_holds' => $propHolds], $props);
             }
@@ -86,12 +98,13 @@ class ResearchPipeline
                 'player_props' => $props,
                 'prop_angles' => $decision['prop_angles'] ?? [],
                 'unresolved' => $decision['unresolved'] ?? [],
-                'market_holds' => collect(['spread', 'total', 'moneyline', 'props'])->mapWithKeys(fn ($scope) => [$scope => app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], $scope)])->all(),
+                'market_holds' => collect(['spread', 'total', 'moneyline', 'props'])->mapWithKeys(fn ($scope) => [$scope => array_values(array_unique([...$researchHolds, ...app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], $scope)]))])->all(),
                 'facts' => $report?->facts ?? [],
                 'risk_flags' => $report?->risk_flags ?? [],
                 'model_signals' => ['qb' => data_get($preview, 'model_metadata.qb_form'), 'trenches' => data_get($preview, 'model_metadata.line_matchup'), 'injuries' => data_get($preview, 'model_metadata.depth_chart_injuries')],
                 'numeric_adjustment_policy' => 'Existing model weights only; narrative interpretation is not a calibrated adjustment.',
                 'source_report_id' => $report?->id,
+                'research_refresh' => ['deferred_reason' => $deferred, 'evidence_current' => $policy->current($report, $game, $fingerprint)],
                 'source_coverage' => $packet['source_coverage'] ?? [],
                 'previous_revision_id' => $previous?->id,
                 'change' => $previous ? ['spread' => round($preview['outputs']['predicted_spread'] - ($previous->revised['predicted_spread'] ?? 0), 2), 'total' => round($preview['outputs']['predicted_total'] - ($previous->revised['predicted_total'] ?? 0), 2), 'eligibility_changed' => data_get($previous->brief, 'eligibility.status') !== $eligibility['status']] : ['initial' => true],

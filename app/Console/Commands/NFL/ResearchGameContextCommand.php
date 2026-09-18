@@ -6,6 +6,9 @@ use App\Models\NFL\Game;
 use App\Models\SportsGameContextReport;
 use App\Services\AI\AiProviderRateLimitCircuitBreaker;
 use App\Services\NFL\NflWebContextResearchService;
+use App\Services\NFL\Research\EvidencePacket;
+use App\Services\NFL\Research\ResearchDeferred;
+use App\Services\NFL\Research\ResearchRefreshPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
@@ -77,11 +80,18 @@ class ResearchGameContextCommand extends Command
             ->whereIn('game_id', $gameIds)
             ->pluck('game_id')
             ->flip();
-        $freshContextGameIds = SportsGameContextReport::query()
+        $latestReports = SportsGameContextReport::query()
             ->where('sport', 'nfl')->whereIn('game_id', $gameIds)
-            ->latest('id')->get()->unique('game_id')
-            ->filter(fn ($report) => $report->status === 'ready' && $report->expires_at && $report->expires_at->isFuture())
-            ->pluck('game_id')->flip();
+            ->latest('id')->get()->unique('game_id')->keyBy('game_id');
+        $policy = app(ResearchRefreshPolicy::class);
+        $freshContextGameIds = $games->filter(function (Game $game) use ($policy, $latestReports): bool {
+            $report = $latestReports->get($game->id);
+            if (! $report || $report->status !== 'ready' || ! $report->expires_at?->isFuture()) {
+                return false;
+            }
+
+            return $policy->current($report, $game, $policy->fingerprint($game, app(EvidencePacket::class)->forGame($game)));
+        })->pluck('id')->flip();
 
         if (! $this->option('force')) {
             $games = $games
@@ -135,7 +145,9 @@ class ResearchGameContextCommand extends Command
 
             for ($attempt = 0; $attempt <= $rateLimitRetries; $attempt++) {
                 try {
-                    $result = $research->research($game, $provider, $model);
+                    $result = $this->option('force')
+                        ? $research->research($game, $provider, $model, true)
+                        : $research->research($game, $provider, $model);
                     $failure = null;
 
                     break;
@@ -164,6 +176,12 @@ class ResearchGameContextCommand extends Command
             if ($result !== null) {
                 /** @var SportsGameContextReport $report */
                 $report = $result['report'];
+                if ($result['reused'] ?? false) {
+                    $this->line('  - reused current context for '.$matchup);
+                    $skipped++;
+
+                    continue;
+                }
                 $generationCost = is_numeric($result['generation']?->cost_usd ?? null)
                     ? (float) $result['generation']->cost_usd
                     : null;
@@ -184,6 +202,12 @@ class ResearchGameContextCommand extends Command
             }
 
             if ($failure !== null) {
+                if ($failure instanceof ResearchDeferred) {
+                    $this->warn('  - deferred '.$matchup.': '.$failure->getMessage());
+                    $failed++;
+
+                    continue;
+                }
                 report($failure);
                 $this->warn('  - failed '.$matchup.': '.$failure->getMessage());
                 $failed++;

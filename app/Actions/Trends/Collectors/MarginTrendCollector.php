@@ -31,7 +31,7 @@ class MarginTrendCollector extends TrendCollector
 
         if ($closeGames->count() >= 3) {
             $closeWins = $closeGames->filter(fn ($g) => $this->won($g))->count();
-            $messages[] = "The {$this->teamAbbr} are {$this->formatRecord($closeWins, $closeGames->count())} in games decided by {$closeMargin} {$unit} or less";
+            $messages[] = "The {$this->teamAbbr} are {$this->teamRecord($closeGames)} in games decided by {$closeMargin} {$unit} or less";
         }
 
         $avgMargin = $this->games->avg(fn ($g) => $this->margin($g));

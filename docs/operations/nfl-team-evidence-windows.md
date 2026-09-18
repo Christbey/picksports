@@ -31,4 +31,4 @@ Game-specific research, roster/injury information, weather and market analysis r
 
 Cleanup regressions additionally check four collector passes, valid zero versus invalid counts, per-game (not pooled) conversion rates, preserved endpoint identity/tier fields, mixed legacy/profile responses and explicit empty-history rendering.
 
-These changes are local until deployed. No production records or historical model outputs are rewritten by this feature.
+The backend and initial evidence-window UI were deployed to production on September 18, 2026 in commit `f4231e88d4f4c61603478eb3c7b6db853b498478`; Laravel Cloud reported deployment success. No production records or historical model outputs are rewritten by this feature. See [mobile game-page behavior](nfl-game-page-mobile.md) for the responsive presentation and browser checks.

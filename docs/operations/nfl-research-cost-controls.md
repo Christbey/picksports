@@ -46,6 +46,8 @@ Focused tests use fake HTTP only: unchanged reuse, kickoff windows, material cha
 
 ## Deployment
 
-This change is local until explicitly deployed. It needs no new database migration beyond the existing AI usage ledger. Deploy the application code and rebuilt config cache together, then inspect `nfl:research-costs` and scheduler deferral reasons. Measure actual provider spend and coverage over the next full cycle before claiming savings. Source checks and stale-data holds must remain active when the budget prevents more paid research.
+Deployed to Laravel Cloud production on September 18, 2026 in commit `f4231e88d4f4c61603478eb3c7b6db853b498478` (deployment `depl-a2c729eb-8d65-4dc2-a49d-8e60beff77bf`, succeeded). Runtime checks confirmed Redis and all nine cost-control settings, including the $5 rolling daily and $0.75 per-game limits. The read-only cost command succeeded: its post-deploy 24-hour snapshot included 250 attempts, $12.139932 recorded estimates, and $2.10 unknown-cost reservations. That pre-existing usage exceeds the new admission budget; do not bypass the resulting research deferrals.
+
+The cost controls need no new database migration beyond the existing AI usage ledger. The accompanying NFL signal index migration was confirmed applied. Deploy application code and rebuilt config cache together on future releases. Inspect `nfl:research-costs` and scheduler deferral reasons, and measure actual provider spend and coverage over a full cycle before claiming savings. Source checks and stale-data holds must remain active when the budget prevents more paid research.
 
 Official references: [OpenAI pricing](https://developers.openai.com/api/docs/pricing), [token usage and output limits](https://developers.openai.com/api/docs/guides/token-counting), [Batch API](https://developers.openai.com/api/docs/guides/batch). Batch processing is not used for late injury/inactive updates because its documented turnaround can be up to 24 hours.

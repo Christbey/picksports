@@ -43,6 +43,7 @@ withDefaults(
         matchupContext?: MatchupContextData | null;
         matchupContextTitle?: string;
         linescoreTitle?: string;
+        linescoreClass?: string;
         awayLinescores?: Array<{ period?: number; value: number | string }>;
         homeLinescores?: Array<{ period?: number; value: number | string }>;
         awayScore?: number | null;
@@ -62,6 +63,7 @@ withDefaults(
         homeBarClass?: string;
         showTrends?: boolean;
         trendsTitle?: string;
+        trendsClass?: string;
         trendsSubtitle?: string;
         trendsLoading?: boolean;
         topMatchupEdges?: string[];
@@ -194,6 +196,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
 
             <LinescoreCard
                 v-if="showLinescore"
+                :class="linescoreClass"
                 :title="linescoreTitle"
                 :away-team="awayTeam"
                 :home-team="homeTeam"
@@ -223,6 +226,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
             <slot name="beforeTrends" />
 
             <TrendsComparisonCard
+                :class="trendsClass"
                 v-if="
                     showTrends &&
                     formatCategoryName &&

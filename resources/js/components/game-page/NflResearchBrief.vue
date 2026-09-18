@@ -22,7 +22,7 @@ type Revision = {
         unresolved: Argument[];
     };
 };
-const props = defineProps<{ gameId: number }>();
+const props = defineProps<{ gameId: number; mobileCompact?: boolean }>();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
@@ -48,7 +48,9 @@ onMounted(async () => {
 </script>
 
 <template>
-    <section class="rounded-xl border bg-card p-5 text-card-foreground">
+    <section
+        class="min-w-0 rounded-xl border bg-card p-4 text-card-foreground sm:p-5"
+    >
         <h2 class="text-lg font-semibold">Research and prediction changes</h2>
         <p v-if="loading" class="mt-2 text-sm text-muted-foreground">
             Loading research…
@@ -87,8 +89,11 @@ onMounted(async () => {
                     {{ reason.replaceAll('_', ' ') }}
                 </li>
             </ul>
-            <div class="mt-4 grid gap-4 md:grid-cols-2">
-                <div
+            <div
+                class="mt-4 gap-3 md:grid-cols-2"
+                :class="mobileCompact ? 'hidden md:grid' : 'grid'"
+            >
+                <details
                     v-for="group in [
                         'supporting',
                         'opposing',
@@ -96,8 +101,11 @@ onMounted(async () => {
                         'unresolved',
                     ] as const"
                     :key="group"
+                    class="min-w-0 self-start rounded-lg border p-3"
                 >
-                    <h3 class="font-medium">
+                    <summary
+                        class="min-h-11 cursor-pointer content-center font-medium"
+                    >
                         {{
                             {
                                 supporting: 'Supporting evidence',
@@ -107,7 +115,8 @@ onMounted(async () => {
                                     'Assumptions and unresolved questions',
                             }[group]
                         }}
-                    </h3>
+                        ({{ revisions[0].brief[group].length }})
+                    </summary>
                     <p
                         v-if="!revisions[0].brief[group].length"
                         class="text-sm text-muted-foreground"
@@ -144,15 +153,20 @@ onMounted(async () => {
                                 :href="sourceUrl(item.source_url)"
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                class="underline"
+                                class="inline-flex min-h-11 items-center underline"
                                 >Source</a
                             >
                         </li>
                     </ul>
-                </div>
+                </details>
             </div>
-            <details class="mt-4 text-sm">
-                <summary class="cursor-pointer font-medium">
+            <details
+                class="mt-4 text-sm"
+                :class="mobileCompact ? 'hidden md:block' : ''"
+            >
+                <summary
+                    class="min-h-11 cursor-pointer content-center font-medium"
+                >
                     Forecast history (home minus away margin)
                 </summary>
                 <div class="overflow-x-auto">

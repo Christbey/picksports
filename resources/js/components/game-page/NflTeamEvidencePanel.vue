@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { formatDateLong } from '@/composables/useFormatters';
 import type { NflTeamEvidence } from '@/types';
 
@@ -11,6 +11,7 @@ const props = defineProps<{
     window: string;
 }>();
 const emit = defineEmits<{ 'update:window': [value: string] }>();
+const mobileTeam = ref('away');
 const windows = {
     recent_5: 'Last 5',
     recent_10: 'Last 10',
@@ -48,7 +49,7 @@ const date = (value: string | null | undefined) =>
         aria-label="Team evidence windows"
     >
         <div
-            class="flex flex-wrap gap-2"
+            class="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"
             role="group"
             aria-label="History window"
         >
@@ -56,7 +57,7 @@ const date = (value: string | null | undefined) =>
                 v-for="(label, key) in windows"
                 :key="key"
                 type="button"
-                class="rounded-md border px-3 py-2 text-sm"
+                class="min-h-11 rounded-md border px-3 py-2 text-sm"
                 :class="
                     window === key
                         ? 'bg-primary text-primary-foreground'
@@ -72,8 +73,34 @@ const date = (value: string | null | undefined) =>
             Regular season only. These windows overlap; they are not independent
             confirmations. Head-to-head meetings remain separate below.
         </p>
+        <div
+            class="grid grid-cols-2 gap-2 md:hidden"
+            role="group"
+            aria-label="Team evidence selection"
+        >
+            <button
+                v-for="side in sides"
+                :key="side.key"
+                type="button"
+                class="min-h-11 rounded-md border px-3 py-2 text-sm font-medium"
+                :class="
+                    mobileTeam === side.key
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-background'
+                "
+                :aria-pressed="mobileTeam === side.key"
+                @click="mobileTeam = side.key"
+            >
+                {{ side.label }}
+            </button>
+        </div>
         <div class="grid gap-4 md:grid-cols-2">
-            <article v-for="side in sides" :key="side.key" class="space-y-2">
+            <article
+                v-for="side in sides"
+                :key="side.key"
+                class="min-w-0 space-y-2"
+                :class="mobileTeam === side.key ? '' : 'hidden md:block'"
+            >
                 <h3 class="font-semibold">
                     {{ side.label }} ·
                     {{ side.evidence?.label ?? 'Evidence unavailable' }}
@@ -156,7 +183,9 @@ const date = (value: string | null | undefined) =>
             </article>
         </div>
         <details>
-            <summary class="cursor-pointer text-sm font-medium">
+            <summary
+                class="min-h-11 cursor-pointer content-center text-sm font-medium"
+            >
                 What changed? Last 5 vs preceding 10
             </summary>
             <p class="mt-2 text-xs text-muted-foreground">

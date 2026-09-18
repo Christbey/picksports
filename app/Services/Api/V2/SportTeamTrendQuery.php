@@ -32,13 +32,14 @@ class SportTeamTrendQuery
         $teamModel = $this->teamModel($context);
         $calculatorClass = $this->calculatorClass($context);
         $season = isset($filters['season']) ? (int) $filters['season'] : null;
-        $seasonType = isset($filters['season_type']) ? (string) $filters['season_type'] : null;
+        $seasonType = isset($filters['season_type']) ? (string) $filters['season_type'] : ($context->slug === 'nfl' ? '2' : null);
         $beforeDate = isset($filters['before_date']) ? (string) $filters['before_date'] : null;
         $gamesParam = isset($filters['games']) ? strtolower(trim((string) $filters['games'])) : '';
         $userTier = $this->tierResolver->resolveTierSlug($user);
 
         $cacheKey = $this->sportsViewCache->contextHash([
             'contract' => 'sports.teams.trends.show',
+            'sample_contract_version' => 2,
             'sport' => $context->slug,
             'team_id' => $teamId,
             'season' => $season,
@@ -59,7 +60,7 @@ class SportTeamTrendQuery
                 $isSeasonSample = in_array($gamesParam, ['season', 'all'], true);
 
                 if ($isSeasonSample && method_exists($calculator, 'countAvailableGames')) {
-                    $gameCount = max(1, (int) $calculator->countAvailableGames($team, $season, $seasonType, $beforeDate));
+                    $gameCount = max(0, (int) $calculator->countAvailableGames($team, $season, $seasonType, $beforeDate));
                 } else {
                     $requestedGames = $gamesParam !== '' && ctype_digit($gamesParam)
                         ? (int) $gamesParam
@@ -70,9 +71,12 @@ class SportTeamTrendQuery
                     );
                 }
 
-                $result = $calculator->execute($team, $gameCount, $season, $seasonType, $beforeDate, $userTier);
+                $result = $gameCount === 0
+                    ? ['trends' => [], 'locked' => [], 'sample_size' => 0]
+                    : $calculator->execute($team, $gameCount, $season, $seasonType, $beforeDate, $userTier);
+                $sampleSize = (int) ($result['sample_size'] ?? $gameCount);
                 $trends = (array) ($result['trends'] ?? []);
-                $scoredSignals = $this->signalScorer->score($context->slug, $trends, $gameCount);
+                $scoredSignals = $this->signalScorer->score($context->slug, $trends, $sampleSize);
 
                 return [
                     'team_id' => $team->getKey(),
@@ -80,7 +84,7 @@ class SportTeamTrendQuery
                     'team_name' => $team->getAttribute('display_name')
                         ?? $team->getAttribute('name')
                         ?? $team->getAttribute('school'),
-                    'sample_size' => $gameCount,
+                    'sample_size' => $sampleSize,
                     'user_tier' => $userTier,
                     'trends' => $trends,
                     'scored_signals' => $scoredSignals,

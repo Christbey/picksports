@@ -29,7 +29,7 @@ abstract class AbstractCalculateTeamTrends
     protected const DEFAULT_GAME_COUNT = 20;
 
     /**
-     * @return array{trends: array<string, array<int, string>>, locked: array<string, string>}
+     * @return array{trends: array<string, array<int, string>>, locked: array<string, string>, sample_size: int}
      */
     public function execute(
         object $team,
@@ -46,7 +46,7 @@ abstract class AbstractCalculateTeamTrends
         $games = $this->fetchRecentGames($team, $gameCount, $season, $seasonType, $beforeDate);
 
         if ($games->isEmpty()) {
-            return ['trends' => [], 'locked' => []];
+            return ['trends' => [], 'locked' => [], 'sample_size' => 0];
         }
 
         $trends = [];
@@ -73,7 +73,7 @@ abstract class AbstractCalculateTeamTrends
 
         $trends = $this->normalizeTrendOutput($trends);
 
-        return ['trends' => $trends, 'locked' => []];
+        return ['trends' => $trends, 'locked' => [], 'sample_size' => $games->count()];
     }
 
     /**

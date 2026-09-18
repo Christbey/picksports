@@ -28,7 +28,13 @@ defineProps<{
     >
         <CardHeader>
             <div class="ui-kicker">
-                {{ hasLivePrediction ? 'Live Trading' : 'Market Edge' }}
+                {{
+                    hasLivePrediction
+                        ? livePrediction?.provisional
+                            ? 'Live Estimate'
+                            : 'Live Trading'
+                        : 'Market Edge'
+                }}
             </div>
             <CardTitle class="flex items-center gap-2">
                 <span v-if="hasLivePrediction" class="relative flex h-3 w-3">

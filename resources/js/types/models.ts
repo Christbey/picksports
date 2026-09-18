@@ -134,6 +134,18 @@ export interface MatchupContextRow {
     subtitle?: string;
     away: MatchupContextRecord;
     home: MatchupContextRecord;
+    scope?: string;
+    latest_meeting?: {
+        game_id: number;
+        season: number;
+        game_date: string;
+        away_team_id: number;
+        home_team_id: number;
+        away_abbreviation: string | null;
+        home_abbreviation: string | null;
+        away_score: number;
+        home_score: number;
+    } | null;
 }
 
 export interface MatchupContextData {

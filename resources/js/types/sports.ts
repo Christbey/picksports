@@ -196,6 +196,12 @@ export interface AiPredictionAnalysisSummary {
 }
 
 export interface LivePredictionData {
+    homeLabel?: string | null;
+    awayLabel?: string | null;
+    provisional?: boolean;
+    sourceUpdatedAt?: string | null;
+    freshnessWarning?: string | null;
+    modelWarning?: string | null;
     isLive: boolean;
     homeScore?: number | null;
     awayScore?: number | null;
@@ -371,6 +377,7 @@ export interface GamePageTeam {
 }
 
 export interface GamePageGame {
+    starts_at?: string | null;
     id: number;
     status: string;
     game_date: string | null;

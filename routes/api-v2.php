@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V2\DeveloperSandboxController;
 use App\Http\Controllers\Api\V2\LiveScoreboardController;
 use App\Http\Controllers\Api\V2\MlbDailyPickController;
 use App\Http\Controllers\Api\V2\NativeDeviceSessionController;
+use App\Http\Controllers\Api\V2\NflLiveSnapshotController;
 use App\Http\Controllers\Api\V2\SportController;
 use App\Http\Controllers\Api\V2\SportDepthChartController;
 use App\Http\Controllers\Api\V2\SportForecastController;
@@ -164,6 +165,7 @@ Route::prefix('v2')->name('v2.')->group(function (): void {
         ->group(function (): void {
             Route::get('/games', [SportGameController::class, 'index'])->name('games.index');
             Route::get('/games/{game}/page', SportGamePageController::class)->name('games.page.show');
+            Route::get('/games/{game}/live-snapshot', NflLiveSnapshotController::class)->name('games.live-snapshot.show');
             Route::get('/games/{game}/trends', SportGameTrendController::class)->name('games.trends.show');
             Route::get('/games/{game}', [SportGameController::class, 'show'])->name('games.show');
             Route::get('/games/{game}/depth-charts', [SportDepthChartController::class, 'gameShow'])->name('games.depth-charts.show');

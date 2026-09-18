@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { formatDateLong } from '@/composables/useFormatters';
 import type {
     MatchupContextData,
     MatchupContextRow,
@@ -184,16 +185,10 @@ const classifyTrendTone = (
 const sideLabel = (side: 'away' | 'home'): string =>
     side === 'away' ? props.awayLabel || 'Away' : props.homeLabel || 'Home';
 
-const insightLabel = (
-    side: 'away' | 'home',
-    tone: TrendTone,
-    direction?: string,
-): string => {
+const insightLabel = (side: 'away' | 'home', tone: TrendTone): string => {
     if (tone === 'total') return 'Total context';
     if (tone === 'risk') return `${sideLabel(side)} risk`;
-    return direction === 'support'
-        ? `${sideLabel(side)} edge`
-        : `${sideLabel(side)} context`;
+    return `${sideLabel(side)} context`;
 };
 
 const trendInsights = computed<TrendInsight[]>(() => {
@@ -216,7 +211,7 @@ const trendInsights = computed<TrendInsight[]>(() => {
 
                 insights.push({
                     key: `${side}-${signal.category}-${signal.id || index}`,
-                    label: insightLabel(side, tone, signal.direction),
+                    label: insightLabel(side, tone),
                     detail: props.formatCategoryName(signal.category),
                     category: signal.category,
                     message,
@@ -264,7 +259,7 @@ const trendInsights = computed<TrendInsight[]>(() => {
     return insights.sort((a, b) => b.score - a.score);
 });
 
-const actionableTrendCards = computed<TrendInsight[]>(() => {
+const contextualTrendCards = computed<TrendInsight[]>(() => {
     const selected: TrendInsight[] = [];
 
     const pushBest = (tone: TrendTone) => {
@@ -325,24 +320,26 @@ const formatMatchupWinRate = (record: MatchupContextRow['away']): string => {
 };
 
 const matchupSampleLabel = (row: MatchupContextRow): string => {
-    const games = Math.max(row.away.games || 0, row.home.games || 0);
-
-    if (games === 0) return 'No sample';
-
-    return `${games} ${games === 1 ? 'game' : 'games'}`;
+    return (['away', 'home'] as const)
+        .map((side) => {
+            const games = row[side].games || 0;
+            return `${sideLabel(side)}: ${games} ${games === 1 ? 'game' : 'games'}`;
+        })
+        .join(' · ');
 };
 
-const matchupEdgeLabel = (row: MatchupContextRow): string => {
+const matchupHistoryLabel = (row: MatchupContextRow): string => {
     const awayRate = matchupWinRate(row.away);
     const homeRate = matchupWinRate(row.home);
 
     if (awayRate === null && homeRate === null) return 'No sample';
-    if (awayRate === homeRate) return 'Even';
+    if (awayRate === null || homeRate === null) return 'Incomplete sample';
+    if (awayRate === homeRate) return 'Equal historical win rates';
     if ((awayRate ?? 0) > (homeRate ?? 0)) {
-        return `${props.awayLabel || 'Away'} edge`;
+        return `${props.awayLabel || 'Away'} higher historical win rate`;
     }
 
-    return `${props.homeLabel || 'Home'} edge`;
+    return `${props.homeLabel || 'Home'} higher historical win rate`;
 };
 
 const matchupRows = computed(() => props.matchupContext?.rows ?? []);
@@ -380,6 +377,11 @@ const displayTitle = computed(() =>
             </div>
             <p v-if="subtitle" class="text-sm text-muted-foreground">
                 {{ subtitle }}
+            </p>
+            <p class="text-xs text-muted-foreground">
+                Historical context only. Pattern ranks are not win probabilities
+                or validated betting advantages; small samples are especially
+                uncertain.
             </p>
         </CardHeader>
         <CardContent class="px-4 pb-4 md:px-5">
@@ -468,7 +470,7 @@ const displayTitle = computed(() =>
                                     </p>
                                 </div>
                                 <Badge variant="secondary" class="text-[11px]">
-                                    {{ matchupEdgeLabel(row) }}
+                                    {{ matchupHistoryLabel(row) }}
                                 </Badge>
                             </div>
                             <div class="mt-3 grid grid-cols-2 gap-2 text-sm">
@@ -498,16 +500,34 @@ const displayTitle = computed(() =>
                             <p class="mt-2 text-xs text-muted-foreground">
                                 {{ matchupSampleLabel(row) }}
                             </p>
+                            <p v-if="row.latest_meeting" class="mt-2 text-sm">
+                                Last meeting:
+                                {{
+                                    formatDateLong(row.latest_meeting.game_date)
+                                }}
+                                ({{ row.latest_meeting.season }} season) ·
+                                {{
+                                    row.latest_meeting.away_abbreviation ||
+                                    'Away'
+                                }}
+                                {{ row.latest_meeting.away_score }}–{{
+                                    row.latest_meeting.home_score
+                                }}
+                                {{
+                                    row.latest_meeting.home_abbreviation ||
+                                    'Home'
+                                }}
+                            </p>
                         </article>
                     </div>
                 </div>
 
                 <div
-                    v-if="actionableTrendCards.length > 0"
+                    v-if="contextualTrendCards.length > 0"
                     class="grid gap-3 lg:grid-cols-3"
                 >
                     <div
-                        v-for="insight in actionableTrendCards"
+                        v-for="insight in contextualTrendCards"
                         :key="insight.key"
                         class="rounded-lg border p-3"
                         :class="{
@@ -538,7 +558,7 @@ const displayTitle = computed(() =>
                                 variant="outline"
                                 class="shrink-0 text-[11px]"
                             >
-                                {{ insight.score }}
+                                Pattern rank {{ insight.score }}/100
                             </Badge>
                         </div>
                         <div class="mt-2 flex flex-wrap gap-1.5">
@@ -547,21 +567,25 @@ const displayTitle = computed(() =>
                                 variant="secondary"
                                 class="text-[10px] capitalize"
                             >
-                                {{ insight.quality }}
+                                Pattern: {{ insight.quality }}
                             </Badge>
                             <Badge
                                 v-if="insight.confidence"
                                 variant="outline"
                                 class="text-[10px] capitalize"
                             >
+                                Context:
                                 {{ insight.confidence.replace('_', ' ') }}
                             </Badge>
                             <Badge
-                                v-if="insight.sampleSize"
+                                v-if="insight.sampleSize != null"
                                 variant="outline"
                                 class="text-[10px]"
                             >
-                                {{ insight.sampleSize }} games
+                                {{ insight.sampleSize }}
+                                {{
+                                    insight.sampleSize === 1 ? 'game' : 'games'
+                                }}
                             </Badge>
                         </div>
                         <p class="mt-2 text-sm leading-relaxed">

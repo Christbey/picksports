@@ -5,7 +5,12 @@ namespace App\Services\Sports;
 use App\Models\MLB\Game;
 use App\Models\MLB\Player;
 use App\Models\MLB\PlayerStat;
+use App\Models\NFL\DepthChartEntry;
+use App\Models\NFL\DepthChartSnapshot;
+use App\Models\NFL\Game as NflGame;
+use App\Services\NFL\QuarterbackAvailability;
 use App\Support\MLB\MlbGameScoreResolver;
+use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
@@ -42,6 +47,10 @@ class GameMatchupContextService
 
             return in_array($homeTeamId, $teams, true) && in_array($awayTeamId, $teams, true);
         });
+        if ($game instanceof NflGame) {
+            // Season records and historical meetings deliberately have different scopes.
+            $headToHeadGames = $this->priorHeadToHeadGames($game);
+        }
 
         $rows = [
             $this->makeRow(
@@ -72,6 +81,11 @@ class GameMatchupContextService
                 ),
             ),
         ];
+        if ($game instanceof NflGame) {
+            $rows[0]['scope'] = 'available_prior_seasons';
+            $rows[0]['latest_meeting'] = $this->latestMeeting($headToHeadGames, $awayTeam, $homeTeam);
+            $rows[0]['subtitle'] = $this->historicalScopeSubtitle($game);
+        }
 
         $conferenceRow = $this->buildAlignmentRow(
             key: 'conference_record',
@@ -104,7 +118,9 @@ class GameMatchupContextService
             $rows[] = $this->makeRow(
                 key: 'time_bucket_record',
                 label: sprintf('%s record', $timeBucket['label']),
-                subtitle: $this->seasonScopeSubtitle($game),
+                subtitle: $this->seasonScopeSubtitle($game).($game instanceof NflGame
+                    ? ' · '.config('trends.timezones.nfl.display', 'America/New_York').' kickoff'
+                    : ''),
                 awayRecord: $this->recordFromGames(
                     $awayGames->filter(fn (Model $item): bool => $this->matchesTimeBucket($item, $timeBucket['bucket'])),
                     (int) $awayTeam->getKey(),
@@ -136,8 +152,8 @@ class GameMatchupContextService
                 'player_model' => Player::class,
                 'starter_type' => 'pitcher',
             ],
-            \App\Models\NFL\Game::class => [
-                'game_model' => \App\Models\NFL\Game::class,
+            NflGame::class => [
+                'game_model' => NflGame::class,
                 'player_stat_model' => \App\Models\NFL\PlayerStat::class,
                 'player_model' => \App\Models\NFL\Player::class,
                 'starter_type' => 'qb',
@@ -174,6 +190,9 @@ class GameMatchupContextService
     protected function priorSeasonGamesForTeams(Model $game, array $teamIds): EloquentCollection
     {
         return $this->baseGameQuery($game)
+            ->when($game instanceof NflGame, fn ($query) => $query
+                ->select(['id', 'season', 'game_date', 'game_time', 'home_team_id', 'away_team_id', 'home_score', 'away_score'])
+                ->with(['homeTeam:id,abbreviation,conference,division', 'awayTeam:id,abbreviation,conference,division']))
             ->where('season', (int) $game->season)
             ->where(function (Builder $query) use ($teamIds): void {
                 $query->whereIn('home_team_id', $teamIds)
@@ -188,6 +207,8 @@ class GameMatchupContextService
         $awayTeamId = (int) $game->away_team_id;
 
         return $this->baseGameQuery($game)
+            ->without(['homeTeam', 'awayTeam'])
+            ->select(['id', 'season', 'game_date', 'game_time', 'home_team_id', 'away_team_id', 'home_score', 'away_score'])
             ->where(function ($query) use ($homeTeamId, $awayTeamId): void {
                 $query->where(function ($inner) use ($homeTeamId, $awayTeamId): void {
                     $inner->where('home_team_id', $homeTeamId)
@@ -227,14 +248,46 @@ class GameMatchupContextService
 
         return $query->where(function ($inner) use ($gameDate, $gameTime): void {
             $inner->whereDate('game_date', '<', $gameDate)
-                ->orWhere(function ($sameDate) use ($gameDate, $gameTime): void {
+                ->when($gameTime !== null, fn ($query) => $query->orWhere(function ($sameDate) use ($gameDate, $gameTime): void {
                     $sameDate->whereDate('game_date', '=', $gameDate);
 
                     if ($gameTime !== null) {
                         $sameDate->whereTime('game_time', '<', $gameTime);
                     }
-                });
+                }));
         });
+    }
+
+    protected function historicalScopeSubtitle(Model $game): string
+    {
+        return $this->isPostseasonSeasonType($game->season_type)
+            ? 'Available prior seasons · regular + postseason · before kickoff'
+            : 'Available prior seasons · same season type · before kickoff';
+    }
+
+    protected function latestMeeting(Collection $games, Model $awayTeam, Model $homeTeam): ?array
+    {
+        $latest = $games->sortByDesc(fn (Model $item): string => sprintf('%s %s',
+            $item->game_date?->toDateString() ?? (string) $item->game_date,
+            $this->normalizeTimeValue($item->game_time) ?? '00:00:00',
+        ))->first();
+        if (! $latest) {
+            return null;
+        }
+        $teams = collect([$awayTeam, $homeTeam])->keyBy(fn (Model $team) => $team->getKey());
+        $date = GameDateTimePresenter::forSport('nfl', $latest->game_date, $latest->game_time);
+
+        return [
+            'game_id' => (int) $latest->getKey(),
+            'season' => (int) $latest->season,
+            'game_date' => $date['game_date'],
+            'away_team_id' => (int) $latest->away_team_id,
+            'home_team_id' => (int) $latest->home_team_id,
+            'away_abbreviation' => $teams->get((int) $latest->away_team_id)?->abbreviation,
+            'home_abbreviation' => $teams->get((int) $latest->home_team_id)?->abbreviation,
+            'away_score' => (int) $latest->away_score,
+            'home_score' => (int) $latest->home_score,
+        ];
     }
 
     /**
@@ -378,6 +431,10 @@ class GameMatchupContextService
     protected function gameTimeBucket(Model $game): ?array
     {
         $time = $this->normalizeTimeValue($game->game_time);
+        if ($game instanceof NflGame || $game instanceof \App\Models\CFB\Game) {
+            $sport = $game instanceof NflGame ? 'nfl' : 'cfb';
+            $time = GameDateTimePresenter::forSport($sport, $game->game_date, $time)['game_time'];
+        }
         if ($time === null) {
             return null;
         }
@@ -393,15 +450,7 @@ class GameMatchupContextService
 
     protected function matchesTimeBucket(Model $game, string $bucket): bool
     {
-        $time = $this->normalizeTimeValue($game->game_time);
-        if ($time === null) {
-            return false;
-        }
-
-        [$hour] = array_pad(explode(':', $time), 2, '00');
-        $itemBucket = (int) $hour < 17 ? 'day' : 'night';
-
-        return $itemBucket === $bucket;
+        return ($this->gameTimeBucket($game)['bucket'] ?? null) === $bucket;
     }
 
     protected function normalizeTimeValue(mixed $value): ?string
@@ -597,13 +646,14 @@ class GameMatchupContextService
             return null;
         }
 
-        $homeQuarterback = $homeQuarterbackId !== null ? $playerModel::query()->find($homeQuarterbackId) : null;
-        $awayQuarterback = $awayQuarterbackId !== null ? $playerModel::query()->find($awayQuarterbackId) : null;
+        $quarterbacks = $playerModel::query()->whereIn('id', array_filter([$homeQuarterbackId, $awayQuarterbackId]))->get()->keyBy('id');
+        $homeQuarterback = $quarterbacks->get($homeQuarterbackId);
+        $awayQuarterback = $quarterbacks->get($awayQuarterbackId);
 
         return $this->makeRow(
             key: 'starter_matchup',
             label: 'Record vs likely QB',
-            subtitle: trim(collect([
+            subtitle: $this->historicalScopeSubtitle($game).' · '.trim(collect([
                 $homeQuarterback?->full_name ? 'vs '.$homeQuarterback->full_name : null,
                 $awayQuarterback?->full_name ? 'vs '.$awayQuarterback->full_name : null,
             ])->filter()->implode(' / ')),
@@ -642,6 +692,14 @@ class GameMatchupContextService
      */
     protected function resolveLikelyQuarterbackId(Model $game, array $config, int $teamId, Collection $priorTeamGames): ?int
     {
+        $unavailable = [];
+        if ($game instanceof NflGame) {
+            $unavailable = app(QuarterbackAvailability::class)->forGame($game, $teamId);
+            $depthChart = $this->availableDepthChartQuarterback($game, $teamId, $unavailable);
+            if ($depthChart['has_candidates']) {
+                return $depthChart['player_id'];
+            }
+        }
         if ($priorTeamGames->isEmpty()) {
             return null;
         }
@@ -664,15 +722,45 @@ class GameMatchupContextService
         $statTable = (new $playerStatModel)->getTable();
 
         $stat = $playerStatModel::query()
-            ->select("{$statTable}.*")
+            ->select(["{$statTable}.player_id", "{$playerTable}.full_name"])
             ->join($playerTable, "{$playerTable}.id", '=', "{$statTable}.player_id")
             ->where("{$statTable}.game_id", $latestGameId)
             ->where("{$statTable}.team_id", $teamId)
             ->where($playerTable.'.position', 'QB')
+            ->where("{$statTable}.passing_attempts", '>', 0)
             ->orderByDesc("{$statTable}.passing_attempts")
             ->first();
 
+        if ($stat && $game instanceof NflGame && app(QuarterbackAvailability::class)->excludes($unavailable, $stat->player_id, $stat->full_name)) {
+            return null;
+        }
+
         return $stat ? (int) $stat->player_id : null;
+    }
+
+    /** @return array{has_candidates:bool, player_id:?int} */
+    protected function availableDepthChartQuarterback(NflGame $game, int $teamId, array $unavailable): array
+    {
+        $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
+        $cutoff = $kickoff && $kickoff->lt(now()) ? $kickoff : now();
+        $snapshot = DepthChartSnapshot::query()->with(['entries' => fn ($q) => $q->with('player')
+            ->where('observed_at', '<=', $cutoff)
+            ->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $cutoff))])
+            ->where('team_id', $teamId)->where('season', $game->season)
+            ->where('observed_at', '<=', $cutoff)
+            ->where(fn ($q) => $q->whereNull('source_updated_at')->orWhere('source_updated_at', '<=', $cutoff))
+            ->latest('observed_at')->latest('id')->first();
+        $candidates = $snapshot ? $snapshot->entries->filter(fn ($entry) => strtoupper((string) ($entry->position_code ?: $entry->position_slot_key)) === 'QB')
+            : DepthChartEntry::query()->with('player')->where('team_id', $teamId)->where('season', $game->season)
+                ->where('position_code', 'QB')->whereNotNull('source_updated_at')
+                ->where('source_updated_at', '<=', $cutoff)->where('updated_at', '<=', $cutoff)->get();
+        $available = $candidates->filter(fn ($entry) => $entry->player_id && ! app(QuarterbackAvailability::class)->excludes($unavailable, $entry->player_id, $entry->player?->full_name))
+            ->sortBy([['depth_rank', 'asc'], ['slot_order', 'asc']]);
+        $first = $available->first();
+        $ambiguous = $first && (! is_numeric($first->depth_rank)
+            || $available->where('depth_rank', $first->depth_rank)->pluck('player_id')->unique()->count() > 1);
+
+        return ['has_candidates' => $candidates->isNotEmpty(), 'player_id' => $first && ! $ambiguous ? (int) $first->player_id : null];
     }
 
     /**
@@ -694,26 +782,29 @@ class GameMatchupContextService
         $gameTable = $game->getTable();
 
         $games = $game::query()
-            ->with(['homeTeam', 'awayTeam'])
-            ->join($statTable, "{$statTable}.game_id", '=', "{$gameTable}.id")
             ->where("{$gameTable}.status", 'STATUS_FINAL')
-            ->where("{$statTable}.player_id", $playerId)
-            ->where("{$statTable}.{$attemptField}", '>', 0)
-            ->where(function ($query) use ($teamId, $gameTable, $statTable): void {
-                $query->where(function ($inner) use ($teamId, $gameTable, $statTable): void {
-                    $inner->where("{$gameTable}.home_team_id", $teamId)
-                        ->whereColumn("{$statTable}.team_id", "{$gameTable}.away_team_id");
-                })->orWhere(function ($inner) use ($teamId, $gameTable, $statTable): void {
-                    $inner->where("{$gameTable}.away_team_id", $teamId)
-                        ->whereColumn("{$statTable}.team_id", "{$gameTable}.home_team_id");
-                });
+            ->whereNotNull("{$gameTable}.home_score")->whereNotNull("{$gameTable}.away_score")
+            ->where(fn ($query) => $query->where("{$gameTable}.home_team_id", $teamId)->orWhere("{$gameTable}.away_team_id", $teamId))
+            ->whereExists(function ($query) use ($statTable, $gameTable, $playerId, $attemptField, $teamId): void {
+                $query->selectRaw('1')->from($statTable)
+                    ->whereColumn("{$statTable}.game_id", "{$gameTable}.id")
+                    ->where("{$statTable}.player_id", $playerId)
+                    ->where("{$statTable}.{$attemptField}", '>', 0)
+                    ->where(function ($query) use ($teamId, $gameTable, $statTable): void {
+                        $query->where(function ($inner) use ($teamId, $gameTable, $statTable): void {
+                            $inner->where("{$gameTable}.home_team_id", $teamId)
+                                ->whereColumn("{$statTable}.team_id", "{$gameTable}.away_team_id");
+                        })->orWhere(function ($inner) use ($teamId, $gameTable, $statTable): void {
+                            $inner->where("{$gameTable}.away_team_id", $teamId)
+                                ->whereColumn("{$statTable}.team_id", "{$gameTable}.home_team_id");
+                        });
+                    });
             });
 
         $this->applyMatchupContextSeasonTypeFilter($games, $game, "{$gameTable}.season_type");
 
         $games = $this->applyBeforeGameFilter($games, $game)
-            ->distinct()
-            ->select("{$gameTable}.*")
+            ->select(["{$gameTable}.id", "{$gameTable}.home_team_id", "{$gameTable}.away_team_id", "{$gameTable}.home_score", "{$gameTable}.away_score"])
             ->get();
 
         return $this->recordFromGames($games, $teamId);

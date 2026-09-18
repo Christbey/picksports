@@ -8,6 +8,11 @@ import {
     parseLinescores,
 } from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
+import {
+    NFL_LIVE_STATUSES,
+    liveSnapshotWarning,
+    type NflLiveSnapshot,
+} from '@/lib/nflLiveSnapshot';
 import type {
     LivePredictionData,
     NflPageGame,
@@ -212,6 +217,13 @@ export function useNflGamePage(gameId: number) {
     const loading = ref(true);
     const error = ref<string | null>(null);
     const requestController = new AbortController();
+    const liveSnapshot = ref<NflLiveSnapshot | null>(null);
+    const liveRefreshFailed = ref(false);
+    const currentTime = ref(Date.now());
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    let clockTimer: ReturnType<typeof setInterval> | undefined;
+    let refreshing = false;
+    let lastStatsRefresh = 0;
 
     const gameStatus = useGameStatus(() => currentGame.value.status);
     const formatDate = (dateString: string, timeString?: string): string => {
@@ -254,37 +266,53 @@ export function useNflGamePage(gameId: number) {
         );
     });
 
-    const hasLivePrediction = computed(
-        () =>
-            prediction.value?.live_win_probability !== null &&
-            prediction.value?.live_win_probability !== undefined,
+    const hasLivePrediction = computed(() =>
+        NFL_LIVE_STATUSES.has(currentGame.value.status),
     );
     const livePredictionData = computed((): LivePredictionData | undefined => {
-        if (!hasLivePrediction.value || !prediction.value) return undefined;
+        if (!hasLivePrediction.value) return undefined;
+        const snapshot = liveSnapshot.value;
         return {
             isLive: true,
-            homeScore: currentGame.value.home_score,
-            awayScore: currentGame.value.away_score,
-            status: currentGame.value.status,
-            liveWinProbability: prediction.value.live_win_probability as
-                | number
-                | null,
-            livePredictedSpread: prediction.value.live_predicted_spread as
-                | number
-                | null,
-            livePredictedTotal: prediction.value.live_predicted_total as
-                | number
-                | null,
-            liveSecondsRemaining: prediction.value.live_seconds_remaining,
-            preGameWinProbability: Number(prediction.value.win_probability),
-            preGamePredictedSpread: Number(prediction.value.predicted_spread),
-            preGamePredictedTotal: Number(prediction.value.predicted_total),
+            provisional: true,
+            homeLabel: homeTeam.value?.abbreviation,
+            awayLabel: awayTeam.value?.abbreviation,
+            homeScore: snapshot?.game.home_score ?? null,
+            awayScore: snapshot?.game.away_score ?? null,
+            status: snapshot?.game.status ?? currentGame.value.status,
+            period: snapshot?.game.period,
+            gameClock: snapshot?.game.game_clock,
+            liveWinProbability:
+                snapshot?.projection?.live_win_probability ?? null,
+            livePredictedSpread:
+                snapshot?.projection?.live_predicted_spread ?? null,
+            livePredictedTotal:
+                snapshot?.projection?.live_predicted_total ?? null,
+            liveSecondsRemaining: snapshot?.projection?.live_seconds_remaining,
+            sourceUpdatedAt: snapshot?.source_updated_at,
+            freshnessWarning: liveSnapshotWarning(
+                snapshot,
+                currentTime.value,
+                liveRefreshFailed.value,
+            ),
+            modelWarning:
+                snapshot?.warning ??
+                'Experimental score-and-clock estimate; not a live sportsbook edge.',
+            preGameWinProbability: Number(
+                prediction.value?.win_probability ?? 0,
+            ),
+            preGamePredictedSpread: Number(
+                prediction.value?.predicted_spread ?? 0,
+            ),
+            preGamePredictedTotal: Number(
+                prediction.value?.predicted_total ?? 0,
+            ),
         };
     });
 
     const trendsSubtitle = computed(
         () =>
-            `${currentGame.value.season} Season (${homeTrends.value?.sample_size || awayTrends.value?.sample_size || 0} games)`,
+            `${currentGame.value.season} ${weekLabel.value.startsWith('Preseason') ? 'Preseason' : currentGame.value.season_type === '3' ? 'Postseason' : 'Regular Season'} · ${awayTeam.value?.abbreviation ?? 'Away'}: ${awayTrends.value?.sample_size ?? 0} games · ${homeTeam.value?.abbreviation ?? 'Home'}: ${homeTrends.value?.sample_size ?? 0} games · before kickoff`,
     );
 
     const {
@@ -351,7 +379,9 @@ export function useNflGamePage(gameId: number) {
             const trendQuery = {
                 games: 'season',
                 season: currentGame.value.season,
-                before_date: currentGame.value.game_date,
+                season_type: currentGame.value.season_type,
+                before_date:
+                    currentGame.value.starts_at ?? currentGame.value.game_date,
             };
             const supplemental: Promise<unknown>[] = [
                 api.stats
@@ -422,8 +452,96 @@ export function useNflGamePage(gameId: number) {
         }
     };
 
-    onMounted(load);
-    onBeforeUnmount(() => requestController.abort());
+    const refreshLive = async () => {
+        if (refreshing || requestController.signal.aborted || document.hidden)
+            return;
+        refreshing = true;
+        try {
+            const response = await api.games.liveSnapshot<NflLiveSnapshot>(
+                'nfl',
+                gameId,
+                {
+                    init: {
+                        signal: requestController.signal,
+                        cache: 'no-store',
+                    },
+                },
+            );
+            if (requestController.signal.aborted) return;
+            if (!response?.data) throw new Error('Live snapshot unavailable');
+            liveSnapshot.value = response.data;
+            currentGame.value = {
+                ...currentGame.value,
+                ...response.data.game,
+            } as NflPageGame;
+            liveRefreshFailed.value = false;
+            currentTime.value = Date.now();
+            if (
+                Date.now() - lastStatsRefresh >= 60000 ||
+                currentGame.value.status === 'STATUS_FINAL'
+            ) {
+                const statsResponse = await api.stats
+                    .teams('nfl', {
+                        query: { game_id: gameId, per_page: 2 },
+                        init: { signal: requestController.signal },
+                    })
+                    .catch(() => null);
+                if (requestController.signal.aborted) return;
+                const stats = flattenApiV2Stats(
+                    statsResponse?.data,
+                ) as unknown as NflTeamStats[];
+                homeTeamStats.value =
+                    stats.find((row) => row.team_type === 'home') ??
+                    homeTeamStats.value;
+                awayTeamStats.value =
+                    stats.find((row) => row.team_type === 'away') ??
+                    awayTeamStats.value;
+                lastStatsRefresh = Date.now();
+            }
+        } catch {
+            if (!requestController.signal.aborted)
+                liveRefreshFailed.value = true;
+        } finally {
+            refreshing = false;
+        }
+    };
+    const scheduleRefresh = () => {
+        clearTimeout(refreshTimer);
+        if (
+            requestController.signal.aborted ||
+            currentGame.value.status === 'STATUS_FINAL'
+        )
+            return;
+        refreshTimer = setTimeout(
+            async () => {
+                await refreshLive();
+                scheduleRefresh();
+            },
+            NFL_LIVE_STATUSES.has(currentGame.value.status) ? 15000 : 60000,
+        );
+    };
+    const onVisibilityChange = () => {
+        if (!document.hidden && currentGame.value.status !== 'STATUS_FINAL') {
+            void refreshLive().then(scheduleRefresh);
+        }
+    };
+    onMounted(async () => {
+        await load();
+        if (requestController.signal.aborted) return;
+        await refreshLive();
+        if (requestController.signal.aborted) return;
+        scheduleRefresh();
+        clockTimer = setInterval(() => {
+            currentTime.value = Date.now();
+        }, 5000);
+        document.addEventListener('visibilitychange', onVisibilityChange);
+    });
+    onBeforeUnmount(() => {
+        requestController.abort();
+        clearTimeout(refreshTimer);
+        clearInterval(clockTimer);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+    });
 
     return {
         game: currentGame,

@@ -304,6 +304,15 @@ export function useApiV2Client() {
         },
 
         games: {
+            liveSnapshot: <T = ApiV2Record>(
+                sport: ApiV2SportSlug,
+                game: ApiV2Id,
+                options: RequestOptions = {},
+            ) =>
+                item<T>(
+                    v2.sports.games.liveSnapshot.show.url({ sport, game }),
+                    options,
+                ),
             index: (sport: ApiV2SportSlug, options: RequestOptions = {}) =>
                 collection<ApiV2Game>(
                     v2.sports.games.index.url(

@@ -23,6 +23,7 @@ use App\Actions\Trends\Collectors\StreakTrendCollector;
 use App\Actions\Trends\Collectors\TimeBasedTrendCollector;
 use App\Actions\Trends\Collectors\TotalsTrendCollector;
 use App\Models\NFL\Game;
+use Illuminate\Database\Eloquent\Builder;
 
 class CalculateTeamTrends extends AbstractCalculateTeamTrends
 {
@@ -31,6 +32,16 @@ class CalculateTeamTrends extends AbstractCalculateTeamTrends
     protected const GAME_MODEL = Game::class;
 
     protected const DEFAULT_GAME_COUNT = 16;
+
+    protected function baseGamesQuery(
+        object $team,
+        ?int $season = null,
+        ?string $seasonType = null,
+        ?string $beforeDate = null
+    ): Builder {
+        // An omitted phase must never silently mix exhibition and regular games.
+        return parent::baseGamesQuery($team, $season, $seasonType ?? '2', $beforeDate);
+    }
 
     /**
      * @var array<int, class-string>

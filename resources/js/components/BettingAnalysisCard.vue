@@ -246,6 +246,20 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
 
 <template>
     <div class="space-y-3">
+        <div
+            v-if="livePrediction.isLive && livePrediction.provisional"
+            class="space-y-1 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs"
+            role="status"
+        >
+            <p>{{ livePrediction.modelWarning }}</p>
+            <p v-if="livePrediction.sourceUpdatedAt">
+                Game data updated:
+                {{ new Date(livePrediction.sourceUpdatedAt).toLocaleString() }}
+            </p>
+            <p v-if="livePrediction.freshnessWarning" class="font-semibold">
+                {{ livePrediction.freshnessWarning }}
+            </p>
+        </div>
         <!-- Live Prediction Card (only when actual live data exists) -->
         <div v-if="hasLivePredictionData" class="ui-surface-subtle p-3">
             <div class="flex items-start justify-between gap-2">
@@ -257,12 +271,18 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                             <span
                                 class="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500"
                             ></span>
-                            Live Prediction
+                            {{
+                                livePrediction.provisional
+                                    ? 'Experimental projection'
+                                    : 'Live Prediction'
+                            }}
                         </span>
                         <span class="text-sm font-semibold">
+                            {{ livePrediction.homeLabel }}
                             {{ livePrediction.homeScore }}-{{
                                 livePrediction.awayScore
                             }}
+                            {{ livePrediction.awayLabel }}
                             <template
                                 v-if="
                                     livePrediction.liveSecondsRemaining !==
@@ -278,7 +298,11 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                                             livePrediction.liveSecondsRemaining,
                                         )
                                     }}
-                                    remaining
+                                    {{
+                                        (livePrediction.period ?? 0) > 4
+                                            ? 'remaining in this OT period'
+                                            : 'remaining'
+                                    }}
                                 </span>
                             </template>
                             <template
@@ -332,7 +356,11 @@ function formatBetMarketLine(bet: BettingRecommendation): string {
                         v-if="!props.compact"
                         class="text-xs text-muted-foreground"
                     >
-                        Real-time prediction updates based on current game state
+                        {{
+                            livePrediction.provisional
+                                ? 'Refreshes every 15 seconds while visible; source updates may lag.'
+                                : 'Real-time prediction updates based on current game state'
+                        }}
                     </div>
                     <div class="flex flex-wrap gap-2 text-xs">
                         <div

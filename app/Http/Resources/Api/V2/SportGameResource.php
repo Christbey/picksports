@@ -9,6 +9,7 @@ use App\Models\MLB\Game;
 use App\Models\NFL\Team;
 use App\Services\Api\V2\SportContext;
 use App\Support\Sports\GameDateTimePresenter;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -54,6 +55,9 @@ class SportGameResource extends JsonResource
             'short_name' => $this->short_name ?? null,
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
+            ...($this->context->slug === 'nfl' ? ['starts_at' => $this->game_date && $this->game_time
+                ? Carbon::parse($this->game_date->toDateString().' '.GameDateTimePresenter::timeString($this->game_time), 'UTC')->toIso8601String()
+                : null] : []),
             'venue' => $this->venue_name ?? $this->venue ?? null,
             'venue_name' => $this->venue_name ?? $this->venue ?? null,
             'venue_city' => $this->venue_city ?? null,

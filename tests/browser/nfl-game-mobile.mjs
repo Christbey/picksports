@@ -84,6 +84,35 @@ try {
             'No page-level horizontal overflow',
         );
     const nav = page.getByRole('navigation', { name: 'Game sections' });
+    const checkMatchupRow = async () => {
+        const cells = await page.locator('[data-matchup-row] > *').all();
+        assert.equal(cells.length, 3);
+        const boxes = await Promise.all(
+            cells.map((cell) => cell.boundingBox()),
+        );
+        const centers = boxes.map((box) => box.y + box.height / 2);
+        assert.ok(
+            Math.max(...centers) - Math.min(...centers) <= 2,
+            'Teams and score stay aligned in one row',
+        );
+        assert.ok(
+            boxes[0].x + boxes[0].width <= boxes[1].x &&
+                boxes[1].x + boxes[1].width <= boxes[2].x,
+            'Matchup columns do not overlap',
+        );
+        await assertVisible(
+            page.getByRole('link', {
+                name: 'Detroit Lions (Away)',
+                exact: true,
+            }),
+        );
+        await assertVisible(
+            page.getByRole('link', {
+                name: 'Buffalo Bills (Home)',
+                exact: true,
+            }),
+        );
+    };
     const select = async (name) => {
         await nav.getByRole('button', { name, exact: true }).click();
         assert.equal(
@@ -100,6 +129,7 @@ try {
         await page.setViewportSize({ width, height: 844 });
         await page.goto(`${server.resolvedUrls.local[0]}__nfl-mobile`);
         await page.getByText('weather stale', { exact: true }).waitFor();
+        await checkMatchupRow();
         const count = researchRequests;
         await assertVisible(
             page.getByText('Prediction Model', { exact: true }),
@@ -221,6 +251,7 @@ try {
         // Resize after choosing a hidden-on-mobile section: desktop must show all panels.
         await select('Research');
         await page.setViewportSize({ width: 1280, height: 900 });
+        await checkMatchupRow();
         await assertVisible(nav, false);
         await assertVisible(
             page.getByText('Prediction Model', { exact: true }),
@@ -234,6 +265,16 @@ try {
         console.log(
             `PASS: ${width}px mobile navigation, evidence, holds, overflow, 1280px desktop restoration`,
         );
+    }
+    for (const phase of ['scheduled', 'live']) {
+        await page.setViewportSize({ width: 320, height: 844 });
+        await page.goto(
+            `${server.resolvedUrls.local[0]}__nfl-mobile?phase=${phase}`,
+        );
+        await page.getByText('weather stale', { exact: true }).waitFor();
+        await checkMatchupRow();
+        await checkWidth();
+        console.log(`PASS: 320px ${phase} matchup header`);
     }
     assert.deepEqual(errors, [], 'No browser runtime errors');
 } finally {

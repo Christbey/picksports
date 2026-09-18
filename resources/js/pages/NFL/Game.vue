@@ -49,6 +49,7 @@ const sectionClass = (section: string) =>
 <template>
     <SportDetailedGamePage
         v-bind="pageProps"
+        compact-matchup
         :linescore-class="sectionClass('overview')"
         :trends-class="sectionClass('trends')"
     >

@@ -2,6 +2,8 @@
 
 Below 768px, the NFL game page uses a fixed bottom selector: Overview, Research, Trends, and Roster. The selector respects the device safe area and has 44px minimum touch targets. Changing sections scrolls to the content start. Bottom spacing keeps the last content reachable above the selector.
 
+The NFL matchup header keeps away team, score/status, and home team in one row at every width. Narrow screens use 40px logos and abbreviations; full team names remain in accessible link labels and return visually at desktop widths. Other sports retain the shared header's default layout. Browser checks cover final, live and scheduled states with team logos.
+
 - Overview leads with the prediction instead of dozens of starter cards. Research status and all eligibility reasons remain visible, even when evidence is collapsed. Empty betting plans are omitted.
 - The forecast prioritizes home-team model spread and combined-points total. Win probability is displayed once; Elo ratings and box-score details are collapsed. Model lines are explicitly distinguished from sportsbook lines and approved bets. Missing/nonfinite probabilities remain unavailable, valid zero values are retained, and a zero margin is labeled an even matchup.
 - Expanded box-score values wrap within the phone width instead of requiring a 600px horizontal swipe. Trend counts share one compact row; narrow pattern badges can wrap.

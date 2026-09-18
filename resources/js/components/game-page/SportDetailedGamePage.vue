@@ -29,6 +29,7 @@ withDefaults(
         formatDate: (dateString: string | null) => string;
         teamLink: (id: number) => GamePageHrefLike;
         gradientClass: string;
+        compactMatchup?: boolean;
         awayRecentForm?: string;
         homeRecentForm?: string;
         venueLabel?: string | null;
@@ -175,6 +176,7 @@ const resolveTeamName = (team: GamePageTeam | null, fallback: string): string =>
                 :format-date="formatDate"
                 :team-link="teamLink"
                 :gradient-class="gradientClass"
+                :compact="compactMatchup"
                 :venue-label="venueLabel"
                 :broadcast-networks="broadcastNetworks"
                 :extra-info-items="extraInfoItems"

@@ -6,6 +6,11 @@ const team = (id, abbreviation, display_name) => ({
     abbreviation,
     display_name,
     name: display_name,
+    logo:
+        'data:image/svg+xml,' +
+        encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><circle cx="32" cy="32" r="28" fill="#167ac6"/></svg>',
+        ),
     active_injuries: [],
 });
 const away = team(1, 'DET', 'Detroit Lions');
@@ -91,6 +96,16 @@ export const revision = {
     },
 };
 export function useFixturePage() {
+    const phase =
+        typeof window === 'undefined'
+            ? 'final'
+            : new URLSearchParams(window.location.search).get('phase');
+    const status =
+        phase === 'live'
+            ? 'STATUS_IN_PROGRESS'
+            : phase === 'scheduled'
+              ? 'STATUS_SCHEDULED'
+              : 'STATUS_FINAL';
     return {
         pageProps: ref({
             title: 'DET @ BUF',
@@ -100,12 +115,21 @@ export function useFixturePage() {
             homeTeam: home,
             game: {
                 id: 1722,
-                status: 'STATUS_FINAL',
+                status,
                 game_date: '2026-09-17',
                 away_score: 31,
                 home_score: 41,
             },
-            gameStatus: 'Final',
+            gameStatus:
+                phase === 'live'
+                    ? 'In Progress'
+                    : phase === 'scheduled'
+                      ? 'Scheduled'
+                      : 'Final',
+            showScoreStatuses: ['STATUS_FINAL', 'STATUS_IN_PROGRESS'],
+            venueLabel: 'Highmark Stadium',
+            broadcastNetworks: ['Prime Video'],
+            extraInfoItems: ['Regular Season - Week 2'],
             formatDate: () => 'September 17, 2026',
             teamLink: (id) => `/nfl/teams/${id}`,
             gradientClass: 'from-blue-500 to-blue-900',

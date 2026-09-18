@@ -26,6 +26,7 @@ const props = withDefaults(
         badgePulseStatuses?: string[];
         linkTeams?: boolean;
         useTeamColorGlow?: boolean;
+        compact?: boolean;
         winnerCorrect?: boolean | null;
         actualTotal?: number | null;
         bettingValue?: BettingRecommendation[];
@@ -41,6 +42,7 @@ const props = withDefaults(
         badgePulseStatuses: () => [],
         linkTeams: true,
         useTeamColorGlow: false,
+        compact: false,
         winnerCorrect: null,
         actualTotal: null,
         bettingValue: () => [],
@@ -51,6 +53,12 @@ const props = withDefaults(
         homeStarterRating: null,
     },
 );
+
+const teamName = (team: GamePageTeam, fallback: string): string =>
+    team.display_name ||
+    `${team.location || ''} ${team.name || ''}`.trim() ||
+    team.abbreviation ||
+    fallback;
 
 function winnerLabel(): string | null {
     if (props.winnerCorrect === true) return 'WIN';
@@ -139,13 +147,25 @@ function formatStarterLine(
         <div class="h-1 w-full" :class="props.gradientClass" />
         <div class="px-4 py-4 md:px-5">
             <div
-                class="grid items-center gap-4 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+                data-matchup-row
+                class="grid items-center md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]"
+                :class="
+                    compact
+                        ? 'grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] gap-2 md:gap-4'
+                        : 'gap-4'
+                "
             >
                 <component
                     :is="props.linkTeams ? Link : 'div'"
                     v-if="awayTeam"
                     :href="props.linkTeams ? teamLink(awayTeam.id) : undefined"
-                    class="flex min-w-0 items-center gap-3 transition-opacity hover:opacity-85 md:justify-end"
+                    :aria-label="`${teamName(awayTeam, 'Away Team')} (Away)`"
+                    class="flex min-w-0 items-center transition-opacity hover:opacity-85 md:justify-end"
+                    :class="
+                        compact
+                            ? 'min-h-11 flex-col gap-1 md:flex-row md:gap-3'
+                            : 'gap-3'
+                    "
                 >
                     <div class="relative shrink-0">
                         <div
@@ -157,20 +177,25 @@ function formatStarterLine(
                             v-if="awayTeam.logo"
                             :src="awayTeam.logo"
                             :alt="awayTeam.name || 'Away Team'"
-                            class="relative z-10 h-14 w-14 object-contain md:h-16 md:w-16"
+                            class="relative z-10 object-contain md:h-16 md:w-16"
+                            :class="compact ? 'h-10 w-10' : 'h-14 w-14'"
                         />
                     </div>
-                    <div class="min-w-0 text-left md:text-right">
+                    <div
+                        class="max-w-full min-w-0 md:text-right"
+                        :class="compact ? 'text-center' : 'text-left'"
+                    >
                         <div
-                            class="truncate text-lg font-semibold tracking-tight md:text-xl"
+                            class="truncate font-semibold tracking-tight md:text-xl"
+                            :class="compact ? 'text-sm' : 'text-lg'"
                         >
-                            {{
-                                awayTeam.display_name ||
-                                `${awayTeam.location || ''} ${awayTeam.name || ''}`.trim() ||
-                                awayTeam.name ||
+                            <span v-if="compact" class="md:hidden">{{
                                 awayTeam.abbreviation ||
-                                'Away Team'
-                            }}
+                                teamName(awayTeam, 'Away')
+                            }}</span>
+                            <span :class="compact ? 'hidden md:inline' : ''">{{
+                                teamName(awayTeam, 'Away Team')
+                            }}</span>
                         </div>
                         <div
                             class="text-xs tracking-wide text-muted-foreground uppercase"
@@ -203,7 +228,12 @@ function formatStarterLine(
                 </component>
 
                 <div
-                    class="rounded-xl border border-border/70 bg-muted/35 px-4 py-3 text-center"
+                    class="min-w-0 rounded-xl border border-border/70 bg-muted/35 text-center"
+                    :class="
+                        compact
+                            ? 'max-w-32 px-2 py-2 md:max-w-none md:px-4 md:py-3'
+                            : 'px-4 py-3'
+                    "
                 >
                     <div
                         v-if="
@@ -211,7 +241,8 @@ function formatStarterLine(
                             game.away_score !== undefined &&
                             game.home_score !== undefined
                         "
-                        class="text-3xl font-semibold tracking-tight md:text-4xl"
+                        class="font-semibold tracking-tight whitespace-nowrap md:text-4xl"
+                        :class="compact ? 'text-xl sm:text-3xl' : 'text-3xl'"
                     >
                         {{ game.away_score }} - {{ game.home_score }}
                     </div>
@@ -258,7 +289,13 @@ function formatStarterLine(
                     :is="props.linkTeams ? Link : 'div'"
                     v-if="homeTeam"
                     :href="props.linkTeams ? teamLink(homeTeam.id) : undefined"
-                    class="flex min-w-0 items-center gap-3 transition-opacity hover:opacity-85"
+                    :aria-label="`${teamName(homeTeam, 'Home Team')} (Home)`"
+                    class="flex min-w-0 items-center transition-opacity hover:opacity-85"
+                    :class="
+                        compact
+                            ? 'min-h-11 flex-col gap-1 md:flex-row md:gap-3'
+                            : 'gap-3'
+                    "
                 >
                     <div class="relative shrink-0 md:order-2">
                         <div
@@ -270,20 +307,25 @@ function formatStarterLine(
                             v-if="homeTeam.logo"
                             :src="homeTeam.logo"
                             :alt="homeTeam.name || 'Home Team'"
-                            class="relative z-10 h-14 w-14 object-contain md:h-16 md:w-16"
+                            class="relative z-10 object-contain md:h-16 md:w-16"
+                            :class="compact ? 'h-10 w-10' : 'h-14 w-14'"
                         />
                     </div>
-                    <div class="min-w-0 text-left">
+                    <div
+                        class="max-w-full min-w-0 md:text-left"
+                        :class="compact ? 'text-center' : 'text-left'"
+                    >
                         <div
-                            class="truncate text-lg font-semibold tracking-tight md:text-xl"
+                            class="truncate font-semibold tracking-tight md:text-xl"
+                            :class="compact ? 'text-sm' : 'text-lg'"
                         >
-                            {{
-                                homeTeam.display_name ||
-                                `${homeTeam.location || ''} ${homeTeam.name || ''}`.trim() ||
-                                homeTeam.name ||
+                            <span v-if="compact" class="md:hidden">{{
                                 homeTeam.abbreviation ||
-                                'Home Team'
-                            }}
+                                teamName(homeTeam, 'Home')
+                            }}</span>
+                            <span :class="compact ? 'hidden md:inline' : ''">{{
+                                teamName(homeTeam, 'Home Team')
+                            }}</span>
                         </div>
                         <div
                             class="text-xs tracking-wide text-muted-foreground uppercase"

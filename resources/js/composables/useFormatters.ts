@@ -18,10 +18,15 @@ export const formatSpread = (spread: number | string): string => {
 
 export const formatDateLong = (dateString: string | null): string => {
     if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString('en-US', {
+    const date = new Date(dateString);
+    if (!Number.isFinite(date.getTime())) return '-';
+    // A localized calendar date is not an instant at UTC midnight.
+    const calendarOnly = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+    return date.toLocaleDateString('en-US', {
         month: 'long',
         day: 'numeric',
         year: 'numeric',
+        ...(calendarOnly ? { timeZone: 'UTC' } : {}),
     });
 };
 

@@ -4,6 +4,7 @@ namespace App\Services\Api\V2;
 
 use App\Application\Sports\ReadModels\GameSummary;
 use App\Application\Sports\ReadModels\GameSummaryMapper;
+use App\Models\NFL\Game;
 use App\Services\Api\V2\Concerns\BuildsSportQueries;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Auth\Authenticatable;
@@ -250,6 +251,12 @@ class SportGameQuery
                 'awayStartingPitcherForecast.actualPitcher',
             ],
         };
+
+        // Detail consumers need availability data; list/recent queries stay lean.
+        if ($gameModel === Game::class && in_array($profile, ['detail', 'page'], true)) {
+            $relations[] = 'homeTeam.activePlayerInjuries.player';
+            $relations[] = 'awayTeam.activePlayerInjuries.player';
+        }
 
         return $this->availableRelations($gameModel, ['sportEvent', ...$relations]);
     }

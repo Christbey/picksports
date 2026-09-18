@@ -95,8 +95,6 @@ const props = withDefaults(
             :home-label="homeLabel"
             :away-team-stats="awayTeamStats"
             :home-team-stats="homeTeamStats"
-            :get-better-value="props.getBetterValue"
-            :calculate-percentage="props.calculatePercentage"
         />
 
         <LiveBettingAnalysisCard

@@ -42,6 +42,12 @@ const homeInjuries = computed(
                 :home-team-abbr="pageProps.homeTeam?.abbreviation"
                 :away-injuries="awayInjuries"
                 :home-injuries="homeInjuries"
+                :away-injuries-available="
+                    Array.isArray(pageProps.awayTeam?.active_injuries)
+                "
+                :home-injuries-available="
+                    Array.isArray(pageProps.homeTeam?.active_injuries)
+                "
                 :depth-chart-context="pageProps.prediction?.depth_chart_context"
             />
         </template>

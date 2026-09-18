@@ -581,25 +581,25 @@ export interface NflPagePrediction {
 
 export interface NflTeamStats {
     team_type?: 'home' | 'away' | string;
-    total_yards: number;
-    passing_yards: number;
-    passing_completions: number;
-    passing_attempts: number;
-    rushing_yards: number;
-    rushing_attempts: number;
-    first_downs: number;
-    third_down_conversions: number;
-    third_down_attempts: number;
-    fourth_down_conversions: number;
-    fourth_down_attempts: number;
-    red_zone_scores: number;
-    red_zone_attempts: number;
-    interceptions: number;
-    fumbles_lost: number;
-    sacks_allowed: number;
-    penalties: number;
-    penalty_yards: number;
-    time_of_possession: number;
+    total_yards?: number | null;
+    passing_yards?: number | null;
+    passing_completions?: number | null;
+    passing_attempts?: number | null;
+    rushing_yards?: number | null;
+    rushing_attempts?: number | null;
+    first_downs?: number | null;
+    third_down_conversions?: number | null;
+    third_down_attempts?: number | null;
+    fourth_down_conversions?: number | null;
+    fourth_down_attempts?: number | null;
+    red_zone_scores?: number | null;
+    red_zone_attempts?: number | null;
+    interceptions?: number | null;
+    fumbles_lost?: number | null;
+    sacks_allowed?: number | null;
+    penalties?: number | null;
+    penalty_yards?: number | null;
+    time_of_possession?: string | null;
 }
 
 export interface NflPageGame extends GamePageGame {

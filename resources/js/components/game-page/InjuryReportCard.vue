@@ -20,24 +20,31 @@ interface InjuryItem {
     source_updated_at?: string | null;
 }
 
-const props = defineProps<{
-    awayTeamAbbr?: string | null;
-    homeTeamAbbr?: string | null;
-    awayInjuries: InjuryItem[];
-    homeInjuries: InjuryItem[];
-    depthChartContext?: PredictionSummary['depth_chart_context'] | null;
-}>();
+const props = withDefaults(
+    defineProps<{
+        awayTeamAbbr?: string | null;
+        homeTeamAbbr?: string | null;
+        awayInjuries: InjuryItem[];
+        homeInjuries: InjuryItem[];
+        awayInjuriesAvailable?: boolean;
+        homeInjuriesAvailable?: boolean;
+        depthChartContext?: PredictionSummary['depth_chart_context'] | null;
+    }>(),
+    { awayInjuriesAvailable: true, homeInjuriesAvailable: true },
+);
 
 const teams = computed(() => [
     {
         key: 'away',
         label: props.awayTeamAbbr || 'Away',
         injuries: props.awayInjuries,
+        available: props.awayInjuriesAvailable !== false,
     },
     {
         key: 'home',
         label: props.homeTeamAbbr || 'Home',
         injuries: props.homeInjuries,
+        available: props.homeInjuriesAvailable !== false,
     },
 ]);
 
@@ -263,21 +270,37 @@ const modelImpactLines = computed(() => {
         <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
                 <h3 class="ui-kicker">Injuries & Availability</h3>
-                <p class="mt-1 text-xs text-muted-foreground">
+                <p
+                    v-if="teams.every((team) => team.available)"
+                    class="mt-1 text-xs text-muted-foreground"
+                >
                     {{ totalInjuries }} active
                     {{ totalInjuries === 1 ? 'listing' : 'listings' }}
+                </p>
+                <p v-else class="mt-1 text-xs text-muted-foreground">
+                    Injury data unavailable for one or both teams.
                 </p>
             </div>
             <div class="flex items-center gap-2 text-[11px] font-medium">
                 <span
                     class="rounded-full bg-muted px-2 py-1 text-foreground/80"
                 >
-                    {{ awayTeamAbbr || 'Away' }} {{ awayInjuries.length }}
+                    {{ awayTeamAbbr || 'Away' }}
+                    {{
+                        awayInjuriesAvailable === false
+                            ? '—'
+                            : awayInjuries.length
+                    }}
                 </span>
                 <span
                     class="rounded-full bg-muted px-2 py-1 text-foreground/80"
                 >
-                    {{ homeTeamAbbr || 'Home' }} {{ homeInjuries.length }}
+                    {{ homeTeamAbbr || 'Home' }}
+                    {{
+                        homeInjuriesAvailable === false
+                            ? '—'
+                            : homeInjuries.length
+                    }}
                 </span>
             </div>
         </div>
@@ -319,7 +342,11 @@ const modelImpactLines = computed(() => {
                         {{ team.label }}
                     </p>
                     <span class="text-xs text-muted-foreground">
-                        {{ team.injuries.length }} active
+                        {{
+                            team.available
+                                ? `${team.injuries.length} active`
+                                : 'Unavailable'
+                        }}
                     </span>
                 </div>
 
@@ -437,8 +464,15 @@ const modelImpactLines = computed(() => {
                     }}
                 </button>
 
-                <p v-else class="mt-3 text-sm text-muted-foreground">
-                    No active injuries listed.
+                <p
+                    v-if="team.injuries.length === 0"
+                    class="mt-3 text-sm text-muted-foreground"
+                >
+                    {{
+                        team.available
+                            ? 'No active injuries listed.'
+                            : 'Injury data unavailable.'
+                    }}
                 </p>
             </section>
         </div>

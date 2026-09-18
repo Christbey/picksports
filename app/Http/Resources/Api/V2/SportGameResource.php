@@ -4,13 +4,16 @@ namespace App\Http\Resources\Api\V2;
 
 use App\Application\Sports\ReadModels\GameSummary;
 use App\Application\Sports\ReadModels\TeamSummary;
+use App\Http\Resources\NFL\TeamResource;
 use App\Models\MLB\Game;
+use App\Models\NFL\Team;
 use App\Services\Api\V2\SportContext;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Http\Resources\MissingValue;
+use Illuminate\Support\Arr;
 
 class SportGameResource extends JsonResource
 {
@@ -282,6 +285,12 @@ class SportGameResource extends JsonResource
             'alternate_color' => $team->alternate_color ?? null,
             'logo' => $team->logo_url ?? null,
             'logo_url' => $team->logo_url ?? null,
+            ...($team instanceof Team && $team->relationLoaded('activePlayerInjuries')
+                ? Arr::only(
+                    (new TeamResource($team))->resolve(),
+                    ['active_injuries_count', 'active_injuries'],
+                )
+                : []),
         ];
     }
 

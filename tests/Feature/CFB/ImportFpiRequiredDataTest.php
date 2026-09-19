@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\CFB\FpiRating;
+use App\Models\CFB\Team;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 
 it('fails a required rating refresh on an empty provider response', function () {
@@ -12,4 +14,16 @@ it('fails a required rating refresh when no returned team can be mapped', functi
     $this->mock(CollegeFootballDataService::class)->shouldReceive('getFpiRatings')->with(2026)
         ->andReturn([['team' => 'Unmapped College', 'fpi' => 20]]);
     $this->artisan('cfb:import-fpi', ['--season' => 2026, '--require-data' => true])->assertFailed();
+});
+
+it('accepts unchanged numeric ratings without pretending their source timestamp advanced', function () {
+    $team = Team::factory()->create(['school' => 'Test College', 'division' => 'FBS']);
+    $rating = FpiRating::factory()->create(['team_id' => $team->id, 'season' => 2026,
+        'week' => 3, 'fpi' => 15, 'offense' => null, 'defense' => null, 'special_teams' => null,
+        'fpi_rank' => null, 'updated_at' => now()->subDays(2)]);
+    $timestamp = $rating->updated_at->toIso8601String();
+    $this->mock(CollegeFootballDataService::class)->shouldReceive('getFpiRatings')->with(2026)
+        ->andReturn([['team' => 'Test College', 'fpi' => 15]]);
+    $this->artisan('cfb:import-fpi', ['--season' => 2026, '--week' => 3, '--require-data' => true])->assertSuccessful();
+    expect($rating->fresh()->updated_at->toIso8601String())->toBe($timestamp);
 });

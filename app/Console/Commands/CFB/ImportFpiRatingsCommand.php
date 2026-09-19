@@ -48,6 +48,7 @@ class ImportFpiRatingsCommand extends Command
         $created = 0;
         $updated = 0;
         $matched = 0;
+        $usable = 0;
         $skipped = 0;
 
         foreach ($rows as $row) {
@@ -81,11 +82,14 @@ class ImportFpiRatingsCommand extends Command
                 'special_teams' => $this->floatOrNull(data_get($row, 'efficiencies.specialTeams')),
             ]);
             $rating->save();
+            if (is_numeric($rating->fpi)) {
+                $usable++;
+            }
         }
 
         $this->info("Matched {$matched} rows. Created {$created}, updated {$updated}, skipped {$skipped}.");
 
-        if ($this->option('require-data') && ($matched === 0 || ! FpiRating::where('season', $season)->where('week', $week)->whereNotNull('fpi')->where('updated_at', '>=', now()->subMinutes(5))->exists())) {
+        if ($this->option('require-data') && $usable === 0) {
             $this->error('No usable FPI ratings imported.');
 
             return self::FAILURE;

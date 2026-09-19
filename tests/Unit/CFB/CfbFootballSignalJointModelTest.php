@@ -1,6 +1,7 @@
 <?php
 
 use App\Services\CFB\Signals\CfbFootballSignalJointModel;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\CarbonImmutable;
 
 it('fits correlated football conditions jointly and validates the capped combined prediction on later games', function () {
@@ -32,4 +33,18 @@ it('uses the same signed team and averaged total orientation as prediction contr
     $rule = fn ($market) => ['market' => $market, 'condition' => ['all' => [['field' => 'context.neutral', 'operator' => '==', 'value' => false]]]];
     $features = CfbFootballSignalJointModel::features(['event' => ['neutral_site' => false]], ['catalog' => ['both_spread' => $rule('spread'), 'both_total' => $rule('total')]]);
     expect($features['spread']['both_spread'])->toBe(0.0)->and($features['total']['both_total'])->toBe(1.0);
+});
+
+it('preserves evidence hashes through a database-style floating point JSON round trip', function () {
+    $rows = [];
+    foreach (range(1, 301) as $i) {
+        $rows[] = ['game_id' => $i, 'starts_at' => CarbonImmutable::parse('2023-01-01')->addDays($i)->toIso8601String(),
+            'features' => ['spread' => ['trend' => 1.0]], 'residuals' => ['spread' => $i % 7 + 0.1]];
+    }
+    $fit = (new CfbFootballSignalJointModel)->fit($rows, 'spread', 2);
+    $normalize = function ($value) use (&$normalize) {
+        return is_array($value) ? array_map($normalize, $value) : (is_float($value) ? (float) sprintf('%.16g', $value) : $value);
+    };
+    $hasher = new CanonicalPayloadHasher;
+    expect($hasher->hash($normalize($fit)))->toBe($hasher->hash($fit));
 });

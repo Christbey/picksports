@@ -11,7 +11,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.6.1';
+    public const SEMANTIC_VERSION = '1.6.2';
 
     /** @return array<string, mixed> */
     public function configuration(): array

@@ -95,8 +95,8 @@ class CfbFootballSignalJointModel
 
         return [...$result, 'coefficients' => $coefficients, 'feature_samples' => $counts,
             'status' => $lift > 0 && $lift > 1.96 * $se ? 'validated_joint_residual' : 'no_validation_improvement',
-            'validation_baseline_mae' => array_sum($baseErrors) / $n, 'validation_adjusted_mae' => array_sum($adjustedErrors) / $n,
-            'validation_mae_improvement' => $lift, 'validation_standard_error' => $se,
+            'validation_baseline_mae' => round(array_sum($baseErrors) / $n, 6), 'validation_adjusted_mae' => round(array_sum($adjustedErrors) / $n, 6),
+            'validation_mae_improvement' => round($lift, 6), 'validation_standard_error' => round($se, 6),
             'validation_scope' => 'whole_capped_model_not_individual_rule_significance'];
     }
 

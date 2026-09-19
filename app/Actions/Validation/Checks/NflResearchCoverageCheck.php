@@ -117,7 +117,7 @@ class NflResearchCoverageCheck implements ValidationCheck
                 : "{$covered}/".count($ids).' upcoming NFL games have fresh cited research and revision evidence; '.count($held).' game(s) have explicit data holds.',
             'recommended_action' => 'nfl:research-pipeline --days-forward='.$days.' --limit=4',
             'metadata' => [
-                'enabled' => $enabled, 'window_days' => $days, 'eligible_games' => count($ids), 'covered_games' => $covered,
+                'enabled' => $enabled, 'window_days' => $days, 'eligible_games' => count($ids), 'eligible_game_ids' => $ids, 'covered_games' => $covered,
                 'missing_game_ids' => $missing, 'stale_game_ids' => $stale, 'partial_game_ids' => $partial,
                 'unlinked_revision_game_ids' => $unlinked, 'uncited_game_ids' => $uncited,
                 'data_hold_game_ids' => $held, 'blocking_game_ids' => $blocking,

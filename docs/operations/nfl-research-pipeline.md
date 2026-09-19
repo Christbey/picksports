@@ -14,6 +14,8 @@ Date options, default slate selection, matchup filters, recommendation filters, 
 
 Scheduled jobs:
 
+- At minutes 10 and 40, all day in season: refresh NFL odds independently of model generation (`nfl:sync-odds --days=8`). The 30-minute cadence fits the 60-minute market freshness requirement; provider timestamps still take precedence over retrieval timestamps.
+- At minutes 5 and 35: run read-only `nfl:research-readiness --days-forward=2`. Missing/partial/stale/unlinked research, data holds, or stale paired spread quotes fail readiness. A completed no-edge `pass` is healthy.
 - Every 15 minutes: ingest eight unseen or oldest-due teams across the next seven days. The full 32-team slate rotates within an hour while each run stays bounded.
 - At minutes 7, 22, 37 and 52: review four unseen or oldest-due games per run across the next seven days. The rotation does not require a paid request on every review. [Research cost controls](nfl-research-cost-controls.md) apply kickoff-aware freshness, evidence reuse, bounded partial-report retries, per-game locks and rolling spend reservations. Source ingestion and local forecast calculations continue separately; deferred research remains visibly held.
 - Hourly at minute 55: inspect at most 250 ungraded revisions whose linked game is final with both scores, in 50-row database batches. Future and in-progress games never consume the batch. Grade attempts are persisted in the database: never-attempted finals run first, then the oldest eligible attempt. A pending prop revision moves to the back of the queue and becomes eligible again after the 55-minute cooldown, so it cannot repeatedly consume the first page or starve newer finals.
@@ -32,6 +34,10 @@ php artisan nfl:research-evaluation --book=fanduel
 ```
 
 `--no-web` permits a safe numerical preview but holds eligibility if research is missing, changed or stale. `--briefs` reads stored reports without network requests or prediction writes. Ingestion failures are recorded per source and cause nonzero command exit; one source failure does not terminate the remaining source checks.
+
+Use repeatable `--game-id=ID` to bound recovery to specific games. Review commands exit nonzero for data-held or unavailable assessments, not only thrown exceptions. Provider failures are logged and preserved as `research_refresh_failed` in a new held assessment; the command does not silently leave yesterday's revision as current. New reports are linked immediately without overwriting older immutable revisions.
+
+`nfl:run-pregame-pipeline` now follows generation with a no-web assessment refresh and the two-day research readiness check. Its success means those checks passed too; it never silently increases AI budgets. Research remains independently batched, and full-slate held assessments are visible even while paid refreshes are deferred.
 
 Research grading accepts `--grade-limit` and `--grade-batch-size`; production
 defaults are controlled by `NFL_RESEARCH_GRADING_MAX_PER_RUN` and

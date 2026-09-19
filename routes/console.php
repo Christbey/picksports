@@ -1042,6 +1042,16 @@ $scheduleSportPipeline(
     scheduleStandaloneOdds: false,
 );
 $nflPregamePipelineCommand = "nfl:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8";
+// Research rejects quotes older than 60 minutes; refresh prices independently
+// of expensive generation and regardless of the next model-run window.
+$nflResearchOddsCommand = 'nfl:sync-odds --days=8';
+$nflResearchOddsEvent = Schedule::command($nflResearchOddsCommand)
+    ->cron('10,40 * * * *')
+    ->when($nflInSeason)
+    ->name('NFL: Research Market Refresh')
+    ->onOneServer()
+    ->withoutOverlapping(10);
+$attachCommandHeartbeat($nflResearchOddsEvent, $nflResearchOddsCommand, 'NFL: Research Market Refresh');
 $nflPregamePipelineEvent = Schedule::command($nflPregamePipelineCommand)
     ->cron('20 6-23 * * *')
     ->when($nflInSeason)
@@ -1430,6 +1440,15 @@ $attachCommandHeartbeat(
     $nflResearchRevisionCommand,
     'NFL: Build Research Revisions',
 );
+
+$nflResearchReadinessCommand = 'nfl:research-readiness --days-forward=2';
+$nflResearchReadinessEvent = Schedule::command($nflResearchReadinessCommand)
+    ->cron('5,35 * * * *')
+    ->when($nflInSeason)
+    ->name('NFL: Research Readiness')
+    ->onOneServer()
+    ->withoutOverlapping(10);
+$attachCommandHeartbeat($nflResearchReadinessEvent, $nflResearchReadinessCommand, 'NFL: Research Readiness');
 
 $nflResearchGradingCommand = 'nfl:research-pipeline --grade --grade-limit=250 --grade-batch-size=50 --grade-retry-after-minutes=55';
 $nflResearchGradingEvent = Schedule::command($nflResearchGradingCommand)

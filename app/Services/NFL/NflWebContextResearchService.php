@@ -56,12 +56,15 @@ class NflWebContextResearchService
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $circuitBreaker = app(AiProviderRateLimitCircuitBreaker::class);
         $retryAfter = $circuitBreaker->retryAfterSeconds($provider);
-        $game->loadMissing(['homeTeam', 'awayTeam']);
+        $game->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
         $packet = app(EvidencePacket::class)->forGame($game);
         $policy = app(ResearchRefreshPolicy::class);
         $fingerprint = $policy->fingerprint($game, $packet);
+        $candidate = $game->getAttribute('research_candidate') ?? $game->prediction?->only(['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']) ?? [];
+        // Hash the same full candidate the reviewer checks, before prompt compaction.
+        $candidateHash = app(ResearchPipeline::class)->candidateContextHash($candidate);
         $existing = SportsGameContextReport::where('sport', 'nfl')->where('game_id', $game->id)->latest('id')->first();
-        if (! $force && $policy->current($existing, $game, $fingerprint)) {
+        if (! $force && $policy->current($existing, $game, $fingerprint, $candidateHash)) {
             return ['report' => $existing, 'payload' => $existing->raw_payload, 'generation' => null, 'reused' => true];
         }
         if ($retryAfter > 0) {
@@ -72,7 +75,7 @@ class NflWebContextResearchService
         $input['synced_injuries'] = $policy->injuries($game);
         $input['verified_availability'] = $packet['availability'];
         $input['official_source_coverage'] = $packet['source_coverage'] ?? [];
-        $input['model_candidate'] = $game->getAttribute('research_candidate') ?? $game->prediction?->only(['predicted_spread', 'predicted_total', 'win_probability', 'model_metadata']);
+        $input['model_candidate'] = $candidate;
         $input['named_team_projections'] = $this->namedTeamProjections($game, $input['model_candidate'] ?? []);
         // Bound model context to decision signals, not the full feature archive.
         if ($input['model_candidate']) {
@@ -84,14 +87,17 @@ class NflWebContextResearchService
                 'contextual_factors' => $meta['contextual_factors'] ?? [],
                 'actual_weather' => $meta['actual_weather'] ?? [],
                 'depth_chart_injuries' => $meta['depth_chart_injuries'] ?? [],
-                'analysis_layer' => Arr::only($meta['analysis_layer'] ?? [], ['bet_classification', 'risk_flags', 'calculated_edge', 'eligibility']),
+                'analysis_layer' => Arr::only($meta['analysis_layer'] ?? [], ['bet_classification', 'raw_bet_classification', 'risk_flags', 'calculated_edge', 'eligibility']),
             ];
         }
         $prompt = $this->prompt($input);
         $provider ??= (string) config('ai.features.nfl_game_context_research.provider', 'openai');
         $model ??= (string) config('ai.features.nfl_game_context_research.model', 'gpt-5.6-luna');
         $promptVersion = (string) config('ai.features.nfl_game_context_research.prompt_version', 'nfl-game-context-research-v2');
-        $generation = app(ResearchSpendGuard::class)->reserve($game, $fingerprint, $provider, $model,
+        // A material forecast change permits revalidation after the minimum interval,
+        // while all per-game/global spend and attempt limits still apply.
+        $attemptFingerprint = hash('sha256', $fingerprint.'|'.$candidateHash);
+        $generation = app(ResearchSpendGuard::class)->reserve($game, $attemptFingerprint, $provider, $model,
             fn (array $reservation) => $this->generationRecorder->start(
                 purpose: 'nfl_game_context_research',
                 promptVersion: $promptVersion,
@@ -102,10 +108,13 @@ class NflWebContextResearchService
                 contextId: (string) $game->getKey(),
                 metadata: [
                     ...$reservation,
+                    'evidence_fingerprint' => $fingerprint,
+                    'candidate_hash' => $candidateHash,
                     'previous_report_id' => $existing?->id,
                     'refresh_reason' => $force ? 'manual_force' : (! $existing ? 'initial_research'
                         : (data_get($existing->raw_payload, 'research_fingerprint') !== $fingerprint ? 'evidence_changed'
-                            : ($existing->status !== 'ready' ? 'incomplete_retry' : 'freshness_expired'))),
+                            : (data_get($existing->raw_payload, 'candidate_hash') !== $candidateHash ? 'candidate_changed'
+                                : ($existing->status !== 'ready' ? 'incomplete_retry' : 'freshness_expired')))),
                     'search_cap' => max(1, (int) config('ai.features.nfl_game_context_research.max_searches', 5)),
                 ],
             ));
@@ -167,7 +176,7 @@ class NflWebContextResearchService
             $payload['decision_research'] = $this->decisionResearch($decoded['decision_research'] ?? [], array_column($payload['sources'], 'url'));
             $payload = $this->enforceTwoSidedEvidence($payload);
             $payload = app(ResearchUncertaintyPolicy::class)->applyStatus($payload);
-            $payload['candidate_hash'] = app(ResearchPipeline::class)->candidateContextHash($input['model_candidate'] ?? []);
+            $payload['candidate_hash'] = $candidateHash;
             $payload['document_ids'] = array_column($input['official_documents'], 'id');
             $payload['evidence_context_hash'] = app(EvidencePacket::class)->contextHash($packet);
             $payload['research_fingerprint'] = $fingerprint;

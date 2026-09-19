@@ -8,6 +8,20 @@ use Illuminate\Console\Scheduling\Schedule;
 
 uses()->group('scheduling');
 
+it('refreshes NFL research markets within their freshness window independently of model runs', function () {
+    $events = collect(app(Schedule::class)->events())->keyBy('description');
+    $odds = $events->get('NFL: Research Market Refresh');
+    expect($odds)->not->toBeNull()
+        ->and($odds->expression)->toBe('10,40 * * * *')
+        ->and((string) $odds->command)->toContain('nfl:sync-odds --days=8')
+        ->and($odds->expiresAt)->toBe(10)
+        ->and($odds->onOneServer)->toBeTrue();
+    $readiness = $events->get('NFL: Research Readiness');
+    expect($readiness)->not->toBeNull()
+        ->and($readiness->expression)->toBe('5,35 * * * *')
+        ->and($readiness->onOneServer)->toBeTrue();
+});
+
 it('runs every scheduled command on only one server', function () {
     $events = collect(app(Schedule::class)->events());
 

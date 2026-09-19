@@ -60,13 +60,12 @@ function reserveCostAttempt(Game $game, string $fingerprint = 'unchanged'): AiGe
         fn ($metadata) => app(AiGenerationRecorder::class)->start('nfl_game_context_research', 'test', 'openai', 'gpt-5.6-luna', [], 'nfl_game', (string) $game->id, $metadata));
 }
 
-it('reuses the same sourced report without another request even if the model or market changes', function () {
+it('reuses the same sourced report for unchanged forecasts and market-only updates', function () {
     Http::fake(['*' => Http::response(costControlResponse())]);
     $game = costControlGame();
     $service = app(NflWebContextResearchService::class);
     $first = $service->research($game);
     $this->travel(2)->hours();
-    $game->setAttribute('research_candidate', ['predicted_spread' => 12, 'predicted_total' => 60]);
     $game->odds_updated_at = now();
     $second = $service->research($game);
     expect($first['report']->status)->toBe('ready')
@@ -234,7 +233,7 @@ it('keeps a budget-deferred research revision on hold and exposes why', function
         ->and(AiGeneration::count())->toBe(0);
 });
 
-it('recalculates a changed candidate without purchasing fresh research or certifying old arguments', function () {
+it('keeps a changed candidate on hold during an explicit no-web review', function () {
     Http::fake(['*' => Http::response(costControlResponse())]);
     $game = costControlGame();
     Prediction::factory()->create(['game_id' => $game->id, 'predicted_spread' => 2]);
@@ -244,11 +243,59 @@ it('recalculates a changed candidate without purchasing fresh research or certif
         'model_metadata' => [], 'model_version' => 'changed-test',
     ]));
     $this->mock(PlayerPropAnalyzer::class, fn ($m) => $m->shouldReceive('previewNflGame')->andReturn([]));
-    $revision = app(ResearchPipeline::class)->review($game);
+    $revision = app(ResearchPipeline::class)->review($game, research: false);
     expect($revision->revised['predicted_spread'])->toBe(8)
         ->and($revision->brief['research_refresh']['evidence_current'])->toBeTrue()
         ->and($revision->brief['eligibility']['data_reasons'])->toContain('research_candidate_changed');
     Http::assertSentCount(1);
+});
+
+it('stores the full candidate hash before prompt compaction and reuses it consistently', function () {
+    Http::fake(['*' => Http::response(costControlResponse())]);
+    $game = costControlGame();
+    $candidate = ['predicted_spread' => 5, 'predicted_total' => 42, 'win_probability' => .6,
+        'model_metadata' => ['analysis_layer' => ['raw_bet_classification' => 'no_bet_risk', 'bet_classification' => 'hold']]];
+    $game->setAttribute('research_candidate', $candidate);
+    $service = app(NflWebContextResearchService::class);
+    $first = $service->research($game);
+    expect($first['report']->raw_payload['candidate_hash'])->toBe(app(ResearchPipeline::class)->candidateContextHash($candidate));
+    expect($service->research($game)['reused'])->toBeTrue();
+    Http::assertSentCount(1);
+});
+
+it('revalidates a material forecast change after the minimum interval without bypassing budgets', function () {
+    Http::fake(['*' => Http::response(costControlResponse())]);
+    $game = costControlGame();
+    $game->setAttribute('research_candidate', ['predicted_spread' => 2, 'predicted_total' => 42]);
+    $service = app(NflWebContextResearchService::class);
+    $first = $service->research($game);
+    $game->setAttribute('research_candidate', ['predicted_spread' => 8, 'predicted_total' => 42]);
+    expect(fn () => $service->research($game))->toThrow(ResearchDeferred::class, 'research_retry_not_due');
+    $this->travel(16)->minutes();
+    $second = $service->research($game);
+    expect($second['report']->id)->not->toBe($first['report']->id)
+        ->and($second['report']->raw_payload['candidate_hash'])->toBe(app(ResearchPipeline::class)->candidateContextHash($game->getAttribute('research_candidate')));
+    Http::assertSentCount(2);
+    config(['nfl_research.cost_control.daily_budget_usd' => 0]);
+    $game->setAttribute('research_candidate', ['predicted_spread' => 12]);
+    $this->travel(16)->minutes();
+    expect(fn () => $service->research($game))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
+    Http::assertSentCount(2);
+});
+
+it('persists a new explicit hold instead of losing the entire revision on provider failure', function () {
+    $game = costControlGame();
+    Prediction::factory()->create(['game_id' => $game->id]);
+    $this->mock(GeneratePredictionFromHistoricalElo::class, fn ($m) => $m->shouldReceive('preview')->andReturn([
+        'outputs' => ['predicted_spread' => 5, 'predicted_total' => 42, 'win_probability' => .6],
+        'model_metadata' => [], 'model_version' => 'failure-test',
+    ]));
+    $this->mock(PlayerPropAnalyzer::class, fn ($m) => $m->shouldReceive('previewNflGame')->andReturn([]));
+    $this->mock(NflWebContextResearchService::class, fn ($m) => $m->shouldReceive('research')->andThrow(new ConnectionException('Timed out')));
+    $revision = app(ResearchPipeline::class)->review($game);
+    expect($revision->exists)->toBeTrue()
+        ->and($revision->brief['eligibility']['status'])->toBe('hold')
+        ->and($revision->brief['eligibility']['data_reasons'])->toContain('research_refresh_failed');
 });
 
 it('keeps timeout spend unknown and prevents immediately purchasing the same request again', function () {

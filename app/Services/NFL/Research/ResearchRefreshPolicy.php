@@ -28,12 +28,13 @@ class ResearchRefreshPolicy
         return $kickoff && $kickoff->lt($expiry) ? $kickoff : $expiry;
     }
 
-    public function current(?SportsGameContextReport $report, Game $game, string $fingerprint): bool
+    public function current(?SportsGameContextReport $report, Game $game, string $fingerprint, ?string $candidateHash = null): bool
     {
         return $report && $report->status === 'ready'
             && $report->expires_at?->isFuture()
             && $report->researched_at?->gt(now()->subMinutes($this->freshnessMinutes($game)))
-            && data_get($report->raw_payload, 'research_fingerprint') === $fingerprint;
+            && data_get($report->raw_payload, 'research_fingerprint') === $fingerprint
+            && ($candidateHash === null || data_get($report->raw_payload, 'candidate_hash') === $candidateHash);
     }
 
     public function fingerprint(Game $game, array $packet): string

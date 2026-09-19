@@ -43,7 +43,7 @@ it('researches the upcoming weekly slate by default and excludes past kickoffs',
     });
 
     $this->artisan('nfl:research-pipeline', ['--no-ingest' => true, '--no-web' => true])
-        ->expectsOutputToContain('1 eligible game(s); reviewing 1 this run')->assertSuccessful();
+        ->expectsOutputToContain('1 eligible game(s); reviewing 1 this run')->assertFailed();
 });
 
 it('rotates persisted and cached timestamps chronologically despite different timestamp formats', function () {
@@ -58,7 +58,7 @@ it('rotates persisted and cached timestamps chronologically despite different ti
         $mock->shouldReceive('review')->once()->with(Mockery::on(fn (Game $g) => $g->is($older)), false)->andReturnNull();
     });
 
-    $this->artisan('nfl:research-pipeline', ['--no-ingest' => true, '--no-web' => true, '--limit' => 1])->assertSuccessful();
+    $this->artisan('nfl:research-pipeline', ['--no-ingest' => true, '--no-web' => true, '--limit' => 1])->assertFailed();
 });
 
 it('honors a shared provider cooldown in direct pipeline service calls without fabricating reports', function () {

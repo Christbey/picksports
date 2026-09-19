@@ -362,7 +362,7 @@ it('rotates small research batches so every eligible game is covered', function 
         '--no-ingest' => true,
         '--no-web' => true,
     ])->expectsOutput('NFL research coverage: 2 eligible game(s); reviewing 1 this run; 1 remain for the next batch.')
-        ->assertSuccessful();
+        ->assertFailed(); // A skipped/null assessment must not report readiness.
 });
 
 it('does not equate reserve activation with clearance to play', function () {

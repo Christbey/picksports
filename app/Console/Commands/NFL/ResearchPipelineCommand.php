@@ -23,6 +23,7 @@ class ResearchPipelineCommand extends Command
         {--date=}
         {--days-forward=7}
         {--limit=16 : Maximum games, or teams for an ingest-only batch}
+        {--game-id=* : Restrict review to specific games}
         {--grade-limit= : Maximum final ungraded revisions to inspect}
         {--grade-batch-size= : Final revisions loaded per database batch}
         {--grade-retry-after-minutes= : Minimum minutes before a pending revision is retried}
@@ -124,14 +125,13 @@ class ResearchPipelineCommand extends Command
         $start = $dates->parseLocalDate($this->option('date'));
         $window = $dates->forRange($start, $start->addDays(max(0, (int) $this->option('days-forward'))));
         $games = Game::with(['homeTeam', 'awayTeam', 'prediction'])->where(fn ($q) => $dates->applyGameDateWindow($q, $window))->orderBy('game_date')->orderBy('game_time')->get();
+        if ($this->option('game-id') !== []) {
+            $games = $games->whereIn('id', array_map('intval', $this->option('game-id')));
+        }
         if ($this->option('briefs')) {
             foreach ($games as $game) {
                 $revision = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
                 if ($revision) {
-                    if ($reason = data_get($revision->brief, 'research_refresh.deferred_reason')) {
-                        $failed = true;
-                        $this->warn('Game '.$game->id.' paid research deferred: '.$reason.'. Existing evidence has not been revalidated.');
-                    }
                     $this->line(json_encode(['revision_id' => $revision->id, 'baseline' => $revision->baseline, 'revised' => $revision->revised, 'brief' => $revision->brief, 'market' => $revision->market], JSON_UNESCAPED_SLASHES));
                 }
             }
@@ -174,9 +174,17 @@ class ResearchPipelineCommand extends Command
                 $revision = $pipeline->review($game, ! $this->option('no-web'));
                 if ($revision) {
                     $this->line(json_encode(['game_id' => $game->id, 'revision_id' => $revision->id, 'new_revision' => $revision->wasRecentlyCreated, 'eligibility' => $revision->brief['eligibility'], 'change' => $revision->brief['change']]));
+                    if (data_get($revision->brief, 'eligibility.status') === 'hold') {
+                        $failed = true;
+                        $this->warn('Game '.$game->id.' assessment held: '.implode(', ', data_get($revision->brief, 'eligibility.data_reasons', [])));
+                    }
+                } else {
+                    $failed = true;
+                    $this->warn('Game '.$game->id.' assessment unavailable or already running.');
                 }
             } catch (Throwable $e) {
                 $failed = true;
+                report($e);
                 $this->error('Game '.$game->id.' research failed: '.class_basename($e));
                 if (app(AiProviderRateLimitCircuitBreaker::class)->isRateLimitFailure($e->getMessage())
                     || str_contains($e->getMessage(), 'rate-limit cooldown')) {

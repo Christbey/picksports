@@ -54,6 +54,18 @@ class RunPregamePipelineCommand extends Command
                 'name' => 'canonical_generation_and_readiness',
                 'command' => 'nfl:generate-canonical-predictions',
                 'arguments' => [...$shared, '--verify-readiness' => true],
+                'continue_on_failure' => true,
+            ],
+            [
+                'name' => 'research_assessments',
+                'command' => 'nfl:research-pipeline',
+                'arguments' => ['--date' => $horizon['date'], '--days-forward' => $daysForward, '--no-ingest' => true, '--no-web' => true, '--limit' => 100],
+                'continue_on_failure' => true,
+            ],
+            [
+                'name' => 'research_readiness',
+                'command' => 'nfl:research-readiness',
+                'arguments' => ['--days-forward' => min(2, $daysForward)],
             ],
         ];
 

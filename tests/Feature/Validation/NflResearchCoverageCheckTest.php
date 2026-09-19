@@ -145,7 +145,7 @@ it('registers NFL research coverage in both validator scopes and uses batched qu
     Http::assertNothingSent();
 });
 
-it('rolls over expired immutable evidence but deduplicates fresh unchanged research revisions', function (string $status) {
+it('links newer research immediately while deduplicating repeated reviews of the same report', function (string $status) {
     $game = researchCoverageGame();
     $preview = ['outputs' => ['predicted_spread' => 3, 'predicted_total' => 45, 'win_probability' => 60], 'model_metadata' => [], 'model_version' => 'test'];
     $this->mock(GeneratePredictionFromHistoricalElo::class, fn ($mock) => $mock->shouldReceive('preview')->andReturn($preview));
@@ -161,9 +161,10 @@ it('rolls over expired immutable evidence but deduplicates fresh unchanged resea
     $original = researchCoverageReport($game, $attributes);
     $first = $pipeline->review($game, false);
     $fresh = researchCoverageReport($game, $attributes);
-    expect($pipeline->review($game, false)->id)->toBe($first->id);
-    $original->update(['expires_at' => now()->subMinute()]);
     $renewed = $pipeline->review($game, false);
+    expect($renewed->id)->not->toBe($first->id);
+    $original->update(['expires_at' => now()->subMinute()]);
+    expect($pipeline->review($game, false)->id)->toBe($renewed->id);
     expect($renewed->id)->not->toBe($first->id)
         ->and((int) $renewed->report_id)->toBe($fresh->id)
         ->and((int) $first->fresh()->report_id)->toBe($original->id)
@@ -175,3 +176,23 @@ it('rolls over expired immutable evidence but deduplicates fresh unchanged resea
     }
     Http::assertNothingSent();
 })->with(['ready', 'partial']);
+
+it('readiness fails data holds and stale markets but accepts a completed no-edge pass', function () {
+    $game = researchCoverageGame();
+    $revision = researchCoverageRevision($game, researchCoverageReport($game));
+    $game->update(['odds_updated_at' => now(), 'odds_data' => [
+        'home_team' => 'Home', 'away_team' => 'Away',
+        'bookmakers' => [['key' => 'book', 'last_update' => now()->toIso8601String(), 'markets' => [
+            ['key' => 'spreads', 'outcomes' => [['name' => 'Home', 'point' => -3, 'price' => -110], ['name' => 'Away', 'point' => 3, 'price' => -110]]],
+        ]]],
+    ]]);
+    $this->artisan('nfl:research-readiness')->assertSuccessful();
+    $revision->update(['brief' => ['eligibility' => ['status' => 'hold', 'data_complete' => false, 'data_reasons' => ['research_candidate_changed']]]]);
+    $this->artisan('nfl:research-readiness')->assertFailed();
+    $revision->update(['brief' => ['eligibility' => ['status' => 'pass', 'data_complete' => true, 'data_reasons' => []]]]);
+    $odds = $game->odds_data;
+    $odds['bookmakers'][0]['last_update'] = now()->subHours(2)->toIso8601String();
+    $game->update(['odds_data' => $odds]);
+    // A new retrieval timestamp must not disguise an old provider quote.
+    $this->artisan('nfl:research-readiness')->assertFailed();
+});

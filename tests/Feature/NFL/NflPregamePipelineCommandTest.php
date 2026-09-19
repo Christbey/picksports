@@ -41,6 +41,18 @@ it('wires one bounded horizon through odds legacy and verified canonical generat
                         '--days-forward' => 8,
                         '--verify-readiness' => true,
                     ],
+                    'continue_on_failure' => true,
+                ],
+                [
+                    'name' => 'research_assessments',
+                    'command' => 'nfl:research-pipeline',
+                    'arguments' => ['--date' => '2026-09-15', '--days-forward' => 8, '--no-ingest' => true, '--no-web' => true, '--limit' => 100],
+                    'continue_on_failure' => true,
+                ],
+                [
+                    'name' => 'research_readiness',
+                    'command' => 'nfl:research-readiness',
+                    'arguments' => ['--days-forward' => 2],
                 ],
             ]);
 

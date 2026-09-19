@@ -14,6 +14,7 @@ use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -43,11 +44,17 @@ class ResearchPipeline
             $policy = app(ResearchRefreshPolicy::class);
             $fingerprint = $policy->fingerprint($game, $packet);
             $deferred = null;
-            if ($research && ! $policy->current($report, $game, $fingerprint)) {
+            if ($research && ! $policy->current($report, $game, $fingerprint, $candidateHash)) {
                 try {
                     $report = app(NflWebContextResearchService::class)->research($game)['report'];
                 } catch (ResearchDeferred $exception) {
                     $deferred = $exception->getMessage();
+                } catch (Throwable $exception) {
+                    // Preserve an honest current assessment even when the provider fails.
+                    // Do not leave yesterday's revision as the apparent latest result.
+                    $deferred = 'research_refresh_failed';
+                    report($exception);
+                    Log::warning('NFL research refresh failed', ['game_id' => $game->id, 'exception' => $exception::class]);
                 }
             }
             $holds = $packet['holds'];
@@ -104,20 +111,16 @@ class ResearchPipeline
                 'model_signals' => ['qb' => data_get($preview, 'model_metadata.qb_form'), 'trenches' => data_get($preview, 'model_metadata.line_matchup'), 'injuries' => data_get($preview, 'model_metadata.depth_chart_injuries')],
                 'numeric_adjustment_policy' => 'Existing model weights only; narrative interpretation is not a calibrated adjustment.',
                 'source_report_id' => $report?->id,
-                'research_refresh' => ['deferred_reason' => $deferred, 'evidence_current' => $policy->current($report, $game, $fingerprint)],
+                'research_refresh' => ['deferred_reason' => $deferred, 'evidence_current' => $policy->current($report, $game, $fingerprint), 'candidate_current' => $policy->current($report, $game, $fingerprint, $candidateHash)],
                 'source_coverage' => $packet['source_coverage'] ?? [],
                 'previous_revision_id' => $previous?->id,
                 'change' => $previous ? ['spread' => round($preview['outputs']['predicted_spread'] - ($previous->revised['predicted_spread'] ?? 0), 2), 'total' => round($preview['outputs']['predicted_total'] - ($previous->revised['predicted_total'] ?? 0), 2), 'eligibility_changed' => data_get($previous->brief, 'eligibility.status') !== $eligibility['status']] : ['initial' => true],
             ];
             $evidence = ['documents' => array_map(fn ($d) => array_diff_key($d, ['text' => true]), $selectedDocuments), 'availability' => $packet['availability'], 'report_id' => $report?->id];
             $materialHash = $this->revisionHash($preview, $evidence, $market, $eligibility, $props, $brief);
-            // Preserve semantic deduplication while its immutable evidence is
-            // current. Once that report expires, link the refreshed evidence in
-            // a new revision even when the model recommendation is unchanged.
-            $renewEvidence = $previous && $report && $previous->report_id !== $report->id
-                && $report->expires_at?->gt(now())
-                && ! SportsGameContextReport::query()->where('sport', 'nfl')->where('game_id', $game->id)
-                    ->whereKey($previous->report_id)->where('expires_at', '>', now())->exists();
+            // Always link newly researched evidence, even when the recommendation
+            // is unchanged. Repeated reviews of that same report still deduplicate.
+            $renewEvidence = $previous && $report && $previous->report_id !== $report->id;
             if ($previous && ! $renewEvidence && data_get($previous->brief, 'material_hash', $previous->input_hash) === $materialHash) {
                 return $previous;
             }
@@ -281,7 +284,7 @@ class ResearchPipeline
                     if (! is_numeric($outcome['point'] ?? null) || ! is_numeric($outcome['price'] ?? null) || ! $home) {
                         continue;
                     }
-                    $quotes[] = ['bookmaker' => $book['key'], 'side' => $outcome['name'] === $home ? 'home' : 'away', 'line' => (float) $outcome['point'], 'price' => (int) $outcome['price'], 'observed_at' => $market['last_update'] ?? $game->odds_updated_at?->toIso8601String()];
+                    $quotes[] = ['bookmaker' => $book['key'], 'side' => $outcome['name'] === $home ? 'home' : 'away', 'line' => (float) $outcome['point'], 'price' => (int) $outcome['price'], 'observed_at' => $market['last_update'] ?? $book['last_update'] ?? $game->odds_updated_at?->toIso8601String()];
                 }
             }
         }
@@ -305,7 +308,7 @@ class ResearchPipeline
                 if (($market['key'] ?? null) !== $key) {
                     continue;
                 }
-                $observedAt = $market['last_update'] ?? $game->odds_updated_at?->toIso8601String();
+                $observedAt = $market['last_update'] ?? $book['last_update'] ?? $game->odds_updated_at?->toIso8601String();
                 try {
                     if (! is_string($observedAt) || ! Carbon::parse($observedAt)->betweenIncluded($freshAfter, now())) {
                         continue;

@@ -323,3 +323,34 @@ it('rejects unsafe pregame timing before creating lifecycle records', function (
         ->and(CalculationRun::query()->count())->toBe(0)
         ->and(CanonicalPrediction::query()->count())->toBe(0);
 });
+
+it('publishes unchanged metadata containing signed zero after a database JSON roundtrip', function () {
+    $capturedAt = now()->startOfSecond()->toImmutable();
+    $event = SportEvent::factory()->create(['sport' => 'nba', 'starts_at' => $capturedAt->addHour()]);
+    lifecycleRulesRelease();
+    $calculator = new class implements SportCalculator
+    {
+        public function calculate(EventInputSnapshotData $snapshot, CalculationReleaseData $release): PredictionOutput
+        {
+            return new PredictionOutput(
+                markets: [new PredictionMarketOutput('spread', 'home', projectedLine: -0.0)],
+                metadata: ['home_margin' => round(-0.01, 1), 'nested' => ['value' => -0.0]],
+            );
+        }
+    };
+    $prediction = app(PredictionLifecycleOrchestrator::class)->generateAndPublish(
+        $event,
+        new PredictionLifecycleTestSnapshotBuilder(['home_probability' => 0.5], $capturedAt, $event->starts_at),
+        $calculator,
+    );
+    expect($prediction->publication_state)->toBe('published')
+        ->and($prediction->calculationRun->output_hash)->toBe($prediction->output_hash);
+});
+
+it('hashes signed zeros consistently without equating nonzero metadata changes', function () {
+    $hasher = app(CanonicalPayloadHasher::class);
+    $before = ['margin' => round(-0.01, 1), 'nested' => [-0.0]];
+    $stored = json_decode(json_encode($before, JSON_THROW_ON_ERROR), true, flags: JSON_THROW_ON_ERROR);
+    expect($hasher->hash($before))->toBe($hasher->hash($stored))
+        ->and($hasher->hash(['margin' => 0]))->not->toBe($hasher->hash(['margin' => -0.1]));
+});

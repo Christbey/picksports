@@ -130,7 +130,13 @@ const formatSignedHomeSpread = (
                     </div>
                 </div>
                 <div class="ui-surface-subtle p-4 text-center">
-                    <div class="text-sm text-muted-foreground">Confidence</div>
+                    <div class="text-sm text-muted-foreground">
+                        {{
+                            prediction.sport === 'cfb'
+                                ? 'Win-model confidence'
+                                : 'Confidence'
+                        }}
+                    </div>
                     <div
                         class="text-2xl font-semibold tracking-tight capitalize"
                     >
@@ -141,6 +147,20 @@ const formatSignedHomeSpread = (
                         class="mt-1 text-xs text-muted-foreground"
                     >
                         Score: {{ formatNumber(prediction.confidence_score) }}
+                    </div>
+                    <div
+                        v-if="prediction.sport === 'cfb'"
+                        class="mt-1 text-xs text-muted-foreground"
+                    >
+                        <span
+                            v-if="
+                                prediction.confidence_context
+                                    ?.probability_status ===
+                                'uncalibrated_model_estimate'
+                            "
+                            >Uncalibrated estimate.
+                        </span>
+                        Not a probability of covering the spread.
                     </div>
                 </div>
             </div>

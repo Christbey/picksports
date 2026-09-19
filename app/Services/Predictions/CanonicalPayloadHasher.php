@@ -38,6 +38,12 @@ class CanonicalPayloadHasher
             return $this->canonicalize($value->jsonSerialize());
         }
 
+        // PHP can encode a rounded float as -0, but JSON decoding and SQL JSON
+        // storage normalize it to 0. They represent the same numeric value.
+        if (is_float($value) && $value == 0.0) {
+            return 0.0;
+        }
+
         if (! is_array($value)) {
             return $value;
         }

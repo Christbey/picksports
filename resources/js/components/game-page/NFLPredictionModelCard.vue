@@ -43,6 +43,20 @@ const favorite = computed(() => {
             <p class="text-xs text-muted-foreground">
                 Model estimates, not sportsbook lines or an approved bet.
             </p>
+            <p
+                v-if="prediction.sport === 'cfb'"
+                class="text-xs text-muted-foreground"
+            >
+                <span
+                    v-if="
+                        prediction.confidence_context?.probability_status ===
+                        'uncalibrated_model_estimate'
+                    "
+                    >Win probability is an uncalibrated model estimate.
+                </span>
+                Win probability does not measure the chance of covering the
+                spread.
+            </p>
         </CardHeader>
         <CardContent class="space-y-4">
             <div class="grid grid-cols-2 gap-3">

@@ -393,6 +393,7 @@ export interface GamePageGame {
 }
 
 export interface PredictionSummary {
+    sport?: string;
     away_win_probability: number;
     home_win_probability: number;
     predicted_spread: number;
@@ -404,6 +405,7 @@ export interface PredictionSummary {
         model_level?: string | null;
         reason_codes?: string[];
         sample_games?: number | null;
+        probability_status?: string | null;
     } | null;
     confidence_score?: number | null;
     actual_total?: number | null;
@@ -607,6 +609,8 @@ export interface SportGamePageConfig {
 export type NflPageTeam = GamePageTeam;
 
 export interface NflPagePrediction {
+    sport?: string;
+    confidence_context?: PredictionSummary['confidence_context'];
     id: number;
     game_id: number;
     home_elo: number | string;

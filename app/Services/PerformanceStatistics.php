@@ -149,6 +149,7 @@ class PerformanceStatistics
 
         $row = $query->selectRaw("
             COUNT(*) AS total_bets,
+            SUM(CASE WHEN bet_settlements.profit_units IS NOT NULL THEN 1 ELSE 0 END) AS priced_bets,
             SUM(CASE WHEN bet_settlements.result_status = 'win' THEN 1 ELSE 0 END) AS total_wins,
             SUM(CASE WHEN bet_settlements.result_status = 'loss' THEN 1 ELSE 0 END) AS total_losses,
             SUM(CASE WHEN bet_settlements.result_status = 'push' THEN 1 ELSE 0 END) AS total_pushes,
@@ -157,12 +158,13 @@ class PerformanceStatistics
         ")->first();
 
         $totalBets = (int) ($row->total_bets ?? 0);
+        $pricedBets = (int) ($row->priced_bets ?? 0);
         $totalWins = (int) ($row->total_wins ?? 0);
         $totalLosses = (int) ($row->total_losses ?? 0);
         $totalPushes = (int) ($row->total_pushes ?? 0);
         $gradedDecisions = $totalWins + $totalLosses;
         $totalProfitUnits = round((float) ($row->total_profit_units ?? 0), 4);
-        $totalWagered = $totalBets * 100;
+        $totalWagered = $pricedBets * 100;
         $totalProfit = round($totalProfitUnits * 100, 2);
         $roi = $totalWagered > 0 ? round(($totalProfit / $totalWagered) * 100, 2) : null;
 
@@ -171,10 +173,12 @@ class PerformanceStatistics
             'total_wins' => $totalWins,
             'total_losses' => $totalLosses,
             'total_pushes' => $totalPushes,
-            'total_staked_units' => $totalBets,
+            'priced_bets' => $pricedBets,
+            'unpriced_bets' => $totalBets - $pricedBets,
+            'total_staked_units' => $pricedBets,
             'total_wagered' => $totalWagered,
-            'total_profit' => $totalProfit,
-            'total_profit_units' => $totalProfitUnits,
+            'total_profit' => $totalBets > 0 && $pricedBets === 0 ? null : $totalProfit,
+            'total_profit_units' => $totalBets > 0 && $pricedBets === 0 ? null : $totalProfitUnits,
             'roi_percentage' => $roi,
             'win_percentage' => $gradedDecisions > 0 ? round(($totalWins / $gradedDecisions) * 100, 1) : null,
             'avg_clv' => $row->avg_clv !== null ? round((float) $row->avg_clv, 4) : null,

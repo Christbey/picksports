@@ -10,7 +10,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.4.1';
+    public const SEMANTIC_VERSION = '1.5.0';
 
     /** @return array<string, mixed> */
     public function configuration(): array
@@ -20,6 +20,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
         $configuration['inputs']['point_in_time_elo'] = true;
         $configuration['inputs']['auditable_feature_coverage'] = true;
         $configuration['inputs']['preserve_missing_metrics'] = true;
+        $configuration['inputs']['personnel_evidence'] = true;
         $configuration['spread']['rating_baseline'] = 'fpi_points';
 
         return $configuration;

@@ -6,6 +6,7 @@ use App\Models\CFB\PreseasonTeamSignal;
 use App\Models\CFB\Team;
 use App\Models\CfbdTeamMapping;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 
@@ -18,6 +19,8 @@ class SyncPreseasonTeamSignalsCommand extends Command
         {--skip-transfers : Skip CFBD transfer portal summary}
         {--skip-talent : Skip CFBD talent composite}
         {--skip-recruiting : Skip CFBD team recruiting rankings}
+        {--include-coaches : Compare verified current and prior CFBD head coaches}
+        {--require-data : Fail when any requested source has no matched current-season rows}
         {--dry-run : Fetch and summarize without writing}';
 
     protected $description = 'Sync CFB preseason team signal inputs for returning production, transfers, talent, and recruiting';
@@ -51,6 +54,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
             'talent' => 0,
             'recruiting' => 0,
             'skipped' => 0,
+            'coaches' => 0,
         ];
 
         if (! $this->option('skip-returning-production')) {
@@ -69,6 +73,11 @@ class SyncPreseasonTeamSignalsCommand extends Command
             $stats['recruiting'] = $this->syncRecruiting($service, $season, $teamFilter, $dryRun, $stats['skipped']);
         }
 
+        if ($this->option('include-coaches')) {
+            $stats['coaches'] = $this->syncCoaches($service, $season, $dryRun);
+            $this->info('Head coach continuity records: '.$stats['coaches']);
+        }
+
         $this->info(sprintf(
             'Processed returning=%d, transfer teams=%d, talent=%d, recruiting=%d, skipped=%d%s.',
             $stats['returning'],
@@ -78,6 +87,22 @@ class SyncPreseasonTeamSignalsCommand extends Command
             $stats['skipped'],
             $dryRun ? ' (dry run)' : ''
         ));
+
+        if ($this->option('require-data')) {
+            $requested = [
+                'returning' => ! $this->option('skip-returning-production'),
+                'transfers' => ! $this->option('skip-transfers'),
+                'talent' => ! $this->option('skip-talent'),
+                'recruiting' => ! $this->option('skip-recruiting'),
+                'coaches' => (bool) $this->option('include-coaches'),
+            ];
+            $empty = array_keys(array_filter($requested, fn ($enabled, $source) => $enabled && $stats[$source] === 0, ARRAY_FILTER_USE_BOTH));
+            if ($empty !== []) {
+                $this->error('No matched current-season rows for requested personnel feeds: '.implode(', ', $empty).'. Refresh remains retryable.');
+
+                return self::FAILURE;
+            }
+        }
 
         return self::SUCCESS;
     }
@@ -93,7 +118,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         $processed = 0;
 
         foreach ($rows as $row) {
-            if (! is_array($row)) {
+            if (! is_array($row) || ! $this->rowMatchesSeason($row, $season)) {
                 $skipped++;
 
                 continue;
@@ -141,7 +166,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         $summaries = [];
 
         foreach ($rows as $row) {
-            if (! is_array($row)) {
+            if (! is_array($row) || ! $this->rowMatchesSeason($row, $season)) {
                 $skipped++;
 
                 continue;
@@ -198,7 +223,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         $processed = 0;
 
         foreach ($rows as $row) {
-            if (! is_array($row)) {
+            if (! is_array($row) || ! $this->rowMatchesSeason($row, $season)) {
                 $skipped++;
 
                 continue;
@@ -238,7 +263,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         $processed = 0;
 
         foreach ($rows as $row) {
-            if (! is_array($row)) {
+            if (! is_array($row) || ! $this->rowMatchesSeason($row, $season)) {
                 $skipped++;
 
                 continue;
@@ -276,6 +301,17 @@ class SyncPreseasonTeamSignalsCommand extends Command
             return;
         }
 
+        $existing = PreseasonTeamSignal::where('team_id', $team->id)->where('season', $season)->first();
+        $evidence = (array) $existing?->source_evidence;
+        foreach (['returning_production_payload' => 'returning_production', 'transfer_portal_payload' => 'transfers',
+            'talent_payload' => 'talent', 'recruiting_payload' => 'recruiting', 'coaching_continuity_payload' => 'head_coach'] as $field => $component) {
+            if (array_key_exists($field, $attributes)) {
+                $evidence[$component] = ['source' => 'cfbd', 'observed_at' => now()->toIso8601String(),
+                    'season' => $season, 'payload_field' => $field,
+                    'payload_hash' => app(CanonicalPayloadHasher::class)->hash($attributes[$field])];
+            }
+        }
+        $attributes['source_evidence'] = $evidence;
         PreseasonTeamSignal::query()->updateOrCreate(
             [
                 'team_id' => $team->id,
@@ -283,6 +319,52 @@ class SyncPreseasonTeamSignalsCommand extends Command
             ],
             $attributes
         );
+    }
+
+    private function rowMatchesSeason(array $row, int $season): bool
+    {
+        foreach (['season', 'year'] as $field) {
+            if (array_key_exists($field, $row) && (! is_numeric($row[$field]) || (float) $row[$field] !== (float) $season)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function syncCoaches(CollegeFootballDataService $service, int $season, bool $dryRun): int
+    {
+        $index = [];
+        foreach ([$season - 1, $season] as $year) {
+            foreach ($service->getCoaches($year) as $row) {
+                $name = trim(($row['firstName'] ?? '').' '.($row['lastName'] ?? ''));
+                if ($name === '') {
+                    continue;
+                }
+                foreach ((array) ($row['seasons'] ?? []) as $entry) {
+                    if (! is_array($entry) || (int) ($entry['year'] ?? 0) !== $year || ! $this->rowMatchesSeason($entry, $year) || ! ($team = $this->resolveTeam($entry))) {
+                        continue;
+                    }
+                    $index[$year][$team->id][$name] = ['name' => $name, 'id' => $row['id'] ?? null];
+                }
+            }
+        }
+        $count = 0;
+        foreach ($index[$season] ?? [] as $teamId => $current) {
+            $prior = $index[$season - 1][$teamId] ?? [];
+            // Interim/multiple coaches or absent prior data cannot prove continuity.
+            $known = count($current) === 1 && count($prior) === 1;
+            $payload = ['current' => array_values($current), 'prior' => array_values($prior),
+                'comparison_status' => $known ? 'verified' : 'unresolved', 'coordinator_coverage' => 'unavailable'];
+            $this->updateSignal(Team::findOrFail($teamId), $season, [
+                'head_coach_name' => count($current) === 1 ? array_key_first($current) : null,
+                'new_head_coach' => $known ? array_key_first($current) !== array_key_first($prior) : null,
+                'coaching_continuity_payload' => $payload, 'synced_at' => now(),
+            ], $dryRun);
+            $count++;
+        }
+
+        return $count;
     }
 
     /**

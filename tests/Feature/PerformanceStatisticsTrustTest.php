@@ -185,3 +185,33 @@ it('uses the latest graded sport season instead of a stale configured season', f
         ->and($season['nba']['total_graded'])->toBe(1)
         ->and($season['nba']['winner_accuracy'])->toBe(100.0);
 });
+
+it('excludes unknown returns from ROI stakes without dropping their graded ATS outcome', function () {
+    foreach ([['win', 1.2], ['loss', null]] as $index => [$status, $profit]) {
+        $decision = BetDecision::create(['decision_run_id' => (string) Str::uuid(), 'sport' => 'cfb',
+            'game_table' => 'cfb_games', 'game_id' => $index + 1, 'market_type' => 'spread', 'market_key' => 'spreads',
+            'side' => 'home', 'line' => -7, 'price' => $profit === null ? null : 120, 'status' => 'released_tracking_bet',
+            'is_bet' => true, 'pregame_safe' => true, 'decided_at' => '2026-09-19 10:00:00',
+            'decision_hash' => hash('sha256', 'unknown-return-'.$index)]);
+        BetSettlement::create(['bet_decision_id' => $decision->id, 'result_status' => $status,
+            'profit_units' => $profit, 'graded_at' => now(), 'settled_at' => now()]);
+    }
+    $roi = app(PerformanceStatistics::class)->calculateROI();
+    expect($roi['total_bets'])->toBe(2)->and($roi['total_wins'])->toBe(1)->and($roi['total_losses'])->toBe(1)
+        ->and($roi['win_percentage'])->toBe(50.0)->and($roi['priced_bets'])->toBe(1)->and($roi['unpriced_bets'])->toBe(1)
+        ->and($roi['total_staked_units'])->toBe(1)->and($roi['roi_percentage'])->toBe(120.0);
+});
+
+it('reports unknown rather than break-even profit when every settled return is unpriced', function () {
+    $decision = BetDecision::create(['decision_run_id' => (string) Str::uuid(), 'sport' => 'cfb',
+        'game_table' => 'cfb_games', 'game_id' => 1, 'market_type' => 'spread', 'market_key' => 'spreads',
+        'side' => 'home', 'line' => -7, 'price' => null, 'status' => 'released_tracking_bet',
+        'is_bet' => true, 'pregame_safe' => true, 'decided_at' => '2026-09-19 10:00:00',
+        'decision_hash' => hash('sha256', 'all-unpriced-return')]);
+    BetSettlement::create(['bet_decision_id' => $decision->id, 'result_status' => 'win',
+        'profit_units' => null, 'graded_at' => now(), 'settled_at' => now()]);
+    $roi = app(PerformanceStatistics::class)->calculateROI();
+    expect($roi['total_bets'])->toBe(1)->and($roi['priced_bets'])->toBe(0)->and($roi['unpriced_bets'])->toBe(1)
+        ->and($roi['total_profit'])->toBeNull()->and($roi['total_profit_units'])->toBeNull()
+        ->and($roi['roi_percentage'])->toBeNull()->and($roi['win_percentage'])->toBe(100.0);
+});

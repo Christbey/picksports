@@ -6,8 +6,10 @@ use App\Models\CFB\Game;
 use App\Models\EventInputSnapshot;
 use App\Models\PredictionMarket;
 use App\Services\CFB\CfbMarketMovementSignalService;
+use App\Services\CFB\CfbSpreadMarketConfirmation;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
 use App\Services\CFB\Predictions\CfbEarlySeasonSpreadSupport;
+use App\Services\CFB\Predictions\CfbSpreadCoverProbabilityService;
 
 function earlySpreadEvidence(): array
 {
@@ -72,6 +74,19 @@ function earlySpreadSignal(array $inputs, bool $freshQuote = true, string $basel
     $market->shouldReceive('spreadContext')->andReturn(['current_bookmaker_home_line' => -20.5,
         'current_home_margin' => 20.5, 'current_book_count' => 2,
         'current_captured_at' => ($freshQuote ? now() : now()->subDay())->toIso8601String()]);
+
+    app()->instance(CfbSpreadMarketConfirmation::class,
+        Mockery::mock(CfbSpreadMarketConfirmation::class)->shouldReceive('assess')->andReturn([
+            'supported' => $freshQuote, 'confirming_book_count' => 2,
+            'risk_flags' => $freshQuote ? [] : ['stale_market_quote'],
+            'best_quote' => ['line' => -20.5, 'price' => -110, 'bookmaker' => 'test', 'quote_id' => 1,
+                'provider_observed_at' => now()->toIso8601String()],
+        ])->getMock());
+    app()->instance(CfbSpreadCoverProbabilityService::class,
+        Mockery::mock(CfbSpreadCoverProbabilityService::class)->shouldReceive('assess')->andReturn([
+            'status' => 'calibrated', 'cover_probability' => .57, 'expected_value_per_unit' => .08,
+            'positive_expected_value' => true, 'risk_flags' => [],
+        ])->getMock());
 
     return (new CfbCanonicalSpreadValueSignalService($market))->forPrediction($prediction, $game);
 }

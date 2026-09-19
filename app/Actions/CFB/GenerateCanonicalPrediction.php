@@ -5,6 +5,7 @@ namespace App\Actions\CFB;
 use App\Exceptions\Predictions\PredictionLifecycleException;
 use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
+use App\Services\CFB\CfbReleasedBetDecisionRecorder;
 use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\CFB\Predictions\CfbInputSnapshotBuilder;
 use App\Services\Predictions\PredictionLifecycleOrchestrator;
@@ -19,8 +20,13 @@ class GenerateCanonicalPrediction
             throw new PredictionLifecycleException('CFB canonical generation requires a linked sport event.');
         }
 
-        return $publish
+        $prediction = $publish
             ? $this->orchestrator->generateAndPublish($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger)
             : $this->orchestrator->generate($game->sportEvent, $this->snapshotBuilder, $this->calculator, trigger: $trigger);
+        if ($publish) {
+            app(CfbReleasedBetDecisionRecorder::class)->record($prediction, $game);
+        }
+
+        return $prediction;
     }
 }

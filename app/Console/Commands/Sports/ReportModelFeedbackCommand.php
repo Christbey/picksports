@@ -21,8 +21,10 @@ class ReportModelFeedbackCommand extends Command
             ->get();
         $settled = $decisions->filter(fn (BetDecision $decision): bool => $decision->settlement !== null);
         $bets = $settled->filter(fn (BetDecision $decision): bool => $decision->is_bet);
-        $actualProfit = (float) $bets->sum(fn (BetDecision $decision): float => (float) $decision->settlement?->profit_units);
-        $shadowProfit = (float) $settled->sum(
+        $pricedBets = $bets->filter(fn (BetDecision $decision): bool => is_numeric($decision->settlement?->profit_units));
+        $pricedShadow = $settled->filter(fn (BetDecision $decision): bool => is_numeric(data_get($decision->settlement?->metadata, 'shadow_profit_units')));
+        $actualProfit = (float) $pricedBets->sum(fn (BetDecision $decision): float => (float) $decision->settlement?->profit_units);
+        $shadowProfit = (float) $pricedShadow->sum(
             fn (BetDecision $decision): float => (float) data_get($decision->settlement?->metadata, 'shadow_profit_units', 0.0)
         );
         $brierRows = $settled->filter(fn (BetDecision $decision): bool => $decision->shadowOutput !== null
@@ -50,8 +52,10 @@ class ReportModelFeedbackCommand extends Command
                 ['Decisions', (string) $decisions->count()],
                 ['Settled decisions', (string) $settled->count()],
                 ['Tracked bets', (string) $bets->count()],
-                ['Actual ROI', $bets->isEmpty() ? 'N/A' : number_format($actualProfit / $bets->count() * 100, 2).'%'],
-                ['Counterfactual ROI', $settled->isEmpty() ? 'N/A' : number_format($shadowProfit / $settled->count() * 100, 2).'%'],
+                ['Priced tracked bets', (string) $pricedBets->count()],
+                ['Unpriced settled bets', (string) ($bets->count() - $pricedBets->count())],
+                ['Actual ROI', $pricedBets->isEmpty() ? 'N/A' : number_format($actualProfit / $pricedBets->count() * 100, 2).'%'],
+                ['Counterfactual ROI', $pricedShadow->isEmpty() ? 'N/A' : number_format($shadowProfit / $pricedShadow->count() * 100, 2).'%'],
                 ['Average CLV probability', $clvRows->isEmpty()
                     ? 'N/A'
                     : number_format((float) $clvRows->avg(fn (BetDecision $decision): ?float => $decision->settlement?->clv), 4)],

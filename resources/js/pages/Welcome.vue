@@ -32,10 +32,11 @@ interface OverallStats {
 
 interface ROIStats {
     total_bets: number;
+    priced_bets?: number;
     total_wins: number;
     total_losses: number;
     total_wagered: number;
-    total_profit: number;
+    total_profit: number | null;
     roi_percentage: number | null;
     win_percentage: number | null;
 }
@@ -127,7 +128,9 @@ const recent = computed(() => props.performance.recent.overall);
 const roi = computed(() => props.performance.roi);
 const hasOverallSample = computed(() => overall.value.total_predictions > 0);
 const hasRecentSample = computed(() => recent.value.total_predictions > 0);
-const hasRoiSample = computed(() => roi.value.total_bets > 0);
+const hasRoiSample = computed(
+    () => (roi.value.priced_bets ?? roi.value.total_bets) > 0,
+);
 
 const formatPercent = (value: number, hasSample: boolean) =>
     hasSample ? `${value.toFixed(1)}%` : 'Pending';
@@ -572,7 +575,7 @@ const formatSignedPercent = (value: number | null, hasSample: boolean) => {
                             >
                                 {{
                                     hasRoiSample
-                                        ? `${roi.total_bets} pregame-safe settled bets`
+                                        ? `${roi.priced_bets ?? roi.total_bets} priced pregame-safe settled bets`
                                         : 'No settled qualifying bets yet'
                                 }}
                             </div>

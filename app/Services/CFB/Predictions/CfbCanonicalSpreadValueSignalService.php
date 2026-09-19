@@ -6,7 +6,7 @@ use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\PredictionMarket;
 use App\Services\CFB\CfbMarketMovementSignalService;
-use Carbon\CarbonImmutable;
+use App\Services\CFB\CfbSpreadMarketConfirmation;
 
 class CfbCanonicalSpreadValueSignalService
 {
@@ -43,22 +43,42 @@ class CfbCanonicalSpreadValueSignalService
 
         $signedHomeEdge = $modelHomeMargin - $marketHomeMargin;
         $side = $signedHomeEdge >= 0 ? 'home' : 'away';
-        $edgePoints = round(abs($signedHomeEdge), 1);
+        $confirmation = app(CfbSpreadMarketConfirmation::class)->assess($game, $side, $modelHomeMargin);
+        $executable = $confirmation['best_quote'];
+        if ($executable !== null) {
+            $marketHomeLine = $side === 'home' ? $executable['line'] : -$executable['line'];
+            $marketHomeMargin = -$marketHomeLine;
+        }
+        $edgePoints = round($side === 'home' ? $modelHomeMargin - $marketHomeMargin : $marketHomeMargin - $modelHomeMargin, 1);
+        $probability = app(CfbSpreadCoverProbabilityService::class)->assess(
+            $prediction, $side, $side === 'home' ? $marketHomeLine : -$marketHomeLine,
+            $executable['price'] ?? null,
+        );
         $minimumEdge = (float) config('cfb.predictions.spread_value.minimum_edge_points', 3.0);
         $keyEdge = (float) config('cfb.predictions.spread_value.key_edge_points', 7.0);
         $support = $this->statisticalSupport($prediction);
-        $marketHealth = $this->marketHealth($market, $game);
+        $marketHealth = ['supported' => $confirmation['supported'],
+            'observed_at' => $executable['provider_observed_at'] ?? null,
+            'risk_flags' => $confirmation['risk_flags']];
+        $probabilityFlags = $probability['risk_flags'];
+        if (! $probability['positive_expected_value'] && $probability['status'] === 'calibrated') {
+            $probabilityFlags[] = 'non_positive_calibrated_ev';
+        }
         $assessment = app(CfbSpreadAssessment::class)->assess(
             (array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []),
-            $modelHomeMargin, $marketHomeLine, [...$support['risk_flags'], ...$marketHealth['risk_flags'],
+            $modelHomeMargin, $marketHomeLine, [...$support['risk_flags'], ...$marketHealth['risk_flags'], ...$probabilityFlags,
                 ...(! $prediction->generated_at || $prediction->generated_at->lt(now()->subHours(6))
                     || $prediction->generated_at->gt(now()) ? ['stale_prediction'] : [])],
         );
+        $assessment['cover_probability'] = $probability['cover_probability'];
+        $assessment['probability_status'] = $probability['status'];
         if ($edgePoints < $minimumEdge) {
             return [
                 'has_playable_value' => false,
                 'play_count' => 0,
                 'spread_assessment' => $assessment,
+                'market_confirmation' => $confirmation,
+                'cover_probability_evidence' => $probability,
                 'best' => null,
             ];
         }
@@ -69,11 +89,13 @@ class CfbCanonicalSpreadValueSignalService
                 'has_playable_value' => false,
                 'play_count' => 0,
                 'spread_assessment' => $assessment,
+                'market_confirmation' => $confirmation,
+                'cover_probability_evidence' => $probability,
                 'best' => null,
             ];
         }
 
-        $isPlayable = $edgePoints >= $minimumEdge && $support['supported'] && $marketHealth['supported'] && $assessment['risk_flags'] === [];
+        $isPlayable = $edgePoints >= $minimumEdge && $support['supported'] && $marketHealth['supported'] && $probability['positive_expected_value'] && $assessment['risk_flags'] === [];
         $isKeyEdge = $isPlayable && $edgePoints >= $keyEdge;
         $team = $side === 'home' ? $game->homeTeam : $game->awayTeam;
         $teamLabel = $team?->abbreviation ?: $team?->display_name ?: $team?->school ?: ucfirst($side);
@@ -89,6 +111,8 @@ class CfbCanonicalSpreadValueSignalService
 
         return [
             'spread_assessment' => $assessment,
+            'market_confirmation' => $confirmation,
+            'cover_probability_evidence' => $probability,
             'has_playable_value' => $isPlayable,
             'play_count' => $isPlayable ? 1 : 0,
             'best' => [
@@ -97,6 +121,11 @@ class CfbCanonicalSpreadValueSignalService
                 'side' => $side,
                 'edge' => $edgePoints,
                 'market_line' => round($marketSideLine, 1),
+                'price' => $executable['price'] ?? null,
+                'bookmaker' => $executable['bookmaker'] ?? null,
+                'market_quote_id' => $executable['quote_id'] ?? null,
+                'cover_probability' => $probability['cover_probability'],
+                'expected_value_per_unit' => $probability['expected_value_per_unit'],
                 'model_line' => round($modelSideLine, 1),
                 'market_home_line' => round($marketHomeLine, 1),
                 'model_home_line' => round($modelHomeLine, 1),
@@ -115,11 +144,14 @@ class CfbCanonicalSpreadValueSignalService
                 'risk_flags' => $riskFlags,
                 'statistical_support' => $support,
                 'market_evidence' => [
-                    'source' => $market['source'] ?? null,
-                    'captured_at' => $market['current_captured_at'] ?? null,
+                    'source' => 'market_quotes_executable_multibook',
+                    'reference_consensus_source' => $market['source'] ?? null,
+                    'captured_at' => $executable['captured_at'] ?? null,
                     'observed_at' => $marketHealth['observed_at'],
-                    'book_count' => (int) ($market['current_book_count'] ?? 0),
-                    'bookmaker_home_line_range' => $this->number($market['current_bookmaker_home_line_range'] ?? null),
+                    'book_count' => $confirmation['confirming_book_count'],
+                    'executable_quote' => $executable,
+                    'confirmation' => $confirmation,
+                    'bookmaker_home_line_range' => $confirmation['line_range'] ?? null,
                 ],
             ],
         ];
@@ -179,35 +211,6 @@ class CfbCanonicalSpreadValueSignalService
         ];
     }
 
-    /** @param array<string, mixed> $market @return array{supported:bool,observed_at:string|null,risk_flags:list<string>} */
-    private function marketHealth(array $market, Game $game): array
-    {
-        $riskFlags = [];
-        $minimumBooks = (int) config('cfb.predictions.spread_value.minimum_books', 1);
-        $bookCount = (int) ($market['current_book_count'] ?? 0);
-        $bookRange = $this->number($market['current_bookmaker_home_line_range'] ?? null);
-        $maximumRange = (float) config('cfb.predictions.spread_value.maximum_book_line_range', 2.5);
-        $capturedAt = $market['current_captured_at'] ?? null;
-        $observedAt = is_string($capturedAt) ? $capturedAt : null;
-        $maximumAgeHours = (int) config('cfb.predictions.spread_value.maximum_quote_age_hours', 6);
-
-        if ($bookCount < $minimumBooks) {
-            $riskFlags[] = 'thin_market_consensus';
-        }
-        if ($bookRange !== null && $bookRange > $maximumRange) {
-            $riskFlags[] = 'wide_bookmaker_line_range';
-        }
-        if (! $this->hasFreshTimestamp($observedAt, $maximumAgeHours)) {
-            $riskFlags[] = 'stale_market_quote';
-        }
-
-        return [
-            'supported' => $riskFlags === [],
-            'observed_at' => $observedAt,
-            'risk_flags' => $riskFlags,
-        ];
-    }
-
     private function reason(Game $game, string $side, float $modelHomeLine, float $marketHomeLine, float $edgePoints, bool $supported): string
     {
         $home = $game->homeTeam?->abbreviation ?: $game->homeTeam?->school ?: 'Home';
@@ -244,18 +247,5 @@ class CfbCanonicalSpreadValueSignalService
     private function integer(mixed $value): ?int
     {
         return is_numeric($value) ? (int) $value : null;
-    }
-
-    private function hasFreshTimestamp(mixed $capturedAt, int $maximumAgeHours): bool
-    {
-        if (! is_string($capturedAt) || trim($capturedAt) === '') {
-            return false;
-        }
-
-        try {
-            return CarbonImmutable::parse($capturedAt)->betweenIncluded(now()->subHours($maximumAgeHours), now());
-        } catch (\Throwable) {
-            return false;
-        }
     }
 }

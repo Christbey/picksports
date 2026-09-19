@@ -40,9 +40,11 @@ interface ROIStats {
     total_losses: number;
     total_pushes: number;
     total_staked_units: number;
+    priced_bets: number;
+    unpriced_bets: number;
     total_wagered: number;
-    total_profit: number;
-    total_profit_units: number;
+    total_profit: number | null;
+    total_profit_units: number | null;
     roi_percentage: number | null;
     win_percentage: number | null;
     verified: boolean;
@@ -93,8 +95,8 @@ const formatPercent = (value: number | null, digits = 1) =>
 const formatMetric = (value: number | null, suffix = '') =>
     value === null ? 'Pending' : `${value.toFixed(2)}${suffix}`;
 
-const formatUnits = (value: number) =>
-    `${value > 0 ? '+' : ''}${value.toFixed(2)}u`;
+const formatUnits = (value: number | null) =>
+    value === null ? 'N/A' : `${value > 0 ? '+' : ''}${value.toFixed(2)}u`;
 </script>
 
 <template>
@@ -235,7 +237,10 @@ const formatUnits = (value: number) =>
                                     {{ roi.total_staked_units.toFixed(2) }}u
                                 </div>
                                 <div class="mt-1 text-xs text-muted-foreground">
-                                    {{ roi.total_bets }} decisions
+                                    {{ roi.priced_bets }} priced decisions
+                                    <template v-if="roi.unpriced_bets > 0">
+                                        · {{ roi.unpriced_bets }} missing prices
+                                    </template>
                                 </div>
                             </div>
                             <div>

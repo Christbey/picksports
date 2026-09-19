@@ -4,6 +4,7 @@ namespace App\Services\CFB;
 
 use App\Models\CFB\Game;
 use App\Models\MarketQuote;
+use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use App\Support\Odds\MarketSpread;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
@@ -185,11 +186,19 @@ class CfbMarketMovementSignalService
             return null;
         }
 
-        $quotes = $this->pregameSpreadQuotes($game, $asOf);
+        if ($gameStart === null) {
+            return null;
+        }
+        $quote = app(CfbStoredPregameQuote::class)
+            ->latest($game->id, 'spreads', 'home', $gameStart, $asOf);
+        $line = $quote?->bookmaker_home_line ?? $quote?->line;
 
-        return $quotes->isEmpty()
-            ? null
-            : $this->consensusPoints($quotes)->last();
+        return $quote && is_numeric($line) ? [
+            'bookmaker_home_line' => (float) $line,
+            'home_margin' => MarketSpread::bookmakerHomeLineToHomeMargin((float) $line),
+            'captured_at' => $quote->captured_at->toIso8601String(),
+            'book_count' => 1,
+        ] : null;
     }
 
     /**
@@ -249,6 +258,9 @@ class CfbMarketMovementSignalService
 
     private function gameStartAt(Game $game): ?Carbon
     {
+        if ($game->sportEvent?->starts_at !== null) {
+            return Carbon::instance($game->sportEvent->starts_at);
+        }
         if ($game->game_date === null) {
             return null;
         }

@@ -3,6 +3,7 @@
 use App\Models\CFB\PreseasonTeamSignal;
 use App\Models\CFB\Team;
 use App\Models\CfbdTeamMapping;
+use App\Services\CollegeFootballData\CollegeFootballDataService;
 use Illuminate\Support\Facades\Http;
 
 uses()->group('cfb', 'preseason-signals');
@@ -127,4 +128,35 @@ it('syncs preseason team signal sources while preserving manual continuity field
         ->and($signal->projected_starting_qb_name)->toBe('Curated QB')
         ->and($signal->new_head_coach)->toBeFalse()
         ->and($signal->synced_at)->not->toBeNull();
+});
+
+it('rejects wrong-season source rows without restamping previously stored evidence', function (string $method, string $skipOption, array $row) {
+    $team = Team::factory()->create(['cfbd_team_id' => 61, 'school' => 'Georgia']);
+    $signal = PreseasonTeamSignal::factory()->create(['team_id' => $team->id, 'season' => 2026,
+        'source_evidence' => ['returning_production' => ['observed_at' => '2026-09-01T00:00:00Z']]]);
+    $before = $signal->fresh()->getAttributes();
+    $this->mock(CollegeFootballDataService::class)
+        ->shouldReceive($method)->once()->andReturn([$row]);
+    $options = ['--season' => 2026, '--require-data' => true,
+        '--skip-returning-production' => true, '--skip-transfers' => true, '--skip-talent' => true, '--skip-recruiting' => true];
+    unset($options[$skipOption]);
+    $this->artisan('cfb:sync-preseason-team-signals', $options)->assertFailed();
+    expect($signal->fresh()->getAttributes())->toBe($before);
+})->with([
+    ['getReturningProduction', '--skip-returning-production', ['teamId' => 61, 'season' => 2025, 'usage' => .5]],
+    ['getTransferPortal', '--skip-transfers', ['origin' => 'Georgia', 'destination' => 'Georgia', 'season' => 2025, 'rating' => .8]],
+    ['getTeamTalent', '--skip-talent', ['teamId' => 61, 'year' => 2025, 'talent' => 500]],
+    ['getTeamRecruitingRankings', '--skip-recruiting', ['teamId' => 61, 'year' => 2025, 'rank' => 5, 'points' => 250]],
+]);
+
+it('fails required empty feeds while exempting explicitly skipped sources', function () {
+    $service = $this->mock(CollegeFootballDataService::class);
+    foreach (['getReturningProduction', 'getTransferPortal', 'getTeamTalent', 'getTeamRecruitingRankings'] as $method) {
+        $service->shouldReceive($method)->once()->andReturn([]);
+    }
+    $service->shouldReceive('getCoaches')->twice()->andReturn([]);
+    $this->artisan('cfb:sync-preseason-team-signals', ['--season' => 2026, '--require-data' => true, '--include-coaches' => true])
+        ->expectsOutputToContain('returning, transfers, talent, recruiting, coaches')->assertFailed();
+    $this->artisan('cfb:sync-preseason-team-signals', ['--season' => 2026, '--require-data' => true,
+        '--skip-returning-production' => true, '--skip-transfers' => true, '--skip-talent' => true, '--skip-recruiting' => true])->assertSuccessful();
 });

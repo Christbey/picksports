@@ -50,8 +50,58 @@ class CfbFrozenBaselineComparison
 
         return ['margins' => $margins, 'errors' => array_map(fn ($margin) => $margin - $actualMargin, $margins),
             'paired' => $eloAvailable && $fpiAvailable,
+            'evidence_coverage' => $this->evidenceCoverage($inputs, $fpiAvailable, $eloAvailable, $asOf),
             'unavailable' => array_values(array_filter([$fpiAvailable ? null : 'fpi_missing_contemporaneous_provenance',
                 $eloAvailable ? null : 'corrected_elo_missing_contemporaneous_provenance']))];
+    }
+
+    /** Exclusive buckets allow totals to add up; cumulative flags intentionally overlap. */
+    public function spreadBuckets(?float $homeLine): array
+    {
+        if ($homeLine === null) {
+            return ['exclusive' => 'missing_market_spread', 'cumulative' => []];
+        }
+        $size = abs($homeLine);
+
+        return ['exclusive' => match (true) {
+            $size >= 35 => '35_plus', $size >= 28 => '28_to_under_35',
+            $size >= 20 => '20_to_under_28', default => 'under_20',
+        }, 'cumulative' => array_values(array_filter([
+            $size >= 20 ? '20_plus' : null, $size >= 28 ? '28_plus' : null, $size >= 35 ? '35_plus' : null,
+        ]))];
+    }
+
+    private function evidenceCoverage(array $inputs, bool $fpiAvailable, bool $eloAvailable, CarbonImmutable $capturedAt): array
+    {
+        $coverage = ['opponent_strength' => ['fpi' => $fpiAvailable ? 'both_teams_contemporaneous' : 'missing_or_unverified',
+            'elo' => $eloAvailable ? 'both_teams_contemporaneous' : 'missing_or_unverified']];
+        foreach (['pace' => ['plays_per_game', 'seconds_per_play'],
+            'late_game' => ['fourth_quarter_margin', 'garbage_time_scoring_rate']] as $group => $fields) {
+            foreach (['home', 'away'] as $side) {
+                $evidence = data_get($inputs, $side.'.large_spread_evidence');
+                $observed = data_get($evidence, 'latest_source_observed_at');
+                try {
+                    $safe = is_string($observed) && CarbonImmutable::parse($observed)->lte($capturedAt);
+                } catch (\Throwable) {
+                    $safe = false;
+                }
+                if ($safe && is_array(data_get($evidence, $group))) {
+                    $coverage[$group][$side] = [...$evidence[$group], 'applied_to_prediction' => false];
+
+                    continue;
+                }
+                $values = [];
+                foreach ($fields as $field) {
+                    $value = data_get($inputs, $side.'.metrics.'.$field);
+                    if (is_numeric($value)) {
+                        $values[$field] = (float) $value;
+                    }
+                }
+                $coverage[$group][$side] = ['status' => $values ? 'frozen_values_available_not_applied' : 'missing_frozen_evidence', 'values' => $values];
+            }
+        }
+
+        return $coverage;
     }
 
     public function summarize(array $errors): array

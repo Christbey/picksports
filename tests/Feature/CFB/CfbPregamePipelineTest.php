@@ -43,6 +43,11 @@ beforeEach(function () {
 
         return 0;
     });
+    Artisan::command('cfb:sync-preseason-team-signals {--season=} {--include-coaches} {--require-data}', function () use ($steps) {
+        $steps[] = 'personnel';
+
+        return 0;
+    });
     Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=}', function () use ($steps) {
         $steps[] = 'generation';
 
@@ -58,7 +63,7 @@ it('completes synchronous injury and odds work before generation', function () {
         return 0;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
-    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'personnel', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
 });
 
 it('stops after failed odds and releases its application lock', function () {
@@ -69,7 +74,7 @@ it('stops after failed odds and releases its application lock', function () {
         return 1;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'personnel', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds']);
     $lock = Cache::lock('cfb:pregame-pipeline');
     expect($lock->get())->toBeTrue();
     $lock->release();
@@ -128,11 +133,26 @@ it('refreshes Elo and metrics even after the daily FPI refresh is cached', funct
         return 0;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
-    expect($steps->getArrayCopy())->toBe(['elo', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
+    expect($steps->getArrayCopy())->toBe(['elo', 'personnel', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
 });
 
 it('stops when zero injuries actually means an unavailable feed', function () {
     app(SyncPlayerInjuries::class)->shouldReceive('lastSyncReliable')->andReturn(false);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($this->steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'roster', 'injury']);
+    expect($this->steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'personnel', 'roster', 'injury']);
+});
+
+it('requires personnel data and retries an empty refresh without caching success', function () {
+    $attempts = 0;
+    Artisan::command('cfb:sync-preseason-team-signals {--season=} {--include-coaches} {--require-data}', function () use (&$attempts) {
+        expect($this->option('require-data'))->toBeTrue();
+        $attempts++;
+
+        return $attempts === 1 ? 1 : 0;
+    });
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
+    expect(Cache::has('cfb:personnel:v2:2026:2026-09-18'))->toBeFalse();
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect($attempts)->toBe(2)->and(Cache::has('cfb:personnel:v2:2026:2026-09-18'))->toBeTrue();
 });

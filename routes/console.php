@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\NFL\Game;
+use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CommandHeartbeatService;
 use App\Services\NFL\Predictions\NflPregameHorizon;
 use App\Support\CFB\CfbWeek;
@@ -1243,7 +1244,17 @@ $scheduleSportPipeline(
 $cfbCanonicalPipelineEnabled = fn (): bool => $cfbInSeason()
     && (bool) config('prediction_lifecycle.canonical_pipeline.cfb', false);
 $scheduleDailySeasonJob("cfb:evaluate-canonical-predictions --season={$fallSeasonYear}", '03:05', $cfbCanonicalPipelineEnabled, 'CFB: Evaluate Canonical Predictions');
-$scheduleDailySeasonJob('sports:settle-bet-decisions --sport=cfb', '03:10', $cfbCanonicalPipelineEnabled, 'CFB: Settle Model Decisions');
+$scheduleDailySeasonJob('sports:settle-bet-decisions --sport=cfb --regrade-cfb', '03:10', $cfbCanonicalPipelineEnabled, 'CFB: Settle Model Decisions');
+$scheduleDailySeasonJob("cfb:report-frozen-decisions --season={$fallSeasonYear}", '03:15', $cfbCanonicalPipelineEnabled, 'CFB: Audit Frozen Bet Decisions')
+    ->appendOutputTo(storage_path('logs/cfb-frozen-decisions.log'));
+$scheduleDailySeasonJob("cfb:compare-frozen-baselines --season={$fallSeasonYear}", '03:20', $cfbCanonicalPipelineEnabled, 'CFB: Compare Frozen Spread Baselines')
+    ->appendOutputTo(storage_path('logs/cfb-frozen-baselines.log'));
+$cfbSpreadCandidateCommand = 'cfb:train-spread-calibration --release-version='.
+    CfbCalculationReleaseDefinition::SEMANTIC_VERSION;
+$cfbSpreadCandidateEvent = Schedule::command($cfbSpreadCandidateCommand)->weeklyOn(2, '02:10')
+    ->when($cfbCanonicalPipelineEnabled)->withoutOverlapping(180)->onOneServer()->runInBackground()
+    ->appendOutputTo(storage_path('logs/cfb-spread-calibration.log'))->name('CFB: Evaluate Spread Calibration Challenger');
+$attachCommandHeartbeat($cfbSpreadCandidateEvent, $cfbSpreadCandidateCommand, 'CFB: Evaluate Spread Calibration Challenger');
 $scheduleDailySeasonJob("cfb:generate-canonical-predictions --season={$fallSeasonYear} --week={$cfbCurrentRegularSeasonWeek} --days-forward=8", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
 $cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=2";
 $cfbPregamePipelineEvent = Schedule::command($cfbPregamePipelineCommand)

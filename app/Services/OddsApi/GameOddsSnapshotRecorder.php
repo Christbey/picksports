@@ -36,7 +36,7 @@ class GameOddsSnapshotRecorder
             // football quotes permanently stale after their first capture.
             $refreshAfterMinutes = max(1, (int) floor(
                 ($sport === 'cfb'
-                    ? (int) config('cfb.predictions.spread_value.maximum_quote_age_hours', 6) * 60
+                    ? (int) config('cfb.predictions.spread_value.maximum_quote_age_minutes', 60)
                     : (int) config('nfl.predictions.pregame_market.maximum_quote_age_minutes', 60)) / 2,
             ));
             if (! in_array($sport, ['nfl', 'cfb'], true)

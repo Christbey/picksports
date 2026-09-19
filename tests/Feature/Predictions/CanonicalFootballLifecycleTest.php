@@ -336,7 +336,7 @@ it('can generate and verify only the requested CFB week', function () {
         ->and(app(CfbCanonicalCutoverReadinessService::class)->report(2026, 2)['ready_for_cutover'])->toBeFalse();
 });
 
-it('highlights a statistically supported CFB away cover edge against an inflated favorite line', function () {
+it('holds an apparent CFB edge without two priced books and calibrated cover evidence', function () {
     $definition = [
         'sport' => 'cfb', 'game' => Game::class, 'team' => Team::class,
         'metric' => TeamMetric::class, 'legacy_prediction' => Prediction::class,
@@ -408,22 +408,20 @@ it('highlights a statistically supported CFB away cover edge against an inflated
     $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')->assertOk()
         ->assertJsonPath('data.0.value_signal.has_playable_value', false)
         ->assertJsonPath('data.0.value_signal.spread_assessment.status', 'insufficient_evidence')
-        ->assertJsonPath('data.0.value_signal.spread_assessment.risk_flags.0', 'stale_market_quote');
+        ->assertJsonPath('data.0.value_signal.market_confirmation.supported', false);
     MarketQuote::query()->update(['captured_at' => now()]);
 
     $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')
         ->assertOk()
-        ->assertJsonPath('data.0.value_signal.has_playable_value', true)
-        ->assertJsonPath('data.0.value_signal.play_count', 1)
+        ->assertJsonPath('data.0.value_signal.has_playable_value', false)
+        ->assertJsonPath('data.0.value_signal.play_count', 0)
         ->assertJsonPath('data.0.value_signal.best.side', 'away')
         ->assertJsonPath('data.0.value_signal.best.edge', 14)
-        ->assertJsonPath('data.0.value_signal.best.is_key_edge', true)
+        ->assertJsonPath('data.0.value_signal.best.is_key_edge', false)
         ->assertJsonPath('data.0.value_signal.best.stats_supported', true)
-        ->assertJsonPath('data.0.value_signal.best.grade', 'Key')
-        ->assertJsonPath('data.0.value_signal.best.statistical_support.home_sample_games', 12)
-        ->assertJsonPath('data.0.value_signal.best.statistical_support.away_sample_games', 12)
-        ->assertJsonPath('data.0.value_signal.best.market_evidence.source', 'market_quotes_consensus')
-        ->assertJsonPath('data.0.value_signal.best.risk_flags.0', 'extreme_model_market_disagreement')
+        ->assertJsonPath('data.0.value_signal.best.grade', 'Watch')
+        ->assertJsonPath('data.0.value_signal.market_confirmation.supported', false)
+        ->assertJsonPath('data.0.value_signal.cover_probability_evidence.status', 'unavailable')
         ->assertJsonPath('data.0.market_summary.has_odds', true)
         ->assertJson(fn ($json) => $json->whereType('data.0.value_signal.best.label', 'string')->etc());
 

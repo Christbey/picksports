@@ -34,3 +34,12 @@ it('excludes late snapshots and cannot label retroactively rebuilt ratings as hi
     expect($result['paired'])->toBeFalse()->and($result['margins'])->not->toHaveKey('corrected_elo')
         ->and($result['margins'])->not->toHaveKey('fixed_half_blend');
 });
+
+it('keeps exclusive and overlapping large market spread buckets explicit at boundaries', function () {
+    $service = new CfbFrozenBaselineComparison;
+    expect($service->spreadBuckets(-19.5)['exclusive'])->toBe('under_20')
+        ->and($service->spreadBuckets(-20)['exclusive'])->toBe('20_to_under_28')
+        ->and($service->spreadBuckets(28)['exclusive'])->toBe('28_to_under_35')
+        ->and($service->spreadBuckets(-35))->toBe(['exclusive' => '35_plus', 'cumulative' => ['20_plus', '28_plus', '35_plus']])
+        ->and($service->spreadBuckets(null)['exclusive'])->toBe('missing_market_spread');
+});

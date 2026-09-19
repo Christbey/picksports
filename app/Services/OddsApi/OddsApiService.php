@@ -80,7 +80,9 @@ class OddsApiService
         $params = $this->withApiKey([
             'regions' => 'us',
             'markets' => 'h2h,spreads,totals',
-            'bookmakers' => 'draftkings',
+            'bookmakers' => $sport === 'americanfootball_ncaaf'
+                ? implode(',', (array) config('cfb.odds.bookmakers', ['draftkings', 'fanduel', 'betmgm']))
+                : 'draftkings',
             'oddsFormat' => 'american',
         ]);
 
@@ -371,6 +373,7 @@ class OddsApiService
                 $bookmakerData = [
                     'key' => $bookmaker['key'] ?? null,
                     'title' => $bookmaker['title'] ?? null,
+                    'last_update' => $bookmaker['last_update'] ?? null,
                     'markets' => [],
                 ];
 
@@ -378,6 +381,7 @@ class OddsApiService
                     foreach ($bookmaker['markets'] as $market) {
                         $marketData = [
                             'key' => $market['key'] ?? null,
+                            'last_update' => $market['last_update'] ?? null,
                             'outcomes' => $market['outcomes'] ?? [],
                         ];
                         $bookmakerData['markets'][] = $marketData;

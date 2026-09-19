@@ -63,6 +63,15 @@ class RunPregamePipelineCommand extends Command
 
                 return self::FAILURE;
             }
+            $personnelKey = 'cfb:personnel:v2:'.$season.':'.now('America/Chicago')->toDateString();
+            if (! Cache::has($personnelKey)) {
+                if ($this->call('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--require-data' => true]) !== self::SUCCESS) {
+                    $this->error('Personnel source refresh failed; generation stopped.');
+
+                    return self::FAILURE;
+                }
+                Cache::put($personnelKey, true, now()->addHours(24));
+            }
             $teams = $games->flatMap(fn ($g) => [$g->homeTeam, $g->awayTeam])->filter()->unique('id');
             foreach ($teams as $team) {
                 $rosterKey = 'cfb:prop-roster:'.$team->id.':'.now('America/Chicago')->toDateString();

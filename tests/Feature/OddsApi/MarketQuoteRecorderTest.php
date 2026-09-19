@@ -150,13 +150,13 @@ it('records a new CFB observation of unchanged odds without rewriting prior capt
     $recorder = app(GameOddsSnapshotRecorder::class);
     $event = ['id' => 'cfb-refresh', 'commence_time' => '2026-09-19T20:00:00Z'];
     $first = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T08:00:00Z'));
-    $skipped = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T10:59:00Z'));
-    $fresh = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T11:00:00Z'));
+    $skipped = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T08:29:00Z'));
+    $fresh = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T08:30:00Z'));
 
     expect($skipped)->toBeNull()
         ->and($fresh)->not->toBeNull()
         ->and($fresh->id)->not->toBe($first->id)
         ->and($first->fresh()->captured_at->utc()->toIso8601String())->toBe('2026-09-19T08:00:00+00:00')
-        ->and($fresh->captured_at->utc()->toIso8601String())->toBe('2026-09-19T11:00:00+00:00')
+        ->and($fresh->captured_at->utc()->toIso8601String())->toBe('2026-09-19T08:30:00+00:00')
         ->and(MarketQuote::where('game_odds_snapshot_id', $fresh->id)->count())->toBe(2);
 });

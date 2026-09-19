@@ -35,8 +35,21 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
         $inputs['event']['week'] = (int) $event->cfbGame->week;
         $sourceTimestamps = $snapshot->sourceTimestamps;
         $inputs['require_versioned_elo'] = (bool) data_get($release->configuration, 'inputs.point_in_time_elo', false);
+        $inputs['require_personnel_evidence'] = (bool) data_get($release->configuration, 'inputs.personnel_evidence', false);
         foreach (['home', 'away'] as $side) {
             $game = $event->cfbGame;
+            if ($inputs['require_personnel_evidence']) {
+                $inputs[$side]['large_spread_evidence'] = app(CfbLargeSpreadEvidence::class)->forGame(
+                    $game, $inputs[$side]['team_id'], $snapshot->capturedAt, $snapshot->cutoffAt);
+                $sourceTimestamps[$side.'_large_spread'] = $inputs[$side]['large_spread_evidence']['latest_source_observed_at'] ?? null;
+                $inputs[$side]['personnel'] = app(CfbPersonnelEvidence::class)->forTeam(
+                    $game, $inputs[$side]['team_id'], $snapshot->capturedAt, $snapshot->cutoffAt);
+                foreach ($inputs[$side]['personnel']['components'] as $name => $component) {
+                    if ($component['status'] === 'verified') {
+                        $sourceTimestamps[$side.'_personnel_'.$name] = $component['observed_at'];
+                    }
+                }
+            }
             if ($inputs['require_versioned_elo']) {
                 $elo = app(CfbPointInTimeElo::class)->forTeam($inputs[$side]['team_id'], (int) $event->season,
                     $snapshot->capturedAt, $snapshot->cutoffAt, (float) data_get($release->configuration, 'elo.default', 1500));

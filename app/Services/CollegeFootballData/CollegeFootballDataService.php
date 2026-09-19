@@ -144,6 +144,12 @@ class CollegeFootballDataService
         ]);
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function getCoaches(int $year): array
+    {
+        return $this->get('/coaches', ['year' => $year]);
+    }
+
     /**
      * @return array<int, array<string, mixed>>
      */

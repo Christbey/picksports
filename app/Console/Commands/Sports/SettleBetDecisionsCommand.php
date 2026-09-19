@@ -6,6 +6,8 @@ use App\Models\BetDecision;
 use App\Models\BetSettlement;
 use App\Models\MarketQuote;
 use App\Models\NBA\Game;
+use App\Services\CFB\Predictions\CfbStoredPregameQuote;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Support\MLB\MlbLineScores;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +17,7 @@ class SettleBetDecisionsCommand extends Command
 {
     protected $signature = 'sports:settle-bet-decisions
         {--sport= : Restrict to one sport}
+        {--regrade-cfb : Audit and refresh existing CFB final settlements; requires --sport=cfb}
         {--limit=0 : Optional decision limit}';
 
     protected $description = 'Settle immutable decisions and retain actual and counterfactual feedback';
@@ -31,9 +34,15 @@ class SettleBetDecisionsCommand extends Command
 
     public function handle(): int
     {
+        if ($this->option('regrade-cfb') && strtolower((string) $this->option('sport')) !== 'cfb') {
+            $this->error('--regrade-cfb requires --sport=cfb.');
+
+            return self::FAILURE;
+        }
         $query = BetDecision::query()
             ->where(function ($pending): void {
                 $pending->whereDoesntHave('settlement')
+                    ->when($this->option('regrade-cfb'), fn ($query) => $query->orWhere('sport', 'cfb'))
                     ->orWhere(fn ($decision) => $decision->where('sport', 'nfl')
                         ->whereHas('settlement', fn ($settlement) => $settlement->whereExists(function ($game): void {
                             $game->selectRaw('1')->from('nfl_games as corrected_game')
@@ -48,7 +57,8 @@ class SettleBetDecisionsCommand extends Command
                                 });
                         })));
             })
-            ->whereNotIn('status', ['held_candidate', 'model_hold'])
+            ->where(fn ($query) => $query->whereNotIn('status', ['held_candidate', 'model_hold'])
+                ->when($this->option('regrade-cfb'), fn ($existing) => $existing->orWhereHas('settlement')))
             ->when($this->option('sport'), fn ($builder) => $builder->where('sport', strtolower((string) $this->option('sport'))))
             ->orderBy('id');
 
@@ -84,9 +94,16 @@ class SettleBetDecisionsCommand extends Command
                 continue;
             }
 
-            $shadowProfit = $grade['push']
+            $missingCfbPrice = $decision->sport === 'cfb' && (! is_numeric($decision->price) || abs((float) $decision->price) < 100);
+            if ($missingCfbPrice && (! $this->option('regrade-cfb') || ! $decision->settlement()->exists())) {
+                $this->warn("CFB decision {$decision->id} has no valid entry price; return settlement withheld.");
+
+                continue;
+            }
+
+            $shadowProfit = $missingCfbPrice ? null : ($grade['push']
                 ? 0.0
-                : ($grade['won'] ? $this->winProfit($decision->price) : -1.0);
+                : ($grade['won'] ? $this->winProfit($decision->price) : -1.0));
             $closingQuoteSelection = $this->closingQuote($decision, $marketType);
             $closingQuote = $closingQuoteSelection['quote'];
             $clv = $this->closingLineValue($decision, $closingQuote, $marketType);
@@ -94,7 +111,7 @@ class SettleBetDecisionsCommand extends Command
             $values = [
                 'result_status' => $grade['push'] ? 'push' : ($grade['won'] ? 'win' : 'loss'),
                 'result_value' => $grade['result_value'],
-                'profit_units' => $decision->is_bet ? $shadowProfit : 0.0,
+                'profit_units' => $missingCfbPrice ? null : ($decision->is_bet ? $shadowProfit : 0.0),
                 'closing_price' => $closingQuote?->price,
                 'closing_line' => $closingQuote?->line,
                 'clv' => $clv['value'],
@@ -123,12 +140,18 @@ class SettleBetDecisionsCommand extends Command
                         ?? $closingQuote?->bookmaker_title,
                     'consensus_bookmaker_count' => $closingQuoteSelection['bookmaker_count'],
                     'clv_type' => $clv['type'],
+                    ...($decision->sport === 'cfb' ? ['return_status' => $missingCfbPrice ? 'missing_entry_price' : 'priced',
+                        'exclude_from_return_metrics' => $missingCfbPrice, 'closing_policy' => 'last_stored_pregame_quote',
+                        'closing_quote_stored_at' => $closingQuote?->created_at?->toIso8601String()] : []),
                 ],
             ];
             $settlement = DB::transaction(function () use ($decision, $values): BetSettlement {
                 $existing = BetSettlement::query()->where('bet_decision_id', $decision->id)->lockForUpdate()->first();
                 if ($existing === null) {
                     return BetSettlement::query()->firstOrCreate(['bet_decision_id' => $decision->id], $values);
+                }
+                if ($decision->sport === 'cfb' && $this->option('regrade-cfb')) {
+                    return $this->regradeCfb($existing, $values);
                 }
                 if ($decision->sport !== 'nfl'
                     || (data_get($existing->metadata, 'home_score') == $values['metadata']['home_score']
@@ -172,10 +195,45 @@ class SettleBetDecisionsCommand extends Command
 
         $this->info("Settled {$settled} decision(s).");
         if ($corrected > 0) {
-            $this->info("Corrected {$corrected} NFL settlement(s) from changed official final scores.");
+            $this->info($this->option('regrade-cfb')
+                ? "Regraded {$corrected} CFB settlement(s) with preserved audit history."
+                : "Corrected {$corrected} NFL settlement(s) from changed official final scores.");
         }
 
         return self::SUCCESS;
+    }
+
+    private function regradeCfb(BetSettlement $existing, array $values): BetSettlement
+    {
+        $columns = ['result_status', 'result_value', 'profit_units', 'closing_price', 'closing_line', 'clv'];
+        $metadataKeys = array_keys($values['metadata']);
+        $comparable = static function (array $attributes) use ($columns, $metadataKeys): array {
+            $result = array_intersect_key($attributes, array_flip($columns));
+            foreach (['result_value' => 4, 'profit_units' => 4, 'closing_line' => 3, 'clv' => 6] as $key => $precision) {
+                $result[$key] = is_numeric($result[$key] ?? null) ? round((float) $result[$key], $precision) : null;
+            }
+            $result['closing_price'] = is_numeric($result['closing_price'] ?? null) ? (int) $result['closing_price'] : null;
+            $result['metadata'] = array_intersect_key((array) ($attributes['metadata'] ?? []), array_flip($metadataKeys));
+
+            return $result;
+        };
+        $hasher = app(CanonicalPayloadHasher::class);
+        if (hash_equals($hasher->hash($comparable($existing->toArray())), $hasher->hash($comparable($values)))) {
+            return $existing;
+        }
+        $previous = $existing->toArray();
+        unset($previous['metadata']['cfb_regrades']);
+        $values['metadata'] = [...(array) $existing->metadata, ...$values['metadata'],
+            'cfb_regrades' => [...(array) data_get($existing->metadata, 'cfb_regrades', []), [
+                'revision' => count((array) data_get($existing->metadata, 'cfb_regrades', [])) + 1,
+                'regraded_at' => now()->toIso8601String(),
+                'reason' => 'explicit_cfb_score_price_and_last_stored_pregame_closing_regrade',
+                'previous_settlement' => $previous,
+            ]]];
+        $values['settled_at'] = $existing->settled_at;
+        $existing->update($values);
+
+        return $existing;
     }
 
     private function marketType(BetDecision $decision): ?string
@@ -275,6 +333,16 @@ class SettleBetDecisionsCommand extends Command
             'spread' => 'spreads',
             'total' => 'totals',
         };
+
+        if ($decision->sport === 'cfb') {
+            $game = \App\Models\CFB\Game::query()->with('sportEvent')->find($decision->game_id);
+            $kickoff = $game?->sportEvent?->starts_at ?? $decision->game_start_at;
+            $quote = $kickoff ? app(CfbStoredPregameQuote::class)
+                ->latest((int) $decision->game_id, $marketKey, (string) $decision->side, $kickoff) : null;
+
+            return ['quote' => $quote, 'selection' => $quote ? 'last_stored_pregame_quote' : null,
+                'bookmaker_count' => $quote ? 1 : 0];
+        }
 
         $query = MarketQuote::query()
             ->where('sport', $decision->sport)

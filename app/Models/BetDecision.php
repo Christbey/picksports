@@ -75,6 +75,15 @@ class BetDecision extends Model
 
     protected static function booted(): void
     {
+        $protectCfbDecision = static function (BetDecision $decision): void {
+            if ($decision->getOriginal('sport') === 'cfb'
+                && data_get($decision->getOriginal('explanation'), 'authority') === 'cfb_canonical_prospective_decision') {
+                throw new \LogicException('Frozen CFB decisions are immutable; create a fresh prediction revision for reassessment.');
+            }
+        };
+        static::updating($protectCfbDecision);
+        static::deleting($protectCfbDecision);
+
         static::saving(function (BetDecision $decision): void {
             if (! $decision->shadow_model_output_id) {
                 return;

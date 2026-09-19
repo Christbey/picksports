@@ -77,6 +77,7 @@ class PreseasonTeamSignal extends Model
         'coaching_continuity_payload',
         'data_quality_status',
         'synced_at',
+        'source_evidence',
     ];
 
     protected static function newFactory(): CfbPreseasonTeamSignalFactory
@@ -128,6 +129,7 @@ class PreseasonTeamSignal extends Model
             'coordinator_continuity_score' => 'decimal:3',
             'coaching_continuity_payload' => 'array',
             'synced_at' => 'datetime',
+            'source_evidence' => 'array',
         ];
     }
 

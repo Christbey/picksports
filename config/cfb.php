@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'odds' => ['bookmakers' => ['draftkings', 'fanduel', 'betmgm']],
 
     /*
     |--------------------------------------------------------------------------
@@ -255,7 +256,11 @@ return [
                 'maximum_rating_age_days' => 14,
             ],
             'minimum_metric_reliability' => env('CFB_SPREAD_VALUE_MINIMUM_METRIC_RELIABILITY', 0.75),
-            'minimum_books' => env('CFB_SPREAD_VALUE_MINIMUM_BOOKS', 1),
+            'minimum_books' => env('CFB_SPREAD_VALUE_MINIMUM_BOOKS', 2),
+            'maximum_quote_age_minutes' => 60,
+            'minimum_american_price' => -125,
+            'maximum_american_price' => 200,
+            'calibration_artifact_id' => env('CFB_SPREAD_CALIBRATION_ARTIFACT_ID'),
             'maximum_book_line_range' => env('CFB_SPREAD_VALUE_MAXIMUM_BOOK_LINE_RANGE', 2.5),
             'maximum_quote_age_hours' => env('CFB_SPREAD_VALUE_MAXIMUM_QUOTE_AGE_HOURS', 6),
         ],

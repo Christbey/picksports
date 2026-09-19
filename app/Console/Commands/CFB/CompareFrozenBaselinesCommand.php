@@ -4,6 +4,7 @@ namespace App\Console\Commands\CFB;
 
 use App\Models\SportEvent;
 use App\Services\CFB\Predictions\CfbFrozenBaselineComparison;
+use App\Services\CFB\Predictions\CfbStoredPregameQuote;
 use Illuminate\Console\Command;
 
 class CompareFrozenBaselinesCommand extends Command
@@ -12,14 +13,14 @@ class CompareFrozenBaselinesCommand extends Command
 
     protected $description = 'Read-only comparison of fixed FPI/Elo baselines using frozen contemporaneous pregame snapshots';
 
-    public function handle(CfbFrozenBaselineComparison $comparison): int
+    public function handle(CfbFrozenBaselineComparison $comparison, CfbStoredPregameQuote $quotes): int
     {
         if (! ctype_digit((string) $this->option('season'))) {
             $this->error('An explicit --season is required.');
 
             return self::FAILURE;
         }
-        $rows = $excluded = $cohorts = [];
+        $rows = $excluded = $cohorts = $coverage = [];
         $events = SportEvent::query()->where('sport', 'cfb')->where('season', (int) $this->option('season'))
             ->whereHas('cfbGame', fn ($q) => $q->where('status', 'STATUS_FINAL'))
             ->with('cfbGame')->orderBy('starts_at')->get();
@@ -42,6 +43,15 @@ class CompareFrozenBaselinesCommand extends Command
             foreach ($evaluation['unavailable'] ?? [] as $reason) {
                 $excluded[$reason] = ($excluded[$reason] ?? 0) + 1;
             }
+            $quote = $quotes->latest($game->id, 'spreads', 'home', $event->starts_at, $snapshot->captured_at);
+            $marketLine = $quote?->bookmaker_home_line ?? $quote?->line;
+            $buckets = $comparison->spreadBuckets(is_numeric($marketLine) ? (float) $marketLine : null);
+            foreach (['pace', 'late_game'] as $feature) {
+                foreach (['home', 'away'] as $side) {
+                    $key = $feature.':'.$side.':'.data_get($evaluation, 'evidence_coverage.'.$feature.'.'.$side.'.status', 'missing_frozen_evidence');
+                    $coverage[$key] = ($coverage[$key] ?? 0) + 1;
+                }
+            }
             foreach ($evaluation['errors'] ?? [] as $model => $error) {
                 $cohorts['available'][$model][] = $error;
                 if ($evaluation['paired']) {
@@ -50,10 +60,15 @@ class CompareFrozenBaselinesCommand extends Command
                     // This is a model-margin bucket, not a market favorite-size claim.
                     $bucket = abs($evaluation['margins']['fpi']) >= 20 ? 'fpi_margin_20_plus' : 'fpi_margin_under_20';
                     $cohorts[$bucket][$model][] = $error;
+                    $cohorts['market_spread_exclusive:'.$buckets['exclusive']][$model][] = $error;
+                    foreach ($buckets['cumulative'] as $largeBucket) {
+                        $cohorts['market_spread_cumulative:'.$largeBucket][$model][] = $error;
+                    }
                 }
             }
             $rows[] = ['game_id' => $game->id, 'snapshot_id' => $snapshot->id, 'starts_at' => $event->starts_at,
-                'captured_at' => $snapshot->captured_at, ...$evaluation];
+                'captured_at' => $snapshot->captured_at, 'actual_home_margin' => (float) $game->home_score - (float) $game->away_score, 'market_quote_id' => $quote?->id,
+                'market_home_line' => $marketLine, 'spread_buckets' => $buckets, ...$evaluation];
         }
         $summary = [];
         foreach ($cohorts as $cohort => $models) {
@@ -67,9 +82,11 @@ class CompareFrozenBaselinesCommand extends Command
             'coefficients' => ['elo_points_per_score_point' => 25, 'home_field_points' => 2.2, 'blend_elo_weight' => 0.5],
             'limitations' => ['Not the contextual production calculator; coefficients are not newly calibrated.',
                 'Retrospective Elo rebuilt after kickoff cannot enter frozen snapshots.',
-                'ATS, CLV and probability calibration are not evaluated; this command does not read market quote history.',
+                'ATS and price-adjusted returns/CLV are reported separately by cfb:report-frozen-decisions; these baselines are not historical recommendations.',
+                'Market-spread cohorts use only quotes stored by snapshot capture; cumulative 20+/28+/35+ overlap, exclusive bands do not.',
+                'Pace and late-game fields are coverage diagnostics only; missing evidence is never imputed.',
                 'Available cohorts may differ; compare models only on the paired cohort.'],
-            'excluded' => $excluded, 'summary' => $summary, 'rows' => $rows], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
+            'excluded' => $excluded, 'feature_coverage' => $coverage, 'summary' => $summary, 'rows' => $rows], JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR));
 
         return self::SUCCESS;
     }

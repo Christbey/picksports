@@ -2,6 +2,7 @@
 
 namespace App\Services\CFB\Predictions;
 
+use App\Actions\CFB\CalculateElo;
 use Carbon\CarbonImmutable;
 
 /** Fixed-coefficient diagnostics on frozen pregame evidence; never fits on held-out outcomes. */
@@ -33,7 +34,7 @@ class CfbFrozenBaselineComparison
                 && $safeEvidence(data_get($inputs, $side.'.rating_evidence.observed_at'));
             $eloAvailable = $eloAvailable && is_numeric(data_get($inputs, $side.'.elo'))
                 && data_get($inputs, $side.'.elo_evidence.qualified') === true
-                && data_get($inputs, $side.'.elo_evidence.model_version') === 'cfb-elo-2.0.0'
+                && data_get($inputs, $side.'.elo_evidence.model_version') === CalculateElo::MODEL_VERSION
                 && $safeEvidence(data_get($inputs, $side.'.elo_evidence.observed_at'));
         }
         $margins = [];

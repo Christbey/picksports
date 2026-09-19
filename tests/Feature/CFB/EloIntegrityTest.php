@@ -167,3 +167,26 @@ it('matches chronological replay when same-day event IDs disagree with kickoff o
     expect((float) EloRating::where('team_id', $a->id)->where('game_id', $later->id)->firstOrFail()->elo_before)
         ->toBe((float) EloRating::where('team_id', $a->id)->where('game_id', $earlier->id)->firstOrFail()->elo_rating);
 });
+
+it('rounds a half-point transfer once without inflating combined team ratings', function () {
+    [$a, $b] = integrityTeams();
+    $game = integrityGame($a, $b, '2026-09-05');
+    config(['cfb.elo.home_field_advantage' => 0, 'cfb.elo.base_k_factor' => 39,
+        'cfb.elo.recency_multiplier' => 1, 'cfb.elo.mov_coefficient' => 0]);
+    $result = app(CalculateElo::class)->execute($game);
+    expect($result['home_new_elo'])->toBe(1520)->and($result['away_new_elo'])->toBe(1480)
+        ->and($result['home_change'] + $result['away_change'])->toBe(0.0)
+        ->and((float) $a->fresh()->elo_rating + (float) $b->fresh()->elo_rating)->toBe(3000.0);
+    $candidate = app(EloRebuildService::class)->build();
+    expect($candidate['integrity_validated'])->toBeTrue();
+});
+
+it('rejects a candidate from an older model before activation', function () {
+    [$a, $b] = integrityTeams();
+    integrityGame($a, $b, '2026-09-05');
+    $service = app(EloRebuildService::class);
+    $candidate = $service->build();
+    DB::table('cfb_elo_rebuilds')->where('id', $candidate['id'])->update(['model_version' => 'cfb-elo-2.0.0']);
+    expect(fn () => $service->activate($candidate['id']))->toThrow(RuntimeException::class, 'another model version');
+    expect(EloRating::count())->toBe(0);
+});

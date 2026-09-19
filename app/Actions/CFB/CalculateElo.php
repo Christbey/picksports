@@ -55,7 +55,7 @@ class CalculateElo extends AbstractEloCalculator
         return $this->resolveLogMarginMultiplier($margin, (float) $coefficient, (float) $maxMultiplier);
     }
 
-    public const MODEL_VERSION = 'cfb-elo-2.0.0';
+    public const MODEL_VERSION = 'cfb-elo-2.0.1';
 
     public function fingerprint(Model $game): string
     {
@@ -86,10 +86,11 @@ class CalculateElo extends AbstractEloCalculator
         $this->validateResult($game);
         $advantage = $game->neutral_site ? 0 : (float) config('cfb.elo.home_field_advantage', 55);
         $expected = $this->calculateExpectedScore($homeElo + $advantage, $awayElo);
-        $delta = round($this->calculateKFactor($game) * (($game->home_score > $game->away_score ? 1 : 0) - $expected), 1);
-        // Preserve the established integer rating scale, but store the actual applied delta.
-        $homeAfter = (int) round($homeElo + $delta);
-        $awayAfter = (int) round($awayElo - $delta);
+        // Round the transfer once, not each ending rating. Rounding both positive
+        // endpoints independently creates one extra Elo point at half-point ties.
+        $transfer = (int) round($this->calculateKFactor($game) * (($game->home_score > $game->away_score ? 1 : 0) - $expected));
+        $homeAfter = (int) $homeElo + $transfer;
+        $awayAfter = (int) $awayElo - $transfer;
 
         return [
             'home_change' => $homeAfter - $homeElo,

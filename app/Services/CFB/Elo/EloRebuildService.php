@@ -180,6 +180,7 @@ class EloRebuildService
             $initializations[$initialization['season'].':'.$initialization['team_id']] = $initialization;
         }
         $pairs = [];
+        $transfers = [];
         $endpoints = [];
         $latestSeason = [];
         foreach ($payload['rows'] as $row) {
@@ -201,11 +202,15 @@ class EloRebuildService
             $endpoints[$row['team_id']] = $row['elo_rating'];
             $latestSeason[$row['team_id']] = $row['season'];
             $pairs[$row['game_id']][] = $row['team_id'];
+            $transfers[$row['game_id']] = ($transfers[$row['game_id']] ?? 0) + (float) $row['elo_change'];
         }
         if ($endpoints != $payload['ratings']) {
             throw new RuntimeException('Candidate endpoints disagree with history.');
         }
-        foreach ($pairs as $pair) {
+        foreach ($pairs as $gameId => $pair) {
+            if ($transfers[$gameId] !== 0.0) {
+                throw new RuntimeException('Candidate game transfers are not zero-sum.');
+            }
             if (count($pair) !== 2 || count(array_unique($pair)) !== 2) {
                 throw new RuntimeException('Candidate contains incomplete or duplicate game pairs.');
             }

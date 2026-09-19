@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\CFB\CalculateElo;
 use App\Actions\CFB\GenerateCanonicalPrediction;
 use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
@@ -289,7 +290,7 @@ it('excludes archived Elo versions and uses exact pregame ratings without claimi
             'season_type' => 'regular', 'elo_rating' => 1520, 'elo_change' => 19.5];
         EloRating::create([...$base, 'active_slot' => null]);
         EloRating::create([...$base, 'active_slot' => 1, 'elo_before' => 1500.25,
-            'model_version' => 'cfb-elo-2.0.0', 'rebuilt_at' => now()]);
+            'model_version' => CalculateElo::MODEL_VERSION, 'rebuilt_at' => now()]);
     }
     $rows = app(CfbMoneylineCalibrationDataset::class)->rows(2025, 2025);
     expect($rows)->toHaveCount(1)->and($rows[0]['home_pregame_elo'])->toBe(1500.25)

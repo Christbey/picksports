@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\CFB\CalculateElo;
 use App\Actions\CFB\GenerateCanonicalPrediction;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
@@ -68,7 +69,7 @@ function canonicalFootballFixture(array $definition): array
     if ($definition['sport'] === 'cfb') {
         foreach ([$home, $away] as $team) {
             DB::table('cfb_elo_season_initializations')->insert([
-                'team_id' => $team->id, 'season' => 2026, 'model_version' => 'cfb-elo-2.0.0',
+                'team_id' => $team->id, 'season' => 2026, 'model_version' => CalculateElo::MODEL_VERSION,
                 'prior_rating' => $team->elo_rating, 'initial_rating' => $team->elo_rating,
                 'regression_factor' => 0.3, 'active_slot' => 1,
                 'created_at' => now()->subDay(), 'updated_at' => now()->subDay(),

@@ -43,7 +43,7 @@ class CfbPointInTimeElo
         }
         $model = $row?->model_version ?? $initial?->model_version;
         $initialId = $row?->season_initialization_id ?? $initial?->id;
-        $qualified = $model === 'cfb-elo-2.0.0' && $initialId !== null && $initial !== null
+        $qualified = $model === CalculateElo::MODEL_VERSION && $initialId !== null && $initial !== null
             && (int) $initialId === (int) $initial->id && $initial->model_version === $model;
 
         return ['rating' => (float) ($row?->elo_rating ?? $initial?->initial_rating ?? $default),

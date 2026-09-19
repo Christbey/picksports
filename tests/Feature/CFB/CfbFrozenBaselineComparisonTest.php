@@ -1,12 +1,13 @@
 <?php
 
+use App\Actions\CFB\CalculateElo;
 use App\Services\CFB\Predictions\CfbFrozenBaselineComparison;
 use Carbon\CarbonImmutable;
 
 function frozenCfbInputs(): array
 {
     $team = ['elo' => 1500, 'metrics' => ['fpi' => 0],
-        'elo_evidence' => ['qualified' => true, 'model_version' => 'cfb-elo-2.0.0', 'observed_at' => '2026-09-01T00:00:00Z'],
+        'elo_evidence' => ['qualified' => true, 'model_version' => CalculateElo::MODEL_VERSION, 'observed_at' => '2026-09-01T00:00:00Z'],
         'rating_evidence' => ['source' => 'cfbd_fpi', 'units' => 'points_above_average', 'season' => 2026, 'observed_at' => '2026-09-01T00:00:00Z']];
 
     return ['event' => ['season' => 2026, 'neutral_site' => true], 'home' => $team, 'away' => $team];

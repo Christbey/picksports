@@ -1,6 +1,6 @@
 # CFB Elo integrity and canonical release 1.4.0
 
-CFB Elo model `cfb-elo-2.0.0` uses fresh locked team state, atomic paired updates, explicit starting ratings, per-team season initialization, and source-result fingerprints. It retains the existing rating formula while repairing chronology and offseason application. The default first available season starts at 1500; subsequent seasons regress toward 1500 using the configured factor. This is not a claim of calibrated betting accuracy.
+CFB Elo model `cfb-elo-2.0.1` uses fresh locked team state, atomic paired updates, explicit starting ratings, per-team season initialization, and source-result fingerprints. It retains the existing expected-win and K-factor formula while repairing chronology and offseason application. The integer transfer is rounded once and applied equally and oppositely to both teams, preventing rounding-driven rating inflation. The default first available season starts at 1500; subsequent seasons regress toward 1500 using the configured factor. This is not a claim of calibrated betting accuracy.
 
 ## Deployment and repair
 

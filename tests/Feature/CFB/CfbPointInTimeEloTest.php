@@ -11,11 +11,11 @@ use Illuminate\Support\Facades\DB;
 it('selects observed prior-game versioned ratings instead of mutable team Elo or later result rows', function () {
     $team = Team::factory()->create(['elo_rating' => 1900]);
     $initial = DB::table('cfb_elo_season_initializations')->insertGetId(['team_id' => $team->id, 'season' => 2026,
-        'model_version' => 'cfb-elo-2.0.0', 'prior_rating' => 1500, 'initial_rating' => 1500, 'regression_factor' => 0.3,
+        'model_version' => CalculateElo::MODEL_VERSION, 'prior_rating' => 1500, 'initial_rating' => 1500, 'regression_factor' => 0.3,
         'active_slot' => 1, 'created_at' => '2026-08-01', 'updated_at' => '2026-08-01']);
     $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => Team::factory()->create()->id, 'status' => 'STATUS_FINAL', 'game_date' => '2026-09-01']);
     $row = EloRating::create(['team_id' => $team->id, 'game_id' => $game->id, 'season' => 2026, 'week' => 1,
-        'season_type' => 2, 'elo_rating' => 1520, 'elo_change' => 20, 'model_version' => 'cfb-elo-2.0.0', 'season_initialization_id' => $initial]);
+        'season_type' => 2, 'elo_rating' => 1520, 'elo_change' => 20, 'model_version' => CalculateElo::MODEL_VERSION, 'season_initialization_id' => $initial]);
     DB::table('cfb_elo_ratings')->where('id', $row->id)->update(['created_at' => '2026-09-01 05:00:00', 'updated_at' => '2026-09-01 05:00:00']);
     $service = new CfbPointInTimeElo;
     $result = $service->forTeam($team->id, 2026, CarbonImmutable::parse('2026-09-02'), CarbonImmutable::parse('2026-09-03'));
@@ -36,12 +36,12 @@ it('uses an explicitly unqualified default when no observed history or initializ
 it('derives an auditable preseason baseline from only the immediately preceding verified season', function () {
     $team = Team::factory()->create(['elo_rating' => 2200]);
     $initial = DB::table('cfb_elo_season_initializations')->insertGetId(['team_id' => $team->id, 'season' => 2025,
-        'model_version' => 'cfb-elo-2.0.0', 'prior_rating' => 1500, 'initial_rating' => 1500, 'regression_factor' => 0.3,
+        'model_version' => CalculateElo::MODEL_VERSION, 'prior_rating' => 1500, 'initial_rating' => 1500, 'regression_factor' => 0.3,
         'active_slot' => 1, 'created_at' => '2025-08-01', 'updated_at' => '2025-08-01']);
     $game = Game::factory()->create(['home_team_id' => $team->id, 'away_team_id' => Team::factory()->create()->id,
         'season' => 2025, 'status' => 'STATUS_FINAL', 'game_date' => '2025-12-01']);
     $row = EloRating::create(['team_id' => $team->id, 'game_id' => $game->id, 'season' => 2025, 'week' => 14,
-        'season_type' => 'regular', 'elo_rating' => 1600, 'elo_change' => 20, 'model_version' => 'cfb-elo-2.0.0',
+        'season_type' => 'regular', 'elo_rating' => 1600, 'elo_change' => 20, 'model_version' => CalculateElo::MODEL_VERSION,
         'season_initialization_id' => $initial, 'result_fingerprint' => app(CalculateElo::class)->fingerprint($game->fresh())]);
     DB::table('cfb_elo_ratings')->where('id', $row->id)->update(['created_at' => '2025-12-02', 'updated_at' => '2025-12-02']);
     $service = new CfbPointInTimeElo;

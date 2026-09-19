@@ -37,6 +37,8 @@ php artisan nfl:research-evaluation --book=fanduel
 
 Use repeatable `--game-id=ID` to bound recovery to specific games. Review commands exit nonzero for data-held or unavailable assessments, not only thrown exceptions. Provider failures are logged and preserved as `research_refresh_failed` in a new held assessment; the command does not silently leave yesterday's revision as current. New reports are linked immediately without overwriting older immutable revisions.
 
+Scoped uncertainty blockers remain structured records. Deduplication uses their JSON identity, not PHP's string-based `array_unique`, so game/prop/total-specific uncertainty cannot crash revision persistence or collapse different blockers into one. `--no-web` can rebuild assessments from already purchased reports after a persistence failure.
+
 `nfl:run-pregame-pipeline` now follows generation with a no-web assessment refresh and the two-day research readiness check. Its success means those checks passed too; it never silently increases AI budgets. Research remains independently batched, and full-slate held assessments are visible even while paid refreshes are deferred.
 
 Research grading accepts `--grade-limit` and `--grade-batch-size`; production

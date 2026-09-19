@@ -298,6 +298,30 @@ it('persists a new explicit hold instead of losing the entire revision on provid
         ->and($revision->brief['eligibility']['data_reasons'])->toContain('research_refresh_failed');
 });
 
+it('persists all scoped uncertainty records without array-to-string exceptions or dropping distinct blockers', function () {
+    $game = costControlGame();
+    Prediction::factory()->create(['game_id' => $game->id]);
+    $preview = ['outputs' => ['predicted_spread' => 5, 'predicted_total' => 42, 'win_probability' => .6],
+        'model_metadata' => [], 'model_version' => 'scoped-test'];
+    $this->mock(GeneratePredictionFromHistoricalElo::class, fn ($m) => $m->shouldReceive('preview')->andReturn($preview));
+    $this->mock(PlayerPropAnalyzer::class, fn ($m) => $m->shouldReceive('previewNflGame')->andReturn([['prop_id' => 1]]));
+    $gameBlocker = ['claim' => 'Starting quarterback status unresolved', 'scope' => 'game', 'blocking' => true];
+    $propBlocker = ['claim' => 'Receiver availability unresolved', 'scope' => 'props', 'blocking' => true];
+    SportsGameContextReport::create([
+        'sport' => 'nfl', 'game_id' => $game->id, 'prompt_version' => 'test', 'input_hash' => hash('sha256', 'scope-test'),
+        'status' => 'partial', 'researched_at' => now(), 'expires_at' => now()->addHour(),
+        'raw_payload' => ['decision_research' => ['unresolved' => [$gameBlocker, $propBlocker, $propBlocker]]],
+    ]);
+    $revision = app(ResearchPipeline::class)->review($game, false);
+    expect($revision->exists)->toBeTrue()
+        ->and($revision->brief['market_holds']['props'])->toContain($gameBlocker, $propBlocker)
+        ->and(collect($revision->brief['market_holds']['props'])->filter(fn ($hold) => is_array($hold)))->toHaveCount(2)
+        ->and($revision->brief['market_holds']['spread'])->toContain($gameBlocker)
+        ->and($revision->brief['market_holds']['spread'])->not->toContain($propBlocker)
+        ->and($revision->brief['player_props'][0]['research_holds'])->toContain($propBlocker)
+        ->and($revision->brief['eligibility']['status'])->toBe('hold');
+});
+
 it('keeps timeout spend unknown and prevents immediately purchasing the same request again', function () {
     Http::fake(fn () => throw new ConnectionException('Timed out'));
     $game = costControlGame();

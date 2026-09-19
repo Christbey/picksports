@@ -91,7 +91,7 @@ class ResearchPipeline
             }
             $props = app(PlayerPropAnalyzer::class)->previewNflGame($game);
             $researchHolds = array_values(array_filter($holds, fn (string $hold): bool => str_starts_with($hold, 'research_')));
-            $propHolds = array_values(array_unique([...$researchHolds, ...app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], 'props')]));
+            $propHolds = $this->marketHolds($researchHolds, $decision['unresolved'] ?? [], 'props');
             if ($propHolds !== []) {
                 $props = array_map(fn ($prop) => [...$prop, 'status' => 'hold', 'research_holds' => $propHolds], $props);
             }
@@ -105,7 +105,7 @@ class ResearchPipeline
                 'player_props' => $props,
                 'prop_angles' => $decision['prop_angles'] ?? [],
                 'unresolved' => $decision['unresolved'] ?? [],
-                'market_holds' => collect(['spread', 'total', 'moneyline', 'props'])->mapWithKeys(fn ($scope) => [$scope => array_values(array_unique([...$researchHolds, ...app(ResearchUncertaintyPolicy::class)->holdsFor($decision['unresolved'] ?? [], $scope)]))])->all(),
+                'market_holds' => collect(['spread', 'total', 'moneyline', 'props'])->mapWithKeys(fn ($scope) => [$scope => $this->marketHolds($researchHolds, $decision['unresolved'] ?? [], $scope)])->all(),
                 'facts' => $report?->facts ?? [],
                 'risk_flags' => $report?->risk_flags ?? [],
                 'model_signals' => ['qb' => data_get($preview, 'model_metadata.qb_form'), 'trenches' => data_get($preview, 'model_metadata.line_matchup'), 'injuries' => data_get($preview, 'model_metadata.depth_chart_injuries')],
@@ -134,6 +134,14 @@ class ResearchPipeline
 
             return ResearchRevision::firstOrCreate(['game_id' => $game->id, 'input_hash' => $hash], ['report_id' => $report?->id, 'baseline' => $baseline, 'revised' => [...$preview['outputs'], 'model_version' => $preview['model_version']], 'evidence' => $evidence, 'brief' => $brief, 'market' => $market, 'created_at' => now()]);
         });
+    }
+
+    /** Preserve scoped uncertainty records without array-to-string coercion. */
+    private function marketHolds(array $researchHolds, array $unresolved, string $scope): array
+    {
+        return collect([...$researchHolds, ...app(ResearchUncertaintyPolicy::class)->holdsFor($unresolved, $scope)])
+            ->unique(fn ($hold): string => json_encode($hold, JSON_THROW_ON_ERROR))
+            ->values()->all();
     }
 
     /** @param array<string, mixed> $candidate */

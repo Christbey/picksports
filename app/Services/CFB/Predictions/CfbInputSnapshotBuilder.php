@@ -14,10 +14,17 @@ use App\Services\CFB\CfbTeamEvidenceService;
 use App\Services\Predictions\Football\FootballInputSnapshotBuilder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
 
 class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
 {
     public function build(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
+    {
+        return Cache::lock('cfb-elo-integrity-write', 600)->block(15,
+            fn () => $this->buildLocked($event, $release));
+    }
+
+    private function buildLocked(SportEvent $event, CalculationReleaseData $release): EventInputSnapshotData
     {
         $snapshot = parent::build($event, $release);
         if (! data_get($release->configuration, 'inputs.sample_aware_context', false)) {
@@ -27,8 +34,16 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
         $inputs = $snapshot->inputs;
         $inputs['event']['week'] = (int) $event->cfbGame->week;
         $sourceTimestamps = $snapshot->sourceTimestamps;
+        $inputs['require_versioned_elo'] = (bool) data_get($release->configuration, 'inputs.point_in_time_elo', false);
         foreach (['home', 'away'] as $side) {
             $game = $event->cfbGame;
+            if ($inputs['require_versioned_elo']) {
+                $elo = app(CfbPointInTimeElo::class)->forTeam($inputs[$side]['team_id'], (int) $event->season,
+                    $snapshot->capturedAt, $snapshot->cutoffAt, (float) data_get($release->configuration, 'elo.default', 1500));
+                $inputs[$side]['elo'] = $elo['rating'];
+                $inputs[$side]['elo_evidence'] = $elo['evidence'];
+                $sourceTimestamps[$side.'_elo'] = $elo['evidence']['observed_at'];
+            }
             $inputs[$side]['evidence_windows'] = app(CfbTeamEvidenceService::class)
                 ->forGame($game, $inputs[$side]['team_id']);
             $inputs[$side]['availability'] = app(CfbPlayerEvidenceService::class)
@@ -36,7 +51,8 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $prior = TeamMetric::where('team_id', $inputs[$side]['team_id'])
                 ->where('season', $event->season - 1)
                 ->where('updated_at', '<=', $snapshot->capturedAt)
-                ->whereDate('calculation_date', '<', $snapshot->cutoffAt)
+                ->where('updated_at', '<', $snapshot->cutoffAt)
+                ->whereDate('calculation_date', '<=', $snapshot->cutoffAt)
                 ->orderByDesc('calculation_date')->orderByDesc('id')->first();
             $inputs[$side]['prior_metrics'] = $prior ? $this->nullableMetrics($prior) : null;
             $inputs[$side]['prior_metric_evidence'] = [
@@ -52,6 +68,13 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 $inputs[$side]['metrics'] = $this->nullableMetrics($current);
             } else {
                 $inputs[$side]['metrics'] = null;
+            }
+            if (data_get($inputs, $side.'.elo_evidence.source_kind') === 'derived_season_initialization') {
+                // Stored absolute injury ratings use mutable team Elo, not this newly regressed baseline.
+                // Keep direct injury records; suppress only the incompatible absolute-rating delta.
+                $inputs[$side]['metrics']['injury_adjusted_team_rating'] = null;
+                $inputs[$side]['injury_rating_evidence'] = ['status' => 'metric_baseline_unaligned',
+                    'applied' => false, 'direct_injury_records_retained' => true];
             }
             if (data_get($release->configuration, 'spread.rating_baseline') === 'fpi_points') {
                 $rating = FpiRating::where('team_id', $inputs[$side]['team_id'])

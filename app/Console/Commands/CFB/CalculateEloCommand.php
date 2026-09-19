@@ -7,6 +7,8 @@ use App\Console\Commands\Sports\AbstractCalculateEloCommand;
 use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
+use App\Services\CFB\Elo\EloRebuildService;
+use Illuminate\Database\Eloquent\Builder;
 
 class CalculateEloCommand extends AbstractCalculateEloCommand
 {
@@ -27,4 +29,31 @@ class CalculateEloCommand extends AbstractCalculateEloCommand
     protected const ELO_RATING_MODEL = EloRating::class;
 
     protected const CALCULATE_ELO_ACTION = CalculateElo::class;
+
+    protected function applyAdditionalAnalyticsFilters(Builder $query): void
+    {
+        $query->reorder()->orderBy('season')->orderBy('game_date')->orderBy('game_time')->orderBy('id');
+    }
+
+    public function handle(): int
+    {
+        if ($this->option('reset')) {
+            $this->error('Destructive reset is disabled for CFB. Use cfb:rebuild-elo to review an isolated candidate.');
+
+            return self::FAILURE;
+        }
+        if ($this->option('regress')) {
+            $this->warn('Season regression is now automatic and idempotent per team; --regress is unnecessary.');
+            $this->input->setOption('regress', false);
+        }
+        try {
+            app(EloRebuildService::class)->assertActiveHistoryCurrent();
+
+            return parent::handle();
+        } catch (\RuntimeException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+    }
 }

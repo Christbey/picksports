@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\CFB\GenerateCanonicalPrediction;
+use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
@@ -41,7 +42,8 @@ it('reconstructs the exact pregame elo and never uses the result as a feature', 
         ->and($homeWin['target_home_win'])->toBe(1)
         ->and($awayWin['target_home_win'])->toBe(0)
         ->and($homeWin['home_metric_season'])->toBe(2024)
-        ->and($homeWin['availability_status'])->toBe('verified_reconstruction');
+        ->and($homeWin['availability_status'])->toBe('retrospective_unverified_reconstruction')
+        ->and($homeWin['pregame_safe'])->toBeFalse();
 });
 
 it('trains with season boundaries and registers only a challenger', function () {
@@ -101,9 +103,9 @@ it('trains with season boundaries and registers only a challenger', function () 
 it('refuses to train without four independent seasons', function () {
     $dataset = Mockery::mock(CfbMoneylineCalibrationDataset::class);
     $dataset->shouldReceive('rows')->once()->andReturn([
-        ['season' => 2023],
-        ['season' => 2024],
-        ['season' => 2025],
+        ['season' => 2023, 'pregame_safe' => true],
+        ['season' => 2024, 'pregame_safe' => true],
+        ['season' => 2025, 'pregame_safe' => true],
     ]);
     app()->instance(CfbMoneylineCalibrationDataset::class, $dataset);
 
@@ -273,3 +275,32 @@ function cfbCalibrationSourceRow(): array
         ...collect($metrics)->mapWithKeys(fn ($value, string $key): array => ["away_{$key}" => $value])->all(),
     ];
 }
+
+it('excludes archived Elo versions and uses exact pregame ratings without claiming live historical evidence', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $game = Game::factory()->create(['home_team_id' => $home->id, 'away_team_id' => $away->id,
+        'season' => 2025, 'week' => 1, 'status' => 'STATUS_FINAL', 'game_date' => '2025-09-01',
+        'game_time' => '12:00:00', 'home_score' => 30, 'away_score' => 20]);
+    foreach ([$home, $away] as $team) {
+        TeamMetric::create(['team_id' => $team->id, 'season' => 2024, 'wins' => 8, 'losses' => 4,
+            'points_per_game' => 28, 'points_allowed_per_game' => 21, 'calculation_date' => '2024-12-31']);
+        $base = ['team_id' => $team->id, 'game_id' => $game->id, 'season' => 2025, 'week' => 1,
+            'season_type' => 'regular', 'elo_rating' => 1520, 'elo_change' => 19.5];
+        EloRating::create([...$base, 'active_slot' => null]);
+        EloRating::create([...$base, 'active_slot' => 1, 'elo_before' => 1500.25,
+            'model_version' => 'cfb-elo-2.0.0', 'rebuilt_at' => now()]);
+    }
+    $rows = app(CfbMoneylineCalibrationDataset::class)->rows(2025, 2025);
+    expect($rows)->toHaveCount(1)->and($rows[0]['home_pregame_elo'])->toBe(1500.25)
+        ->and($rows[0]['elo_source'])->toBe('retrospective_rebuild')->and($rows[0]['pregame_safe'])->toBeFalse();
+});
+
+it('refuses to train a calibration challenger from unverified retrospective rows', function () {
+    $dataset = Mockery::mock(CfbMoneylineCalibrationDataset::class);
+    $dataset->shouldReceive('rows')->once()->andReturn([['season' => 2025, 'pregame_safe' => false]]);
+    app()->instance(CfbMoneylineCalibrationDataset::class, $dataset);
+    $this->artisan('cfb:train-moneyline-calibration', ['--from-season' => 2022, '--to-season' => 2025])
+        ->expectsOutput('Calibration blocked: 1 retrospective rows lack proven pregame availability; use frozen contemporaneous inputs.')
+        ->assertFailed();
+});

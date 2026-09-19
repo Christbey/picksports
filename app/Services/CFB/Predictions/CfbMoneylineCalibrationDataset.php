@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class CfbMoneylineCalibrationDataset
 {
-    public const FEATURE_VERSION = 'cfb-prior-season-core-v2';
+    public const FEATURE_VERSION = 'cfb-prior-season-core-v3';
 
     public function __construct(
         private readonly CfbCalculator $calculator,
@@ -17,8 +17,8 @@ class CfbMoneylineCalibrationDataset
     ) {}
 
     /**
-     * Reconstruct current canonical CFB win probabilities using only values that
-     * were available before each game began.
+     * Reconstruct diagnostic probabilities from current historical tables.
+     * These are retrospective features, not proof of historical availability.
      *
      * @return list<array<string, mixed>>
      */
@@ -27,11 +27,11 @@ class CfbMoneylineCalibrationDataset
         $rows = DB::table('cfb_games as games')
             ->join('cfb_elo_ratings as home_elo', function ($join): void {
                 $join->on('home_elo.game_id', '=', 'games.id')
-                    ->on('home_elo.team_id', '=', 'games.home_team_id');
+                    ->on('home_elo.team_id', '=', 'games.home_team_id')->where('home_elo.active_slot', 1);
             })
             ->join('cfb_elo_ratings as away_elo', function ($join): void {
                 $join->on('away_elo.game_id', '=', 'games.id')
-                    ->on('away_elo.team_id', '=', 'games.away_team_id');
+                    ->on('away_elo.team_id', '=', 'games.away_team_id')->where('away_elo.active_slot', 1);
             })
             ->join('cfb_team_metrics as home_metrics', function ($join): void {
                 $join->on('home_metrics.team_id', '=', 'games.home_team_id')
@@ -68,6 +68,12 @@ class CfbMoneylineCalibrationDataset
                 'games.home_score',
                 'games.away_score',
                 'games.neutral_site',
+                'home_elo.elo_before as home_elo_before',
+                'away_elo.elo_before as away_elo_before',
+                'home_elo.model_version as home_elo_model_version',
+                'away_elo.model_version as away_elo_model_version',
+                'home_elo.rebuilt_at as home_elo_rebuilt_at',
+                'away_elo.rebuilt_at as away_elo_rebuilt_at',
                 'home_elo.elo_rating as home_postgame_elo',
                 'home_elo.elo_change as home_elo_change',
                 'away_elo.elo_rating as away_postgame_elo',
@@ -93,11 +99,11 @@ class CfbMoneylineCalibrationDataset
         $configuration = $this->releaseDefinition->configuration();
         $configurationHash = hash('sha256', json_encode($configuration, JSON_THROW_ON_ERROR));
         $capturedAt = CarbonImmutable::parse(
-            trim((string) $row['game_date'].' '.(string) ($row['game_time'] ?? '00:00:00')),
+            trim(substr((string) $row['game_date'], 0, 10).' '.(string) ($row['game_time'] ?? '00:00:00')),
             config('app.timezone'),
         );
-        $homePregameElo = (float) $row['home_postgame_elo'] - (float) $row['home_elo_change'];
-        $awayPregameElo = (float) $row['away_postgame_elo'] - (float) $row['away_elo_change'];
+        $homePregameElo = isset($row['home_elo_before']) ? (float) $row['home_elo_before'] : (float) $row['home_postgame_elo'] - (float) $row['home_elo_change'];
+        $awayPregameElo = isset($row['away_elo_before']) ? (float) $row['away_elo_before'] : (float) $row['away_postgame_elo'] - (float) $row['away_elo_change'];
 
         $snapshot = new EventInputSnapshotData(
             schemaVersion: CfbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION,
@@ -120,7 +126,7 @@ class CfbMoneylineCalibrationDataset
             capturedAt: $capturedAt,
             cutoffAt: $capturedAt,
             latestSourceAvailableAt: $capturedAt,
-            pregameSafetyStatus: 'verified_reconstruction',
+            pregameSafetyStatus: 'retrospective_unverified_reconstruction',
             metadata: [
                 'reconstruction_profile' => self::FEATURE_VERSION,
                 'injuries_available' => false,
@@ -156,8 +162,12 @@ class CfbMoneylineCalibrationDataset
             'home_team_id' => (int) $row['home_team_id'],
             'away_team_id' => (int) $row['away_team_id'],
             'reconstruction_profile' => self::FEATURE_VERSION,
-            'pregame_safe' => true,
-            'availability_status' => 'verified_reconstruction',
+            'pregame_safe' => false,
+            'availability_status' => 'retrospective_unverified_reconstruction',
+            'historical_availability_proven' => false,
+            'elo_source' => ($row['home_elo_rebuilt_at'] ?? null) || ($row['away_elo_rebuilt_at'] ?? null) ? 'retrospective_rebuild' : 'historical_table_reconstruction',
+            'home_elo_model_version' => $row['home_elo_model_version'] ?? null,
+            'away_elo_model_version' => $row['away_elo_model_version'] ?? null,
             'home_metric_season' => (int) $row['home_metric_season'],
             'away_metric_season' => (int) $row['away_metric_season'],
             'home_pregame_elo' => round($homePregameElo, 4),

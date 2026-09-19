@@ -24,12 +24,21 @@ beforeEach(function () {
 
         return 100;
     });
-    $this->mock(SyncPlayerInjuries::class)->shouldReceive('execute')->andReturnUsing(function () use ($steps) {
+    $injuryMock = $this->mock(SyncPlayerInjuries::class);
+    $injuryMock->shouldReceive('lastSyncReliable')->andReturn(true)->byDefault();
+    $injuryMock->shouldReceive('execute')->andReturnUsing(function () use ($steps) {
         $steps[] = 'injury';
 
         return 0;
     });
-    Artisan::command('cfb:import-fpi {--season=} {--week=} {--require-data} {--recalculate-metrics}', function () use ($steps) {
+    foreach (['cfb:sync-season-affiliations' => 'membership', 'cfb:calculate-elo' => 'elo', 'cfb:calculate-team-metrics' => 'metrics'] as $command => $step) {
+        Artisan::command($command.' {--season=}', function () use ($steps, $step) {
+            $steps[] = $step;
+
+            return 0;
+        });
+    }
+    Artisan::command('cfb:import-fpi {--season=} {--week=} {--require-data} {--require-complete}', function () use ($steps) {
         $steps[] = 'ratings';
 
         return 0;
@@ -49,7 +58,7 @@ it('completes synchronous injury and odds work before generation', function () {
         return 0;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
-    expect($steps->getArrayCopy())->toBe(['ratings', 'roster', 'injury', 'roster', 'injury', 'odds', 'generation']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
 });
 
 it('stops after failed odds and releases its application lock', function () {
@@ -60,7 +69,7 @@ it('stops after failed odds and releases its application lock', function () {
         return 1;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($steps->getArrayCopy())->toBe(['ratings', 'roster', 'injury', 'roster', 'injury', 'odds']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds']);
     $lock = Cache::lock('cfb:pregame-pipeline');
     expect($lock->get())->toBeTrue();
     $lock->release();
@@ -89,12 +98,41 @@ it('resolves the real roster action with the college football ESPN service', fun
 
 it('stops generation when the rating refresh fails and retries on the next run', function () {
     $steps = $this->steps;
-    Artisan::command('cfb:import-fpi {--season=} {--week=} {--require-data} {--recalculate-metrics}', function () use ($steps) {
+    Artisan::command('cfb:import-fpi {--season=} {--week=} {--require-data} {--require-complete}', function () use ($steps) {
         $steps[] = 'failed-ratings';
 
         return 1;
     });
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect($steps->getArrayCopy())->toBe(['failed-ratings', 'failed-ratings']);
+    expect($steps->getArrayCopy())->toBe(['membership', 'failed-ratings', 'membership', 'failed-ratings']);
+});
+
+it('stops before forecasts when Elo integrity fails', function () {
+    $steps = $this->steps;
+    Artisan::command('cfb:calculate-elo {--season=}', function () use ($steps) {
+        $steps[] = 'failed-elo';
+
+        return 1;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
+    expect($steps->getArrayCopy())->toBe(['membership', 'ratings', 'failed-elo']);
+});
+
+it('refreshes Elo and metrics even after the daily FPI refresh is cached', function () {
+    Cache::put('cfb:pregame-ratings:v2:2026:2026-09-18', true, now()->addDay());
+    $steps = $this->steps;
+    Artisan::command('cfb:sync-odds {--days=}', function () use ($steps) {
+        $steps[] = 'odds';
+
+        return 0;
+    });
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
+    expect($steps->getArrayCopy())->toBe(['elo', 'roster', 'injury', 'roster', 'injury', 'metrics', 'odds', 'generation']);
+});
+
+it('stops when zero injuries actually means an unavailable feed', function () {
+    app(SyncPlayerInjuries::class)->shouldReceive('lastSyncReliable')->andReturn(false);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
+    expect($this->steps->getArrayCopy())->toBe(['membership', 'ratings', 'elo', 'roster', 'injury']);
 });

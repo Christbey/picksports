@@ -23,12 +23,25 @@ class EloRating extends Model
         'date',
         'elo_rating',
         'elo_change',
+        'elo_before',
+        'model_version',
+        'result_fingerprint',
+        'season_initialization_id',
+        'rebuilt_at',
+        'active_slot',
     ];
+
+    protected static function booted(): void
+    {
+        static::addGlobalScope('active', fn ($query) => $query->where('cfb_elo_ratings.active_slot', 1));
+    }
 
     protected function casts(): array
     {
         return [
             'date' => 'date',
+            'rebuilt_at' => 'datetime',
+            'elo_before' => 'decimal:2',
             'elo_rating' => 'decimal:1',
             'elo_change' => 'decimal:1',
         ];

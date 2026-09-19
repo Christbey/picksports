@@ -25,6 +25,7 @@ use App\Services\NFL\Predictions\NflCanonicalCutoverReadinessService;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
 use App\Services\Predictions\PredictionFeatureSnapshotRecorder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 
 dataset('canonical football sports', [
@@ -64,6 +65,16 @@ function canonicalFootballFixture(array $definition): array
         'abbreviation' => $definition['away_abbreviation'] ?? 'AWY',
         'elo_rating' => 1440,
     ]);
+    if ($definition['sport'] === 'cfb') {
+        foreach ([$home, $away] as $team) {
+            DB::table('cfb_elo_season_initializations')->insert([
+                'team_id' => $team->id, 'season' => 2026, 'model_version' => 'cfb-elo-2.0.0',
+                'prior_rating' => $team->elo_rating, 'initial_rating' => $team->elo_rating,
+                'regression_factor' => 0.3, 'active_slot' => 1,
+                'created_at' => now()->subDay(), 'updated_at' => now()->subDay(),
+            ]);
+        }
+    }
     $metricClass = $definition['metric'];
 
     foreach ([[$home, 32.0, 18.0, 14.0, 2.0], [$away, 19.0, 29.0, -10.0, -1.0]] as [$team, $scored, $allowed, $net, $turnovers]) {

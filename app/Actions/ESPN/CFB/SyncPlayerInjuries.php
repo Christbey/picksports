@@ -13,4 +13,18 @@ class SyncPlayerInjuries extends AbstractSyncPlayerInjuries
     protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const INJURY_TABLE = 'cfb_player_injuries';
+
+    public function execute(string $teamEspnId): int
+    {
+        // Reset before the team lookup too: a missing team must not inherit the previous team's success.
+        $this->injuryPayloadObserved = false;
+        $this->injuryPayloadReliable = false;
+
+        return parent::execute($teamEspnId);
+    }
+
+    public function lastSyncReliable(): bool
+    {
+        return $this->injuryPayloadObserved && $this->injuryPayloadReliable;
+    }
 }

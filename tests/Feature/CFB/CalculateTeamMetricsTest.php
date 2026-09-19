@@ -1,11 +1,15 @@
 <?php
 
+use App\Actions\CFB\CalculateElo;
 use App\Actions\CFB\CalculateTeamMetrics;
+use App\Models\CFB\EloRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\CFB\TeamStat;
+use App\Services\CFB\PlayerAvailabilityImpactService;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
+use App\Support\CfbSeasonAffiliationResolver;
 
 uses()->group('cfb', 'team-metrics');
 
@@ -128,4 +132,46 @@ it('persists advanced cfb signal metrics from cfbd payloads', function () {
         ->and((float) $metric->defensive_front_rating)->toBeGreaterThan(0.0)
         ->and((float) $metric->rating_consensus)->toBeGreaterThan(0.0)
         ->and($metric->cfbd_advanced_payload)->toHaveKey('offense');
+});
+
+it('rebuilds historical metrics without current team ratings or availability leaking backward', function () {
+    $this->travelTo(now()->setDate(2026, 9, 19));
+    $fcs = Team::factory()->create(['division' => 'FCS', 'elo_rating' => 1900]);
+    foreach ([[$this->team, 'FBS'], [$this->opponent, 'FBS'], [$fcs, 'NON_FBS']] as [$team, $subdivision]) {
+        app(CfbSeasonAffiliationResolver::class)->ensureForSeason($team, 2025, [
+            'subdivision' => $subdivision, 'conference' => 'Test', 'division' => null, 'source' => 'cfbd_fbs_membership',
+        ]);
+    }
+    $this->mock(PlayerAvailabilityImpactService::class)
+        ->shouldNotReceive('adjustedTeamRating')->shouldNotReceive('totalAdjustment');
+    $first = null;
+    foreach ([$this->opponent, $fcs] as $index => $opponent) {
+        $game = Game::factory()->create([
+            'season' => 2025, 'week' => $index + 1, 'game_date' => '2025-09-'.($index === 0 ? '06' : '13'),
+            'home_team_id' => $this->team->id, 'away_team_id' => $opponent->id,
+            'home_score' => 31, 'away_score' => 17, 'status' => 'STATUS_FINAL',
+        ]);
+        $first ??= $game;
+        foreach ([[$this->team, 'home'], [$opponent, 'away']] as [$participant, $side]) {
+            TeamStat::query()->create(['team_id' => $participant->id, 'game_id' => $game->id, 'team_type' => $side,
+                'total_yards' => 350, 'passing_yards' => 200, 'rushing_yards' => 150, 'interceptions' => 0, 'fumbles_lost' => 0]);
+        }
+    }
+    foreach ([[$this->team, 1510, 1530], [$this->opponent, 1480, 1460]] as [$participant, $before, $after]) {
+        EloRating::query()->create(['team_id' => $participant->id, 'game_id' => $first->id,
+            'season' => 2025, 'week' => 1, 'season_type' => 'regular', 'date' => '2025-09-06',
+            'elo_before' => $before, 'elo_rating' => $after, 'elo_change' => $after - $before,
+            'model_version' => CalculateElo::MODEL_VERSION]);
+    }
+    $metric = app(CalculateTeamMetrics::class)->execute($this->team, 2025);
+    expect((float) $metric->strength_of_schedule)->toBe(1480.0)
+        ->and($metric->injury_adjusted_team_rating)->toBeNull()
+        ->and($metric->injury_total_adjustment)->toBeNull()
+        ->and((float) $metric->rating_consensus_sources['elo']['value'])->toBe(2.4);
+    $baseline = $metric->only(['rating_consensus', 'strength_of_schedule', 'resume_rating', 'injury_adjusted_team_rating', 'injury_total_adjustment']);
+    $this->team->update(['elo_rating' => 2100]);
+    $this->opponent->update(['elo_rating' => 1000]);
+    $fcs->update(['elo_rating' => 1000]);
+    $again = app(CalculateTeamMetrics::class)->execute($this->team->fresh(), 2025);
+    expect($again->only(array_keys($baseline)))->toBe($baseline);
 });

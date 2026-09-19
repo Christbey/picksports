@@ -25,6 +25,13 @@ class CalculateTeamMetricsCommand extends AbstractFootballTeamMetricsCommand
 
     protected function beforeBulkCalculation(object $calculateMetrics, int|string $season): void
     {
+        $missing = Team::query()->whereDoesntHave('seasonAffiliations', function (Builder $query) use ($season): void {
+            $query->where('season', (int) $season)->where('source', 'cfbd_fbs_membership');
+        })->count();
+        if ($missing > 0) {
+            throw new \RuntimeException("{$missing} teams lack authoritative {$season} affiliations. Run cfb:sync-season-affiliations --season={$season} first.");
+        }
+
         if (method_exists($calculateMetrics, 'purgeNonFbsMetrics')) {
             $calculateMetrics->purgeNonFbsMetrics((int) $season);
         }

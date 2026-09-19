@@ -27,3 +27,28 @@ it('accepts unchanged numeric ratings without pretending their source timestamp 
     $this->artisan('cfb:import-fpi', ['--season' => 2026, '--week' => 3, '--require-data' => true])->assertSuccessful();
     expect($rating->fresh()->updated_at->toIso8601String())->toBe($timestamp);
 });
+
+it('rejects a partially mapped provider response in complete coverage mode', function () {
+    Team::factory()->create(['school' => 'Known College', 'division' => 'FBS']);
+    $this->mock(CollegeFootballDataService::class)->shouldReceive('getFpiRatings')->with(2026)
+        ->andReturn([['team' => 'Known College', 'fpi' => 10], ['team' => 'Missing College', 'fpi' => 12]]);
+    $this->artisan('cfb:import-fpi', ['--season' => 2026, '--require-complete' => true])
+        ->expectsOutputToContain('Incomplete FPI coverage')->assertFailed();
+});
+
+it('rejects missing ratings for a known FBS team in complete coverage mode', function () {
+    Team::factory()->create(['school' => 'Known College', 'division' => 'FBS']);
+    Team::factory()->create(['school' => 'Absent College', 'division' => 'FBS']);
+    $this->mock(CollegeFootballDataService::class)->shouldReceive('getFpiRatings')->with(2026)
+        ->andReturn([['team' => 'Known College', 'fpi' => 10]]);
+    $this->artisan('cfb:import-fpi', ['--season' => 2026, '--require-complete' => true])
+        ->expectsOutputToContain('Absent College')->assertFailed();
+});
+
+it('accepts a complete usable mapped FPI response', function () {
+    Team::factory()->create(['school' => 'Known College', 'division' => 'FBS']);
+    $this->mock(CollegeFootballDataService::class)->shouldReceive('getFpiRatings')->with(2026)
+        ->andReturn([['team' => 'Known College', 'fpi' => 10]]);
+    $this->artisan('cfb:import-fpi', ['--season' => 2026, '--require-complete' => true])
+        ->expectsOutputToContain('FPI coverage: 1/1')->assertSuccessful();
+});

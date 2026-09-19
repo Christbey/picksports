@@ -3,9 +3,15 @@
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
 use App\Services\CFB\TeamTotals\HistoricalTeamTotalProjector;
+use App\Support\CfbSeasonAffiliationResolver;
 
 beforeEach(function () {
     $this->teams = Team::factory()->count(6)->create(['division' => 'FBS']);
+    foreach ($this->teams as $team) {
+        app(CfbSeasonAffiliationResolver::class)->ensureForSeason($team, 2025, [
+            'subdivision' => 'FBS', 'conference' => 'Test conference', 'division' => null, 'source' => 'cfbd_fbs_membership',
+        ]);
+    }
     for ($round = 0; $round < 8; $round++) {
         for ($i = 0; $i < 6; $i++) {
             Game::factory()->create(['home_team_id' => $this->teams[$i]->id, 'away_team_id' => $this->teams[($i + 1) % 6]->id,

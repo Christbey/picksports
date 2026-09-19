@@ -141,12 +141,6 @@ class Team extends Model
 
     public function isFbsForSeason(int $season): bool
     {
-        $affiliation = $this->seasonAffiliation($season);
-
-        if ($affiliation) {
-            return $affiliation->isFbs();
-        }
-
         return app(CfbSeasonAffiliationResolver::class)->isFbs($this, $season);
     }
 }

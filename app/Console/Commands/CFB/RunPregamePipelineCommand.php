@@ -42,16 +42,26 @@ class RunPregamePipelineCommand extends Command
 
                 return self::SUCCESS;
             }
-            $ratingsKey = 'cfb:pregame-ratings:'.$season.':'.now('America/Chicago')->toDateString();
+            $ratingsKey = 'cfb:pregame-ratings:v2:'.$season.':'.now('America/Chicago')->toDateString();
             if (! Cache::has($ratingsKey)) {
+                if ($this->call('cfb:sync-season-affiliations', ['--season' => (int) $season]) !== self::SUCCESS) {
+                    $this->error('Season membership refresh failed; generation stopped.');
+
+                    return self::FAILURE;
+                }
                 if ($this->call('cfb:import-fpi', ['--season' => (int) $season,
                     '--week' => (int) $games->min('week'), '--require-data' => true,
-                    '--recalculate-metrics' => true]) !== self::SUCCESS) {
+                    '--require-complete' => true]) !== self::SUCCESS) {
                     $this->error('Rating/metric refresh failed; generation stopped.');
 
                     return self::FAILURE;
                 }
                 Cache::put($ratingsKey, true, now()->addHours(24));
+            }
+            if ($this->call('cfb:calculate-elo', ['--season' => (int) $season]) !== self::SUCCESS) {
+                $this->error('Elo integrity/update failed; generation stopped.');
+
+                return self::FAILURE;
             }
             $teams = $games->flatMap(fn ($g) => [$g->homeTeam, $g->awayTeam])->filter()->unique('id');
             foreach ($teams as $team) {
@@ -66,6 +76,17 @@ class RunPregamePipelineCommand extends Command
                 }
                 // Direct action: do not generate before queued injury work finishes.
                 $injuries->execute((string) $team->espn_id);
+                if (! $injuries->lastSyncReliable()) {
+                    $this->error("Injury feed was unavailable or incomplete for team {$team->id}; generation stopped.");
+
+                    return self::FAILURE;
+                }
+            }
+            // Recompute after Elo and injury updates, including games finalized since the daily refresh.
+            if ($this->call('cfb:calculate-team-metrics', ['--season' => (int) $season]) !== self::SUCCESS) {
+                $this->error('Team metric refresh failed; generation stopped.');
+
+                return self::FAILURE;
             }
             if ($this->call('cfb:sync-odds', ['--days' => (int) $days]) !== self::SUCCESS) {
                 return self::FAILURE;

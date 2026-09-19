@@ -14,6 +14,7 @@ use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\OddsApi\GameOddsSnapshotRecorder;
+use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -1296,6 +1297,9 @@ function createCfbEloRating(Team $team, int $season, int $week, float $elo, ?str
 
 function createCfbTeamMetric(Team $team, int $season, float $fpi, float $wepaNet, float $netRating, array $extra = []): void
 {
+    app(CfbSeasonAffiliationResolver::class)->ensureForSeason($team, $season, [
+        'subdivision' => 'FBS', 'conference' => $team->conference, 'division' => null, 'source' => 'cfbd_fbs_membership',
+    ]);
     TeamMetric::query()->create(array_merge([
         'team_id' => $team->id,
         'season' => $season,

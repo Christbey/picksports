@@ -10,6 +10,10 @@ class CfbPredictionInputQuality
         $flags = [];
         $samples = [];
         foreach (['home', 'away'] as $side) {
+            if (data_get($inputs, 'require_versioned_elo', false)
+                && ! data_get($inputs, $side.'.elo_evidence.qualified', false)) {
+                $flags[] = $side.'_unverified_elo_provenance';
+            }
             $metrics = (array) data_get($inputs, $side.'.metrics', []);
             $samples[$side] = max(0, (int) ($metrics['wins'] ?? 0) + (int) ($metrics['losses'] ?? 0));
             if ($samples[$side] === 0 || ! is_numeric($metrics['points_per_game'] ?? null)

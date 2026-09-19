@@ -117,12 +117,21 @@ class CfbCalculator extends CanonicalFootballCalculator
                 confidenceScore: $market->confidenceScore,
             ) : $market, $output->markets);
         $quality = CfbPredictionInputQuality::assess($snapshot->inputs);
+        $coverage = [];
+        if (data_get($release->configuration, 'inputs.auditable_feature_coverage', false)) {
+            $coverage = ['feature_coverage' => CfbFeatureCoverage::describe($snapshot->inputs, $fpiBaseline !== null, $rating)];
+            // Moneyline confidence is not a probability of covering or beating a total.
+            $markets = array_map(fn ($market) => in_array($market->marketType, ['spread', 'total'], true)
+                ? new PredictionMarketOutput($market->marketType, $market->selection,
+                    projectedLine: $market->projectedLine, confidenceScore: null)
+                : $market, $markets);
+        }
 
         return new PredictionOutput(
             markets: $markets,
-            metadata: [...$output->metadata, 'input_quality' => $quality,
+            metadata: [...$output->metadata, ...$coverage, 'input_quality' => $quality,
                 'reason_codes' => [...$output->metadata['reason_codes'], ...$quality['risk_flags']]],
-            diagnostics: [...$output->diagnostics, 'raw_total' => round($rawTotal, 4),
+            diagnostics: [...$output->diagnostics, ...$coverage, 'raw_total' => round($rawTotal, 4),
                 'projected_total' => collect($markets)->first(fn ($m) => $m->marketType === 'total')->projectedLine,
                 'spread_baseline' => $fpiBaseline === null ? 'elo_scoring' : 'fpi_points',
                 'fpi_home_margin' => $fpiBaseline === null ? null : round($fpiBaseline, 4),

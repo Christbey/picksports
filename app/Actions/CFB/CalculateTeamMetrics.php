@@ -60,6 +60,17 @@ class CalculateTeamMetrics
         }
 
         extract($this->gatherTeamStatsFromGames($games, $team));
+        if ($season < (int) now()->format('Y')) {
+            // Missing historical opponent ratings are unknown, not today's mutable team Elo.
+            $recordedElos = $this->pregameEloIndex($games);
+            $opponentElos = [];
+            foreach ($games as $game) {
+                $opponentId = (int) $game->home_team_id === (int) $team->id ? $game->away_team_id : $game->home_team_id;
+                if (isset($recordedElos[$game->id.'-'.$opponentId])) {
+                    $opponentElos[] = $recordedElos[$game->id.'-'.$opponentId];
+                }
+            }
+        }
 
         // Gather CFB-specific points data
         $pointsScored = [];
@@ -212,7 +223,11 @@ class CalculateTeamMetrics
     {
         $nonFbsIds = Team::query()
             ->get()
-            ->reject(fn (Team $team) => $this->seasonAffiliationResolver->isFbs($team, $season))
+            ->filter(function (Team $team) use ($season): bool {
+                $attributes = $this->seasonAffiliationResolver->attributesForSeason($team, $season);
+
+                return in_array($attributes['subdivision'], ['FCS', 'NON_FBS'], true);
+            })
             ->pluck('id');
 
         if ($nonFbsIds->isEmpty()) {
@@ -321,6 +336,10 @@ class CalculateTeamMetrics
 
     protected function playerAvailabilityAdjustedTeamRating(Team $team, int $season): ?float
     {
+        if ($season < (int) now()->format('Y')) {
+            return null; // Current injury feeds cannot establish historical availability.
+        }
+
         if (! (bool) config('cfb.predictions.player_availability.enabled', true)) {
             return $this->calculateInjuryAdjustedTeamRating($team, 'cfb', (float) ($team->elo_rating ?? 1500));
         }
@@ -333,6 +352,10 @@ class CalculateTeamMetrics
 
     protected function playerAvailabilityTotalAdjustment(Team $team, int $season): ?float
     {
+        if ($season < (int) now()->format('Y')) {
+            return null;
+        }
+
         if (! (bool) config('cfb.predictions.player_availability.enabled', true)) {
             return $this->calculateInjuryAdjustedTotalAdjustment($team, 'cfb');
         }
@@ -808,12 +831,20 @@ class CalculateTeamMetrics
         $pointsPerElo = (float) config('cfb.predictions.points_per_elo', 0.08);
         $defaultElo = (float) config('cfb.elo.default_rating', 1500);
 
+        $elo = $season < (int) now()->format('Y')
+            ? EloRating::query()->where('team_id', $team->id)->where('cfb_elo_ratings.season', $season)
+                ->where('model_version', CalculateElo::MODEL_VERSION)
+                ->join('cfb_games', 'cfb_games.id', '=', 'cfb_elo_ratings.game_id')
+                ->orderByDesc('cfb_games.game_date')->orderByDesc('cfb_games.game_time')->orderByDesc('cfb_games.id')
+                ->value('cfb_elo_ratings.elo_rating')
+            : ($team->elo_rating ?? $defaultElo);
+
         $sourceValues = [
             'fpi' => $ratings['fpi'] ?? null,
             'power_rating' => $ratings['power_rating'] ?? null,
             'wepa_net' => is_numeric($ratings['wepa_net'] ?? null) ? ((float) $ratings['wepa_net'] * 4.0) : null,
             'net_rating' => is_numeric($ratings['net_rating'] ?? null) ? ((float) $ratings['net_rating'] * 0.40) : null,
-            'elo' => (((float) ($team->elo_rating ?? $defaultElo)) - $defaultElo) * $pointsPerElo,
+            'elo' => is_numeric($elo) ? ((float) $elo - $defaultElo) * $pointsPerElo : null,
             'cfp_rating' => is_numeric($ratings['cfp_rating'] ?? null) ? (((float) $ratings['cfp_rating'] - 50.0) / 2.9) : null,
             'resume_rating' => is_numeric($ratings['resume_rating'] ?? null) ? ((float) $ratings['resume_rating'] * 0.39 / 2.9) : null,
         ];
@@ -922,7 +953,8 @@ class CalculateTeamMetrics
         $margin = $teamScore - $opponentScore;
         $won = $margin > 0;
         $opponentIsFbs = $this->seasonAffiliationResolver->isFbs($opponent, $season);
-        $opponentPregameElo = $pregameEloIndex[$game->id.'-'.$opponent->id] ?? (float) ($opponent->elo_rating ?? 1500);
+        $opponentPregameElo = $pregameEloIndex[$game->id.'-'.$opponent->id]
+            ?? ($season < (int) now()->format('Y') ? (float) config('cfb.elo.default_rating', 1500) : (float) ($opponent->elo_rating ?? 1500));
         $neutralSite = (bool) ($game->neutral_site ?? false);
         $locationBonus = $neutralSite ? 0.25 : ($isHome ? 0.0 : 0.55);
         $championshipBonus = $this->isChampionshipValueGame($game) ? 0.75 : 0.0;
@@ -990,7 +1022,7 @@ class CalculateTeamMetrics
             ->whereIn('game_id', $games->pluck('id'))
             ->get()
             ->mapWithKeys(function ($record): array {
-                $preGameElo = (float) $record->elo_rating - (float) $record->elo_change;
+                $preGameElo = $record->elo_before !== null ? (float) $record->elo_before : (float) $record->elo_rating - (float) $record->elo_change;
 
                 return [$record->game_id.'-'.$record->team_id => $preGameElo];
             })
@@ -1066,7 +1098,20 @@ class CalculateTeamMetrics
 
     protected function normalizeConference(?string $conference): string
     {
-        return strtolower(trim((string) $conference));
+        $normalized = strtolower(trim((string) $conference));
+
+        return match ($normalized) {
+            'sec' => 'southeastern conference',
+            'acc' => 'atlantic coast conference',
+            'big ten' => 'big ten conference',
+            'big 12' => 'big 12 conference',
+            'american athletic', 'american' => 'american athletic conference',
+            'mid-american' => 'mid-american conference',
+            'mountain west' => 'mountain west conference',
+            'sun belt' => 'sun belt conference',
+            'pac-12' => 'pac-12 conference',
+            default => $normalized,
+        };
     }
 
     /**
@@ -1127,6 +1172,6 @@ class CalculateTeamMetrics
 
     protected function conferenceForSeason(Team $team, int $season): ?string
     {
-        return $team->seasonAffiliation($season)?->conference ?? $team->conference;
+        return $this->seasonAffiliationResolver->attributesForSeason($team, $season)['conference'];
     }
 }

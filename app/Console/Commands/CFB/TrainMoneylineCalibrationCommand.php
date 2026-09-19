@@ -47,6 +47,12 @@ class TrainMoneylineCalibrationCommand extends Command
         }
 
         $rows = $dataset->rows($fromSeason, $toSeason, $minWeek, $maxWeek);
+        $unsafe = count(array_filter($rows, fn ($row) => ($row['pregame_safe'] ?? false) !== true));
+        if ($unsafe > 0) {
+            $this->error("Calibration blocked: {$unsafe} retrospective rows lack proven pregame availability; use frozen contemporaneous inputs.");
+
+            return self::FAILURE;
+        }
         $seasons = collect($rows)->pluck('season')->map(fn ($season): int => (int) $season)->unique()->sort()->values();
 
         if (count($rows) < $minimumRows || $seasons->count() < 4) {
@@ -116,7 +122,7 @@ class TrainMoneylineCalibrationCommand extends Command
             ],
             metadata: [
                 'market_type' => 'win_probability',
-                'point_in_time_basis' => 'verified_reconstruction',
+                'point_in_time_basis' => 'verified_contemporaneous_evidence',
                 'activation_policy' => 'challenger_only_until_offline_and_live_shadow_gates_pass',
             ],
         );

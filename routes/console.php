@@ -1245,7 +1245,8 @@ $cfbCanonicalPipelineEnabled = fn (): bool => $cfbInSeason()
 $scheduleDailySeasonJob("cfb:evaluate-canonical-predictions --season={$fallSeasonYear}", '03:05', $cfbCanonicalPipelineEnabled, 'CFB: Evaluate Canonical Predictions');
 $scheduleDailySeasonJob('sports:settle-bet-decisions --sport=cfb', '03:10', $cfbCanonicalPipelineEnabled, 'CFB: Settle Model Decisions');
 $scheduleDailySeasonJob("cfb:generate-canonical-predictions --season={$fallSeasonYear} --week={$cfbCurrentRegularSeasonWeek} --days-forward=8", '04:35', $cfbCanonicalPipelineEnabled, 'CFB: Generate Canonical Predictions');
-Schedule::command("cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=2")
+$cfbPregamePipelineCommand = "cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=2";
+$cfbPregamePipelineEvent = Schedule::command($cfbPregamePipelineCommand)
     ->hourlyAt(45)
     ->between('08:00', '23:00')
     ->when($cfbCanonicalPipelineEnabled)
@@ -1253,6 +1254,7 @@ Schedule::command("cfb:run-pregame-pipeline --season={$fallSeasonYear} --days-fo
     ->onOneServer()
     ->runInBackground()
     ->name('CFB: Refresh Pregame Inputs and Forecasts');
+$attachCommandHeartbeat($cfbPregamePipelineEvent, $cfbPregamePipelineCommand, 'CFB: Refresh Pregame Inputs and Forecasts');
 $scheduleWeeklySeasonJob(
     'espn:sync-cfb-teams',
     3,

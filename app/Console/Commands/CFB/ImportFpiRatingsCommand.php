@@ -16,6 +16,7 @@ class ImportFpiRatingsCommand extends Command
         {--season= : Season to import (defaults to current year)}
         {--week=0 : Snapshot week to store for this import}
         {--require-data : Fail if no usable ratings are imported}
+        {--require-complete : Require usable ratings for every FBS team and every provider row to match}
         {--recalculate-metrics : Recalculate CFB team metrics after import}';
 
     protected $description = 'Import CFB FPI ratings from CollegeFootballData';
@@ -34,7 +35,7 @@ class ImportFpiRatingsCommand extends Command
         if ($rows === []) {
             $this->warn("No FPI ratings were returned for {$season}.");
 
-            return $this->option('require-data') ? self::FAILURE : self::SUCCESS;
+            return ($this->option('require-data') || $this->option('require-complete')) ? self::FAILURE : self::SUCCESS;
         }
 
         $teams = Team::query()->get();
@@ -49,6 +50,7 @@ class ImportFpiRatingsCommand extends Command
         $updated = 0;
         $matched = 0;
         $usable = 0;
+        $usableTeamIds = [];
         $skipped = 0;
 
         foreach ($rows as $row) {
@@ -84,6 +86,7 @@ class ImportFpiRatingsCommand extends Command
             $rating->save();
             if (is_numeric($rating->fpi)) {
                 $usable++;
+                $usableTeamIds[] = (int) $team->id;
             }
         }
 
@@ -91,6 +94,16 @@ class ImportFpiRatingsCommand extends Command
 
         if ($this->option('require-data') && $usable === 0) {
             $this->error('No usable FPI ratings imported.');
+
+            return self::FAILURE;
+        }
+
+        $missing = $fbsTeams->reject(fn (Team $team): bool => in_array((int) $team->id, $usableTeamIds, true));
+        $this->info(sprintf('FPI coverage: %d/%d FBS teams; %d provider rows unmatched.',
+            count(array_unique($usableTeamIds)), $fbsTeams->count(), $skipped));
+        if ($this->option('require-complete') && ($fbsTeams->isEmpty() || $missing->isNotEmpty() || $skipped > 0 || $usable !== count($rows) || count(array_unique($usableTeamIds)) !== $usable)) {
+            $this->error('Incomplete FPI coverage; generation must remain on hold. Missing: '.
+                ($missing->pluck('school')->implode(', ') ?: 'unmatched or unusable provider rows'));
 
             return self::FAILURE;
         }

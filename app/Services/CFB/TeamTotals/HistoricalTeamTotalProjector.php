@@ -4,7 +4,6 @@ namespace App\Services\CFB\TeamTotals;
 
 use App\Models\CFB\Game;
 use App\Models\CFB\Team;
-use App\Models\CFB\TeamSeasonAffiliation;
 use App\Support\CfbSeasonAffiliationResolver;
 
 /** Independent score model. Never reads or writes saved game predictions. */
@@ -52,9 +51,8 @@ class HistoricalTeamTotalProjector
     {
         $key = $id.':'.$season;
         if (! array_key_exists($key, $this->affiliations)) {
-            $stored = TeamSeasonAffiliation::where('team_id', $id)->where('season', $season)->first();
             $team = Team::find($id);
-            $this->affiliations[$key] = $stored ? $stored->isFbs() : ($team && app(CfbSeasonAffiliationResolver::class)->attributesForSeason($team, $season)['subdivision'] === 'FBS');
+            $this->affiliations[$key] = $team && app(CfbSeasonAffiliationResolver::class)->isFbs($team, $season);
         }
 
         return $this->affiliations[$key];

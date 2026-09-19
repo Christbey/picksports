@@ -3,6 +3,7 @@
 namespace App\Console\Commands\Sports\Canonical;
 
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Model;
 
 abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
 {
@@ -55,12 +56,16 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
             } catch (\Throwable $exception) {
                 $failures++;
                 $this->error("Game {$game->getKey()}: {$exception->getMessage()}");
+            } finally {
+                $this->releaseGameResources($game);
             }
         }
         $this->info("Canonical {$this->sportLabel()} generation complete: {$succeeded} succeeded, {$failures} failed.");
 
         return $failures === 0 ? self::SUCCESS : self::FAILURE;
     }
+
+    protected function releaseGameResources(Model $game): void {}
 
     /** @return class-string */
     abstract protected function gameClass(): string;

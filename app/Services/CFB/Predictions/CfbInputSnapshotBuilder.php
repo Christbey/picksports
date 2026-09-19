@@ -142,9 +142,14 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 $sourceTimestamps['signal_'.$key] = $quote?->created_at?->toIso8601String();
             }
             $sourceTimestamps['signal_weather'] = $weather?->updated_at?->toIso8601String();
-            $evidenceKey = 'cfb:football-signal-evidence:'.app(CanonicalPayloadHasher::class)->hash($release->configuration).':'.$release->semanticVersion.':'.$snapshot->capturedAt->format('YmdHi');
-            $inputs['football_signal_evidence'] = Cache::remember($evidenceKey, 120,
-                fn () => app(CfbFootballSignalEvidence::class)->build($snapshot->capturedAt, $release->configuration));
+            $evidenceKey = 'cfb:football-signal-evidence:'.app(CanonicalPayloadHasher::class)->hash($release->configuration).':'.$release->semanticVersion;
+            $evidence = Cache::get($evidenceKey);
+            if (! is_array($evidence) || ! isset($evidence['as_of'])
+                || CarbonImmutable::parse($evidence['as_of'])->gt($snapshot->capturedAt)) {
+                $evidence = app(CfbFootballSignalEvidence::class)->build($snapshot->capturedAt, $release->configuration);
+                Cache::put($evidenceKey, $evidence, 900);
+            }
+            $inputs['football_signal_evidence'] = $evidence;
             $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'];
         }
 

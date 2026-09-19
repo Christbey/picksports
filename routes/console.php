@@ -1266,6 +1266,8 @@ $scheduleDailySeasonJob('cfb:train-football-signals', '03:15', $cfbCanonicalPipe
 
 $scheduleDailySeasonJob("cfb:report-football-signals --season={$fallSeasonYear}", '03:30', $cfbCanonicalPipelineEnabled, 'CFB: Audit Football Signal Rules')
     ->appendOutputTo(storage_path('logs/cfb-football-signals.log'));
+$scheduleDailySeasonJob('cfb:train-frozen-moneyline-calibration', '03:35', $cfbCanonicalPipelineEnabled, 'CFB: Reassess Frozen Moneyline Calibration')
+    ->appendOutputTo(storage_path('logs/cfb-moneyline-calibration.log'));
 $cfbSpreadCandidateCommand = 'cfb:train-spread-calibration --release-version='.
     CfbCalculationReleaseDefinition::SEMANTIC_VERSION;
 $cfbSpreadCandidateEvent = Schedule::command($cfbSpreadCandidateCommand)->weeklyOn(2, '02:10')
@@ -1463,3 +1465,7 @@ $attachCommandHeartbeat(
     $nflResearchGradingCommand,
     'NFL: Grade Research Revisions',
 );
+
+// Keep non-FBS opponent results available without mixing their rankings into FBS metrics.
+$scheduleDailySeasonJob('cfb:sync-opponent-history --days=14', '03:05', $cfbInSeason, 'CFB: Refresh Independent Opponent History')
+    ->appendOutputTo(storage_path('logs/cfb-opponent-history.log'));

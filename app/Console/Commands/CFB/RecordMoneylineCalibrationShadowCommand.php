@@ -2,13 +2,18 @@
 
 namespace App\Console\Commands\CFB;
 
+use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\ModelArtifact;
 use App\Models\PredictionFeatureSnapshot;
+use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
+use App\Services\CFB\Predictions\CfbFrozenMoneylineCalibrationDataset;
+use App\Services\CFB\Predictions\CfbMoneylineTemporalCalibration;
 use App\Services\ML\ModelArtifactRegistry;
 use App\Services\ML\ShadowModelOutputRecorder;
 use App\Services\ML\WinProbabilityCalibrationTrainer;
 use App\Services\Predictions\ModelRunRecorder;
+use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\File;
@@ -105,6 +110,20 @@ class RecordMoneylineCalibrationShadowCommand extends Command
                 continue;
             }
 
+            // Keep evidence across a patch only when replaying the trained release
+            // reproduces this forecast's exact canonical output hash.
+            if ($artifact->model_version === CfbMoneylineTemporalCalibration::VERSION) {
+                $trainedRelease = CalculationRelease::query()->where('sport', 'cfb')->where('phase', 'pregame')
+                    ->where('semantic_version', $model['release_version'] ?? '')
+                    ->where('configuration_hash', $model['release_configuration_hash'] ?? '')->first();
+                if (! $trainedRelease || ! app(CfbFrozenMoneylineCalibrationDataset::class)->matchesRelease($prediction, $trainedRelease)
+                    || ($model['validation_passed'] ?? false) !== true
+                    || CarbonImmutable::parse($model['evaluated_through'])->gte($prediction->generated_at)) {
+                    $skipped++;
+
+                    continue;
+                }
+            }
             $baselineProbability = (float) $baseline->probability;
             $calibratedProbability = $trainer->predict($baselineProbability, [
                 'alpha' => (float) $model['alpha'],
@@ -193,13 +212,21 @@ class RecordMoneylineCalibrationShadowCommand extends Command
             ->where('sport', 'cfb')
             ->where('market_type', 'win_probability')
             ->where('model_type', 'cfb_moneyline_platt_calibration')
-            ->whereIn('status', ['promotion_eligible', 'promoted'])
+            ->where(fn (Builder $query) => $query->whereIn('status', ['promotion_eligible', 'promoted'])
+                ->orWhere(fn (Builder $q) => $q->where('status', 'challenger')
+                    ->where('model_version', CfbMoneylineTemporalCalibration::VERSION)
+                    ->where('metrics->validation_passed', true)))
+            ->when(! filled($this->option('artifact')), fn (Builder $q) => $q->where(fn (Builder $scope) => $scope->where('model_version', '!=', CfbMoneylineTemporalCalibration::VERSION)
+                ->orWhereHas('trainingRun', fn (Builder $run) => $run->where('parameters->release_version',
+                    CfbCalculationReleaseDefinition::SEMANTIC_VERSION))))
             ->when(
                 filled($this->option('artifact')),
                 fn (Builder $query) => $query->whereKey((string) $this->option('artifact')),
             )
-            ->latest('created_at')
-            ->latest('id')
+            // Keep the same qualifying candidate collecting prospective evidence;
+            // daily retraining must not reset shadow samples to zero.
+            ->oldest('created_at')
+            ->oldest('id')
             ->first();
     }
 
@@ -210,6 +237,7 @@ class RecordMoneylineCalibrationShadowCommand extends Command
             ->with([
                 'markets',
                 'calculationRun.inputSnapshot',
+                'calculationRun.release',
                 'sportEvent.cfbGame',
             ])
             ->where('sport', 'cfb')

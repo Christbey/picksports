@@ -198,7 +198,7 @@ class CfbCanonicalSpreadValueSignalService
             || abs($awayElo - $defaultElo) >= 0.001;
         $hasBidirectionalMetricSample = $homeSample > 0 && $awaySample > 0;
         $modelInputsQualified = array_diff($quality['risk_flags'], ['home_quarterback_unresolved', 'away_quarterback_unresolved']) === [] && ($hasDifferentiatedElo
-            || $hasBidirectionalMetricSample);
+            || $hasBidirectionalMetricSample || ($quality['evidence_path'] ?? null) === 'independent_completed_results');
         $riskFlags = $quality['risk_flags'];
 
         if (! $modelInputsQualified) {

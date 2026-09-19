@@ -6,6 +6,7 @@ use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
+use App\Services\CFB\Ratings\ResultRatingModel;
 use App\Services\CFB\Signals\CfbFootballSignalModel;
 use App\Services\Predictions\Football\CanonicalFootballCalculator;
 use Carbon\CarbonImmutable;
@@ -140,6 +141,38 @@ class CfbCalculator extends CanonicalFootballCalculator
                 'context_reliability' => $reliability, 'paired_rating_family' => $rating, 'input_quality' => $quality],
             generatedAt: $output->generatedAt,
         );
+
+        $independent = $snapshot->inputs['independent_result_rating'] ?? null;
+        if (data_get($configuration, 'independent_result_rating.enabled', false)
+            && ResultRatingModel::usableEvidence($independent)) {
+            $margin = (float) $independent['home_margin'];
+            $total = (float) $independent['total'];
+            $probability = round(1 / (1 + exp(-$margin / $configuration['spread']['probability_coefficient'])), 6);
+            $originalFlags = $quality['replaced_input_flags'] ?? $quality['risk_flags'];
+            $quality['risk_flags'] = array_values(array_filter($originalFlags,
+                fn ($flag) => ! str_ends_with($flag, 'missing_team_metrics') && ! str_ends_with($flag, 'unverified_elo_provenance')));
+            $quality['qualified'] = $quality['risk_flags'] === [];
+            $quality['replaced_input_flags'] = $originalFlags;
+            $quality['evidence_path'] = 'independent_completed_results';
+            $quality['sample_games'] = ['home' => $independent['home']['current_games'], 'away' => $independent['away']['current_games']];
+            $quality['prior_games'] = ['home' => $independent['home']['prior_games'], 'away' => $independent['away']['prior_games']];
+
+            return new PredictionOutput(
+                markets: [new PredictionMarketOutput('spread', 'home', projectedLine: -$margin),
+                    new PredictionMarketOutput('total', 'combined', projectedLine: $total),
+                    new PredictionMarketOutput('moneyline', 'home', probability: $probability),
+                    new PredictionMarketOutput('moneyline', 'away', probability: round(1 - $probability, 6))],
+                metadata: ['home_margin' => $margin, 'reason_codes' => ['INDEPENDENT_RESULT_RATING'],
+                    'market_conventions' => $output->metadata['market_conventions'] ?? [],
+                    'input_quality' => $quality, 'independent_result_rating' => $independent,
+                    'feature_coverage' => ['spread_baseline' => 'independent_completed_results',
+                        'paired_rating_family' => 'regularized_result_network', 'calibration' => ['ats_status' => 'not_calibrated']],
+                    'football_signal_summary' => ['applied' => 0, 'reason' => 'Weights trained on the FPI baseline do not transfer to the independent result baseline.']],
+                diagnostics: ['home_margin' => $margin, 'projected_total' => $total, 'input_quality' => $quality,
+                    'spread_baseline' => 'independent_completed_results', 'independent_result_rating' => $independent],
+                generatedAt: $output->generatedAt,
+            );
+        }
 
         return $this->applyFootballSignals($result, $snapshot->inputs, $configuration, $snapshot->capturedAt);
     }

@@ -9,6 +9,7 @@ use App\Actions\GradePlayerProps;
 use App\Models\CFB\Game;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Services\BettingRecommendations\CfbPropEligibility;
+use App\Services\CFB\Live\Overtime\OvertimeState;
 use App\Services\ESPN\CFB\EspnService;
 use App\Services\OddsApi\OddsApiService;
 use Carbon\CarbonImmutable;
@@ -36,6 +37,7 @@ class LiveBettingSync
         DB::transaction(function () use ($game, $payload, $statsObserved) {
             $locked = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
             $this->updateGameFromSummary($payload, $locked);
+            $locked->update(['overtime_state' => app(OvertimeState::class)->fromSummary($locked, $payload)]);
             if ($statsObserved) {
                 (new SyncPlayerStats)->execute($payload, $locked);
             }

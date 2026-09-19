@@ -43,6 +43,24 @@ class CfbSpreadResidualCalibration
         if (collect($rows)->contains(fn ($r) => ($r['pregame_safe'] ?? false) !== true)) {
             return ['status' => 'insufficient_evidence', 'reason' => 'unverified_pregame_rows'];
         }
+        $seen = [];
+        foreach ($rows as $row) {
+            if (isset($row['game_id']) && isset($seen[$row['game_id']])) {
+                return ['status' => 'insufficient_evidence', 'reason' => 'duplicate_game_evidence'];
+            }
+            if (isset($row['game_id'])) {
+                $seen[$row['game_id']] = true;
+            }
+            foreach (['model_margin', 'actual_margin', 'home_line'] as $field) {
+                if (! is_numeric($row[$field] ?? null) || ! is_finite((float) $row[$field])) {
+                    return ['status' => 'insufficient_evidence', 'reason' => 'invalid_settlement_evidence'];
+                }
+            }
+            if (abs($row['actual_margin'] - round($row['actual_margin'])) > 0.000001
+                || abs($row['home_line'] * 2 - round($row['home_line'] * 2)) > 0.000001) {
+                return ['status' => 'insufficient_evidence', 'reason' => 'invalid_settlement_evidence'];
+            }
+        }
         usort($rows, fn ($a, $b) => strcmp($a['kickoff'], $b['kickoff']));
         // Keep complete kickoff dates together; a same-day game cannot train another game that day.
         $days = [];

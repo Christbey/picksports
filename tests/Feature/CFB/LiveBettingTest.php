@@ -71,7 +71,7 @@ test('withholds live forecasts for missing state or college overtime', function 
     $this->game->update($changes);
     expect(app(UpdateLivePrediction::class)->execute($this->game->fresh()))->toBeNull();
     expect(LivePredictionSnapshot::first()->status)->toBe($status)->and(LivePredictionSnapshot::first()->projection)->toBeNull();
-})->with([[['game_clock' => null], 'missing_clock'], [['home_score' => null], 'missing_score'], [['period' => 5, 'game_clock' => '00:00'], 'overtime_unmodeled']]);
+})->with([[['game_clock' => null], 'missing_clock'], [['home_score' => null], 'missing_score'], [['period' => 5, 'game_clock' => '00:00'], 'overtime_missing_possession']]);
 
 test('handles home spread signs and refuses stale or pregame market quotes', function () {
     $service = app(LiveMarketComparison::class);

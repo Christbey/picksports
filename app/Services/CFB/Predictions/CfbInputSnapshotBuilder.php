@@ -12,6 +12,7 @@ use App\Models\CFB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbTeamEvidenceService;
+use App\Services\CFB\Ratings\ResultRatingEvidence;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\Football\FootballInputSnapshotBuilder;
@@ -107,6 +108,15 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                     'units' => 'points_above_average',
                 ];
                 $sourceTimestamps[$side.'_fpi'] = $rating?->updated_at?->toIso8601String();
+            }
+        }
+
+        if (data_get($release->configuration, 'independent_result_rating.enabled', false)) {
+            $quality = CfbPredictionInputQuality::assess($inputs);
+            if (collect($quality['risk_flags'])->contains(fn ($flag) => str_ends_with($flag, 'missing_team_metrics') || str_ends_with($flag, 'unverified_elo_provenance'))) {
+                $inputs['independent_result_rating'] = app(ResultRatingEvidence::class)
+                    ->forGame($game, $snapshot->capturedAt, $snapshot->cutoffAt);
+                $sourceTimestamps['independent_result_rating'] = $inputs['independent_result_rating']['source_available_at'] ?? null;
             }
         }
 

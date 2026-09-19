@@ -82,14 +82,15 @@ it('accepts the last stored pregame quote before forecast publication while igno
     $team = ['elo_evidence' => ['qualified' => true], 'metrics' => ['wins' => 6, 'losses' => 0, 'points_per_game' => 28, 'points_allowed_per_game' => 21]];
     $snapshot = EventInputSnapshot::factory()->create(['sport_event_id' => $event->id, 'sport' => 'cfb',
         'captured_at' => '2026-09-01 10:00:00', 'cutoff_at' => $event->starts_at, 'latest_source_available_at' => '2026-09-01 09:00:00',
-        'inputs' => ['require_versioned_elo' => true, 'home' => $team, 'away' => $team]]);
+        'inputs' => ['require_versioned_elo' => true, 'home' => $team, 'away' => $team], 'created_at' => '2026-09-01 10:00:00']);
     $release = CalculationRelease::factory()->create(['sport' => 'cfb', 'semantic_version' => '1.4.0']);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'event_input_snapshot_id' => $snapshot->id,
         'calculation_release_id' => $release->id]);
     $prediction = CanonicalPrediction::factory()->create(['sport_event_id' => $event->id, 'sport' => 'cfb',
         'calculation_run_id' => $run->id, 'phase' => 'pregame', 'publication_state' => 'draft',
-        'generated_at' => '2026-09-01 11:59:30', 'published_at' => '2026-09-01 11:59:30']);
+        'generated_at' => '2026-09-01 11:59:30', 'published_at' => '2026-09-01 11:59:30', 'created_at' => '2026-09-01 11:59:30']);
     $prediction->markets()->create(['market_type' => 'spread', 'selection' => 'home', 'projected_line' => -7]);
+    $prediction->markets()->create(['market_type' => 'moneyline', 'selection' => 'home', 'probability' => 0.7]);
     $prediction->update(['publication_state' => 'published']);
     $odds = GameOddsSnapshot::create(['sport' => 'cfb', 'game_table' => 'cfb_games', 'game_id' => $game->id,
         'source' => 'test', 'captured_at' => '2026-09-01 10:30:00', 'payload_hash' => hash('sha256', 'test'), 'odds_data' => []]);
@@ -202,4 +203,14 @@ it('counts historical coverage exclusions without fetching every game for a new 
     } finally {
         DB::disableQueryLog();
     }
+});
+
+it('rejects duplicate game evidence and non-football settlement margins', function () {
+    $row = ['game_id' => 1, 'season' => 2026, 'kickoff' => '2026-09-01T12:00:00Z', 'pregame_safe' => true,
+        'model_margin' => 3, 'actual_margin' => 4, 'home_line' => -3.5];
+    $trainer = new CfbSpreadResidualCalibration;
+    expect($trainer->train([$row, $row])['reason'])->toBe('duplicate_game_evidence')
+        ->and($trainer->train([[...$row, 'actual_margin' => 4.5]])['reason'])->toBe('invalid_settlement_evidence')
+        ->and($trainer->train([[...$row, 'home_line' => -3.25]])['reason'])->toBe('invalid_settlement_evidence')
+        ->and($trainer->train([[...$row, 'model_margin' => INF]])['reason'])->toBe('invalid_settlement_evidence');
 });

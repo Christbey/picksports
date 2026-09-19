@@ -2,6 +2,7 @@
 
 namespace App\Services\CFB\Predictions;
 
+use App\Models\CalculationRelease;
 use App\Models\CanonicalPrediction;
 use App\Models\ModelArtifact;
 use App\Services\ML\ModelArtifactRegistry;
@@ -32,9 +33,16 @@ class CfbSpreadCoverProbabilityService
             $path = app(ModelArtifactRegistry::class)->materializeArtifact($artifact);
             $model = json_decode(file_get_contents($path), true, flags: JSON_THROW_ON_ERROR);
             $release = $prediction->calculationRun?->release;
+            $releaseCompatible = ($model['release_configuration_hash'] ?? null) === $release?->configuration_hash
+                && ($model['release_version'] ?? null) === $release?->semantic_version;
+            if (! $releaseCompatible) {
+                $trainedRelease = CalculationRelease::query()->where('sport', 'cfb')->where('phase', 'pregame')
+                    ->where('semantic_version', $model['release_version'] ?? '')
+                    ->where('configuration_hash', $model['release_configuration_hash'] ?? '')->first();
+                $releaseCompatible = $trainedRelease && app(CfbFrozenMoneylineCalibrationDataset::class)->matchesRelease($prediction, $trainedRelease);
+            }
             if (($model['model_version'] ?? null) !== CfbSpreadResidualCalibration::VERSION
-                || ($model['release_configuration_hash'] ?? null) !== $release?->configuration_hash
-                || ($model['release_version'] ?? null) !== $release?->semantic_version
+                || ! $releaseCompatible
                 || ($model['validation_passed'] ?? false) !== true
                 || CarbonImmutable::parse($model['evaluated_through'])->gte($prediction->generated_at)
                 || CarbonImmutable::parse($model['trained_at'])->gt($prediction->generated_at)

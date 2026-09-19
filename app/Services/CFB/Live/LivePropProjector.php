@@ -44,6 +44,8 @@ class LivePropProjector
                 $row['status'] = 'availability_uncertain';
             } elseif ($mean === null) {
                 $row['status'] = 'insufficient_history';
+            } elseif ((int) $game->period > 4) {
+                $row['status'] = 'overtime_player_projection_unavailable';
             } elseif (! $projection) {
                 $row['status'] = 'game_projection_unavailable';
             } elseif (is_numeric($actual)) {

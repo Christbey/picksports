@@ -382,7 +382,8 @@ const outcomes = (market: Market) =>
                     Experimental estimates, not calibrated betting edges. Player
                     estimates blend prior production with the current pace; they
                     do not account for depth-chart changes or teammate injury
-                    redistribution. Overtime projections are withheld.
+                    redistribution. Overtime requires verified possession state
+                    and sufficient historical support.
                 </p>
             </template>
         </CardContent>

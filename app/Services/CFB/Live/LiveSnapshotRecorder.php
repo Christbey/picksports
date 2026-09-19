@@ -64,7 +64,7 @@ class LiveSnapshotRecorder
     public function record(Game $game, array $baseline, ?array $projection, string $status, string $source = 'scoreboard', array $markets = [], array $props = [], ?CarbonInterface $observedAt = null): LivePredictionSnapshot
     {
         $state = ['status' => $game->status, 'period' => $game->period, 'clock' => $game->game_clock,
-            'home_score' => $game->home_score, 'away_score' => $game->away_score];
+            'home_score' => $game->home_score, 'away_score' => $game->away_score, 'overtime' => $game->overtime_state];
         $hash = hash('sha256', json_encode([$game->id, now()->format('Y-m-d H:i'), $state, $baseline, $projection, $status, $source, $markets, $props]));
 
         return LivePredictionSnapshot::firstOrCreate(['state_hash' => $hash], [

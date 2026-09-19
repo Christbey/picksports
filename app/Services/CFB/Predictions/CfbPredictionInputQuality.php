@@ -2,6 +2,8 @@
 
 namespace App\Services\CFB\Predictions;
 
+use App\Services\CFB\Ratings\ResultRatingModel;
+
 class CfbPredictionInputQuality
 {
     /** @param array<string, mixed> $inputs @return array<string, mixed> */
@@ -23,6 +25,18 @@ class CfbPredictionInputQuality
             if (data_get($inputs, $side.'.availability.quarterback_hold', false)) {
                 $flags[] = $side.'_quarterback_unresolved';
             }
+        }
+
+        $independent = $inputs['independent_result_rating'] ?? null;
+        if (ResultRatingModel::usableEvidence($independent)) {
+            $original = $flags;
+            $flags = array_values(array_filter($flags, fn ($flag) => ! str_ends_with($flag, 'missing_team_metrics') && ! str_ends_with($flag, 'unverified_elo_provenance')));
+
+            return ['qualified' => $flags === [], 'risk_flags' => $flags, 'replaced_input_flags' => $original,
+                'evidence_path' => 'independent_completed_results',
+                'sample_games' => ['home' => $independent['home']['current_games'], 'away' => $independent['away']['current_games']],
+                'prior_games' => ['home' => $independent['home']['prior_games'], 'away' => $independent['away']['prior_games']],
+                'probability_status' => 'uncalibrated_model_estimate'];
         }
 
         return ['qualified' => $flags === [], 'risk_flags' => $flags, 'sample_games' => $samples,

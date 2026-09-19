@@ -15,7 +15,8 @@ class CfbFootballSignalEvidence
 {
     public static function baselineHash(array $configuration): string
     {
-        unset($configuration['football_signals']);
+        // Independent-result forecasts return before applying these FPI-baseline weights.
+        unset($configuration['football_signals'], $configuration['independent_result_rating']);
 
         return app(CanonicalPayloadHasher::class)->hash($configuration);
     }

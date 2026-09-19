@@ -57,6 +57,7 @@ class Game extends Model
         'conference_game',
         'broadcast_networks',
         'completed_at',
+        'overtime_state',
     ];
 
     protected function casts(): array
@@ -70,6 +71,7 @@ class Game extends Model
             'away_linescores' => 'array',
             'broadcast_networks' => 'array',
             'odds_data' => 'array',
+            'overtime_state' => 'array',
         ];
     }
 

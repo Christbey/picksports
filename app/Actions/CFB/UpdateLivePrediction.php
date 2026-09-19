@@ -6,6 +6,7 @@ use App\Actions\Sports\AbstractFootballUpdateLivePrediction;
 use App\Models\CFB\Game;
 use App\Services\CFB\Live\LiveScoreProjector;
 use App\Services\CFB\Live\LiveSnapshotRecorder;
+use App\Services\CFB\Live\Overtime\OvertimeProjector;
 use Illuminate\Support\Facades\DB;
 
 class UpdateLivePrediction extends AbstractFootballUpdateLivePrediction
@@ -38,8 +39,9 @@ class UpdateLivePrediction extends AbstractFootballUpdateLivePrediction
                     'model_version' => LiveScoreProjector::VERSION,
                     'home_win_probability' => $game->home_score === $game->away_score ? null : ($game->home_score > $game->away_score ? 1 : 0), 'seconds_remaining' => 0];
             } elseif ((int) $game->period > 4) {
-                // College overtime is possession-based, not the NFL's timed overtime.
-                $status = 'overtime_unmodeled';
+                $overtime = app(OvertimeProjector::class)->project($game);
+                $status = $overtime['status'];
+                $projection = $overtime['projection'];
             } elseif ((int) $game->period < 1 || ! preg_match('/^(?:0?[0-9]|1[0-4]):[0-5][0-9]$|^15:00$/', (string) $clock)) {
                 $status = 'missing_clock';
             } elseif (! is_numeric($baseline['spread']) || ! is_numeric($baseline['total'])

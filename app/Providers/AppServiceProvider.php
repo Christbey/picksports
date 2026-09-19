@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Actions\ESPN\CFB\SyncGamesFromSchedule;
 use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
@@ -38,6 +39,9 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->when(SyncPlayers::class)
+            ->needs(BaseEspnService::class)
+            ->give(\App\Services\ESPN\CFB\EspnService::class);
+        $this->app->when(SyncGamesFromSchedule::class)
             ->needs(BaseEspnService::class)
             ->give(\App\Services\ESPN\CFB\EspnService::class);
         $this->app->singleton(ModelRunRecorder::class);

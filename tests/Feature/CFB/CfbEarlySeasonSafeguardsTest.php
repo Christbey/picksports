@@ -19,6 +19,7 @@ use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\CFB\Predictions\CfbPredictionInputQuality;
+use App\Services\CFB\Ratings\ResultRatingEvidence;
 use Laravel\Sanctum\Sanctum;
 
 function cfbSampleOutput(array $inputs, bool $sampleAware = true): PredictionOutput
@@ -183,6 +184,7 @@ it('keeps team evidence windows distinct and empty samples nullable', function (
 });
 
 it('publishes reproducible fallback forecasts with incomplete labels and no playable signal', function () {
+    $this->mock(ResultRatingEvidence::class)->shouldReceive('forGame')->andReturnNull();
     $this->travelTo(Carbon\Carbon::parse('2026-09-18 12:00:00', 'UTC'));
     $f = cfbWorkloadFixture();
     $event = SportEvent::factory()->create(['sport' => 'cfb', 'season' => 2026, 'season_type' => 'regular',

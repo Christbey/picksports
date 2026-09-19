@@ -47,6 +47,7 @@ class SyncGameWeatherCommand extends Command
         $created = 0;
         $updated = 0;
         $skipped = 0;
+        $failed = 0;
 
         foreach ($games as $game) {
             if (! $this->option('force') && GameWeather::query()->where('game_id', $game->id)->exists()) {
@@ -55,7 +56,15 @@ class SyncGameWeatherCommand extends Command
                 continue;
             }
 
-            $weather = $weatherService->fetch($game);
+            try {
+                $weather = $weatherService->fetch($game);
+            } catch (\Throwable $error) {
+                report($error);
+                $failed++;
+                $this->warn("Weather refresh failed for CFB game {$game->id}; continuing remaining games.");
+
+                continue;
+            }
             if ($weather === null) {
                 $skipped++;
 
@@ -66,8 +75,8 @@ class SyncGameWeatherCommand extends Command
             $row->wasRecentlyCreated ? $created++ : $updated++;
         }
 
-        $this->info("CFB weather sync complete. Created {$created}, updated {$updated}, skipped {$skipped}.");
+        $this->info("CFB weather sync complete. Created {$created}, updated {$updated}, skipped {$skipped}, failed {$failed}.");
 
-        return Command::SUCCESS;
+        return $failed > 0 ? Command::FAILURE : Command::SUCCESS;
     }
 }

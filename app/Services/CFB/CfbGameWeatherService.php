@@ -114,10 +114,14 @@ class CfbGameWeatherService
             }
         }
 
-        $query = trim((string) ($game->venue_city ?? '').' '.(string) ($game->venue_state ?? ''));
-        if ($query === '') {
+        $city = trim((string) ($game->venue_city ?? ''));
+        if ($city === '') {
             return null;
         }
+
+        // Open-Meteo treats the text after a comma as the exact administrative-area qualifier.
+        $state = trim((string) ($game->venue_state ?? ''));
+        $query = $city.($state === '' ? '' : ', '.$state);
 
         $response = Http::timeout(15)->get((string) config('services.open_meteo.geocoding_url'), [
             'name' => $query,
@@ -138,7 +142,7 @@ class CfbGameWeatherService
         return [
             'latitude' => (float) $result['latitude'],
             'longitude' => (float) $result['longitude'],
-            'source' => 'geocoded_venue_city',
+            'source' => 'geocoded_venue_city_qualified',
         ];
     }
 

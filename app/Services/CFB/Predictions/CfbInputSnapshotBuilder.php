@@ -115,6 +115,7 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 ->build($game, $snapshot->capturedAt, $snapshot->cutoffAt);
             $sourceTimestamps['historical_signals'] = $inputs['historical_signals']['latest_source_available_at'];
             $weather = GameWeather::where('game_id', $game->id)
+                ->where(fn ($query) => $query->whereNull('location_source')->orWhere('location_source', '!=', 'geocoded_venue_city'))
                 ->where('updated_at', '<=', $snapshot->capturedAt)->where('updated_at', '<', $snapshot->cutoffAt)
                 // observed_at is the forecast VALID hour, not when the forecast was received.
                 ->where('created_at', '<=', $snapshot->capturedAt)->where('created_at', '<', $snapshot->cutoffAt)
@@ -124,7 +125,7 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $inputs['signal_context']['conference'] = $game->conference_game === null ? null : (bool) $game->conference_game;
             if ($weather) {
                 $inputs['signal_context']['weather_evidence'] = ['weather_id' => $weather->id,
-                    'provider' => $weather->provider, 'available_at' => $weather->updated_at->toIso8601String(),
+                    'provider' => $weather->provider, 'location_source' => $weather->location_source, 'available_at' => $weather->updated_at->toIso8601String(),
                     'forecast_valid_at' => $weather->observed_at?->toIso8601String(),
                     'time_semantics' => 'received_before_capture_forecast_valid_at_kickoff'];
                 foreach (['temperature_f', 'wind_speed_mph', 'wind_gust_mph', 'precipitation_inches', 'is_indoor'] as $field) {

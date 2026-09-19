@@ -1473,6 +1473,42 @@ function saveOptions(): SavePickOption[] {
                     </li>
                 </ul>
             </details>
+            <details
+                v-if="valueSignal()?.signal_contributions?.signals?.length"
+                class="text-xs text-muted-foreground"
+            >
+                <summary class="cursor-pointer">
+                    Signal impact:
+                    {{
+                        valueSignal()?.signal_contributions
+                            ?.active_spread_signals
+                    }}
+                    spread,
+                    {{
+                        valueSignal()?.signal_contributions
+                            ?.active_total_signals
+                    }}
+                    total
+                </summary>
+                <p class="mt-1">
+                    Positive spread points favor the home team; positive total
+                    points raise the total. Impacts compare the forecast with
+                    that signal removed and are not independent votes.
+                </p>
+                <ul class="mt-1 list-disc space-y-1 pl-4">
+                    <li
+                        v-for="signal in valueSignal()?.signal_contributions?.signals?.filter(
+                            (item) => item.active,
+                        )"
+                        :key="`${signal.signal}-${signal.market}`"
+                    >
+                        {{ signal.signal.replaceAll('_', ' ') }} ·
+                        {{ signal.market }}:
+                        {{ signal.contribution_points > 0 ? '+' : ''
+                        }}{{ signal.contribution_points.toFixed(1) }} points
+                    </li>
+                </ul>
+            </details>
             <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">

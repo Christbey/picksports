@@ -1249,6 +1249,8 @@ $scheduleDailySeasonJob("cfb:report-frozen-decisions --season={$fallSeasonYear}"
     ->appendOutputTo(storage_path('logs/cfb-frozen-decisions.log'));
 $scheduleDailySeasonJob("cfb:compare-frozen-baselines --season={$fallSeasonYear}", '03:20', $cfbCanonicalPipelineEnabled, 'CFB: Compare Frozen Spread Baselines')
     ->appendOutputTo(storage_path('logs/cfb-frozen-baselines.log'));
+$scheduleDailySeasonJob("cfb:report-signal-contributions --season={$fallSeasonYear}", '03:25', $cfbCanonicalPipelineEnabled, 'CFB: Grade Frozen Signal Contributions')
+    ->appendOutputTo(storage_path('logs/cfb-signal-contributions.log'));
 $cfbSpreadCandidateCommand = 'cfb:train-spread-calibration --release-version='.
     CfbCalculationReleaseDefinition::SEMANTIC_VERSION;
 $cfbSpreadCandidateEvent = Schedule::command($cfbSpreadCandidateCommand)->weeklyOn(2, '02:10')

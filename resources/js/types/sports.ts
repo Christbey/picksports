@@ -53,6 +53,18 @@ export interface BettingValueSummary {
 }
 
 export interface ValueSignalSummary {
+    signal_contributions?: {
+        excluded?: string;
+        active_spread_signals?: number;
+        active_total_signals?: number;
+        signals?: Array<{
+            signal: string;
+            market: string;
+            contribution_points: number;
+            active: boolean;
+            grade: string;
+        }>;
+    } | null;
     decision_policy_version?: string;
     decision_status?:
         | 'unavailable'

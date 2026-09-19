@@ -73,11 +73,17 @@ class CfbCanonicalSpreadValueSignalService
                 ...(! $prediction->generated_at || $prediction->generated_at->lt(now()->subHours(6))
                     || $prediction->generated_at->gt(now()) ? ['stale_prediction'] : [])],
         );
+        $signalContributions = null;
+        if ($game->sportEvent?->starts_at && $prediction->calculationRun?->release) {
+            $signalContributions = app(CfbSignalContributionGrader::class)->evaluate(
+                $prediction, $game->sportEvent->starts_at->toImmutable(), null, null, $marketHomeLine);
+        }
         $assessment['cover_probability'] = $probability['cover_probability'];
         $assessment['probability_status'] = $probability['status'];
         if (! $support['model_inputs_qualified']
             && (bool) config('cfb.predictions.spread_value.suppress_unqualified_model_inputs', true)) {
             return [
+                'signal_contributions' => $signalContributions,
                 'decision_policy_version' => self::DECISION_POLICY_VERSION,
                 'decision_status' => 'unavailable',
                 'decision_summary' => 'No reliable spread selection: essential model inputs are missing.',
@@ -116,6 +122,7 @@ class CfbCanonicalSpreadValueSignalService
         $decisionNotes = $this->decisionNotes($riskFlags);
 
         return [
+            'signal_contributions' => $signalContributions,
             'decision_policy_version' => self::DECISION_POLICY_VERSION,
             'decision_status' => $decisionStatus,
             'decision_summary' => $noEdge ? 'No directional edge at the selected line.'

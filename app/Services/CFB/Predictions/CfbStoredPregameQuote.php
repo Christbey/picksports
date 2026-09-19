@@ -10,6 +10,10 @@ class CfbStoredPregameQuote
 {
     public function latest(int $gameId, string $marketKey, string $side, CarbonInterface $kickoff, ?CarbonInterface $asOf = null): ?MarketQuote
     {
+        // Database timestamps use the application timezone, including UTC callers.
+        $kickoff = $kickoff->copy()->setTimezone(config('app.timezone'));
+        $asOf = $asOf?->copy()->setTimezone(config('app.timezone'));
+
         return MarketQuote::query()->where('sport', 'cfb')->where('game_table', 'cfb_games')
             ->where('game_id', $gameId)->where('market_key', $marketKey)->where('side', $side)
             ->where('is_pregame', true)->where('captured_at', '<', $kickoff)

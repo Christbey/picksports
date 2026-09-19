@@ -9,7 +9,7 @@ class NflGameStateGuard
 {
     public static function preserve(Model $game, array $attributes): array
     {
-        if (! $game instanceof Game) {
+        if (! $game instanceof Game && ! $game instanceof \App\Models\CFB\Game) {
             return $attributes;
         }
 
@@ -26,11 +26,12 @@ class NflGameStateGuard
         $resolver = app(EspnGameStatusResolver::class);
         $current = (string) $game->status;
         $incoming = (string) ($attributes['status'] ?? '');
-        $regresses = $resolver->rank($incoming, 'nfl') < $resolver->rank($current, 'nfl');
+        $sport = $game instanceof Game ? 'nfl' : 'cfb';
+        $regresses = $resolver->rank($incoming, $sport) < $resolver->rank($current, $sport);
 
         // A stale schedule must not erase the score while retaining a live/final status.
         foreach (['home_score', 'away_score', 'period', 'game_clock', 'home_linescores', 'away_linescores', 'completed_at'] as $field) {
-            if ($regresses || (array_key_exists($field, $attributes) && $attributes[$field] === null && $game->{$field} !== null)) {
+            if ($regresses || ($sport === 'nfl' && array_key_exists($field, $attributes) && $attributes[$field] === null && $game->{$field} !== null)) {
                 unset($attributes[$field]);
             }
         }

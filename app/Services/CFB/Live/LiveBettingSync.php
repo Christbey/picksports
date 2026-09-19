@@ -22,6 +22,7 @@ class LiveBettingSync
 
     public function execute(Game $game): array
     {
+        $statsObservedSince = now()->startOfSecond();
         $payload = $this->espn->getLiveGame((string) $game->espn_event_id);
         if (! is_array($payload) || (string) data_get($payload, 'header.id') !== (string) $game->espn_event_id
             || ! is_array(data_get($payload, 'header.competitions.0.status.type'))) {
@@ -37,8 +38,9 @@ class LiveBettingSync
         });
         $game->refresh();
         app(UpdateLivePrediction::class)->execute($game);
-        $snapshot = LivePredictionSnapshot::where('game_id', $game->id)->latest('id')->first();
-        if (! $snapshot || ! in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_FINAL'], true)) {
+        $game->refresh();
+        $snapshot = LivePredictionSnapshot::where('game_id', $game->id)->where('source', 'scoreboard')->latest('id')->first();
+        if (! $snapshot || $snapshot->observed_at->lt($statsObservedSince) || ! in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_FINAL'], true)) {
             return ['status' => 'no_baseline_or_not_live'];
         }
         $response = null;
@@ -62,7 +64,7 @@ class LiveBettingSync
         // Keep the quote and box-score timestamps together; no live prices touch game odds_data or pregame props.
         $projection = $snapshot->status === 'live' ? $snapshot->projection : null;
         $markets = $response ? app(LiveMarketComparison::class)->games($response, $projection) : [];
-        $props = app(LivePropProjector::class)->project($game, $projection, $response, $statsObserved);
+        $props = app(LivePropProjector::class)->project($game, $projection, $response, $statsObserved, $statsObservedSince);
         $recorded = app(LiveSnapshotRecorder::class)->record($game, $snapshot->pregame, $snapshot->projection,
             $game->status === 'STATUS_FINAL' && ! $statsObserved ? 'final_pending_stats' : $snapshot->status, 'live_feed', $markets, $props);
         if ($game->status === 'STATUS_FINAL' && $statsObserved) {

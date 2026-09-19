@@ -4,6 +4,9 @@ import { fetchJson } from '@/composables/useApiClient';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 type Forecast = {
+    source?: string;
+    home_points?: number | null;
+    away_points?: number | null;
     spread: number | null;
     total: number | null;
     home_win_probability: number | null;
@@ -170,6 +173,19 @@ const outcomes = (market: Market) =>
                     Live projection unavailable:
                     {{ snapshot.status.replaceAll('_', ' ') }}.
                 </p>
+                <p
+                    v-if="snapshot.pregame.source === 'stored_closing_market'"
+                    class="text-sm text-muted-foreground"
+                >
+                    Live estimates start from the last stored pregame line
+                    because team evidence is incomplete.
+                </p>
+                <p
+                    v-else-if="snapshot.pregame.source === 'canonical_pregame'"
+                    class="text-sm text-muted-foreground"
+                >
+                    Live estimates start from the published pregame forecast.
+                </p>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
                         <thead>
@@ -201,7 +217,27 @@ const outcomes = (market: Market) =>
                                 </td>
                             </tr>
                             <tr>
-                                <td class="py-2">Home win probability</td>
+                                <td class="py-2">Home team points</td>
+                                <td>—</td>
+                                <td>
+                                    {{
+                                        number(snapshot.projection?.home_points)
+                                    }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="py-2">Away team points</td>
+                                <td>—</td>
+                                <td>
+                                    {{
+                                        number(snapshot.projection?.away_points)
+                                    }}
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="py-2">
+                                    Home win estimate (uncalibrated)
+                                </td>
                                 <td>
                                     {{
                                         percent(
@@ -305,9 +341,7 @@ const outcomes = (market: Market) =>
                 </div>
                 <details>
                     <summary class="cursor-pointer text-sm font-medium">
-                        Saved live history ({{
-                            payload?.meta.snapshot_count
-                        }}
+                        Saved live history ({{ payload?.meta.snapshot_count }}
                         snapshots)
                     </summary>
                     <div class="mt-2 overflow-x-auto">

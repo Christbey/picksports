@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\CFB\UpdateLivePrediction;
+use App\Models\CanonicalPrediction;
 use App\Models\CFB\Game;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Models\CFB\Player;
@@ -8,6 +9,9 @@ use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\Team;
+use App\Models\GameOddsSnapshot;
+use App\Models\MarketQuote;
+use App\Models\SportEvent;
 use App\Models\User;
 use App\Services\CFB\Live\LiveBettingSync;
 use App\Services\CFB\Live\LiveMarketComparison;
@@ -15,6 +19,7 @@ use App\Services\CFB\Live\LivePropProjector;
 use App\Services\CFB\Live\LiveSnapshotRecorder;
 use App\Services\ESPN\CFB\EspnService;
 use App\Services\OddsApi\OddsApiService;
+use App\Support\NflGameStateGuard;
 use App\Support\PredictionFieldAccess;
 use Carbon\Carbon;
 use Laravel\Sanctum\Sanctum;
@@ -27,7 +32,8 @@ beforeEach(function () {
         'season' => 2026, 'season_type' => 2, 'game_date' => '2026-09-12', 'game_time' => '17:00:00',
         'status' => 'STATUS_IN_PROGRESS', 'period' => 2, 'game_clock' => '00:00', 'home_score' => 14, 'away_score' => 7,
         'odds_api_event_id' => 'live-event']);
-    $this->prediction = Prediction::create(['game_id' => $this->game->id, 'predicted_spread' => 10, 'predicted_total' => 50, 'win_probability' => .7, 'confidence_score' => 65]);
+    $this->prediction = Prediction::create(['game_id' => $this->game->id, 'predicted_spread' => 10, 'predicted_total' => 50, 'win_probability' => .7, 'confidence_score' => 65, 'created_at' => now()->subHours(2), 'updated_at' => now()->subHours(2)]);
+    $this->prediction->forceFill(['created_at' => now()->subHours(2), 'updated_at' => now()->subHours(2)])->saveQuietly();
     $this->market = fn ($time = '2026-09-12T17:59:30Z') => ['id' => 'live-event', 'commence_time' => '2026-09-12T17:00:00Z', 'home_team' => 'Home', 'away_team' => 'Away',
         'bookmakers' => [['key' => 'fanduel', 'markets' => [
             ['key' => 'spreads', 'last_update' => $time, 'outcomes' => [['name' => 'Home', 'point' => -7.5, 'price' => -110], ['name' => 'Away', 'point' => 7.5, 'price' => -110]]],
@@ -179,4 +185,71 @@ test('a final game without final box scores remains pending for a later capture'
     $odds->shouldNotReceive('getEventOdds');
     (new LiveBettingSync($espn, $odds))->execute($this->game);
     expect(LivePredictionSnapshot::where('source', 'live_feed')->latest('id')->first()->status)->toBe('final_pending_stats');
+});
+
+test('uses the published prekickoff canonical forecast instead of a frozen legacy baseline', function () {
+    app(UpdateLivePrediction::class)->execute($this->game);
+    $legacySnapshot = LivePredictionSnapshot::first();
+    // Simulate snapshots produced by v1 without modifying immutable records.
+    $this->game->liveSnapshots()->getQuery()->delete();
+    $old = $legacySnapshot->pregame;
+    unset($old['baseline_contract']);
+    app(LiveSnapshotRecorder::class)->record($this->game, $old, null, 'live');
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => Carbon::parse('2026-09-12T17:00:00Z')->setTimezone(config('app.timezone'))]);
+    $this->game->update(['sport_event_id' => $event->id]);
+    $p = CanonicalPrediction::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id,
+        'phase' => 'pregame', 'publication_state' => 'published', 'generated_at' => now()->subHours(2),
+        'published_at' => now()->subHours(2), 'created_at' => now()->subHours(2),
+        'output_metadata' => ['input_quality' => ['qualified' => true]], 'model_version' => '1.6.2']);
+    $p->markets()->create(['market_type' => 'spread', 'selection' => 'home', 'projected_line' => -20]);
+    $p->markets()->create(['market_type' => 'total', 'selection' => 'combined', 'projected_line' => 60]);
+    $p->markets()->create(['market_type' => 'moneyline', 'selection' => 'home', 'probability' => .96]);
+    app(UpdateLivePrediction::class)->execute($this->game->fresh());
+    $snapshot = LivePredictionSnapshot::latest('id')->first();
+    expect($snapshot->pregame['source'])->toBe('canonical_pregame')->and($snapshot->pregame['spread'])->toBe(20)
+        ->and($snapshot->pregame['canonical_prediction_id'])->toBe($p->id)
+        ->and($snapshot->projection['model_version'])->toBe('cfb-live-score-clock-v2');
+    expect((float) $this->prediction->fresh()->predicted_spread)->toBe(10.0);
+});
+
+test('uses stored closing quotes for incomplete team evidence and ignores postkickoff inserts', function () {
+    $event = SportEvent::factory()->create(['sport' => 'cfb', 'starts_at' => Carbon::parse('2026-09-12T17:00:00Z')->setTimezone(config('app.timezone'))]);
+    $this->game->update(['sport_event_id' => $event->id]);
+    $odds = GameOddsSnapshot::create(['sport' => 'cfb', 'game_table' => 'cfb_games', 'game_id' => $this->game->id, 'source' => 'test', 'captured_at' => now()->subHours(2), 'payload_hash' => hash('sha256', 'test'), 'odds_data' => []]);
+    foreach ([['spreads', 'home', -28], ['totals', 'over', 56]] as [$market, $side, $line]) {
+        MarketQuote::forceCreate(['sport' => 'cfb', 'game_table' => 'cfb_games', 'game_id' => $this->game->id,
+            'game_odds_snapshot_id' => $odds->id, 'source' => 'test', 'bookmaker_key' => 'test', 'quote_hash' => hash('sha256', $market),
+            'market_key' => $market, 'side' => $side, 'line' => $line, 'is_pregame' => true,
+            'created_at' => now()->subHours(2), 'captured_at' => now()->subHours(2)]);
+    }
+    MarketQuote::forceCreate(['game_odds_snapshot_id' => $odds->id, 'sport' => 'cfb', 'game_table' => 'cfb_games', 'game_id' => $this->game->id, 'source' => 'test', 'quote_hash' => hash('sha256', 'late'), 'market_key' => 'spreads', 'side' => 'home', 'line' => -50, 'is_pregame' => true, 'created_at' => now(), 'captured_at' => now()->subHours(2)]);
+    app(UpdateLivePrediction::class)->execute($this->game->fresh());
+    $snapshot = LivePredictionSnapshot::latest('id')->first();
+    expect($snapshot->pregame['source'])->toBe('stored_closing_market')->and($snapshot->pregame['spread'])->toBe(28)
+        ->and($snapshot->projection)->not->toBeNull();
+});
+
+test('does not mistake a postkickoff legacy forecast for pregame evidence', function () {
+    $this->prediction->update(['predicted_spread' => 20]);
+    app(UpdateLivePrediction::class)->execute($this->game->fresh());
+    expect(LivePredictionSnapshot::latest('id')->first()->status)->toBe('missing_pregame');
+});
+
+test('requires executable prices and handles equivalent numeric total lines', function () {
+    $response = ($this->market)();
+    $response['bookmakers'][0]['markets'][0]['outcomes'][0]['price'] = 0;
+    $response['bookmakers'][0]['markets'][1]['outcomes'][1]['point'] = '45.5';
+    $rows = app(LiveMarketComparison::class)->games($response, ['spread' => 10, 'total' => 50, 'home_win_probability' => .75]);
+    expect($rows[0]['lean'])->toBeNull()->and($rows[1]['lean'])->toBe('Over');
+});
+
+test('recognizes a genuine halftime without a clock', function () {
+    $this->game->update(['status' => 'STATUS_HALFTIME', 'period' => 2, 'game_clock' => null]);
+    $result = app(UpdateLivePrediction::class)->execute($this->game->fresh());
+    expect($result['live_seconds_remaining'])->toBe(1800);
+});
+
+test('stale scheduled updates cannot overwrite an active college football score', function () {
+    $changes = NflGameStateGuard::preserve($this->game, ['status' => 'STATUS_SCHEDULED', 'home_score' => 0, 'away_score' => 0, 'period' => 0, 'game_clock' => '0:00']);
+    expect($changes['status'])->toBe('STATUS_IN_PROGRESS')->and($changes)->not->toHaveKey('home_score');
 });

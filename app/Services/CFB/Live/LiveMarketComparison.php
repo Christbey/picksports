@@ -23,7 +23,13 @@ class LiveMarketComparison
 
     public function probability(int|float $price): ?float
     {
-        return $price === 0 ? null : ($price < 0 ? abs($price) / (abs($price) + 100) : 100 / ($price + 100));
+        return ! is_finite((float) $price) || abs($price) < 100 ? null : ($price < 0 ? abs($price) / (abs($price) + 100) : 100 / ($price + 100));
+    }
+
+    private function validPrices(?array $first, ?array $second): bool
+    {
+        return is_numeric($first['price'] ?? null) && is_numeric($second['price'] ?? null)
+            && $this->probability($first['price']) !== null && $this->probability($second['price']) !== null;
     }
 
     public function games(array $response, ?array $projection): array
@@ -44,18 +50,20 @@ class LiveMarketComparison
                     'fresh' => $fresh, 'outcomes' => $outcomes->values()->all(), 'difference' => null, 'lean' => null];
                 if ($fresh && $projection) {
                     if ($market['key'] === 'spreads' && is_numeric($home['point'] ?? null) && is_numeric($away['point'] ?? null)
-                        && abs((float) $home['point'] + (float) $away['point']) < .001) {
+                        && abs((float) $home['point'] + (float) $away['point']) < .001
+                        && $this->validPrices($home, $away)) {
                         // Projections are home-minus-away margins; sportsbook home handicaps have the opposite sign.
                         $row['home_line'] = (float) $home['point'];
                         $row['difference'] = round($projection['spread'] + (float) $home['point'], 1);
                         $row['lean'] = $row['difference'] > 0 ? 'Home' : ($row['difference'] < 0 ? 'Away' : null);
-                    } elseif ($market['key'] === 'totals' && is_numeric($over['point'] ?? null) && ($over['point'] ?? null) === ($under['point'] ?? null)) {
+                    } elseif ($market['key'] === 'totals' && is_numeric($over['point'] ?? null) && is_numeric($under['point'] ?? null)
+                        && abs((float) $over['point'] - (float) $under['point']) < .001 && $this->validPrices($over, $under)) {
                         $row['difference'] = round($projection['total'] - (float) $over['point'], 1);
                         $row['lean'] = $row['difference'] > 0 ? 'Over' : ($row['difference'] < 0 ? 'Under' : null);
                     } elseif ($market['key'] === 'h2h' && is_numeric($home['price'] ?? null) && is_numeric($away['price'] ?? null)) {
                         $h = $this->probability($home['price']);
                         $a = $this->probability($away['price']);
-                        if ($h && $a) {
+                        if ($h && $a && is_numeric($projection['home_win_probability'] ?? null)) {
                             $row['market_home_probability'] = round($h / ($h + $a), 4);
                             $row['difference'] = round(100 * ($projection['home_win_probability'] - $h / ($h + $a)), 1);
                             $row['lean'] = $row['difference'] > 0 ? 'Home' : ($row['difference'] < 0 ? 'Away' : null);

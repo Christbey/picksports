@@ -7,6 +7,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\CFB\Live\LiveMarketComparison;
+use App\Services\CFB\Live\LiveScoreProjector;
 use App\Support\PredictionFieldAccess;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -20,15 +21,14 @@ class CfbLiveBettingController extends Controller
         $canSpread = $access->canViewField($request->user(), 'spread');
         $canProbability = $access->canViewField($request->user(), 'win_probability');
         $history = LivePredictionSnapshot::where('game_id', $model->id)->latest('id')->limit(25)->get();
-        $latest = LivePredictionSnapshot::where('game_id', $model->id)->where('source', 'live_feed')->latest('id')->first()
-            ?? $history->first();
+        $latest = $history->first();
         $final = LivePredictionSnapshot::where('game_id', $model->id)->where('source', 'live_feed')->where('status', 'final')->latest('id')->first();
         $stats = collect($final?->props ?? [])->filter(fn ($p) => $p['status'] === 'final')->keyBy(fn ($p) => $p['player_id'].':'.$p['market']);
         $commenceTime = CfbPropEligibility::kickoff($model)->toIso8601String();
         $serialize = function (LivePredictionSnapshot $snapshot) use ($canSpread, $canProbability, $stats, $model, $commenceTime) {
             $baseline = $snapshot->pregame;
             $projection = $snapshot->projection;
-            foreach (['spread', 'total'] as $key) {
+            foreach (['spread', 'total', 'home_points', 'away_points'] as $key) {
                 if (! $canSpread) {
                     $baseline[$key] = null;
                     if ($projection) {
@@ -106,7 +106,7 @@ class CfbLiveBettingController extends Controller
 
         return response()->json(['data' => $latest ? $serialize($latest) : null, 'history' => $history->map($serialize)->all(),
             'meta' => ['game_id' => $model->id, 'game_status' => $model->status, 'snapshot_count' => $model->liveSnapshots()->count(),
-                'model' => 'cfb-live-score-clock-v1', 'player_prop_model' => 'cfb-live-production-rate-v1',
+                'model' => LiveScoreProjector::VERSION, 'player_prop_model' => 'cfb-live-production-rate-v1',
                 'experimental' => true, 'refresh_seconds' => 30,
                 'limitations' => ['Live comparisons are model differences, not calibrated betting edges.', 'Player estimates do not model depth-chart changes or teammate injury redistribution.', 'Overtime projections are withheld.'],
                 'withheld_fields' => array_values(array_filter([! $canSpread ? 'spread_total' : null, ! $canProbability ? 'win_probability' : null]))]]);

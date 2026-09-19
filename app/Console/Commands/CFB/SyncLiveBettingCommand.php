@@ -22,10 +22,10 @@ class SyncLiveBettingCommand extends Command
         }
         $games = Game::where(function ($q) {
             $q->whereIn('status', ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD'])
-                ->orWhere(fn ($q) => $q->where('status', 'STATUS_FINAL')->whereHas('liveSnapshots')
+                ->orWhere(fn ($q) => $q->where('status', 'STATUS_FINAL')->whereDate('game_date', '>=', now()->subDays(2)->toDateString())->whereHas('liveSnapshots')
                     ->whereDoesntHave('liveSnapshots', fn ($s) => $s->where('source', 'live_feed')->where('status', 'final')));
         })->when($this->option('game'), fn ($q, $id) => $q->whereKey($id))
-            ->orderBy('updated_at')->limit((int) $this->option('limit'))->get();
+            ->orderByRaw("CASE WHEN status = 'STATUS_FINAL' THEN 1 ELSE 0 END")->orderBy('updated_at')->limit((int) $this->option('limit'))->get();
         $failed = 0;
         foreach ($games as $game) {
             try {

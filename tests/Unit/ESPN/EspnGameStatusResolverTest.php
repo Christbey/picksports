@@ -32,3 +32,11 @@ it('preserves final status once stored', function () {
     expect($resolver->resolveForUpdate('STATUS_FINAL', 'STATUS_SCHEDULED', 'summary', 'nba'))
         ->toBe('STATUS_FINAL');
 });
+
+test('college football can resume play after halftime and end of period', function () {
+    $resolver = app(EspnGameStatusResolver::class);
+    foreach (['STATUS_HALFTIME', 'STATUS_END_PERIOD'] as $status) {
+        expect($resolver->resolveForUpdate($status, 'STATUS_IN_PROGRESS', 'summary', 'cfb'))->toBe('STATUS_IN_PROGRESS');
+    }
+    expect($resolver->resolveForUpdate('STATUS_FINAL', 'STATUS_IN_PROGRESS', 'summary', 'cfb'))->toBe('STATUS_FINAL');
+});

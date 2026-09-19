@@ -71,11 +71,11 @@ it('blocks the prior-season exception when the new release lacks personnel cover
         'home' => ['metrics' => ['wins' => 2]], 'away' => ['metrics' => ['wins' => 2]]];
     $result = $service->assess($inputs, ['spread_baseline' => 'fpi_points'], CarbonImmutable::now(), 'verified');
     expect($result['eligible'])->toBeFalse()->and($result['risk_flags'])
-        ->toContain('home_early_season_personnel_evidence_incomplete', 'away_early_season_personnel_evidence_incomplete');
+        ->toContain('home_personnel_coverage_unverified', 'away_personnel_coverage_unverified');
     $inputs['home']['personnel']['coverage_complete'] = true;
     $inputs['away']['personnel']['coverage_complete'] = true;
     expect($service->assess($inputs, ['spread_baseline' => 'fpi_points'], CarbonImmutable::now(), 'verified')['risk_flags'])
-        ->not->toContain('home_early_season_personnel_evidence_incomplete', 'away_early_season_personnel_evidence_incomplete');
+        ->not->toContain('home_personnel_coverage_unverified', 'away_personnel_coverage_unverified');
 });
 
 it('does not trust a correct hash and requested-season stamp over an explicitly wrong payload season', function () {

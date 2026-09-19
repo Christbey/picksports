@@ -32,7 +32,10 @@ class CfbEarlySeasonSpreadSupport
         foreach (['home', 'away'] as $side) {
             if (data_get($inputs, 'require_personnel_evidence', false)
                 && ! data_get($inputs, $side.'.personnel.coverage_complete', false)) {
-                $flags[] = $side.'_early_season_personnel_evidence_incomplete';
+                $missing = (array) data_get($inputs, $side.'.personnel.missing_components', []);
+                foreach ($missing ?: ['coverage'] as $component) {
+                    $flags[] = $side.'_personnel_'.$component.'_unverified';
+                }
             }
             $metrics = (array) data_get($inputs, $side.'.metrics', []);
             $samples[$side] = (int) ($metrics['wins'] ?? 0) + (int) ($metrics['losses'] ?? 0);

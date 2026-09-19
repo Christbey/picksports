@@ -419,7 +419,8 @@ it('holds an apparent CFB edge without two priced books and calibrated cover evi
         ->assertJsonPath('data.0.value_signal.best.edge', 14)
         ->assertJsonPath('data.0.value_signal.best.is_key_edge', false)
         ->assertJsonPath('data.0.value_signal.best.stats_supported', true)
-        ->assertJsonPath('data.0.value_signal.best.grade', 'Watch')
+        ->assertJsonPath('data.0.value_signal.best.grade', 'Blocked')
+        ->assertJsonPath('data.0.value_signal.decision_status', 'blocked')
         ->assertJsonPath('data.0.value_signal.market_confirmation.supported', false)
         ->assertJsonPath('data.0.value_signal.cover_probability_evidence.status', 'unavailable')
         ->assertJsonPath('data.0.market_summary.has_odds', true)
@@ -446,7 +447,10 @@ it('holds an apparent CFB edge without two priced books and calibrated cover evi
         ->assertOk()
         ->assertJsonPath('data.0.market_summary.has_odds', true)
         ->assertJsonPath('data.0.value_signal.has_playable_value', false)
-        ->assertJsonPath('data.0.value_signal.best', null);
+        ->assertJsonPath('data.0.value_signal.decision_status', 'blocked')
+        ->assertJsonPath('data.0.value_signal.best.side', 'away')
+        ->assertJsonPath('data.0.value_signal.best.edge', 2)
+        ->assertJsonPath('data.0.value_signal.best.price', null);
 });
 
 it('keeps a large CFB spread disagreement on watch when team samples do not support it', function () {
@@ -496,7 +500,8 @@ it('keeps a large CFB spread disagreement on watch when team samples do not supp
         ->assertJsonPath('data.0.value_signal.best.edge', 14)
         ->assertJsonPath('data.0.value_signal.best.is_key_edge', false)
         ->assertJsonPath('data.0.value_signal.best.stats_supported', false)
-        ->assertJsonPath('data.0.value_signal.best.grade', 'Watch')
+        ->assertJsonPath('data.0.value_signal.best.grade', 'Blocked')
+        ->assertJsonPath('data.0.value_signal.decision_status', 'blocked')
         ->assertJsonPath('data.0.value_signal.best.statistical_support.home_sample_games', 1)
         ->assertJsonPath('data.0.value_signal.best.statistical_support.away_sample_games', 1);
 });
@@ -547,6 +552,7 @@ it('suppresses a CFB spread disagreement when the model has only default inputs'
         ->assertOk()
         ->assertJsonPath('data.0.value_signal.has_playable_value', false)
         ->assertJsonPath('data.0.value_signal.play_count', 0)
+        ->assertJsonPath('data.0.value_signal.decision_status', 'unavailable')
         ->assertJsonPath('data.0.value_signal.best', null);
 });
 

@@ -68,3 +68,19 @@ it('refuses retrospective recording of old predictions or started games', functi
     expect(app(CfbReleasedBetDecisionRecorder::class)->record($prediction, $game))->toBeNull()
         ->and(BetDecision::count())->toBe(0);
 });
+
+it('records provisional selections with prices and policy identity without approving a wager', function () {
+    [$game, $prediction, $snapshot, $odds] = decisionFixture();
+    $this->mock(CfbCanonicalSpreadValueSignalService::class)->shouldReceive('forPrediction')->once()->andReturn([
+        'decision_policy_version' => 'cfb-spread-decisions-2', 'decision_status' => 'provisional',
+        'has_playable_value' => false, 'spread_assessment' => ['risk_flags' => ['spread_calibration_unavailable']],
+        'market_confirmation' => ['side' => 'home', 'risk_flags' => [], 'best_quote' => [
+            'quote_id' => 88, 'snapshot_id' => $odds->id, 'line' => 2.5, 'price' => -115, 'bookmaker' => 'fanduel',
+        ]], 'best' => ['edge' => 2.5], 'cover_probability_evidence' => ['cover_probability' => null, 'risk_flags' => ['spread_calibration_unavailable']],
+    ]);
+    $decision = app(CfbReleasedBetDecisionRecorder::class)->record($prediction, $game);
+    expect($decision->status)->toBe('provisional_candidate')->and($decision->recommendation_label)->toBe('model_lean')
+        ->and($decision->is_bet)->toBeFalse()->and($decision->price)->toBe(-115)
+        ->and($decision->model_probability)->toBeNull()->and($decision->projected_value)->toBeNull()
+        ->and(data_get($decision->feature_snapshot, 'decision_policy_version'))->toBe('cfb-spread-decisions-2');
+});

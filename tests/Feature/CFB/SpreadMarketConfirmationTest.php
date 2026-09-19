@@ -80,3 +80,13 @@ it('requires a qualifying point edge on the same side at both books', function (
     $result = app(CfbSpreadMarketConfirmation::class)->assess($game, 'home', 25);
     expect($result['supported'])->toBeFalse()->and($result['confirming_book_count'])->toBe(1);
 });
+
+it('preserves fresh Auburn plus 2.5 prices below the betting edge threshold', function () {
+    $game = confirmationGame();
+    confirmationQuotes($game, [['draftkings', 2.5, -115], ['fanduel', 2.5, -115], ['betmgm', 2, -108]]);
+    $result = app(CfbSpreadMarketConfirmation::class)->assess($game, 'home', 0);
+    expect($result['supported'])->toBeFalse()->and($result['market_supported'])->toBeTrue()
+        ->and($result['fresh_book_count'])->toBe(3)->and($result['confirming_book_count'])->toBe(0)
+        ->and($result['best_quote']['line'])->toBe(2.5)->and($result['best_quote']['price'])->toBe(-115)
+        ->and($result['best_quote']['edge_points'])->toBe(2.5);
+});

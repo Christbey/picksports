@@ -847,6 +847,11 @@ function valueSignalMeta(): string | null {
             `Edge ${best.edge > 0 ? '+' : ''}${best.edge.toFixed(1)}${suffix}`,
         );
     }
+    if (typeof best.price === 'number') {
+        parts.push(
+            `${best.price > 0 ? '+' : ''}${best.price}${best.bookmaker ? ` · ${best.bookmaker}` : ''}`,
+        );
+    }
     if (best.grade) {
         parts.push(`Grade ${best.grade}`);
     }
@@ -945,6 +950,7 @@ function dashboardCardTone():
     }
 
     if (
+        valueSignal()?.decision_status === 'provisional' ||
         isLeanRecommendation(props.prediction) ||
         isLiveMonitor(props.prediction) ||
         aiBetClassificationLabel() === 'Bet' ||
@@ -1448,8 +1454,25 @@ function saveOptions(): SavePickOption[] {
                 class="text-xs text-muted-foreground"
                 :title="valueSignal()?.spread_assessment?.risk_flags.join(', ')"
             >
-                {{ valueSignal()?.spread_assessment?.summary }}
+                {{
+                    valueSignal()?.decision_summary ??
+                    valueSignal()?.spread_assessment?.summary
+                }}
             </p>
+            <details
+                v-if="valueSignal()?.decision_notes?.length"
+                class="text-xs text-muted-foreground"
+            >
+                <summary class="cursor-pointer">Why this status</summary>
+                <ul class="mt-1 list-disc space-y-1 pl-4">
+                    <li
+                        v-for="note in valueSignal()?.decision_notes"
+                        :key="note"
+                    >
+                        {{ note }}
+                    </li>
+                </ul>
+            </details>
             <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">

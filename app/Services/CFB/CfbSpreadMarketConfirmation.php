@@ -101,13 +101,15 @@ class CfbSpreadMarketConfirmation
         if (count($confirmed) < $minimumBooks) {
             $flags[] = 'insufficient_same_side_book_confirmation';
         }
-        usort($confirmed, fn ($a, $b) => ($b['line'] <=> $a['line']) ?: ($b['price'] <=> $a['price']) ?: strcmp($a['bookmaker'], $b['bookmaker']));
+        $priced = array_values(array_filter($accepted, fn ($quote) => $median === null || abs($quote['line'] - $median) <= $maximumRange));
+        usort($priced, fn ($a, $b) => ($b['line'] <=> $a['line']) ?: ($b['price'] <=> $a['price']) ?: strcmp($a['bookmaker'], $b['bookmaker']));
 
         return ['supported' => $flags === [], 'side' => $side, 'minimum_books' => $minimumBooks,
             'fresh_book_count' => count($accepted), 'confirming_book_count' => count($confirmed),
             'maximum_quote_age_minutes' => $age, 'median_side_line' => $median, 'line_range' => $range,
-            'selection_policy' => 'best handicap among confirming quotes within price limits; highest price breaks line ties',
-            'best_quote' => $confirmed[0] ?? null, 'confirmed_quotes' => $confirmed,
+            'market_supported' => array_diff($flags, ['insufficient_same_side_book_confirmation']) === [],
+            'selection_policy' => 'best fresh paired handicap within price and line-range limits; independent of edge threshold',
+            'best_quote' => $priced[0] ?? null, 'confirmed_quotes' => $confirmed,
             'fresh_quotes' => $accepted, 'rejected_quotes' => $rejected, 'risk_flags' => $flags];
     }
 

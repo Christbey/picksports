@@ -47,7 +47,8 @@ class CfbReleasedBetDecisionRecorder
             $reasons[] = 'point_edge_or_expected_value_below_threshold';
         }
         $side = data_get($signal, 'market_confirmation.side', data_get($signal, 'best.side', 'unknown'));
-        $features = ['canonical_prediction_id' => $prediction->id, 'prediction_public_id' => $prediction->public_id,
+        $provisional = $safe && ($signal['decision_status'] ?? null) === 'provisional';
+        $features = ['decision_policy_version' => $signal['decision_policy_version'] ?? null, 'canonical_prediction_id' => $prediction->id, 'prediction_public_id' => $prediction->public_id,
             'prediction_revision' => $prediction->revision, 'calculation_run_id' => $prediction->calculation_run_id,
             'calculation_release_id' => $prediction->calculationRun?->calculation_release_id,
             'release_version' => $prediction->calculationRun?->release?->semantic_version,
@@ -70,12 +71,12 @@ class CfbReleasedBetDecisionRecorder
             'model_probability' => $probability['cover_probability'] ?? null,
             'edge' => isset($probability['cover_probability'], $quote['no_vig_probability']) ? $probability['cover_probability'] - $quote['no_vig_probability'] : null,
             'projected_value' => $probability['expected_value_per_unit'] ?? null,
-            'status' => $bet ? 'released_tracking_bet' : 'held_candidate',
-            'recommendation_label' => $bet ? 'model_bet' : 'no_bet',
+            'status' => $bet ? 'released_tracking_bet' : ($provisional ? 'provisional_candidate' : 'held_candidate'),
+            'recommendation_label' => $bet ? 'model_bet' : ($provisional ? 'model_lean' : 'no_bet'),
             'is_public' => false, 'is_tracking_only' => true, 'is_bet' => $bet,
             'pregame_safe' => $safe, 'eligibility_reasons' => $reasons, 'risk_flags' => $reasons,
             'reason_codes' => ['cfb_canonical_prospective_decision'],
-            'explanation' => ['authority' => 'cfb_canonical_prospective_decision', 'decision' => $bet ? 'bet' : 'hold',
+            'explanation' => ['authority' => 'cfb_canonical_prospective_decision', 'decision' => $bet ? 'bet' : ($provisional ? 'lean' : 'hold'),
                 'execution_status' => 'not_recorded', 'point_edge' => data_get($signal, 'best.edge'),
                 'decision_evidence_hash' => hash('sha256', json_encode([$features, $quote], JSON_THROW_ON_ERROR))],
             'feature_snapshot' => $features,

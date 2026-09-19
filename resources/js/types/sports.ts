@@ -53,6 +53,15 @@ export interface BettingValueSummary {
 }
 
 export interface ValueSignalSummary {
+    decision_policy_version?: string;
+    decision_status?:
+        | 'unavailable'
+        | 'no_edge'
+        | 'blocked'
+        | 'provisional'
+        | 'validated';
+    decision_summary?: string;
+    decision_notes?: string[];
     spread_assessment?: {
         status: string;
         summary: string;
@@ -76,6 +85,8 @@ export interface ValueSignalSummary {
         side?: 'home' | 'away' | string | null;
         is_key_edge?: boolean;
         stats_supported?: boolean;
+        price?: number | null;
+        bookmaker?: string | null;
         model_home_line?: number | null;
         market_home_line?: number | null;
         risk_flags?: string[];

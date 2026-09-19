@@ -10,6 +10,8 @@ use App\Services\CFB\CfbSpreadMarketConfirmation;
 
 class CfbCanonicalSpreadValueSignalService
 {
+    public const DECISION_POLICY_VERSION = 'cfb-spread-decisions-2';
+
     public function __construct(private readonly CfbMarketMovementSignalService $marketMovement) {}
 
     /** @return array<string, mixed>|null */
@@ -67,25 +69,19 @@ class CfbCanonicalSpreadValueSignalService
         $assessment = app(CfbSpreadAssessment::class)->assess(
             (array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []),
             $modelHomeMargin, $marketHomeLine, [...$support['risk_flags'], ...$marketHealth['risk_flags'], ...$probabilityFlags,
+                ...($prediction->calculationRun?->inputSnapshot?->pregame_safety_status !== 'verified' ? ['unverified_pregame_snapshot'] : []),
                 ...(! $prediction->generated_at || $prediction->generated_at->lt(now()->subHours(6))
                     || $prediction->generated_at->gt(now()) ? ['stale_prediction'] : [])],
         );
         $assessment['cover_probability'] = $probability['cover_probability'];
         $assessment['probability_status'] = $probability['status'];
-        if ($edgePoints < $minimumEdge) {
-            return [
-                'has_playable_value' => false,
-                'play_count' => 0,
-                'spread_assessment' => $assessment,
-                'market_confirmation' => $confirmation,
-                'cover_probability_evidence' => $probability,
-                'best' => null,
-            ];
-        }
-
         if (! $support['model_inputs_qualified']
             && (bool) config('cfb.predictions.spread_value.suppress_unqualified_model_inputs', true)) {
             return [
+                'decision_policy_version' => self::DECISION_POLICY_VERSION,
+                'decision_status' => 'unavailable',
+                'decision_summary' => 'No reliable spread selection: essential model inputs are missing.',
+                'decision_notes' => $this->decisionNotes($assessment['risk_flags']),
                 'has_playable_value' => false,
                 'play_count' => 0,
                 'spread_assessment' => $assessment,
@@ -101,15 +97,31 @@ class CfbCanonicalSpreadValueSignalService
         $teamLabel = $team?->abbreviation ?: $team?->display_name ?: $team?->school ?: ucfirst($side);
         $marketSideLine = $side === 'home' ? $marketHomeLine : -$marketHomeLine;
         $modelSideLine = $side === 'home' ? $modelHomeLine : -$modelHomeLine;
-        $action = $isPlayable ? 'Bet' : 'Watch';
+        $noEdge = $edgePoints <= 0;
+        $blocked = $executable === null || in_array('unverified_pregame_snapshot', $assessment['risk_flags'], true) || in_array('stale_prediction', $assessment['risk_flags'], true)
+            || in_array('home_quarterback_unresolved', $assessment['risk_flags'], true)
+            || in_array('away_quarterback_unresolved', $assessment['risk_flags'], true)
+            || in_array('market_not_confirmed_pregame', $assessment['risk_flags'], true);
+        $decisionStatus = $noEdge ? 'no_edge' : ($isPlayable ? 'validated' : ($blocked ? 'blocked' : 'provisional'));
+        $action = $isPlayable ? 'Bet' : 'Lean';
         $riskFlags = array_values(array_unique([
             ...$assessment['risk_flags'],
+            ...($edgePoints < $minimumEdge ? ['point_edge_below_threshold'] : []),
             ...($edgePoints >= (float) config('cfb.predictions.spread_value.extreme_edge_points', 14.0)
                 ? ['extreme_model_market_disagreement']
                 : []),
         ]));
 
+        $assessment['risk_flags'] = $riskFlags;
+        $decisionNotes = $this->decisionNotes($riskFlags);
+
         return [
+            'decision_policy_version' => self::DECISION_POLICY_VERSION,
+            'decision_status' => $decisionStatus,
+            'decision_summary' => $noEdge ? 'No directional edge at the selected line.'
+                : sprintf('%s %s — %s. Model edge %+.1f points.', $teamLabel, $this->formatLine($marketSideLine),
+                    $isPlayable ? 'validated model bet' : ($blocked ? 'selection blocked' : 'provisional lean'), $edgePoints),
+            'decision_notes' => $decisionNotes,
             'spread_assessment' => $assessment,
             'market_confirmation' => $confirmation,
             'cover_probability_evidence' => $probability,
@@ -117,7 +129,7 @@ class CfbCanonicalSpreadValueSignalService
             'play_count' => $isPlayable ? 1 : 0,
             'best' => [
                 'type' => 'spread',
-                'label' => sprintf('%s %s %s to cover', $action, $teamLabel, $this->formatLine($marketSideLine)),
+                'label' => $noEdge ? 'No directional edge' : sprintf('%s %s %s to cover', $action, $teamLabel, $this->formatLine($marketSideLine)),
                 'side' => $side,
                 'edge' => $edgePoints,
                 'market_line' => round($marketSideLine, 1),
@@ -129,7 +141,7 @@ class CfbCanonicalSpreadValueSignalService
                 'model_line' => round($modelSideLine, 1),
                 'market_home_line' => round($marketHomeLine, 1),
                 'model_home_line' => round($modelHomeLine, 1),
-                'grade' => $isKeyEdge ? 'Key' : ($isPlayable ? 'Playable' : 'Watch'),
+                'grade' => $isKeyEdge ? 'Key' : ($isPlayable ? 'Playable' : ($noEdge ? 'No edge' : ($blocked ? 'Blocked' : 'Provisional'))),
                 'risk_level' => $riskFlags === [] ? 'low' : 'medium',
                 'is_key_edge' => $isKeyEdge,
                 'stats_supported' => $support['supported'],
@@ -176,7 +188,7 @@ class CfbCanonicalSpreadValueSignalService
         $hasDifferentiatedElo = abs($homeElo - $defaultElo) >= 0.001
             || abs($awayElo - $defaultElo) >= 0.001;
         $hasBidirectionalMetricSample = $homeSample > 0 && $awaySample > 0;
-        $modelInputsQualified = $quality['qualified'] && ($hasDifferentiatedElo
+        $modelInputsQualified = array_diff($quality['risk_flags'], ['home_quarterback_unresolved', 'away_quarterback_unresolved']) === [] && ($hasDifferentiatedElo
             || $hasBidirectionalMetricSample);
         $riskFlags = $quality['risk_flags'];
 
@@ -188,12 +200,14 @@ class CfbCanonicalSpreadValueSignalService
         $early = app(CfbEarlySeasonSpreadSupport::class)->assess(
             $inputs, $diagnostics, $snapshot?->captured_at, (string) $snapshot?->pregame_safety_status,
         );
-        if (! $early['eligible'] && ($homeSample < $minimumSample || $awaySample < $minimumSample)) {
-            $riskFlags[] = 'insufficient_team_metric_sample';
+        if (! $early['eligible'] && ($homeSample < $minimumSample || $awaySample < $minimumSample || $reliability < $minimumReliability)) {
+            // Explain the failed prior-season path instead of mislabeling personnel gaps as sample shortages.
+            $riskFlags = [...$riskFlags, ...array_diff($early['risk_flags'], ['early_season_exception_not_needed'])];
+            if ($homeSample >= $minimumSample && $awaySample >= $minimumSample && $reliability < $minimumReliability) {
+                $riskFlags[] = 'insufficient_metric_reliability';
+            }
         }
-        if (! $early['eligible'] && $reliability < $minimumReliability) {
-            $riskFlags[] = 'insufficient_metric_reliability';
-        }
+        $riskFlags = array_values(array_unique($riskFlags));
 
         return [
             'supported' => $riskFlags === [],
@@ -218,7 +232,7 @@ class CfbCanonicalSpreadValueSignalService
         $candidate = $side === 'home' ? $home : $away;
         $support = $supported
             ? 'The stored evidence clears the current-season or prior-season-plus-rating support checks.'
-            : 'The numerical edge is visible, but the stored statistical sample does not clear the promotion gates.';
+            : 'This is a directional estimate; the listed evidence gaps limit betting eligibility.';
 
         return sprintf(
             'Model: %s %s; market: %s %s. %s has a %.1f-point ATS edge. %s',
@@ -230,6 +244,33 @@ class CfbCanonicalSpreadValueSignalService
             $edgePoints,
             $support,
         );
+    }
+
+    private function decisionNotes(array $flags): array
+    {
+        $notes = [];
+        foreach ($flags as $flag) {
+            if (preg_match('/^(home|away)_personnel_(.+)_unverified$/', $flag, $parts)) {
+                $component = match ($parts[2]) {
+                    'head_coach' => 'head-coach continuity', 'coverage' => 'personnel coverage',
+                    default => str_replace('_', ' ', $parts[2]),
+                };
+                $notes[] = ucfirst($parts[1]).' '.$component.' is unverified.';
+
+                continue;
+            }
+            $notes[] = match ($flag) {
+                'spread_calibration_unavailable', 'spread_calibration_incompatible', 'spread_calibration_out_of_domain', 'spread_calibration_line_bucket_unvalidated' => 'Cover probability and expected return are not validated.',
+                'point_edge_below_threshold' => 'Edge is below the betting threshold.',
+                'insufficient_same_side_book_confirmation' => 'Fewer than two books clear the betting edge threshold.',
+                'insufficient_fresh_priced_books' => 'Fewer than two fresh priced books are available.',
+                'spread_price_unavailable' => 'No eligible fresh price is available.',
+                'home_quarterback_evidence_missing', 'away_quarterback_evidence_missing', 'home_quarterback_evidence_unresolved', 'away_quarterback_evidence_unresolved' => 'Current quarterback availability needs verification.',
+                default => ucfirst(str_replace('_', ' ', $flag)).'.',
+            };
+        }
+
+        return array_values(array_unique($notes));
     }
 
     private function formatLine(float $line): string

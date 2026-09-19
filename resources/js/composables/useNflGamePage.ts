@@ -8,6 +8,7 @@ import {
     parseLinescores,
 } from '@/composables/useGameDataUtils';
 import { useTeamTrends } from '@/composables/useTeamTrends';
+import { finiteValue, recentRecord } from '@/lib/gameOutcome';
 import {
     NFL_LIVE_STATUSES,
     liveSnapshotWarning,
@@ -45,9 +46,7 @@ const toNumber = (value: unknown): number => {
 };
 
 const toOptionalNumber = (value: unknown): number | null => {
-    if (value === null || value === undefined || value === '') return null;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
+    return finiteValue(value);
 };
 
 const normalizeDepthChartContext = (
@@ -167,11 +166,11 @@ const normalizePrediction = (
     return {
         id: toNumber(source.id),
         game_id: toNumber(source.game_id),
-        home_elo: toNumber(source.home_elo),
-        away_elo: toNumber(source.away_elo),
-        predicted_spread: toNumber(source.predicted_spread),
-        predicted_total: toOptionalNumber(source.predicted_total) ?? 0,
-        win_probability: toNumber(source.win_probability),
+        home_elo: toOptionalNumber(source.home_elo) ?? '',
+        away_elo: toOptionalNumber(source.away_elo) ?? '',
+        predicted_spread: toOptionalNumber(source.predicted_spread) ?? '',
+        predicted_total: toOptionalNumber(source.predicted_total) ?? '',
+        win_probability: toOptionalNumber(source.win_probability) ?? '',
         confidence_score: toNumber(source.confidence_score),
         betting_value: Array.isArray(source.betting_value)
             ? (source.betting_value as NflPagePrediction['betting_value'])
@@ -324,19 +323,7 @@ export function useNflGamePage(gameId: number) {
         formatTrendCategoryName: formatCategoryName,
     } = useTeamTrends(homeTrends, awayTrends);
 
-    const getNumericRecord = (
-        games: RecentGameListItem[],
-        teamId: number,
-    ): string => {
-        const wins = games.filter((g) => {
-            const isHome = g.home_team_id === teamId;
-            const teamScore = isHome ? g.home_score : g.away_score;
-            const oppScore = isHome ? g.away_score : g.home_score;
-            return teamScore && oppScore && teamScore > oppScore;
-        }).length;
-        const losses = games.length - wins;
-        return `${wins}-${losses}`;
-    };
+    const getNumericRecord = recentRecord;
 
     const load = async () => {
         try {
@@ -412,21 +399,32 @@ export function useNflGamePage(gameId: number) {
             ) => {
                 if (!team) return;
 
+                const cutoff = currentGame.value.starts_at;
                 supplemental.push(
-                    api.teams
-                        .games('nfl', team, {
-                            query: { per_page: 25 },
-                            init: { signal: requestController.signal },
-                        })
-                        .then((response) => {
-                            recentGames.value = (response?.data ?? [])
-                                .filter(
-                                    (game) =>
-                                        game.status === 'STATUS_FINAL' &&
-                                        game.id !== currentGame.value.id,
-                                )
-                                .slice(0, 5) as RecentGameListItem[];
-                        }),
+                    cutoff && currentGame.value.season_type
+                        ? api.teams
+                              .games('nfl', team, {
+                                  query: {
+                                      per_page: 25,
+                                      status: 'STATUS_FINAL',
+                                      season_type: String(
+                                          currentGame.value.season_type,
+                                      ),
+                                      before_game_at: cutoff,
+                                      exclude_game_id: gameId,
+                                  },
+                                  init: { signal: requestController.signal },
+                              })
+                              .then((response) => {
+                                  recentGames.value = (response?.data ?? [])
+                                      .filter(
+                                          (game) =>
+                                              game.status === 'STATUS_FINAL' &&
+                                              game.id !== currentGame.value.id,
+                                      )
+                                      .slice(0, 5) as RecentGameListItem[];
+                              })
+                        : Promise.resolve(),
                     api.teams
                         .trends('nfl', team, {
                             query: trendQuery,

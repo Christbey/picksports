@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, reactive } from 'vue';
+import { availabilityFreshness } from '@/lib/dataFreshness';
 import type { PredictionSummary } from '@/types';
 
 interface InjuryItem {
@@ -305,6 +306,16 @@ const modelImpactLines = computed(() => {
             </div>
         </div>
 
+        <div class="mt-3 space-y-1 text-xs text-muted-foreground">
+            <p v-for="team in teams" :key="team.key">
+                {{ team.label }}:
+                {{
+                    team.available
+                        ? availabilityFreshness(team.injuries)
+                        : 'Availability data unavailable.'
+                }}
+            </p>
+        </div>
         <div
             v-if="modelImpactLines.length > 0"
             class="mt-4 rounded-lg border border-border/60 bg-background/55 p-3"

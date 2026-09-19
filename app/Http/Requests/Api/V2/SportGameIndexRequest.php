@@ -21,6 +21,7 @@ class SportGameIndexRequest extends FormRequest
         return [
             'status' => ['sometimes', 'string', 'max:100'],
             'season' => ['sometimes', 'integer'],
+            'season_type' => ['sometimes', 'string', 'max:50'],
             'from_date' => ['sometimes', 'date'],
             'to_date' => array_filter([
                 'sometimes',
@@ -41,6 +42,7 @@ class SportGameIndexRequest extends FormRequest
         $filters = $this->safe()->only([
             'status',
             'season',
+            'season_type',
             'from_date',
             'to_date',
             'before_game_at',

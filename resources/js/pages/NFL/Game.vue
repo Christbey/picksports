@@ -86,6 +86,12 @@ const sectionClass = (section: string) =>
                 </button>
             </div>
             <div :class="sectionClass('roster')">
+                <p
+                    v-if="pageProps.game.status === 'STATUS_FINAL'"
+                    class="text-sm text-muted-foreground"
+                >
+                    Current availability report—not a preserved kickoff roster.
+                </p>
                 <InjuryReportCard
                     :away-team-abbr="pageProps.awayTeam?.abbreviation"
                     :home-team-abbr="pageProps.homeTeam?.abbreviation"
@@ -129,6 +135,7 @@ const sectionClass = (section: string) =>
             >
                 <NflResearchBrief
                     :game-id="gameId"
+                    :game-status="pageProps.game.status"
                     :mobile-compact="mobileSection === 'overview'"
                 />
                 <button
@@ -144,7 +151,8 @@ const sectionClass = (section: string) =>
                 <BettingPlanCard
                     v-if="
                         predictionSectionProps.prediction?.narrative
-                            ?.betting_plan
+                            ?.betting_plan &&
+                        pageProps.game.status !== 'STATUS_FINAL'
                     "
                     :betting-plan="
                         predictionSectionProps.prediction.narrative.betting_plan
@@ -156,6 +164,11 @@ const sectionClass = (section: string) =>
 
         <template #afterTrends>
             <div :class="sectionClass('trends')">
+                <p class="text-sm text-muted-foreground">
+                    Recent games: up to five completed games from the same
+                    season type, before this matchup’s kickoff. W–L–T excludes
+                    ungraded scores.
+                </p>
                 <NflGameEnhancements v-bind="recentSectionProps" />
             </div>
             <div aria-hidden="true" class="h-24 shrink-0 md:hidden" />

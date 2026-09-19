@@ -42,6 +42,52 @@ const props = {
     homeLabel: 'BUF',
     emptyText: 'No trends',
 };
+
+test('conditional patterns remain in details but cannot become pregame highlights', async () => {
+    let bindings;
+    const wrapper = {
+        ...component,
+        setup(props, context) {
+            bindings = component.setup(props, context);
+            return bindings;
+        },
+    };
+    const conditional = 'When DET lead after Q1 they win 100%';
+    const descriptive = 'DET have won three of five games';
+    const html = await renderToString(
+        createSSRApp(wrapper, {
+            ...props,
+            allTrendCategories: ['first_score', 'scoring'],
+            awayTrends: {
+                trends: { first_score: [conditional], scoring: [descriptive] },
+                scored_signals: [
+                    {
+                        id: 'conditional',
+                        category: 'first_score',
+                        message: conditional,
+                        tone: 'team',
+                        score: 99,
+                        direction: 'support',
+                    },
+                    {
+                        id: 'descriptive',
+                        category: 'scoring',
+                        message: descriptive,
+                        tone: 'team',
+                        score: 50,
+                        direction: 'support',
+                    },
+                ],
+            },
+        }),
+    );
+    assert.deepEqual(
+        bindings.contextualTrendCards.value.map((card) => card.message),
+        [descriptive],
+    );
+    assert.match(html, /In-game condition—not standalone pregame evidence/);
+    assert.match(html, /All patterns · both teams/);
+});
 const record = (wins, losses) => ({
     wins,
     losses,

@@ -106,6 +106,13 @@ export function useFixturePage() {
             : phase === 'scheduled'
               ? 'STATUS_SCHEDULED'
               : 'STATUS_FINAL';
+    const fixtureGame = {
+        id: 1722,
+        status,
+        game_date: '2026-09-17',
+        away_score: 31,
+        home_score: 41,
+    };
     return {
         pageProps: ref({
             title: 'DET @ BUF',
@@ -113,13 +120,7 @@ export function useFixturePage() {
             loading: false,
             awayTeam: away,
             homeTeam: home,
-            game: {
-                id: 1722,
-                status,
-                game_date: '2026-09-17',
-                away_score: 31,
-                home_score: 41,
-            },
+            game: fixtureGame,
             gameStatus:
                 phase === 'live'
                     ? 'In Progress'
@@ -153,12 +154,14 @@ export function useFixturePage() {
         }),
         predictionSectionProps: ref({
             section: 'prediction',
+            game: fixtureGame,
             prediction,
             awayLabel: 'DET',
             homeLabel: 'BUF',
         }),
         analysisSectionProps: ref({
             section: 'analysis',
+            game: fixtureGame,
             prediction,
             awayLabel: 'DET',
             homeLabel: 'BUF',

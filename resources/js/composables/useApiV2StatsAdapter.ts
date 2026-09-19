@@ -29,6 +29,7 @@ export const flattenApiV2Stat = (row: ApiV2Stat): FlatStatRow => ({
     team: row.team,
     player: row.player,
     game: row.game,
+    updated_at: row.updated_at,
 });
 
 export const flattenApiV2Stats = (rows: ApiV2Stat[] = []): FlatStatRow[] =>

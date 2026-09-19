@@ -94,6 +94,10 @@ const date = (value: string | null | undefined) =>
                 {{ side.label }}
             </button>
         </div>
+        <p class="text-xs text-muted-foreground md:hidden">
+            Team selection changes this statistics table only. Matchup history
+            and patterns below cover both teams.
+        </p>
         <div class="grid gap-4 md:grid-cols-2">
             <article
                 v-for="side in sides"

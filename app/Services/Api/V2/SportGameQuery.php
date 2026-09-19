@@ -148,6 +148,7 @@ class SportGameQuery
             ->with($this->relationsFor($gameModel, $relationProfile))
             ->when($filters['status'] ?? null, fn (Builder $query, string $status): Builder => $query->where('status', $status))
             ->when($filters['season'] ?? null, fn (Builder $query, int $season): Builder => $query->where('season', $season))
+            ->when($filters['season_type'] ?? null, fn (Builder $query, string $phase): Builder => $query->where('season_type', $phase))
             ->tap(fn (Builder $query): Builder => $this->whereGameDateFilters($query, $filters))
             ->when($filters['before_game_at'] ?? null, fn (Builder $query, string $before): Builder => $this->whereBeforeGame($query, $before))
             ->when($filters['exclude_game_id'] ?? null, fn (Builder $query, int $gameId): Builder => $query->whereKeyNot($gameId))
@@ -197,7 +198,7 @@ class SportGameQuery
 
     private function whereBeforeGame(Builder $query, string $before): Builder
     {
-        $cutoff = Carbon::parse($before)->setTimezone((string) config('app.timezone', 'UTC'));
+        $cutoff = Carbon::parse($before)->setTimezone($query->getModel() instanceof Game ? 'UTC' : (string) config('app.timezone', 'UTC'));
         $date = $cutoff->toDateString();
         $time = $cutoff->format('H:i:s');
 

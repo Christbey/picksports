@@ -8,6 +8,23 @@ use Laravel\Sanctum\Sanctum;
 
 uses(RefreshDatabase::class);
 
+it('filters NFL phase and UTC kickoff before pagination across seasons', function () {
+    config(['app.timezone' => 'America/Chicago']);
+    Sanctum::actingAs(User::factory()->create());
+    $team = App\Models\NFL\Team::factory()->create();
+    $opponent = App\Models\NFL\Team::factory()->create();
+    $base = ['home_team_id' => $team->id, 'away_team_id' => $opponent->id, 'season_type' => '2', 'season' => 2026, 'status' => 'STATUS_FINAL', 'home_score' => 0, 'away_score' => 7];
+    $older = App\Models\NFL\Game::factory()->create([...$base, 'season' => 2025, 'game_date' => '2026-01-04', 'game_time' => '18:00:00']);
+    $prior = App\Models\NFL\Game::factory()->create([...$base, 'game_date' => '2026-09-17', 'game_time' => '23:50:00']);
+    $current = App\Models\NFL\Game::factory()->create([...$base, 'game_date' => '2026-09-18', 'game_time' => '00:15:00']);
+    App\Models\NFL\Game::factory()->create([...$base, 'season_type' => '1', 'game_date' => '2026-08-20', 'game_time' => '18:00:00']);
+    App\Models\NFL\Game::factory()->create([...$base, 'season_type' => '3', 'game_date' => '2026-01-10', 'game_time' => '18:00:00']);
+    App\Models\NFL\Game::factory()->count(6)->create([...$base, 'game_date' => '2026-09-20', 'game_time' => '18:00:00']);
+    $query = http_build_query(['status' => 'STATUS_FINAL', 'season_type' => '2', 'before_game_at' => '2026-09-17T19:15:00-05:00', 'exclude_game_id' => $current->id, 'per_page' => 5]);
+    $response = $this->getJson("/api/v2/sports/nfl/teams/{$team->id}/games?{$query}")->assertOk()->assertJsonPath('meta.pagination.total', 2)->assertJsonPath('meta.filters.season_type', '2');
+    expect($response->json('data.*.id'))->toBe([$prior->id, $older->id]);
+});
+
 it('returns only completed team games before the requested game start', function () {
     Sanctum::actingAs(User::factory()->create());
     $team = Team::factory()->create();

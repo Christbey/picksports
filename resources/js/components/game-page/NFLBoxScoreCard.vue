@@ -2,17 +2,20 @@
 import { computed } from 'vue';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { nflBoxScoreRows } from '@/lib/nflBoxScore';
+import { storedTimestamp } from '@/lib/dataFreshness';
 import type { NflTeamStats } from '@/types';
 
 const props = defineProps<{
     awayLabel?: string | null;
     homeLabel?: string | null;
-    awayTeamStats: NflTeamStats;
-    homeTeamStats: NflTeamStats;
+    awayTeamStats: NflTeamStats & { updated_at?: string | null };
+    homeTeamStats: NflTeamStats & { updated_at?: string | null };
 }>();
 const rows = computed(() =>
     nflBoxScoreRows(props.awayTeamStats, props.homeTeamStats),
 );
+const populated = (side: 'away' | 'home') =>
+    rows.value.filter((row) => !row[side].includes('—')).length;
 </script>
 
 <template>
@@ -25,6 +28,23 @@ const rows = computed(() =>
             </p>
         </CardHeader>
         <CardContent>
+            <div class="mb-3 space-y-1 text-xs text-muted-foreground">
+                <p>
+                    {{ awayLabel || 'Away' }}: {{ populated('away') }}/{{
+                        rows.length
+                    }}
+                    complete stat rows · stored update
+                    {{ storedTimestamp(awayTeamStats.updated_at) }}
+                </p>
+                <p>
+                    {{ homeLabel || 'Home' }}: {{ populated('home') }}/{{
+                        rows.length
+                    }}
+                    complete stat rows · stored update
+                    {{ storedTimestamp(homeTeamStats.updated_at) }}
+                </p>
+                <p>Populated fields do not certify a final statistics sync.</p>
+            </div>
             <div class="ui-table-wrap">
                 <div class="min-w-0 space-y-3">
                     <div

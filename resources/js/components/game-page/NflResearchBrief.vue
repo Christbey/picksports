@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { decisionLabel, researchReason } from '@/lib/researchDecision';
 
 type Argument = {
     claim: string;
@@ -22,10 +23,21 @@ type Revision = {
         unresolved: Argument[];
     };
 };
-const props = defineProps<{ gameId: number; mobileCompact?: boolean }>();
+const props = defineProps<{
+    gameId: number;
+    mobileCompact?: boolean;
+    gameStatus?: string;
+}>();
 const revisions = ref<Revision[]>([]);
 const error = ref('');
 const loading = ref(true);
+const reasons = computed(() => [
+    ...new Set(
+        (revisions.value[0]?.brief.eligibility.reasons ?? []).map(
+            researchReason,
+        ),
+    ),
+]);
 const sourceUrl = (url: string | null) =>
     url && /^https:\/\//i.test(url) ? url : undefined;
 onMounted(async () => {
@@ -66,13 +78,21 @@ onMounted(async () => {
         </p>
         <template v-else>
             <p class="mt-2 text-sm">
-                Latest spread assessment:
-                <strong>{{ revisions[0].brief.eligibility.status }}</strong>
+                {{
+                    gameStatus === 'STATUS_FINAL'
+                        ? 'Archived spread assessment:'
+                        : 'Latest spread assessment:'
+                }}
+                <strong>{{
+                    decisionLabel(revisions[0].brief.eligibility.status)
+                }}</strong>
             </p>
             <p class="text-sm text-muted-foreground">
-                Forecasts remain visible during holds. A pass means no approved
-                betting edge, not missing research. Market-specific holds are
-                identified below.
+                {{
+                    gameStatus === 'STATUS_FINAL'
+                        ? 'Pregame research retained for review, not a current recommendation.'
+                        : 'Research approval and forecast values are separate. Any blocking evidence remains listed below.'
+                }}
             </p>
             <p class="text-sm text-muted-foreground">
                 Recorded
@@ -85,13 +105,26 @@ onMounted(async () => {
                 v-if="revisions[0].brief.eligibility.reasons.length"
                 class="mt-3 list-inside list-disc text-sm"
             >
-                <li
-                    v-for="reason in revisions[0].brief.eligibility.reasons"
-                    :key="reason"
-                >
-                    {{ reason.replaceAll('_', ' ') }}
+                <li v-for="reason in reasons" :key="reason">
+                    {{ reason }}
                 </li>
             </ul>
+            <details
+                v-if="revisions[0].brief.eligibility.reasons.length"
+                class="mt-2 text-xs text-muted-foreground"
+            >
+                <summary class="min-h-11 cursor-pointer content-center">
+                    Technical reason codes
+                </summary>
+                <ul class="break-words">
+                    <li
+                        v-for="reason in revisions[0].brief.eligibility.reasons"
+                        :key="reason"
+                    >
+                        {{ reason }}
+                    </li>
+                </ul>
+            </details>
             <div
                 class="mt-4 gap-3 md:grid-cols-2"
                 :class="mobileCompact ? 'hidden md:grid' : 'grid'"

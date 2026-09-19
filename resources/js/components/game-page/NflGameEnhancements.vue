@@ -2,17 +2,20 @@
 import LiveBettingAnalysisCard from '@/components/game-page/LiveBettingAnalysisCard.vue';
 import NFLBoxScoreCard from '@/components/game-page/NFLBoxScoreCard.vue';
 import NFLPredictionModelCard from '@/components/game-page/NFLPredictionModelCard.vue';
+import NflFinalResultCard from '@/components/game-page/NflFinalResultCard.vue';
 import TeamRecentGamesSection from '@/components/game-page/TeamRecentGamesSection.vue';
 import type {
     LivePredictionData,
     NflPagePrediction,
     NflTeamStats,
     RecentGameListItem,
+    GamePageGame,
 } from '@/types';
 
 const props = withDefaults(
     defineProps<{
         section: 'prediction' | 'analysis' | 'recent';
+        game?: GamePageGame;
         prediction?: NflPagePrediction | null;
         awayLabel?: string | null;
         homeLabel?: string | null;
@@ -79,6 +82,12 @@ const props = withDefaults(
 </script>
 
 <template>
+    <NflFinalResultCard
+        v-if="section === 'prediction' && game?.status === 'STATUS_FINAL'"
+        :game="game"
+        :prediction="prediction"
+        :home-label="homeLabel"
+    />
     <NFLPredictionModelCard
         v-if="section === 'prediction' && prediction"
         :prediction="prediction"
@@ -108,6 +117,7 @@ const props = withDefaults(
         </details>
 
         <LiveBettingAnalysisCard
+            v-if="game?.status !== 'STATUS_FINAL'"
             :has-live-prediction="hasLivePrediction"
             :betting-value="prediction?.betting_value"
             :live-prediction="livePredictionData"

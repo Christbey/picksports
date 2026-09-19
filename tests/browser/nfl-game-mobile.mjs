@@ -128,14 +128,21 @@ try {
     for (const width of [320, 390, 767]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto(`${server.resolvedUrls.local[0]}__nfl-mobile`);
-        await page.getByText('weather stale', { exact: true }).waitFor();
+        await page
+            .getByText('A current kickoff weather report is unavailable.', {
+                exact: true,
+            })
+            .waitFor();
+        await assertVisible(
+            page.getByRole('region', { name: 'Final result summary' }),
+        );
         await checkMatchupRow();
         const count = researchRequests;
         await assertVisible(
             page.getByText('Prediction Model', { exact: true }),
         );
         await assertVisible(page.getByText('Model total', { exact: true }));
-        await assertVisible(page.getByText('48.5', { exact: true }));
+        await assertVisible(page.getByText('48.5', { exact: true }).first());
         await assertVisible(page.getByText('1500', { exact: true }), false);
         await assertVisible(
             page.getByText('Total Yards', { exact: true }),
@@ -202,7 +209,11 @@ try {
             page.getByText('Prediction Model', { exact: true }),
             false,
         );
-        await assertVisible(page.getByText('weather stale', { exact: true }));
+        await assertVisible(
+            page.getByText('A current kickoff weather report is unavailable.', {
+                exact: true,
+            }),
+        );
         await page
             .locator('summary')
             .filter({ hasText: 'Supporting evidence' })
@@ -242,7 +253,11 @@ try {
                 fullPage: true,
             });
         await select('Overview');
-        await assertVisible(page.getByText('weather stale', { exact: true }));
+        await assertVisible(
+            page.getByText('A current kickoff weather report is unavailable.', {
+                exact: true,
+            }),
+        );
         assert.equal(
             researchRequests,
             count,
@@ -271,7 +286,15 @@ try {
         await page.goto(
             `${server.resolvedUrls.local[0]}__nfl-mobile?phase=${phase}`,
         );
-        await page.getByText('weather stale', { exact: true }).waitFor();
+        await page
+            .getByText('A current kickoff weather report is unavailable.', {
+                exact: true,
+            })
+            .waitFor();
+        await assertVisible(
+            page.getByRole('region', { name: 'Final result summary' }),
+            false,
+        );
         await checkMatchupRow();
         await checkWidth();
         console.log(`PASS: 320px ${phase} matchup header`);

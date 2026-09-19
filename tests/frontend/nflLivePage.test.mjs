@@ -213,7 +213,58 @@ test('initial requests use explicit regular-season phase and UTC kickoff, not th
         });
     }
     assert.equal(state.loading.value, false);
+    for (const { args } of calls.filter((call) => call.name === 'recent')) {
+        assert.deepEqual(args[2].query, {
+            per_page: 25,
+            status: 'STATUS_FINAL',
+            season_type: '2',
+            before_game_at: '2026-09-18T00:15:00Z',
+            exclude_game_id: 1722,
+        });
+    }
     assert.equal([...timers.values()][0].delay, 15000);
+});
+
+test('recent record counts shutouts and ties without inventing losses for missing scores', async () => {
+    await mount();
+    const record = (home_score, away_score) => ({
+        home_team_id: 2,
+        away_team_id: 1,
+        home_score,
+        away_score,
+        status: 'STATUS_FINAL',
+    });
+    assert.equal(
+        state.getNumericRecord(
+            [record(7, 0), record(0, 7), record(0, 0), record(null, 7)],
+            2,
+        ),
+        '1-1-1 W–L–T · 1 ungraded',
+    );
+});
+
+test('normalization preserves unavailable model values instead of inventing zero forecasts', async () => {
+    globalThis.__nflLivePageApi.predictions.forGame = async () => ({
+        data: {
+            game_id: 1722,
+            predicted_spread: null,
+            predicted_total: null,
+            win_probability: null,
+        },
+    });
+    await mount();
+    assert.equal(state.prediction.value.predicted_spread, '');
+    assert.equal(state.prediction.value.predicted_total, '');
+    assert.equal(state.prediction.value.win_probability, '');
+});
+
+test('missing kickoff cannot trigger an unbounded recent-game query', async () => {
+    globalThis.__nflLivePageApi.games.show = async () => ({
+        data: { ...game, starts_at: null },
+    });
+    await mount();
+    assert.equal(count('recent'), 0);
+    assert.deepEqual(state.homeRecentGames.value, []);
 });
 
 test('polling assigns a coherent score/projection snapshot without reloading expensive context', async () => {

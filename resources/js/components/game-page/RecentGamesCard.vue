@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { RecentGameListItem } from '@/types';
+import { gameOutcome } from '@/lib/gameOutcome';
 
 defineProps<{
     title: string;
@@ -10,13 +11,6 @@ defineProps<{
     teamId: number;
     gameHrefPrefix: string;
 }>();
-
-const didTeamWin = (game: RecentGameListItem, teamId: number): boolean => {
-    const isHome = game.home_team_id === teamId;
-    const teamScore = isHome ? game.home_score || 0 : game.away_score || 0;
-    const oppScore = isHome ? game.away_score || 0 : game.home_score || 0;
-    return teamScore > oppScore;
-};
 
 const opponentAbbreviation = (
     game: RecentGameListItem,
@@ -33,7 +27,7 @@ const formattedScore = (game: RecentGameListItem, teamId: number): string => {
     const isHome = game.home_team_id === teamId;
     const teamScore = isHome ? game.home_score : game.away_score;
     const oppScore = isHome ? game.away_score : game.home_score;
-    return `${teamScore}-${oppScore}`;
+    return `${teamScore ?? '—'}-${oppScore ?? '—'}`;
 };
 </script>
 
@@ -63,12 +57,18 @@ const formattedScore = (game: RecentGameListItem, teamId: number): string => {
                         <div class="text-sm font-semibold">
                             <span
                                 :class="
-                                    didTeamWin(recentGame, teamId)
+                                    gameOutcome(recentGame, teamId) === 'W'
                                         ? 'text-green-600 dark:text-green-400'
-                                        : 'text-red-600 dark:text-red-400'
+                                        : gameOutcome(recentGame, teamId) ===
+                                            'L'
+                                          ? 'text-red-600 dark:text-red-400'
+                                          : 'text-muted-foreground'
                                 "
                             >
-                                {{ didTeamWin(recentGame, teamId) ? 'W' : 'L' }}
+                                {{
+                                    gameOutcome(recentGame, teamId) ??
+                                    'Ungraded'
+                                }}
                                 {{ formattedScore(recentGame, teamId) }}
                             </span>
                         </div>

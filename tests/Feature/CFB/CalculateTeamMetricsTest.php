@@ -183,6 +183,7 @@ it('imports provider WEPA nested EPA fields and retains independent per-season c
     app(CfbSeasonAffiliationResolver::class)->ensureForSeason($this->team, 2025, [
         'subdivision' => 'FBS', 'conference' => 'SEC', 'division' => null, 'source' => 'cfbd_fbs_membership']);
     $service = Mockery::mock(CollegeFootballDataService::class);
+    $service->shouldReceive('get')->once()->with('/stats/season', ['year' => 2025])->andReturn([]);
     $service->shouldReceive('getWepaTeamSeason')->once()->with(2025)->andReturn([
         ['year' => 2025, 'teamId' => 61, 'team' => 'Georgia', 'epa' => ['total' => .3], 'epaAllowed' => ['total' => -.1]],
     ]);
@@ -228,9 +229,62 @@ it('does not silently overwrite metrics when a configured external request fails
     $metric = TeamMetric::create(['team_id' => $this->team->id, 'season' => 2026,
         'calculation_date' => now(), 'offensive_success_rate' => .47]);
     $service = Mockery::mock(CollegeFootballDataService::class);
-    $service->shouldReceive('getWepaTeamSeason')->once()->andReturn([]);
-    $service->shouldReceive('getAdvancedTeamSeasonStats')->once()->andThrow(new RuntimeException('HTTP400 invalid boolean'));
+    $service->shouldReceive('getWepaTeamSeason')->twice()->andReturn([]);
+    $service->shouldReceive('getAdvancedTeamSeasonStats')->twice()->andThrow(new RuntimeException('HTTP400 invalid boolean'));
     $this->app->instance(CollegeFootballDataService::class, $service);
+    expect(fn () => app(CalculateTeamMetrics::class)->refreshExternalMetrics($this->team, 2026))->toThrow(RuntimeException::class, 'metric update withheld');
     expect(fn () => app(CalculateTeamMetrics::class)->execute($this->team, 2026))->toThrow(RuntimeException::class, 'metric update withheld')
         ->and((float) $metric->fresh()->offensive_success_rate)->toBe(.47);
+});
+
+it('uses cached historical season sacks allowed aggregates with explicit inputs and no current season substitution', function ($sacks, $expected) {
+    $this->team->update(['cfbd_team_id' => 61, 'school' => 'Georgia']);
+    app(CfbSeasonAffiliationResolver::class)->ensureForSeason($this->team, 2025, [
+        'subdivision' => 'FBS', 'conference' => 'SEC', 'division' => null, 'source' => 'cfbd_fbs_membership']);
+    $rows = [];
+    foreach (['passAttempts' => 380, 'sacksOpponent' => $sacks, 'games' => 13, 'sacks' => 50] as $key => $value) {
+        $rows[] = ['season' => 2025, 'team' => 'Georgia', 'statName' => $key, 'statValue' => $value];
+    }
+    $service = Mockery::mock(CollegeFootballDataService::class);
+    $service->shouldReceive('get')->once()->with('/stats/season', ['year' => 2025])->andReturn($rows);
+    $service->shouldReceive('getWepaTeamSeason')->once()->with(2025)->andReturn([]);
+    $service->shouldReceive('getWepaTeamSeason')->once()->with(2026)->andReturn([]);
+    $service->shouldReceive('getAdvancedTeamSeasonStats')->once()->with(2025, null, null, true)->andReturn([
+        ['season' => 2025, 'teamId' => 61, 'offense' => ['successRate' => .5]],
+    ]);
+    $service->shouldReceive('getAdvancedTeamSeasonStats')->once()->with(2026, null, null, true)->andReturn([
+        ['season' => 2026, 'teamId' => 61, 'offense' => ['successRate' => .4]],
+    ]);
+    $this->app->instance(CollegeFootballDataService::class, $service);
+    $action = app(CalculateTeamMetrics::class);
+    $metric = $action->execute($this->team, 2025);
+    expect($metric->offensive_sack_rate === null ? null : (float) $metric->offensive_sack_rate)->toBe($expected);
+    if ($expected !== null) {
+        expect(data_get($metric->cfbd_advanced_payload, '_local_derivations.offensive_sack_rate.inputs.sacksOpponent'))->toBe($sacks)
+            ->and(data_get($metric->cfbd_advanced_payload, '_local_derivations.offensive_sack_rate.sample_games'))->toBe(13)
+            ->and(data_get($metric->cfbd_advanced_payload, '_local_derivations.offensive_sack_rate.source'))->toBe('cfbd_stats_season');
+    }
+    expect($action->execute($this->team, 2025)->offensive_sack_rate)->toBe($metric->offensive_sack_rate)
+        ->and($action->execute($this->team, 2026)->offensive_sack_rate)->toBeNull();
+})->with([[20, .05], [0, 0.0], [null, null], [-1, null]]);
+
+it('refreshes only existing external metrics without recalculating local ratings', function () {
+    $this->team->update(['cfbd_team_id' => 61]);
+    $metric = TeamMetric::create(['team_id' => $this->team->id, 'season' => 2026,
+        'calculation_date' => '2026-09-01', 'offensive_rating' => 123.4]);
+    $service = Mockery::mock(CollegeFootballDataService::class);
+    $service->shouldReceive('getWepaTeamSeason')->once()->andReturn([
+        ['year' => 2026, 'teamId' => 61, 'epa' => ['total' => .3], 'epaAllowed' => ['total' => .1]],
+    ]);
+    $service->shouldReceive('getAdvancedTeamSeasonStats')->once()->andReturn([
+        ['season' => 2026, 'teamId' => 61, 'offense' => ['successRate' => .5]],
+    ]);
+    $this->app->instance(CollegeFootballDataService::class, $service);
+    $action = app(CalculateTeamMetrics::class);
+    $updated = $action->refreshExternalMetrics($this->team, 2026);
+    expect((float) $updated->cfbd_wepa_net)->toBe(.2)
+        ->and((float) $updated->offensive_success_rate)->toBe(.5)
+        ->and($updated->offensive_rating)->toBe($metric->offensive_rating)
+        ->and($updated->calculation_date->toDateString())->toBe('2026-09-01')
+        ->and($action->refreshExternalMetrics($this->opponent, 2026))->toBeNull();
 });

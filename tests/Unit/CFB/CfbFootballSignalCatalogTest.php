@@ -59,3 +59,14 @@ it('uses verified personnel and qualified fourth quarter evidence only', functio
         ->and($features['team']['late']['fourth_margin'])->toBe(-3)
         ->and($features['team']['late']['leading_fourth_margin'])->toBeNull();
 });
+
+it('uses a verified prior-season sack aggregate only for the season mean', function () {
+    $inputs = ['event' => ['season' => 2026], 'home' => ['prior_metrics' => ['season_sack_evidence' => [
+        'source' => 'cfbd_stats_season', 'season' => 2025, 'games' => 12, 'sacks_allowed' => 18,
+    ]]]];
+    $features = CfbFootballSignalCatalog::features($inputs, 'home');
+    expect(data_get($features, 'team.history.prior_season.sacks_allowed_per_game'))->toBe(1.5)
+        ->and(data_get($features, 'team.history.last3.sacks_allowed_per_game'))->toBeNull();
+    $inputs['home']['prior_metrics']['season_sack_evidence']['season'] = 2026;
+    expect(data_get(CfbFootballSignalCatalog::features($inputs, 'home'), 'team.history.prior_season.sacks_allowed_per_game'))->toBeNull();
+});

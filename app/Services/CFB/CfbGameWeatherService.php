@@ -29,6 +29,8 @@ class CfbGameWeatherService
             return null;
         }
 
+        // Request UTC hours so venue-local DST and the app timezone cannot shift the selected forecast.
+        $dateTime = $dateTime->copy()->utc();
         $date = $dateTime->toDateString();
         $response = Http::timeout(20)->get((string) config('services.open_meteo.forecast_url'), [
             'latitude' => $location['latitude'],
@@ -47,7 +49,7 @@ class CfbGameWeatherService
             'temperature_unit' => 'fahrenheit',
             'wind_speed_unit' => 'mph',
             'precipitation_unit' => 'inch',
-            'timezone' => 'auto',
+            'timezone' => 'UTC',
             'start_date' => $date,
             'end_date' => $date,
         ]);
@@ -61,7 +63,11 @@ class CfbGameWeatherService
             return null;
         }
 
-        $hourIndex = $this->nearestHourlyIndex((array) data_get($payload, 'hourly.time', []), $dateTime);
+        $times = (array) data_get($payload, 'hourly.time', []);
+        if ($times === []) {
+            return null;
+        }
+        $hourIndex = $this->nearestHourlyIndex($times, $dateTime);
 
         return [
             'provider' => 'open_meteo',
@@ -69,7 +75,7 @@ class CfbGameWeatherService
             'longitude' => $location['longitude'],
             'location_source' => $location['source'],
             'observed_at' => isset(data_get($payload, 'hourly.time', [])[$hourIndex])
-                ? Carbon::parse(data_get($payload, "hourly.time.{$hourIndex}"))->toDateTimeString()
+                ? Carbon::parse(data_get($payload, "hourly.time.{$hourIndex}"), 'UTC')->setTimezone(config('app.timezone'))->toDateTimeString()
                 : $dateTime->toDateTimeString(),
             'temperature_f' => $this->hourlyValue($payload, 'temperature_2m', $hourIndex),
             'feels_like_f' => $this->hourlyValue($payload, 'apparent_temperature', $hourIndex),
@@ -138,6 +144,10 @@ class CfbGameWeatherService
 
     private function gameDateTime(Game $game): ?Carbon
     {
+        if ($game->sportEvent?->starts_at) {
+            return Carbon::instance($game->sportEvent->starts_at)->setTimezone(config('app.timezone'));
+        }
+
         if (! $game->game_date) {
             return null;
         }
@@ -154,7 +164,7 @@ class CfbGameWeatherService
         $bestDiff = PHP_INT_MAX;
 
         foreach ($times as $index => $time) {
-            $diff = abs(Carbon::parse((string) $time)->diffInMinutes($target, false));
+            $diff = abs(Carbon::parse((string) $time, 'UTC')->diffInMinutes($target, false));
             if ($diff < $bestDiff) {
                 $bestDiff = $diff;
                 $bestIndex = (int) $index;

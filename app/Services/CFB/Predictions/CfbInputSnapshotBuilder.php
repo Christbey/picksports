@@ -13,6 +13,7 @@ use App\Models\SportEvent;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbTeamEvidenceService;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use App\Services\Predictions\Football\FootballInputSnapshotBuilder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -115,11 +116,17 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $sourceTimestamps['historical_signals'] = $inputs['historical_signals']['latest_source_available_at'];
             $weather = GameWeather::where('game_id', $game->id)
                 ->where('updated_at', '<=', $snapshot->capturedAt)->where('updated_at', '<', $snapshot->cutoffAt)
-                ->where('observed_at', '<=', $snapshot->capturedAt)->orderByDesc('observed_at')->first();
+                // observed_at is the forecast VALID hour, not when the forecast was received.
+                ->where('created_at', '<=', $snapshot->capturedAt)->where('created_at', '<', $snapshot->cutoffAt)
+                ->orderByDesc('updated_at')->first();
             // Legacy context rows may contain default zero adjustments without observed weather.
             $inputs['signal_context'] = [];
             $inputs['signal_context']['conference'] = $game->conference_game === null ? null : (bool) $game->conference_game;
             if ($weather) {
+                $inputs['signal_context']['weather_evidence'] = ['weather_id' => $weather->id,
+                    'provider' => $weather->provider, 'available_at' => $weather->updated_at->toIso8601String(),
+                    'forecast_valid_at' => $weather->observed_at?->toIso8601String(),
+                    'time_semantics' => 'received_before_capture_forecast_valid_at_kickoff'];
                 foreach (['temperature_f', 'wind_speed_mph', 'wind_gust_mph', 'precipitation_inches', 'is_indoor'] as $field) {
                     $inputs['signal_context'][$field] = $weather->$field === null ? null : (is_bool($weather->$field) ? $weather->$field : (float) $weather->$field);
                 }
@@ -134,7 +141,7 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 $sourceTimestamps['signal_'.$key] = $quote?->created_at?->toIso8601String();
             }
             $sourceTimestamps['signal_weather'] = $weather?->updated_at?->toIso8601String();
-            $evidenceKey = 'cfb:football-signal-evidence:'.hash('sha256', json_encode($release->configuration, JSON_THROW_ON_ERROR)).':'.$snapshot->capturedAt->format('YmdHi');
+            $evidenceKey = 'cfb:football-signal-evidence:'.app(CanonicalPayloadHasher::class)->hash($release->configuration).':'.$snapshot->capturedAt->format('YmdHi');
             $inputs['football_signal_evidence'] = Cache::remember($evidenceKey, 120,
                 fn () => app(CfbFootballSignalEvidence::class)->build($snapshot->capturedAt, $release->configuration));
             $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'];
@@ -166,6 +173,16 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             'cfbd_wepa_offense', 'cfbd_wepa_defense', 'cfbd_wepa_net', 'offensive_true_epa_per_play',
             'defensive_true_epa_per_play', 'net_true_epa_per_play'] as $field) {
             $inputs[$field] = $this->nullableFloat($metric->getAttribute($field));
+        }
+
+        $seasonSacks = data_get($metric->getAttribute('cfbd_advanced_payload'), '_local_derivations.offensive_sack_rate');
+        if (data_get($seasonSacks, 'source') === 'cfbd_stats_season') {
+            $inputs['season_sack_evidence'] = [
+                'source' => 'cfbd_stats_season', 'season' => (int) $metric->getAttribute('season'),
+                'games' => data_get($seasonSacks, 'inputs.games'),
+                'sacks_allowed' => data_get($seasonSacks, 'inputs.sacksOpponent'),
+                'pass_attempts' => data_get($seasonSacks, 'inputs.passAttempts'),
+            ];
         }
 
         return $inputs;

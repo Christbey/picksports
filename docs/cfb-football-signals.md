@@ -276,3 +276,7 @@ The residual learner uses one eligible, published pregame forecast per completed
 `cfb:report-football-signals --season=2026 --catalog` lists definitions and actual coverage/contributions. The daily 03:30 report tracks allocated contribution error reductions after results arrive. This holds the other frozen contributions fixed; it is not causal attribution.
 
 The feed fixes serialize CFBD boolean query values correctly, parse `epa.total` and `epaAllowed.total` for WEPA, preserve season-specific lookup indices, and surface request failures before overwriting metrics. ESPN sacks allowed use the opposing defense's explicit aggregate sacks when the team-stat field is absent. Sack rate requires complete sacks and attempts for the eligible team sample. An empty provider season remains missing data.
+
+Weather records distinguish the forecast's valid hour from when it was received. Forecast selection uses the canonical kickoff instant in UTC; the existing pregame pipeline refreshes weather without making an unavailable weather feed block predictions.
+
+For completed prior seasons, CFBD season `sacksOpponent`, `passAttempts`, and `games` provide a validated aggregate fallback for sack rate. The frozen season mean can support the prior-season sack comparison; it does not invent per-game sack values. `CalculateTeamMetrics::refreshExternalMetrics` refreshes the external fields without rescanning historical plays or changing local ratings.

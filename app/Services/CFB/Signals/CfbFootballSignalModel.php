@@ -12,7 +12,7 @@ class CfbFootballSignalModel
     public function evaluate(array $inputs, array $configuration, ?array $baselineConfiguration = null, ?CarbonImmutable $capturedAt = null): array
     {
         $catalog = $configuration['catalog'] ?? CfbFootballSignalCatalog::all();
-        $catalogHash = hash('sha256', json_encode($catalog, JSON_THROW_ON_ERROR));
+        $catalogHash = CfbFootballSignalEvidence::catalogHash($catalog);
         $rows = $families = [];
         $evidence = $inputs['football_signal_evidence'] ?? [];
         $compatible = $baselineConfiguration !== null

@@ -48,6 +48,7 @@ beforeEach(function () {
 
         return 0;
     });
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--force}', fn () => 0);
     Artisan::command('cfb:generate-canonical-predictions {--season=} {--days-forward=}', function () use ($steps) {
         $steps[] = 'generation';
 
@@ -155,4 +156,11 @@ it('requires personnel data and retries an empty refresh without caching success
     expect(Cache::has('cfb:personnel:v3:2026:2026-09-18'))->toBeFalse();
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
     expect($attempts)->toBe(2)->and(Cache::has('cfb:personnel:v3:2026:2026-09-18'))->toBeTrue();
+});
+
+it('continues generation after an unavailable optional weather refresh', function () {
+    Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
+    Artisan::command('cfb:sync-game-weather {--season=} {--from-date=} {--days-forward=} {--force}', fn () => 1);
+    $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->expectsOutput('Weather refresh unavailable; missing weather remains unknown.')->assertSuccessful();
+    expect($this->steps->getArrayCopy())->toContain('generation');
 });

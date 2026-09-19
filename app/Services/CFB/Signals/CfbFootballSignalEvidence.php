@@ -3,6 +3,7 @@
 namespace App\Services\CFB\Signals;
 
 use App\Models\CanonicalPrediction;
+use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\CarbonImmutable;
 
 /** Uses only predictions and outcomes already observed at capture; never reconstructs old inputs. */
@@ -12,7 +13,12 @@ class CfbFootballSignalEvidence
     {
         unset($configuration['football_signals']);
 
-        return hash('sha256', json_encode($configuration, JSON_THROW_ON_ERROR));
+        return app(CanonicalPayloadHasher::class)->hash($configuration);
+    }
+
+    public static function catalogHash(array $catalog): string
+    {
+        return app(CanonicalPayloadHasher::class)->hash($catalog);
     }
 
     public function build(CarbonImmutable $asOf, array $configuration): array
@@ -80,7 +86,7 @@ class CfbFootballSignalEvidence
             $fits[$id] = app(CfbFootballSignalModel::class)->fit(array_values($observations[$id] ?? []));
         }
 
-        return ['version' => CfbFootballSignalModel::VERSION, 'catalog_hash' => hash('sha256', json_encode($catalog, JSON_THROW_ON_ERROR)),
+        return ['version' => CfbFootballSignalModel::VERSION, 'catalog_hash' => self::catalogHash($catalog),
             'baseline_hash' => $baselineHash, 'as_of' => $asOf->toIso8601String(),
             'latest_source_observed_at' => $latest?->toIso8601String(), 'prediction_ids' => $sourceIds,
             'status' => $sourceIds ? 'frozen_outcomes_evaluated' : 'no_eligible_frozen_outcomes', 'signals' => $fits];

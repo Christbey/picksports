@@ -123,6 +123,15 @@ final class CfbFootballSignalCatalog
                     && is_numeric($evidence['value'] ?? null) ? (float) $evidence['value'] : null;
             }
         }
+        $seasonSacks = data_get($team, 'prior_metrics.season_sack_evidence', []);
+        if (data_get($out, 'history.prior_season.sacks_allowed_per_game') === null
+            && ($seasonSacks['source'] ?? null) === 'cfbd_stats_season'
+            && (int) ($seasonSacks['season'] ?? 0) === (int) data_get($inputs, 'event.season') - 1
+            && is_numeric($seasonSacks['games'] ?? null) && $seasonSacks['games'] >= 3
+            && is_numeric($seasonSacks['sacks_allowed'] ?? null) && $seasonSacks['sacks_allowed'] >= 0) {
+            // A complete prior-season aggregate supplies its mean without fabricating per-game values.
+            $out['history']['prior_season']['sacks_allowed_per_game'] = $seasonSacks['sacks_allowed'] / $seasonSacks['games'];
+        }
         $venue = data_get($inputs, 'event.neutral_site') === true ? 'neutral' : $side;
         $out['history']['venue'] = $out['history'][$venue] ?? [];
         $components = (array) data_get($team, 'personnel.components', []);

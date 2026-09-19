@@ -101,6 +101,17 @@ class RunPregamePipelineCommand extends Command
                 return self::FAILURE;
             }
 
+            // Weather is optional evidence. Provider unavailability must not block a forecast.
+            try {
+                if ($this->call('cfb:sync-game-weather', ['--season' => (int) $season,
+                    '--from-date' => now()->toDateString(), '--days-forward' => (int) $days, '--force' => true]) !== self::SUCCESS) {
+                    $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+                }
+            } catch (\Throwable $error) {
+                report($error);
+                $this->warn('Weather refresh unavailable; missing weather remains unknown.');
+            }
+
             return $this->call('cfb:generate-canonical-predictions', ['--season' => (int) $season, '--days-forward' => (int) $days]);
         } finally {
             $lock->release();

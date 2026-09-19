@@ -35,6 +35,8 @@ class CalculateTeamMetrics
      */
     protected array $seasonAdvancedStatsIndex = [];
 
+    protected array $seasonBasicStatsIndex = [];
+
     /**
      * @var array<string, int>|null
      */
@@ -45,6 +47,29 @@ class CalculateTeamMetrics
         private readonly CfbSeasonAffiliationResolver $seasonAffiliationResolver,
         private readonly PlayerAvailabilityImpactService $playerAvailabilityImpactService,
     ) {}
+
+    public function refreshExternalMetrics(Team $team, int $season): ?TeamMetric
+    {
+        if (! $this->seasonAffiliationResolver->isFbs($team, $season)) {
+            return null;
+        }
+        $metric = TeamMetric::query()->where('team_id', $team->id)->where('season', $season)->first();
+        if (! $metric) {
+            return null;
+        }
+        // Fetch all sources before writing, so a provider failure preserves the existing row.
+        $wepa = $this->wepaForTeam($team, $season);
+        $advanced = $this->advancedStatsForTeam($team, $season);
+        $payload = $advanced['payload'];
+        unset($advanced['payload']);
+        $metric->fill([...$advanced,
+            'cfbd_wepa_offense' => $wepa['offense'], 'cfbd_wepa_defense' => $wepa['defense'],
+            'cfbd_wepa_net' => $wepa['net'], 'cfbd_wepa_payload' => $wepa['payload'],
+            'cfbd_advanced_payload' => $payload,
+        ])->save();
+
+        return $metric;
+    }
 
     public function execute(Team $team, int $season): ?TeamMetric
     {
@@ -534,6 +559,9 @@ class CalculateTeamMetrics
 
         if ($offensiveSackRate === null) {
             $derived = $this->observedSackRate($team, $season);
+            if ($derived['value'] === null && $season < (int) now()->format('Y')) {
+                $derived = $this->historicalAggregateSackRate($team, $season) ?? $derived;
+            }
             $offensiveSackRate = $derived['value'];
             $row['_local_derivations']['offensive_sack_rate'] = $derived;
         }
@@ -668,9 +696,11 @@ class CalculateTeamMetrics
     private function providerRows(string $source, int $season): array
     {
         try {
-            $rows = $source === 'advanced'
-                ? $this->collegeFootballDataService->getAdvancedTeamSeasonStats($season, excludeGarbageTime: true)
-                : $this->collegeFootballDataService->getWepaTeamSeason($season);
+            $rows = match ($source) {
+                'advanced' => $this->collegeFootballDataService->getAdvancedTeamSeasonStats($season, excludeGarbageTime: true),
+                'basic' => $this->collegeFootballDataService->get('/stats/season', ['year' => $season]),
+                default => $this->collegeFootballDataService->getWepaTeamSeason($season),
+            };
         } catch (\Throwable $exception) {
             Log::warning('CFB external metric request failed', ['source' => $source, 'season' => $season,
                 'exception' => get_class($exception)]);
@@ -687,6 +717,51 @@ class CalculateTeamMetrics
         }
 
         return $rows;
+    }
+
+    private function historicalAggregateSackRate(Team $team, int $season): ?array
+    {
+        if (! array_key_exists($season, $this->seasonBasicStatsIndex)) {
+            $index = [];
+            foreach ($this->providerRows('basic', $season) as $row) {
+                if (($row['season'] ?? null) !== $season || ! is_string($row['team'] ?? null)
+                    || ! in_array($row['statName'] ?? null, ['passAttempts', 'sacksOpponent', 'games'], true)) {
+                    continue;
+                }
+                $name = mb_strtolower(trim($row['team']));
+                $key = $row['statName'];
+                // Conflicting duplicate aggregates are not safe to use or sum.
+                $index[$name][$key] = array_key_exists($key, $index[$name] ?? []) ? null : ($row['statValue'] ?? null);
+            }
+            $this->seasonBasicStatsIndex[$season] = $index;
+        }
+        $mapping = $this->cfbdMappingIndex();
+        foreach ($this->seasonBasicStatsIndex[$season] as $name => $values) {
+            $matches = ($team->cfbd_team_id && ($mapping[$name] ?? null) === (int) $team->cfbd_team_id)
+                || in_array($name, array_map(fn ($value) => mb_strtolower(trim((string) $value)),
+                    [$team->school, $team->display_name, $team->name, $team->short_display_name]), true);
+            if (! $matches) {
+                continue;
+            }
+            foreach (['passAttempts', 'sacksOpponent', 'games'] as $key) {
+                if (! is_numeric($values[$key] ?? null) || $values[$key] < 0 || floor((float) $values[$key]) !== (float) $values[$key]) {
+                    return null;
+                }
+            }
+            $denominator = $values['passAttempts'] + $values['sacksOpponent'];
+            if ($denominator <= 0 || $values['games'] <= 0) {
+                return null;
+            }
+
+            return ['value' => round($values['sacksOpponent'] / $denominator, 4),
+                'source' => 'cfbd_stats_season', 'endpoint' => '/stats/season', 'season' => $season,
+                'team' => $name, 'inputs' => $values, 'sample_games' => (int) $values['games'],
+                'formula' => 'sacksOpponent / (passAttempts + sacksOpponent)',
+                'definition' => 'Opponent defensive sacks are sacks allowed; excludes scrambles; full historical season aggregate',
+                'complete' => true, 'observed_at' => now()->toIso8601String()];
+        }
+
+        return null;
     }
 
     private function observedSackRate(Team $team, int $season): array

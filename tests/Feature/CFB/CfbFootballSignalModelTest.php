@@ -36,7 +36,7 @@ function footballFittedEvidence(array $config, array $ids = ['scoring_pressure']
     return ['version' => CfbFootballSignalModel::VERSION, 'as_of' => '2026-09-20T00:00:00Z',
         'latest_source_observed_at' => '2026-09-19T00:00:00Z', 'status' => 'frozen_outcomes_evaluated',
         'baseline_hash' => CfbFootballSignalEvidence::baselineHash($config),
-        'catalog_hash' => hash('sha256', json_encode(CfbFootballSignalCatalog::all(), JSON_THROW_ON_ERROR)),
+        'catalog_hash' => CfbFootballSignalEvidence::catalogHash(CfbFootballSignalCatalog::all()),
         'signals' => array_fill_keys($ids, ['status' => 'validated_residual', 'coefficient' => 2.0,
             'sample_games' => 60, 'validation_games' => 18])];
 }
@@ -121,4 +121,16 @@ it('ignores future results and backfilled snapshots instead of claiming historic
     expect($evidence['prediction_ids'])->toBe([$prediction->id])->and($evidence['signals']['scoring_pressure']['sample_games'])->toBe(1);
     DB::table('event_input_snapshots')->where('id', $snapshot->id)->update(['created_at' => '2026-09-02']);
     expect($service->build($capture, $config)['prediction_ids'])->toBe([]);
+});
+
+it('matches frozen evidence when database JSON reorders object keys', function () {
+    $config = app(CfbCalculationReleaseDefinition::class)->configuration();
+    $reordered = array_reverse($config, true);
+    $reordered['spread'] = array_reverse($reordered['spread'], true);
+    expect(CfbFootballSignalEvidence::baselineHash($config))->toBe(CfbFootballSignalEvidence::baselineHash($reordered));
+    $catalog = CfbFootballSignalCatalog::all();
+    $reorderedCatalog = array_reverse($catalog, true);
+    $id = array_key_first($reorderedCatalog);
+    $reorderedCatalog[$id] = array_reverse($reorderedCatalog[$id], true);
+    expect(CfbFootballSignalEvidence::catalogHash($catalog))->toBe(CfbFootballSignalEvidence::catalogHash($reorderedCatalog));
 });

@@ -38,3 +38,9 @@ Coverage tests: `tests/Feature/CFB/PlayerPropsPipelineTest.php` exercises fetchi
 The September 12 Central-date run checked 80 upcoming mapped games: 221 quotes across 27 games, 53 games without supported quotes, and zero API/preparation failures. Preparation populated 5,399 players and 6,718 player-stat rows across 265 games. The final audit found 192 linked props, 83 scored props, and one recommendation above the board threshold; 29 unmatched quotes stayed withheld. These are point-in-time counts, not guarantees of future market coverage or betting accuracy.
 
 Board eligibility is evaluated before the CFB result limit, so stale high-confidence quotes cannot crowd out valid lower-ranked picks. Final-game detail ingestion and this board-limit behavior both have regression coverage.
+
+## Sample and availability safeguards
+
+The CFB evidence service supplies distinct last-five, last-ten, this-season, and prior-season player windows, restricted to the current team and games before the target. Missing opportunities remain unknown. Two recent games are compared with the preceding three (no overlap); a 50% or greater opportunity change holds the prop for workload review. This conservative gate is not a probability adjustment or a validated optimal threshold.
+
+Active unresolved injuries to recently participating teammates in the relevant position group, or an unresolved last-observed quarterback, also hold affected props. The last observed passer is not represented as a confirmed starter; no replacement identity or replacement yardage is invented. Holds are rechecked when reading the board and stored with reason codes during analysis. The 60-point recommendation threshold remains unchanged. Automatic depth-chart replacement and calibrated workload redistribution still require a sourced CFB starter feed and separate validation.

@@ -244,10 +244,16 @@ return [
         ],
         'spread_value' => [
             'enabled' => env('CFB_SPREAD_VALUE_ENABLED', true),
+            'suppress_unqualified_model_inputs' => env('CFB_SPREAD_VALUE_SUPPRESS_UNQUALIFIED_INPUTS', true),
             'minimum_edge_points' => env('CFB_SPREAD_VALUE_MINIMUM_EDGE_POINTS', 3.0),
             'key_edge_points' => env('CFB_SPREAD_VALUE_KEY_EDGE_POINTS', 7.0),
             'extreme_edge_points' => env('CFB_SPREAD_VALUE_EXTREME_EDGE_POINTS', 14.0),
             'minimum_sample_games' => env('CFB_SPREAD_VALUE_MINIMUM_SAMPLE_GAMES', 6),
+            'early_season' => [
+                'enabled' => env('CFB_SPREAD_VALUE_EARLY_SEASON_ENABLED', true),
+                'minimum_prior_games' => 8,
+                'maximum_rating_age_days' => 14,
+            ],
             'minimum_metric_reliability' => env('CFB_SPREAD_VALUE_MINIMUM_METRIC_RELIABILITY', 0.75),
             'minimum_books' => env('CFB_SPREAD_VALUE_MINIMUM_BOOKS', 1),
             'maximum_book_line_range' => env('CFB_SPREAD_VALUE_MAXIMUM_BOOK_LINE_RANGE', 2.5),

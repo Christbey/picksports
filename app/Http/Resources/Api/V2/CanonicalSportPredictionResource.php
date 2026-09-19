@@ -7,6 +7,7 @@ use App\Models\CFB\Game as CfbGame;
 use App\Models\PredictionMarket;
 use App\Services\Api\V2\SportContext;
 use App\Services\CFB\Predictions\CfbCanonicalSpreadValueSignalService;
+use App\Services\CFB\Predictions\CfbPredictionInputQuality;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -65,8 +66,12 @@ class CanonicalSportPredictionResource extends JsonResource
             'predicted_spread' => $this->number($homeSpread?->projected_line),
             'predicted_total' => $this->number($total?->projected_line),
             'confidence_score' => $confidence,
-            'confidence_level' => $this->confidenceLevel($confidence),
+            'confidence_level' => $confidenceContext['tier'],
             'confidence_context' => $confidenceContext,
+            'evidence_windows' => $prediction->sport === 'cfb' ? [
+                'home' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'home.evidence_windows'),
+                'away' => data_get($prediction->calculationRun?->inputSnapshot?->inputs, 'away.evidence_windows'),
+            ] : null,
             'public_recommendation' => null,
             'value_signal' => $valueSignal,
             'market_aware_projection' => null,
@@ -193,17 +198,29 @@ class CanonicalSportPredictionResource extends JsonResource
         ];
     }
 
-    /** @return array{label:string,tier:string,model_level:string,reason_codes:array<int,string>,sample_games:null} */
+    /** @return array<string, mixed> */
     private function confidenceContext(CanonicalPrediction $prediction, ?float $confidence): array
     {
         $level = $this->confidenceLevel($confidence);
+        if ($prediction->sport === 'cfb') {
+            $quality = CfbPredictionInputQuality::assess((array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []));
+            if (! $quality['qualified']) {
+                return [
+                    'label' => 'Incomplete inputs', 'tier' => 'unavailable', 'model_level' => $level,
+                    'reason_codes' => $quality['risk_flags'], 'sample_games' => min($quality['sample_games']),
+                    'team_sample_games' => $quality['sample_games'],
+                    'probability_status' => $quality['probability_status'],
+                ];
+            }
+        }
 
         return [
             'label' => ucfirst($level),
             'tier' => $level,
             'model_level' => $level,
             'reason_codes' => array_values((array) data_get($prediction->output_metadata, 'reason_codes', [])),
-            'sample_games' => null,
+            'sample_games' => isset($quality) ? min($quality['sample_games']) : null,
+            ...($prediction->sport === 'cfb' ? ['probability_status' => 'uncalibrated_model_estimate'] : []),
         ];
     }
 

@@ -10,7 +10,18 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.1.0';
+    public const SEMANTIC_VERSION = '1.3.0';
+
+    /** @return array<string, mixed> */
+    public function configuration(): array
+    {
+        $configuration = parent::configuration();
+        $configuration['inputs']['sample_aware_context'] = true;
+        $configuration['inputs']['preserve_missing_metrics'] = true;
+        $configuration['spread']['rating_baseline'] = 'fpi_points';
+
+        return $configuration;
+    }
 
     public function sport(): string
     {

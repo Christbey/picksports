@@ -7,7 +7,6 @@ use App\Models\CFB\Game;
 use App\Models\PredictionMarket;
 use App\Services\CFB\CfbMarketMovementSignalService;
 use Carbon\CarbonImmutable;
-use Carbon\CarbonInterface;
 
 class CfbCanonicalSpreadValueSignalService
 {
@@ -47,17 +46,34 @@ class CfbCanonicalSpreadValueSignalService
         $edgePoints = round(abs($signedHomeEdge), 1);
         $minimumEdge = (float) config('cfb.predictions.spread_value.minimum_edge_points', 3.0);
         $keyEdge = (float) config('cfb.predictions.spread_value.key_edge_points', 7.0);
+        $support = $this->statisticalSupport($prediction);
+        $marketHealth = $this->marketHealth($market, $game);
+        $assessment = app(CfbSpreadAssessment::class)->assess(
+            (array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []),
+            $modelHomeMargin, $marketHomeLine, [...$support['risk_flags'], ...$marketHealth['risk_flags'],
+                ...(! $prediction->generated_at || $prediction->generated_at->lt(now()->subHours(6))
+                    || $prediction->generated_at->gt(now()) ? ['stale_prediction'] : [])],
+        );
         if ($edgePoints < $minimumEdge) {
             return [
                 'has_playable_value' => false,
                 'play_count' => 0,
+                'spread_assessment' => $assessment,
                 'best' => null,
             ];
         }
 
-        $support = $this->statisticalSupport($prediction);
-        $marketHealth = $this->marketHealth($market, $game);
-        $isPlayable = $edgePoints >= $minimumEdge && $support['supported'] && $marketHealth['supported'];
+        if (! $support['model_inputs_qualified']
+            && (bool) config('cfb.predictions.spread_value.suppress_unqualified_model_inputs', true)) {
+            return [
+                'has_playable_value' => false,
+                'play_count' => 0,
+                'spread_assessment' => $assessment,
+                'best' => null,
+            ];
+        }
+
+        $isPlayable = $edgePoints >= $minimumEdge && $support['supported'] && $marketHealth['supported'] && $assessment['risk_flags'] === [];
         $isKeyEdge = $isPlayable && $edgePoints >= $keyEdge;
         $team = $side === 'home' ? $game->homeTeam : $game->awayTeam;
         $teamLabel = $team?->abbreviation ?: $team?->display_name ?: $team?->school ?: ucfirst($side);
@@ -65,14 +81,14 @@ class CfbCanonicalSpreadValueSignalService
         $modelSideLine = $side === 'home' ? $modelHomeLine : -$modelHomeLine;
         $action = $isPlayable ? 'Bet' : 'Watch';
         $riskFlags = array_values(array_unique([
-            ...$support['risk_flags'],
-            ...$marketHealth['risk_flags'],
+            ...$assessment['risk_flags'],
             ...($edgePoints >= (float) config('cfb.predictions.spread_value.extreme_edge_points', 14.0)
                 ? ['extreme_model_market_disagreement']
                 : []),
         ]));
 
         return [
+            'spread_assessment' => $assessment,
             'has_playable_value' => $isPlayable,
             'play_count' => $isPlayable ? 1 : 0,
             'best' => [
@@ -109,10 +125,11 @@ class CfbCanonicalSpreadValueSignalService
         ];
     }
 
-    /** @return array{supported:bool,home_sample_games:int,away_sample_games:int,minimum_sample_games:int,metric_reliability:float,minimum_metric_reliability:float,home_record_season:int|null,away_record_season:int|null,risk_flags:list<string>} */
+    /** @return array<string, mixed> */
     private function statisticalSupport(CanonicalPrediction $prediction): array
     {
         $inputs = (array) ($prediction->calculationRun?->inputSnapshot?->inputs ?? []);
+        $quality = CfbPredictionInputQuality::assess($inputs);
         $diagnostics = (array) ($prediction->calculationRun?->diagnostics ?? []);
         $homeMetrics = (array) data_get($inputs, 'home.metrics', []);
         $awayMetrics = (array) data_get($inputs, 'away.metrics', []);
@@ -121,17 +138,36 @@ class CfbCanonicalSpreadValueSignalService
         $minimumSample = (int) config('cfb.predictions.spread_value.minimum_sample_games', 6);
         $minimumReliability = (float) config('cfb.predictions.spread_value.minimum_metric_reliability', 0.75);
         $reliability = (float) data_get($diagnostics, 'metric_reliability', 0.0);
-        $riskFlags = [];
+        $defaultElo = (float) config('cfb.elo.default_rating', 1500);
+        $homeElo = $this->number(data_get($inputs, 'home.elo')) ?? $defaultElo;
+        $awayElo = $this->number(data_get($inputs, 'away.elo')) ?? $defaultElo;
+        $hasDifferentiatedElo = abs($homeElo - $defaultElo) >= 0.001
+            || abs($awayElo - $defaultElo) >= 0.001;
+        $hasBidirectionalMetricSample = $homeSample > 0 && $awaySample > 0;
+        $modelInputsQualified = $quality['qualified'] && ($hasDifferentiatedElo
+            || $hasBidirectionalMetricSample);
+        $riskFlags = $quality['risk_flags'];
 
-        if ($homeSample < $minimumSample || $awaySample < $minimumSample) {
+        if (! $modelInputsQualified) {
+            $riskFlags[] = 'missing_model_inputs';
+        }
+
+        $snapshot = $prediction->calculationRun?->inputSnapshot;
+        $early = app(CfbEarlySeasonSpreadSupport::class)->assess(
+            $inputs, $diagnostics, $snapshot?->captured_at, (string) $snapshot?->pregame_safety_status,
+        );
+        if (! $early['eligible'] && ($homeSample < $minimumSample || $awaySample < $minimumSample)) {
             $riskFlags[] = 'insufficient_team_metric_sample';
         }
-        if ($reliability < $minimumReliability) {
+        if (! $early['eligible'] && $reliability < $minimumReliability) {
             $riskFlags[] = 'insufficient_metric_reliability';
         }
 
         return [
             'supported' => $riskFlags === [],
+            'model_inputs_qualified' => $modelInputsQualified,
+            'support_path' => $riskFlags === [] ? ($early['eligible'] ? $early['path'] : 'current_season_sample') : 'insufficient_evidence',
+            'early_season_support' => $early,
             'home_sample_games' => $homeSample,
             'away_sample_games' => $awaySample,
             'minimum_sample_games' => $minimumSample,
@@ -152,12 +188,7 @@ class CfbCanonicalSpreadValueSignalService
         $bookRange = $this->number($market['current_bookmaker_home_line_range'] ?? null);
         $maximumRange = (float) config('cfb.predictions.spread_value.maximum_book_line_range', 2.5);
         $capturedAt = $market['current_captured_at'] ?? null;
-        $observedAt = $this->freshestTimestamp(
-            $capturedAt,
-            $game->odds_updated_at instanceof CarbonInterface
-                ? $game->odds_updated_at->toIso8601String()
-                : null,
-        );
+        $observedAt = is_string($capturedAt) ? $capturedAt : null;
         $maximumAgeHours = (int) config('cfb.predictions.spread_value.maximum_quote_age_hours', 6);
 
         if ($bookCount < $minimumBooks) {
@@ -183,7 +214,7 @@ class CfbCanonicalSpreadValueSignalService
         $away = $game->awayTeam?->abbreviation ?: $game->awayTeam?->school ?: 'Away';
         $candidate = $side === 'home' ? $home : $away;
         $support = $supported
-            ? 'The stored team-metric samples and calculation reliability clear the configured support gates.'
+            ? 'The stored evidence clears the current-season or prior-season-plus-rating support checks.'
             : 'The numerical edge is visible, but the stored statistical sample does not clear the promotion gates.';
 
         return sprintf(
@@ -222,32 +253,9 @@ class CfbCanonicalSpreadValueSignalService
         }
 
         try {
-            return CarbonImmutable::parse($capturedAt)->gte(now()->subHours($maximumAgeHours));
+            return CarbonImmutable::parse($capturedAt)->betweenIncluded(now()->subHours($maximumAgeHours), now());
         } catch (\Throwable) {
             return false;
         }
-    }
-
-    private function freshestTimestamp(mixed ...$timestamps): ?string
-    {
-        $freshest = null;
-
-        foreach ($timestamps as $timestamp) {
-            if (! is_string($timestamp) || trim($timestamp) === '') {
-                continue;
-            }
-
-            try {
-                $candidate = CarbonImmutable::parse($timestamp);
-            } catch (\Throwable) {
-                continue;
-            }
-
-            if ($freshest === null || $candidate->gt($freshest)) {
-                $freshest = $candidate;
-            }
-        }
-
-        return $freshest?->toIso8601String();
     }
 }

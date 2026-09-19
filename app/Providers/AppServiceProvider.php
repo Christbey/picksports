@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Actions\ESPN\CFB\SyncPlayers;
 use App\Actions\ESPN\NBA\SyncGamesFromScoreboard;
 use App\Actions\ESPN\NBA\SyncPlayerInjuries;
 use App\Events\GameFinalized;
@@ -9,6 +10,7 @@ use App\Listeners\TriggerGameFinalizationGrading;
 use App\Models\DeveloperApiCredential;
 use App\Services\CommandHeartbeatService;
 use App\Services\DeveloperPlatform\DeveloperApiCredentialAuthenticator;
+use App\Services\ESPN\BaseEspnService;
 use App\Services\ESPN\NBA\EspnService;
 use App\Services\Predictions\ModelRunRecorder;
 use Carbon\CarbonImmutable;
@@ -35,6 +37,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->when(SyncPlayers::class)
+            ->needs(BaseEspnService::class)
+            ->give(\App\Services\ESPN\CFB\EspnService::class);
         $this->app->singleton(ModelRunRecorder::class);
         $this->registerEspnScoreboardSyncActions();
         $this->registerEspnPlayerInjurySyncActions();

@@ -14,7 +14,7 @@ beforeEach(function () {
         }
     }
     $this->game = Game::factory()->create(['home_team_id' => $this->teams[0]->id, 'away_team_id' => $this->teams[3]->id,
-        'season' => 2026, 'game_date' => '2026-09-12', 'game_time' => '23:30:00', 'status' => 'STATUS_SCHEDULED']);
+        'season' => 2026, 'game_date' => '2026-09-12', 'game_time' => '23:30:00', 'status' => 'STATUS_SCHEDULED', 'neutral_site' => false]);
 });
 
 test('uses prior seasons and reports sample sizes without saved predictions', function () {

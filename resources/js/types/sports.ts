@@ -53,6 +53,11 @@ export interface BettingValueSummary {
 }
 
 export interface ValueSignalSummary {
+    spread_assessment?: {
+        status: string;
+        summary: string;
+        risk_flags: string[];
+    } | null;
     has_playable_value: boolean;
     play_count: number;
     best?: {

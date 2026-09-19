@@ -3,6 +3,7 @@
 use App\Actions\CFB\GenerateCanonicalPrediction;
 use App\Models\CalculationRun;
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
 use App\Models\CFB\Prediction;
 use App\Models\CFB\Team;
@@ -15,6 +16,7 @@ use App\Models\PredictionMarket;
 use App\Models\SportEvent;
 use App\Models\SportEventResult;
 use App\Models\User;
+use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\Predictions\CfbCalculationReleaseRegistrar;
 use App\Services\CFB\Predictions\CfbCanonicalCutoverReadinessService;
 use App\Services\NFL\NflPredictionDispositionRecorder;
@@ -274,6 +276,12 @@ it('retains preseason CFB power ratings before either team has a completed-game 
         'fpi' => -10,
     ]);
 
+    FpiRating::factory()->create(['team_id' => $fixture['home']->id, 'season' => 2026, 'week' => 0, 'fpi' => 14]);
+    FpiRating::factory()->create(['team_id' => $fixture['away']->id, 'season' => 2026, 'week' => 0, 'fpi' => -10]);
+
+    FpiRating::factory()->create(['team_id' => $fixture['home']->id, 'season' => 2026, 'week' => 1, 'fpi' => 99, 'updated_at' => now()->addDay()]);
+    FpiRating::factory()->create(['team_id' => $fixture['away']->id, 'season' => 2026, 'week' => 5, 'fpi' => 99]);
+
     app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
     $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
     $spread = $prediction->markets
@@ -283,7 +291,7 @@ it('retains preseason CFB power ratings before either team has a completed-game 
 
     expect(data_get($prediction->calculationRun->inputSnapshot->inputs, 'home.metrics.fpi'))->toBe(14)
         ->and(data_get($prediction->calculationRun->inputSnapshot->inputs, 'away.metrics.fpi'))->toBe(-10)
-        ->and((float) $spread->projected_line)->toBe(-5.2);
+        ->and((float) $spread->projected_line)->toBe(-23.6);
 });
 
 it('can generate and verify only the requested CFB week', function () {
@@ -326,6 +334,10 @@ it('highlights a statistically supported CFB away cover edge against an inflated
     ];
     $fixture = canonicalFootballFixture($definition);
     app(CfbCalculationReleaseRegistrar::class)->register(effectiveAt: now()->subMinute()->toImmutable());
+    foreach (['home', 'away'] as $side) {
+        FpiRating::factory()->create(['team_id' => $fixture[$side]->id, 'season' => 2026, 'week' => 0, 'fpi' => $side === 'home' ? 15 : 0]);
+    }
+    $this->mock(CfbPlayerEvidenceService::class)->shouldReceive('quarterback')->andReturn(['status' => 'last_observed']);
     $prediction = app(GenerateCanonicalPrediction::class)->execute($fixture['game']);
     $modelHomeLine = (float) $prediction->markets
         ->where('market_type', 'spread')
@@ -380,6 +392,12 @@ it('highlights a statistically supported CFB away cover edge against an inflated
     config()->set('subscriptions.tier_bypass_user_ids', [$user->id]);
     config()->set('prediction_lifecycle.canonical_reads.cfb', true);
     Sanctum::actingAs($user);
+
+    $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')->assertOk()
+        ->assertJsonPath('data.0.value_signal.has_playable_value', false)
+        ->assertJsonPath('data.0.value_signal.spread_assessment.status', 'insufficient_evidence')
+        ->assertJsonPath('data.0.value_signal.spread_assessment.risk_flags.0', 'stale_market_quote');
+    MarketQuote::query()->update(['captured_at' => now()]);
 
     $this->getJson('/api/v2/sports/cfb/predictions?season=2026&week=1')
         ->assertOk()

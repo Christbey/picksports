@@ -165,6 +165,9 @@ The scheduler is organized around shared helpers in `routes/console.php`:
 
 ### CFB
 
+- Hourly at `:45`, 08:00–23:00 Central: `cfb:run-pregame-pipeline --days-forward=2` synchronously refreshes participating-team rosters (once daily) and injuries, then odds, then canonical forecasts. It requires canonical generation enabled, uses an application lock and scheduler overlap/single-server guards, and stops on odds failures. New forecasts preserve previous revisions; no historical games are regenerated.
+
+
 - Daily current-week sync at `07:00`
 - Live scoreboard sync every 5 minutes between `12:00` and `02:00`
 - Game details sync every 30 minutes between `14:00` and `02:00`
@@ -209,3 +212,5 @@ For implementation details, review:
 ```bash
 routes/console.php
 ```
+
+The CFB pregame pipeline now requires a successful daily FPI import and metric recalculation before injuries, odds, and canonical generation. Empty required imports stop generation and retry on the next run. New snapshots record individual rating provenance; missing opponent ratings remain an explicit spread hold.

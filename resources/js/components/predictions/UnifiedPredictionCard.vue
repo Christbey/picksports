@@ -1443,6 +1443,13 @@ function saveOptions(): SavePickOption[] {
             :class="dashboardRailClass()"
         />
         <div class="flex min-w-0 flex-1 flex-col gap-3 pl-1">
+            <p
+                v-if="valueSignal()?.spread_assessment"
+                class="text-xs text-muted-foreground"
+                :title="valueSignal()?.spread_assessment?.risk_flags.join(', ')"
+            >
+                {{ valueSignal()?.spread_assessment?.summary }}
+            </p>
             <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
                 <div class="flex items-start justify-between gap-3">
                     <div class="min-w-0">

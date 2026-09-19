@@ -7,6 +7,7 @@ use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Team;
+use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\OddsApi\OddsApiService;
 use App\Services\Sports\SportsDateWindowService;
@@ -344,6 +345,14 @@ class PlayerPropAnalyzer
                 $recommendations->push($recommendation);
             } elseif ($recommendation === null) {
                 $this->clearPredictionSnapshot($prop);
+                if ($prop instanceof PlayerProp && $this->persistSnapshots) {
+                    $evidence = app(CfbPlayerEvidenceService::class)->forProp($prop);
+                    $prop->forceFill(['confidence_decomposition' => [
+                        'analysis_disposition' => ['status' => 'hold',
+                            'reason_codes' => $evidence['hold_reasons'] ?: ['ineligible_quote_or_insufficient_evidence']],
+                        'cfb_context' => ['evidence' => $evidence],
+                    ]])->saveQuietly();
+                }
                 if ($sport === 'NFL' && $this->nflAnalysisHold !== null && $this->persistSnapshots) {
                     $prop->forceFill(['confidence_decomposition' => [
                         'analysis_disposition' => $this->nflDisposition($prop, 'hold', $this->nflAnalysisHold),
@@ -561,10 +570,11 @@ class PlayerPropAnalyzer
         if ($this->cfbAnalysisProp) {
             $analysis['confidence_decomposition']['cfb_context'] = [
                 'history' => 'prior_reported_current_team_current_or_previous_season',
-                'availability' => 'own_player_injury_exclusion_only',
+                'availability' => 'own_player_and_teammate_workload_holds',
                 'teammate_workload_adjusted' => false,
+                'evidence' => app(CfbPlayerEvidenceService::class)->forProp($this->cfbAnalysisProp),
             ];
-            $analysis['reasoning'][] = 'College football: prior current-team stats; no teammate injury or depth-chart workload adjustment.';
+            $analysis['reasoning'][] = 'College football: prior current-team stats; unresolved teammate or workload changes are withheld, not assigned a yardage adjustment.';
         }
         if (isset($context['availability'])) {
             $analysis['confidence_decomposition']['availability'] = $context['availability'];
@@ -1478,7 +1488,7 @@ class PlayerPropAnalyzer
             'model_over_probability' => $modelOverProbability,
             'market_over_probability' => $marketOverProbability,
             'edge_probability' => $edgeProbability,
-            'reasoning' => [...$this->precomputedReasoning($prop, $side, $modelOverProbability, $marketOverProbability, $edgeProbability), ...($prop instanceof PlayerProp ? ['College football: prior current-team stats; no teammate injury or depth-chart workload adjustment.'] : [])],
+            'reasoning' => [...$this->precomputedReasoning($prop, $side, $modelOverProbability, $marketOverProbability, $edgeProbability), ...($prop instanceof PlayerProp ? ['College football: prior current-team stats; unresolved teammate or workload changes are withheld, not assigned a yardage adjustment.'] : [])],
             'context' => $contextFactor !== null ? [
                 'pace_factor' => 1.0,
                 'opponent_factor' => 1.0,

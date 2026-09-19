@@ -5,6 +5,7 @@ namespace App\Services\BettingRecommendations;
 use App\Models\CFB\Game;
 use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
+use App\Services\CFB\CfbPlayerEvidenceService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -69,6 +70,7 @@ class CfbPropEligibility
         }
 
         // An unresolved availability report blocks a pick; absence of a report is not proof of health.
-        return ! $player->activeInjuries()->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->exists();
+        return ! $player->activeInjuries()->whereRaw("LOWER(status) NOT IN ('active', 'available', 'probable')")->exists()
+            && app(CfbPlayerEvidenceService::class)->forProp($prop)['hold_reasons'] === [];
     }
 }

@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class CfbMoneylineCalibrationDataset
 {
-    public const FEATURE_VERSION = 'cfb-prior-season-core-v1';
+    public const FEATURE_VERSION = 'cfb-prior-season-core-v2';
 
     public function __construct(
         private readonly CfbCalculator $calculator,
@@ -103,6 +103,7 @@ class CfbMoneylineCalibrationDataset
             schemaVersion: CfbCalculationReleaseDefinition::INPUT_SCHEMA_VERSION,
             inputs: [
                 'event' => [
+                    'season' => (int) $row['season'],
                     'neutral_site' => (bool) $row['neutral_site'],
                 ],
                 'home' => [

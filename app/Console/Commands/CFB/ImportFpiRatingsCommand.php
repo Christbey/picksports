@@ -15,6 +15,7 @@ class ImportFpiRatingsCommand extends Command
     protected $signature = 'cfb:import-fpi
         {--season= : Season to import (defaults to current year)}
         {--week=0 : Snapshot week to store for this import}
+        {--require-data : Fail if no usable ratings are imported}
         {--recalculate-metrics : Recalculate CFB team metrics after import}';
 
     protected $description = 'Import CFB FPI ratings from CollegeFootballData';
@@ -33,7 +34,7 @@ class ImportFpiRatingsCommand extends Command
         if ($rows === []) {
             $this->warn("No FPI ratings were returned for {$season}.");
 
-            return self::SUCCESS;
+            return $this->option('require-data') ? self::FAILURE : self::SUCCESS;
         }
 
         $teams = Team::query()->get();
@@ -84,9 +85,16 @@ class ImportFpiRatingsCommand extends Command
 
         $this->info("Matched {$matched} rows. Created {$created}, updated {$updated}, skipped {$skipped}.");
 
+        if ($this->option('require-data') && ($matched === 0 || ! FpiRating::where('season', $season)->where('week', $week)->whereNotNull('fpi')->where('updated_at', '>=', now()->subMinutes(5))->exists())) {
+            $this->error('No usable FPI ratings imported.');
+
+            return self::FAILURE;
+        }
+
         if ($this->option('recalculate-metrics')) {
             $this->newLine();
-            $this->call('cfb:calculate-team-metrics', ['--season' => $season]);
+
+            return $this->call('cfb:calculate-team-metrics', ['--season' => $season]);
         }
 
         return self::SUCCESS;

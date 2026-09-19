@@ -18,6 +18,10 @@ class CalculateBettingValue
             return null;
         }
 
+        if (! $this->hasQualifiedPredictionInputs($prediction, $sportKey)) {
+            return null;
+        }
+
         $recommendations = [];
 
         $spreadsMarket = $this->extractMarket($oddsData, 'spreads');
@@ -46,6 +50,22 @@ class CalculateBettingValue
         }
 
         return $recommendations === [] ? null : $recommendations;
+    }
+
+    private function hasQualifiedPredictionInputs(object $prediction, string $sportKey): bool
+    {
+        if ($sportKey !== 'cfb'
+            || ! (bool) config('cfb.predictions.spread_value.suppress_unqualified_model_inputs', true)) {
+            return true;
+        }
+
+        $defaultElo = (float) config('cfb.elo.default_rating', 1500);
+        $homeElo = is_numeric($prediction->home_elo ?? null) ? (float) $prediction->home_elo : $defaultElo;
+        $awayElo = is_numeric($prediction->away_elo ?? null) ? (float) $prediction->away_elo : $defaultElo;
+        $bothEloRatingsAreDefault = abs($homeElo - $defaultElo) < 0.001
+            && abs($awayElo - $defaultElo) < 0.001;
+
+        return ! $bothEloRatingsAreDefault;
     }
 
     protected function analyzeSpread(object $game, object $prediction, array $market, string $sportKey): ?array

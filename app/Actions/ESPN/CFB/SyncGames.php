@@ -26,7 +26,7 @@ class SyncGames extends AbstractSyncGames
         parent::__construct($espnService);
     }
 
-    protected function buildGameAttributes(GameData $dto, array $gameData, Model $homeTeam, Model $awayTeam): array
+    protected function buildGameAttributes(GameData $dto, array $gameData, ?Model $homeTeam, ?Model $awayTeam): array
     {
         return array_merge(
             parent::buildGameAttributes($dto, $gameData, $homeTeam, $awayTeam),

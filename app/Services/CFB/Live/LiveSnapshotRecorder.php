@@ -7,6 +7,7 @@ use App\Models\CFB\Game;
 use App\Models\CFB\LivePredictionSnapshot;
 use App\Services\BettingRecommendations\CfbPropEligibility;
 use App\Services\CFB\Predictions\CfbStoredPregameQuote;
+use Carbon\CarbonInterface;
 
 class LiveSnapshotRecorder
 {
@@ -60,7 +61,7 @@ class LiveSnapshotRecorder
         return $base;
     }
 
-    public function record(Game $game, array $baseline, ?array $projection, string $status, string $source = 'scoreboard', array $markets = [], array $props = []): LivePredictionSnapshot
+    public function record(Game $game, array $baseline, ?array $projection, string $status, string $source = 'scoreboard', array $markets = [], array $props = [], ?CarbonInterface $observedAt = null): LivePredictionSnapshot
     {
         $state = ['status' => $game->status, 'period' => $game->period, 'clock' => $game->game_clock,
             'home_score' => $game->home_score, 'away_score' => $game->away_score];
@@ -69,7 +70,7 @@ class LiveSnapshotRecorder
         return LivePredictionSnapshot::firstOrCreate(['state_hash' => $hash], [
             'game_id' => $game->id, 'prediction_id' => $baseline['prediction_id'], 'source' => $source,
             'pregame' => $baseline, 'state' => $state, 'projection' => $projection, 'markets' => $markets, 'props' => $props,
-            'status' => $status, 'observed_at' => now(),
+            'status' => $status, 'observed_at' => $observedAt ?? now(),
         ]);
     }
 }

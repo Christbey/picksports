@@ -253,3 +253,29 @@ test('stale scheduled updates cannot overwrite an active college football score'
     $changes = NflGameStateGuard::preserve($this->game, ['status' => 'STATUS_SCHEDULED', 'home_score' => 0, 'away_score' => 0, 'period' => 0, 'game_clock' => '0:00']);
     expect($changes['status'])->toBe('STATUS_IN_PROGRESS')->and($changes)->not->toHaveKey('home_score');
 });
+
+test('recording fresh quotes does not reset the age of their score projection', function () {
+    app(UpdateLivePrediction::class)->execute($this->game);
+    $first = LivePredictionSnapshot::first();
+    $this->travel(5)->minutes();
+    $recorded = app(LiveSnapshotRecorder::class)->record($this->game, $first->pregame, $first->projection, 'live', 'live_feed', [], [], $first->observed_at);
+    expect($recorded->observed_at->eq($first->observed_at))->toBeTrue();
+    Sanctum::actingAs(User::factory()->create());
+    $this->getJson('/api/v2/sports/cfb/games/'.$this->game->id.'/live-betting')->assertOk()->assertJsonPath('data.stale', true);
+});
+
+test('a partial box score cannot erase stored player stats or finalize prop grading', function () {
+    app(UpdateLivePrediction::class)->execute($this->game);
+    $player = Player::factory()->create(['team_id' => $this->away->id, 'espn_id' => 'partial-test', 'full_name' => 'Partial Test']);
+    $stat = PlayerStat::factory()->create(['game_id' => $this->game->id, 'team_id' => $this->away->id, 'player_id' => $player->id, 'rushing_yards' => 90]);
+    $espn = Mockery::mock(EspnService::class);
+    $espn->shouldReceive('getLiveGame')->andReturn(['header' => ['id' => $this->game->espn_event_id, 'competitions' => [[
+        'status' => ['type' => ['name' => 'STATUS_FINAL'], 'period' => 4, 'displayClock' => '0:00'],
+        'competitors' => [['homeAway' => 'home', 'score' => '28'], ['homeAway' => 'away', 'score' => '21']],
+    ]]], 'boxscore' => ['players' => [['team' => ['id' => $this->home->espn_id], 'statistics' => [['name' => 'rushing', 'athletes' => []]]]]]]);
+    $odds = Mockery::mock(OddsApiService::class);
+    $odds->shouldNotReceive('getEventOdds');
+    (new LiveBettingSync($espn, $odds))->execute($this->game);
+    expect($stat->fresh())->not->toBeNull()->and($stat->fresh()->rushing_yards)->toBe(90);
+    expect(LivePredictionSnapshot::where('source', 'live_feed')->latest('id')->first()->status)->toBe('final_pending_stats');
+});

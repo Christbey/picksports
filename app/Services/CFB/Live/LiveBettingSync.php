@@ -28,7 +28,11 @@ class LiveBettingSync
             || ! is_array(data_get($payload, 'header.competitions.0.status.type'))) {
             return ['status' => 'scoreboard_unavailable'];
         }
-        $statsObserved = is_array(data_get($payload, 'boxscore.players')) && count(data_get($payload, 'boxscore.players')) > 0;
+        $teamsWithStats = collect(data_get($payload, 'boxscore.players', []))
+            ->filter(fn ($team) => is_array($team['statistics'] ?? null) && count($team['statistics']) > 0)
+            ->map(fn ($team) => (string) data_get($team, 'team.id'))->all();
+        $statsObserved = in_array((string) $game->homeTeam?->espn_id, $teamsWithStats, true)
+            && in_array((string) $game->awayTeam?->espn_id, $teamsWithStats, true);
         DB::transaction(function () use ($game, $payload, $statsObserved) {
             $locked = Game::whereKey($game->id)->lockForUpdate()->firstOrFail();
             $this->updateGameFromSummary($payload, $locked);
@@ -66,7 +70,7 @@ class LiveBettingSync
         $markets = $response ? app(LiveMarketComparison::class)->games($response, $projection) : [];
         $props = app(LivePropProjector::class)->project($game, $projection, $response, $statsObserved, $statsObservedSince);
         $recorded = app(LiveSnapshotRecorder::class)->record($game, $snapshot->pregame, $snapshot->projection,
-            $game->status === 'STATUS_FINAL' && ! $statsObserved ? 'final_pending_stats' : $snapshot->status, 'live_feed', $markets, $props);
+            $game->status === 'STATUS_FINAL' && ! $statsObserved ? 'final_pending_stats' : $snapshot->status, 'live_feed', $markets, $props, $snapshot->observed_at);
         if ($game->status === 'STATUS_FINAL' && $statsObserved) {
             app(GradePlayerProps::class)->executeForGame('americanfootball_ncaaf', $game->id);
         }

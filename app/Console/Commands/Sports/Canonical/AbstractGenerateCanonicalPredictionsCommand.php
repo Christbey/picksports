@@ -46,12 +46,13 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
             return self::SUCCESS;
         }
 
+        $this->configureBatch($games->count());
         $generator = app($this->generatorClass());
         $succeeded = 0;
         $failures = 0;
         foreach ($games as $game) {
             try {
-                $generator->execute($game, ! $this->option('draft'), 'artisan');
+                $this->generateGame($game, $generator);
                 $succeeded++;
             } catch (\Throwable $exception) {
                 $failures++;
@@ -63,6 +64,13 @@ abstract class AbstractGenerateCanonicalPredictionsCommand extends Command
         $this->info("Canonical {$this->sportLabel()} generation complete: {$succeeded} succeeded, {$failures} failed.");
 
         return $failures === 0 ? self::SUCCESS : self::FAILURE;
+    }
+
+    protected function configureBatch(int $count): void {}
+
+    protected function generateGame(Model $game, object $generator): void
+    {
+        $generator->execute($game, ! $this->option('draft'), 'artisan');
     }
 
     protected function releaseGameResources(Model $game): void {}

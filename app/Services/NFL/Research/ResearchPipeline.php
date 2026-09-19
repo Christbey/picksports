@@ -22,7 +22,7 @@ class ResearchPipeline
 {
     public function review(Game $game, bool $research = true): ?ResearchRevision
     {
-        return Cache::lock('nfl-research-game:'.$game->id, 300)->get(function () use ($game, $research) {
+        $revision = Cache::lock('nfl-research-game:'.$game->id, 300)->get(function () use ($game, $research) {
             $game->loadMissing(['homeTeam', 'awayTeam', 'prediction']);
             $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
             if (! $kickoff
@@ -134,6 +134,10 @@ class ResearchPipeline
 
             return ResearchRevision::firstOrCreate(['game_id' => $game->id, 'input_hash' => $hash], ['report_id' => $report?->id, 'baseline' => $baseline, 'revised' => [...$preview['outputs'], 'model_version' => $preview['model_version']], 'evidence' => $evidence, 'brief' => $brief, 'market' => $market, 'created_at' => now()]);
         });
+
+        // Laravel returns false for contention; this service returns an optional
+        // revision, not a boolean. A concurrent review is not a TypeError.
+        return $revision instanceof ResearchRevision ? $revision : null;
     }
 
     /** Preserve scoped uncertainty records without array-to-string coercion. */

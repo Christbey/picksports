@@ -180,6 +180,19 @@ it('prevents overlapping manual and scheduled research calls', function () {
     }
 });
 
+it('returns an unavailable assessment rather than throwing a TypeError on review lock contention', function () {
+    $game = costControlGame();
+    $lock = Cache::lock('nfl-research-game:'.$game->id, 300);
+    $lock->get();
+    $this->mock(NflWebContextResearchService::class, fn ($m) => $m->shouldNotReceive('research'));
+    try {
+        expect(app(ResearchPipeline::class)->review($game))->toBeNull();
+    } finally {
+        $lock->release();
+    }
+    Http::assertNothingSent();
+});
+
 it('records usage for paid invalid or incomplete responses without saving a report', function (string $failure) {
     $response = costControlResponse();
     if ($failure === 'incomplete') {

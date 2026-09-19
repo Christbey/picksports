@@ -127,3 +127,36 @@ it('preserves generic participant markets without applying core-market pair requ
         ->and($homeRun->participant)->toBe('Pete Crow-Armstrong')
         ->and((float) $homeRun->no_vig_probability)->toBe(1.0);
 });
+
+it('records a new CFB observation of unchanged odds without rewriting prior captures', function () {
+    config(['cfb.predictions.spread_value.maximum_quote_age_hours' => 6]);
+    $game = App\Models\CFB\Game::factory()->create([
+        'home_team_id' => App\Models\CFB\Team::factory()->create()->id,
+        'away_team_id' => App\Models\CFB\Team::factory()->create()->id,
+    ]);
+    $odds = [
+        'home_team' => 'Home', 'away_team' => 'Away',
+        'bookmakers' => [[
+            'key' => 'draftkings', 'title' => 'DraftKings',
+            'markets' => [[
+                'key' => 'spreads',
+                'outcomes' => [
+                    ['name' => 'Home', 'price' => -110, 'point' => -3.5],
+                    ['name' => 'Away', 'price' => -110, 'point' => 3.5],
+                ],
+            ]],
+        ]],
+    ];
+    $recorder = app(GameOddsSnapshotRecorder::class);
+    $event = ['id' => 'cfb-refresh', 'commence_time' => '2026-09-19T20:00:00Z'];
+    $first = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T08:00:00Z'));
+    $skipped = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T10:59:00Z'));
+    $fresh = $recorder->record('cfb', $game, $event, $odds, Carbon::parse('2026-09-19T11:00:00Z'));
+
+    expect($skipped)->toBeNull()
+        ->and($fresh)->not->toBeNull()
+        ->and($fresh->id)->not->toBe($first->id)
+        ->and($first->fresh()->captured_at->utc()->toIso8601String())->toBe('2026-09-19T08:00:00+00:00')
+        ->and($fresh->captured_at->utc()->toIso8601String())->toBe('2026-09-19T11:00:00+00:00')
+        ->and(MarketQuote::where('game_odds_snapshot_id', $fresh->id)->count())->toBe(2);
+});

@@ -6,11 +6,14 @@ use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
+use App\Models\CFB\GameContextSignal;
+use App\Models\CFB\GameWeather;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\CFB\CfbTeamEvidenceService;
+use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\Predictions\Football\FootballInputSnapshotBuilder;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
@@ -79,6 +82,7 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 ->orderByDesc('calculation_date')->orderByDesc('id')->first();
             if ($current && $current->season >= $event->season - 1) {
                 $inputs[$side]['metrics'] = $this->nullableMetrics($current);
+                $sourceTimestamps[$side.'_metric'] = $current->updated_at->toIso8601String();
             } else {
                 $inputs[$side]['metrics'] = null;
             }
@@ -106,6 +110,40 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             }
         }
 
+        if (data_get($release->configuration, 'football_signals.enabled', false)) {
+            $inputs['historical_signals'] = app(CfbHistoricalSignalEvidenceBuilder::class)
+                ->build($game, $snapshot->capturedAt, $snapshot->cutoffAt);
+            $sourceTimestamps['historical_signals'] = $inputs['historical_signals']['latest_source_available_at'];
+            $context = GameContextSignal::where('game_id', $game->id)
+                ->where('updated_at', '<=', $snapshot->capturedAt)->where('updated_at', '<', $snapshot->cutoffAt)
+                ->orderByDesc('updated_at')->first();
+            $weather = GameWeather::where('game_id', $game->id)
+                ->where('updated_at', '<=', $snapshot->capturedAt)->where('updated_at', '<', $snapshot->cutoffAt)
+                ->where('observed_at', '<=', $snapshot->capturedAt)->orderByDesc('observed_at')->first();
+            $inputs['signal_context'] = $context?->toArray() ?? [];
+            $inputs['signal_context']['conference'] = $game->conference_game === null ? null : (bool) $game->conference_game;
+            if ($weather) {
+                foreach (['temperature_f', 'wind_speed_mph', 'wind_gust_mph', 'precipitation_inches', 'is_indoor'] as $field) {
+                    $inputs['signal_context'][$field] = $weather->$field === null ? null : (is_bool($weather->$field) ? $weather->$field : (float) $weather->$field);
+                }
+            }
+            foreach (['home', 'away'] as $side) {
+                $inputs['signal_context'][$side.'_rest_days'] = data_get($inputs, 'historical_signals.'.$side.'.rest_days.value');
+            }
+            foreach (['spreads' => ['home', 'home_spread'], 'totals' => ['over', 'total']] as $market => [$side, $key]) {
+                $quote = app(CfbStoredPregameQuote::class)->latest($game->id, $market, $side, $snapshot->cutoffAt, $snapshot->capturedAt);
+                $inputs['signal_context'][$key] = $quote?->line === null ? null : (float) $quote->line;
+                $inputs['signal_context'][$key.'_quote_id'] = $quote?->id;
+                $sourceTimestamps['signal_'.$key] = $quote?->created_at?->toIso8601String();
+            }
+            $sourceTimestamps['signal_context'] = $context?->updated_at?->toIso8601String();
+            $sourceTimestamps['signal_weather'] = $weather?->updated_at?->toIso8601String();
+            $evidenceKey = 'cfb:football-signal-evidence:'.hash('sha256', json_encode($release->configuration, JSON_THROW_ON_ERROR)).':'.$snapshot->capturedAt->format('YmdHi');
+            $inputs['football_signal_evidence'] = Cache::remember($evidenceKey, 120,
+                fn () => app(CfbFootballSignalEvidence::class)->build($snapshot->capturedAt, $release->configuration));
+            $sourceTimestamps['football_signal_evidence'] = $inputs['football_signal_evidence']['latest_source_observed_at'];
+        }
+
         return new EventInputSnapshotData(
             schemaVersion: $snapshot->schemaVersion, inputs: $inputs,
             capturedAt: $snapshot->capturedAt, cutoffAt: $snapshot->cutoffAt,
@@ -121,6 +159,16 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
         $inputs = $this->metricInputs($metric);
         foreach (['offensive_rating', 'defensive_rating', 'net_rating', 'points_per_game',
             'points_allowed_per_game', 'turnover_differential', 'recent_form_rating', 'rest_travel_fatigue'] as $field) {
+            $inputs[$field] = $this->nullableFloat($metric->getAttribute($field));
+        }
+
+        foreach (['yards_per_game', 'yards_allowed_per_game', 'passing_yards_per_game', 'rushing_yards_per_game',
+            'strength_of_schedule', 'offensive_success_rate', 'defensive_success_rate', 'net_success_rate',
+            'offensive_explosiveness', 'defensive_explosiveness', 'net_explosiveness', 'offensive_havoc_rate',
+            'defensive_havoc_rate', 'net_havoc_rate', 'offensive_line_yards', 'offensive_stuff_rate',
+            'offensive_sack_rate', 'offensive_line_rating', 'qb_environment_rating', 'defensive_front_rating',
+            'cfbd_wepa_offense', 'cfbd_wepa_defense', 'cfbd_wepa_net', 'offensive_true_epa_per_play',
+            'defensive_true_epa_per_play', 'net_true_epa_per_play'] as $field) {
             $inputs[$field] = $this->nullableFloat($metric->getAttribute($field));
         }
 

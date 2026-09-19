@@ -53,6 +53,24 @@ export interface BettingValueSummary {
 }
 
 export interface ValueSignalSummary {
+    football_signals?: {
+        catalog_count: number;
+        triggered: number;
+        applied: number;
+        missing_inputs: number;
+        spread_adjustment: number;
+        total_adjustment: number;
+        signals: Array<{
+            id: string;
+            label: string;
+            side: string;
+            market: string;
+            matched: boolean | null;
+            status: string;
+            sample_games: number;
+            contribution_points: number;
+        }>;
+    } | null;
     signal_contributions?: {
         excluded?: string;
         active_spread_signals?: number;

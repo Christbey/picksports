@@ -6,7 +6,9 @@ use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Application\Predictions\Data\PredictionMarketOutput;
 use App\Application\Predictions\Data\PredictionOutput;
+use App\Services\CFB\Signals\CfbFootballSignalModel;
 use App\Services\Predictions\Football\CanonicalFootballCalculator;
+use Carbon\CarbonImmutable;
 
 class CfbCalculator extends CanonicalFootballCalculator
 {
@@ -127,7 +129,7 @@ class CfbCalculator extends CanonicalFootballCalculator
                 : $market, $markets);
         }
 
-        return new PredictionOutput(
+        $result = new PredictionOutput(
             markets: $markets,
             metadata: [...$output->metadata, ...$coverage, 'input_quality' => $quality,
                 'reason_codes' => [...$output->metadata['reason_codes'], ...$quality['risk_flags']]],
@@ -138,6 +140,40 @@ class CfbCalculator extends CanonicalFootballCalculator
                 'context_reliability' => $reliability, 'paired_rating_family' => $rating, 'input_quality' => $quality],
             generatedAt: $output->generatedAt,
         );
+
+        return $this->applyFootballSignals($result, $snapshot->inputs, $configuration, $snapshot->capturedAt);
+    }
+
+    private function applyFootballSignals(PredictionOutput $output, array $inputs, array $configuration, CarbonImmutable $capturedAt): PredictionOutput
+    {
+        if (! data_get($configuration, 'football_signals.enabled', false)) {
+            return $output;
+        }
+        $signals = app(CfbFootballSignalModel::class)->evaluate($inputs, $configuration['football_signals'], $configuration, $capturedAt);
+        $baseMargin = -collect($output->markets)->first(fn ($m) => $m->marketType === 'spread')->projectedLine;
+        $baseTotal = collect($output->markets)->first(fn ($m) => $m->marketType === 'total')->projectedLine;
+        $margin = round($baseMargin + $signals['spread_adjustment'], 1);
+        $total = round($baseTotal + $signals['total_adjustment'], 1);
+        $probability = round(1 / (1 + exp(-$margin / $configuration['spread']['probability_coefficient'])), 6);
+        $markets = array_map(fn ($market) => match ($market->marketType) {
+            'spread' => new PredictionMarketOutput('spread', 'home', projectedLine: -$margin, confidenceScore: $market->confidenceScore),
+            'total' => new PredictionMarketOutput('total', $market->selection, projectedLine: $total, confidenceScore: $market->confidenceScore),
+            'moneyline' => new PredictionMarketOutput('moneyline', $market->selection,
+                probability: $market->selection === 'home' ? $probability : round(1 - $probability, 6),
+                confidenceScore: round(max($probability, 1 - $probability) * 100, 2)),
+            default => $market,
+        }, $output->markets);
+
+        if ($margin === $baseMargin && $total === $baseTotal) {
+            $markets = $output->markets;
+        }
+
+        return new PredictionOutput(markets: $markets,
+            metadata: [...$output->metadata, 'home_margin' => $margin,
+                'football_signal_summary' => array_diff_key($signals, ['signals' => true])],
+            diagnostics: [...$output->diagnostics, 'projected_total' => $total,
+                'football_signals' => [...$signals, 'base_home_margin' => $baseMargin, 'base_total' => $baseTotal]],
+            generatedAt: $output->generatedAt);
     }
 
     protected function expectedSport(): string

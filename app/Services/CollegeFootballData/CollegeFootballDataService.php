@@ -200,9 +200,10 @@ class CollegeFootballDataService
      */
     protected function sanitizeQuery(array $query): array
     {
-        return array_filter(
-            $query,
-            static fn (mixed $value): bool => $value !== null && $value !== ''
+        return array_map(
+            // CFBD validates literal query booleans; PHP/Guzzle otherwise sends 1/0.
+            static fn (mixed $value): mixed => is_bool($value) ? ($value ? 'true' : 'false') : $value,
+            array_filter($query, static fn (mixed $value): bool => $value !== null && $value !== ''),
         );
     }
 }

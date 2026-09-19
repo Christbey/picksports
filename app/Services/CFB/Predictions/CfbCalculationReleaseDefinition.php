@@ -2,6 +2,7 @@
 
 namespace App\Services\CFB\Predictions;
 
+use App\Services\CFB\Signals\CfbFootballSignalCatalog;
 use App\Services\Predictions\Football\FootballCalculationReleaseDefinition;
 
 class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefinition
@@ -10,7 +11,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.5.1';
+    public const SEMANTIC_VERSION = '1.6.0';
 
     /** @return array<string, mixed> */
     public function configuration(): array
@@ -22,6 +23,10 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
         $configuration['inputs']['preserve_missing_metrics'] = true;
         $configuration['inputs']['personnel_evidence'] = true;
         $configuration['spread']['rating_baseline'] = 'fpi_points';
+
+        $configuration['football_signals'] = ['enabled' => true, 'version' => 'cfb-football-signals-1',
+            'maximum_spread_adjustment' => 2.0, 'maximum_total_adjustment' => 3.0,
+            'catalog' => CfbFootballSignalCatalog::all()];
 
         return $configuration;
     }

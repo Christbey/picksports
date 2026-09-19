@@ -105,7 +105,7 @@ it('requests advanced team season stats', function () {
     Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.collegefootballdata.com/stats/season/advanced')
         && $request['year'] === 2025
         && $request['conference'] === 'SEC'
-        && $request['excludeGarbageTime'] === true);
+        && $request['excludeGarbageTime'] === 'true');
 });
 
 it('throws when the api key is missing', function () {
@@ -131,4 +131,11 @@ it('throws on failed responses', function () {
 
     expect(fn () => $service->getAdjustedTeamSeasonStats(year: 2025))
         ->toThrow(RequestException::class);
+});
+
+it('serializes explicit false query booleans instead of numeric zero', function () {
+    config()->set('services.collegefootballdata.api_key', 'test-cfbd-key');
+    Http::fake(fn (Request $request) => Http::response([]));
+    (new CollegeFootballDataService)->getAdvancedTeamSeasonStats(2026, excludeGarbageTime: false);
+    Http::assertSent(fn (Request $request) => $request['excludeGarbageTime'] === 'false');
 });

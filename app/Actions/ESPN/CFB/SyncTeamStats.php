@@ -6,12 +6,50 @@ use App\Actions\ESPN\AbstractFootballSyncTeamStats;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamStat;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class SyncTeamStats extends AbstractFootballSyncTeamStats
 {
     protected const TEAM_MODEL_CLASS = Team::class;
 
     protected const TEAM_STAT_MODEL_CLASS = TeamStat::class;
+
+    public function execute(array $gameData, Model $game): int
+    {
+        if (! isset($gameData['boxscore']['teams'])) {
+            return 0;
+        }
+
+        return DB::transaction(function () use ($gameData, $game): int {
+            $synced = parent::execute($gameData, $game);
+            $defensiveSacks = [];
+            foreach ($gameData['boxscore']['players'] ?? [] as $teamBoxscore) {
+                $espnId = $teamBoxscore['team']['id'] ?? null;
+                foreach ($teamBoxscore['statistics'] ?? [] as $category) {
+                    if (! $espnId || ($category['name'] ?? null) !== 'defensive') {
+                        continue;
+                    }
+                    $index = array_search('sacks', $category['keys'] ?? [], true);
+                    $value = $index === false ? null : ($category['totals'][$index] ?? null);
+                    // Use ESPN's team aggregate, never a potentially incomplete athlete sum.
+                    if (is_numeric($value) && (float) $value >= 0 && floor((float) $value) === (float) $value) {
+                        $defensiveSacks[(string) $espnId] = (int) $value;
+                    }
+                }
+            }
+
+            $teams = Team::query()->whereIn('id', [$game->home_team_id, $game->away_team_id])->get()->keyBy('id');
+            foreach ([$game->home_team_id => $game->away_team_id, $game->away_team_id => $game->home_team_id] as $teamId => $opponentId) {
+                $opponentEspnId = $teams->get($opponentId)?->espn_id;
+                if ($opponentEspnId !== null && array_key_exists((string) $opponentEspnId, $defensiveSacks)) {
+                    TeamStat::query()->where('game_id', $game->id)->where('team_id', $teamId)
+                        ->whereNull('sacks_allowed')->update(['sacks_allowed' => $defensiveSacks[(string) $opponentEspnId]]);
+                }
+            }
+
+            return $synced;
+        });
+    }
 
     protected function parseTeamStats(array $statistics): array
     {

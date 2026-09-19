@@ -84,6 +84,7 @@ class CfbCanonicalSpreadValueSignalService
             && (bool) config('cfb.predictions.spread_value.suppress_unqualified_model_inputs', true)) {
             return [
                 'signal_contributions' => $signalContributions,
+                'football_signals' => data_get($prediction->calculationRun?->diagnostics, 'football_signals'),
                 'decision_policy_version' => self::DECISION_POLICY_VERSION,
                 'decision_status' => 'unavailable',
                 'decision_summary' => 'No reliable spread selection: essential model inputs are missing.',
@@ -123,6 +124,7 @@ class CfbCanonicalSpreadValueSignalService
 
         return [
             'signal_contributions' => $signalContributions,
+            'football_signals' => data_get($prediction->calculationRun?->diagnostics, 'football_signals'),
             'decision_policy_version' => self::DECISION_POLICY_VERSION,
             'decision_status' => $decisionStatus,
             'decision_summary' => $noEdge ? 'No directional edge at the selected line.'

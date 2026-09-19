@@ -1,0 +1,88 @@
+<?php
+
+namespace App\Services\CFB\Signals;
+
+use App\Models\CanonicalPrediction;
+use Carbon\CarbonImmutable;
+
+/** Uses only predictions and outcomes already observed at capture; never reconstructs old inputs. */
+class CfbFootballSignalEvidence
+{
+    public static function baselineHash(array $configuration): string
+    {
+        unset($configuration['football_signals']);
+
+        return hash('sha256', json_encode($configuration, JSON_THROW_ON_ERROR));
+    }
+
+    public function build(CarbonImmutable $asOf, array $configuration): array
+    {
+        $catalog = data_get($configuration, 'football_signals.catalog') ?? CfbFootballSignalCatalog::all();
+        $baselineHash = self::baselineHash($configuration);
+        $observations = $seen = $sourceIds = [];
+        $latest = null;
+        $predictions = CanonicalPrediction::query()->where('sport', 'cfb')->where('phase', 'pregame')
+            ->whereIn('publication_state', ['published', 'superseded'])
+            ->where('generated_at', '<', $asOf)->where('published_at', '<', $asOf)
+            ->where('created_at', '<=', $asOf)->where('generated_at', '>=', $asOf->subYears(3))
+            ->whereHas('sportEvent.cfbGame', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('updated_at', '<=', $asOf))
+            ->with(['markets', 'calculationRun.release', 'calculationRun.inputSnapshot', 'sportEvent.cfbGame'])
+            ->orderByDesc('generated_at')->orderByDesc('id')->get();
+        foreach ($predictions as $prediction) {
+            $game = $prediction->sportEvent?->cfbGame;
+            $kickoff = $prediction->sportEvent?->starts_at;
+            $snapshot = $prediction->calculationRun?->inputSnapshot;
+            $release = $prediction->calculationRun?->release;
+            if (! $game || isset($seen[$game->id]) || ! $kickoff || ! $snapshot || ! $release
+                || $snapshot->pregame_safety_status !== 'verified' || ! $snapshot->captured_at
+                || $snapshot->captured_at->gte($kickoff) || $snapshot->captured_at->gt($prediction->generated_at)
+                || ! $prediction->published_at || $prediction->published_at->gte($kickoff)
+                || $snapshot->created_at->gte($kickoff) || $prediction->created_at->gte($kickoff)
+                || $snapshot->created_at->gt($asOf) || $prediction->generated_at->gte($kickoff)
+                || $kickoff->gte($asOf) || $game->created_at->gt($asOf)
+                || ($snapshot->latest_source_available_at && $snapshot->latest_source_available_at->gt($snapshot->captured_at))
+                || self::baselineHash($release->configuration) !== $baselineHash
+                || ! is_numeric($game->home_score) || ! is_numeric($game->away_score)
+                || $game->home_score < 0 || $game->away_score < 0 || $game->home_score == $game->away_score) {
+                continue;
+            }
+            $spread = $prediction->markets->first(fn ($m) => $m->market_type === 'spread' && $m->selection === 'home');
+            $total = $prediction->markets->first(fn ($m) => $m->market_type === 'total');
+            if (! is_numeric($spread?->projected_line) || ! is_numeric($total?->projected_line)) {
+                continue;
+            }
+            $seen[$game->id] = true;
+            $sourceIds[] = $prediction->id;
+            $observed = $game->updated_at->toImmutable();
+            $latest = $latest === null || $observed->gt($latest) ? $observed : $latest;
+            $baseMargin = data_get($prediction->calculationRun->diagnostics, 'football_signals.base_home_margin', -(float) $spread->projected_line);
+            $baseTotal = data_get($prediction->calculationRun->diagnostics, 'football_signals.base_total', (float) $total->projected_line);
+            $residuals = ['spread' => $game->home_score - $game->away_score - $baseMargin,
+                'total' => $game->home_score + $game->away_score - $baseTotal];
+            foreach (['home', 'away'] as $side) {
+                $features = CfbFootballSignalCatalog::features($snapshot->inputs, $side);
+                foreach ($catalog as $id => $definition) {
+                    $market = $definition['market'];
+                    if (! isset($residuals[$market]) || CfbFootballSignalCatalog::evaluate($definition, $features) !== true) {
+                        continue;
+                    }
+                    // Same game seen from both teams is still one independent observation.
+                    // Opposed spread activations cancel rather than becoming two training samples.
+                    $value = $residuals[$market] * ($market === 'spread' && $side === 'away' ? -1 : 1);
+                    $existing = $observations[$id][$game->id]['residual'] ?? null;
+                    $observations[$id][$game->id] = ['game_id' => $game->id, 'starts_at' => $kickoff->toIso8601String(),
+                        'residual' => $existing === null ? $value : ($existing + $value) / 2];
+                }
+            }
+        }
+        $fits = [];
+        foreach ($catalog as $id => $definition) {
+            $fits[$id] = app(CfbFootballSignalModel::class)->fit(array_values($observations[$id] ?? []));
+        }
+
+        return ['version' => CfbFootballSignalModel::VERSION, 'catalog_hash' => hash('sha256', json_encode($catalog, JSON_THROW_ON_ERROR)),
+            'baseline_hash' => $baselineHash, 'as_of' => $asOf->toIso8601String(),
+            'latest_source_observed_at' => $latest?->toIso8601String(), 'prediction_ids' => $sourceIds,
+            'status' => $sourceIds ? 'frozen_outcomes_evaluated' : 'no_eligible_frozen_outcomes', 'signals' => $fits];
+    }
+}

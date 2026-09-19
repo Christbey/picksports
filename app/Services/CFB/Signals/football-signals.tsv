@@ -1,0 +1,200 @@
+scoring_pressure|matchup|Scoring offense faces permissive scoring defense|spread|t.points_per_game >= 35;o.points_allowed_per_game >= 28
+defensive_control|matchup|Low allowance defense faces low scoring offense|spread|t.points_allowed_per_game <= 20;o.points_per_game <= 24
+margin_quality|matchup|Positive margin meets negative margin|spread|t.margin_per_game >= 10;o.margin_per_game < 0
+yards_mismatch|matchup|High yardage offense faces yardage leakage|spread|t.total_yards_per_game >= 450;o.yards_allowed_per_game >= 400
+efficiency_mismatch|matchup|Efficient offense faces inefficient defense|spread|t.yards_per_play >= 6.5;o.opponent_yards_per_play >= 6
+pass_attack|matchup|Productive passing meets permissive pass defense|spread|t.passing_yards_per_game >= 280;o.passing_yards_allowed_per_game >= 250
+rush_attack|matchup|Productive rushing meets permissive run defense|spread|t.rushing_yards_per_game >= 200;o.rushing_yards_allowed_per_game >= 170
+pass_efficiency|matchup|Efficient passing faces a high allowance defense|spread|t.passing_yards_per_attempt >= 8;o.opponent_yards_per_play >= 6
+rush_efficiency|matchup|Efficient rushing faces high rushing allowance|spread|t.rushing_yards_per_attempt >= 5;o.rushing_yards_allowed_per_game >= 170
+possession_security|matchup|Low turnover offense meets low takeaway defense|spread|t.turnovers_per_game <= 1;o.takeaways_per_game <= 1
+takeaway_pressure|matchup|Takeaway defense faces turnover prone offense|spread|t.takeaways_per_game >= 2;o.turnovers_per_game >= 2
+conversion_pressure|matchup|Third down strength meets high yardage allowance|spread|t.third_down_rate >= 0.45;o.yards_allowed_per_game >= 400
+red_zone_finish|matchup|Red zone scoring strength meets scoring leakage|spread|t.red_zone_score_rate >= 0.9;o.points_allowed_per_game >= 28
+drive_volume|matchup|First down volume meets low takeaway defense|spread|t.first_downs_per_game >= 24;o.takeaways_per_game <= 1
+clean_offense|matchup|Low penalties and few sacks support sustained offense|spread|t.penalty_yards_per_game <= 40;t.sacks_allowed_per_game <= 1
+disrupted_offense|matchup|Frequent sacks combine with weak third downs|spread|t.sacks_allowed_per_game >= 3;t.third_down_rate <= 0.35
+empty_yards|matchup|High yardage fails to produce scoring|spread|t.total_yards_per_game >= 400;t.points_per_game <= 24
+short_field_scoring|matchup|Scoring exceeds modest yardage with takeaway support|spread|t.points_per_game >= 35;t.total_yards_per_game <= 350;t.takeaways_per_game >= 2
+balanced_attack|matchup|Both passing and rushing production are substantial|spread|t.passing_yards_per_game >= 250;t.rushing_yards_per_game >= 180
+one_dimensional_pass|matchup|Passing production exceeds rushing by a wide margin|spread|t.passing_yards_per_game >= 300;t.rushing_yards_per_game <= 100
+one_dimensional_rush|matchup|Rushing production leads a limited pass attack|spread|t.rushing_yards_per_game >= 230;t.passing_yards_per_game <= 160
+accuracy_without_depth|matchup|High completion rate coexists with short passing output|spread|t.completion_rate >= 0.7;t.passing_yards_per_attempt <= 6.5
+vertical_inaccuracy|matchup|Low completion rate coexists with high yards per attempt|spread|t.completion_rate <= 0.55;t.passing_yards_per_attempt >= 8
+run_stop_test|matchup|Strong run prevention meets run heavy production|spread|t.rushing_yards_allowed_per_game <= 110;o.rushing_yards_per_game >= 200
+pass_stop_test|matchup|Strong pass prevention meets pass heavy production|spread|t.passing_yards_allowed_per_game <= 180;o.passing_yards_per_game >= 280
+low_efficiency_defense|matchup|Defensive efficiency exceeds scoring results|spread|t.opponent_yards_per_play <= 5;t.points_allowed_per_game >= 28
+bend_no_break|matchup|High yardage allowance coexists with low scoring allowance|spread|t.yards_allowed_per_game >= 400;t.points_allowed_per_game <= 20
+fourth_down_reliance|matchup|Fourth down success offsets poor third down conversion|spread|t.fourth_down_rate >= 0.65;t.third_down_rate <= 0.35
+red_zone_waste|matchup|Weak red zone conversion despite strong drive volume|spread|t.red_zone_score_rate <= 0.7;t.first_downs_per_game >= 24
+discipline_gap|matchup|Penalty burden differs materially across opponents|spread|t.penalty_yards_per_game <= 40;o.penalty_yards_per_game >= 70
+recent_points_per_game|recent_form|Recent scoring production improves over prior season|spread|r.points_per_game > @p.points_per_game
+recent_points_allowed_per_game|recent_form|Recent scoring allowance improves over prior season|spread|r.points_allowed_per_game < @p.points_allowed_per_game
+recent_margin_per_game|recent_form|Recent scoring margin improves over prior season|spread|r.margin_per_game > @p.margin_per_game
+recent_total_yards_per_game|recent_form|Recent offensive yardage improves over prior season|spread|r.total_yards_per_game > @p.total_yards_per_game
+recent_yards_allowed_per_game|recent_form|Recent defensive yardage allowance improves over prior season|spread|r.yards_allowed_per_game < @p.yards_allowed_per_game
+recent_passing_yards_per_game|recent_form|Recent passing volume improves over prior season|spread|r.passing_yards_per_game > @p.passing_yards_per_game
+recent_rushing_yards_per_game|recent_form|Recent rushing volume improves over prior season|spread|r.rushing_yards_per_game > @p.rushing_yards_per_game
+recent_yards_per_play|recent_form|Recent offensive efficiency improves over prior season|spread|r.yards_per_play > @p.yards_per_play
+recent_opponent_yards_per_play|recent_form|Recent defensive efficiency improves over prior season|spread|r.opponent_yards_per_play < @p.opponent_yards_per_play
+recent_passing_yards_per_attempt|recent_form|Recent passing efficiency improves over prior season|spread|r.passing_yards_per_attempt > @p.passing_yards_per_attempt
+recent_rushing_yards_per_attempt|recent_form|Recent rushing efficiency improves over prior season|spread|r.rushing_yards_per_attempt > @p.rushing_yards_per_attempt
+recent_completion_rate|recent_form|Recent completion accuracy improves over prior season|spread|r.completion_rate > @p.completion_rate
+recent_third_down_rate|recent_form|Recent third down conversion improves over prior season|spread|r.third_down_rate > @p.third_down_rate
+recent_red_zone_score_rate|recent_form|Recent red zone conversion improves over prior season|spread|r.red_zone_score_rate > @p.red_zone_score_rate
+recent_turnovers_per_game|recent_form|Recent ball security improves over prior season|spread|r.turnovers_per_game < @p.turnovers_per_game
+recent_takeaways_per_game|recent_form|Recent takeaway generation improves over prior season|spread|r.takeaways_per_game > @p.takeaways_per_game
+recent_sacks_allowed_per_game|recent_form|Recent pass protection improves over prior season|spread|r.sacks_allowed_per_game < @p.sacks_allowed_per_game
+recent_penalty_yards_per_game|recent_form|Recent penalty discipline improves over prior season|spread|r.penalty_yards_per_game < @p.penalty_yards_per_game
+recent_first_downs_per_game|recent_form|Recent drive generation improves over prior season|spread|r.first_downs_per_game > @p.first_downs_per_game
+recent_fourth_down_rate|recent_form|Recent fourth down conversion improves over prior season|spread|r.fourth_down_rate > @p.fourth_down_rate
+venue_points_per_game|venue|Scoring travels|spread|v.points_per_game > @t.points_per_game
+venue_points_allowed_per_game|venue|Scoring defense travels|spread|v.points_allowed_per_game < @t.points_allowed_per_game
+venue_margin_per_game|venue|Venue margin exceeds overall margin|spread|v.margin_per_game > @t.margin_per_game
+venue_total_yards_per_game|venue|Venue offensive production exceeds overall|spread|v.total_yards_per_game > @t.total_yards_per_game
+venue_yards_allowed_per_game|venue|Venue yardage prevention exceeds overall|spread|v.yards_allowed_per_game < @t.yards_allowed_per_game
+venue_yards_per_play|venue|Venue offensive efficiency exceeds overall|spread|v.yards_per_play > @t.yards_per_play
+venue_opponent_yards_per_play|venue|Venue defensive efficiency exceeds overall|spread|v.opponent_yards_per_play < @t.opponent_yards_per_play
+venue_turnover_margin_per_game|venue|Venue turnover margin exceeds overall|spread|v.turnover_margin_per_game > @t.turnover_margin_per_game
+venue_third_down_rate|venue|Venue third down conversion exceeds overall|spread|v.third_down_rate > @t.third_down_rate
+venue_red_zone_score_rate|venue|Venue red zone conversion exceeds overall|spread|v.red_zone_score_rate > @t.red_zone_score_rate
+road_ats|venue|Road visitor has covered a majority of prior away lines|spread|context.home == false;ta.ats_cover_rate > 0.5
+home_ats|venue|Home host has failed a majority of prior home lines|spread|context.home == true;th.ats_cover_rate < 0.5
+neutral_experience|venue|Neutral game with positive neutral site margins|spread|context.neutral == true;tn.margin_per_game > 0
+conference_ats|venue|Conference game with positive conference ATS record|spread|context.conference == true;tc.ats_cover_rate > 0.5
+nonconference_ats|venue|Nonconference game with negative nonconference ATS record|spread|context.conference == false;tx.ats_cover_rate < 0.5
+conference_scoring|venue|Conference scoring exceeds nonconference scoring|spread|context.conference == true;tc.points_per_game > @tx.points_per_game
+road_defense|venue|Visitor allows more away than home scoring|spread|context.home == false;ta.points_allowed_per_game > @th.points_allowed_per_game
+home_offense|venue|Host generates more home than away yardage|spread|context.home == true;th.total_yards_per_game > @ta.total_yards_per_game
+neutral_defense|venue|Neutral site defense allows fewer points than overall|spread|context.neutral == true;tn.points_allowed_per_game < @t.points_allowed_per_game
+conference_turnovers|venue|Conference turnover margin exceeds nonconference|spread|context.conference == true;tc.turnover_margin_per_game > @tx.turnover_margin_per_game
+short_rest_protection|schedule|Short rest exposes frequent sacks|spread|context.rest_days < 6;t.sacks_allowed_per_game >= 3
+short_rest_rush|schedule|Short rest for a run oriented offense|spread|context.rest_days < 6;t.rushing_yards_per_game >= 200
+short_rest_defense|schedule|Short rest for a defense allowing sustained drives|spread|context.rest_days < 6;t.yards_allowed_per_game >= 400
+rest_advantage_accuracy|schedule|Rest advantage supports an accurate passing offense|spread|context.rest_days > @context.opponent_rest_days;t.completion_rate >= 0.65
+rest_disadvantage_turnovers|schedule|Rest disadvantage with poor ball security|spread|context.rest_days < @context.opponent_rest_days;t.turnovers_per_game >= 2
+bye_new_passer|schedule|Extra preparation with a changed primary passer|spread|context.rest_days >= 12;tp.qb_changed == true
+bye_defense|schedule|Extra preparation for a weak efficiency defense|spread|context.rest_days >= 12;t.opponent_yards_per_play >= 6
+bye_coach_change|schedule|Extra preparation under a new head coach|spread|context.rest_days >= 12;tp.coach_changed == true
+wind_pass_volume|weather|Wind challenges a high volume passing offense|spread|context.wind_speed_mph >= 20;t.passing_yards_per_game >= 280
+rain_ball_security|weather|Precipitation compounds turnover risk|spread|context.precipitation_inches >= 0.1;t.turnovers_per_game >= 2
+cold_accuracy|weather|Cold conditions test an inaccurate passing offense|spread|context.temperature_f <= 35;t.completion_rate <= 0.55
+gusts_total|weather|Strong gusts accompany two passing offenses|total|context.wind_gust_mph >= 30;t.passing_yards_per_game >= 250;o.passing_yards_per_game >= 250
+road_new_passer|schedule|Road game with changed observed primary passer|spread|context.home == false;tp.qb_changed == true
+road_poor_accuracy|schedule|Road game with low passing accuracy|spread|context.home == false;t.completion_rate <= 0.55
+road_clean_play|schedule|Road game with few penalties and turnovers|spread|context.home == false;t.penalty_yards_per_game <= 40;t.turnovers_per_game <= 1
+early_returning|schedule|Early season with substantial returning usage|spread|context.week <= 3;tp.returning_usage >= 0.65
+late_low_depth_proxy|schedule|Late season with substantial stored injury adjustment|spread|context.week >= 10;tm.injury_total_adjustment <= -5
+opponent_bye|schedule|Opponent has extra preparation and efficient offense|spread|context.opponent_rest_days >= 12;o.yards_per_play >= 6.5
+neutral_new_coach|schedule|New head coach at a neutral site|spread|context.neutral == true;tp.coach_changed == true
+season_opener_qb|schedule|Season opener with changed observed passer|spread|context.week <= 1;tp.qb_changed == true
+returning_passing|personnel|Returning passing usage supports efficient passing|spread|tp.returning_passing_usage >= 0.65;t.passing_yards_per_attempt >= 8
+returning_rushing|personnel|Returning rushing usage supports productive rushing|spread|tp.returning_rushing_usage >= 0.65;t.rushing_yards_per_game >= 200
+returning_receiving|personnel|Returning receiving usage with high passing volume|spread|tp.returning_receiving_usage >= 0.65;t.passing_yards_per_game >= 280
+low_returning_high_rating|personnel|Low returning usage contrasts with strong FPI|spread|tp.returning_usage < 0.35;tm.fpi >= 15
+new_passer_strong_prior|personnel|Changed passer follows strong prior passing efficiency|spread|tp.qb_changed == true;p.passing_yards_per_attempt >= 8
+new_passer_sacks|personnel|Changed passer faces poor pass protection|spread|tp.qb_changed == true;t.sacks_allowed_per_game >= 3
+same_passer_accuracy|personnel|Continuing observed passer with high accuracy|spread|tp.qb_changed == false;t.completion_rate >= 0.65
+same_passer_turnovers|personnel|Continuing observed passer with turnover concerns|spread|tp.qb_changed == false;t.turnovers_per_game >= 2
+new_coach_low_returning|personnel|New head coach with low returning usage|spread|tp.coach_changed == true;tp.returning_usage < 0.35
+new_coach_poor_prior|personnel|New head coach follows negative prior margins|spread|tp.coach_changed == true;p.margin_per_game < 0
+coach_stability_low_penalties|personnel|Stable head coach with low penalties|spread|tp.coach_changed == false;t.penalty_yards_per_game <= 40
+talent_scoring_gap|personnel|Superior talent meets inferior current scoring|spread|tp.talent > @op.talent;t.points_per_game < @o.points_per_game
+talent_efficiency_gap|personnel|Superior talent meets inferior current efficiency|spread|tp.talent > @op.talent;t.yards_per_play < @o.yards_per_play
+recruiting_returning|personnel|Better recruiting rank combines with returning usage|spread|tp.recruiting_rank < @op.recruiting_rank;tp.returning_usage >= 0.65
+recruiting_coach_change|personnel|Strong recruiting rank under a new coach|spread|tp.recruiting_rank <= 20;tp.coach_changed == true
+talent_road|personnel|More talented visitor faces a home opponent|spread|context.home == false;tp.talent > @op.talent
+returning_defense_test|personnel|High returning usage faces efficient opposing offense|spread|tp.returning_usage >= 0.65;o.yards_per_play >= 6.5
+qb_changes_both|personnel|Both teams changed observed primary passers|spread|tp.qb_changed == true;op.qb_changed == true
+coaches_changes_both|personnel|Both teams have changed head coaches|spread|tp.coach_changed == true;op.coach_changed == true
+unrated_transfers_qb|personnel|Unrated transfer coverage coexists with changed passer|spread|tp.unrated_transfers > 0;tp.qb_changed == true
+big_favorite_defense|market_spread|Three touchdown favorite has strong scoring defense|spread|context.spread <= -21;t.points_allowed_per_game <= 20
+big_favorite_turnovers|market_spread|Three touchdown favorite has turnover risk|spread|context.spread <= -21;t.turnovers_per_game >= 2
+big_favorite_run|market_spread|Three touchdown favorite relies on rushing production|spread|context.spread <= -21;t.rushing_yards_per_game >= 230
+big_dog_efficiency|market_spread|Three touchdown underdog retains offensive efficiency|spread|context.spread >= 21;t.yards_per_play >= 6
+big_dog_ball_security|market_spread|Three touchdown underdog protects possession|spread|context.spread >= 21;t.turnovers_per_game <= 1
+short_favorite_red_zone|market_spread|Field goal favorite has weak red zone scoring|spread|context.spread < 0;context.spread >= -3;t.red_zone_score_rate <= 0.7
+short_dog_takeaways|market_spread|Field goal underdog generates takeaways|spread|context.spread > 0;context.spread <= 3;t.takeaways_per_game >= 2
+home_dog_ats|market_spread|Home underdog has positive recent ATS record|spread|context.home == true;context.spread > 0;r.ats_cover_rate > 0.5
+road_favorite_ats|market_spread|Road favorite has negative away ATS record|spread|context.home == false;context.spread < 0;ta.ats_cover_rate < 0.5
+winning_not_covering|market_spread|Winning record coexists with losing ATS record|spread|t.win_rate > 0.5;t.ats_cover_rate < 0.5
+losing_covering|market_spread|Losing record coexists with winning ATS record|spread|t.win_rate < 0.5;t.ats_cover_rate > 0.5
+ats_without_efficiency|market_spread|Recent covers coexist with poor offensive efficiency|spread|r.ats_cover_rate > 0.5;r.yards_per_play < 5
+ats_with_takeaways|market_spread|Recent covers coexist with positive turnover margin|spread|r.ats_cover_rate > 0.5;r.turnover_margin_per_game >= 1
+noncovers_improving_yards|market_spread|Recent noncovers coexist with improving yardage|spread|r.ats_cover_rate < 0.5;r.total_yards_per_game > @p.total_yards_per_game
+favorite_injuries|market_spread|Favorite has substantial injury adjustment|spread|context.spread < 0;tm.injury_total_adjustment <= -5
+underdog_rating_edge|market_spread|Underdog has higher FPI than opponent|spread|context.spread > 0;tm.fpi > @om.fpi
+favorite_rating_deficit|market_spread|Favorite has lower Elo than opponent|spread|context.spread < 0;team.elo < @opponent.elo
+key_seven|market_spread|Seven point line with close historical margins|spread|context.spread == -7;t.margin_per_game <= 7
+key_three|market_spread|Three point underdog with strong red zone scoring|spread|context.spread == 3;t.red_zone_score_rate >= 0.9
+huge_line_low_total|market_spread|Large favorite in a low total market|spread|context.spread <= -21;context.total <= 45
+both_fast_proxy|total|Both teams have high play attempt volume|total|tl.plays >= 75;ol.plays >= 75
+both_low_volume|total|Both teams have low play attempt volume|total|tl.plays <= 60;ol.plays <= 60
+two_pass_attacks|total|Two high volume passing offenses meet|total|t.passing_yards_per_game >= 280;o.passing_yards_per_game >= 280
+two_run_attacks|total|Two high volume rushing offenses meet|total|t.rushing_yards_per_game >= 200;o.rushing_yards_per_game >= 200
+two_efficient_attacks|total|Both offenses gain efficiently|total|t.yards_per_play >= 6.5;o.yards_per_play >= 6.5
+two_efficient_defenses|total|Both defenses limit yards per play|total|t.opponent_yards_per_play <= 5;o.opponent_yards_per_play <= 5
+red_zone_both|total|Both offenses convert red zone opportunities|total|t.red_zone_score_rate >= 0.9;o.red_zone_score_rate >= 0.9
+red_zone_stalls|total|Both offenses struggle in red zone|total|t.red_zone_score_rate <= 0.7;o.red_zone_score_rate <= 0.7
+third_down_both|total|Both offenses sustain third downs|total|t.third_down_rate >= 0.45;o.third_down_rate >= 0.45
+turnovers_both|total|Both offenses frequently lose possession|total|t.turnovers_per_game >= 2;o.turnovers_per_game >= 2
+clean_possessions|total|Both offenses protect possession|total|t.turnovers_per_game <= 1;o.turnovers_per_game <= 1
+sacks_both|total|Both offenses allow frequent sacks|total|t.sacks_allowed_per_game >= 3;o.sacks_allowed_per_game >= 3
+penalties_both|total|Both teams incur substantial penalties|total|t.penalty_yards_per_game >= 70;o.penalty_yards_per_game >= 70
+high_total_low_efficiency|total|High market total meets two inefficient offenses|total|context.total >= 60;t.yards_per_play <= 5;o.yards_per_play <= 5
+low_total_high_efficiency|total|Low market total meets two efficient offenses|total|context.total <= 45;t.yards_per_play >= 6;o.yards_per_play >= 6
+recent_overs_defense|total|Recent overs coincide with weak defensive efficiency|total|r.over_rate > 0.5;r.opponent_yards_per_play >= 6
+recent_unders_offense|total|Recent unders coincide with weak offensive efficiency|total|r.under_rate > 0.5;r.yards_per_play <= 5
+conference_under|total|Conference game with historical conference unders|total|context.conference == true;tc.under_rate > 0.5
+neutral_over|total|Neutral site game with historical neutral overs|total|context.neutral == true;tn.over_rate > 0.5
+short_rest_both|total|Both teams play on short rest|total|context.rest_days < 6;context.opponent_rest_days < 6
+fpi_elo_disagree|rating_context|FPI advantage conflicts with Elo deficit|spread|tm.fpi > @om.fpi;team.elo < @opponent.elo
+power_fpi_disagree|rating_context|Power rating advantage conflicts with FPI deficit|spread|tm.power_rating > @om.power_rating;tm.fpi < @om.fpi
+rating_margin_disagree|rating_context|Rating advantage conflicts with scoring margin deficit|spread|tm.fpi > @om.fpi;t.margin_per_game < @o.margin_per_game
+rating_efficiency_disagree|rating_context|Rating advantage conflicts with offensive efficiency deficit|spread|tm.fpi > @om.fpi;t.yards_per_play < @o.yards_per_play
+rating_defense_disagree|rating_context|Rating advantage conflicts with defensive efficiency deficit|spread|tm.fpi > @om.fpi;t.opponent_yards_per_play > @o.opponent_yards_per_play
+elite_fpi_new_qb|rating_context|High FPI team changed observed primary passer|spread|tm.fpi >= 20;tp.qb_changed == true
+elite_fpi_new_coach|rating_context|High FPI team changed head coach|spread|tm.fpi >= 20;tp.coach_changed == true
+negative_fpi_wins|rating_context|Negative FPI team has winning record|spread|tm.fpi < 0;t.win_rate > 0.5
+positive_fpi_losses|rating_context|Positive FPI team has losing record|spread|tm.fpi > 0;t.win_rate < 0.5
+prior_strength_current_decline|rating_context|Strong prior margin meets negative current margin|spread|p.margin_per_game >= 10;t.margin_per_game < 0
+prior_weak_current_growth|rating_context|Weak prior margin meets strong current margin|spread|p.margin_per_game < 0;t.margin_per_game >= 10
+rating_growth_returning|rating_context|FPI improved over prior metric with returning usage|spread|tm.fpi > @pm.fpi;tp.returning_usage >= 0.65
+rating_growth_turnovers|rating_context|FPI improvement coexists with turnover fortune|spread|tm.fpi > @pm.fpi;t.turnover_margin_per_game >= 2
+rating_decline_qb|rating_context|FPI decline coexists with passer change|spread|tm.fpi < @pm.fpi;tp.qb_changed == true
+form_rating_efficiency|rating_context|Positive recent form rating aligns with efficient offense|spread|tm.recent_form_rating > 0;r.yards_per_play >= 6.5
+form_rating_defense|rating_context|Negative recent form aligns with weak defense|spread|tm.recent_form_rating < 0;r.opponent_yards_per_play >= 6
+injury_rating_pass|rating_context|Injury adjustment combines with poor passing efficiency|spread|tm.injury_total_adjustment <= -5;t.passing_yards_per_attempt <= 6
+fatigue_rush_defense|rating_context|Positive fatigue burden combines with run defense leakage|spread|tm.rest_travel_fatigue > 0;t.rushing_yards_allowed_per_game >= 170
+rating_edge_low_talent|rating_context|Rating advantage despite lower talent|spread|tm.fpi > @om.fpi;tp.talent < @op.talent
+rating_edge_low_returning|rating_context|Rating advantage despite lower returning usage|spread|tm.fpi > @om.fpi;tp.returning_usage < @op.returning_usage
+late_allowance_favorite|late_game|Large favorite allows substantial fourth quarter scoring|spread|context.spread <= -14;tl.fourth_allowed >= 10
+late_margin_favorite|late_game|Large favorite has negative fourth quarter margins|spread|context.spread <= -14;tl.fourth_margin < 0
+lead_erosion|late_game|Large favorite loses margin after entering fourth up twenty|spread|context.spread <= -20;tl.leading_fourth_margin < 0
+lead_extension|late_game|Efficient offense extends twenty point fourth quarter leads|spread|t.yards_per_play >= 6.5;tl.leading_fourth_margin > 0
+late_dog_offense|late_game|Large underdog has positive fourth quarter margins|spread|context.spread >= 14;tl.fourth_margin > 0
+late_defense_low_volume|late_game|Low attempt volume combines with late scoring allowance|spread|tl.plays <= 60;tl.fourth_allowed >= 10
+late_defense_takeaways|late_game|Strong takeaway rate coexists with late defensive leakage|spread|t.takeaways_per_game >= 2;tl.fourth_allowed >= 10
+late_drop_high_margin|late_game|Strong overall margins coexist with late margin losses|spread|t.margin_per_game >= 14;tl.fourth_margin < 0
+late_strength_low_margin|late_game|Weak overall margins coexist with late margin gains|spread|t.margin_per_game <= 0;tl.fourth_margin > 0
+high_volume_sacks|late_game|High attempt volume combines with frequent sacks|spread|tl.plays >= 75;t.sacks_allowed_per_game >= 3
+high_volume_turnovers|late_game|High attempt volume combines with turnovers|spread|tl.plays >= 75;t.turnovers_per_game >= 2
+low_volume_efficiency|late_game|Low attempt volume masks strong offensive efficiency|spread|tl.plays <= 60;t.yards_per_play >= 6.5
+high_volume_low_efficiency|late_game|High attempt volume masks weak offensive efficiency|spread|tl.plays >= 75;t.yards_per_play <= 5
+late_both_allow|late_game|Both defenses allow substantial fourth quarter scoring|total|tl.fourth_allowed >= 10;ol.fourth_allowed >= 10
+late_protection|late_game|Late margin losses coincide with poor pass protection|spread|tl.fourth_margin < 0;t.sacks_allowed_per_game >= 3
+late_discipline|late_game|Late margin losses coincide with high penalties|spread|tl.fourth_margin < 0;t.penalty_yards_per_game >= 70
+late_rushing|late_game|Late margin gains coexist with productive rushing|spread|tl.fourth_margin > 0;t.rushing_yards_per_game >= 200
+late_new_passer|late_game|Changed primary passer with negative fourth quarter margins|spread|tp.qb_changed == true;tl.fourth_margin < 0
+late_short_rest|late_game|Short rest follows weak fourth quarter defense|spread|context.rest_days < 6;tl.fourth_allowed >= 10
+late_road_favorite|late_game|Road favorite has weak fourth quarter margins|spread|context.home == false;context.spread < 0;tl.fourth_margin < 0
+rush_protection_escape|interaction|Strong rushing provides an alternative to weak pass protection|spread|t.rushing_yards_per_attempt >= 5;t.sacks_allowed_per_game >= 3
+pass_third_down_gap|interaction|Efficient passing does not translate to third downs|spread|t.passing_yards_per_attempt >= 8;t.third_down_rate <= 0.35
+completion_red_zone_gap|interaction|Accurate passing does not translate to red zone scoring|spread|t.completion_rate >= 0.7;t.red_zone_score_rate <= 0.7
+defense_turnover_dependency|interaction|Poor defensive yardage accompanies high takeaways|spread|t.yards_allowed_per_game >= 400;t.takeaways_per_game >= 2
+rush_defense_pass_exposure|interaction|Strong run defense coexists with pass vulnerability|spread|t.rushing_yards_allowed_per_game <= 110;t.passing_yards_allowed_per_game >= 280
+pass_defense_run_exposure|interaction|Strong pass defense coexists with run vulnerability|spread|t.passing_yards_allowed_per_game <= 180;t.rushing_yards_allowed_per_game >= 200
+drives_without_firstdowns|interaction|Scoring production coexists with low first down volume|spread|t.points_per_game >= 35;t.first_downs_per_game <= 18
+turnover_reversal_risk|interaction|Winning record depends on positive turnovers despite negative yardage profile|spread|t.win_rate > 0.5;t.turnover_margin_per_game >= 2;t.total_yards_per_game < @t.yards_allowed_per_game
+schedule_defense_shift|interaction|Conference defensive allowance exceeds prior season baseline|spread|context.conference == true;tc.points_allowed_per_game > @p.points_allowed_per_game
+opponent_accuracy_pressure|interaction|Opponent accuracy tests a defense allowing high completion yardage|spread|o.completion_rate >= 0.7;t.passing_yards_allowed_per_game >= 250

@@ -5,6 +5,7 @@ namespace App\Services\CFB\Predictions;
 use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Models\CanonicalPrediction;
+use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use Carbon\CarbonImmutable;
 
 /** Paired counterfactuals on frozen inputs; never refits weights or rewrites predictions. */
@@ -29,6 +30,10 @@ class CfbSignalContributionGrader
         $inputs = $snapshot->inputs;
         $configuration = $release->configuration;
         $calculate = function (array $i, array $c) use ($snapshot, $release): array {
+            if ($c !== $release->configuration && isset($i['football_signal_evidence'])) {
+                // A paired ablation holds the already fitted corrections fixed while changing one base term.
+                $i['football_signal_evidence']['baseline_hash'] = CfbFootballSignalEvidence::baselineHash($c);
+            }
             $r = new CalculationReleaseData($release->publicId, $release->sport, $release->phase, $release->calculatorName,
                 $release->releaseType, $release->semanticVersion, $release->codeRevision, $release->configurationHash,
                 $release->inputSchemaVersion, $c);

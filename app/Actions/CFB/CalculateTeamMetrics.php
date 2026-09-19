@@ -11,11 +11,13 @@ use App\Models\CFB\Game;
 use App\Models\CFB\Play;
 use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
+use App\Models\CFB\TeamStat;
 use App\Models\CfbdTeamMapping;
 use App\Services\CFB\PlayerAvailabilityImpactService;
 use App\Services\CollegeFootballData\CollegeFootballDataService;
 use App\Support\CfbSeasonAffiliationResolver;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Log;
 
 class CalculateTeamMetrics
@@ -24,14 +26,14 @@ class CalculateTeamMetrics
     use CalculatesTeamTrueEpaFromPlays;
 
     /**
-     * @var array<int, array<string, mixed>>|null
+     * @var array<int, array<int, array<string, mixed>>>
      */
-    protected ?array $seasonWepaIndex = null;
+    protected array $seasonWepaIndex = [];
 
     /**
-     * @var array<int|string, array<string, mixed>>|null
+     * @var array<int, array<int|string, array<string, mixed>>>
      */
-    protected ?array $seasonAdvancedStatsIndex = null;
+    protected array $seasonAdvancedStatsIndex = [];
 
     /**
      * @var array<string, int>|null
@@ -382,6 +384,7 @@ class CalculateTeamMetrics
         }
 
         $offense = $this->extractMetricValue($row, [
+            'epa.total',
             'offense',
             'offensive',
             'wepaOff',
@@ -390,6 +393,7 @@ class CalculateTeamMetrics
             'wepa_offense',
         ]);
         $defense = $this->extractMetricValue($row, [
+            'epaAllowed.total',
             'defense',
             'defensive',
             'wepaDef',
@@ -524,11 +528,15 @@ class CalculateTeamMetrics
         $offensiveSackRate = $this->rateMetricValue($row, [
             'offense.sackRate',
             'offense.sack_rate',
-            'offense.passingDowns.sackRate',
-            'offense.standardDowns.sackRate',
             'offensive.sackRate',
             'offensive_sack_rate',
         ]);
+
+        if ($offensiveSackRate === null) {
+            $derived = $this->observedSackRate($team, $season);
+            $offensiveSackRate = $derived['value'];
+            $row['_local_derivations']['offensive_sack_rate'] = $derived;
+        }
 
         return array_merge($empty, [
             'offensive_success_rate' => $this->roundOrNull($offensiveSuccessRate, 4),
@@ -607,77 +615,97 @@ class CalculateTeamMetrics
      */
     protected function seasonWepaIndex(int $season): array
     {
-        if ($this->seasonWepaIndex !== null) {
-            return $this->seasonWepaIndex;
+        if (array_key_exists($season, $this->seasonWepaIndex)) {
+            return $this->seasonWepaIndex[$season];
+        }
+        $rows = $this->providerRows('wepa', $season);
+        $index = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || (isset($row['year']) && (int) $row['year'] !== $season)) {
+                continue;
+            }
+            $id = $row['teamId'] ?? $row['id'] ?? $row['team_id'] ?? null;
+            if (is_numeric($id)) {
+                $index[(int) $id] = $row;
+            }
         }
 
-        try {
-            $rows = $this->collegeFootballDataService->getWepaTeamSeason($season);
-        } catch (\Throwable) {
-            $this->seasonWepaIndex = [];
-
-            return $this->seasonWepaIndex;
-        }
-
-        $this->seasonWepaIndex = collect($rows)
-            ->filter(fn ($row) => is_array($row))
-            ->mapWithKeys(function (array $row): array {
-                $teamId = data_get($row, 'id');
-
-                if ($teamId === null) {
-                    $teamId = data_get($row, 'teamId');
-                }
-
-                $teamId = is_numeric($teamId) ? (int) $teamId : null;
-
-                return $teamId ? [$teamId => $row] : [];
-            })
-            ->all();
-
-        return $this->seasonWepaIndex;
+        return $this->seasonWepaIndex[$season] = $index;
     }
 
-    /**
-     * @return array<int|string, array<string, mixed>>
-     */
+    /** @return array<int|string, array<string, mixed>> */
     protected function seasonAdvancedStatsIndex(int $season): array
     {
-        if ($this->seasonAdvancedStatsIndex !== null) {
-            return $this->seasonAdvancedStatsIndex;
+        if (array_key_exists($season, $this->seasonAdvancedStatsIndex)) {
+            return $this->seasonAdvancedStatsIndex[$season];
         }
-
-        try {
-            $rows = $this->collegeFootballDataService->getAdvancedTeamSeasonStats($season, excludeGarbageTime: true);
-        } catch (\Throwable) {
-            $this->seasonAdvancedStatsIndex = [];
-
-            return $this->seasonAdvancedStatsIndex;
-        }
-
-        $this->seasonAdvancedStatsIndex = collect($rows)
-            ->filter(fn ($row): bool => is_array($row))
-            ->flatMap(function (array $row): array {
-                $keys = [];
-                $teamId = data_get($row, 'id')
-                    ?? data_get($row, 'teamId')
-                    ?? data_get($row, 'team_id');
-
-                if (is_numeric($teamId)) {
-                    $keys[(int) $teamId] = $row;
-                }
-
-                foreach (['team', 'school', 'name'] as $nameKey) {
-                    $name = data_get($row, $nameKey);
-                    if (is_string($name) && trim($name) !== '') {
-                        $keys[mb_strtolower(trim($name))] = $row;
+        $rows = $this->providerRows('advanced', $season);
+        $mapping = $this->cfbdMappingIndex();
+        $index = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || (isset($row['season']) && (int) $row['season'] !== $season)) {
+                continue;
+            }
+            $id = $row['teamId'] ?? $row['id'] ?? $row['team_id'] ?? null;
+            if (is_numeric($id)) {
+                // Do not flatMap numeric keys: collection flattening renumbers team IDs.
+                $index[(int) $id] = $row;
+            }
+            foreach (['team', 'school', 'name'] as $key) {
+                if (is_string($row[$key] ?? null) && trim($row[$key]) !== '') {
+                    $name = mb_strtolower(trim($row[$key]));
+                    $index[$name] = $row;
+                    if (isset($mapping[$name])) {
+                        $index[$mapping[$name]] = $row;
                     }
                 }
+            }
+        }
 
-                return $keys;
-            })
-            ->all();
+        return $this->seasonAdvancedStatsIndex[$season] = $index;
+    }
 
-        return $this->seasonAdvancedStatsIndex;
+    private function providerRows(string $source, int $season): array
+    {
+        try {
+            $rows = $source === 'advanced'
+                ? $this->collegeFootballDataService->getAdvancedTeamSeasonStats($season, excludeGarbageTime: true)
+                : $this->collegeFootballDataService->getWepaTeamSeason($season);
+        } catch (\Throwable $exception) {
+            Log::warning('CFB external metric request failed', ['source' => $source, 'season' => $season,
+                'exception' => get_class($exception)]);
+            // Optional unconfigured local environments can still calculate local box-score metrics.
+            // A configured provider failure must not silently overwrite real metrics with nulls.
+            if (config('services.collegefootballdata.api_key') || $exception instanceof RequestException) {
+                throw new \RuntimeException("CFBD {$source} request failed for {$season}; metric update withheld.", previous: $exception);
+            }
+
+            return [];
+        }
+        if ($rows === []) {
+            Log::warning('CFB external metric endpoint returned no season data', ['source' => $source, 'season' => $season]);
+        }
+
+        return $rows;
+    }
+
+    private function observedSackRate(Team $team, int $season): array
+    {
+        $stats = TeamStat::query()->where('team_id', $team->id)
+            ->whereHas('game', fn ($query) => $query->where('season', $season)->where('status', 'STATUS_FINAL'))
+            ->get();
+        $games = Game::query()->where('season', $season)->where('status', 'STATUS_FINAL')
+            ->where(fn ($query) => $query->where('home_team_id', $team->id)->orWhere('away_team_id', $team->id))->count();
+        $complete = $games > 0 && $stats->count() === $games && $stats->every(fn ($stat) => is_numeric($stat->sacks_allowed)
+            && is_numeric($stat->passing_attempts) && $stat->sacks_allowed >= 0 && $stat->passing_attempts >= 0);
+        $sacks = $complete ? (float) $stats->sum('sacks_allowed') : null;
+        $attempts = $complete ? (float) $stats->sum('passing_attempts') : null;
+
+        return ['value' => $complete && $sacks + $attempts > 0 ? round($sacks / ($sacks + $attempts), 4) : null,
+            'source' => 'stored_final_game_team_stats', 'formula' => 'sacks_allowed / (passing_attempts + sacks_allowed)',
+            'definition' => 'Sacks per pass attempts plus sacks; excludes scrambles; not passing-down-only sack rate',
+            'complete' => $complete, 'sample_games' => $stats->count(), 'stat_ids' => $stats->pluck('id')->all(),
+            'game_ids' => $stats->pluck('game_id')->all(), 'observed_at' => $stats->max('updated_at')?->toIso8601String()];
     }
 
     /**
@@ -690,11 +718,12 @@ class CalculateTeamMetrics
         }
 
         $this->cfbdMappingIndex = CfbdTeamMapping::query()
-            ->whereNotNull('espn_team_name')
-            ->get(['espn_team_name', 'cfbd_team_id'])
-            ->mapWithKeys(fn (CfbdTeamMapping $mapping): array => [
-                mb_strtolower(trim((string) $mapping->espn_team_name)) => (int) $mapping->cfbd_team_id,
-            ])
+            ->get(['espn_team_name', 'cfbd_team_name', 'alternate_names', 'cfbd_team_id'])
+            ->mapWithKeys(function (CfbdTeamMapping $mapping): array {
+                $names = array_filter([$mapping->espn_team_name, $mapping->cfbd_team_name, ...(array) $mapping->alternate_names], 'is_string');
+
+                return collect($names)->mapWithKeys(fn ($name) => [mb_strtolower(trim($name)) => (int) $mapping->cfbd_team_id])->all();
+            })
             ->all();
 
         return $this->cfbdMappingIndex;

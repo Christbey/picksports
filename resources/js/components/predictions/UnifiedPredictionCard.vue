@@ -1474,6 +1474,40 @@ function saveOptions(): SavePickOption[] {
                 </ul>
             </details>
             <details
+                v-if="valueSignal()?.football_signals"
+                class="text-xs text-muted-foreground"
+            >
+                <summary class="cursor-pointer">
+                    Football signals:
+                    {{ valueSignal()?.football_signals?.catalog_count }} rules ·
+                    {{ valueSignal()?.football_signals?.applied }} contributions
+                </summary>
+                <p class="mt-1">
+                    Checked for both teams:
+                    {{ valueSignal()?.football_signals?.triggered }} conditions
+                    triggered;
+                    {{
+                        valueSignal()?.football_signals?.missing_inputs
+                    }}
+                    missing inputs. A triggered rule contributes points only
+                    when its historical correction has supporting evidence.
+                </p>
+                <ul class="mt-1 list-disc space-y-1 pl-4">
+                    <li
+                        v-for="signal in valueSignal()?.football_signals?.signals.filter(
+                            (item) => item.matched,
+                        )"
+                        :key="`${signal.id}-${signal.side}`"
+                    >
+                        {{ signal.side }} · {{ signal.label }} ·
+                        {{ signal.market }}:
+                        {{ signal.contribution_points.toFixed(2) }} points ·
+                        {{ signal.status.replaceAll('_', ' ') }}
+                        ({{ signal.sample_games }} historical games)
+                    </li>
+                </ul>
+            </details>
+            <details
                 v-if="valueSignal()?.signal_contributions?.signals?.length"
                 class="text-xs text-muted-foreground"
             >

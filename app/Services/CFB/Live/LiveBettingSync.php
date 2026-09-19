@@ -44,7 +44,7 @@ class LiveBettingSync
         app(UpdateLivePrediction::class)->execute($game);
         $game->refresh();
         $snapshot = LivePredictionSnapshot::where('game_id', $game->id)->where('source', 'scoreboard')->latest('id')->first();
-        if (! $snapshot || $snapshot->observed_at->lt($statsObservedSince) || ! in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_FINAL'], true)) {
+        if (! $snapshot || $snapshot->observed_at->lt(now()->subMinutes(3)) || ! in_array($game->status, ['STATUS_IN_PROGRESS', 'STATUS_HALFTIME', 'STATUS_END_PERIOD', 'STATUS_FINAL'], true)) {
             return ['status' => 'no_baseline_or_not_live'];
         }
         $response = null;

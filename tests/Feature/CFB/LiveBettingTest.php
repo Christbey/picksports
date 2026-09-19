@@ -279,3 +279,16 @@ test('a partial box score cannot erase stored player stats or finalize prop grad
     expect($stat->fresh())->not->toBeNull()->and($stat->fresh()->rushing_yards)->toBe(90);
     expect(LivePredictionSnapshot::where('source', 'live_feed')->latest('id')->first()->status)->toBe('final_pending_stats');
 });
+
+test('accepts an unchanged fresh state when the snapshot is deduplicated within the same minute', function () {
+    app(UpdateLivePrediction::class)->execute($this->game);
+    $this->travel(20)->seconds();
+    $espn = Mockery::mock(EspnService::class);
+    $espn->shouldReceive('getLiveGame')->andReturn(['header' => ['id' => $this->game->espn_event_id, 'competitions' => [[
+        'status' => ['type' => ['name' => 'STATUS_IN_PROGRESS'], 'period' => 2, 'displayClock' => '00:00'],
+        'competitors' => [['homeAway' => 'home', 'score' => '14'], ['homeAway' => 'away', 'score' => '7']],
+    ]]]]);
+    $odds = Mockery::mock(OddsApiService::class);
+    $odds->shouldReceive('getEventOdds')->andReturn(null);
+    expect((new LiveBettingSync($espn, $odds))->execute($this->game)['status'])->toBe('captured');
+});

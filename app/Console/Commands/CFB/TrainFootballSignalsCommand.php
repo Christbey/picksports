@@ -27,7 +27,15 @@ class TrainFootballSignalsCommand extends Command
         $artifact = $trainer->train(app(CfbCalculationReleaseDefinition::class)->configuration(), (int) $from, (int) $to,
             CarbonImmutable::now(), fn ($count) => $this->line("Reconstructed {$count} games."));
         $fits = array_map(fn ($rows) => app(CfbFootballSignalModel::class)->fit(array_values($rows)), $artifact['observations']);
-        $this->line(json_encode(['games' => count($artifact['source_game_ids']), 'rules_with_observations' => count($fits),
+        $observedRules = array_fill_keys(array_keys($artifact['observations']), true);
+        foreach ($artifact['joint_observations'] as $row) {
+            foreach ($row['features'] as $features) {
+                foreach ($features as $id => $value) {
+                    $observedRules[$id] = true;
+                }
+            }
+        }
+        $this->line(json_encode(['games' => count($artifact['source_game_ids']), 'rules_with_observations' => count($observedRules),
             'fit_statuses' => array_count_values(array_column($fits, 'status')),
             'supported' => array_filter($fits, fn ($fit) => $fit['status'] === 'validated_residual'),
             'joint_models' => collect(['spread', 'total'])->mapWithKeys(fn ($market) => [$market => app(CfbFootballSignalJointModel::class)->fit(array_values($artifact['joint_observations']), $market, $market === 'spread' ? 2.0 : 3.0)])->all(),

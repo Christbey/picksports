@@ -35,7 +35,11 @@ class CfbFootballSignalHistoricalTrainer
                 'penalty_yards', 'first_downs', 'passing_attempts', 'rushing_attempts', 'passing_completions',
                 'third_down_conversions', 'third_down_attempts', 'fourth_down_conversions', 'fourth_down_attempts',
                 'red_zone_scores', 'red_zone_attempts', 'interceptions', 'fumbles_lost'])
-            ->get()->keyBy(fn ($s) => $s->game_id.':'.$s->team_id);
+            ->toBase()->get()->map(function ($stat) {
+                $stat->updated_at = CarbonImmutable::parse($stat->updated_at);
+
+                return $stat;
+            })->keyBy(fn ($s) => $s->game_id.':'.$s->team_id);
         $prior = TeamMetric::whereBetween('season', [$fromSeason - 1, $toSeason - 1])->where('updated_at', '<=', $asOf)
             ->select(['team_id', 'season', 'wins', 'losses', 'fpi', 'points_per_game', 'points_allowed_per_game'])
             ->get()->keyBy(fn ($m) => $m->season.':'.$m->team_id);
@@ -89,16 +93,18 @@ class CfbFootballSignalHistoricalTrainer
             $output = app(CfbCalculator::class)->calculate(new EventInputSnapshotData('cfb-pregame-v1', $baselineInputs, $cutoff->subSecond()), $release);
             $residuals = ['spread' => $target->home_score - $target->away_score - $output->metadata['home_margin'],
                 'total' => $target->home_score + $target->away_score - $output->diagnostics['projected_total']];
-            foreach (['home', 'away'] as $side) {
-                $features = CfbFootballSignalCatalog::features($inputs, $side, $configuration['football_signals']['feature_policy']);
-                foreach ($catalog as $id => $rule) {
-                    if (CfbFootballSignalCatalog::evaluate($rule, $features) !== true) {
-                        continue;
+            if (($configuration['football_signals']['weighting'] ?? null) !== 'joint_ridge_v1') {
+                foreach (['home', 'away'] as $side) {
+                    $features = CfbFootballSignalCatalog::features($inputs, $side, $configuration['football_signals']['feature_policy']);
+                    foreach ($catalog as $id => $rule) {
+                        if (CfbFootballSignalCatalog::evaluate($rule, $features) !== true) {
+                            continue;
+                        }
+                        $value = $residuals[$rule['market']] * ($rule['market'] === 'spread' && $side === 'away' ? -1 : 1);
+                        $existing = $observations[$id][$target->id]['residual'] ?? null;
+                        $observations[$id][$target->id] = ['game_id' => $target->id, 'starts_at' => $cutoff->toIso8601String(),
+                            'residual' => $existing === null ? $value : ($existing + $value) / 2];
                     }
-                    $value = $residuals[$rule['market']] * ($rule['market'] === 'spread' && $side === 'away' ? -1 : 1);
-                    $existing = $observations[$id][$target->id]['residual'] ?? null;
-                    $observations[$id][$target->id] = ['game_id' => $target->id, 'starts_at' => $cutoff->toIso8601String(),
-                        'residual' => $existing === null ? $value : ($existing + $value) / 2];
                 }
             }
             $jointRows[$target->id] = ['game_id' => $target->id, 'starts_at' => $cutoff->toIso8601String(),
@@ -108,6 +114,7 @@ class CfbFootballSignalHistoricalTrainer
                 $progress(count($sourceIds));
             }
         }
+        unset($stats, $games, $prior, $byTeam, $related);
         $artifact = ['schema' => 'cfb-signal-history-v1', 'available_at' => CarbonImmutable::now()->toIso8601String(), 'as_of' => $asOf->toIso8601String(),
             'baseline_hash' => CfbFootballSignalEvidence::baselineHash($configuration), 'from_season' => $fromSeason, 'to_season' => $toSeason,
             'historical_availability_proven' => false, 'baseline_rating_source' => 'prior_season_fpi',

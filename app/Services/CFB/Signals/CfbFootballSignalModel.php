@@ -43,6 +43,12 @@ class CfbFootballSignalModel
                         'validation_mae_improvement' => $joint['validation_mae_improvement'] ?? null];
                     $supported = $compatible && ($evidence['catalog_hash'] ?? null) === $catalogHash
                         && ($joint['status'] ?? null) === 'validated_joint_residual' && is_numeric($fit['coefficient']);
+                    // Historical training uses a paired FPI baseline. Do not transfer its
+                    // spread residuals to an unrelated Elo fallback baseline.
+                    if ($definition['market'] === 'spread'
+                        && (! is_numeric(data_get($inputs, 'home.metrics.fpi')) || ! is_numeric(data_get($inputs, 'away.metrics.fpi')))) {
+                        $supported = false;
+                    }
                 }
 
                 $row = ['id' => $id, 'label' => $definition['label'], 'family' => $definition['family'],

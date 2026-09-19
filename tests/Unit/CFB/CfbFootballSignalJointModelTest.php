@@ -14,6 +14,7 @@ it('fits correlated football conditions jointly and validates the capped combine
     $fit = $model->fit($rows, 'spread', 2);
     expect($fit['status'])->toBe('validated_joint_residual')
         ->and($fit['coefficients']['passing'])->toBe($fit['coefficients']['protection'])
+        ->and($fit['coefficients']['passing'])->toEqualWithDelta(630 / 520, 0.000001)
         ->and($fit['validation_baseline_mae'])->toBe(3.0)
         ->and($fit['validation_adjusted_mae'])->toBe(1.0)
         ->and($model->fit([...$rows, ...$rows], 'spread', 2))->toBe($fit);

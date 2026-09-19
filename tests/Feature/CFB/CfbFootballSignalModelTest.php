@@ -96,6 +96,8 @@ it('changes canonical output only when a fitted condition has valid frozen suppo
     expect($supported->metadata['home_margin'] - $base->metadata['home_margin'])->toBe(2.0)
         ->and($supported->diagnostics['football_signals']['spread_adjustment'])->toBe(2.0)
         ->and($base->diagnostics['football_signals']['applied'])->toBe(0);
+    $inputs['away']['metrics']['fpi'] = null;
+    expect(app(CfbFootballSignalModel::class)->evaluate($inputs, $config['football_signals'], $config, $capture)['applied'])->toBe(0);
 });
 
 it('ignores future results and backfilled snapshots instead of claiming historical pregame evidence', function () {

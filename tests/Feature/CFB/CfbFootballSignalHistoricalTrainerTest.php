@@ -23,6 +23,7 @@ it('trains from prior-season ratings without letting target-season final metrics
         'home_team_id' => $home->id, 'away_team_id' => $away->id, 'status' => 'STATUS_FINAL',
         'home_score' => 35, 'away_score' => 14, 'neutral_site' => false]);
     $config = app(CfbCalculationReleaseDefinition::class)->configuration();
+    unset($config['football_signals']['weighting']);
     $config['football_signals']['catalog'] = ['home' => ['id' => 'home', 'market' => 'spread',
         'condition' => ['all' => [['field' => 'context.home', 'operator' => '==', 'value' => true]]]]];
     $trainer = app(CfbFootballSignalHistoricalTrainer::class);

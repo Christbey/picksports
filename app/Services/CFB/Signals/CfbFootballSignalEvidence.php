@@ -89,7 +89,9 @@ class CfbFootballSignalEvidence
             }
             $residuals = ['spread' => $game->home_score - $game->away_score - $baseMargin,
                 'total' => $game->home_score + $game->away_score - $baseTotal];
-            if (isset($snapshot->inputs['historical_signals'])) {
+            if (isset($snapshot->inputs['historical_signals'])
+                && is_numeric(data_get($snapshot->inputs, 'home.metrics.fpi'))
+                && is_numeric(data_get($snapshot->inputs, 'away.metrics.fpi'))) {
                 $jointRows[$game->id] = ['game_id' => $game->id, 'starts_at' => $kickoff->toIso8601String(),
                     'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($snapshot->inputs, $configuration['football_signals'])];
             }

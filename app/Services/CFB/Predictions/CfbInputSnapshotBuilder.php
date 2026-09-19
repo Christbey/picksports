@@ -6,7 +6,6 @@ use App\Application\Predictions\Data\CalculationReleaseData;
 use App\Application\Predictions\Data\EventInputSnapshotData;
 use App\Models\CFB\FpiRating;
 use App\Models\CFB\Game;
-use App\Models\CFB\GameContextSignal;
 use App\Models\CFB\GameWeather;
 use App\Models\CFB\PlayerInjury;
 use App\Models\CFB\TeamMetric;
@@ -114,13 +113,11 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
             $inputs['historical_signals'] = app(CfbHistoricalSignalEvidenceBuilder::class)
                 ->build($game, $snapshot->capturedAt, $snapshot->cutoffAt);
             $sourceTimestamps['historical_signals'] = $inputs['historical_signals']['latest_source_available_at'];
-            $context = GameContextSignal::where('game_id', $game->id)
-                ->where('updated_at', '<=', $snapshot->capturedAt)->where('updated_at', '<', $snapshot->cutoffAt)
-                ->orderByDesc('updated_at')->first();
             $weather = GameWeather::where('game_id', $game->id)
                 ->where('updated_at', '<=', $snapshot->capturedAt)->where('updated_at', '<', $snapshot->cutoffAt)
                 ->where('observed_at', '<=', $snapshot->capturedAt)->orderByDesc('observed_at')->first();
-            $inputs['signal_context'] = $context?->toArray() ?? [];
+            // Legacy context rows may contain default zero adjustments without observed weather.
+            $inputs['signal_context'] = [];
             $inputs['signal_context']['conference'] = $game->conference_game === null ? null : (bool) $game->conference_game;
             if ($weather) {
                 foreach (['temperature_f', 'wind_speed_mph', 'wind_gust_mph', 'precipitation_inches', 'is_indoor'] as $field) {
@@ -136,7 +133,6 @@ class CfbInputSnapshotBuilder extends FootballInputSnapshotBuilder
                 $inputs['signal_context'][$key.'_quote_id'] = $quote?->id;
                 $sourceTimestamps['signal_'.$key] = $quote?->created_at?->toIso8601String();
             }
-            $sourceTimestamps['signal_context'] = $context?->updated_at?->toIso8601String();
             $sourceTimestamps['signal_weather'] = $weather?->updated_at?->toIso8601String();
             $evidenceKey = 'cfb:football-signal-evidence:'.hash('sha256', json_encode($release->configuration, JSON_THROW_ON_ERROR)).':'.$snapshot->capturedAt->format('YmdHi');
             $inputs['football_signal_evidence'] = Cache::remember($evidenceKey, 120,

@@ -78,6 +78,7 @@ class PreseasonTeamSignal extends Model
         'data_quality_status',
         'synced_at',
         'source_evidence',
+        'qb_season_usage_payload',
     ];
 
     protected static function newFactory(): CfbPreseasonTeamSignalFactory
@@ -130,6 +131,7 @@ class PreseasonTeamSignal extends Model
             'coaching_continuity_payload' => 'array',
             'synced_at' => 'datetime',
             'source_evidence' => 'array',
+            'qb_season_usage_payload' => 'array',
         ];
     }
 

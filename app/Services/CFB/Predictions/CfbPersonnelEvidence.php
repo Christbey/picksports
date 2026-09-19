@@ -36,7 +36,14 @@ class CfbPersonnelEvidence
                 'observed_at' => $evidence['observed_at'] ?? null, 'payload_hash' => $evidence['payload_hash'] ?? null,
                 'values' => $status === 'verified' ? $payload : null];
         }
+        $components['transfers']['rating_coverage'] = $this->transferRatingCoverage($components['transfers']['values']);
         $components['quarterback'] = $this->quarterback($game, $teamId, $captured, $cutoff);
+        if ($components['quarterback']['status'] !== 'verified') {
+            $provider = $this->providerQuarterback($signal, $game, $teamId, $captured, $cutoff);
+            if ($provider !== null) {
+                $components['quarterback'] = $provider;
+            }
+        }
         $missing = array_keys(array_filter($components, fn ($c) => $c['status'] !== 'verified'));
 
         return ['schema' => 'cfb-personnel-v1', 'signal_id' => $signal?->id, 'season' => (int) $game->season,
@@ -73,10 +80,76 @@ class CfbPersonnelEvidence
             'recruiting' => is_numeric($payload['points'] ?? null) && $payload['points'] >= 0
                 && is_numeric($payload['rank'] ?? null) && $payload['rank'] >= 1,
             'transfers' => $payload !== [] && collect($payload)->every(fn ($row) => is_array($row)
-                && filled($row['origin'] ?? null) && (is_numeric($row['rating'] ?? null) || is_numeric($row['stars'] ?? null))),
+                && filled($row['origin'] ?? null) && (filled($row['playerId'] ?? null)
+                    || (filled($row['firstName'] ?? null) && filled($row['lastName'] ?? null)))),
             'head_coach' => count($payload['current'] ?? []) === 1 && count($payload['prior'] ?? []) === 1,
             default => false,
         };
+    }
+
+    private function transferRatingCoverage(?array $rows): array
+    {
+        if ($rows === null) {
+            return ['status' => 'unavailable', 'total' => null, 'rated' => null, 'unrated' => null];
+        }
+        $rated = collect($rows)->filter(fn ($row) => is_numeric($row['rating'] ?? null) || is_numeric($row['stars'] ?? null))->count();
+
+        return ['status' => $rated === count($rows) ? 'complete' : 'partial',
+            'total' => count($rows), 'rated' => $rated, 'unrated' => count($rows) - $rated,
+            'unknown_ratings_imputed' => false];
+    }
+
+    private function providerQuarterback(?PreseasonTeamSignal $signal, Game $game, int $teamId, CarbonImmutable $captured, CarbonImmutable $cutoff): ?array
+    {
+        $evidence = (array) data_get($signal?->source_evidence, 'quarterback_usage', []);
+        $payload = $signal?->qb_season_usage_payload;
+        try {
+            $observed = isset($evidence['observed_at']) ? CarbonImmutable::parse($evidence['observed_at']) : null;
+            if (($evidence['source'] ?? null) !== 'cfbd' || ($evidence['payload_field'] ?? null) !== 'qb_season_usage_payload'
+                || (int) ($evidence['season'] ?? 0) !== (int) $game->season || ! $observed
+                || $observed->gt($captured) || $observed->gte($cutoff) || $observed->lt($captured->subDays(7))
+                || ! is_array($payload) || (int) ($payload['season'] ?? 0) !== (int) $game->season
+                || (int) ($payload['team_id'] ?? 0) !== $teamId || ($payload['identity_namespace'] ?? null) !== 'cfbd'
+                || ! hash_equals((string) ($evidence['payload_hash'] ?? ''), app(CanonicalPayloadHasher::class)->hash($payload))) {
+                return null;
+            }
+            $current = $this->providerLeader($payload['current'] ?? [], (int) $game->season);
+            $prior = $this->providerLeader($payload['prior'] ?? [], (int) $game->season - 1);
+            $known = $current !== null && $prior !== null;
+
+            return ['status' => $known ? 'verified' : 'unresolved', 'source' => 'cfbd_season_passing_usage',
+                'observed_at' => $observed->toIso8601String(), 'payload_hash' => $evidence['payload_hash'],
+                'confirmed_starter' => false, 'identity_namespace' => 'cfbd',
+                'values' => ['current' => $current, 'prior' => $prior,
+                    'observed_primary_passer_changed' => $known ? $current['cfbd_player_id'] !== $prior['cfbd_player_id'] : null]];
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function providerLeader(array $rows, int $season): ?array
+    {
+        $players = [];
+        foreach ($rows as $row) {
+            if (! is_array($row) || ! $this->payloadMatchesSeason('quarterback', $row, $season)
+                || (int) ($row['season'] ?? 0) !== $season || ($row['category'] ?? null) !== 'passing'
+                || ($row['statType'] ?? null) !== 'ATT' || ! filled($row['playerId'] ?? null)
+                || ! is_numeric($row['stat'] ?? null) || (float) $row['stat'] <= 0) {
+                return null;
+            }
+            $id = (string) $row['playerId'];
+            if (isset($players[$id]) && $players[$id]['passing_attempts'] !== (float) $row['stat']) {
+                return null;
+            }
+            $players[$id] = ['cfbd_player_id' => $id, 'name' => $row['player'] ?? null,
+                'season' => $season, 'passing_attempts' => (float) $row['stat']];
+        }
+        $ranked = collect($players)->sortByDesc('passing_attempts')->values();
+        if ($ranked->isEmpty() || ($ranked->count() > 1 && $ranked[0]['passing_attempts'] === $ranked[1]['passing_attempts'])) {
+            return null;
+        }
+
+        return $ranked[0];
     }
 
     private function quarterback(Game $game, int $teamId, CarbonImmutable $captured, CarbonImmutable $cutoff): array

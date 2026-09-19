@@ -99,3 +99,82 @@ it('does not trust a correct hash and requested-season stamp over an explicitly 
         expect($result['components'][$component]['status'])->toBe('unverified');
     }
 });
+
+it('uses provider passing usage with separate identities while preserving curated quarterback fields', function () {
+    config()->set('services.collegefootballdata.api_key', 'test');
+    $team = Team::factory()->create(['school' => 'Georgia']);
+    $signal = PreseasonTeamSignal::factory()->create(['team_id' => $team->id, 'season' => 2026, 'qb_continuity_confidence' => .7]);
+    Http::fake(['*stats/player/season*' => function ($request) {
+        expect($request['category'])->toBe('passing');
+        $year = (int) $request['year'];
+
+        return Http::response([
+            ['season' => $year, 'playerId' => 'cfbd-'.$year, 'player' => 'Passer', 'team' => 'Georgia', 'category' => 'passing', 'statType' => 'ATT', 'stat' => '100'],
+            ['season' => $year, 'playerId' => 'backup', 'player' => 'Backup', 'team' => 'Georgia', 'category' => 'passing', 'statType' => 'ATT', 'stat' => '10'],
+            ['season' => $year, 'playerId' => 'yards-only', 'player' => 'Other', 'team' => 'Georgia', 'category' => 'passing', 'statType' => 'YDS', 'stat' => '3000'],
+        ]);
+    }]);
+    $this->artisan('cfb:sync-preseason-team-signals', ['--season' => 2026, '--include-quarterbacks' => true, '--require-data' => true,
+        '--skip-returning-production' => true, '--skip-transfers' => true, '--skip-talent' => true, '--skip-recruiting' => true])->assertSuccessful();
+    expect((float) $signal->fresh()->qb_continuity_confidence)->toBe(.7);
+    $game = Game::factory()->create(['season' => 2026, 'game_date' => '2026-09-19', 'home_team_id' => $team->id, 'away_team_id' => Team::factory()->create()->id]);
+    $get = fn () => app(CfbPersonnelEvidence::class)->forTeam($game, $team->id, CarbonImmutable::now(), CarbonImmutable::now()->addHours(4))['components']['quarterback'];
+    expect($get()['status'])->toBe('verified')->and($get()['source'])->toBe('cfbd_season_passing_usage')
+        ->and($get()['values']['current']['cfbd_player_id'])->toBe('cfbd-2026')
+        ->and($get()['values']['observed_primary_passer_changed'])->toBeTrue()->and($get()['confirmed_starter'])->toBeFalse();
+    $payload = $signal->fresh()->qb_season_usage_payload;
+    $payload['current'][1]['stat'] = '100';
+    $evidence = $signal->fresh()->source_evidence;
+    $evidence['quarterback_usage']['payload_hash'] = app(CanonicalPayloadHasher::class)->hash($payload);
+    $signal->update(['qb_season_usage_payload' => $payload, 'source_evidence' => $evidence]);
+    expect($get()['status'])->toBe('unresolved');
+    $payload['current'][1]['stat'] = '10';
+    $signal->update(['qb_season_usage_payload' => $payload]);
+    expect($get()['status'])->toBe('unresolved'); // A mismatched hash cannot recover verification.
+});
+
+it('rejects absent or wrong-season quarterback feeds without refreshing previous source evidence', function ($wrongYear) {
+    config()->set('services.collegefootballdata.api_key', 'test');
+    $team = Team::factory()->create(['school' => 'Georgia']);
+    $signal = PreseasonTeamSignal::factory()->create(['team_id' => $team->id, 'season' => 2026,
+        'qb_season_usage_payload' => ['preserved' => true], 'source_evidence' => ['quarterback_usage' => ['observed_at' => '2026-09-18']]]);
+    $before = $signal->fresh()->getAttributes();
+    Http::fake(['*stats/player/season*' => Http::response($wrongYear ? [
+        ['season' => 2024, 'playerId' => 'p', 'team' => 'Georgia', 'category' => 'passing', 'statType' => 'ATT', 'stat' => '100'],
+    ] : [])]);
+    $this->artisan('cfb:sync-preseason-team-signals', ['--season' => 2026, '--include-quarterbacks' => true, '--require-data' => true,
+        '--skip-returning-production' => true, '--skip-transfers' => true, '--skip-talent' => true, '--skip-recruiting' => true])->assertFailed();
+    expect($signal->fresh()->getAttributes())->toBe($before);
+})->with([false, true]);
+
+it('verifies unrated transfer identities but leaves their values unknown', function () {
+    config()->set('services.collegefootballdata.api_key', 'test');
+    $team = Team::factory()->create(['school' => 'Georgia']);
+    Http::fake(['*player/portal*' => Http::response([
+        ['season' => 2026, 'firstName' => 'Unrated', 'lastName' => 'Transfer', 'origin' => 'Georgia', 'destination' => 'Other', 'position' => 'QB', 'rating' => null, 'stars' => null],
+        ['season' => 2026, 'firstName' => 'Rated', 'lastName' => 'Transfer', 'origin' => 'Other', 'destination' => 'Georgia', 'position' => 'QB', 'rating' => .9],
+    ])]);
+    $this->artisan('cfb:sync-preseason-team-signals', ['--season' => 2026, '--require-data' => true,
+        '--skip-returning-production' => true, '--skip-talent' => true, '--skip-recruiting' => true])->assertSuccessful();
+    $signal = PreseasonTeamSignal::where('team_id', $team->id)->firstOrFail();
+    expect($signal->outgoing_transfer_value)->toBeNull()->and($signal->transfer_net_value)->toBeNull()->and($signal->transfer_qb_net_value)->toBeNull();
+    $game = Game::factory()->create(['season' => 2026, 'game_date' => '2026-09-19', 'home_team_id' => $team->id, 'away_team_id' => Team::factory()->create()->id]);
+    $result = app(CfbPersonnelEvidence::class)->forTeam($game, $team->id, CarbonImmutable::now(), CarbonImmutable::now()->addHours(4))['components']['transfers'];
+    expect($result['status'])->toBe('verified')->and($result['rating_coverage']['rated'])->toBe(1)
+        ->and($result['rating_coverage']['unrated'])->toBe(1)->and($result['rating_coverage']['unknown_ratings_imputed'])->toBeFalse();
+});
+
+it('holds provider quarterback evidence with invalid nested season or observation time', function ($invalid) {
+    $team = Team::factory()->create();
+    $game = Game::factory()->create(['season' => 2026, 'game_date' => '2026-09-19', 'home_team_id' => $team->id, 'away_team_id' => Team::factory()->create()->id]);
+    $row = fn ($year) => ['season' => $year, 'playerId' => 'p-'.$year, 'category' => 'passing', 'statType' => 'ATT', 'stat' => '100'];
+    $payload = ['season' => 2026, 'team_id' => $team->id, 'identity_namespace' => 'cfbd', 'current' => [$row(2026)], 'prior' => [$row($invalid === 'season' ? 2024 : 2025)]];
+    $observed = match ($invalid) {
+        'stale' => now()->subDays(8), 'future' => now()->addMinute(), default => now()
+    };
+    PreseasonTeamSignal::factory()->create(['team_id' => $team->id, 'season' => 2026, 'qb_season_usage_payload' => $payload,
+        'source_evidence' => ['quarterback_usage' => ['source' => 'cfbd', 'season' => 2026, 'observed_at' => $observed->toIso8601String(),
+            'payload_field' => 'qb_season_usage_payload', 'payload_hash' => app(CanonicalPayloadHasher::class)->hash($payload)]]]);
+    $result = app(CfbPersonnelEvidence::class)->forTeam($game, $team->id, CarbonImmutable::now(), CarbonImmutable::now()->addHours(4));
+    expect($result['components']['quarterback']['status'])->toBe('unresolved');
+})->with(['season', 'stale', 'future']);

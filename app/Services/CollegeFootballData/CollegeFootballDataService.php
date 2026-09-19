@@ -145,6 +145,12 @@ class CollegeFootballDataService
     }
 
     /** @return array<int, array<string, mixed>> */
+    public function getPlayerSeasonPassingStats(int $year): array
+    {
+        return $this->get('/stats/player/season', ['year' => $year, 'category' => 'passing']);
+    }
+
+    /** @return array<int, array<string, mixed>> */
     public function getCoaches(int $year): array
     {
         return $this->get('/coaches', ['year' => $year]);

@@ -43,7 +43,7 @@ beforeEach(function () {
 
         return 0;
     });
-    Artisan::command('cfb:sync-preseason-team-signals {--season=} {--include-coaches} {--require-data}', function () use ($steps) {
+    Artisan::command('cfb:sync-preseason-team-signals {--season=} {--include-coaches} {--include-quarterbacks} {--require-data}', function () use ($steps) {
         $steps[] = 'personnel';
 
         return 0;
@@ -144,15 +144,15 @@ it('stops when zero injuries actually means an unavailable feed', function () {
 
 it('requires personnel data and retries an empty refresh without caching success', function () {
     $attempts = 0;
-    Artisan::command('cfb:sync-preseason-team-signals {--season=} {--include-coaches} {--require-data}', function () use (&$attempts) {
-        expect($this->option('require-data'))->toBeTrue();
+    Artisan::command('cfb:sync-preseason-team-signals {--season=} {--include-coaches} {--include-quarterbacks} {--require-data}', function () use (&$attempts) {
+        expect($this->option('require-data'))->toBeTrue()->and($this->option('include-quarterbacks'))->toBeTrue();
         $attempts++;
 
         return $attempts === 1 ? 1 : 0;
     });
     Artisan::command('cfb:sync-odds {--days=}', fn () => 0);
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertFailed();
-    expect(Cache::has('cfb:personnel:v2:2026:2026-09-18'))->toBeFalse();
+    expect(Cache::has('cfb:personnel:v3:2026:2026-09-18'))->toBeFalse();
     $this->artisan('cfb:run-pregame-pipeline', ['--season' => 2026])->assertSuccessful();
-    expect($attempts)->toBe(2)->and(Cache::has('cfb:personnel:v2:2026:2026-09-18'))->toBeTrue();
+    expect($attempts)->toBe(2)->and(Cache::has('cfb:personnel:v3:2026:2026-09-18'))->toBeTrue();
 });

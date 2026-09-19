@@ -19,6 +19,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         {--skip-transfers : Skip CFBD transfer portal summary}
         {--skip-talent : Skip CFBD talent composite}
         {--skip-recruiting : Skip CFBD team recruiting rankings}
+        {--include-quarterbacks : Compare CFBD prior/current season primary passing usage}
         {--include-coaches : Compare verified current and prior CFBD head coaches}
         {--require-data : Fail when any requested source has no matched current-season rows}
         {--dry-run : Fetch and summarize without writing}';
@@ -55,6 +56,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
             'recruiting' => 0,
             'skipped' => 0,
             'coaches' => 0,
+            'quarterbacks' => 0,
         ];
 
         if (! $this->option('skip-returning-production')) {
@@ -71,6 +73,11 @@ class SyncPreseasonTeamSignalsCommand extends Command
 
         if (! $this->option('skip-recruiting')) {
             $stats['recruiting'] = $this->syncRecruiting($service, $season, $teamFilter, $dryRun, $stats['skipped']);
+        }
+
+        if ($this->option('include-quarterbacks')) {
+            $stats['quarterbacks'] = $this->syncQuarterbacks($service, $season, $dryRun);
+            $this->info('Quarterback usage records: '.$stats['quarterbacks']);
         }
 
         if ($this->option('include-coaches')) {
@@ -95,6 +102,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
                 'talent' => ! $this->option('skip-talent'),
                 'recruiting' => ! $this->option('skip-recruiting'),
                 'coaches' => (bool) $this->option('include-coaches'),
+                'quarterbacks' => (bool) $this->option('include-quarterbacks'),
             ];
             $empty = array_keys(array_filter($requested, fn ($enabled, $source) => $enabled && $stats[$source] === 0, ARRAY_FILTER_USE_BOTH));
             if ($empty !== []) {
@@ -200,7 +208,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
                 'outgoing_transfer_count' => $summary['outgoing_count'],
                 'incoming_transfer_value' => $this->roundFloat($summary['incoming_value']),
                 'outgoing_transfer_value' => $this->roundFloat($summary['outgoing_value']),
-                'transfer_net_value' => $this->roundFloat($summary['incoming_value'] - $summary['outgoing_value']),
+                'transfer_net_value' => $summary['incoming_value'] === null || $summary['outgoing_value'] === null ? null : $this->roundFloat($summary['incoming_value'] - $summary['outgoing_value']),
                 'transfer_qb_net_value' => $this->positionNetValue($summary['positions'], 'QB'),
                 'transfer_ol_net_value' => $this->positionNetValue($summary['positions'], 'OL'),
                 'transfer_dl_net_value' => $this->positionNetValue($summary['positions'], 'DL'),
@@ -304,7 +312,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         $existing = PreseasonTeamSignal::where('team_id', $team->id)->where('season', $season)->first();
         $evidence = (array) $existing?->source_evidence;
         foreach (['returning_production_payload' => 'returning_production', 'transfer_portal_payload' => 'transfers',
-            'talent_payload' => 'talent', 'recruiting_payload' => 'recruiting', 'coaching_continuity_payload' => 'head_coach'] as $field => $component) {
+            'talent_payload' => 'talent', 'recruiting_payload' => 'recruiting', 'coaching_continuity_payload' => 'head_coach', 'qb_season_usage_payload' => 'quarterback_usage'] as $field => $component) {
             if (array_key_exists($field, $attributes)) {
                 $evidence[$component] = ['source' => 'cfbd', 'observed_at' => now()->toIso8601String(),
                     'season' => $season, 'payload_field' => $field,
@@ -330,6 +338,39 @@ class SyncPreseasonTeamSignalsCommand extends Command
         }
 
         return true;
+    }
+
+    protected function syncQuarterbacks(CollegeFootballDataService $service, int $season, bool $dryRun): int
+    {
+        $index = [];
+        foreach ([$season - 1, $season] as $year) {
+            foreach ($service->getPlayerSeasonPassingStats($year) as $row) {
+                if (! is_array($row) || ! isset($row['season']) || ! $this->rowMatchesSeason($row, $year)
+                    || ($row['category'] ?? null) !== 'passing' || ($row['statType'] ?? null) !== 'ATT'
+                    || ! filled($row['playerId'] ?? null) || ! is_numeric($row['stat'] ?? null) || (float) $row['stat'] <= 0
+                    || ! ($team = $this->resolveTeam(['team' => $row['team'] ?? null]))) {
+                    continue;
+                }
+                // CFBD identities remain in their own namespace; no ESPN ID inference.
+                $index[$year][$team->id][(string) $row['playerId']][] = $row;
+            }
+        }
+        $count = 0;
+        foreach ($index[$season] ?? [] as $teamId => $current) {
+            if (empty($index[$season - 1][$teamId])) {
+                continue; // Never stamp an absent prior feed as a successful comparison.
+            }
+            $payload = ['season' => $season, 'team_id' => $teamId, 'endpoint' => '/stats/player/season',
+                'category' => 'passing', 'stat_type' => 'ATT', 'identity_namespace' => 'cfbd',
+                'current' => array_merge(...array_values($current)),
+                'prior' => array_merge(...array_values($index[$season - 1][$teamId]))];
+            $this->updateSignal(Team::findOrFail($teamId), $season, [
+                'qb_season_usage_payload' => $payload, 'synced_at' => now(),
+            ], $dryRun);
+            $count++;
+        }
+
+        return $count;
     }
 
     protected function syncCoaches(CollegeFootballDataService $service, int $season, bool $dryRun): int
@@ -528,7 +569,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
         $valueKey = "{$direction}_value";
 
         $summary[$countKey]++;
-        $summary[$valueKey] += $value;
+        $summary[$valueKey] = $value === null || $summary[$valueKey] === null ? null : $summary[$valueKey] + $value;
         $summary['payload'][] = $row;
         $summary['positions'][$position] ??= [
             'incoming_count' => 0,
@@ -538,9 +579,11 @@ class SyncPreseasonTeamSignalsCommand extends Command
             'net_value' => 0.0,
         ];
         $summary['positions'][$position][$countKey]++;
-        $summary['positions'][$position][$valueKey] += $value;
+        $summary['positions'][$position][$valueKey] = $value === null || $summary['positions'][$position][$valueKey] === null
+            ? null : $summary['positions'][$position][$valueKey] + $value;
         $summary['positions'][$position]['net_value'] =
-            $summary['positions'][$position]['incoming_value'] - $summary['positions'][$position]['outgoing_value'];
+            $summary['positions'][$position]['incoming_value'] === null || $summary['positions'][$position]['outgoing_value'] === null
+                ? null : $summary['positions'][$position]['incoming_value'] - $summary['positions'][$position]['outgoing_value'];
     }
 
     protected function positionBucket(mixed $position): string
@@ -561,7 +604,7 @@ class SyncPreseasonTeamSignalsCommand extends Command
     /**
      * @param  array<string, mixed>  $row
      */
-    protected function transferValue(array $row): float
+    protected function transferValue(array $row): ?float
     {
         $rating = $this->floatOrNull(data_get($row, 'rating'));
 
@@ -569,15 +612,15 @@ class SyncPreseasonTeamSignalsCommand extends Command
             return $rating;
         }
 
-        return (float) ($this->floatOrNull(data_get($row, 'stars')) ?? 0.0);
+        return $this->floatOrNull(data_get($row, 'stars'));
     }
 
     /**
      * @param  array<string, array<string, int|float>>  $positions
      */
-    protected function positionNetValue(array $positions, string $position): float
+    protected function positionNetValue(array $positions, string $position): ?float
     {
-        return $this->roundFloat((float) ($positions[$position]['net_value'] ?? 0.0));
+        return isset($positions[$position]) ? $this->roundFloat($positions[$position]['net_value']) : 0.0;
     }
 
     protected function normalizeName(mixed $value): string
@@ -593,9 +636,9 @@ class SyncPreseasonTeamSignalsCommand extends Command
         return is_numeric($value) ? $this->roundFloat((float) $value, $precision) : null;
     }
 
-    protected function roundFloat(float $value, int $precision = 3): float
+    protected function roundFloat(?float $value, int $precision = 3): ?float
     {
-        return round($value, $precision);
+        return $value === null ? null : round($value, $precision);
     }
 
     protected function intOrNull(mixed $value): ?int

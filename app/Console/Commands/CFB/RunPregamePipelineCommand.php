@@ -63,9 +63,9 @@ class RunPregamePipelineCommand extends Command
 
                 return self::FAILURE;
             }
-            $personnelKey = 'cfb:personnel:v2:'.$season.':'.now('America/Chicago')->toDateString();
+            $personnelKey = 'cfb:personnel:v3:'.$season.':'.now('America/Chicago')->toDateString();
             if (! Cache::has($personnelKey)) {
-                if ($this->call('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--require-data' => true]) !== self::SUCCESS) {
+                if ($this->call('cfb:sync-preseason-team-signals', ['--season' => (int) $season, '--include-coaches' => true, '--include-quarterbacks' => true, '--require-data' => true]) !== self::SUCCESS) {
                     $this->error('Personnel source refresh failed; generation stopped.');
 
                     return self::FAILURE;

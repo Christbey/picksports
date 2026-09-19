@@ -11,7 +11,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
 
     public const INPUT_SCHEMA_VERSION = 'cfb-pregame-v1';
 
-    public const SEMANTIC_VERSION = '1.6.0';
+    public const SEMANTIC_VERSION = '1.6.1';
 
     /** @return array<string, mixed> */
     public function configuration(): array
@@ -25,6 +25,7 @@ class CfbCalculationReleaseDefinition extends FootballCalculationReleaseDefiniti
         $configuration['spread']['rating_baseline'] = 'fpi_points';
 
         $configuration['football_signals'] = ['enabled' => true, 'version' => 'cfb-football-signals-1',
+            'feature_policy' => 'early_season_prior_v1', 'training_policy' => 'replay_frozen_baseline_v1',
             'maximum_spread_adjustment' => 2.0, 'maximum_total_adjustment' => 3.0,
             'catalog' => CfbFootballSignalCatalog::all()];
 

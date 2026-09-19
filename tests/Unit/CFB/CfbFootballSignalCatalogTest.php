@@ -70,3 +70,27 @@ it('uses a verified prior-season sack aggregate only for the season mean', funct
     $inputs['home']['prior_metrics']['season_sack_evidence']['season'] = 2026;
     expect(data_get(CfbFootballSignalCatalog::features($inputs, 'home'), 'team.history.prior_season.sacks_allowed_per_game'))->toBeNull();
 });
+
+it('uses explicit prior evidence for small current samples without inventing recent or venue history', function () {
+    $input = ['event' => ['season' => 2026], 'historical_signals' => ['home' => ['windows' => [
+        'current_season' => ['metrics' => ['yards_per_play' => ['value' => 9, 'sample_games' => 1]]],
+        'prior_season' => ['metrics' => ['yards_per_play' => ['value' => 5, 'sample_games' => 12]]],
+    ]]]];
+    $f = CfbFootballSignalCatalog::features($input, 'home', 'early_season_prior_v1');
+    expect(data_get($f, 'team.history.current_season.yards_per_play'))->toBe(6.0)
+        ->and(data_get($f, 'team.history_support.current_season.yards_per_play.current_games'))->toBe(1)
+        ->and(data_get($f, 'team.history.last3.yards_per_play'))->toBeNull()
+        ->and(data_get($f, 'team.history.venue.yards_per_play'))->toBeNull();
+    $input['historical_signals']['home']['windows']['prior_season']['metrics']['yards_per_play']['sample_games'] = 2;
+    expect(data_get(CfbFootballSignalCatalog::features($input, 'home', 'early_season_prior_v1'), 'team.history.current_season.yards_per_play'))->toBeNull();
+});
+
+it('adapts original frozen season aggregates but rejects stale seasons', function () {
+    $input = ['event' => ['season' => 2026], 'home' => ['metrics' => ['record_season' => 2025,
+        'wins' => 8, 'losses' => 4, 'points_per_game' => 35, 'points_allowed_per_game' => 21]]];
+    $f = CfbFootballSignalCatalog::features($input, 'home', 'early_season_prior_v1');
+    expect(data_get($f, 'team.history.current_season.points_per_game'))->toBe(35.0)
+        ->and(data_get($f, 'team.history_support.current_season.points_per_game.source'))->toBe('prior_season_only');
+    $input['home']['metrics']['record_season'] = 2024;
+    expect(data_get(CfbFootballSignalCatalog::features($input, 'home', 'early_season_prior_v1'), 'team.history.current_season.points_per_game'))->toBeNull();
+});

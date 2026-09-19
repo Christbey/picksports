@@ -87,7 +87,7 @@ final class CfbFootballSignalCatalog
     }
 
     /** Adapt an immutable canonical snapshot. No database, live odds, or present-day reads. */
-    public static function features(array $inputs, string $side): array
+    public static function features(array $inputs, string $side, string $policy = 'observed_only'): array
     {
         if (! in_array($side, ['home', 'away'], true)) {
             throw new \InvalidArgumentException('Signal side must be home or away');
@@ -108,11 +108,11 @@ final class CfbFootballSignalCatalog
             }
         }
 
-        return ['context' => $context, 'team' => self::teamFeatures($inputs, $side),
-            'opponent' => self::teamFeatures($inputs, $other)];
+        return ['context' => $context, 'team' => self::teamFeatures($inputs, $side, $policy),
+            'opponent' => self::teamFeatures($inputs, $other, $policy)];
     }
 
-    private static function teamFeatures(array $inputs, string $side): array
+    private static function teamFeatures(array $inputs, string $side, string $policy): array
     {
         $team = (array) ($inputs[$side] ?? []);
         $out = ['elo' => $team['elo'] ?? null, 'metrics' => $team['metrics'] ?? [],
@@ -122,6 +122,9 @@ final class CfbFootballSignalCatalog
                 $out['history'][$window][$metric] = ($evidence['sample_games'] ?? 0) >= 3
                     && is_numeric($evidence['value'] ?? null) ? (float) $evidence['value'] : null;
             }
+        }
+        if ($policy === 'early_season_prior_v1') {
+            $out = self::withSeasonPrior($out, $team, $inputs, $side);
         }
         $seasonSacks = data_get($team, 'prior_metrics.season_sack_evidence', []);
         if (data_get($out, 'history.prior_season.sacks_allowed_per_game') === null
@@ -156,6 +159,63 @@ final class CfbFootballSignalCatalog
             'leading_fourth_margin' => ['late_game', 'fourth_margin_when_leading_20_plus']] as $field => [$group, $value]) {
             $sample = $field === 'leading_fourth_margin' ? 'entered_fourth_leading_20_plus_games' : 'sample_games';
             $out['late'][$field] = data_get($large, $group.'.'.$sample, 0) >= 3 ? data_get($large, $group.'.'.$value) : null;
+        }
+
+        return $out;
+    }
+
+    /** Blend small current samples with three games of the actual prior season, never a league default. */
+    private static function withSeasonPrior(array $out, array $team, array $inputs, string $side): array
+    {
+        $season = (int) data_get($inputs, 'event.season');
+        $windows = (array) data_get($inputs, 'historical_signals.'.$side.'.windows', []);
+        $aggregates = [];
+        foreach (['metrics', 'prior_metrics'] as $key) {
+            $m = (array) ($team[$key] ?? []);
+            $year = (int) ($m['record_season'] ?? $m['season'] ?? 0);
+            $n = (int) ($m['wins'] ?? 0) + (int) ($m['losses'] ?? 0);
+            if ($n <= 0 || ! in_array($year, [$season, $season - 1], true)) {
+                continue;
+            }
+            foreach (['points_per_game', 'points_allowed_per_game'] as $field) {
+                if (is_numeric($m[$field] ?? null)) {
+                    $aggregates[$year][$field] = ['value' => (float) $m[$field], 'sample_games' => $n];
+                }
+            }
+            if (isset($aggregates[$year]['points_per_game'], $aggregates[$year]['points_allowed_per_game'])) {
+                $aggregates[$year]['margin_per_game'] = ['value' => $m['points_per_game'] - $m['points_allowed_per_game'], 'sample_games' => $n];
+            }
+            $aggregates[$year]['win_rate'] = ['value' => (int) ($m['wins'] ?? 0) / $n, 'sample_games' => $n];
+        }
+        $current = array_replace($aggregates[$season] ?? [], $windows['current_season']['metrics'] ?? []);
+        $prior = array_replace($aggregates[$season - 1] ?? [], $windows['prior_season']['metrics'] ?? []);
+        $sacks = $team['prior_metrics']['season_sack_evidence'] ?? [];
+        if (($sacks['source'] ?? null) === 'cfbd_stats_season' && (int) ($sacks['season'] ?? 0) === $season - 1
+            && is_numeric($sacks['games'] ?? null) && $sacks['games'] >= 3
+            && is_numeric($sacks['sacks_allowed'] ?? null) && $sacks['sacks_allowed'] >= 0
+            && ! is_numeric($prior['sacks_allowed_per_game']['value'] ?? null)) {
+            $prior['sacks_allowed_per_game'] = ['value' => $sacks['sacks_allowed'] / $sacks['games'], 'sample_games' => $sacks['games']];
+        }
+        foreach (array_unique([...array_keys($current), ...array_keys($prior)]) as $metric) {
+            $c = $current[$metric] ?? [];
+            $p = $prior[$metric] ?? [];
+            $n = is_numeric($c['value'] ?? null) ? max(0, (int) ($c['sample_games'] ?? 0)) : 0;
+            $pn = is_numeric($p['value'] ?? null) ? max(0, (int) ($p['sample_games'] ?? 0)) : 0;
+            if ($pn >= 3) {
+                $out['history']['prior_season'][$metric] = (float) $p['value'];
+            }
+            if ($n >= 3) {
+                $value = (float) $c['value'];
+                $source = 'observed_current_season';
+            } elseif ($pn >= 3) {
+                $value = ($n * (float) ($c['value'] ?? 0) + 3 * (float) $p['value']) / ($n + 3);
+                $source = $n ? 'current_blended_with_prior' : 'prior_season_only';
+            } else {
+                continue;
+            }
+            $out['history']['current_season'][$metric] = $value;
+            $out['history_support']['current_season'][$metric] = ['source' => $source, 'current_games' => $n,
+                'prior_games' => $pn, 'prior_weight_games' => $n < 3 ? 3 : 0];
         }
 
         return $out;

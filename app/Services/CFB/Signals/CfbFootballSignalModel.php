@@ -17,7 +17,8 @@ class CfbFootballSignalModel
         $evidence = $inputs['football_signal_evidence'] ?? [];
         $compatible = $baselineConfiguration !== null
             && ($evidence['baseline_hash'] ?? null) === CfbFootballSignalEvidence::baselineHash($baselineConfiguration)
-            && ($evidence['version'] ?? null) === self::VERSION;
+            && ($evidence['version'] ?? null) === self::VERSION
+            && ($evidence['feature_policy'] ?? 'observed_only') === ($configuration['feature_policy'] ?? 'observed_only');
         try {
             $asOf = CarbonImmutable::parse($evidence['as_of'] ?? 'invalid');
             $cutoff = CarbonImmutable::parse(data_get($inputs, 'event.starts_at', 'invalid'));
@@ -27,7 +28,7 @@ class CfbFootballSignalModel
             $compatible = false;
         }
         foreach (['home', 'away'] as $side) {
-            $features = CfbFootballSignalCatalog::features($inputs, $side);
+            $features = CfbFootballSignalCatalog::features($inputs, $side, $configuration['feature_policy'] ?? 'observed_only');
             foreach ($catalog as $id => $definition) {
                 $matched = CfbFootballSignalCatalog::evaluate($definition, $features);
                 $fit = $evidence['signals'][$id] ?? [];
@@ -35,6 +36,7 @@ class CfbFootballSignalModel
                     && ($evidence['catalog_hash'] ?? null) === $catalogHash;
                 $row = ['id' => $id, 'label' => $definition['label'], 'family' => $definition['family'],
                     'side' => $side, 'market' => $definition['market'], 'matched' => $matched,
+                    'input_support' => array_filter(array_combine($definition['inputs'], array_map(fn ($path) => str_starts_with($path, 'team.history.current_season.') ? data_get($features, 'team.history_support.current_season.'.substr($path, strlen('team.history.current_season.'))) : (str_starts_with($path, 'opponent.history.current_season.') ? data_get($features, 'opponent.history_support.current_season.'.substr($path, strlen('opponent.history.current_season.'))) : null), $definition['inputs']))),
                     'status' => $matched === null ? 'missing_inputs' : ($matched ? ($supported ? 'supported' : 'awaiting_evidence') : 'not_triggered'),
                     'sample_games' => $fit['sample_games'] ?? 0, 'validation_games' => $fit['validation_games'] ?? 0,
                     'validation_mae_improvement' => $fit['validation_mae_improvement'] ?? null,

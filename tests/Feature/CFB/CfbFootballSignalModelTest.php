@@ -35,6 +35,7 @@ function footballFittedEvidence(array $config, array $ids = ['scoring_pressure']
 {
     return ['version' => CfbFootballSignalModel::VERSION, 'as_of' => '2026-09-20T00:00:00Z',
         'latest_source_observed_at' => '2026-09-19T00:00:00Z', 'status' => 'frozen_outcomes_evaluated',
+        'feature_policy' => data_get($config, 'football_signals.feature_policy', 'observed_only'),
         'baseline_hash' => CfbFootballSignalEvidence::baselineHash($config),
         'catalog_hash' => CfbFootballSignalEvidence::catalogHash(CfbFootballSignalCatalog::all()),
         'signals' => array_fill_keys($ids, ['status' => 'validated_residual', 'coefficient' => 2.0,
@@ -46,20 +47,20 @@ it('does not invent effects without compatible observed evidence and does not in
     $inputs = footballSignalInputs();
     $capture = CarbonImmutable::parse('2026-09-20');
     $model = new CfbFootballSignalModel;
-    expect($model->evaluate($inputs, [], $config, $capture)['applied'])->toBe(0);
+    expect($model->evaluate($inputs, $config['football_signals'], $config, $capture)['applied'])->toBe(0);
     $inputs['football_signal_evidence'] = footballFittedEvidence($config);
-    $single = $model->evaluate($inputs, [], $config, $capture);
+    $single = $model->evaluate($inputs, $config['football_signals'], $config, $capture);
     expect($single['spread_adjustment'])->toBe(2.0);
     $inputs['football_signal_evidence'] = footballFittedEvidence($config, ['scoring_pressure', 'defensive_control']);
-    expect($model->evaluate($inputs, [], $config, $capture)['spread_adjustment'])->toBe($single['spread_adjustment']);
+    expect($model->evaluate($inputs, $config['football_signals'], $config, $capture)['spread_adjustment'])->toBe($single['spread_adjustment']);
     $inputs['football_signal_evidence']['catalog_hash'] = 'wrong';
-    expect($model->evaluate($inputs, [], $config, $capture)['applied'])->toBe(0);
+    expect($model->evaluate($inputs, $config['football_signals'], $config, $capture)['applied'])->toBe(0);
     $inputs['football_signal_evidence'] = footballFittedEvidence($config);
     $different = $config;
     $different['inputs']['sample_aware_context'] = false;
-    expect($model->evaluate($inputs, [], $different, $capture)['applied'])->toBe(0);
+    expect($model->evaluate($inputs, $config['football_signals'], $different, $capture)['applied'])->toBe(0);
     $inputs['football_signal_evidence']['as_of'] = '2026-09-20T12:00:00Z';
-    expect($model->evaluate($inputs, [], $config, $capture)['applied'])->toBe(0);
+    expect($model->evaluate($inputs, $config['football_signals'], $config, $capture)['applied'])->toBe(0);
 });
 
 it('deduplicates games and fits only earlier dates before validating residual corrections', function () {
@@ -102,9 +103,12 @@ it('ignores future results and backfilled snapshots instead of claiming historic
         'away_team_id' => Team::factory()->create()->id, 'status' => 'STATUS_FINAL', 'home_score' => 30, 'away_score' => 20]);
     DB::table('cfb_games')->where('id', $game->id)->update(['created_at' => '2026-08-01', 'updated_at' => '2026-09-21']);
     $snapshot = EventInputSnapshot::factory()->create(['sport' => 'cfb', 'sport_event_id' => $event->id,
-        'captured_at' => '2026-09-01 10:00:00', 'cutoff_at' => $event->starts_at, 'latest_source_available_at' => '2026-09-01 09:00:00',
+        'schema_version' => 'cfb-pregame-v1', 'captured_at' => '2026-09-01 10:00:00', 'cutoff_at' => $event->starts_at, 'latest_source_available_at' => '2026-09-01 09:00:00',
         'inputs' => footballSignalInputs()]);
-    $release = CalculationRelease::factory()->create(['sport' => 'cfb', 'configuration' => $config]);
+    $oldConfig = $config;
+    unset($oldConfig['football_signals']);
+    $oldConfig['spread']['power_rating_weight'] = 0.99;
+    $release = CalculationRelease::factory()->create(['sport' => 'cfb', 'configuration' => $oldConfig]);
     $run = CalculationRun::factory()->create(['sport_event_id' => $event->id, 'calculation_release_id' => $release->id, 'event_input_snapshot_id' => $snapshot->id]);
     $prediction = CanonicalPrediction::factory()->create(['sport_event_id' => $event->id, 'sport' => 'cfb', 'phase' => 'pregame',
         'publication_state' => 'draft', 'calculation_run_id' => $run->id, 'generated_at' => '2026-09-01 10:00:00', 'published_at' => '2026-09-01 10:00:00']);
@@ -118,7 +122,11 @@ it('ignores future results and backfilled snapshots instead of claiming historic
     expect($service->build($capture, $config)['prediction_ids'])->toBe([]);
     DB::table('cfb_games')->where('id', $game->id)->update(['updated_at' => '2026-09-19']);
     $evidence = $service->build($capture, $config);
-    expect($evidence['prediction_ids'])->toBe([$prediction->id])->and($evidence['signals']['scoring_pressure']['sample_games'])->toBe(1);
+    expect($evidence['prediction_ids'])->toBe([$prediction->id])->and($evidence['signals']['scoring_pressure']['sample_games'])->toBe(1)
+        ->and($evidence['replayed_prediction_ids'])->toBe([$prediction->id]);
+    $legacy = $config;
+    unset($legacy['football_signals']['training_policy']);
+    expect($service->build($capture, $legacy)['prediction_ids'])->toBe([]);
     DB::table('event_input_snapshots')->where('id', $snapshot->id)->update(['created_at' => '2026-09-02']);
     expect($service->build($capture, $config)['prediction_ids'])->toBe([]);
 });

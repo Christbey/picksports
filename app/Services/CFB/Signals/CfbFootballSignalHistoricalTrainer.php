@@ -48,7 +48,7 @@ class CfbFootballSignalHistoricalTrainer
         $base['football_signals']['enabled'] = false;
         $release = new CalculationReleaseData('historical-research', 'cfb', 'pregame', 'cfb-pregame-rules', 'rules',
             'historical-research', 'prior-game-reconstruction', CfbFootballSignalEvidence::baselineHash($configuration), 'cfb-pregame-v1', $base);
-        $observations = $sourceIds = [];
+        $observations = $sourceIds = $jointRows = [];
         $catalog = $configuration['football_signals']['catalog'];
         $builder = app(CfbHistoricalSignalEvidenceBuilder::class);
         foreach ($games as $target) {
@@ -101,6 +101,8 @@ class CfbFootballSignalHistoricalTrainer
                         'residual' => $existing === null ? $value : ($existing + $value) / 2];
                 }
             }
+            $jointRows[$target->id] = ['game_id' => $target->id, 'starts_at' => $cutoff->toIso8601String(),
+                'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($inputs, $configuration['football_signals'])];
             $sourceIds[] = $target->id;
             if (count($sourceIds) % 100 === 0 && $progress) {
                 $progress(count($sourceIds));
@@ -111,7 +113,7 @@ class CfbFootballSignalHistoricalTrainer
             'historical_availability_proven' => false, 'baseline_rating_source' => 'prior_season_fpi',
             'limitations' => ['retrospective_revised_box_scores', 'prior_season_fpi_differs_from_weekly_fpi',
                 'unarchived_weather_personnel_and_market_conditions_remain_unknown', 'not_live_profitability_validation'],
-            'source_game_ids' => $sourceIds, 'observations' => $observations];
+            'source_game_ids' => $sourceIds, 'observations' => $observations, 'joint_observations' => $jointRows];
         Cache::put(self::key($configuration), $artifact, now()->addDays(8));
 
         return $artifact;

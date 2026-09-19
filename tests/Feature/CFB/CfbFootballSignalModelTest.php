@@ -38,12 +38,14 @@ function footballFittedEvidence(array $config, array $ids = ['scoring_pressure']
         'feature_policy' => data_get($config, 'football_signals.feature_policy', 'observed_only'),
         'baseline_hash' => CfbFootballSignalEvidence::baselineHash($config),
         'catalog_hash' => CfbFootballSignalEvidence::catalogHash(CfbFootballSignalCatalog::all()),
+        'joint_models' => ['spread' => ['status' => 'validated_joint_residual', 'coefficients' => array_fill_keys($ids, 2.0), 'feature_samples' => array_fill_keys($ids, 60), 'validation_games' => 18]],
         'signals' => array_fill_keys($ids, ['status' => 'validated_residual', 'coefficient' => 2.0,
             'sample_games' => 60, 'validation_games' => 18])];
 }
 
 it('does not invent effects without compatible observed evidence and does not inflate overlapping families', function () {
     $config = app(CfbCalculationReleaseDefinition::class)->configuration();
+    unset($config['football_signals']['weighting']);
     $inputs = footballSignalInputs();
     $capture = CarbonImmutable::parse('2026-09-20');
     $model = new CfbFootballSignalModel;

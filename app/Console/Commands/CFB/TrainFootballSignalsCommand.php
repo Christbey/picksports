@@ -4,6 +4,7 @@ namespace App\Console\Commands\CFB;
 
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
 use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
+use App\Services\CFB\Signals\CfbFootballSignalJointModel;
 use App\Services\CFB\Signals\CfbFootballSignalModel;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
@@ -29,6 +30,7 @@ class TrainFootballSignalsCommand extends Command
         $this->line(json_encode(['games' => count($artifact['source_game_ids']), 'rules_with_observations' => count($fits),
             'fit_statuses' => array_count_values(array_column($fits, 'status')),
             'supported' => array_filter($fits, fn ($fit) => $fit['status'] === 'validated_residual'),
+            'joint_models' => collect(['spread', 'total'])->mapWithKeys(fn ($market) => [$market => app(CfbFootballSignalJointModel::class)->fit(array_values($artifact['joint_observations']), $market, $market === 'spread' ? 2.0 : 3.0)])->all(),
             'limitations' => $artifact['limitations']], JSON_PRETTY_PRINT));
 
         return self::SUCCESS;

@@ -32,6 +32,7 @@ class CfbFootballSignalEvidence
         $observations = $seen = $sourceIds = [];
         $latest = null;
         $replayed = [];
+        $jointRows = [];
         $replay = data_get($configuration, 'football_signals.training_policy') === 'replay_frozen_baseline_v1';
         $predictions = CanonicalPrediction::query()->where('sport', 'cfb')->where('phase', 'pregame')
             ->whereIn('publication_state', ['published', 'superseded'])
@@ -39,7 +40,7 @@ class CfbFootballSignalEvidence
             ->where('created_at', '<=', $asOf)->where('generated_at', '>=', $asOf->subYears(3))
             ->whereHas('sportEvent.cfbGame', fn ($q) => $q->where('status', 'STATUS_FINAL')->where('updated_at', '<=', $asOf))
             ->with(['markets', 'calculationRun.release', 'calculationRun.inputSnapshot', 'sportEvent.cfbGame'])
-            ->orderByDesc('generated_at')->orderByDesc('id')->get();
+            ->orderByDesc('generated_at')->orderByDesc('id')->lazy(50);
         foreach ($predictions as $prediction) {
             $game = $prediction->sportEvent?->cfbGame;
             $kickoff = $prediction->sportEvent?->starts_at;
@@ -88,6 +89,10 @@ class CfbFootballSignalEvidence
             }
             $residuals = ['spread' => $game->home_score - $game->away_score - $baseMargin,
                 'total' => $game->home_score + $game->away_score - $baseTotal];
+            if (isset($snapshot->inputs['historical_signals'])) {
+                $jointRows[$game->id] = ['game_id' => $game->id, 'starts_at' => $kickoff->toIso8601String(),
+                    'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($snapshot->inputs, $configuration['football_signals'])];
+            }
             foreach (['home', 'away'] as $side) {
                 $features = CfbFootballSignalCatalog::features($snapshot->inputs, $side, data_get($configuration, 'football_signals.feature_policy', 'observed_only'));
                 foreach ($catalog as $id => $definition) {
@@ -117,7 +122,8 @@ class CfbFootballSignalEvidence
                         $observations[$id][$gameId] ??= $row;
                     }
                 }
-                $historical = array_diff_key($artifact, ['observations' => true]);
+                $jointRows += $artifact['joint_observations'] ?? [];
+                $historical = array_diff_key($artifact, ['observations' => true, 'joint_observations' => true]);
                 $available = CarbonImmutable::parse($artifact['available_at']);
                 $latest = $latest === null || $available->gt($latest) ? $available : $latest;
             }
@@ -127,7 +133,14 @@ class CfbFootballSignalEvidence
             $fits[$id] = app(CfbFootballSignalModel::class)->fit(array_values($observations[$id] ?? []));
         }
 
-        return ['version' => CfbFootballSignalModel::VERSION, 'catalog_hash' => self::catalogHash($catalog),
+        $joint = [];
+        if (data_get($configuration, 'football_signals.weighting') === 'joint_ridge_v1') {
+            foreach (['spread', 'total'] as $market) {
+                $joint[$market] = app(CfbFootballSignalJointModel::class)->fit(array_values($jointRows), $market, (float) data_get($configuration, 'football_signals.maximum_'.$market.'_adjustment'));
+            }
+        }
+
+        return ['joint_models' => $joint, 'version' => CfbFootballSignalModel::VERSION, 'catalog_hash' => self::catalogHash($catalog),
             'feature_policy' => data_get($configuration, 'football_signals.feature_policy', 'observed_only'),
             'training_policy' => data_get($configuration, 'football_signals.training_policy', 'same_release_frozen_predictions'),
             'replayed_prediction_ids' => $replayed, 'historical_training' => $historical,

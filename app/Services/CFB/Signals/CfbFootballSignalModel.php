@@ -14,6 +14,7 @@ class CfbFootballSignalModel
         $catalog = $configuration['catalog'] ?? CfbFootballSignalCatalog::all();
         $catalogHash = CfbFootballSignalEvidence::catalogHash($catalog);
         $rows = $families = [];
+        $jointWeighting = ($configuration['weighting'] ?? null) === 'joint_ridge_v1';
         $evidence = $inputs['football_signal_evidence'] ?? [];
         $compatible = $baselineConfiguration !== null
             && ($evidence['baseline_hash'] ?? null) === CfbFootballSignalEvidence::baselineHash($baselineConfiguration)
@@ -34,16 +35,27 @@ class CfbFootballSignalModel
                 $fit = $evidence['signals'][$id] ?? [];
                 $supported = $compatible && ($fit['status'] ?? null) === 'validated_residual'
                     && ($evidence['catalog_hash'] ?? null) === $catalogHash;
+                if ($jointWeighting) {
+                    $joint = $evidence['joint_models'][$definition['market']] ?? [];
+                    $fit = ['coefficient' => $joint['coefficients'][$id] ?? null,
+                        'sample_games' => $joint['feature_samples'][$id] ?? 0,
+                        'validation_games' => $joint['validation_games'] ?? 0,
+                        'validation_mae_improvement' => $joint['validation_mae_improvement'] ?? null];
+                    $supported = $compatible && ($evidence['catalog_hash'] ?? null) === $catalogHash
+                        && ($joint['status'] ?? null) === 'validated_joint_residual' && is_numeric($fit['coefficient']);
+                }
+
                 $row = ['id' => $id, 'label' => $definition['label'], 'family' => $definition['family'],
                     'side' => $side, 'market' => $definition['market'], 'matched' => $matched,
                     'input_support' => array_filter(array_combine($definition['inputs'], array_map(fn ($path) => str_starts_with($path, 'team.history.current_season.') ? data_get($features, 'team.history_support.current_season.'.substr($path, strlen('team.history.current_season.'))) : (str_starts_with($path, 'opponent.history.current_season.') ? data_get($features, 'opponent.history_support.current_season.'.substr($path, strlen('opponent.history.current_season.'))) : null), $definition['inputs']))),
                     'status' => $matched === null ? 'missing_inputs' : ($matched ? ($supported ? 'supported' : 'awaiting_evidence') : 'not_triggered'),
                     'sample_games' => $fit['sample_games'] ?? 0, 'validation_games' => $fit['validation_games'] ?? 0,
                     'validation_mae_improvement' => $fit['validation_mae_improvement'] ?? null,
+                    'validation_scope' => $jointWeighting ? 'joint_market_model' : 'individual_rule',
                     'contribution_points' => 0.0];
                 if ($matched && $supported && is_numeric($fit['coefficient'] ?? null) && is_finite((float) $fit['coefficient'])) {
                     $market = $definition['market'];
-                    $sign = $market === 'spread' && $side === 'away' ? -1 : 1;
+                    $sign = $jointWeighting && $market === 'total' ? 0.5 : ($market === 'spread' && $side === 'away' ? -1 : 1);
                     $row['raw_correction'] = $sign * (float) $fit['coefficient'];
                     $families[$market][$definition['family']][] = count($rows);
                 }
@@ -55,11 +67,11 @@ class CfbFootballSignalModel
             if (! array_key_exists($market, $adjustments)) {
                 continue;
             }
-            // Average overlapping conditions within a family, then average families.
+            // Legacy weights average families; joint ridge fits the additive contributions together.
             // More labels cannot manufacture a larger edge.
             foreach ($groups as $indices) {
                 foreach ($indices as $index) {
-                    $rows[$index]['contribution_points'] = $rows[$index]['raw_correction'] / count($indices) / count($groups);
+                    $rows[$index]['contribution_points'] = $rows[$index]['raw_correction'] / ($jointWeighting ? 1 : count($indices) * count($groups));
                     $adjustments[$market] += $rows[$index]['contribution_points'];
                 }
             }
@@ -73,7 +85,7 @@ class CfbFootballSignalModel
             }
         }
 
-        return ['version' => self::VERSION, 'catalog_count' => count($catalog),
+        return [...($jointWeighting ? ['weighting' => 'joint_ridge_v1', 'model_validation' => array_map(fn ($m) => array_diff_key($m, ['coefficients' => true, 'feature_samples' => true]), $evidence['joint_models'] ?? []), 'historical_training_games' => count(data_get($evidence, 'historical_training.source_game_ids', []))] : []), 'version' => self::VERSION, 'catalog_count' => count($catalog),
             'evaluated_team_conditions' => count($rows),
             'triggered' => count(array_filter($rows, fn ($row) => $row['matched'] === true)),
             'missing_inputs' => count(array_filter($rows, fn ($row) => $row['matched'] === null)),

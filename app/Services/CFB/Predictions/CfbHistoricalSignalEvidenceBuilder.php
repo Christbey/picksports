@@ -53,6 +53,30 @@ class CfbHistoricalSignalEvidenceBuilder
             ->whereColumn('market_quotes.captured_at', '<', 'history_events.starts_at');
         $quotes = MarketQuote::query()->fromSub($rankedQuotes, 'market_quotes')->where('quote_rank', 1)
             ->get()->groupBy('game_id');
+
+        return $this->summarizeGames($target, $capturedAt, $cutoffAt, $games, $stats, $quotes);
+    }
+
+    /** Research reconstruction: event-date ordering, not a claim these rows were archived before kickoff. */
+    public function reconstruct(Game $target, CarbonImmutable $capturedAt, CarbonImmutable $cutoffAt,
+        Collection $games, Collection $stats): array
+    {
+        $teamIds = [(int) $target->home_team_id, (int) $target->away_team_id];
+        $eligible = $games->filter(fn ($game) => $game->id !== $target->id
+            && $game->game_date->toDateString() < $target->game_date->toDateString()
+            && $game->season >= $target->season - 3 && $game->season <= $target->season
+            && (in_array((int) $game->home_team_id, $teamIds, true) || in_array((int) $game->away_team_id, $teamIds, true)));
+        $result = $this->summarizeGames($target, $capturedAt, $cutoffAt, $eligible, $stats, collect());
+        $result['policy'] = 'retrospective_prior_game_dates_only';
+        $result['historical_availability_proven'] = false;
+
+        return $result;
+    }
+
+    private function summarizeGames(Game $target, CarbonImmutable $capturedAt, CarbonImmutable $cutoffAt,
+        Collection $games, Collection $stats, Collection $quotes): array
+    {
+        $teamIds = [(int) $target->home_team_id, (int) $target->away_team_id];
         $result = ['schema_version' => self::SCHEMA, 'captured_at' => $capturedAt->toIso8601String(),
             'cutoff_at' => $cutoffAt->toIso8601String(), 'policy' => 'observed_prior_dates_only_last_stored_pregame_quotes',
             'historical_scope' => ['seasons' => [$target->season - 3, (int) $target->season], 'opponents' => 'all_stored_opponents', 'season_types' => 'regular_and_postseason'],

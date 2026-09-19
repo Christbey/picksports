@@ -89,3 +89,20 @@ it('grades ATS and totals from the last stored pregame lines without counting pu
     expect($metrics['ats_push_rate']['value'])->toBe(1.0)->and($metrics['ats_cover_rate']['value'])->toBeNull()
         ->and($metrics['over_rate']['value'])->toBe(1.0)->and($metrics['under_rate']['value'])->toBe(0.0);
 });
+
+it('reconstructs only prior game dates and labels later-ingested historical data honestly', function () {
+    $home = Team::factory()->create();
+    $away = Team::factory()->create();
+    $prior = observedCfbHistoryGame($home, $away, '2026-09-01', 30, 20);
+    $target = observedCfbHistoryGame($home, $away, '2026-09-08', 99, 1);
+    $sameDay = observedCfbHistoryGame($home, $away, '2026-09-08', 98, 2);
+    $future = observedCfbHistoryGame($home, $away, '2026-09-15', 97, 3);
+    $games = collect([$future, $sameDay, $target, $prior]);
+    // UTC rollover must not admit other games from the target's local calendar date.
+    $result = app(CfbHistoricalSignalEvidenceBuilder::class)->reconstruct($target, CarbonImmutable::parse('2026-09-20'),
+        CarbonImmutable::parse('2026-09-09 02:00:00Z'), $games, collect());
+    expect($result['home']['windows']['current_season']['game_ids'])->toBe([$prior->id])
+        ->and($result['home']['windows']['current_season']['metrics']['points_per_game']['value'])->toBe(30.0)
+        ->and($result['historical_availability_proven'])->toBeFalse()
+        ->and($result['policy'])->toBe('retrospective_prior_game_dates_only');
+});

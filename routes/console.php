@@ -1251,6 +1251,9 @@ $scheduleDailySeasonJob("cfb:compare-frozen-baselines --season={$fallSeasonYear}
     ->appendOutputTo(storage_path('logs/cfb-frozen-baselines.log'));
 $scheduleDailySeasonJob("cfb:report-signal-contributions --season={$fallSeasonYear}", '03:25', $cfbCanonicalPipelineEnabled, 'CFB: Grade Frozen Signal Contributions')
     ->appendOutputTo(storage_path('logs/cfb-signal-contributions.log'));
+$scheduleDailySeasonJob('cfb:train-football-signals', '03:15', $cfbCanonicalPipelineEnabled, 'CFB: Train Historical Football Signals')
+    ->appendOutputTo(storage_path('logs/cfb-football-signal-training.log'));
+
 $scheduleDailySeasonJob("cfb:report-football-signals --season={$fallSeasonYear}", '03:30', $cfbCanonicalPipelineEnabled, 'CFB: Audit Football Signal Rules')
     ->appendOutputTo(storage_path('logs/cfb-football-signals.log'));
 $cfbSpreadCandidateCommand = 'cfb:train-spread-calibration --release-version='.

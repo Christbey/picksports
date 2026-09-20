@@ -9,6 +9,42 @@ import {
     kickoffLabel,
     nflBoardPresentation,
 } from '../../resources/js/lib/nflBoardPresentation.ts';
+import { researchReason } from '../../resources/js/lib/researchDecision.ts';
+
+test('research labels separate expiry changes and blocked refresh without hiding simultaneous reasons', () => {
+    for (const [status, label] of Object.entries({
+        evidence_expired: 'Evidence expired',
+        prediction_changed: 'Prediction changed',
+        refresh_blocked: 'Refresh blocked',
+        reassessment_due: 'Reassessment needed',
+    })) {
+        const v = nflBoardPresentation({
+            nfl_board: {
+                research: {
+                    status,
+                    reasons: [
+                        'research_evidence_expired',
+                        'research_game_attempt_limit_reached',
+                    ],
+                },
+            },
+        });
+        assert.equal(v.researchLabel, label);
+        assert.equal(v.researchReasons.length, 2);
+    }
+    assert.match(
+        researchReason('research_game_attempt_limit_reached'),
+        /attempt limit/,
+    );
+    assert.match(
+        researchReason('research_game_daily_budget_reached'),
+        /per-game spending/,
+    );
+    assert.match(
+        researchReason('research_prediction_comparison_missing'),
+        /material change is not confirmed/,
+    );
+});
 
 const prediction = (p, margin, homeLine, extra = {}) => ({
     id: 1,

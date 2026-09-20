@@ -7,6 +7,7 @@ use App\Models\NFL\Team;
 use App\Models\SportsGameContextReport;
 use App\Models\User;
 use App\Services\NFL\NflPredictionBoardContext;
+use App\Services\NFL\Research\ResearchPipeline;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -40,13 +41,41 @@ it('does not call held, expired or superseded research ready', function () {
     [$prediction, $report, $revision] = boardFixture();
     $service = app(NflPredictionBoardContext::class);
     $revision->update(['brief' => ['eligibility' => ['status' => 'hold', 'data_complete' => false, 'data_reasons' => ['research_candidate_changed']]]]);
-    expect($service->forPredictions(collect([$prediction]))->get($prediction->id)['research']['status'])->toBe('hold');
+    expect($service->forPredictions(collect([$prediction]))->get($prediction->id)['research']['status'])->toBe('prediction_changed');
     $report->update(['expires_at' => now()->subMinute()]);
-    expect($service->forPredictions(collect([$prediction]))->get($prediction->id)['research']['status'])->toBe('stale');
+    expect($service->forPredictions(collect([$prediction]))->get($prediction->id)['research']['status'])->toBe('evidence_expired');
     $report->update(['expires_at' => now()->addHour()]);
     $prediction->updated_at = now();
     $v = $service->forPredictions(collect([$prediction]))->get($prediction->id);
-    expect($v['research']['status'])->toBe('stale')->and($v['forecast'])->toBeNull();
+    expect($v['research']['status'])->toBe('prediction_changed')->and($v['forecast'])->toBeNull();
+});
+
+it('ignores timestamp only saves but detects changed model outputs and distinguishes missing snapshots', function () {
+    [$prediction, , $revision] = boardFixture();
+    $service = app(NflPredictionBoardContext::class);
+    $prediction->updated_at = now();
+    expect($service->forPredictions(collect([$prediction]))->get($prediction->id)['research']['status'])->toBe('reassessment_due');
+    $revision->update(['brief' => [...$revision->brief, 'stored_prediction_hash' => app(ResearchPipeline::class)->storedPredictionHash($prediction->toArray())]]);
+    expect($service->forPredictions(collect([$prediction]))->get($prediction->id)['research']['status'])->toBe('reviewed');
+    $prediction->predicted_spread = 4.0;
+    $result = $service->forPredictions(collect([$prediction]))->get($prediction->id);
+    expect($result['research']['status'])->toBe('prediction_changed')
+        ->and($result['research']['prediction_changed'])->toBeTrue()
+        ->and($result['forecast'])->toBeNull();
+});
+
+it('shows blocked refresh and expired evidence independently including the tightened pregame window', function () {
+    [$prediction, $report, $revision] = boardFixture();
+    $kickoff = now()->utc()->addHours(4);
+    $prediction->game->game_date = $kickoff->toDateString();
+    $prediction->game->game_time = $kickoff->format('H:i:s');
+    $report->update(['researched_at' => now()->subHours(2), 'expires_at' => now()->addHour()]);
+    $revision->update(['brief' => [...$revision->brief, 'research_refresh' => ['deferred_reason' => 'research_game_attempt_limit_reached']]]);
+    $result = app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->id);
+    expect($result['research']['status'])->toBe('refresh_blocked')
+        ->and($result['research']['evidence_expired'])->toBeTrue()
+        ->and($result['research']['reasons'])->toContain('research_evidence_expired', 'research_game_attempt_limit_reached')
+        ->and($result['forecast'])->toBeNull();
 });
 
 it('does not reuse current odds to describe a final pregame prediction', function () {

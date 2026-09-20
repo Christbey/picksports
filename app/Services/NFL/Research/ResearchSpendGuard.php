@@ -4,6 +4,7 @@ namespace App\Services\NFL\Research;
 
 use App\Models\AiGeneration;
 use App\Models\NFL\Game;
+use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
@@ -32,9 +33,19 @@ class ResearchSpendGuard
                 if ($rows->sum($cost) + $reservation > (float) config('nfl_research.cost_control.daily_budget_usd', 5)) {
                     throw new ResearchDeferred('research_daily_budget_reached');
                 }
-                if ($gameRows->sum($cost) + $reservation > (float) config('nfl_research.cost_control.game_daily_budget_usd', 0.75)
-                    || $gameRows->count() >= (int) config('nfl_research.cost_control.game_daily_attempts', 8)) {
+                if ($gameRows->sum($cost) + $reservation > (float) config('nfl_research.cost_control.game_daily_budget_usd', 0.75)) {
                     throw new ResearchDeferred('research_game_daily_budget_reached');
+                }
+                $limit = max(1, (int) config('nfl_research.cost_control.game_daily_attempts', 8));
+                $kickoff = app(SportsDateWindowService::class)->gameDateTimeUtc($game->game_date, $game->game_time);
+                $pregameReserve = $kickoff && $kickoff->isFuture()
+                    && $kickoff->lte(now()->addHours(max(0, (int) config('nfl_research.cost_control.pregame_reserve_hours', 12))))
+                    && in_array($game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true);
+                if ($pregameReserve) {
+                    $limit += max(0, (int) config('nfl_research.cost_control.pregame_reserved_attempts', 4));
+                }
+                if ($gameRows->count() >= $limit) {
+                    throw new ResearchDeferred('research_game_attempt_limit_reached');
                 }
                 if ($latest) {
                     $sameEvidence = data_get($latest->metadata, 'research_fingerprint') === $fingerprint;
@@ -50,7 +61,8 @@ class ResearchSpendGuard
                     }
                 }
 
-                return $start(['reserved_cost_usd' => $reservation, 'research_fingerprint' => $fingerprint]);
+                return $start(['reserved_cost_usd' => $reservation, 'research_fingerprint' => $fingerprint,
+                    'attempt_limit' => $limit, 'pregame_reserve_available' => (bool) $pregameReserve]);
             });
         } catch (LockTimeoutException) {
             throw new ResearchDeferred('research_budget_lock_busy');

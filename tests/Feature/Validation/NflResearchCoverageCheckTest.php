@@ -87,6 +87,16 @@ it('fails stale reports and expired revision evidence even when the latest repor
         ->and($result['metadata']['unlinked_revision_game_ids'])->toBe([$game->id]);
 });
 
+it('applies the tighter pregame age even before a stored six hour expiry', function () {
+    $game = researchCoverageGame(4);
+    $report = researchCoverageReport($game, ['researched_at' => now()->subHours(2), 'expires_at' => now()->addHour()]);
+    researchCoverageRevision($game, $report);
+    $result = researchCoverageResult();
+    expect($result['metadata']['stale_game_ids'])->toBe([$game->id])
+        ->and($result['metadata']['covered_games'])->toBe(0)
+        ->and($result['status'])->toBe('failing');
+});
+
 it('fails ready reports missing a cited source or a revision', function () {
     $game = researchCoverageGame();
     $report = researchCoverageReport($game);

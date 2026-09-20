@@ -148,9 +148,41 @@ it('keeps unpriced failures reserved and counts them toward the attempt limit', 
     $attempt = reserveCostAttempt($game);
     $attempt->update(['status' => 'failed']);
     $this->travel(7)->hours();
-    expect(fn () => reserveCostAttempt($game))->toThrow(ResearchDeferred::class, 'research_game_daily_budget_reached');
+    expect(fn () => reserveCostAttempt($game))->toThrow(ResearchDeferred::class, 'research_game_attempt_limit_reached');
     $this->travel(18)->hours();
     expect(reserveCostAttempt($game)->id)->not->toBe($attempt->id);
+});
+
+it('reserves four pregame attempts without bypassing money limits retry spacing or kickoff', function () {
+    $game = costControlGame();
+    for ($i = 0; $i < 8; $i++) {
+        reserveCostAttempt($game, 'early-'.$i)->update(['cost_usd' => 0.01, 'status' => 'completed']);
+        $this->travel(16)->minutes();
+    }
+    expect(fn () => reserveCostAttempt($game, 'changed'))->toThrow(ResearchDeferred::class, 'research_game_attempt_limit_reached');
+    $game->game_date = now()->utc()->toDateString();
+    $game->game_time = now()->utc()->addHours(4)->format('H:i:s');
+    config(['nfl_research.cost_control.game_daily_budget_usd' => 0.20]);
+    expect(fn () => reserveCostAttempt($game, 'changed'))->toThrow(ResearchDeferred::class, 'research_game_daily_budget_reached');
+    config(['nfl_research.cost_control.game_daily_budget_usd' => 0.75]);
+    config(['nfl_research.cost_control.daily_budget_usd' => 0.20]);
+    expect(fn () => reserveCostAttempt($game, 'changed'))->toThrow(ResearchDeferred::class, 'research_daily_budget_reached');
+    config(['nfl_research.cost_control.daily_budget_usd' => 50]);
+    $game->status = 'STATUS_IN_PROGRESS';
+    expect(fn () => reserveCostAttempt($game, 'changed'))->toThrow(ResearchDeferred::class, 'research_game_attempt_limit_reached');
+    $game->status = 'STATUS_SCHEDULED';
+    for ($i = 0; $i < 4; $i++) {
+        $attempt = reserveCostAttempt($game, 'pregame-'.$i);
+        expect(data_get($attempt->metadata, 'attempt_limit'))->toBe(12)
+            ->and(data_get($attempt->metadata, 'pregame_reserve_available'))->toBeTrue();
+        $attempt->update(['cost_usd' => 0.01, 'status' => 'completed']);
+        if ($i === 0) {
+            expect(fn () => reserveCostAttempt($game, 'pregame-0'))->toThrow(ResearchDeferred::class, 'research_retry_not_due');
+        }
+        $this->travel(16)->minutes();
+    }
+    expect(fn () => reserveCostAttempt($game, 'extra'))->toThrow(ResearchDeferred::class, 'research_game_attempt_limit_reached');
+    expect(AiGeneration::where('context_id', (string) $game->id)->count())->toBe(12);
 });
 
 it('does not let force bypass the spend budget', function () {

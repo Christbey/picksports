@@ -97,6 +97,7 @@ class ResearchPipeline
             }
             $previous = ResearchRevision::where('game_id', $game->id)->latest('id')->first();
             $brief = [
+                'stored_prediction_hash' => $game->prediction ? $this->storedPredictionHash($game->prediction->toArray()) : null,
                 'game' => $game->short_name ?: $game->name,
                 'kickoff_at' => $kickoff->toIso8601String(),
                 'eligibility' => $eligibility,
@@ -172,6 +173,15 @@ class ResearchPipeline
         ], JSON_UNESCAPED_SLASHES));
     }
 
+    /** Presentation freshness compares semantic model inputs/outputs, never save timestamps alone. */
+    public function storedPredictionHash(array $prediction): string
+    {
+        return hash('sha256', json_encode([
+            'candidate' => $this->candidateContextHash($prediction),
+            'versions' => Arr::only($prediction, ['model_version', 'feature_version', 'blend_version']),
+        ], JSON_THROW_ON_ERROR));
+    }
+
     /**
      * @param  array<string, mixed>  $preview
      * @param  array<string, mixed>  $evidence
@@ -234,6 +244,7 @@ class ResearchPipeline
         return hash('sha256', json_encode([
             'version' => 3,
             'candidate' => $this->candidateContextHash([...$preview['outputs'], 'model_metadata' => $preview['model_metadata']]),
+            'stored_prediction_hash' => $brief['stored_prediction_hash'] ?? null,
             'model_version' => $preview['model_version'],
             'documents' => $documents,
             'availability' => $availability,

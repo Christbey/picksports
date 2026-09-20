@@ -3,7 +3,9 @@
 namespace App\Actions\Validation\Checks;
 
 use App\Actions\Validation\Contracts\ValidationCheck;
+use App\Models\NFL\Game;
 use App\Services\NFL\Predictions\NflPregameHorizon;
+use App\Services\NFL\Research\ResearchRefreshPolicy;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -54,6 +56,7 @@ class NflResearchCoverageCheck implements ValidationCheck
         $covered = 0;
         foreach ($games as $game) {
             $id = (int) $game->id;
+            $freshAfter = $now->subMinutes(app(ResearchRefreshPolicy::class)->freshnessMinutes(new Game((array) $game)));
             $report = $latestReports->get($id);
             $revision = $revisions->get($id);
             $hardGap = false;
@@ -63,6 +66,7 @@ class NflResearchCoverageCheck implements ValidationCheck
             } else {
                 if (! $report->researched_at || ! $report->expires_at
                     || $now->parse($report->researched_at)->gt($now)
+                    || $now->parse($report->researched_at)->lte($freshAfter)
                     || $now->parse($report->expires_at)->lte($now)) {
                     $stale[] = $id;
                     $hardGap = true;
@@ -81,6 +85,7 @@ class NflResearchCoverageCheck implements ValidationCheck
                 if (! $linked || (int) $linked->game_id !== $id
                     || ! $linked->researched_at || ! $linked->expires_at
                     || $now->parse($linked->researched_at)->gt($now)
+                    || $now->parse($linked->researched_at)->lte($freshAfter)
                     || $now->parse($linked->expires_at)->lte($now)
                     || ($linked->status === 'ready' && ! $this->hasCitations($linked))) {
                     $unlinked[] = $id;

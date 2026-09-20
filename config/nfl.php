@@ -42,6 +42,7 @@ return [
             'postseason' => 5,
         ],
         'analytics_types' => [2, 3],
+        'default_team_metrics_type' => 2,
     ],
 
     /*

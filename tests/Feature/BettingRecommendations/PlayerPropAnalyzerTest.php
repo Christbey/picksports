@@ -994,6 +994,7 @@ test('uses ai structured agent for player prop narratives when openai provider i
 });
 
 test('analyzes nfl passing yard props with football usage context', function () {
+    $this->travelTo('2026-09-12 12:00:00');
     $homeTeam = NflTeam::factory()->create();
     $awayTeam = NflTeam::factory()->create();
 
@@ -1056,13 +1057,14 @@ test('analyzes nfl passing yard props with football usage context', function () 
         ->and($recommendations->first()['recommendation'])->toBe('Over')
         ->and($recommendations->first()['market'])->toBe('Passing Yards')
         ->and($prop->recommended_side)->toBe('Over')
-        ->and(data_get($prop->confidence_decomposition, 'schema_version'))->toBe('player-prop-signal-v2')
+        ->and(data_get($prop->confidence_decomposition, 'schema_version'))->toBe(PlayerPropAnalyzer::NFL_MODEL_VERSION)
         ->and(data_get($prop->confidence_decomposition, 'stat_summary.season_avg'))->toEqual(315.0)
         ->and(data_get($recommendations->first(), 'context.usage_context'))->toBe('passing_volume_trend')
         ->and(data_get($recommendations->first(), 'context.usage_factor'))->toBeGreaterThan(1.0);
 });
 
 test('ignores nfl props without a numeric line instead of aborting analysis', function () {
+    $this->travelTo('2026-09-12 12:00:00');
     $homeTeam = NflTeam::factory()->create();
     $awayTeam = NflTeam::factory()->create();
     $game = NflGame::factory()->create([
@@ -1098,6 +1100,7 @@ test('ignores nfl props without a numeric line instead of aborting analysis', fu
 });
 
 test('analyzes a one-sided nfl anytime touchdown price as over 0.5', function () {
+    $this->travelTo('2026-09-12 12:00:00');
     $homeTeam = NflTeam::factory()->create();
     $awayTeam = NflTeam::factory()->create();
     $game = NflGame::factory()->create([

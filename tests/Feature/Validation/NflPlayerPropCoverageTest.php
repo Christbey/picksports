@@ -31,6 +31,7 @@ function nflCoverageProp(Game $game, ?string $status = null, ?string $reason = n
     if ($status !== null) {
         $prop->update(['confidence_decomposition' => ['analysis_disposition' => [
             'status' => $status, 'reason' => $reason, 'evaluated_at' => now()->toIso8601String(),
+            'model_version' => PlayerPropAnalyzer::NFL_MODEL_VERSION,
             'quote_fingerprint' => app(NflPlayerPropCoverage::class)->quoteFingerprint($prop),
         ]]]);
     }

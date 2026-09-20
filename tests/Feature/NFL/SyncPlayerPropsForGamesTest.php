@@ -12,6 +12,8 @@ use Mockery as m;
 
 uses()->group('nfl', 'odds');
 
+beforeEach(fn () => $this->travelTo('2026-09-12 12:00:00'));
+
 afterEach(function () {
     m::close();
 });

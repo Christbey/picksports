@@ -76,6 +76,14 @@ export type Recommendation = {
     match_quality_score?: number | null;
     confidence_decomposition?: {
         schema_version?: string;
+        probability_method?: string;
+        probability_basis?: string;
+        push_probability?: number;
+        history?: {
+            basis: string;
+            current_season_games: number;
+            model_season: number;
+        };
         model_edge_score: number;
         data_quality_score: number;
         match_quality_score: number;

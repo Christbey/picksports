@@ -35,3 +35,25 @@ export const ratingClass = (
     if (value < 0) return 'text-red-600 dark:text-red-400';
     return '';
 };
+
+// `bestFirst` is direction relative to the metric, not numeric descending.
+export function compareMetricValues(
+    a: unknown,
+    b: unknown,
+    lowerIsBetter = false,
+    bestFirst = true,
+): number {
+    const number = (value: unknown) =>
+        value === null ||
+        value === undefined ||
+        value === '' ||
+        !Number.isFinite(Number(value))
+            ? null
+            : Number(value);
+    const left = number(a);
+    const right = number(b);
+    if (left === null && right === null) return 0;
+    if (left === null) return 1;
+    if (right === null) return -1;
+    return (left - right) * (lowerIsBetter ? 1 : -1) * (bestFirst ? 1 : -1);
+}

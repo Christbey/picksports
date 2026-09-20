@@ -217,7 +217,7 @@ const result = computed(() => {
                             </dd>
                         </div>
                         <div class="flex justify-between gap-3">
-                            <dt>Historical model baseline</dt>
+                            <dt>Historical average</dt>
                             <dd>
                                 {{ formatPropStat(rec.stats.historical_avg) }}
                             </dd>
@@ -304,6 +304,26 @@ const result = computed(() => {
                 </p>
                 <section class="space-y-2 border-t pt-3">
                     <h3 class="font-semibold">Model details</h3>
+                    <p
+                        v-if="rec.confidence_decomposition?.probability_method"
+                        class="text-muted-foreground"
+                    >
+                        Model estimate, not calibrated. Probabilities exclude
+                        pushes.
+                        <template v-if="rec.confidence_decomposition.history">
+                            Uses
+                            {{
+                                rec.confidence_decomposition.history
+                                    .model_season
+                            }}
+                            current-team stats;
+                            {{
+                                rec.confidence_decomposition.history
+                                    .current_season_games
+                            }}
+                            current-season games.
+                        </template>
+                    </p>
                     <dl class="space-y-2">
                         <div class="flex justify-between gap-3">
                             <dt>Signal score (not win %)</dt>

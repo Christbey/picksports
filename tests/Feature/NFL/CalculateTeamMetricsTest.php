@@ -17,7 +17,7 @@ beforeEach(function () {
 
 it('calculates basic team metrics for a season', function () {
     // Create 2 completed games for the team
-    $game1 = Game::factory()->create([
+    $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -26,7 +26,7 @@ it('calculates basic team metrics for a season', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,
@@ -100,7 +100,7 @@ it('calculates basic team metrics for a season', function () {
 });
 
 it('calculates yards metrics correctly', function () {
-    $game = Game::factory()->create([
+    $game = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -148,7 +148,7 @@ it('calculates yards metrics correctly', function () {
 });
 
 it('calculates turnover differential correctly', function () {
-    $game1 = Game::factory()->create([
+    $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -157,7 +157,7 @@ it('calculates turnover differential correctly', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,
@@ -210,7 +210,7 @@ it('calculates turnover differential correctly', function () {
 });
 
 it('calculates negative turnover differential when team commits more turnovers', function () {
-    $game = Game::factory()->create([
+    $game = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -251,7 +251,7 @@ it('calculates strength of schedule from opponent elos', function () {
     $opponent2 = Team::factory()->create(['elo_rating' => 1400]);
     $opponent3 = Team::factory()->create(['elo_rating' => 1500]);
 
-    $game1 = Game::factory()->create([
+    $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $opponent1->id,
@@ -260,7 +260,7 @@ it('calculates strength of schedule from opponent elos', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $opponent2->id,
@@ -269,7 +269,7 @@ it('calculates strength of schedule from opponent elos', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game3 = Game::factory()->create([
+    $game3 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $opponent3->id,
@@ -325,7 +325,7 @@ it('returns null when no completed games exist', function () {
 });
 
 it('returns null when games exist but no team stats', function () {
-    Game::factory()->create([
+    Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -341,7 +341,7 @@ it('returns null when games exist but no team stats', function () {
 });
 
 it('returns null when completed game stats are missing one side', function () {
-    $game = Game::factory()->create([
+    $game = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -365,7 +365,7 @@ it('returns null when completed game stats are missing one side', function () {
 
 it('ignores non-final games', function () {
     // Create scheduled game (shouldn't be counted)
-    $scheduledGame = Game::factory()->create([
+    $scheduledGame = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -381,7 +381,7 @@ it('ignores non-final games', function () {
     ]);
 
     // Create in-progress game (shouldn't be counted)
-    $liveGame = Game::factory()->create([
+    $liveGame = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent2->id,
@@ -405,7 +405,7 @@ it('ignores non-final games', function () {
 
 it('updates existing metric instead of creating duplicate', function () {
     // Create initial game
-    $game = Game::factory()->create([
+    $game = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -441,7 +441,7 @@ it('updates existing metric instead of creating duplicate', function () {
 
 it('calculates metrics for multiple seasons separately', function () {
     // Game in 2024
-    $game2024 = Game::factory()->create([
+    $game2024 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2024,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -463,7 +463,7 @@ it('calculates metrics for multiple seasons separately', function () {
     ]);
 
     // Game in 2025
-    $game2025 = Game::factory()->create([
+    $game2025 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent2->id,
@@ -502,7 +502,7 @@ it('calculates metrics for multiple seasons separately', function () {
 });
 
 it('handles teams with only home games', function () {
-    $game1 = Game::factory()->create([
+    $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -511,7 +511,7 @@ it('handles teams with only home games', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent2->id,
@@ -550,7 +550,7 @@ it('handles teams with only home games', function () {
 });
 
 it('handles teams with only away games', function () {
-    $game1 = Game::factory()->create([
+    $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->opponent1->id,
         'away_team_id' => $this->team->id,
@@ -559,7 +559,7 @@ it('handles teams with only away games', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,
@@ -598,7 +598,7 @@ it('handles teams with only away games', function () {
 });
 
 it('handles zero turnovers correctly', function () {
-    $game = Game::factory()->create([
+    $game = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -657,7 +657,7 @@ it('calculates nfl power-rating style metrics', function () {
         'division' => 'North',
     ]);
 
-    $homeGame = Game::factory()->create([
+    $homeGame = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'game_date' => now()->subDays(8),
         'home_team_id' => $this->team->id,
@@ -679,7 +679,7 @@ it('calculates nfl power-rating style metrics', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $awayGame = Game::factory()->create([
+    $awayGame = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'game_date' => now()->subDays(2),
         'home_team_id' => $lowOpponent->id,
@@ -701,7 +701,7 @@ it('calculates nfl power-rating style metrics', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    Game::factory()->create([
+    Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'game_date' => now()->addDays(4),
         'home_team_id' => $this->team->id,
@@ -745,7 +745,7 @@ it('calculates nfl power-rating style metrics', function () {
 });
 
 it('keeps first and second half ratings null when linescores are unavailable', function () {
-    $game = Game::factory()->create([
+    $game = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -796,7 +796,7 @@ it('infers nfl division matchups from abbreviation when conference and division 
         'elo_rating' => 1600,
     ]);
 
-    $divGame = Game::factory()->create([
+    $divGame = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $divOpponent->id,
@@ -805,7 +805,7 @@ it('infers nfl division matchups from abbreviation when conference and division 
         'status' => 'STATUS_FINAL',
     ]);
 
-    $nonDivGame = Game::factory()->create([
+    $nonDivGame = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $nonDivOpponent->id,
         'away_team_id' => $this->team->id,
@@ -837,7 +837,7 @@ it('infers nfl division matchups from abbreviation when conference and division 
 });
 
 it('calculates true epa per play team metrics from nfl plays', function () {
-    $game1 = Game::factory()->create([
+    $game1 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->team->id,
         'away_team_id' => $this->opponent1->id,
@@ -846,7 +846,7 @@ it('calculates true epa per play team metrics from nfl plays', function () {
         'status' => 'STATUS_FINAL',
     ]);
 
-    $game2 = Game::factory()->create([
+    $game2 = Game::factory()->state(['season_type' => 2])->create([
         'season' => 2025,
         'home_team_id' => $this->opponent2->id,
         'away_team_id' => $this->team->id,

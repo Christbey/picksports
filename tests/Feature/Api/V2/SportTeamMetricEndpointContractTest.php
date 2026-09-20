@@ -71,6 +71,7 @@ it('lists v2 team metrics with stable metadata and flat metric fields', function
         'season_type' => '2',
         'wins' => 12,
         'losses' => 4,
+        'ties' => 0,
         'net_rating' => 8.5,
         'offensive_rating' => 115.2,
         'offensive_efficiency' => 114.1,
@@ -115,7 +116,7 @@ it('lists v2 team metrics with stable metadata and flat metric fields', function
         ->assertJsonPath('data.0.wins', 12)
         ->assertJsonPath('data.0.losses', 4)
         ->assertJsonPath('data.0.games_played', 16)
-        ->assertJsonPath('data.0.record_label', '12-4')
+        ->assertJsonPath('data.0.record_label', $slug === 'nfl' ? '12-4-0' : '12-4')
         ->assertJsonPath('data.0.record.source', 'metric');
 
     expect($response->json('data.0.team'))->toBeArray()

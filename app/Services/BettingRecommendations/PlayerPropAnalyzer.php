@@ -7,6 +7,7 @@ use App\Models\CFB\Player;
 use App\Models\CFB\PlayerProp;
 use App\Models\CFB\PlayerStat;
 use App\Models\CFB\Team;
+use App\Models\NFL\TeamStat;
 use App\Services\CFB\CfbPlayerEvidenceService;
 use App\Services\NFL\NflPlayerPropCoverage;
 use App\Services\OddsApi\OddsApiService;
@@ -21,6 +22,21 @@ use Illuminate\Support\Facades\DB;
 class PlayerPropAnalyzer
 {
     protected const SIGNAL_MODEL_VERSION = 'player-prop-signal-v2';
+
+    public const NFL_MODEL_VERSION = 'nfl-player-prop-v3';
+
+    protected ?int $nflModelSeason = null;
+
+    protected ?int $nflPlayerTeamId = null;
+
+    protected array $nflHistoryEvidence = [];
+
+    public static function nflPregame(Model $game): bool
+    {
+        $kickoff = app(NflPropGameTime::class)->forGame($game)['starts_at'];
+
+        return $game->status === 'STATUS_SCHEDULED' && $kickoff !== null && Carbon::parse($kickoff)->isFuture();
+    }
 
     public function __construct(
         protected ?OddsApiService $oddsApiService = null,
@@ -272,7 +288,7 @@ class PlayerPropAnalyzer
 
     private function nflDisposition(Model $prop, string $status, ?string $reason = null): array
     {
-        return ['status' => $status, 'reason' => $reason, 'evaluated_at' => now()->toIso8601String(),
+        return ['status' => $status, 'reason' => $reason, 'model_version' => self::NFL_MODEL_VERSION, 'evaluated_at' => now()->toIso8601String(),
             'quote_fingerprint' => app(NflPlayerPropCoverage::class)->quoteFingerprint($prop)];
     }
 
@@ -280,11 +296,15 @@ class PlayerPropAnalyzer
 
     public function previewNflGame(\App\Models\NFL\Game $game): array
     {
+        if (! self::nflPregame($game)) {
+            return [];
+        }
         $this->persistSnapshots = false;
         try {
             $rows = [];
             $config = $this->getSportConfig('NFL');
-            $props = \App\Models\NFL\PlayerProp::where('game_id', $game->id)->whereNull('graded_at')->where('fetched_at', '>=', now()->subMinutes(30))->get();
+            $props = \App\Models\NFL\PlayerProp::where('game_id', $game->id)->whereNull('graded_at')
+                ->where('fetched_at', '>=', now()->subHours((int) config('validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.nfl', 24)))->get();
             foreach ($props as $prop) {
                 $prop->setRelation('game', $game);
                 $r = $this->analyzeProp($prop, 3, $config, 'NFL', false);
@@ -294,7 +314,8 @@ class PlayerPropAnalyzer
                     'over_price' => $prop->over_price, 'under_price' => $prop->under_price, 'fetched_at' => $prop->fetched_at?->toIso8601String(),
                     'baseline' => $prop->only(['recommended_side', 'predicted_over_probability', 'confidence_score']),
                     'revised' => $r ? Arr::only($r, ['recommendation', 'odds', 'confidence', 'season_avg', 'recent_avg', 'model_over_probability', 'context', 'reasoning']) : null,
-                    'status' => $r ? 'research_candidate' : 'hold',
+                    'status' => $r ? ($r['confidence'] >= 60 ? 'model_candidate' : 'low_confidence') : 'hold',
+                    'hold_reason' => $this->nflAnalysisHold,
                 ];
             }
 
@@ -336,10 +357,18 @@ class PlayerPropAnalyzer
         $recommendations = collect();
 
         foreach ($props as $prop) {
+            // Preserve the exact pregame forecast, including settled and in-play rows.
+            if ($sport === 'NFL' && ($prop->graded_at || ! self::nflPregame($prop->game))) {
+                continue;
+            }
             if ($prop instanceof PlayerProp && $prop->graded_at) {
                 continue;
             }
             $recommendation = $this->analyzeProp($prop, $minGames, $sportConfig, $sport, $attachNarratives);
+
+            if ($sport === 'NFL' && ($prop->fresh()?->graded_at || ! self::nflPregame($prop->game->fresh()))) {
+                continue;
+            }
 
             if ($recommendation && $recommendation['confidence'] >= 60) {
                 $recommendations->push($recommendation);
@@ -462,6 +491,9 @@ class PlayerPropAnalyzer
         $this->nflAnalysisHold = null;
         $this->cfbAnalysisProp = $prop instanceof PlayerProp ? $prop : null;
         $this->nflAnalysisProp = $sport === 'NFL' ? $prop : null;
+        $this->nflModelSeason = null;
+        $this->nflPlayerTeamId = null;
+        $this->nflHistoryEvidence = [];
         if ($this->cfbAnalysisProp && ! CfbPropEligibility::eligible($this->cfbAnalysisProp)) {
             return null;
         }
@@ -495,6 +527,20 @@ class PlayerPropAnalyzer
         $opponentId = $game->home_team_id === $player->team_id ? $game->away_team_id : $game->home_team_id;
         $isHome = $game->home_team_id === $player->team_id;
 
+        if ($sport === 'NFL') {
+            $this->nflPlayerTeamId = (int) $player->team_id;
+            $history = $this->finalizedPlayerStatsQuery($player->id, $sportConfig['player_stat_model'])->with('game')->get();
+            $current = $history->filter(fn ($row) => (int) $row->game->season === (int) $game->season);
+            $this->nflModelSeason = $current->isNotEmpty() ? (int) $game->season : (int) $game->season - 1;
+            $this->nflHistoryEvidence = [
+                'basis' => $current->isNotEmpty() ? 'current_season_current_team' : 'previous_season_current_team_fallback',
+                'model_season' => $this->nflModelSeason,
+                'current_season_games' => $current->count(),
+                'eligible_history_games' => $history->count(),
+                'historical_average' => $this->averageStatValue($history, $statField),
+            ];
+        }
+
         // Calculate player averages
         $seasonAvg = $this->calculateSeasonAverage($player->id, $statField, $minGames, $sportConfig['player_stat_model']);
         $recentAvg = $this->calculateRecentAverage($player->id, $statField, 10, $sportConfig['player_stat_model']);
@@ -521,8 +567,12 @@ class PlayerPropAnalyzer
         if ($context['availability']['unavailable'] ?? false) {
             return $this->holdNflAnalysis('player_unavailable');
         }
+        if ($sport === 'NFL' && ($context['availability']['reason'] ?? '') === 'player_availability_uncertain') {
+            return $this->holdNflAnalysis('player_availability_uncertain');
+        }
+        $modelSample = $sport === 'NFL' ? $this->nflHistoryEvidence['current_season_games'] : ($timesCoveredSeason['games'] ?? 0);
         $dataQualityScore = $this->calculateDataQualityScore(
-            seasonSample: $timesCoveredSeason['games'] ?? 0,
+            seasonSample: $modelSample,
             recentSample: $timesCoveredLast5['games'] ?? 0,
             hasVsOpponent: $vsOpponentAvg !== null,
             hasHomeAway: $homeAwayAvg !== null,
@@ -550,7 +600,7 @@ class PlayerPropAnalyzer
             $matchQualityScore,
             $vsOpponentProfile['games'],
             $homeAwayProfile['games'],
-            (int) ($timesCoveredSeason['games'] ?? 0)
+            (int) $modelSample
         );
 
         if (! $analysis['recommendation']) {
@@ -568,17 +618,26 @@ class PlayerPropAnalyzer
             playerStatModel: $sportConfig['player_stat_model'],
             sport: $sport
         );
-        $analysis = $this->applyCoverRecordSignalAdjustment($analysis, $coverRecord);
+        // Historical hit rates are evidence, not independent confirmations of the same fitted mean.
+        if ($sport !== 'NFL') {
+            $analysis = $this->applyCoverRecordSignalAdjustment($analysis, $coverRecord);
+        }
         $analysis['confidence_decomposition']['cover_record'] = $coverRecord;
         $analysis['confidence_decomposition']['stat_summary'] = [
             'season_avg' => round($seasonAvg, 1),
             'recent_avg' => round($recentAvg ?? $seasonAvg, 1),
             'last5_avg' => round($last5Avg ?? $seasonAvg, 1),
-            'vs_opponent_avg' => $vsOpponentAvg ? round($vsOpponentAvg, 1) : null,
-            'home_away_avg' => $homeAwayAvg ? round($homeAwayAvg, 1) : null,
+            'historical_avg' => $sport === 'NFL' ? $this->nflHistoryEvidence['historical_average'] : $seasonAvg,
+            'vs_opponent_avg' => $vsOpponentAvg !== null ? round($vsOpponentAvg, 1) : null,
+            'home_away_avg' => $homeAwayAvg !== null ? round($homeAwayAvg, 1) : null,
             'consistency' => $consistency,
         ];
-        $analysis['confidence_decomposition']['schema_version'] = self::SIGNAL_MODEL_VERSION;
+        $analysis['confidence_decomposition']['schema_version'] = $sport === 'NFL' ? self::NFL_MODEL_VERSION : self::SIGNAL_MODEL_VERSION;
+        if ($sport === 'NFL') {
+            $analysis['confidence_decomposition']['history'] = $this->nflHistoryEvidence;
+            $analysis['confidence_decomposition']['projection_context'] = $context;
+            $analysis['reasoning'][] = 'NFL model history: '.$this->nflHistoryEvidence['basis'].'; current-season sample '.$modelSample.'.';
+        }
         if ($this->cfbAnalysisProp) {
             $analysis['confidence_decomposition']['cfb_context'] = [
                 'history' => 'prior_reported_current_team_current_or_previous_season',
@@ -600,7 +659,7 @@ class PlayerPropAnalyzer
             confidence: (int) $analysis['confidence'],
             dataQualityScore: $dataQualityScore,
             matchQualityScore: $matchQualityScore,
-            seasonSample: (int) ($timesCoveredSeason['games'] ?? 0),
+            seasonSample: (int) $modelSample,
             coverRecord: $coverRecord
         );
 
@@ -616,10 +675,11 @@ class PlayerPropAnalyzer
             'odds' => $analysis['odds'],
             'confidence' => $analysis['confidence'],
             'season_avg' => round($seasonAvg, 1),
+            'historical_avg' => $analysis['confidence_decomposition']['stat_summary']['historical_avg'],
             'recent_avg' => round($recentAvg ?? $seasonAvg, 1),
             'last5_avg' => round($last5Avg ?? $seasonAvg, 1),
-            'vs_opponent_avg' => $vsOpponentAvg ? round($vsOpponentAvg, 1) : null,
-            'home_away_avg' => $homeAwayAvg ? round($homeAwayAvg, 1) : null,
+            'vs_opponent_avg' => $vsOpponentAvg !== null ? round($vsOpponentAvg, 1) : null,
+            'home_away_avg' => $homeAwayAvg !== null ? round($homeAwayAvg, 1) : null,
             'hit_rate_vs_opponent' => $hitRate,
             'times_covered_last5' => $timesCoveredLast5,
             'times_covered_season' => $timesCoveredSeason,
@@ -689,15 +749,27 @@ class PlayerPropAnalyzer
         ) * ($context['combined_factor'] ?? 1.0);
         $projectionDiff = $projection - $line;
 
+        $isNfl = $prop instanceof \App\Models\NFL\PlayerProp;
         $volatility = $this->estimateVolatility($consistency, $profile['volatility_floor']);
+        if ($isNfl) {
+            // Account for estimation uncertainty without pretending this is fitted calibration.
+            $volatility *= sqrt(1 + 1 / max(1, $seasonSample));
+        }
         $parametricOverProbability = $this->probabilityOverLine($projection, $line, $volatility);
-        $simulatedOverProbability = $this->simulationOverProbability(
+        $simulatedOverProbability = $isNfl ? $parametricOverProbability : $this->simulationOverProbability(
             mean: $projection,
             line: $line,
             stdDev: $volatility,
             iterations: 300
         );
         $modelOverProbability = ($parametricOverProbability * 0.65) + ($simulatedOverProbability * 0.35);
+        $pushProbability = 0.0;
+        if ($isNfl) {
+            $probabilities = $this->nflOutcomeProbabilities($projection, $line, $volatility, (string) $prop->market);
+            $pushProbability = $probabilities['push'];
+            // The stored binary probability is conditional on a non-push, matching calibration grading.
+            $modelOverProbability = $probabilities['over'] / max(0.000001, 1 - $pushProbability);
+        }
         $marketOverProbability = $this->fairMarketOverProbability(
             overOdds: $prop->over_price,
             underOdds: $prop->under_price
@@ -715,11 +787,13 @@ class PlayerPropAnalyzer
         $edgeProbability = 0.0;
         $minEdge = $profile['min_edge'];
 
-        if ($overEdgeProbability >= $minEdge && $prop->over_price !== null) {
+        if ($overEdgeProbability >= $minEdge && $prop->over_price !== null
+            && (! $isNfl || $this->positivePriceEdge($modelOverProbability, $prop->over_price))) {
             $recommendation = 'Over';
             $odds = $prop->over_price;
             $edgeProbability = $overEdgeProbability;
-        } elseif ($underEdgeProbability >= $minEdge && $prop->under_price !== null) {
+        } elseif ($underEdgeProbability >= $minEdge && $prop->under_price !== null
+            && (! $isNfl || $this->positivePriceEdge($modelUnderProbability, $prop->under_price))) {
             $recommendation = 'Under';
             $odds = $prop->under_price;
             $edgeProbability = $underEdgeProbability;
@@ -769,11 +843,9 @@ class PlayerPropAnalyzer
             ($recommendation === 'Over' ? $modelOverProbability : $modelUnderProbability) * 100,
             ($recommendation === 'Over' ? $marketOverProbability : $marketUnderProbability) * 100
         );
-        $reasoning[] = sprintf(
-            'Probability blend: parametric %.1f%%, simulation %.1f%%.',
-            $parametricOverProbability * 100,
-            $simulatedOverProbability * 100
-        );
+        $reasoning[] = $isNfl
+            ? sprintf('Uncalibrated discrete-normal estimate; %.1f%% push probability. Side probability excludes pushes.', $pushProbability * 100)
+            : sprintf('Probability blend: parametric %.1f%%, simulation %.1f%%.', $parametricOverProbability * 100, $simulatedOverProbability * 100);
         $reasoning[] = sprintf(
             'Projection %.1f vs line %.1f (edge %.1f).',
             $projection,
@@ -790,7 +862,7 @@ class PlayerPropAnalyzer
             $context['usage_factor'] ?? $context['minutes_factor'] ?? 1.0
         );
 
-        if ($hitRate && $hitRate['games'] >= 3) {
+        if (! $isNfl && $hitRate && $hitRate['games'] >= 3) {
             $hitRatePercent = ($hitRate['hits'] / $hitRate['games']) * 100;
             $reasoning[] = sprintf(
                 'Vs opponent hit rate over %.1f: %d/%d (%.0f%%).',
@@ -847,7 +919,7 @@ class PlayerPropAnalyzer
             && $dataQualityScore >= 82
             && $matchQualityScore >= 78
             && (($context['combined_factor'] ?? 1.0) >= 0.96);
-        if ($isOutlier) {
+        if ($isOutlier && ! $isNfl) {
             $confidence += 6;
             $reasoning[] = 'Outlier grade: edge and data quality both clear elite thresholds.';
         }
@@ -859,6 +931,11 @@ class PlayerPropAnalyzer
             matchQualityScore: $matchQualityScore,
             seasonSample: $seasonSample
         );
+        if ($isNfl && in_array($context['availability']['reason'] ?? '', ['missing_or_unlinked_depth', 'insufficient_usage_history', 'unmatched_player', 'not_pregame'], true)) {
+            $confidenceCap = min($confidenceCap, 68);
+            $confidence -= 8;
+            $reasoning[] = 'Unresolved availability or workload evidence: signal capped at 68.';
+        }
         if ($confidence > $confidenceCap) {
             $reasoning[] = sprintf('Signal cap applied at %d for market volatility, edge, sample, and data quality.', $confidenceCap);
         }
@@ -874,6 +951,7 @@ class PlayerPropAnalyzer
             'edge_probability' => round($edgeProbability * 100, 1),
             'reasoning' => $reasoning,
             'confidence_decomposition' => [
+                ...($isNfl ? ['probability_method' => 'discretized_normal_uncalibrated', 'push_probability' => round($pushProbability * 100, 3), 'probability_basis' => 'conditional_on_no_push', 'projected_mean' => round($projection, 3), 'predictive_std_dev' => round($volatility, 3)] : []),
                 'model_edge_score' => $modelEdgeScore,
                 'edge_confidence_score' => $edgeConfidenceScore,
                 'effective_edge_confidence_score' => $effectiveEdgeConfidence,
@@ -884,6 +962,25 @@ class PlayerPropAnalyzer
                 'confidence_cap' => $confidenceCap,
             ],
         ];
+    }
+
+    protected function positivePriceEdge(float $probability, ?int $odds): bool
+    {
+        return $odds !== null && abs($odds) >= 100
+            && $probability > $this->impliedProbabilityFromAmericanOdds($odds);
+    }
+
+    /** Integer outcomes: explicit pushes; count markets cannot take negative values. */
+    protected function nflOutcomeProbabilities(float $mean, float $line, float $stdDev, string $market): array
+    {
+        $count = in_array($market, ['player_rush_attempts', 'player_pass_attempts', 'player_pass_completions', 'player_receptions', 'player_anytime_td', 'player_pass_tds', 'player_pass_interceptions'], true);
+        $cdf = fn (float $value): float => $this->normalCdf(($value - $mean) / max(0.001, $stdDev));
+        $lower = $count ? $cdf(-0.5) : 0.0;
+        $mass = max(0.000001, 1 - $lower);
+        $over = max(0.0, min(1.0, (1 - $cdf(floor($line) + 0.5)) / $mass));
+        $under = max(0.0, min(1.0, ($cdf(ceil($line) - 0.5) - $lower) / $mass));
+
+        return ['over' => $over, 'under' => $under, 'push' => max(0.0, 1 - $over - $under)];
     }
 
     protected function buildProjection(
@@ -1174,6 +1271,7 @@ class PlayerPropAnalyzer
     ): array {
         $paceFactor = 1.0;
         $opponentFactor = 1.0;
+        $opponentEvidence = null;
         $usageContext = $this->usageContextFactor($playerId, $market, $sportConfig);
         $minutesFactor = $usageContext['factor'];
         $availability = ($sportConfig['odds_sport_key'] ?? '') === 'americanfootball_nfl'
@@ -1198,25 +1296,45 @@ class PlayerPropAnalyzer
             $allowedField = $this->opponentAllowedStatField($market);
             if ($allowedField !== null) {
                 $teamStatModel = $sportConfig['team_stat_model'];
-                $opponentQuery = $teamStatModel::query()
-                    ->where('team_id', $opponentTeamId)
-                    ->whereHas('game', function ($query) use ($game) {
-                        $query->where('status', 'STATUS_FINAL')
-                            ->whereDate('game_date', '<', $game->game_date);
-                    })
-                    ->orderByDesc('id')
-                    ->take(12);
+                if ($teamStatModel !== TeamStat::class) {
+                    $opponentQuery = $teamStatModel::query()
+                        ->where('team_id', $opponentTeamId)
+                        ->whereHas('game', function ($query) use ($game) {
+                            $query->where('status', 'STATUS_FINAL')
+                                ->whereDate('game_date', '<', $game->game_date);
+                        })
+                        ->orderByDesc('id')
+                        ->take(12);
 
-                $opponentAllowed = (float) ($opponentQuery->avg($allowedField) ?? 0);
-                $leagueAllowed = (float) $teamStatModel::query()
-                    ->whereHas('game', function ($query) use ($game) {
-                        $query->where('status', 'STATUS_FINAL')
-                            ->whereDate('game_date', '<', $game->game_date);
-                    })
-                    ->avg($allowedField);
+                    $opponentAllowed = (float) ($opponentQuery->avg($allowedField) ?? 0);
+                    $leagueAllowed = (float) $teamStatModel::query()
+                        ->whereHas('game', function ($query) use ($game) {
+                            $query->where('status', 'STATUS_FINAL')
+                                ->whereDate('game_date', '<', $game->game_date);
+                        })
+                        ->avg($allowedField);
 
-                if ($opponentAllowed > 0 && $leagueAllowed > 0) {
-                    $opponentFactor = max(0.90, min(1.10, $opponentAllowed / $leagueAllowed));
+                    if ($opponentAllowed > 0 && $leagueAllowed > 0) {
+                        $opponentFactor = max(0.90, min(1.10, $opponentAllowed / $leagueAllowed));
+                    }
+                }
+                if ($teamStatModel === TeamStat::class) {
+                    // Read the OTHER offense in games involving this defense, ordered by event date.
+                    $base = $teamStatModel::query()->join('nfl_games as g', 'g.id', '=', 'nfl_team_stats.game_id')
+                        ->where('g.status', 'STATUS_FINAL')->whereIn('g.season_type', ['2', 'regular'])
+                        ->whereBetween('g.season', [(int) $game->season - 1, (int) $game->season])
+                        ->whereDate('g.game_date', '<', $game->game_date)->whereNotNull('nfl_team_stats.'.$allowedField);
+                    $allowed = (clone $base)->where(function ($q) use ($opponentTeamId) {
+                        $q->where(function ($q) use ($opponentTeamId) {
+                            $q->where('g.home_team_id', $opponentTeamId)->whereColumn('nfl_team_stats.team_id', 'g.away_team_id');
+                        })->orWhere(function ($q) use ($opponentTeamId) {
+                            $q->where('g.away_team_id', $opponentTeamId)->whereColumn('nfl_team_stats.team_id', 'g.home_team_id');
+                        });
+                    })->orderByDesc('g.game_date')->orderByDesc('g.id')->limit(12)->pluck('nfl_team_stats.'.$allowedField);
+                    $league = (float) $base->avg('nfl_team_stats.'.$allowedField);
+                    $opponentEvidence = ['field' => $allowedField, 'games' => $allowed->count(), 'allowed_average' => $allowed->avg(), 'league_average' => $league];
+                    $opponentFactor = $allowed->isNotEmpty() && $league > 0
+                        ? max(0.90, min(1.10, $allowed->avg() / $league)) : 1.0;
                 }
             }
         }
@@ -1230,6 +1348,7 @@ class PlayerPropAnalyzer
             'usage_factor' => round($minutesFactor, 3),
             'usage_context' => $usageContext['label'],
             'combined_factor' => round($combined, 3),
+            ...($opponentEvidence !== null ? ['opponent_evidence' => $opponentEvidence] : []),
             ...($availability !== null ? ['availability' => $availability] : []),
         ];
     }
@@ -1388,6 +1507,9 @@ class PlayerPropAnalyzer
         if (! $this->persistSnapshots) {
             return;
         }
+        if ($prop instanceof \App\Models\NFL\PlayerProp && ($prop->fresh()?->graded_at || ! self::nflPregame($prop->game->fresh()))) {
+            return;
+        }
         if ($prop->getTable() === 'nfl_player_props') {
             $analysis['confidence_decomposition']['analysis_disposition'] = $this->nflDisposition($prop, 'scored');
         }
@@ -1449,7 +1571,7 @@ class PlayerPropAnalyzer
         $schemaVersion = data_get($prop->confidence_decomposition, 'schema_version');
 
         if (
-            $schemaVersion !== self::SIGNAL_MODEL_VERSION
+            ! in_array($schemaVersion, $sport === 'NFL' ? (self::nflPregame($game) ? [self::NFL_MODEL_VERSION] : [self::NFL_MODEL_VERSION, self::SIGNAL_MODEL_VERSION]) : [self::SIGNAL_MODEL_VERSION], true)
             || ! is_array($statSummary)
             || $statSummary === []
             || ! is_array($coverRecord)
@@ -1461,9 +1583,11 @@ class PlayerPropAnalyzer
             if (! $player instanceof Model) {
                 return null;
             }
-            $availability = app(NflPropAvailabilityContext::class)->resolve($game, (int) $player->id, (string) $prop->market);
-            if ($availability['unavailable'] || data_get($prop->confidence_decomposition, 'availability.fingerprint') !== $availability['fingerprint']) {
-                return null;
+            if (self::nflPregame($game)) {
+                $availability = app(NflPropAvailabilityContext::class)->resolve($game, (int) $player->id, (string) $prop->market);
+                if ($availability['unavailable'] || data_get($prop->confidence_decomposition, 'availability.fingerprint') !== $availability['fingerprint']) {
+                    return null;
+                }
             }
         }
 
@@ -1486,6 +1610,7 @@ class PlayerPropAnalyzer
             'odds' => $side === 'Over' ? $prop->over_price : $prop->under_price,
             'confidence' => (int) $prop->confidence_score,
             'season_avg' => data_get($statSummary, 'season_avg'),
+            'historical_avg' => data_get($statSummary, 'historical_avg', data_get($statSummary, 'season_avg')),
             'recent_avg' => data_get($statSummary, 'recent_avg'),
             'last5_avg' => data_get($statSummary, 'last5_avg'),
             'vs_opponent_avg' => data_get($statSummary, 'vs_opponent_avg'),
@@ -1501,7 +1626,7 @@ class PlayerPropAnalyzer
             'market_over_probability' => $marketOverProbability,
             'edge_probability' => $edgeProbability,
             'reasoning' => [...$this->precomputedReasoning($prop, $side, $modelOverProbability, $marketOverProbability, $edgeProbability), ...($prop instanceof PlayerProp ? ['College football: prior current-team stats; unresolved teammate or workload changes are withheld, not assigned a yardage adjustment.'] : [])],
-            'context' => $contextFactor !== null ? [
+            'context' => data_get($prop->confidence_decomposition, 'projection_context') ?? ($contextFactor !== null ? [
                 'pace_factor' => 1.0,
                 'opponent_factor' => 1.0,
                 'minutes_factor' => 1.0,
@@ -1509,7 +1634,7 @@ class PlayerPropAnalyzer
                 'usage_context' => 'stored_context_factor',
                 'combined_factor' => $contextFactor,
                 ...(isset($availability) ? ['availability' => $availability] : []),
-            ] : null,
+            ] : null),
             'data_quality_score' => $prop->data_quality_score,
             'match_quality_score' => $prop->match_quality_score,
             'confidence_decomposition' => $prop->confidence_decomposition,
@@ -1557,7 +1682,7 @@ class PlayerPropAnalyzer
             ->take(82) // Full season
             ->get();
 
-        if ($stats->count() < $minGames) {
+        if (($this->nflAnalysisProp ? ($this->nflHistoryEvidence['eligible_history_games'] ?? $stats->count()) : $stats->count()) < $minGames) {
             return null;
         }
 
@@ -1691,13 +1816,22 @@ class PlayerPropAnalyzer
     protected function statValues(Collection $stats, string $statField): array
     {
         return $stats
-            ->map(fn (Model $stat): float => $this->statValue($stat, $statField))
+            ->map(fn (Model $stat): ?float => $this->statValue($stat, $statField))
+            ->filter(fn ($value) => $value !== null)
             ->values()
             ->all();
     }
 
-    protected function statValue(Model $stat, string $statField): float
+    protected function statValue(Model $stat, string $statField): ?float
     {
+        if ($stat instanceof \App\Models\NFL\PlayerStat) {
+            $fields = $statField === 'total_touchdowns' ? ['rushing_touchdowns', 'receiving_touchdowns'] : [$statField];
+            foreach ($fields as $field) {
+                if (! is_numeric($stat->{$field})) {
+                    return null;
+                }
+            }
+        }
         if ($statField === 'total_touchdowns') {
             return (float) ($stat->rushing_touchdowns ?? 0)
                 + (float) ($stat->receiving_touchdowns ?? 0);
@@ -1827,6 +1961,7 @@ class PlayerPropAnalyzer
      */
     protected function coverRecordFromStats(Collection $stats, string $statField, float $line, string $recommendation): ?array
     {
+        $stats = $stats->filter(fn ($stat) => $this->statValue($stat, $statField) !== null);
         if ($stats->isEmpty()) {
             return null;
         }
@@ -1850,6 +1985,7 @@ class PlayerPropAnalyzer
         $games = $stats->count();
         $wins = $recommendation === 'Under' ? $under : $over;
         $losses = $recommendation === 'Under' ? $over : $under;
+        $decisions = $stats->first() instanceof \App\Models\NFL\PlayerStat ? $wins + $losses : $games;
 
         return [
             'games' => $games,
@@ -1860,7 +1996,7 @@ class PlayerPropAnalyzer
             'recommendation' => $recommendation,
             'wins' => $wins,
             'losses' => $losses,
-            'win_rate' => $games > 0 ? round(($wins / $games) * 100, 1) : null,
+            'win_rate' => $decisions > 0 ? round(($wins / $decisions) * 100, 1) : null,
             'record' => "{$over}-{$under}".($pushes > 0 ? "-{$pushes}" : ''),
             'recommendation_record' => "{$wins}-{$losses}".($pushes > 0 ? "-{$pushes}" : ''),
         ];
@@ -2070,6 +2206,9 @@ class PlayerPropAnalyzer
         }
 
         $values = $this->statValues($stats, $statField);
+        if (count($values) < 3) {
+            return null;
+        }
         $mean = array_sum($values) / count($values);
 
         // Calculate standard deviation
@@ -2153,7 +2292,30 @@ class PlayerPropAnalyzer
 
         return $playerStatModel::where('player_id', $playerId)
             ->whereHas('game', fn ($q) => $q->where('status', 'STATUS_FINAL'))
-            ->when($playerStatModel === \App\Models\NFL\PlayerStat::class, fn ($q) => $q->whereHas('game', fn ($g) => $g->whereIn('season_type', ['2', 'regular'])->when($this->nflAnalysisProp?->game, fn ($g) => $g->whereDate('game_date', '<', $this->nflAnalysisProp->game->game_date))))
+            ->when($playerStatModel === \App\Models\NFL\PlayerStat::class, function ($query) {
+                $prop = $this->nflAnalysisProp;
+                $query->whereHas('game', function ($g) use ($prop) {
+                    $g->whereIn('season_type', ['2', 'regular']);
+                    if ($prop?->game) {
+                        $g->whereDate('game_date', '<', $prop->game->game_date)
+                            ->whereBetween('season', [(int) $prop->game->season - 1, (int) $prop->game->season]);
+                    }
+                    if ($this->nflModelSeason !== null) {
+                        $g->where('season', $this->nflModelSeason);
+                    }
+                });
+                if ($this->nflPlayerTeamId !== null) {
+                    $query->where('team_id', $this->nflPlayerTeamId);
+                }
+                if ($prop) {
+                    $field = $this->getStatFieldForMarket($prop->market);
+                    foreach ($field === 'total_touchdowns' ? ['rushing_touchdowns', 'receiving_touchdowns'] : [$field] as $column) {
+                        if ($column !== null) {
+                            $query->whereNotNull($column);
+                        }
+                    }
+                }
+            })
             ->when($playerStatModel === PlayerStat::class && $this->cfbAnalysisProp !== null, function ($query) {
                 $prop = $this->cfbAnalysisProp;
                 $query->where('team_id', $prop->player->team_id)
@@ -2249,7 +2411,7 @@ class PlayerPropAnalyzer
         $nameParts = explode(' ', trim($normalizedInput));
         $lastName = end($nameParts);
 
-        if ($candidate) {
+        if ($candidate && $this->persistSnapshots) {
             $this->oddsApiService?->rememberUnmappedPlayer(
                 $oddsSportKey,
                 $name,
@@ -2263,7 +2425,9 @@ class PlayerPropAnalyzer
             ->first();
 
         if ($lastNameMatch) {
-            $this->oddsApiService?->rememberUnmappedPlayer($oddsSportKey, $name, $lastNameMatch, 75);
+            if ($this->persistSnapshots) {
+                $this->oddsApiService?->rememberUnmappedPlayer($oddsSportKey, $name, $lastNameMatch, 75);
+            }
 
             return [
                 'player' => $lastNameMatch,
@@ -2271,7 +2435,9 @@ class PlayerPropAnalyzer
             ];
         }
 
-        $this->oddsApiService?->rememberUnmappedPlayer($oddsSportKey, $name);
+        if ($this->persistSnapshots) {
+            $this->oddsApiService?->rememberUnmappedPlayer($oddsSportKey, $name);
+        }
 
         return null;
     }

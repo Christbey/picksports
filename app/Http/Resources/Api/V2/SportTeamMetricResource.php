@@ -34,6 +34,7 @@ class SportTeamMetricResource extends JsonResource
             'season_type' => $this->attribute('season_type'),
             'wins' => $record['wins'],
             'losses' => $record['losses'],
+            ...($this->context->slug === 'nfl' ? ['ties' => $record['ties']] : []),
             'games_played' => $record['games_played'],
             'record' => $record,
             'record_label' => $record['label'],
@@ -96,6 +97,18 @@ class SportTeamMetricResource extends JsonResource
         $wins = $this->nullableInt($metrics['wins'] ?? $this->attribute('wins'));
         $losses = $this->nullableInt($metrics['losses'] ?? $this->attribute('losses'));
         $source = 'metric';
+
+        if ($this->context->slug === 'nfl') {
+            $ties = $this->nullableInt($this->attribute('ties'));
+            $complete = $wins !== null && $losses !== null && $ties !== null;
+
+            return [
+                'wins' => $wins, 'losses' => $losses, 'ties' => $ties,
+                'games_played' => $complete ? $wins + $losses + $ties : null,
+                'label' => $complete ? "{$wins}-{$losses}-{$ties}" : null,
+                'source' => $complete ? 'metric' : 'recalculation_required',
+            ];
+        }
 
         if ($this->preparedRecord !== null && ($wins === null || $losses === null || ($wins + $losses) === 0)) {
             $derived = $this->preparedRecord;

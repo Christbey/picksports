@@ -2,6 +2,8 @@
 import { Head, Link } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import RenderErrorBoundary from '@/components/RenderErrorBoundary.vue';
+import NflTeamMetricsBoard from '@/components/NflTeamMetricsBoard.vue';
+import { compareMetricValues } from '@/components/sport-team-metrics-helpers';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -64,6 +66,7 @@ const availableSeasons = ref<number[]>([]);
 const selectedSeason = ref('');
 const api = useApiV2Client();
 const sport = computed(() => props.config.sport as ApiV2SportSlug);
+const isNfl = computed(() => sport.value === 'nfl');
 const pageRequestController = new AbortController();
 let metricsRequestController: AbortController | null = null;
 
@@ -99,38 +102,55 @@ const activeSortLabel = computed(
     () => currentSortOption.value?.label ?? sortBy.value,
 );
 
-const filteredMetrics = computed(() => {
+const rankedMetrics = computed(() => {
+    const option = currentSortOption.value;
+    if (!option) return metrics.value;
+    const value = (metric: any) =>
+        isNfl.value && !metric.sample_sizes ? null : option.getValue(metric);
+    const bestOrder = [...metrics.value].sort((a, b) =>
+        compareMetricValues(value(a), value(b), option.lowerIsBetter),
+    );
+    const ranks = new Map<number, number | null>();
+    bestOrder.forEach((metric, index) => {
+        const tied =
+            index > 0 &&
+            compareMetricValues(value(metric), value(bestOrder[index - 1])) ===
+                0;
+        ranks.set(
+            metric.id,
+            value(metric) == null
+                ? null
+                : tied
+                  ? (ranks.get(bestOrder[index - 1].id) ?? null)
+                  : index + 1,
+        );
+    });
+    return [...metrics.value]
+        .sort((a, b) =>
+            compareMetricValues(
+                value(a),
+                value(b),
+                option.lowerIsBetter,
+                sortDesc.value,
+            ),
+        )
+        .map((metric) => ({
+            ...metric,
+            display_rank: ranks.get(metric.id),
+        }));
+});
+
+const sortedMetrics = computed(() => {
     if (!searchQuery.value) {
-        return metrics.value;
+        return rankedMetrics.value;
     }
     const query = searchQuery.value.toLowerCase();
-    return metrics.value.filter(
+    return rankedMetrics.value.filter(
         (m) =>
             m.team?.display_name?.toLowerCase().includes(query) ||
             m.team?.abbreviation?.toLowerCase().includes(query) ||
             m.team?.location?.toLowerCase().includes(query),
     );
-});
-
-const sortedMetrics = computed(() => {
-    const sorted = [...filteredMetrics.value];
-    const option = currentSortOption.value;
-    if (!option) return sorted;
-
-    sorted.sort((a, b) => {
-        const aVal = option.getValue(a);
-        const bVal = option.getValue(b);
-
-        if (aVal === null || aVal === undefined) return 1;
-        if (bVal === null || bVal === undefined) return -1;
-
-        if (option.lowerIsBetter) {
-            return sortDesc.value ? aVal - bVal : bVal - aVal;
-        }
-
-        return sortDesc.value ? bVal - aVal : aVal - bVal;
-    });
-    return sorted;
 });
 
 const fetchMetrics = async () => {
@@ -141,6 +161,7 @@ const fetchMetrics = async () => {
     try {
         loading.value = true;
         error.value = null;
+        metrics.value = [];
 
         const query: Record<string, string | number> = { per_page: 500 };
         if (selectedSeason.value) {
@@ -155,6 +176,11 @@ const fetchMetrics = async () => {
             init: { signal: controller.signal },
         });
         if (!response) throw new Error('Failed to fetch team metrics');
+        if (
+            controller.signal.aborted ||
+            metricsRequestController !== controller
+        )
+            return;
 
         metrics.value = response.data ?? [];
         const tier =
@@ -180,12 +206,11 @@ const fetchMetrics = async () => {
 };
 
 const toggleSort = (key: string) => {
-    const option = props.config.sortOptions.find((o) => o.key === key);
     if (sortBy.value === key) {
         sortDesc.value = !sortDesc.value;
     } else {
         sortBy.value = key;
-        sortDesc.value = option?.lowerIsBetter ? false : true;
+        sortDesc.value = true;
     }
 };
 
@@ -277,7 +302,7 @@ onBeforeUnmount(() => {
                                     v-model="selectedSeasonType"
                                     class="flex h-10 min-w-[180px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
                                 >
-                                    <option value="">All</option>
+                                    <option v-if="!isNfl" value="">All</option>
                                     <option
                                         v-for="option in config.seasonTypeOptions"
                                         :key="option.value"
@@ -294,7 +319,48 @@ onBeforeUnmount(() => {
                                     class="w-full"
                                 />
                             </div>
-                            <div class="flex gap-2">
+                            <div
+                                v-if="isNfl"
+                                class="flex w-full flex-wrap items-end gap-2 sm:w-auto"
+                            >
+                                <label
+                                    class="min-w-0 flex-1 space-y-2 text-sm"
+                                    for="nfl-metrics-sort"
+                                >
+                                    <span class="ui-kicker">Sort by</span>
+                                    <select
+                                        id="nfl-metrics-sort"
+                                        :value="sortBy"
+                                        class="h-10 w-full rounded-md border border-input bg-background px-3"
+                                        @change="
+                                            toggleSort(
+                                                (
+                                                    $event.target as HTMLSelectElement
+                                                ).value,
+                                            )
+                                        "
+                                    >
+                                        <option
+                                            v-for="option in config.sortOptions"
+                                            :key="option.key"
+                                            :value="option.key"
+                                        >
+                                            {{ option.label }}
+                                        </option>
+                                    </select>
+                                </label>
+                                <Button
+                                    variant="outline"
+                                    class="h-10"
+                                    @click="sortDesc = !sortDesc"
+                                    >{{
+                                        sortDesc
+                                            ? 'Best first'
+                                            : 'Reverse order'
+                                    }}</Button
+                                >
+                            </div>
+                            <div v-else class="flex flex-wrap gap-2">
                                 <Button
                                     v-for="option in config.sortOptions"
                                     :key="option.key"
@@ -328,7 +394,8 @@ onBeforeUnmount(() => {
                         {{ sortedMetrics.length }} teams
                     </span>
                     <span class="ui-chip text-foreground/80">
-                        Sort: {{ activeSortLabel }} {{ sortDesc ? '↓' : '↑' }}
+                        Sort: {{ activeSortLabel }} ·
+                        {{ sortDesc ? 'Best first' : 'Reverse order' }}
                     </span>
                     <span
                         v-if="selectedSeason"
@@ -360,7 +427,15 @@ onBeforeUnmount(() => {
                     <Skeleton v-for="i in 10" :key="i" class="h-12 w-full" />
                 </div>
 
-                <Card v-else>
+                <NflTeamMetricsBoard
+                    v-else-if="isNfl && !error"
+                    :metrics="sortedMetrics"
+                    :columns="config.columns"
+                    :team-link="config.teamLink"
+                    :sort-label="activeSortLabel"
+                />
+
+                <Card v-else-if="!error">
                     <CardHeader>
                         <div class="ui-kicker">Standings</div>
                         <CardTitle class="tracking-tight"

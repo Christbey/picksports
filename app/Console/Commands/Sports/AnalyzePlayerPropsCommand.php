@@ -91,7 +91,7 @@ class AnalyzePlayerPropsCommand extends Command
             $this->line("Game {$gameId}: {$recommendations->count()} recommendation(s).");
         }
 
-        if ($totalRecommendations > 0) {
+        if ($totalRecommendations > 0 || $sport === 'nfl') {
             app(SportsViewCache::class)->bustSegment(SportsViewCache::SEGMENT_PLAYER_PROPS_PAGE);
         }
 

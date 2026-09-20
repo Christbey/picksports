@@ -131,6 +131,21 @@ test('missing history remains five N/A rows, never zero covers', async () => {
     assert.doesNotMatch(html, /0\/0|\(2025\)|\(2026\)/);
 });
 
+test('new model estimates disclose their history basis and lack of calibration inside details', async () => {
+    const html = await render(
+        fixture({
+            confidence_decomposition: {
+                probability_method: 'discretized_normal_uncalibrated',
+                history: { model_season: 2026, current_season_games: 1 },
+            },
+        }),
+    );
+    assert.match(html, /Model estimate, not calibrated/);
+    assert.match(html, /Probabilities exclude pushes/);
+    assert.match(html, /Uses 2026 current-team stats; 1 current-season games/);
+    assert.doesNotMatch(primary(html), /not calibrated/);
+});
+
 test('zero wins and pushes are explicit; win rate excludes pushes', async () => {
     const rec = fixture();
     rec.stats.cover_record.season = record(0, 2, 1);

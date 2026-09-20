@@ -11,6 +11,7 @@ class ReportPlayerPropsCalibrationCommand extends Command
     protected $signature = 'sports:report-player-props-calibration
         {sport? : One of nba,cbb,wnba,nfl,mlb (omit for all)}
         {--season= : Filter by season}
+        {--model-version= : Filter by the stored prediction schema version}
         {--min-sample=30 : Minimum sample per market to include in market table}';
 
     protected $description = 'Report player-props calibration metrics (Brier, log-loss, ECE) overall and by market';
@@ -71,6 +72,9 @@ class ReportPlayerPropsCalibrationCommand extends Command
         $rows = $this->baseQuery($sport, $season)->get();
 
         $scope = $season === null ? 'all seasons' : "season {$season}";
+        if ($version = $this->option('model-version')) {
+            $scope .= ', model '.$version;
+        }
         $this->line(strtoupper($sport)." Player Props Calibration ({$scope})");
         $this->line(str_repeat('-', 54));
 
@@ -149,6 +153,9 @@ class ReportPlayerPropsCalibrationCommand extends Command
 
         if ($season !== null) {
             $query->where('g.season', $season);
+        }
+        if ($version = $this->option('model-version')) {
+            $query->where('p.confidence_decomposition->schema_version', $version);
         }
 
         return $query;

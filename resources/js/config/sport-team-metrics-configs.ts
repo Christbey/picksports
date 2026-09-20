@@ -511,7 +511,8 @@ export const wcbbTeamMetricsConfig = createSportTeamMetricsConfig({
 export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
     sport: 'nfl',
     title: 'NFL Team Metrics',
-    subtitle: 'Advanced metrics for NFL teams',
+    subtitle: 'Season performance, scoring and play-by-play efficiency',
+    defaultSeasonType: '2',
     seasonTypeOptions: [
         { value: '1', label: 'Preseason' },
         { value: '2', label: 'Regular Season' },
@@ -677,7 +678,7 @@ export const nflTeamMetricsConfig = createSportTeamMetricsConfig({
         },
         {
             label: 'TO+/-',
-            value: (m: any) => formatNumber(m.turnover_differential, 0),
+            value: (m: any) => formatNumber(m.turnover_differential, 1),
             class: (m: any) => turnoverClass(m.turnover_differential),
         },
         {

@@ -61,6 +61,7 @@ class CalculateTeamMetrics
 
     public function execute(Team $team, int $season, int|string|null $seasonType = null): ?TeamMetric
     {
+        $seasonType ??= config('nfl.season.default_team_metrics_type', 2);
         $games = $this->getCompletedGamesForTeam($team, $season, 'NFL', $seasonType);
         $resolvedSeasonType = $this->resolveMetricSeasonType($games, $seasonType);
 
@@ -96,7 +97,17 @@ class CalculateTeamMetrics
             return null;
         }
 
+        // A final status does not establish that scores have actually synchronized.
+        if ($games->contains(fn ($game) => $game->home_score === null || $game->away_score === null)) {
+            Log::warning('Skipping NFL team metrics because final scores are incomplete', [
+                'team_id' => $team->id, 'season' => $season, 'season_type' => $resolvedSeasonType,
+            ]);
+
+            return null;
+        }
         $record = $this->calculateWinLossRecord($games, $team);
+        $ties = $games->count() - $record['wins'] - $record['losses'];
+        $sampleSizes = ['games' => $games->count()];
 
         // Base points and yardage metrics.
         $pointsScored = [];
@@ -114,11 +125,13 @@ class CalculateTeamMetrics
         $defensiveRating = $pointsAllowedPerGame;
         $netRating = $offensiveRating - $defensiveRating;
 
-        $yardsPerGame = $this->calculateAverageYards($teamStats);
-        $yardsAllowedPerGame = $this->calculateAverageYards($opponentStats);
-        $passingYardsPerGame = $this->calculateAveragePassingYards($teamStats);
-        $rushingYardsPerGame = $this->calculateAverageRushingYards($teamStats);
-        $turnoverDifferential = $this->calculateTurnoverDifferential($teamStats, $opponentStats);
+        $yardsPerGame = $this->reportedAverage($teamStats, 'total_yards', 'yards_per_game', $sampleSizes);
+        $yardsAllowedPerGame = $this->reportedAverage($opponentStats, 'total_yards', 'yards_allowed_per_game', $sampleSizes);
+        $passingYardsPerGame = $this->reportedAverage($teamStats, 'passing_yards', 'passing_yards_per_game', $sampleSizes);
+        $rushingYardsPerGame = $this->reportedAverage($teamStats, 'rushing_yards', 'rushing_yards_per_game', $sampleSizes);
+        $completeTurnovers = collect([...$teamStats, ...$opponentStats])->every(fn ($stat) => is_numeric($stat->interceptions) && is_numeric($stat->fumbles_lost));
+        $turnoverDifferential = $completeTurnovers ? $this->calculateTurnoverDifferential($teamStats, $opponentStats) : null;
+        $sampleSizes['turnover_differential'] = $completeTurnovers ? $games->count() : 0;
         $strengthOfSchedule = $this->calculateStrengthOfSchedule($opponentElos);
         $recentFormRating = $this->calculateRecentFormRating($games, $team);
         $injuryAdjustedTeamRating = $this->calculateInjuryAdjustedTeamRating($team, 'nfl', (float) ($team->elo_rating ?? 1500));
@@ -130,7 +143,11 @@ class CalculateTeamMetrics
 
         $homeRating = $this->averageFromContexts($gameContexts->where('is_home', true), 'margin');
         $awayRating = $this->averageFromContexts($gameContexts->where('is_home', false), 'margin');
-        $homeAdvantage = ($homeRating ?? 0.0) - ($awayRating ?? 0.0);
+        $homeAdvantage = $homeRating !== null && $awayRating !== null ? $homeRating - $awayRating : null;
+        $sampleSizes['home'] = $gameContexts->where('is_home', true)->count();
+        $sampleSizes['away'] = $gameContexts->where('is_home', false)->count();
+        $sampleSizes['last_5'] = min(5, $games->count());
+        $sampleSizes['last_10'] = min(10, $games->count());
 
         $seasonSos = $strengthOfSchedule;
         $futureSos = $this->calculateFutureStrengthOfSchedule($team, $season);
@@ -143,7 +160,7 @@ class CalculateTeamMetrics
         $inDivRating = $this->averageFromContexts($gameContexts->where('is_division_game', true), 'margin');
         $nonDivRating = $this->averageFromContexts($gameContexts->where('is_division_game', false), 'margin');
 
-        $luckRating = $this->calculateLuckRating($pointsScored, $pointsAllowed, $record['wins'], $record['losses']);
+        $luckRating = $this->calculateLuckRating($pointsScored, $pointsAllowed, $record['wins'], $record['losses'], $ties);
         $consistencyRating = $this->calculateConsistencyRating($gameContexts->pluck('margin')->all());
 
         $vs1To5Rating = $this->averageMarginForRankBucket($gameContexts, 1, 5);
@@ -155,9 +172,15 @@ class CalculateTeamMetrics
         $firstHalfRating = $this->averageFromContexts($gameContexts, 'first_half_margin');
         $secondHalfRating = $this->averageFromContexts($gameContexts, 'second_half_margin');
         $trueEpaMetrics = $this->calculateTeamTrueEpaMetrics(Play::class, (int) $team->id, $games, true);
+        $epaCounts = Play::query()->whereIn('game_id', $games->pluck('id'))
+            ->where('is_epa_eligible', true)->whereNotNull('true_epa')
+            ->whereIn('possession_team_id', $games->flatMap(fn ($game) => [$game->home_team_id, $game->away_team_id])->unique())
+            ->selectRaw('possession_team_id, count(*) as plays')->groupBy('possession_team_id')->get();
+        $sampleSizes['offensive_epa_plays'] = (int) $epaCounts->where('possession_team_id', $team->id)->sum('plays');
+        $sampleSizes['defensive_epa_plays'] = (int) $epaCounts->where('possession_team_id', '!=', $team->id)->sum('plays');
 
         $leagueAverageElo = (float) (Team::query()->avg('elo_rating') ?? 1500.0);
-        $predictiveRating = $this->calculatePredictiveRating(
+        $predictiveRating = $turnoverDifferential === null ? null : $this->calculatePredictiveRating(
             netRating: $netRating,
             recentFormRating: $recentFormRating,
             turnoverDifferential: $turnoverDifferential,
@@ -175,7 +198,7 @@ class CalculateTeamMetrics
             'offensive_rating' => round($offensiveRating, 1),
             'defensive_rating' => round($defensiveRating, 1),
             'net_rating' => round($netRating, 1),
-            'predictive_rating' => round($predictiveRating, 3),
+            'predictive_rating' => $this->roundOrNull($predictiveRating, 3),
         ]);
 
         $validator = new MetricValidator;
@@ -202,25 +225,28 @@ class CalculateTeamMetrics
                 'season_type' => $resolvedSeasonType,
                 'wins' => $record['wins'],
                 'losses' => $record['losses'],
+                'ties' => $ties,
+                'games_played' => $games->count(),
+                'sample_sizes' => $sampleSizes,
                 'offensive_rating' => round($offensiveRating, 1),
                 'defensive_rating' => round($defensiveRating, 1),
                 'net_rating' => round($netRating, 1),
                 'points_per_game' => round($pointsPerGame, 1),
                 'points_allowed_per_game' => round($pointsAllowedPerGame, 1),
-                'yards_per_game' => round($yardsPerGame, 1),
-                'yards_allowed_per_game' => round($yardsAllowedPerGame, 1),
-                'passing_yards_per_game' => round($passingYardsPerGame, 1),
-                'rushing_yards_per_game' => round($rushingYardsPerGame, 1),
-                'turnover_differential' => round($turnoverDifferential, 1),
+                'yards_per_game' => $this->roundOrNull($yardsPerGame, 1),
+                'yards_allowed_per_game' => $this->roundOrNull($yardsAllowedPerGame, 1),
+                'passing_yards_per_game' => $this->roundOrNull($passingYardsPerGame, 1),
+                'rushing_yards_per_game' => $this->roundOrNull($rushingYardsPerGame, 1),
+                'turnover_differential' => $this->roundOrNull($turnoverDifferential, 1),
                 'strength_of_schedule' => $this->roundOrNull($strengthOfSchedule, 3),
                 'recent_form_rating' => $this->roundOrNull($recentFormRating, 3),
                 'injury_adjusted_team_rating' => $this->roundOrNull($injuryAdjustedTeamRating, 3),
                 'injury_total_adjustment' => $this->roundOrNull($injuryAdjustedTotalAdjustment, 3),
                 'rest_travel_fatigue' => $this->roundOrNull($restTravelFatigue, 3),
-                'predictive_rating' => round($predictiveRating, 3),
+                'predictive_rating' => $this->roundOrNull($predictiveRating, 3),
                 'home_rating' => $this->roundOrNull($homeRating, 3),
                 'away_rating' => $this->roundOrNull($awayRating, 3),
-                'home_advantage_rating' => round($homeAdvantage, 3),
+                'home_advantage_rating' => $this->roundOrNull($homeAdvantage, 3),
                 'future_strength_of_schedule' => $this->roundOrNull($futureSos, 3),
                 'season_strength_of_schedule' => $this->roundOrNull($seasonSos, 3),
                 'strength_of_schedule_basic' => $this->roundOrNull($sosBasic, 3),
@@ -584,9 +610,9 @@ class CalculateTeamMetrics
         return $pct;
     }
 
-    protected function calculateLuckRating(array $pointsScored, array $pointsAllowed, int $wins, int $losses): ?float
+    protected function calculateLuckRating(array $pointsScored, array $pointsAllowed, int $wins, int $losses, int $ties = 0): ?float
     {
-        $games = $wins + $losses;
+        $games = $wins + $losses + $ties;
         if ($games <= 0) {
             return null;
         }
@@ -601,7 +627,7 @@ class CalculateTeamMetrics
         $expectedWinPct = pow(max(1.0, (float) $pf), $exponent)
             / (pow(max(1.0, (float) $pf), $exponent) + pow(max(1.0, (float) $pa), $exponent));
 
-        $actualWinPct = $wins / $games;
+        $actualWinPct = ($wins + $ties * 0.5) / $games;
 
         return ($actualWinPct - $expectedWinPct) * 100.0;
     }
@@ -617,7 +643,7 @@ class CalculateTeamMetrics
 
         $count = count($margins);
         if ($count === 1) {
-            return 100.0;
+            return null;
         }
 
         $avg = array_sum($margins) / $count;
@@ -629,6 +655,14 @@ class CalculateTeamMetrics
         $stdDev = sqrt($variance / $count);
 
         return max(0.0, min(100.0, 100.0 - ($stdDev * 4.0)));
+    }
+
+    private function reportedAverage(array $stats, string $field, string $key, array &$samples): ?float
+    {
+        $values = collect($stats)->pluck($field)->filter(fn ($value) => is_numeric($value));
+        $samples[$key] = $values->count();
+
+        return $values->isEmpty() ? null : (float) $values->avg();
     }
 
     protected function averageMarginForRankBucket(Collection $contexts, int $minRank, int $maxRank): ?float

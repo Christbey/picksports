@@ -42,7 +42,7 @@ function nflPropTimeGame(string $date, ?string $time): Game
         'confidence_score' => 70,
         'fetched_at' => now()->subHours(18),
         'confidence_decomposition' => [
-            'schema_version' => 'player-prop-signal-v2',
+            'schema_version' => PlayerPropAnalyzer::NFL_MODEL_VERSION,
             'stat_summary' => ['season_avg' => 270, 'recent_avg' => 270, 'last5_avg' => 270],
             'cover_record' => [],
             'availability' => $availability,

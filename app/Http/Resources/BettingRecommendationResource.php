@@ -5,6 +5,7 @@ namespace App\Http\Resources;
 use App\Models\NFL\Game as NflGame;
 use App\Services\BettingRecommendations\NflPropGameTime;
 use App\Services\BettingRecommendations\NflPropSeasonSummary;
+use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -40,7 +41,7 @@ class BettingRecommendationResource extends JsonResource
         if ($season !== null) {
             $coverRecord = [
                 ...($coverRecord ?? []),
-                'historical_last_17' => $coverRecord['season'] ?? null,
+                'historical_last_17' => data_get($prop->confidence_decomposition, 'schema_version') === PlayerPropAnalyzer::NFL_MODEL_VERSION ? null : ($coverRecord['season'] ?? null),
                 ...$season['records'],
             ];
             // Presentation win rates exclude pushes; do not mutate model snapshots.
@@ -72,7 +73,7 @@ class BettingRecommendationResource extends JsonResource
             'confidence' => $this->resource['confidence'],
             'stats' => [
                 'season_avg' => $season !== null ? $season['average'] : $this->resource['season_avg'],
-                'historical_avg' => $this->resource['season_avg'],
+                'historical_avg' => $this->resource['historical_avg'] ?? $this->resource['season_avg'],
                 'season_summary' => $season,
                 'recent_avg' => $this->resource['recent_avg'],
                 'last5_avg' => $this->resource['last5_avg'],

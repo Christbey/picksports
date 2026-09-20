@@ -2,6 +2,8 @@
 
 namespace App\Actions\OddsApi;
 
+use App\Models\NFL\Game;
+use App\Services\BettingRecommendations\PlayerPropAnalyzer;
 use App\Services\OddsApi\OddsApiService;
 use App\Support\SportsViewCache;
 use Illuminate\Database\Eloquent\Model;
@@ -78,6 +80,11 @@ abstract class AbstractSyncPlayerPropsForGames
                 continue;
             }
 
+            if ($game instanceof Game && (! PlayerPropAnalyzer::nflPregame($game)
+                || $game->playerProps()->whereNotNull('graded_at')->exists())) {
+                continue;
+            }
+
             $propsData = $this->oddsApiService->getPlayerProps(
                 eventId: $event['id'],
                 sport: $effectiveSportKey,
@@ -85,6 +92,11 @@ abstract class AbstractSyncPlayerPropsForGames
             );
 
             if (! $propsData) {
+                continue;
+            }
+
+            // The provider request may cross kickoff; check again before replacing snapshots.
+            if ($game instanceof Game && ! PlayerPropAnalyzer::nflPregame($game->fresh())) {
                 continue;
             }
 

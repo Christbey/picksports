@@ -12,6 +12,14 @@ import {
 import { researchReason } from '../../resources/js/lib/researchDecision.ts';
 
 test('research labels separate expiry changes and blocked refresh without hiding simultaneous reasons', () => {
+    assert.match(
+        researchReason('research_incomplete_or_stale'),
+        /incomplete or no longer matches/,
+    );
+    assert.doesNotMatch(
+        researchReason('research_incomplete_or_stale'),
+        /out of date/,
+    );
     for (const [status, label] of Object.entries({
         evidence_expired: 'Evidence expired',
         prediction_changed: 'Prediction changed',

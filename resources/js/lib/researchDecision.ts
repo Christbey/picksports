@@ -8,6 +8,8 @@ export const decisionLabel = (status?: string): string =>
     })[status ?? ''] ?? 'Assessment unavailable';
 
 export const researchReason = (reason: string): string => {
+    if (reason === 'research_incomplete_or_stale')
+        return 'Research is incomplete or no longer matches the current evidence. This alone does not mean its age limit expired.';
     if (reason === 'research_game_attempt_limit_reached')
         return 'Refresh blocked: the rolling 24-hour attempt limit, including available pregame reserves, was reached.';
     if (reason === 'research_game_daily_budget_reached')

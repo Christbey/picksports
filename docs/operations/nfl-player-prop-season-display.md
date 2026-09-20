@@ -11,6 +11,8 @@ The recommendation board exposes current regular-season evidence separately from
 
 `stats.cover_record` also includes `last_season`, `all_time`, `vs_opponent`, and `vs_conference`. All use available regular-season records before the matchup and the presented line/side. Opponent and conference splits use the player's stat-row team at each historical game, including before trades. Conference membership uses current stored team metadata, not historical realignment data. Missing conference metadata or no eligible sample returns null and displays N/A. All-time means all available stored history, not guaranteed career completeness.
 
+When provider conference fields are empty, known NFL abbreviations use the existing `TeamPlayoffForecastService` AFC/NFC alignment map. Unknown abbreviations still return N/A; no production team records are overwritten.
+
 The Vue page displays the season, reported sample size, historical baseline, weighted recent averages, sportsbook, original quote timestamp, and freshness status. The NFL quote window is 24 hours. Displaying age is not a replacement for backend recommendation eligibility checks.
 
 Regression coverage: `NflPropSeasonSummaryTest`, `NflPlayerPropBoardTimeTest`, and `playerPropPresentation.test.mjs`.

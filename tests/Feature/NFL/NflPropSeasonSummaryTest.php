@@ -117,7 +117,16 @@ test('NFL cover splits use the presented side and line across seasons opponent a
     $prop->line = 4.5;
     $changedLine = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
     expect($changedLine['records']['all_time']['recommendation_record'])->toBe('5-1');
-    Team::find($game->away_team_id)->update(['conference' => null]);
+    Team::find($game->away_team_id)->update(['conference' => null, 'abbreviation' => 'UNK']);
     $unknown = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
     expect($unknown['records']['vs_conference'])->toBeNull();
+});
+
+test('NFL conference records reuse the existing alignment map when provider conference fields are empty', function () {
+    [$prop, $game, $player] = seasonSummaryFixture();
+    Team::find($game->away_team_id)->update(['abbreviation' => 'ATL', 'conference' => null]);
+    seasonSummaryStat($game, $player, '2026-09-13', 5);
+    $summary = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
+    expect($summary['opponent_conference'])->toBe('NFC')
+        ->and($summary['records']['vs_conference']['recommendation_record'])->toBe('1-0');
 });

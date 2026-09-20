@@ -46,6 +46,11 @@ class TeamPlayoffForecastService
         protected TeamFuturesProjectionService $teamFuturesProjectionService
     ) {}
 
+    public static function conferenceForAbbreviation(string $abbreviation): ?string
+    {
+        return self::FALLBACK_ALIGNMENT[strtoupper(trim($abbreviation))]['conference'] ?? null;
+    }
+
     /**
      * @return array<string, mixed>
      */

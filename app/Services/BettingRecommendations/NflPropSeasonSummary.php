@@ -3,6 +3,7 @@
 namespace App\Services\BettingRecommendations;
 
 use App\Models\NFL\PlayerProp;
+use App\Services\NFL\TeamPlayoffForecastService;
 use App\Services\Sports\SportsDateWindowService;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
@@ -66,7 +67,7 @@ class NflPropSeasonSummary
                     : ((int) $playerTeam === (int) $game->away_team_id ? $game->home_team_id : null))
                 : null;
             $opponent = $teams->get($opponentId);
-            $conference = $this->conference($opponent?->conference);
+            $conference = $this->teamConference($opponent);
             // Use the player's team AT THAT GAME, not their current team after a trade.
             $opposedTeam = fn ($row) => (int) $row->team_id === (int) $row->home_team_id ? $row->away_team_id
                 : ((int) $row->team_id === (int) $row->away_team_id ? $row->home_team_id : null);
@@ -75,7 +76,7 @@ class NflPropSeasonSummary
                 'last_season' => $this->record($history->where('season', (int) $game?->season - 1), $fields, $prop),
                 'all_time' => $this->record($history, $fields, $prop),
                 'vs_opponent' => $opponentId ? $this->record($history->filter(fn ($row) => (int) $opposedTeam($row) === (int) $opponentId), $fields, $prop) : null,
-                'vs_conference' => $conference ? $this->record($history->filter(fn ($row) => $this->conference($teams->get($opposedTeam($row))?->conference) === $conference), $fields, $prop) : null,
+                'vs_conference' => $conference ? $this->record($history->filter(fn ($row) => $this->teamConference($teams->get($opposedTeam($row))) === $conference), $fields, $prop) : null,
             ];
             // Missing statistics are unknown, not zero performances.
             $values = $this->values($eligible, $fields);
@@ -131,5 +132,11 @@ class NflPropSeasonSummary
             'NFC', 'NATIONAL FOOTBALL CONFERENCE' => 'NFC',
             default => null,
         };
+    }
+
+    private function teamConference(?object $team): ?string
+    {
+        return $this->conference($team?->conference)
+            ?? TeamPlayoffForecastService::conferenceForAbbreviation($team?->abbreviation ?? '');
     }
 }

@@ -134,6 +134,9 @@ it('passes actual NFL season averages and records separately from stored histori
         ->assertJsonPath('data.0.stats.season_summary.games', 1)
         ->assertJsonPath('data.0.stats.cover_record.season.games', 1)
         ->assertJsonPath('data.0.stats.cover_record.season.recommendation_record', '0-1')
+        ->assertJsonPath('data.0.stats.cover_record.last_season.recommendation_record', '1-0')
+        ->assertJsonPath('data.0.stats.cover_record.all_time.recommendation_record', '1-1')
+        ->assertJsonPath('data.0.stats.cover_record.vs_opponent.games', 2)
         ->assertJsonPath('data.0.stats.times_covered_season.games', 1);
     expect(data_get($prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toBe(270);
 });

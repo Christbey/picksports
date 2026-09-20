@@ -41,7 +41,7 @@ class BettingRecommendationResource extends JsonResource
             $coverRecord = [
                 ...($coverRecord ?? []),
                 'historical_last_17' => $coverRecord['season'] ?? null,
-                'season' => $season['cover_record'],
+                ...$season['records'],
             ];
             // Presentation win rates exclude pushes; do not mutate model snapshots.
             $coverRecord = collect($coverRecord)->map(function ($record) {

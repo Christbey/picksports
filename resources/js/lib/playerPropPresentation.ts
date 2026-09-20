@@ -1,6 +1,17 @@
 export const formatPropStat = (value: number | null | undefined): string =>
     typeof value === 'number' && Number.isFinite(value) ? String(value) : 'N/A';
 
+export const formatCoverCount = (
+    record:
+        | { wins: number; games: number; recommendation_record: string }
+        | null
+        | undefined,
+    side: 'Over' | 'Under',
+): string =>
+    record
+        ? `${record.wins}/${record.games} covered · ${side} ${record.recommendation_record}`
+        : 'N/A — no eligible sample';
+
 export const formatPropOdds = (value: number | null | undefined): string =>
     typeof value === 'number' &&
     Number.isFinite(value) &&

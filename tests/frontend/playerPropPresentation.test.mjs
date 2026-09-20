@@ -2,12 +2,24 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     formatPropStat,
+    formatCoverCount,
     formatPropOdds,
     sideProbability,
     formatProbabilityEdge,
     propFreshness,
     formatPropTimestamp,
 } from '../../resources/js/lib/playerPropPresentation.ts';
+
+test('cover counts show recommended-side wins sample and pushes without inventing missing history', () => {
+    assert.equal(
+        formatCoverCount(
+            { wins: 3, games: 6, recommendation_record: '3-2-1' },
+            'Under',
+        ),
+        '3/6 covered · Under 3-2-1',
+    );
+    assert.equal(formatCoverCount(null, 'Over'), 'N/A — no eligible sample');
+});
 
 test('Under cards show recommended-side probabilities and percentage-point edge', () => {
     assert.equal(sideProbability(15.2, 'Under'), '84.8%');

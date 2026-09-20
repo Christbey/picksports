@@ -78,14 +78,46 @@ test('NFL season comes from the matchup rather than the calendar year and batche
     $other->market = 'player_rush_yds';
     $other->save();
     $props = new Collection([$prop, $other]);
-    $props->load('game');
+    $props->load(['game', 'player']);
     DB::enableQueryLog();
     DB::flushQueryLog();
     $summaries = app(NflPropSeasonSummary::class)->forProps($props);
     $queries = DB::getQueryLog();
     DB::disableQueryLog();
-    expect($queries)->toHaveCount(1)
+    expect($queries)->toHaveCount(2)
         ->and($summaries[$prop->id]['season'])->toBe(2025)
         ->and($summaries[$prop->id]['average'])->toBe(12.0)
         ->and($summaries[$other->id]['average'])->toBeNull();
+});
+
+test('NFL cover splits use the presented side and line across seasons opponent and conference including trades', function () {
+    [$prop, $game, $player] = seasonSummaryFixture();
+    Team::find($game->home_team_id)->update(['conference' => 'NFC']);
+    Team::find($game->away_team_id)->update(['conference' => 'American Football Conference']);
+    seasonSummaryStat($game, $player, '2026-09-13', 0);
+    seasonSummaryStat($game, $player, '2025-09-13', 20, ['season' => 2025]);
+    seasonSummaryStat($game, $player, '2025-09-20', 10, ['season' => 2025]);
+    seasonSummaryStat($game, $player, '2024-09-13', 5, ['season' => 2024]);
+    seasonSummaryStat($game, $player, '2023-09-13', 20, ['season' => 2023]);
+    // In 2023 this player belonged to today's opponent, so that game was vs NFC, not vs that team.
+    PlayerStat::whereHas('game', fn ($q) => $q->where('season', 2023))->update(['team_id' => $game->away_team_id]);
+    $otherAfc = Team::factory()->create(['conference' => 'AFC']);
+    seasonSummaryStat($game, $player, '2022-09-13', 5, ['season' => 2022, 'away_team_id' => $otherAfc->id]);
+    $summary = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
+    expect($summary['records']['season']['recommendation_record'])->toBe('1-0')
+        ->and($summary['records']['last_season']['recommendation_record'])->toBe('0-1-1')
+        ->and($summary['records']['all_time']['recommendation_record'])->toBe('3-2-1')
+        ->and($summary['records']['all_time']['win_rate'])->toBe(60.0)
+        ->and($summary['records']['vs_opponent']['recommendation_record'])->toBe('2-1-1')
+        ->and($summary['records']['vs_conference']['recommendation_record'])->toBe('3-1-1')
+        ->and($summary['opponent_conference'])->toBe('AFC');
+    $prop->recommended_side = 'Over';
+    $over = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
+    expect($over['records']['all_time']['recommendation_record'])->toBe('2-3-1');
+    $prop->line = 4.5;
+    $changedLine = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
+    expect($changedLine['records']['all_time']['recommendation_record'])->toBe('5-1');
+    Team::find($game->away_team_id)->update(['conference' => null]);
+    $unknown = app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id];
+    expect($unknown['records']['vs_conference'])->toBeNull();
 });

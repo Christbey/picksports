@@ -17,6 +17,7 @@ import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
 import {
     formatPropStat,
+    formatCoverCount,
     formatPropOdds,
     sideProbability,
     formatProbabilityEdge,
@@ -61,6 +62,8 @@ type Recommendation = {
             average: number | null;
             games: number;
             missing_stat_games: number;
+            opponent?: string | null;
+            opponent_conference?: string | null;
         } | null;
         recent_avg: number | null;
         last5_avg: number | null;
@@ -69,6 +72,9 @@ type Recommendation = {
         cover_record: {
             season: CoverRecord | null;
             historical_last_17?: CoverRecord | null;
+            last_season?: CoverRecord | null;
+            all_time?: CoverRecord | null;
+            vs_conference?: CoverRecord | null;
             last_10: CoverRecord | null;
             last_5: CoverRecord | null;
             home_away: CoverRecord | null;
@@ -375,28 +381,56 @@ const getCoverRecordRows = (rec: Recommendation) => {
     const record = rec.stats?.cover_record;
     if (!record) return [];
 
-    return [
+    const season = rec.stats.season_summary?.season;
+    const rows: [string, CoverRecord | null | undefined][] = [
         [
             props.sport === 'NFL'
                 ? `${rec.stats.season_summary?.season ?? 'Current'} season`
                 : 'Historical',
             record.season,
         ],
+        ...(props.sport === 'NFL'
+            ? ([
+                  [
+                      `${season ? season - 1 : 'Last'} season`,
+                      record.last_season,
+                  ],
+                  ['All available', record.all_time],
+                  [
+                      `vs ${rec.stats.season_summary?.opponent ?? 'opponent'}`,
+                      record.vs_opponent,
+                  ],
+                  [
+                      `vs ${rec.stats.season_summary?.opponent_conference ?? 'conference'}`,
+                      record.vs_conference,
+                  ],
+              ] as [string, CoverRecord | null | undefined][])
+            : []),
         ['Last 17', record.historical_last_17],
         ['Last 10', record.last_10],
         ['Last 5', record.last_5],
         ['Home/Away', record.home_away],
-        ['vs Opponent', record.vs_opponent],
-    ].filter((row): row is [string, CoverRecord] => row[1] != null);
+        ...(props.sport !== 'NFL'
+            ? [
+                  ['vs Opponent', record.vs_opponent] as [
+                      string,
+                      CoverRecord | null,
+                  ],
+              ]
+            : []),
+    ];
+    return rows.filter(
+        (row, index) => (props.sport === 'NFL' && index < 5) || row[1] != null,
+    );
 };
 
 const formatCoverRecord = (
-    record: CoverRecord,
+    record: CoverRecord | null | undefined,
     recommendation: 'Over' | 'Under',
-) => `${recommendation} ${record.recommendation_record}`;
+) => formatCoverCount(record, recommendation);
 
-const formatCoverRate = (record: CoverRecord) =>
-    record.win_rate === null ? 'N/A' : `${record.win_rate.toFixed(1)}%`;
+const formatCoverRate = (record: CoverRecord | null | undefined) =>
+    record?.win_rate == null ? 'N/A' : `${record.win_rate.toFixed(1)}%`;
 
 const getInitials = (name: string) =>
     name
@@ -993,20 +1027,34 @@ onBeforeUnmount(() => {
                                                 span seasons; pushes are
                                                 excluded from win rate.
                                             </p>
+                                            <p
+                                                v-if="sport === 'NFL'"
+                                                class="text-[11px] text-muted-foreground"
+                                            >
+                                                Regular season only. All
+                                                available, opponent, and
+                                                conference records use stored
+                                                history before this matchup.
+                                                Conference uses current team
+                                                membership. W–L–P; win %
+                                                excludes pushes.
+                                            </p>
                                             <div
                                                 v-for="[
                                                     label,
                                                     record,
                                                 ] in getCoverRecordRows(rec)"
                                                 :key="`${rec.id}-${label}`"
-                                                class="grid grid-cols-[76px_1fr_auto] items-center gap-2 text-xs"
+                                                class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 text-xs"
                                             >
                                                 <span
                                                     class="text-muted-foreground"
                                                 >
                                                     {{ label }}
                                                 </span>
-                                                <span class="font-medium">
+                                                <span
+                                                    class="col-span-2 row-start-2 font-medium"
+                                                >
                                                     {{
                                                         formatCoverRecord(
                                                             record,
@@ -1022,7 +1070,8 @@ onBeforeUnmount(() => {
                                                     }}
                                                 </span>
                                                 <span
-                                                    class="col-span-3 text-[11px] text-muted-foreground"
+                                                    v-if="record"
+                                                    class="col-span-2 text-[11px] text-muted-foreground"
                                                 >
                                                     {{ record.games }} games ·
                                                     Raw O/U:

@@ -18,6 +18,21 @@ class SyncPlayerPropsCommand extends AbstractSyncPlayerPropsCommand
 
     protected const SPORT_LABEL = 'NFL';
 
+    public function handle(): int
+    {
+        $result = parent::handle();
+        if ($result !== self::SUCCESS) {
+            return $result;
+        }
+
+        // Fetch replaces quote rows. Rebuild their deterministic recommendation
+        // snapshots immediately; no AI narratives or additional provider calls.
+        return $this->call('sports:analyze-player-props', [
+            '--sport' => 'nfl',
+            '--only-missing' => true,
+        ]);
+    }
+
     protected function defaultOddsSportKey(): ?string
     {
         return $this->resolveAutomaticNflOddsSportKey();

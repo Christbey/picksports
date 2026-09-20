@@ -12,3 +12,5 @@ The recommendation board exposes current regular-season evidence separately from
 The Vue page displays the season, reported sample size, historical baseline, weighted recent averages, sportsbook, original quote timestamp, and freshness status. The NFL quote window is 24 hours. Displaying age is not a replacement for backend recommendation eligibility checks.
 
 Regression coverage: `NflPropSeasonSummaryTest`, `NflPlayerPropBoardTimeTest`, and `playerPropPresentation.test.mjs`.
+
+The once-daily `nfl:sync-player-props` command chains `sports:analyze-player-props --sport=nfl --only-missing` after a successful fetch. Quote replacement clears snapshots, so analysis must follow the fetch. This step uses no AI narratives and does not fetch prices again. An analysis failure propagates as a nonzero sync-command exit code.

@@ -395,11 +395,23 @@ class PlayerPropAnalyzer
             ->when($sport !== 'CFB', fn ($query) => $query->limit(max(1, min($limit, 150))))
             ->get();
 
-        return $props
+        $recommendations = $props
             ->map(fn (Model $prop): ?array => $this->precomputedRecommendationPayload($prop, $sport))
             ->filter()
             ->take(max(1, min($limit, 150)))
             ->values();
+
+        if (strtoupper($sport) === 'NFL') {
+            $summaries = app(NflPropSeasonSummary::class)->forProps(
+                new \Illuminate\Database\Eloquent\Collection($recommendations->pluck('prop')->all())
+            );
+            $recommendations = $recommendations->map(fn (array $recommendation): array => [
+                ...$recommendation,
+                'season_summary' => $summaries[$recommendation['prop']->id],
+            ]);
+        }
+
+        return $recommendations;
     }
 
     /**

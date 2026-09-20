@@ -4,6 +4,8 @@ namespace App\Http\Resources;
 
 use App\Models\NFL\Game as NflGame;
 use App\Services\BettingRecommendations\NflPropGameTime;
+use App\Services\BettingRecommendations\NflPropSeasonSummary;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -31,6 +33,28 @@ class BettingRecommendationResource extends JsonResource
             ?? $prop->player_name
             ?? 'Unknown Player';
 
+        $season = $game instanceof NflGame
+            ? ($this->resource['season_summary'] ?? app(NflPropSeasonSummary::class)->forProps(new Collection([$prop]))[$prop->id])
+            : null;
+        $coverRecord = $this->resource['cover_record'] ?? null;
+        if ($season !== null) {
+            $coverRecord = [
+                ...($coverRecord ?? []),
+                'historical_last_17' => $coverRecord['season'] ?? null,
+                'season' => $season['cover_record'],
+            ];
+            // Presentation win rates exclude pushes; do not mutate model snapshots.
+            $coverRecord = collect($coverRecord)->map(function ($record) {
+                if (! is_array($record)) {
+                    return $record;
+                }
+                $decisions = ($record['wins'] ?? 0) + ($record['losses'] ?? 0);
+                $record['win_rate'] = $decisions > 0 ? round(100 * $record['wins'] / $decisions, 1) : null;
+
+                return $record;
+            })->all();
+        }
+
         return [
             'id' => $prop->id,
             'player' => [
@@ -47,15 +71,17 @@ class BettingRecommendationResource extends JsonResource
             'odds' => $this->resource['odds'],
             'confidence' => $this->resource['confidence'],
             'stats' => [
-                'season_avg' => $this->resource['season_avg'],
+                'season_avg' => $season !== null ? $season['average'] : $this->resource['season_avg'],
+                'historical_avg' => $this->resource['season_avg'],
+                'season_summary' => $season,
                 'recent_avg' => $this->resource['recent_avg'],
                 'last5_avg' => $this->resource['last5_avg'],
                 'vs_opponent_avg' => $this->resource['vs_opponent_avg'] ?? null,
                 'home_away_avg' => $this->resource['home_away_avg'] ?? null,
                 'hit_rate_vs_opponent' => $this->resource['hit_rate_vs_opponent'] ?? null,
                 'times_covered_last5' => $this->resource['times_covered_last5'] ?? null,
-                'times_covered_season' => $this->resource['times_covered_season'] ?? null,
-                'cover_record' => $this->resource['cover_record'] ?? null,
+                'times_covered_season' => $season !== null ? $season['cover_record'] : ($this->resource['times_covered_season'] ?? null),
+                'cover_record' => $coverRecord,
                 'consistency' => $this->resource['consistency'] ?? null,
             ],
             'streak' => $this->resource['streak'] ?? null,
@@ -81,6 +107,11 @@ class BettingRecommendationResource extends JsonResource
                 ...($game instanceof NflGame ? app(NflPropGameTime::class)->forGame($game) : []),
             ],
             'bookmaker' => $prop->bookmaker,
+            'fetched_at' => $prop->fetched_at?->toIso8601String(),
+            'freshness_hours' => (int) config(
+                "validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.{$sportPrefix}",
+                config('validation.thresholds.player_prop_freshness.stale_after_hours', 12),
+            ),
         ];
     }
 

@@ -3,6 +3,7 @@
 use App\Models\NFL\Game;
 use App\Models\NFL\Player;
 use App\Models\NFL\PlayerProp;
+use App\Models\NFL\PlayerStat;
 use App\Models\NFL\Team;
 use App\Models\User;
 use App\Services\BettingRecommendations\NflPropAvailabilityContext;
@@ -39,6 +40,7 @@ function nflPropTimeGame(string $date, ?string $time): Game
         'under_price' => -110,
         'recommended_side' => 'Over',
         'confidence_score' => 70,
+        'fetched_at' => now()->subHours(18),
         'confidence_decomposition' => [
             'schema_version' => 'player-prop-signal-v2',
             'stat_summary' => ['season_avg' => 270, 'recent_avg' => 270, 'last5_avg' => 270],
@@ -64,6 +66,8 @@ it('uses the local kickoff date for NFL board defaults, filters, and recommendat
         ->assertJsonPath('games.0.timezone', 'America/Chicago')
         ->assertJsonPath('data.0.game.kickoff_label', 'Thu, Sep 17, 7:15 PM CDT')
         ->assertJsonPath('data.0.game.starts_at', '2026-09-18T00:15:00+00:00')
+        ->assertJsonPath('data.0.fetched_at', now()->subHours(18)->toIso8601String())
+        ->assertJsonPath('data.0.freshness_hours', 24)
         ->assertJsonPath('meta.diagnostics.raw_prop_count', 1);
 
     $this->getJson('/api/v2/sports/nfl/player-props/board?date=2026-09-17')
@@ -104,4 +108,32 @@ it('keeps the default NFL slate on the business date after UTC midnight', functi
 
     $this->getJson('/api/v2/sports/nfl/player-props/board')
         ->assertOk()->assertJsonPath('filters.date', '2026-09-17');
+});
+
+it('passes actual NFL season averages and records separately from stored historical inputs', function () {
+    $game = nflPropTimeGame('2026-09-20', '17:00:00');
+    $game->update(['season' => 2026]);
+    $prop = PlayerProp::where('game_id', $game->id)->firstOrFail();
+    foreach ([[2025, '2025-09-13', 400], [2026, '2026-09-13', 100]] as [$season, $date, $yards]) {
+        $played = Game::factory()->create([
+            'home_team_id' => $game->home_team_id, 'away_team_id' => $game->away_team_id,
+            'season' => $season, 'season_type' => 2, 'status' => 'STATUS_FINAL',
+            'game_date' => $date, 'game_time' => '17:00:00',
+        ]);
+        PlayerStat::factory()->create([
+            'player_id' => $prop->player_id, 'game_id' => $played->id,
+            'team_id' => $game->home_team_id, 'passing_yards' => $yards,
+        ]);
+    }
+
+    $this->getJson('/api/v2/sports/nfl/player-props/board?date=2026-09-20')
+        ->assertOk()
+        ->assertJsonPath('data.0.stats.season_avg', 100)
+        ->assertJsonPath('data.0.stats.historical_avg', 270)
+        ->assertJsonPath('data.0.stats.season_summary.season', 2026)
+        ->assertJsonPath('data.0.stats.season_summary.games', 1)
+        ->assertJsonPath('data.0.stats.cover_record.season.games', 1)
+        ->assertJsonPath('data.0.stats.cover_record.season.recommendation_record', '0-1')
+        ->assertJsonPath('data.0.stats.times_covered_season.games', 1);
+    expect(data_get($prop->fresh()->confidence_decomposition, 'stat_summary.season_avg'))->toBe(270);
 });

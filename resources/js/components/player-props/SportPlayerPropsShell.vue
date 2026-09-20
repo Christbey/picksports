@@ -15,6 +15,14 @@ import {
 import { Label } from '@/components/ui/label';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import AppLayout from '@/layouts/AppLayout.vue';
+import {
+    formatPropStat,
+    formatPropOdds,
+    sideProbability,
+    formatProbabilityEdge,
+    propFreshness,
+    formatPropTimestamp,
+} from '@/lib/playerPropPresentation';
 
 type CoverRecord = {
     games: number;
@@ -43,16 +51,24 @@ type Recommendation = {
     market: string;
     line: number;
     recommendation: 'Over' | 'Under';
-    odds: number;
+    odds: number | null;
     confidence: number;
     stats: {
-        season_avg: number;
-        recent_avg: number;
-        last5_avg: number;
+        season_avg: number | null;
+        historical_avg?: number | null;
+        season_summary?: {
+            season: number | null;
+            average: number | null;
+            games: number;
+            missing_stat_games: number;
+        } | null;
+        recent_avg: number | null;
+        last5_avg: number | null;
         times_covered_last5: { hits: number; games: number } | null;
         times_covered_season: { hits: number; games: number } | null;
         cover_record: {
             season: CoverRecord | null;
+            historical_last_17?: CoverRecord | null;
             last_10: CoverRecord | null;
             last_5: CoverRecord | null;
             home_away: CoverRecord | null;
@@ -106,6 +122,8 @@ type Recommendation = {
         timezone?: string;
     };
     bookmaker: string;
+    fetched_at?: string | null;
+    freshness_hours?: number;
 };
 
 type DateOption = {
@@ -328,7 +346,10 @@ const getConfidenceColor = (rec: Recommendation) => {
     return 'bg-gray-500';
 };
 
-const formatOdds = (odds: number) => (odds > 0 ? `+${odds}` : odds.toString());
+const nowMs = ref(Date.now());
+let freshnessTimer: ReturnType<typeof setInterval> | undefined;
+const quoteStatus = (rec: Recommendation) =>
+    propFreshness(rec.fetched_at, rec.freshness_hours, nowMs.value);
 
 const getSignalBand = (rec: Recommendation) => {
     const label = rec.confidence_decomposition?.signal_quality?.label;
@@ -355,12 +376,18 @@ const getCoverRecordRows = (rec: Recommendation) => {
     if (!record) return [];
 
     return [
-        ['Season', record.season],
+        [
+            props.sport === 'NFL'
+                ? `${rec.stats.season_summary?.season ?? 'Current'} season`
+                : 'Historical',
+            record.season,
+        ],
+        ['Last 17', record.historical_last_17],
         ['Last 10', record.last_10],
         ['Last 5', record.last_5],
         ['Home/Away', record.home_away],
         ['vs Opponent', record.vs_opponent],
-    ].filter((row): row is [string, CoverRecord] => row[1] !== null);
+    ].filter((row): row is [string, CoverRecord] => row[1] != null);
 };
 
 const formatCoverRecord = (
@@ -440,10 +467,14 @@ const toggleModelDetails = (id: number) => {
 
 onMounted(() => {
     void loadBoard();
+    freshnessTimer = setInterval(() => {
+        nowMs.value = Date.now();
+    }, 60_000);
 });
 
 onBeforeUnmount(() => {
     boardAbortController?.abort();
+    clearInterval(freshnessTimer);
 });
 </script>
 
@@ -736,8 +767,40 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                                 <Badge variant="outline" class="font-mono">
-                                    {{ formatOdds(rec.odds) }}
+                                    {{ formatPropOdds(rec.odds) }}
                                 </Badge>
+                            </div>
+
+                            <div
+                                class="space-y-1 text-xs text-muted-foreground"
+                            >
+                                <p>
+                                    Sportsbook: {{ rec.bookmaker || 'Unknown' }}
+                                </p>
+                                <p>
+                                    Quote fetched:
+                                    {{
+                                        formatPropTimestamp(
+                                            rec.fetched_at,
+                                            rec.game.timezone,
+                                        )
+                                    }}
+                                </p>
+                                <p
+                                    :class="
+                                        quoteStatus(rec) === 'stale'
+                                            ? 'text-amber-700 dark:text-amber-400'
+                                            : ''
+                                    "
+                                >
+                                    {{
+                                        quoteStatus(rec) === 'fresh'
+                                            ? `Within ${rec.freshness_hours}-hour quote window`
+                                            : quoteStatus(rec) === 'stale'
+                                              ? 'Quote expired — verify the current line and price'
+                                              : 'Quote freshness unavailable'
+                                    }}
+                                </p>
                             </div>
 
                             <div class="flex items-center justify-between">
@@ -763,7 +826,10 @@ onBeforeUnmount(() => {
                                 <div
                                     class="flex justify-between text-xs text-muted-foreground"
                                 >
-                                    <span>Signal Score</span>
+                                    <span
+                                        title="Model signal strength, not probability of winning"
+                                        >Signal Score (not win %)</span
+                                    >
                                     <span>{{ rec.confidence }}/100</span>
                                 </div>
                                 <div
@@ -797,73 +863,114 @@ onBeforeUnmount(() => {
                                 >
                                     <div class="space-y-2">
                                         <div
+                                            v-if="sport === 'NFL'"
+                                            class="space-y-1 border-b pb-2"
+                                        >
+                                            <div
+                                                class="flex justify-between gap-3 text-sm"
+                                            >
+                                                <span
+                                                    class="text-muted-foreground"
+                                                    >{{
+                                                        rec.stats.season_summary
+                                                            ?.season ??
+                                                        'Current'
+                                                    }}
+                                                    Regular-season Avg</span
+                                                >
+                                                <span class="font-medium">{{
+                                                    formatPropStat(
+                                                        rec.stats.season_avg,
+                                                    )
+                                                }}</span>
+                                            </div>
+                                            <p
+                                                class="text-[11px] text-muted-foreground"
+                                            >
+                                                {{
+                                                    rec.stats.season_summary
+                                                        ?.games ?? 0
+                                                }}
+                                                reported games before this
+                                                matchup.
+                                                <template
+                                                    v-if="
+                                                        rec.stats.season_summary
+                                                            ?.missing_stat_games
+                                                    "
+                                                >
+                                                    {{
+                                                        rec.stats.season_summary
+                                                            .missing_stat_games
+                                                    }}
+                                                    games with missing stats
+                                                    excluded.
+                                                </template>
+                                                <template
+                                                    v-if="
+                                                        (rec.stats
+                                                            .season_summary
+                                                            ?.games ?? 0) < 3
+                                                    "
+                                                    >Small sample.</template
+                                                >
+                                            </p>
+                                        </div>
+                                        <div
                                             class="flex justify-between text-sm"
                                         >
-                                            <span class="text-muted-foreground"
-                                                >Season Avg</span
+                                            <span
+                                                class="text-muted-foreground"
+                                                title="Average of up to 82 prior finalized games; may span seasons"
+                                                >Historical Avg</span
                                             >
                                             <span class="font-medium">{{
-                                                rec.stats?.season_avg ?? 0
+                                                formatPropStat(
+                                                    rec.stats?.historical_avg,
+                                                )
                                             }}</span>
                                         </div>
                                         <div
                                             class="flex justify-between text-sm"
                                         >
                                             <span class="text-muted-foreground"
-                                                >Last 10 Games</span
+                                                >Last 10 (weighted)</span
                                             >
-                                            <span
-                                                :class="[
-                                                    'font-medium',
-                                                    (rec.stats?.recent_avg ??
-                                                        0) >
-                                                    (rec.stats?.season_avg ?? 0)
-                                                        ? 'text-green-600 dark:text-green-400'
-                                                        : 'text-red-600 dark:text-red-400',
-                                                ]"
-                                            >
-                                                {{ rec.stats?.recent_avg ?? 0 }}
+                                            <span class="font-medium">
+                                                {{
+                                                    formatPropStat(
+                                                        rec.stats?.recent_avg,
+                                                    )
+                                                }}
                                             </span>
                                         </div>
                                         <div
                                             class="flex justify-between text-sm"
                                         >
                                             <span class="text-muted-foreground"
-                                                >Last 5 Games</span
+                                                >Last 5 (weighted)</span
                                             >
-                                            <span
-                                                :class="[
-                                                    'font-medium',
-                                                    (rec.stats?.last5_avg ??
-                                                        0) >
-                                                    (rec.stats?.recent_avg ?? 0)
-                                                        ? 'text-green-600 dark:text-green-400'
-                                                        : 'text-red-600 dark:text-red-400',
-                                                ]"
-                                            >
-                                                {{ rec.stats?.last5_avg ?? 0 }}
+                                            <span class="font-medium">
+                                                {{
+                                                    formatPropStat(
+                                                        rec.stats?.last5_avg,
+                                                    )
+                                                }}
                                             </span>
                                         </div>
                                         <div
-                                            v-if="
-                                                rec.stats?.vs_opponent_avg !==
-                                                null
-                                            "
                                             class="flex justify-between text-sm"
                                         >
                                             <span class="text-muted-foreground"
-                                                >vs Opponent</span
+                                                >vs Opponent (weighted)</span
                                             >
-                                            <span
-                                                :class="[
-                                                    'font-medium',
-                                                    rec.stats.vs_opponent_avg >
-                                                    (rec.stats?.season_avg ?? 0)
-                                                        ? 'text-green-600 dark:text-green-400'
-                                                        : 'text-red-600 dark:text-red-400',
-                                                ]"
-                                            >
-                                                {{ rec.stats.vs_opponent_avg }}
+                                            <span class="font-medium">
+                                                {{
+                                                    formatPropStat(
+                                                        rec.stats
+                                                            ?.vs_opponent_avg,
+                                                    )
+                                                }}
                                             </span>
                                         </div>
                                         <div
@@ -875,8 +982,17 @@ onBeforeUnmount(() => {
                                             <div
                                                 class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase"
                                             >
-                                                Cover Record
+                                                History against this line
                                             </div>
+                                            <p
+                                                class="text-[11px] text-muted-foreground"
+                                            >
+                                                Prior games compared with
+                                                today's {{ rec.line }} line, not
+                                                historical bets. Windows may
+                                                span seasons; pushes are
+                                                excluded from win rate.
+                                            </p>
                                             <div
                                                 v-for="[
                                                     label,
@@ -908,6 +1024,7 @@ onBeforeUnmount(() => {
                                                 <span
                                                     class="col-span-3 text-[11px] text-muted-foreground"
                                                 >
+                                                    {{ record.games }} games ·
                                                     Raw O/U:
                                                     {{ record.record }}
                                                     <template
@@ -939,46 +1056,47 @@ onBeforeUnmount(() => {
                                             class="flex justify-between border-t pt-2 text-sm"
                                         >
                                             <span class="text-muted-foreground"
-                                                >Edge vs Line</span
+                                                >Probability edge ({{
+                                                    rec.recommendation
+                                                }})</span
                                             >
                                             <span
                                                 :class="[
                                                     'font-bold',
-                                                    (rec.edge ?? 0) > 0
+                                                    (rec.edge_probability ??
+                                                        0) > 0
                                                         ? 'text-green-600 dark:text-green-400'
-                                                        : 'text-red-600 dark:text-red-400',
+                                                        : 'text-muted-foreground',
                                                 ]"
                                             >
                                                 {{
-                                                    (rec.edge ?? 0) > 0
-                                                        ? '+'
-                                                        : ''
-                                                }}{{ rec.edge ?? 0 }}
+                                                    formatProbabilityEdge(
+                                                        rec.edge_probability,
+                                                    )
+                                                }}
                                             </span>
                                         </div>
                                         <div
-                                            v-if="
-                                                rec.model_over_probability !==
-                                                    null &&
-                                                rec.market_over_probability !==
-                                                    null
-                                            "
                                             class="flex justify-between text-sm"
                                         >
                                             <span class="text-muted-foreground"
-                                                >Model vs Market</span
+                                                >{{ rec.recommendation }}: model
+                                                vs fair market</span
                                             >
                                             <span class="font-medium">
                                                 {{
-                                                    rec.model_over_probability?.toFixed(
-                                                        1,
+                                                    sideProbability(
+                                                        rec.model_over_probability,
+                                                        rec.recommendation,
                                                     )
-                                                }}% vs
+                                                }}
+                                                vs
                                                 {{
-                                                    rec.market_over_probability?.toFixed(
-                                                        1,
+                                                    sideProbability(
+                                                        rec.market_over_probability,
+                                                        rec.recommendation,
                                                     )
-                                                }}%
+                                                }}
                                             </span>
                                         </div>
                                     </div>

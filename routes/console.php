@@ -1035,12 +1035,18 @@ $scheduleSportPipeline(
     ],
     'nfl:sync-odds',
     'NFL: Sync Odds',
-    'nfl:sync-player-props',
-    10,
-    15,
-    'NFL: Sync Player Props',
     scheduleStandaloneOdds: false,
 );
+// Daily provider fetch; NFL prop freshness is evaluated against a 24-hour window.
+$nflPlayerPropsCommand = 'nfl:sync-player-props';
+$nflPlayerPropsEvent = Schedule::command($nflPlayerPropsCommand)
+    ->dailyAt('10:10')
+    ->when($nflInSeason)
+    ->name('NFL: Sync Player Props')
+    ->onOneServer()
+    ->withoutOverlapping(120)
+    ->runInBackground();
+$attachCommandHeartbeat($nflPlayerPropsEvent, $nflPlayerPropsCommand, 'NFL: Sync Player Props');
 $nflPregamePipelineCommand = "nfl:run-pregame-pipeline --season={$fallSeasonYear} --days-forward=8";
 // Research rejects quotes older than 60 minutes; refresh prices independently
 // of expensive generation and regardless of the next model-run window.

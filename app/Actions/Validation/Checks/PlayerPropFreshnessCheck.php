@@ -27,7 +27,10 @@ class PlayerPropFreshnessCheck implements ValidationCheck
         }
 
         $windowDays = (int) ($profile['window_days'] ?? config('validation.window_days', 7));
-        $staleHours = (int) config('validation.thresholds.player_prop_freshness.stale_after_hours', 12);
+        $staleHours = (int) config(
+            "validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.{$sport}",
+            config('validation.thresholds.player_prop_freshness.stale_after_hours', 12),
+        );
         $softAvailabilityHours = (int) config('validation.thresholds.player_prop_freshness.soft_availability_hours', 24);
         $expectedAvailabilityHours = (int) config('validation.thresholds.player_prop_freshness.expected_availability_hours', 6);
         $warnPct = (float) config('validation.thresholds.player_prop_freshness.problem_warn_pct', 0.05);

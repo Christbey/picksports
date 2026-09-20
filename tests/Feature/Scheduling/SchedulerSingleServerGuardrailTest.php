@@ -8,6 +8,18 @@ use Illuminate\Console\Scheduling\Schedule;
 
 uses()->group('scheduling');
 
+it('fetches NFL player props once daily without an AI research command', function () {
+    $events = collect(app(Schedule::class)->events())
+        ->filter(fn ($event): bool => str_contains((string) $event->command, 'nfl:sync-player-props'));
+
+    expect($events)->toHaveCount(1);
+    $event = $events->first();
+    expect($event->expression)->toBe('10 10 * * *')
+        ->and($event->onOneServer)->toBeTrue()
+        ->and($event->withoutOverlapping)->toBeTrue()
+        ->and($event->expiresAt)->toBe(120);
+});
+
 it('refreshes NFL research markets within their freshness window independently of model runs', function () {
     $events = collect(app(Schedule::class)->events())->keyBy('description');
     $odds = $events->get('NFL: Research Market Refresh');

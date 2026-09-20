@@ -16,8 +16,9 @@ class NflPlayerPropCoverage
     }
 
     /** @return array<string,int> */
-    public function forGame(int $gameId, int $staleHours = 12): array
+    public function forGame(int $gameId, ?int $staleHours = null): array
     {
+        $staleHours ??= (int) config('validation.thresholds.player_prop_freshness.stale_after_hours_by_sport.nfl', 24);
         $counts = ['quotes' => 0, 'eligible_quotes' => 0, 'scored_quotes' => 0, 'held_quotes' => 0,
             'no_edge_quotes' => 0, 'data_hold_quotes' => 0, 'unprocessed_quotes' => 0, 'stale_quotes' => 0];
         foreach (DB::table('nfl_player_props')->where('game_id', $gameId)->cursor() as $prop) {

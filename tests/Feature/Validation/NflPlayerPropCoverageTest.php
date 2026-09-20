@@ -46,7 +46,7 @@ function nflCoverageProp(Game $game, ?string $status = null, ?string $reason = n
 test('one fresh scored NFL quote cannot hide an unprocessed stale quote', function () {
     $game = nflCoverageGame();
     nflCoverageProp($game, 'scored');
-    nflCoverageProp($game)->update(['fetched_at' => now()->subDay()]);
+    nflCoverageProp($game)->update(['fetched_at' => now()->subDay()->subSecond()]);
 
     $result = app(PlayerPropFreshnessCheck::class)->run('nfl', config('validation.sports.nfl'));
     expect($result['status'])->toBe('failing')
@@ -55,6 +55,21 @@ test('one fresh scored NFL quote cannot hide an unprocessed stale quote', functi
         ->and(data_get($result, 'metadata.quote_coverage.unprocessed_quotes'))->toBe(1)
         ->and(data_get($result, 'metadata.quote_coverage.stale_quotes'))->toBe(1);
 });
+
+test('NFL props remain fresh through 24 hours and expire afterward without changing timestamps', function (int $ageSeconds, int $staleQuotes) {
+    $game = nflCoverageGame();
+    $prop = nflCoverageProp($game, 'scored');
+    $fetchedAt = now()->subSeconds($ageSeconds);
+    $prop->update(['fetched_at' => $fetchedAt]);
+
+    $result = app(PlayerPropFreshnessCheck::class)->run('nfl', config('validation.sports.nfl'));
+
+    expect(data_get($result, 'metadata.stale_after_hours'))->toBe(24)
+        ->and(data_get($result, 'metadata.quote_coverage.stale_quotes'))->toBe($staleQuotes)
+        ->and(app(NflPlayerPropCoverage::class)->forGame($game->id)['stale_quotes'])->toBe($staleQuotes)
+        ->and($prop->fresh()->fetched_at->equalTo($fetchedAt))->toBeTrue()
+        ->and(config('validation.thresholds.player_prop_freshness.stale_after_hours'))->toBe(12);
+})->with(['18 hours' => [18 * 3600, 0], '24 hours' => [24 * 3600, 0], 'expired' => [24 * 3600 + 1, 1]]);
 
 test('evaluated no-edge holds count as processed while data holds remain visible', function () {
     $game = nflCoverageGame();

@@ -168,6 +168,7 @@ return [
             'problem_warn_pct' => 0.05,
             'problem_fail_pct' => 0.20,
             'stale_after_hours' => 12,
+            'stale_after_hours_by_sport' => ['nfl' => 24],
             'soft_availability_hours' => 24,
             'expected_availability_hours' => 6,
         ],

@@ -18,5 +18,6 @@ final readonly class SportPredictionPresentationData
         public ?array $recommendation = null,
         public ?array $marketAwareProjection = null,
         public ?array $valueSignal = null,
+        public ?array $nflBoard = null,
     ) {}
 }

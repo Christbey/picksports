@@ -8,6 +8,7 @@ use App\Models\PredictionFeatureSnapshot;
 use App\Services\MLB\MlbMarketAwareProjectionService;
 use App\Services\MLB\MlbPeriodInsightService;
 use App\Services\MLB\MlbPredictionRecommendationService;
+use App\Services\NFL\NflPredictionBoardContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
@@ -28,11 +29,12 @@ class SportPredictionPresentationService
     public function forPredictions(SportContext $context, Collection $predictions): Collection
     {
         $snapshots = $this->snapshots->latestForPredictions($predictions);
+        $nflBoard = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions($predictions) : collect();
         $periodInsightsByGame = $context->slug === 'mlb'
             ? $this->mlbPeriodInsights->forGames($predictions->pluck('game')->filter())
             : [];
 
-        return $predictions->mapWithKeys(function (Model $prediction) use ($context, $snapshots, $periodInsightsByGame): array {
+        return $predictions->mapWithKeys(function (Model $prediction) use ($context, $snapshots, $periodInsightsByGame, $nflBoard): array {
             $predictionId = (int) $prediction->getKey();
 
             return [$predictionId => $this->build(
@@ -40,6 +42,7 @@ class SportPredictionPresentationService
                 $prediction,
                 $snapshots->get($predictionId),
                 $periodInsightsByGame[(int) $prediction->getAttribute('game_id')] ?? [],
+                $nflBoard->get($predictionId),
             )];
         });
     }
@@ -53,7 +56,9 @@ class SportPredictionPresentationService
             ? $this->mlbPeriodInsights->forGame($prediction->getRelationValue('game'))
             : [];
 
-        return $this->build($context, $prediction, $snapshot, $periodInsights);
+        $nflBoard = $context->slug === 'nfl' ? app(NflPredictionBoardContext::class)->forPredictions(collect([$prediction]))->get($prediction->getKey()) : null;
+
+        return $this->build($context, $prediction, $snapshot, $periodInsights, $nflBoard);
     }
 
     /**
@@ -64,11 +69,13 @@ class SportPredictionPresentationService
         Model $prediction,
         ?PredictionFeatureSnapshot $snapshot,
         array $periodInsights,
+        ?array $nflBoard = null,
     ): SportPredictionPresentationData {
         $isMlbPrediction = $context->slug === 'mlb' && $prediction instanceof MlbPrediction;
 
         return new SportPredictionPresentationData(
             periodInsights: $periodInsights,
+            nflBoard: $nflBoard,
             featureSnapshot: $snapshot,
             recommendation: $isMlbPrediction
                 ? $this->mlbRecommendations->forPrediction($prediction)

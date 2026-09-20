@@ -5,6 +5,7 @@ namespace App\Http\Resources\Api\V2;
 use App\Models\PredictionFeatureSnapshot;
 use App\Services\Api\V2\SportContext;
 use App\Services\Api\V2\SportPredictionPresentationData;
+use App\Services\Sports\SportsDateWindowService;
 use App\Support\MLB\MlbGamePhase;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
@@ -52,6 +53,7 @@ class SportPredictionResource extends JsonResource
             'market_aware_projection' => $this->marketAwareProjection(),
             'recommendation' => $this->recommendation(),
             'pro_signal_layer' => $this->proSignalLayer(),
+            'nfl_board' => $this->presentation->nflBoard,
             'period_insights' => $this->context->slug === 'mlb' ? $this->presentation->periodInsights : [],
             'cfb_signal_context' => $this->cfbSignalContext(),
             'home_elo' => $this->floatAttribute('home_elo'),
@@ -114,6 +116,9 @@ class SportPredictionResource extends JsonResource
             'short_name' => $game->getAttribute('short_name'),
             'game_date' => $dateTime['game_date'],
             'game_time' => $dateTime['game_time'],
+            'kickoff_at' => $this->context->slug === 'nfl'
+                ? app(SportsDateWindowService::class)->gameDateTimeUtc($game->getAttribute('game_date'), $game->getAttribute('game_time'))?->toIso8601String()
+                : null,
             'status' => $game->getAttribute('status'),
             'home_score' => $game->getAttribute('home_score'),
             'away_score' => $game->getAttribute('away_score'),

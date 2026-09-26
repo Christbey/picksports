@@ -48,6 +48,8 @@ class SportPredictionResource extends JsonResource
             'confidence_score' => $this->floatAttribute('confidence_score'),
             'confidence_level' => $this->confidenceLevel(),
             'confidence_context' => $this->confidenceContext(),
+            'spread_assessment' => $this->context->slug === 'nfl'
+                ? data_get($this->attribute('model_metadata'), 'spread_assessment') : null,
             'public_recommendation' => $this->publicRecommendation(),
             'value_signal' => $this->valueSignal(),
             'market_aware_projection' => $this->marketAwareProjection(),

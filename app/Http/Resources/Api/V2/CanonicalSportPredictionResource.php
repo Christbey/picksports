@@ -3,9 +3,11 @@
 namespace App\Http\Resources\Api\V2;
 
 use App\Models\CanonicalPrediction;
+use App\Models\CFB\Game;
 use App\Models\PredictionMarket;
 use App\Services\Api\V2\CanonicalPredictionPresentationData;
 use App\Services\Api\V2\SportContext;
+use App\Services\CFB\Live\LiveBoardPresentation;
 use App\Support\Sports\GameDateTimePresenter;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -104,6 +106,8 @@ class CanonicalSportPredictionResource extends JsonResource
             'live_seconds_remaining' => null,
             'live_outs_remaining' => null,
             'live_updated_at' => null,
+            ...($game instanceof Game
+                ? app(LiveBoardPresentation::class)->forGame($game) : []),
             'depth_chart_context' => null,
             'market_summary' => [
                 'has_odds' => $valueSignal !== null,
@@ -148,6 +152,8 @@ class CanonicalSportPredictionResource extends JsonResource
             'status' => $game->status,
             'home_score' => $game->home_score,
             'away_score' => $game->away_score,
+            'period' => $game->period,
+            'clock' => $game->game_clock ?? $game->clock,
             'home_linescores' => null,
             'away_linescores' => null,
             'inning' => null,

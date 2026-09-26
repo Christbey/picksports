@@ -198,6 +198,12 @@ return [
             'injury_questionable_total_penalty' => 0.10,
         ],
         'model_version' => env('NFL_MODEL_VERSION', 'nfl-historical-elo-v2'),
+        'sample_reliability' => [
+            // Conservative prior strength, not optimized against the current season.
+            'prior_games' => 8,
+        ],
+        'allow_unvalidated_trust_boosts' => false,
+        'allow_legacy_spread_bias_calibration' => false,
         'feature_version' => env('NFL_FEATURE_VERSION', 'nfl-pregame-ml-v3'),
         'blend_version' => env('NFL_BLEND_VERSION', 'nfl-multi-signal-v1'),
         'full_historical_shadow' => [
@@ -271,6 +277,9 @@ return [
         |
         */
         'true_epa' => [
+            // Same-game fitted custom EP is not a validated pregame feature.
+            // Independent of NFL_TRUE_EPA_ENABLED so existing deployments fail safe.
+            'custom_epa_quarantined' => env('NFL_CUSTOM_EPA_QUARANTINED', true),
             'enabled' => env('NFL_TRUE_EPA_ENABLED', true),
             'backfill_before_generation' => env('NFL_TRUE_EPA_BACKFILL_BEFORE_GENERATION', true),
             'blend_weight' => env('NFL_TRUE_EPA_BLEND_WEIGHT', 0.35),
@@ -356,6 +365,8 @@ return [
         ],
 
         'depth_chart_injuries' => [
+            // Safety bound, not a fitted accuracy claim.
+            'max_total_adjustment' => env('NFL_INJURY_MAX_TOTAL_ADJUSTMENT', 3.0),
             'enabled' => env('NFL_DEPTH_CHART_INJURIES_ENABLED', true),
         ],
 
@@ -1042,13 +1053,13 @@ return [
                 'trust_exception' => env('NFL_TIGHT_SPREAD_TRUST_EXCEPTION', 85.0),
             ],
             'big_spread' => [
-                'enabled' => env('NFL_BIG_SPREAD_TRUST_BOOST_ENABLED', true),
+                'enabled' => env('NFL_BIG_SPREAD_TRUST_BOOST_ENABLED', false),
                 'threshold' => env('NFL_BIG_SPREAD_THRESHOLD', 7.0),
                 'trust_boost' => env('NFL_BIG_SPREAD_TRUST_BOOST', 4.0),
             ],
             'key_number' => [
-                'edge_7_trust_boost' => env('NFL_KEY_NUMBER_7_TRUST_BOOST', 3.0),
-                'edge_10_trust_boost' => env('NFL_KEY_NUMBER_10_TRUST_BOOST', 6.0),
+                'edge_7_trust_boost' => env('NFL_KEY_NUMBER_7_TRUST_BOOST', 0.0),
+                'edge_10_trust_boost' => env('NFL_KEY_NUMBER_10_TRUST_BOOST', 0.0),
             ],
             'high_total' => [
                 'enabled' => env('NFL_HIGH_TOTAL_BUCKET_ADJUSTMENT_ENABLED', true),

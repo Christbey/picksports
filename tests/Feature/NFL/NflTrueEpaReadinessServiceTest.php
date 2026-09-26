@@ -10,6 +10,10 @@ use Mockery as m;
 
 uses()->group('nfl', 'predictions');
 
+beforeEach(function () {
+    config(['nfl.predictions.true_epa.custom_epa_quarantined' => false]);
+});
+
 it('refreshes only incomplete true EPA metrics for teams on the prediction slate', function () {
     config([
         'nfl.predictions.true_epa.enabled' => true,

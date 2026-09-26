@@ -4,6 +4,11 @@ namespace App\Services\NFL\Research;
 
 class RecommendationEligibility
 {
+    /**
+     * Report data completeness and model consensus separately. A candidate here
+     * is not release approval: immutable pregame evidence and quotes are checked
+     * by NflReleasedBetDecisionRecorder. Data holds take precedence over a pass.
+     */
     public function evaluate(array $analysis, array $metadata, array $holds = []): array
     {
         $modelReasons = [];

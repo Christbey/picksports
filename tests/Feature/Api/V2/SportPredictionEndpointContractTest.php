@@ -370,6 +370,25 @@ it('shows a v2 game prediction with sport, freshness, and warning metadata', fun
         ->and($response->json('meta.warnings'))->toBeArray();
 })->with('v2PredictionContractSports');
 
+it('passes through the NFL spread assessment without substituting winner confidence', function () {
+    v2PredictionContractActingAsBypassUser();
+    [$game] = v2PredictionContractCreateGamePrediction(
+        NflTeam::class,
+        NflGame::class,
+        NflPrediction::class,
+        [],
+        ['model_metadata' => ['spread_assessment' => [
+            'recommendation' => 'pass_small_edge', 'edge_points' => 0.2,
+            'minimum_edge_points' => 2.0, 'cover_probability' => null,
+        ]]],
+    );
+    $this->getJson("/api/v2/sports/nfl/games/{$game->id}/prediction")
+        ->assertOk()
+        ->assertJsonPath('data.spread_assessment.recommendation', 'pass_small_edge')
+        ->assertJsonPath('data.spread_assessment.edge_points', 0.2)
+        ->assertJsonPath('data.spread_assessment.cover_probability', null);
+});
+
 it('marks high raw prediction confidence as watch when sample context is missing', function () {
     v2PredictionContractActingAsBypassUser();
 

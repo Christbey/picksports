@@ -154,6 +154,9 @@ abstract class AbstractEloCalculator
         if ($game->status !== 'STATUS_FINAL') {
             return ['home_change' => 0, 'away_change' => 0, 'skipped' => false];
         }
+        if ($game->home_score === null || $game->away_score === null) {
+            return ['home_change' => 0, 'away_change' => 0, 'skipped' => true, 'reason' => 'missing_final_scores'];
+        }
 
         $homeTeam = $game->homeTeam;
         $awayTeam = $game->awayTeam;
@@ -185,8 +188,10 @@ abstract class AbstractEloCalculator
         $homeExpected = $this->calculateExpectedScore($adjustedHomeElo, $awayElo);
         $awayExpected = 1 - $homeExpected;
 
-        // Determine actual scores (1 for win, 0 for loss)
-        $homeActual = $game->home_score > $game->away_score ? 1 : 0;
+        // Draws split the result; they must not silently count as away wins.
+        $homeActual = $game->home_score == $game->away_score
+            ? 0.5
+            : ($game->home_score > $game->away_score ? 1.0 : 0.0);
         $awayActual = 1 - $homeActual;
 
         // Calculate K-factor with margin of victory and playoff multiplier

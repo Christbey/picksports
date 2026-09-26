@@ -5,6 +5,40 @@ namespace App\Support;
 class NflReasonCodeCatalog
 {
     /**
+     * Historical tokens are kept readable without endorsing their original
+     * charting/pace claims. New predictions emit explicitly named diagnostics.
+     * These are labels only, not aliases for matching approval rules.
+     *
+     * @var array<string, string>
+     */
+    private const LEGACY_PROXY_LABELS = [
+        'weak_ol_vs_blitz_heavy_defense' => 'High Combined Sack Rate Proxy (Legacy)',
+        'elite_defense_edge' => 'High Defensive Sack Rate Context (Legacy)',
+        'explosive_play_prevention_edge' => 'High Defensive Sack Rate Context (Legacy)',
+        'poor_secondary_risk' => 'Low Defensive Sack Rate Context (Legacy)',
+        'ol_pass_protection_edge' => 'Model Side Sack Matchup Proxy (Legacy)',
+        'home_pass_protection_edge' => 'Home Sack Matchup Proxy (Legacy)',
+        'away_pass_protection_edge' => 'Away Sack Matchup Proxy (Legacy)',
+        'ol_run_blocking_edge' => 'Model Side Rushing Efficiency Matchup Proxy (Legacy)',
+        'dl_pressure_edge' => 'Model Side Sack Matchup Proxy (Legacy)',
+        'pressure_mismatch_against_qb' => 'Model Side Sack Matchup Proxy (Legacy)',
+        'cannot_run_block_risk' => 'Negative Rushing Matchup Proxy (Legacy)',
+        'run_game_should_travel' => 'Away Positive Rushing Matchup Proxy (Legacy)',
+        'run_heavy_clock_control' => 'Positive Rushing Matchup Proxy (Legacy)',
+        'dl_run_stop_edge' => 'Low Defensive Rushing Yards Per Attempt Context (Legacy)',
+        'poor_run_defense_risk' => 'High Defensive Rushing Yards Per Attempt Context (Legacy)',
+        'trenches_major_home_edge' => 'Home Trench Matchup Proxy (Legacy)',
+        'trenches_major_away_edge' => 'Away Trench Matchup Proxy (Legacy)',
+        'trench_matchup_home_edge' => 'Home Trench Matchup Proxy (Legacy)',
+        'trench_matchup_away_edge' => 'Away Trench Matchup Proxy (Legacy)',
+        'pass_heavy_volatility' => 'High Pass Attempt Share Context (Legacy)',
+        'fast_pace_over_signal' => 'Positive Model Total Context; Pace Not Measured (Legacy)',
+        'slow_pace_under_signal' => 'Negative Model Total Context; Pace Not Measured (Legacy)',
+        'explosive_offense_edge' => 'Positive Trench Total Proxy (Legacy)',
+        'bend_dont_break_defense' => 'Negative Trench Total Proxy (Legacy)',
+    ];
+
+    /**
      * @return list<string>
      */
     public function backgroundCodes(): array
@@ -20,6 +54,13 @@ class NflReasonCodeCatalog
             'high_trust_no_market_edge',
             'home_away_split_signal',
             'high_market_total',
+            'high_defensive_sack_rate_context',
+            'low_defensive_sack_rate_context',
+            'high_defensive_rushing_yards_per_attempt_context',
+            'low_defensive_rushing_yards_per_attempt_context',
+            'high_pass_attempt_share_context',
+            'model_total_above_market_context',
+            'model_total_below_market_context',
             'early_kickoff_window',
             'late_afternoon_kickoff_window',
             'low_market_total',
@@ -199,7 +240,7 @@ class NflReasonCodeCatalog
 
     protected function isDiagnostic(string $code): bool
     {
-        if ($this->isBackground($code)) {
+        if (isset(self::LEGACY_PROXY_LABELS[$code]) || $this->isBackground($code)) {
             return true;
         }
 
@@ -244,6 +285,10 @@ class NflReasonCodeCatalog
 
     protected function label(string $code): string
     {
+        if (isset(self::LEGACY_PROXY_LABELS[$code])) {
+            return self::LEGACY_PROXY_LABELS[$code];
+        }
+
         return str($code)
             ->replace('_', ' ')
             ->headline()

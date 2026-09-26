@@ -1,0 +1,182 @@
+[
+  {
+    "snapshot_id": 182164,
+    "metadata": {
+      "legacy": {
+        "spread": 13.05
+      },
+      "blended": {
+        "spread": 13.05
+      },
+      "preseason_signal": {
+        "weight": 0.25,
+        "applied": true,
+        "enabled": true,
+        "signal_spread": 2.158
+      },
+      "rolling_efficiency": {
+        "reason": "feature_disabled",
+        "applied": false,
+        "enabled": false
+      },
+      "opponent_adjusted_efficiency": {
+        "reason": "feature_disabled",
+        "applied": false,
+        "enabled": false
+      },
+      "qb_form": {
+        "applied": true,
+        "enabled": true,
+        "signal_spread": 0.705,
+        "effective_weight": 0.22
+      },
+      "line_matchup": {
+        "weight": 0.18,
+        "applied": true,
+        "enabled": true,
+        "signal_spread": 1.595
+      },
+      "contextual_factors": {
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 2
+      },
+      "depth_chart_injuries": {
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 1.9
+      },
+      "adaptive_point_calibration": {
+        "reason": "calibrated",
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 0.0497
+      },
+      "market_blend": {
+        "applied": true,
+        "enabled": true,
+        "market_spread": 3,
+        "spread_model_weight": 0.5
+      }
+    }
+  },
+  {
+    "snapshot_id": 182174,
+    "metadata": {
+      "legacy": {
+        "spread": 0.81
+      },
+      "blended": {
+        "spread": 0.81
+      },
+      "preseason_signal": {
+        "weight": 0.25,
+        "applied": true,
+        "enabled": true,
+        "signal_spread": -5.787
+      },
+      "rolling_efficiency": {
+        "reason": "feature_disabled",
+        "applied": false,
+        "enabled": false
+      },
+      "opponent_adjusted_efficiency": {
+        "reason": "feature_disabled",
+        "applied": false,
+        "enabled": false
+      },
+      "qb_form": {
+        "applied": false,
+        "enabled": true
+      },
+      "line_matchup": {
+        "weight": 0.18,
+        "applied": true,
+        "enabled": true,
+        "signal_spread": -3.543
+      },
+      "contextual_factors": {
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": -2
+      },
+      "depth_chart_injuries": {
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": -0.17
+      },
+      "adaptive_point_calibration": {
+        "reason": "calibrated",
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 0.0497
+      },
+      "market_blend": {
+        "applied": true,
+        "enabled": true,
+        "market_spread": 3.5,
+        "spread_model_weight": 0.5
+      }
+    }
+  },
+  {
+    "snapshot_id": 190049,
+    "metadata": {
+      "legacy": {
+        "spread": 6.75
+      },
+      "blended": {
+        "spread": 2.746
+      },
+      "preseason_signal": {
+        "reason": "true_epa_already_applied",
+        "applied": false,
+        "enabled": true
+      },
+      "rolling_efficiency": {
+        "reason": "feature_disabled",
+        "applied": false,
+        "enabled": false
+      },
+      "opponent_adjusted_efficiency": {
+        "reason": "feature_disabled",
+        "applied": false,
+        "enabled": false
+      },
+      "qb_form": {
+        "applied": true,
+        "enabled": true,
+        "signal_spread": 0.161,
+        "effective_weight": 0.22
+      },
+      "line_matchup": {
+        "weight": 0.18,
+        "applied": true,
+        "enabled": true,
+        "signal_spread": 2.301
+      },
+      "contextual_factors": {
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 2
+      },
+      "depth_chart_injuries": {
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 1.22
+      },
+      "adaptive_point_calibration": {
+        "reason": "calibrated",
+        "applied": true,
+        "enabled": true,
+        "spread_adjustment": 0.0527
+      },
+      "market_blend": {
+        "applied": true,
+        "enabled": true,
+        "market_spread": 6.5,
+        "spread_model_weight": 0.5
+      }
+    }
+  }
+]

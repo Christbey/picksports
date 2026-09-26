@@ -21,7 +21,8 @@ class NflTrueEpaReadinessService
      */
     public function prepare(Collection $games): array
     {
-        if (! config('nfl.predictions.true_epa.enabled', false)
+        if (config('nfl.predictions.true_epa.custom_epa_quarantined', true)
+            || ! config('nfl.predictions.true_epa.enabled', false)
             || ! config('nfl.predictions.true_epa.backfill_before_generation', true)) {
             return ['enabled' => false, 'checked' => 0, 'attempted' => 0, 'backfilled' => 0, 'missing' => []];
         }

@@ -1,0 +1,208 @@
+{
+  "1": {
+    "profiles": {
+      "rollingEfficiencyProfile": {
+        "home": {
+          "games": 0,
+          "avg_margin": 0,
+          "recent_margin": 0,
+          "yard_diff": 0,
+          "turnover_diff": 0,
+          "points_for": 0,
+          "points_against": 0
+        },
+        "away": {
+          "games": 0,
+          "avg_margin": 0,
+          "recent_margin": 0,
+          "yard_diff": 0,
+          "turnover_diff": 0,
+          "points_for": 0,
+          "points_against": 0
+        }
+      },
+      "opponentAdjustedEfficiencyProfile": {
+        "home": {
+          "games": 0,
+          "opponent_adjusted_margin": 0,
+          "yard_diff": 0,
+          "red_zone_rate_diff": 0,
+          "third_down_rate_diff": 0,
+          "avg_opponent_elo": 0
+        },
+        "away": {
+          "games": 0,
+          "opponent_adjusted_margin": 0,
+          "yard_diff": 0,
+          "red_zone_rate_diff": 0,
+          "third_down_rate_diff": 0,
+          "avg_opponent_elo": 0
+        }
+      },
+      "totalEnvironmentProfile": {
+        "home": {
+          "games": 3,
+          "points_for": 12,
+          "points_against": 27.5,
+          "offensive_plays": 51.5,
+          "defensive_plays": 51.5,
+          "yards_per_play": 5.929,
+          "yards_allowed_per_play": 5.925,
+          "pass_rate": 0.486,
+          "red_zone_rate": 0.5,
+          "red_zone_allowed_rate": 0.5,
+          "third_down_rate": 0.375,
+          "third_down_allowed_rate": 0.375,
+          "turnover_rate": 0.029,
+          "takeaway_rate": 0.029,
+          "penalty_yards": 37.5
+        },
+        "away": {
+          "games": 3,
+          "points_for": 27.5,
+          "points_against": 12,
+          "offensive_plays": 51.5,
+          "defensive_plays": 51.5,
+          "yards_per_play": 5.925,
+          "yards_allowed_per_play": 5.929,
+          "pass_rate": 0.486,
+          "red_zone_rate": 0.5,
+          "red_zone_allowed_rate": 0.5,
+          "third_down_rate": 0.375,
+          "third_down_allowed_rate": 0.375,
+          "turnover_rate": 0.029,
+          "takeaway_rate": 0.029,
+          "penalty_yards": 37.5
+        }
+      },
+      "lineProfile": {
+        "home": {
+          "games": 1,
+          "off_sack_allowed_rate": 0.0333,
+          "off_rush_yards_per_attempt": 3.75,
+          "def_sack_rate": 0.1,
+          "def_rush_yards_allowed_per_attempt": 3.167,
+          "off_pass_attempts": 30,
+          "off_rush_attempts": 20,
+          "def_pass_attempts": 20,
+          "def_rush_attempts": 30
+        },
+        "away": {
+          "games": 1,
+          "off_sack_allowed_rate": 0.1,
+          "off_rush_yards_per_attempt": 3.167,
+          "def_sack_rate": 0.0333,
+          "def_rush_yards_allowed_per_attempt": 3.75,
+          "off_pass_attempts": 20,
+          "off_rush_attempts": 30,
+          "def_pass_attempts": 30,
+          "def_rush_attempts": 20
+        }
+      }
+    },
+    "queries": 18
+  },
+  "4": {
+    "profiles": {
+      "rollingEfficiencyProfile": {
+        "home": {
+          "games": 3,
+          "avg_margin": -7.667,
+          "recent_margin": -8,
+          "yard_diff": 0,
+          "turnover_diff": 0,
+          "points_for": 16.667,
+          "points_against": 24.333
+        },
+        "away": {
+          "games": 3,
+          "avg_margin": 7.667,
+          "recent_margin": 8,
+          "yard_diff": 0,
+          "turnover_diff": 0,
+          "points_for": 24.333,
+          "points_against": 16.667
+        }
+      },
+      "opponentAdjustedEfficiencyProfile": {
+        "home": {
+          "games": 3,
+          "opponent_adjusted_margin": -6.467,
+          "yard_diff": 0,
+          "red_zone_rate_diff": 0,
+          "third_down_rate_diff": 0,
+          "avg_opponent_elo": 1580
+        },
+        "away": {
+          "games": 3,
+          "opponent_adjusted_margin": 7.667,
+          "yard_diff": 0,
+          "red_zone_rate_diff": 0,
+          "third_down_rate_diff": 0,
+          "avg_opponent_elo": 1500
+        }
+      },
+      "totalEnvironmentProfile": {
+        "home": {
+          "games": 4,
+          "points_for": 16.5,
+          "points_against": 24.5,
+          "offensive_plays": 51,
+          "defensive_plays": 52,
+          "yards_per_play": 6.235,
+          "yards_allowed_per_play": 7.269,
+          "pass_rate": 0.588,
+          "red_zone_rate": 0.333,
+          "red_zone_allowed_rate": 0.667,
+          "third_down_rate": 0.333,
+          "third_down_allowed_rate": 0.417,
+          "turnover_rate": 0.0196,
+          "takeaway_rate": 0.0385,
+          "penalty_yards": 50
+        },
+        "away": {
+          "games": 4,
+          "points_for": 24.5,
+          "points_against": 16.5,
+          "offensive_plays": 52,
+          "defensive_plays": 51,
+          "yards_per_play": 7.269,
+          "yards_allowed_per_play": 6.235,
+          "pass_rate": 0.385,
+          "red_zone_rate": 0.667,
+          "red_zone_allowed_rate": 0.333,
+          "third_down_rate": 0.417,
+          "third_down_allowed_rate": 0.333,
+          "turnover_rate": 0.0385,
+          "takeaway_rate": 0.0196,
+          "penalty_yards": 50
+        }
+      },
+      "lineProfile": {
+        "home": {
+          "games": 2,
+          "off_sack_allowed_rate": 0.06,
+          "off_rush_yards_per_attempt": 3.54,
+          "def_sack_rate": 0.06,
+          "def_rush_yards_allowed_per_attempt": 3.54,
+          "off_pass_attempts": 50,
+          "off_rush_attempts": 50,
+          "def_pass_attempts": 50,
+          "def_rush_attempts": 50
+        },
+        "away": {
+          "games": 2,
+          "off_sack_allowed_rate": 0.06,
+          "off_rush_yards_per_attempt": 3.54,
+          "def_sack_rate": 0.06,
+          "def_rush_yards_allowed_per_attempt": 3.54,
+          "off_pass_attempts": 50,
+          "off_rush_attempts": 50,
+          "def_pass_attempts": 50,
+          "def_rush_attempts": 50
+        }
+      }
+    },
+    "queries": 22
+  }
+}

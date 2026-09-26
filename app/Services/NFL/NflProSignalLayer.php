@@ -2,7 +2,6 @@
 
 namespace App\Services\NFL;
 
-use App\Models\GameOddsSnapshot;
 use App\Models\NFL\Game;
 
 class NflProSignalLayer
@@ -18,10 +17,12 @@ class NflProSignalLayer
         array $analysis,
         float $predictedSpread,
         float $predictedTotal,
-        float $winProbability
+        float $winProbability,
+        ?NflOddsHistory $oddsHistory = null
     ): array {
-        $marketSpread = $this->number(data_get($analysis, 'calculated_edge.market_spread')) ?? $this->entryMarketSpread($game);
-        $marketTotal = $this->number(data_get($analysis, 'calculated_edge.market_total')) ?? $this->entryMarketTotal($game);
+        $oddsHistory ??= new NflOddsHistory($game);
+        $marketSpread = $this->number(data_get($analysis, 'calculated_edge.market_spread')) ?? $this->entryMarketSpread($game, $oddsHistory);
+        $marketTotal = $this->number(data_get($analysis, 'calculated_edge.market_total')) ?? $this->entryMarketTotal($game, $oddsHistory);
         $spreadEdge = $this->number(data_get($analysis, 'calculated_edge.spread_points'))
             ?? ($marketSpread !== null ? $predictedSpread - $marketSpread : null);
         $totalEdge = $this->number(data_get($analysis, 'calculated_edge.total_points'))
@@ -33,13 +34,14 @@ class NflProSignalLayer
         $crossedKeyNumbers = $marketSpread !== null
             ? $this->crossedKeyNumbers($marketSpread, $predictedSpread, $keyNumbers)
             : [];
-        $pickSide = $marketSpread === null ? null : ($predictedSpread >= $marketSpread ? 'home' : 'away');
+        $pickSide = $marketSpread === null || abs($predictedSpread - $marketSpread) < 0.0001
+            ? null : ($predictedSpread > $marketSpread ? 'home' : 'away');
         $spreadPrice = $pickSide === null ? null : $this->spreadPriceForPick($game, $pickSide);
         $teaserCandidate = in_array(3, $crossedKeyNumbers, true)
             && in_array(7, $crossedKeyNumbers, true)
             && $this->validTeaserPrice($spreadPrice);
         $numberDiscipline = $this->numberDisciplineContext($marketSpread, $marketTotal, $crossedKeyNumbers, $nearKeyNumbers, $spreadPrice, $teaserCandidate);
-        $marketMovement = $this->marketMovementContext($game, $pickSide, $marketSpread);
+        $marketMovement = $this->marketMovementContext($game, $pickSide, $marketSpread, $oddsHistory);
         $injuryReplacement = $this->injuryReplacementContext($metadata);
         $weatherRoof = $this->weatherRoofContext($game, $metadata);
         $efficiencyMismatch = $this->efficiencyMismatchContext($metadata);
@@ -100,10 +102,20 @@ class NflProSignalLayer
             $riskFlags,
             $allReasonCodes
         );
+        $minimumSpreadEdge = (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0);
+        if ($spreadEdge === null || abs($spreadEdge) < $minimumSpreadEdge) {
+            $marketScores['spread']['score'] = min(59, $marketScores['spread']['score']);
+            $marketScores['spread']['tier'] = 'pass';
+            $marketScores['spread']['reason'] = $spreadEdge === null ? 'missing_market_line' : 'spread_edge_below_minimum';
+            $marketScores['spread']['minimum_edge_points'] = $minimumSpreadEdge;
+        }
 
         return [
             'version' => 'nfl-pro-signal-layer-v2',
             'score' => $score,
+            'score_kind' => 'heuristic_not_probability',
+            'spread_cover_probability' => null,
+            'spread_probability_status' => 'no_validated_spread_calibration',
             'tier' => $this->tier($score),
             'market_scores' => $marketScores,
             'recommended_markets' => $this->marketRecommendations($marketScores),
@@ -517,16 +529,12 @@ class NflProSignalLayer
     /**
      * @return array<string,mixed>
      */
-    private function marketMovementContext(Game $game, ?string $pickSide, ?float $marketSpread): array
+    private function marketMovementContext(Game $game, ?string $pickSide, ?float $marketSpread, NflOddsHistory $oddsHistory): array
     {
-        $snapshots = GameOddsSnapshot::query()
-            ->where('sport', 'nfl')
-            ->where('game_table', $game->getTable())
-            ->where('game_id', $game->id)
-            ->orderBy('captured_at')
-            ->get();
-        $openSpread = $snapshots->isNotEmpty() ? $this->homeMarginSpread((array) $snapshots->first()?->odds_data) : null;
-        $lastSnapshotSpread = $snapshots->isNotEmpty() ? $this->homeMarginSpread((array) $snapshots->last()?->odds_data) : null;
+        $first = $oddsHistory->first();
+        $last = $oddsHistory->last();
+        $openSpread = $first ? $this->homeMarginSpread((array) $first->odds_data) : null;
+        $lastSnapshotSpread = $last ? $this->homeMarginSpread((array) $last->odds_data) : null;
         $currentSpread = $marketSpread ?? $lastSnapshotSpread;
         $lineMovement = $openSpread !== null && $currentSpread !== null ? $currentSpread - $openSpread : null;
         $closingLineValue = $pickSide !== null && $marketSpread !== null && $lastSnapshotSpread !== null && $this->isFinal($game)
@@ -538,16 +546,16 @@ class NflProSignalLayer
         $bookRange = $this->spreadBookRange($game);
         $spanMinutes = null;
 
-        if ($snapshots->count() >= 2) {
-            $firstCapturedAt = $snapshots->first()?->captured_at;
-            $lastCapturedAt = $snapshots->last()?->captured_at;
+        if ($oddsHistory->count() >= 2) {
+            $firstCapturedAt = $first?->captured_at;
+            $lastCapturedAt = $last?->captured_at;
             if ($firstCapturedAt && $lastCapturedAt) {
                 $spanMinutes = abs($firstCapturedAt->diffInMinutes($lastCapturedAt));
             }
         }
 
-        $midSpread = $snapshots->count() >= 3
-            ? $this->homeMarginSpread((array) $snapshots[(int) floor($snapshots->count() / 2)]?->odds_data)
+        $midSpread = $oddsHistory->count() >= 3
+            ? $this->homeMarginSpread((array) $oddsHistory->middle()?->odds_data)
             : null;
         $buybackResistance = $openSpread !== null
             && $midSpread !== null
@@ -815,59 +823,16 @@ class NflProSignalLayer
         return $home !== null && $away !== null ? round($home - $away, 3) : null;
     }
 
-    private function lineMovement(Game $game): ?float
-    {
-        $snapshots = GameOddsSnapshot::query()
-            ->where('sport', 'nfl')
-            ->where('game_table', $game->getTable())
-            ->where('game_id', $game->id)
-            ->orderBy('captured_at')
-            ->get();
-
-        if ($snapshots->count() < 2) {
-            return null;
-        }
-
-        $first = $this->homeMarginSpread((array) $snapshots->first()?->odds_data);
-        $last = $this->homeMarginSpread((array) $snapshots->last()?->odds_data);
-
-        return $first !== null && $last !== null ? $last - $first : null;
-    }
-
-    private function entryMarketSpread(Game $game): ?float
+    private function entryMarketSpread(Game $game, NflOddsHistory $oddsHistory): ?float
     {
         return $this->homeMarginSpread($this->oddsData($game))
-            ?? $this->snapshotMarketSpread($game, 'asc');
+            ?? $this->homeMarginSpread((array) $oddsHistory->first()?->odds_data);
     }
 
-    private function entryMarketTotal(Game $game): ?float
+    private function entryMarketTotal(Game $game, NflOddsHistory $oddsHistory): ?float
     {
         return $this->marketTotal($this->oddsData($game))
-            ?? $this->snapshotMarketTotal($game, 'asc');
-    }
-
-    private function snapshotMarketSpread(Game $game, string $direction): ?float
-    {
-        $snapshot = GameOddsSnapshot::query()
-            ->where('sport', 'nfl')
-            ->where('game_table', $game->getTable())
-            ->where('game_id', $game->id)
-            ->orderBy('captured_at', $direction)
-            ->first();
-
-        return $snapshot ? $this->homeMarginSpread((array) $snapshot->odds_data) : null;
-    }
-
-    private function snapshotMarketTotal(Game $game, string $direction): ?float
-    {
-        $snapshot = GameOddsSnapshot::query()
-            ->where('sport', 'nfl')
-            ->where('game_table', $game->getTable())
-            ->where('game_id', $game->id)
-            ->orderBy('captured_at', $direction)
-            ->first();
-
-        return $snapshot ? $this->marketTotal((array) $snapshot->odds_data) : null;
+            ?? $this->marketTotal((array) $oddsHistory->first()?->odds_data);
     }
 
     private function spreadClv(string $pickSide, float $entrySpread, float $closingSpread): float

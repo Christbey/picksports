@@ -20,6 +20,11 @@ class PredictionResource extends AbstractPredictionResource
         if ($this->hasTierPermission($request, 'spread')) {
             $data['predicted_spread'] = (float) $this->predicted_spread;
             $data['predicted_total'] = (float) $this->predicted_total;
+            $data['spread_assessment'] = data_get($this->model_metadata, 'spread_assessment', [
+                'status' => 'unavailable',
+                'cover_probability' => null,
+                'reason' => 'no_validated_spread_calibration',
+            ]);
             $data = $this->appendLiveSpreadFields($data);
         }
 
@@ -32,6 +37,7 @@ class PredictionResource extends AbstractPredictionResource
         // Confidence Score
         if ($this->hasTierPermission($request, 'confidence_score')) {
             $data['confidence_score'] = (float) $this->confidence_score;
+            $data['confidence_basis'] = 'outright_winner';
         }
 
         // Away Elo

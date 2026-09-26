@@ -32,3 +32,21 @@ it('classifies actionable and diagnostic nfl reason codes', function () {
             'is_diagnostic' => true,
         ]);
 });
+
+it('labels historical sack and total proxies honestly without approving them', function () {
+    $catalog = new NflReasonCodeCatalog;
+
+    foreach ([
+        'weak_ol_vs_blitz_heavy_defense' => 'High Combined Sack Rate Proxy (Legacy)',
+        'explosive_play_prevention_edge' => 'High Defensive Sack Rate Context (Legacy)',
+        'poor_secondary_risk' => 'Low Defensive Sack Rate Context (Legacy)',
+        'fast_pace_over_signal' => 'Positive Model Total Context; Pace Not Measured (Legacy)',
+    ] as $code => $label) {
+        expect($catalog->metadata($code))->toMatchArray([
+            'code' => $code,
+            'label' => $label,
+            'is_diagnostic' => true,
+            'is_actionable' => false,
+        ]);
+    }
+});

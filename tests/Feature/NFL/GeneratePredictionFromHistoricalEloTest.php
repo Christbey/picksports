@@ -23,6 +23,12 @@ use Illuminate\Support\Facades\DB;
 
 uses()->group('nfl', 'predictions');
 
+// Legacy feature compatibility scenarios explicitly opt into the quarantined branch.
+// Safe production defaults are covered separately in NflSpreadIntegrityTest.
+beforeEach(function () {
+    config(['nfl.predictions.true_epa.custom_epa_quarantined' => false]);
+});
+
 function createNflPredictionTestGame(): Game
 {
     $suffix = (string) random_int(100000, 999999);
@@ -91,7 +97,7 @@ it('falls back to legacy elo-only prediction when true epa metrics are unavailab
     expect(data_get($legacy->model_metadata, 'true_epa.enabled'))->toBeFalse()
         ->and(data_get($legacy->model_metadata, 'true_epa.applied'))->toBeFalse()
         ->and(data_get($legacy->model_metadata, 'true_epa.reason'))->toBe('feature_disabled')
-        ->and($legacy->model_version)->toBe('nfl-historical-elo-v2-career-regular-v2')
+        ->and($legacy->model_version)->toBe('nfl-historical-elo-v2-career-regular-v2-ats-v3')
         ->and($legacy->feature_version)->toBe('nfl-pregame-ml-v3')
         ->and($legacy->blend_version)->toBe('nfl-multi-signal-v1')
         ->and(PredictionFeatureSnapshot::query()->where('prediction_id', $legacy->id)->exists())->toBeTrue()
@@ -1598,7 +1604,7 @@ it('adaptively shrinks win probability when similar prior confidence has underpe
         ->and((float) data_get($prediction->model_metadata, 'adaptive_win_probability_calibration.actual_favorite_win_rate'))->toBe(0.0);
 });
 
-it('adaptively corrects spread and total bias from prior actual results', function () {
+it('quarantines mutable-history spread correction while retaining the existing total correction', function () {
     config([
         'nfl.predictions.true_epa.enabled' => false,
         'nfl.predictions.preseason_signal.enabled' => false,
@@ -1665,9 +1671,10 @@ it('adaptively corrects spread and total bias from prior actual results', functi
     expect(data_get($prediction->model_metadata, 'adaptive_point_calibration.applied'))->toBeTrue()
         ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.spread_residual'))->toBe(7.0)
         ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.total_residual'))->toBe(10.0)
-        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.spread_adjustment'))->toBe(-5.0)
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.spread_adjustment'))->toBe(0.0)
+        ->and(data_get($prediction->model_metadata, 'adaptive_point_calibration.spread_calibration_status'))->toBe('disabled_unverified_historical_corpus')
         ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.total_adjustment'))->toBe(-5.0)
-        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.calibrated_spread'))->toBeLessThan((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.baseline_spread'))
+        ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.calibrated_spread'))->toBe((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.baseline_spread'))
         ->and((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.calibrated_total'))->toBeLessThan((float) data_get($prediction->model_metadata, 'adaptive_point_calibration.baseline_total'));
 });
 
@@ -1770,10 +1777,12 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
     expect(data_get($prediction->model_metadata, 'contextual_factors.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.home_away_strength.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.division_rivalry.is_division_game'))->toBeTrue()
-        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.applied'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.evidence_available'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.home.h2h.wins'))->toBe(3)
         ->and(data_get($prediction->model_metadata, 'contextual_factors.matchup_records.away.h2h.losses'))->toBe(3)
-        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.applied'))->toBeTrue()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.applied'))->toBeFalse()
+        ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.evidence_available'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.week'))->toBe(10)
         ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.home.team.wins'))->toBe(1)
         ->and(data_get($prediction->model_metadata, 'contextual_factors.same_week_records.away.team.losses'))->toBe(1)
@@ -1783,13 +1792,13 @@ it('adds contextual factors and analysis metadata to nfl predictions', function 
         ->and(data_get($prediction->model_metadata, 'contextual_factors.coaching_prior.new_head_coaches.home.coach'))->toBe('Test Coach')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.applied'))->toBeTrue()
         ->and(data_get($prediction->model_metadata, 'analysis_layer.trust_score'))->toBeNumeric()
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_h2h_record_home_edge')
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_division_record_home_edge')
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('recent_conference_record_home_edge')
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_record_context')
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_h2h_record_home_edge')
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_opponent_division_record_home_edge')
-        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('same_week_opponent_conference_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('recent_h2h_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('recent_division_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('recent_conference_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('same_week_record_context')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('same_week_h2h_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('same_week_opponent_division_record_home_edge')
+        ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->not->toContain('same_week_opponent_conference_record_home_edge')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('new_head_coach_context')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('home_new_head_coach')
         ->and(data_get($prediction->model_metadata, 'analysis_layer.reason_codes'))->toContain('new_head_coach_home_edge')

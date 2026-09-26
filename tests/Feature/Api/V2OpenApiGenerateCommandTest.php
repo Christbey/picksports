@@ -201,11 +201,13 @@ test('specialized game contracts describe their actual sports filters and respon
     $spec = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     $paths = $spec['paths'];
     $base = '/api/v2/sports/{sport}/games/{game}/';
-    foreach (['live-betting' => 'cfb', 'live-snapshot' => 'nfl'] as $endpoint => $sport) {
+    foreach (['live-betting' => 'cfb', 'live-snapshot' => 'nfl', 'market-history' => 'nfl', 'matchup-signals' => 'nfl'] as $endpoint => $sport) {
         $operation = $paths[$base.$endpoint]['get'];
         expect(collect($operation['parameters'])->firstWhere('name', 'sport')['schema']['enum'])->toBe([$sport]);
     }
-    expect(collect($paths[$base.'live-snapshot']['get']['parameters'])->where('in', 'query'))->toHaveCount(0)
+    expect(collect($paths[$base.'market-history']['get']['parameters'])->where('in', 'query')->pluck('name')->all())->toBe(['since', 'home_line'])
+        ->and(collect($paths[$base.'matchup-signals']['get']['parameters'])->where('in', 'query')->pluck('name')->all())->toBe(['window'])
+        ->and(collect($paths[$base.'live-snapshot']['get']['parameters'])->where('in', 'query'))->toHaveCount(0)
         ->and($spec['components']['schemas']['NflLiveSnapshotResponse']['required'])->toBe(['data'])
         ->and($spec['components']['schemas']['CfbLiveBettingResponse']['required'])->toBe(['data', 'history', 'meta']);
 });

@@ -4,7 +4,9 @@ namespace App\Console\Commands\NFL;
 
 use App\Models\NFL\EloRating;
 use App\Models\NFL\Game;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
+use Illuminate\Support\Collection;
 
 class CalibrateSpreadCommand extends Command
 {
@@ -17,13 +19,23 @@ class CalibrateSpreadCommand extends Command
 
     protected $description = 'Calibrate the ELO-to-points conversion factor for spread predictions';
 
+    protected ?Collection $eloByTeam = null;
+
     public function handle(): int
     {
-        $season = $this->option('season');
+        $season = filter_var($this->option('season'), FILTER_VALIDATE_INT);
         $hfa = $this->option('hfa') ?? config('nfl.elo.home_field_advantage');
         $min = $this->option('min') ?? config('nfl.calibration.spread.min');
         $max = $this->option('max') ?? config('nfl.calibration.spread.max');
         $step = $this->option('step') ?? config('nfl.calibration.spread.step');
+
+        if ($season === false || $season < 2000 || $season > 2100
+            || collect([$hfa, $min, $max, $step])->contains(fn ($value) => ! is_numeric($value) || ! is_finite((float) $value))
+            || $min <= 0 || $max < $min || $step <= 0 || ($max - $min) / $step > 1000) {
+            $this->error('Use a valid season and finite parameters: 0 < min <= max, step > 0, at most 1001 candidates.');
+
+            return Command::INVALID;
+        }
 
         $this->info("Calibrating spread conversion factor for {$season} season...");
         $this->info("Using HFA: {$hfa}");
@@ -32,6 +44,8 @@ class CalibrateSpreadCommand extends Command
         $games = Game::query()
             ->where('status', 'STATUS_FINAL')
             ->where('season', $season)
+            ->whereIn('season_type', ['2', 'regular', 'Regular Season'])
+            ->whereNotNull('home_score')->whereNotNull('away_score')
             ->with(['homeTeam', 'awayTeam'])
             ->orderBy('game_date')
             ->get();
@@ -42,35 +56,45 @@ class CalibrateSpreadCommand extends Command
             return Command::FAILURE;
         }
 
-        $this->info("Testing against {$games->count()} games");
+        // Load once, not once per game per candidate. Date-only Elo rows are
+        // postgame ratings: never admit the evaluated game's calendar date.
+        $this->eloByTeam = EloRating::query()
+            ->whereIn('team_id', $games->pluck('home_team_id')->merge($games->pluck('away_team_id'))->unique())
+            ->whereDate('date', '<', $games->max('game_date')->toDateString())
+            ->orderBy('date')->orderBy('id')->get(['team_id', 'date', 'elo_rating'])
+            ->map(fn ($rating) => ['team_id' => $rating->team_id, 'date' => substr($rating->getRawOriginal('date'), 0, 10), 'elo' => (float) $rating->elo_rating])
+            ->groupBy('team_id');
+        $samples = [];
+        foreach ($games as $game) {
+            if (! $game->homeTeam || ! $game->awayTeam) {
+                continue;
+            }
+            $home = $this->getEloAtDate($game->home_team_id, $game->game_date);
+            $away = $this->getEloAtDate($game->away_team_id, $game->game_date);
+            if ($home === null || $away === null) {
+                continue; // An absent rating is not evidence of equal team strength.
+            }
+            $samples[] = ['elo_diff' => $home - $away + ($game->neutral_site ? 0 : (float) $hfa),
+                'actual' => $game->home_score - $game->away_score];
+        }
+        $this->info('Eligible regular-season games: '.count($samples).'; excluded missing prior ratings/teams: '.($games->count() - count($samples)));
+        $this->warn('Retrospective in-sample diagnostic, not held-out ATS validation. Stored ratings may be reconstructed. No settings are changed.');
+        if ($samples === []) {
+            $this->error('No games with both prior-date Elo ratings.');
+
+            return Command::FAILURE;
+        }
         $this->newLine();
 
         $results = [];
 
-        for ($pointsPerElo = $min; $pointsPerElo <= $max; $pointsPerElo += $step) {
+        for ($index = 0; $index <= (int) floor(((float) $max - (float) $min) / (float) $step + 1e-9); $index++) {
+            $pointsPerElo = (float) $min + $index * (float) $step;
             $errors = [];
 
-            foreach ($games as $game) {
-                if (! $game->homeTeam || ! $game->awayTeam) {
-                    continue;
-                }
-
-                // Get ELO ratings at the time of the game
-                $homeElo = $this->getEloAtDate($game->home_team_id, $game->game_date);
-                $awayElo = $this->getEloAtDate($game->away_team_id, $game->game_date);
-
-                // Apply HFA (unless neutral site)
-                $adjustedHomeElo = $game->neutral_site ? $homeElo : $homeElo + $hfa;
-
-                // Calculate predicted spread
-                $eloDiff = $adjustedHomeElo - $awayElo;
-                $predictedSpread = $eloDiff * $pointsPerElo;
-
-                // Calculate actual spread
-                $actualSpread = $game->home_score - $game->away_score;
-
-                // Track error
-                $errors[] = abs($actualSpread - $predictedSpread);
+            foreach ($samples as $sample) {
+                $predictedSpread = $this->publishedMargin($sample['elo_diff'], $pointsPerElo);
+                $errors[] = abs($sample['actual'] - $predictedSpread);
             }
 
             if (empty($errors)) {
@@ -82,8 +106,8 @@ class CalibrateSpreadCommand extends Command
 
             $results[] = [
                 'points_per_elo' => round($pointsPerElo, 4),
-                'mae' => round($mae, 2),
-                'median' => round($median, 2),
+                'mae' => $mae,
+                'median' => $median,
             ];
         }
 
@@ -99,8 +123,8 @@ class CalibrateSpreadCommand extends Command
             $rows[] = [
                 $index + 1,
                 $result['points_per_elo'],
-                $result['mae'].' pts',
-                $result['median'].' pts',
+                round($result['mae'], 2).' pts',
+                round($result['median'], 2).' pts',
             ];
         }
 
@@ -111,28 +135,37 @@ class CalibrateSpreadCommand extends Command
 
         $this->newLine();
         $best = $results[0];
-        $this->info("✨ Optimal Conversion Factor: {$best['points_per_elo']}");
+        $this->info("Best tested in-sample conversion factor: {$best['points_per_elo']}");
         $this->line("  Mean Absolute Error: {$best['mae']} points");
         $this->line("  Median Error: {$best['median']} points");
         $this->newLine();
         $this->line('Example spreads with this factor:');
-        $this->line('  50 ELO difference = '.round(50 * $best['points_per_elo'], 1).' points');
-        $this->line('  100 ELO difference = '.round(100 * $best['points_per_elo'], 1).' points');
-        $this->line('  150 ELO difference = '.round(150 * $best['points_per_elo'], 1).' points');
-        $this->line('  200 ELO difference = '.round(200 * $best['points_per_elo'], 1).' points');
+        foreach ([50, 100, 150, 200] as $difference) {
+            $this->line("  {$difference} adjusted ELO difference = ".$this->publishedMargin($difference, $best['points_per_elo']).' points');
+        }
 
         return Command::SUCCESS;
     }
 
-    protected function getEloAtDate(int $teamId, $gameDate): float
+    protected function publishedMargin(float $difference, float $pointsPerElo): float
     {
+        return round(max((float) config('nfl.predictions.min_spread'), min((float) config('nfl.predictions.max_spread'), $difference * $pointsPerElo)), 1);
+    }
+
+    protected function getEloAtDate(int $teamId, $gameDate): ?float
+    {
+        $date = Carbon::parse($gameDate)->toDateString();
+        if ($this->eloByTeam !== null) {
+            return $this->eloByTeam->get($teamId, collect())->last(fn ($rating) => $rating['date'] < $date)['elo'] ?? null;
+        }
         $eloRecord = EloRating::query()
             ->where('team_id', $teamId)
-            ->where('date', '<=', $gameDate)
+            ->whereDate('date', '<', $date)
             ->orderBy('date', 'desc')
+            ->orderByDesc('id')
             ->first();
 
-        return $eloRecord ? (float) $eloRecord->elo_rating : config('nfl.elo.default_rating');
+        return $eloRecord ? (float) $eloRecord->elo_rating : null;
     }
 
     protected function median(array $values): float

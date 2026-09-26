@@ -144,6 +144,20 @@ it('caps high scoring profiles when no market or key-number value exists', funct
         ->and(data_get($layer, 'risk_flags'))->toContain('no_market_or_key_number_gate');
 });
 
+it('does not promote a tiny spread edge even with strong winner and total signals', function () {
+    $game = nflProSignalGame();
+    $layer = app(NflProSignalLayer::class)->build($game, [
+        'qb_form' => ['signal_spread' => 3.0],
+        'line_matchup' => ['signal_spread' => 3.0],
+        'true_epa' => ['signal_spread' => 3.0],
+    ], ['calculated_edge' => ['market_spread' => 2.5, 'market_total' => 43.5,
+        'spread_points' => 0.2, 'total_points' => -8.0]], 2.7, 35.5, .9);
+
+    expect(data_get($layer, 'market_scores.spread.tier'))->toBe('pass')
+        ->and(data_get($layer, 'market_scores.spread.reason'))->toBe('spread_edge_below_minimum')
+        ->and(collect($layer['recommended_markets'])->pluck('market')->all())->not->toContain('spread');
+});
+
 it('adds v2 market injury weather efficiency and regression context', function () {
     $game = nflProSignalGame([
         'status' => 'STATUS_FINAL',

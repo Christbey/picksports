@@ -35,24 +35,13 @@ class NflReleasedBetDecisionRecorder
         $prediction->loadMissing(['game.homeTeam', 'game.awayTeam', 'game.sportEvent']);
         $game = $prediction->game;
         $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
-        $proSignal = (array) ($analysis['pro_signal_layer'] ?? []);
-        $recommendations = collect((array) ($proSignal['recommended_markets'] ?? []))
-            ->filter(fn (mixed $recommendation): bool => is_array($recommendation)
-                && ($recommendation['tier'] ?? null) === 'official_candidate')
-            ->unique(fn (array $recommendation): string => $this->marketKey($recommendation) ?? '')
-            ->filter(fn (array $recommendation): bool => $this->marketKey($recommendation) !== null)
-            ->values();
-        $candidateMarketKeys = $recommendations
-            ->map(fn (array $recommendation): string => (string) $this->marketKey($recommendation))
-            ->all();
+        $recommendations = $this->candidateRecommendations($analysis);
+        $candidateMarketKeys = $recommendations->keys()->all();
 
         if (! $game instanceof Game
             || ! in_array((string) $game->season_type, $this->regularSeasonTypes(), true)
             || ! in_array((string) $game->status, ['STATUS_SCHEDULED', 'STATUS_DELAYED'], true)
-            || ($analysis['applied'] ?? false) !== true
-            || ($analysis['bet_classification'] ?? null) !== 'bet'
-            || data_get($analysis, 'eligibility.eligible') !== true
-            || ($proSignal['tier'] ?? null) !== 'official_candidate') {
+            || $recommendations->isEmpty()) {
             return $this->coverageResult(collect(), []);
         }
 
@@ -187,7 +176,7 @@ class NflReleasedBetDecisionRecorder
                 'score' => is_numeric($recommendation['score'] ?? null)
                     ? (int) $recommendation['score']
                     : null,
-                'confidence' => is_numeric($prediction->confidence_score)
+                'confidence' => $selection['market_type'] === 'moneyline' && is_numeric($prediction->confidence_score)
                     ? ((float) $prediction->confidence_score / 100)
                     : null,
                 'status' => 'released_tracking_bet',
@@ -234,23 +223,42 @@ class NflReleasedBetDecisionRecorder
     public function candidateMarketKeys(Prediction $prediction): array
     {
         $analysis = (array) data_get($prediction->model_metadata, 'analysis_layer', []);
+
+        return $this->candidateRecommendations($analysis)->keys()->all();
+    }
+
+    /**
+     * Model/data consensus identifies candidates, not released wagers. Recording
+     * additionally requires an eligible game, pregame snapshot and exact quote.
+     *
+     * @return Collection<string, array<string, mixed>>
+     */
+    private function candidateRecommendations(array $analysis): Collection
+    {
         $proSignal = (array) ($analysis['pro_signal_layer'] ?? []);
 
         if (($analysis['applied'] ?? false) !== true
             || ($analysis['bet_classification'] ?? null) !== 'bet'
             || data_get($analysis, 'eligibility.eligible') !== true
             || ($proSignal['tier'] ?? null) !== 'official_candidate') {
-            return [];
+            return collect();
         }
 
         return collect((array) ($proSignal['recommended_markets'] ?? []))
             ->filter(fn (mixed $recommendation): bool => is_array($recommendation)
                 && ($recommendation['tier'] ?? null) === 'official_candidate')
-            ->map(fn (array $recommendation): ?string => $this->marketKey($recommendation))
-            ->filter()
-            ->unique()
-            ->values()
-            ->all();
+            ->filter(fn (array $recommendation): bool => $this->marketKey($recommendation) !== null)
+            ->filter(function (array $recommendation) use ($analysis): bool {
+                if ($this->marketKey($recommendation) !== 'spreads') {
+                    return true;
+                }
+                $edge = data_get($analysis, 'calculated_edge.spread_points');
+
+                return is_numeric($edge) && is_finite((float) $edge)
+                    && abs((float) $edge) >= (float) config('nfl.predictions.analysis_layer.min_spread_edge', 2.0);
+            })
+            ->unique(fn (array $recommendation): string => $this->marketKey($recommendation))
+            ->keyBy(fn (array $recommendation): string => $this->marketKey($recommendation));
     }
 
     /**
@@ -352,7 +360,7 @@ class NflReleasedBetDecisionRecorder
                 'score' => is_numeric($recommendation['score'] ?? null)
                     ? (int) $recommendation['score']
                     : null,
-                'confidence' => is_numeric($prediction->confidence_score)
+                'confidence' => $marketType === 'moneyline' && is_numeric($prediction->confidence_score)
                     ? ((float) $prediction->confidence_score / 100)
                     : null,
                 'status' => 'held_candidate',

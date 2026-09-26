@@ -2,7 +2,6 @@
 
 namespace App\Actions\NFL;
 
-use App\Models\GameOddsSnapshot;
 use App\Models\NFL\DepthChartEntry;
 use App\Models\NFL\DepthChartSnapshot;
 use App\Models\NFL\EloRating;
@@ -16,8 +15,15 @@ use App\Models\NFL\TeamCoachSeason;
 use App\Models\NFL\TeamMetric;
 use App\Services\NFL\GameWeatherService;
 use App\Services\NFL\NflFullHistoricalShadowInferenceService;
+use App\Services\NFL\NflInjuryTotalAdjustment;
 use App\Services\NFL\NflMlFeatureVectorBuilder;
+use App\Services\NFL\NflOddsHistory;
 use App\Services\NFL\NflProSignalLayer;
+use App\Services\NFL\NflQuarterbackStatsSummary;
+use App\Services\NFL\NflRushingMatchup;
+use App\Services\NFL\NflSampleReliability;
+use App\Services\NFL\NflSpreadProbability;
+use App\Services\NFL\NflTeamHistory;
 use App\Services\NFL\PlayerPositionGradeService;
 use App\Services\NFL\QuarterbackAvailability;
 use App\Services\NFL\Research\RecommendationEligibility;
@@ -81,6 +87,14 @@ class GeneratePredictionFromHistoricalElo
      */
     protected array $lastModelMetadata = [];
 
+    protected ?NflTeamHistory $teamHistory = null;
+
+    protected ?NflOddsHistory $oddsHistory = null;
+
+    protected array $injuryStateCache = [];
+
+    protected array $projectedQuarterbacks = [];
+
     /**
      * @var array<string,array<string,mixed>>
      */
@@ -131,6 +145,10 @@ class GeneratePredictionFromHistoricalElo
     protected function generate(Game $game, bool $persist): array|string|null
     {
         $this->lastModelMetadata = [];
+        $this->teamHistory = null;
+        $this->oddsHistory = null;
+        $this->injuryStateCache = [];
+        $this->projectedQuarterbacks = [];
 
         if (! $game->homeTeam || ! $game->awayTeam) {
             return $persist ? 'skipped' : null;
@@ -156,84 +174,19 @@ class GeneratePredictionFromHistoricalElo
         $combinedEloBonus = (($homeElo + $awayElo) - (2 * $defaultElo)) / 100;
         $legacyTotal = $averageTotal + $combinedEloBonus;
 
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyTrueEpaBlend(
-            game: $game,
-            legacySpread: $legacySpread,
-            legacyWinProbability: $legacyWinProbability,
-            legacyTotal: $legacyTotal
-        );
-        [$predictedSpread, $winProbability] = $this->applyPreseasonSignalBlend(
-            $game,
-            $predictedSpread,
-            $winProbability
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyRollingEfficiencyBlend(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyOpponentAdjustedEfficiencyBlend(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        $predictedTotal = $this->applyTotalEnvironmentBlend(
-            $game,
-            $predictedTotal
-        );
-        [$predictedSpread, $winProbability] = $this->applyQbFormBlend(
-            $game,
-            $predictedSpread,
-            $winProbability
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyLineMatchupBlend(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyContextualFactorsBlend(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyActualWeatherBlend(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyDepthChartInjuryAdjustments(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyAdaptivePointCalibration(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        $this->applyPlayerPositionGradeContext($game);
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyMarketBlend(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
-        $winProbability = $this->applyAdaptiveWinProbabilityCalibration($game, $winProbability);
-        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyAutomatedCalibrationTweaks(
-            $game,
-            $predictedSpread,
-            $winProbability,
-            $predictedTotal
-        );
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->calculateForecast($game, $legacySpread, $legacyWinProbability, $legacyTotal);
         $confidenceScore = max($winProbability, 1 - $winProbability) * 100;
-        $this->applyAnalysisLayer($game, $predictedSpread, $predictedTotal, $winProbability);
+        $this->lastModelMetadata['raw_outputs'] = [
+            'predicted_spread' => $predictedSpread,
+            'predicted_total' => $predictedTotal,
+            'win_probability' => $winProbability,
+        ];
+        $this->lastModelMetadata['numeric_policy'] = [
+            'version' => 'line-direction-injury-precision-v2',
+            'injury_stage_rounding' => false,
+            'selection_basis' => 'published_one_decimal_margin_and_total',
+        ];
+        $this->applyAnalysisLayer($game, round($predictedSpread, 1), round($predictedTotal, 1), $winProbability);
 
         $isFinal = (string) $game->status === (string) config('nfl.statuses.final', 'STATUS_FINAL');
         $historicalProfile = $isFinal
@@ -242,7 +195,7 @@ class GeneratePredictionFromHistoricalElo
         $profileSuffix = $historicalProfile !== 'configured' && $historicalProfile !== 'pregame'
             ? '-'.$historicalProfile
             : '';
-        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2'.$profileSuffix;
+        $modelVersion = (string) config('nfl.predictions.model_version', 'nfl-historical-elo-v2').'-career-regular-v2-ats-v3'.$profileSuffix;
         $featureVersion = (string) config('nfl.predictions.feature_version', 'nfl-pregame-ml-v3');
         $blendVersion = (string) config('nfl.predictions.blend_version', 'nfl-multi-signal-v1').$profileSuffix;
         $baselineOutputs = [
@@ -397,19 +350,49 @@ class GeneratePredictionFromHistoricalElo
     /**
      * @return array{0:float,1:float,2:float}
      */
+    protected function calculateForecast(Game $game, float $predictedSpread, float $winProbability, float $predictedTotal): array
+    {
+        // Resolve once, before building team profiles. Never blend a backup's
+        // offense into the projected starter's profile merely because it is recent.
+        foreach ([(int) $game->home_team_id, (int) $game->away_team_id] as $teamId) {
+            $this->projectedQuarterbacks[$teamId] = $this->qbContextForGame($game, $teamId);
+        }
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyTrueEpaBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        [$predictedSpread, $winProbability] = $this->applyPreseasonSignalBlend($game, $predictedSpread, $winProbability);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyRollingEfficiencyBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyOpponentAdjustedEfficiencyBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        $predictedTotal = $this->applyTotalEnvironmentBlend($game, $predictedTotal);
+        [$predictedSpread, $winProbability] = $this->applyQbFormBlend($game, $predictedSpread, $winProbability);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyLineMatchupBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyContextualFactorsBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyActualWeatherBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyDepthChartInjuryAdjustments($game, $predictedSpread, $winProbability, $predictedTotal);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyAdaptivePointCalibration($game, $predictedSpread, $winProbability, $predictedTotal);
+        $this->applyPlayerPositionGradeContext($game);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyMarketBlend($game, $predictedSpread, $winProbability, $predictedTotal);
+        $winProbability = $this->applyAdaptiveWinProbabilityCalibration($game, $winProbability);
+        [$predictedSpread, $winProbability, $predictedTotal] = $this->applyAutomatedCalibrationTweaks($game, $predictedSpread, $winProbability, $predictedTotal);
+
+        return [$predictedSpread, $winProbability, $predictedTotal];
+    }
+
+    /** @return array{0:float,1:float,2:float} */
     protected function applyTrueEpaBlend(
         Game $game,
         float $legacySpread,
         float $legacyWinProbability,
         float $legacyTotal
     ): array {
-        if (! config('nfl.predictions.true_epa.enabled', false)) {
+        $quarantined = (bool) config('nfl.predictions.true_epa.custom_epa_quarantined', true);
+        if ($quarantined || ! config('nfl.predictions.true_epa.enabled', false)) {
             $this->lastModelMetadata = [
                 'model' => 'nfl_historical_elo',
                 'true_epa' => [
                     'enabled' => false,
                     'applied' => false,
-                    'reason' => 'feature_disabled',
+                    'reason' => $quarantined ? 'custom_epa_quarantined' : 'feature_disabled',
+                    'quarantined' => $quarantined,
+                    'requested_enabled' => (bool) config('nfl.predictions.true_epa.enabled', false),
                 ],
                 'legacy' => [
                     'spread' => round($legacySpread, 4),
@@ -717,8 +700,8 @@ class GeneratePredictionFromHistoricalElo
             return [$predictedSpread, $winProbability];
         }
 
-        $home = $this->qbContextForGame($game, (int) $game->home_team_id);
-        $away = $this->qbContextForGame($game, (int) $game->away_team_id);
+        $home = $this->projectedQuarterbacks[(int) $game->home_team_id] ?? $this->qbContextForGame($game, (int) $game->home_team_id);
+        $away = $this->projectedQuarterbacks[(int) $game->away_team_id] ?? $this->qbContextForGame($game, (int) $game->away_team_id);
 
         if (($home['qb_id'] ?? null) === null || ($away['qb_id'] ?? null) === null) {
             $this->lastModelMetadata['qb_form']['reason'] = 'missing_game_qb_identity';
@@ -756,8 +739,7 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.max_spread')
         );
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $blendedWinProbability = $this->clamp(1 / (1 + exp(-$blendedSpread / $spreadCoefficient)), 0.01, 0.99);
+        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
 
         $this->lastModelMetadata['qb_form'] = [
             'enabled' => true,
@@ -828,18 +810,20 @@ class GeneratePredictionFromHistoricalElo
             + ((float) $away['third_down_rate_diff'] * $thirdDownWeight);
         $signalSpread = $this->clamp($homeScore - $awayScore, -$maxSignalSpread, $maxSignalSpread);
 
-        $weight = $this->clamp((float) config('nfl.predictions.opponent_adjusted_efficiency.blend_weight', 0.18), 0.0, 1.0);
+        $baseWeight = $this->clamp((float) config('nfl.predictions.opponent_adjusted_efficiency.blend_weight', 0.18), 0.0, 1.0);
+        $weight = app(NflSampleReliability::class)->weight($baseWeight, (int) $home['games'], (int) $away['games']);
         $blendedSpread = $this->clamp(
             $this->blend($predictedSpread, $predictedSpread + $signalSpread, $weight),
             (float) config('nfl.predictions.min_spread'),
             (float) config('nfl.predictions.max_spread')
         );
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $blendedWinProbability = $this->clamp(1 / (1 + exp(-$blendedSpread / $spreadCoefficient)), 0.01, 0.99);
+        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
 
         $this->lastModelMetadata['opponent_adjusted_efficiency'] = [
             'enabled' => true,
             'applied' => true,
+            'maximum_weight' => $baseWeight,
+            'reliability_method' => 'min_team_games_over_games_plus_prior',
             'weight' => round($weight, 4),
             'home' => $home,
             'away' => $away,
@@ -1029,8 +1013,7 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.max_spread')
         );
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $blendedWinProbability = $this->clamp(1 / (1 + exp(-$blendedSpread / $spreadCoefficient)), 0.01, 0.99);
+        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
 
         $this->lastModelMetadata['preseason_signal'] = [
             'enabled' => true,
@@ -1076,6 +1059,8 @@ class GeneratePredictionFromHistoricalElo
             $this->lastModelMetadata['line_matchup']['reason'] = 'insufficient_prior_games';
             $this->lastModelMetadata['line_matchup']['home_games'] = (int) ($home['games'] ?? 0);
             $this->lastModelMetadata['line_matchup']['away_games'] = (int) ($away['games'] ?? 0);
+            $this->lastModelMetadata['line_matchup']['home'] = $home;
+            $this->lastModelMetadata['line_matchup']['away'] = $away;
 
             return [$predictedSpread, $winProbability, $predictedTotal];
         }
@@ -1084,8 +1069,14 @@ class GeneratePredictionFromHistoricalElo
         $pressureWeight = (float) config('nfl.predictions.line_matchup.pressure_edge_weight', 34.0);
         $maxSignalSpread = (float) config('nfl.predictions.line_matchup.max_signal_spread', 4.0);
 
-        $homeRunEdge = (float) $home['off_rush_yards_per_attempt'] - (float) $away['def_rush_yards_allowed_per_attempt'];
-        $awayRunEdge = (float) $away['off_rush_yards_per_attempt'] - (float) $home['def_rush_yards_allowed_per_attempt'];
+        $rushing = app(NflRushingMatchup::class)->edges($home, $away);
+        if ($rushing === null) {
+            $this->lastModelMetadata['line_matchup']['reason'] = 'missing_rushing_sample';
+
+            return [$predictedSpread, $winProbability, $predictedTotal];
+        }
+        $homeRunEdge = $rushing['home'];
+        $awayRunEdge = $rushing['away'];
         $homePressureEdge = (float) $away['def_sack_rate'] + (float) $home['off_sack_allowed_rate'];
         $awayPressureEdge = (float) $home['def_sack_rate'] + (float) $away['off_sack_allowed_rate'];
 
@@ -1105,7 +1096,7 @@ class GeneratePredictionFromHistoricalElo
         $totalPressureWeight = (float) config('nfl.predictions.line_matchup.total_pressure_edge_weight', 14.0);
         $maxTotalAdjustment = (float) config('nfl.predictions.line_matchup.max_total_adjustment', 3.0);
         $totalSignal = $this->clamp(
-            (($homeRunEdge + $awayRunEdge) * $totalRunWeight)
+            (($rushing['legacy_home'] + $rushing['legacy_away']) * $totalRunWeight)
                 - (max(0.0, $homePressureEdge + $awayPressureEdge) * $totalPressureWeight),
             -$maxTotalAdjustment,
             $maxTotalAdjustment
@@ -1116,12 +1107,16 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.true_epa.max_predicted_total', 66.0)
         );
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $blendedWinProbability = $this->clamp(1 / (1 + exp(-$blendedSpread / $spreadCoefficient)), 0.01, 0.99);
+        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
 
         $this->lastModelMetadata['line_matchup'] = [
             'enabled' => true,
             'applied' => true,
+            'evidence_type' => 'sack_rate_and_rushing_efficiency_proxy',
+            'rushing_matchup' => $rushing,
+            'spread_formula_parameters' => ['run_weight' => $runWeight, 'pressure_weight' => $pressureWeight, 'max_signal_spread' => $maxSignalSpread],
+            'total_formula' => 'legacy_offense_minus_allowed_unchanged',
+            'charting_available' => false,
             'weight' => round($weight, 4),
             'home' => $home,
             'away' => $away,
@@ -1167,6 +1162,18 @@ class GeneratePredictionFromHistoricalElo
         $division = $this->divisionRivalryContext($game);
         $matchupRecords = $this->matchupRecordContext($game);
         $sameWeekRecords = $this->sameWeekRecordContext($game);
+        // Retain the evidence contract, but descriptive records are not fitted
+        // point adjustments. This also prevents stale env weights re-enabling them.
+        foreach ([&$division, &$matchupRecords, &$sameWeekRecords] as &$history) {
+            $history['evidence_available'] = $history['applied'];
+            $history['applied'] = false;
+            $history['descriptive_spread_adjustment'] = $history['spread_adjustment'];
+            $history['spread_adjustment'] = 0.0;
+            $history['affects_prediction'] = false;
+        }
+        unset($history);
+        $division['descriptive_total_adjustment'] = $division['total_adjustment'];
+        $division['total_adjustment'] = 0.0;
         $priorSeasonPedigree = $this->priorSeasonPedigreeContext($game);
         $weather = $this->weatherTotalContext($game);
         $schedule = $this->scheduleSpotContext($game);
@@ -1198,8 +1205,7 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.true_epa.max_predicted_total', 66.0)
         );
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $adjustedWinProbability = $this->clamp(1 / (1 + exp(-$adjustedSpread / $spreadCoefficient)), 0.01, 0.99);
+        $adjustedWinProbability = $this->winProbabilityFromSpread($adjustedSpread);
 
         $this->lastModelMetadata['contextual_factors'] = [
             'enabled' => true,
@@ -1943,7 +1949,8 @@ class GeneratePredictionFromHistoricalElo
             : (float) config('nfl.elo.home_field_advantage') * (float) config('nfl.predictions.points_per_elo');
         $signalSpread = $this->clamp($homeSignal - $awaySignal + $homeFieldAdvantage, -$maxSignalSpread, $maxSignalSpread);
 
-        $weight = $this->clamp((float) config('nfl.predictions.rolling_efficiency.blend_weight', 0.35), 0.0, 1.0);
+        $baseWeight = $this->clamp((float) config('nfl.predictions.rolling_efficiency.blend_weight', 0.35), 0.0, 1.0);
+        $weight = app(NflSampleReliability::class)->weight($baseWeight, (int) $home['games'], (int) $away['games']);
         $blendedSpread = $this->blend($predictedSpread, $signalSpread, $weight);
         $blendedSpread = $this->clamp(
             $blendedSpread,
@@ -1951,8 +1958,7 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.max_spread')
         );
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $blendedWinProbability = $this->clamp(1 / (1 + exp(-$blendedSpread / $spreadCoefficient)), 0.01, 0.99);
+        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
 
         $totalSignal = ((float) $home['points_for'] + (float) $away['points_for'] + (float) $home['points_against'] + (float) $away['points_against']) / 2.0;
         $blendedTotal = $this->blend($predictedTotal, $totalSignal, min($weight, 0.25));
@@ -1965,6 +1971,8 @@ class GeneratePredictionFromHistoricalElo
         $this->lastModelMetadata['rolling_efficiency'] = [
             'enabled' => true,
             'applied' => true,
+            'maximum_weight' => $baseWeight,
+            'reliability_method' => 'min_team_games_over_games_plus_prior',
             'weight' => round($weight, 4),
             'home' => $home,
             'away' => $away,
@@ -2052,12 +2060,7 @@ class GeneratePredictionFromHistoricalElo
             );
         }
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $blendedWinProbability = $this->clamp(
-            1 / (1 + exp(-$blendedSpread / $spreadCoefficient)),
-            0.01,
-            0.99
-        );
+        $blendedWinProbability = $this->winProbabilityFromSpread($blendedSpread);
 
         $this->lastModelMetadata['market_blend'] = [
             'enabled' => true,
@@ -2164,7 +2167,10 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.adaptive_point_calibration.trim_fraction', 0.10)
         );
 
-        $spreadWeight = $this->clamp((float) config('nfl.predictions.adaptive_point_calibration.spread_blend_weight', 0.35), 0.0, 1.0);
+        // Mutable historical predictions are not an eligible spread calibration corpus.
+        $spreadWeight = config('nfl.predictions.allow_legacy_spread_bias_calibration', false)
+            ? $this->clamp((float) config('nfl.predictions.adaptive_point_calibration.spread_blend_weight', 0.35), 0.0, 1.0)
+            : 0.0;
         $totalWeight = $this->clamp((float) config('nfl.predictions.adaptive_point_calibration.total_blend_weight', 0.45), 0.0, 1.0);
         $maxSpreadAdjustment = (float) config('nfl.predictions.adaptive_point_calibration.max_spread_adjustment', 2.0);
         $maxTotalAdjustment = (float) config('nfl.predictions.adaptive_point_calibration.max_total_adjustment', 2.5);
@@ -2183,12 +2189,7 @@ class GeneratePredictionFromHistoricalElo
             (float) config('nfl.predictions.true_epa.max_predicted_total', 66.0)
         );
 
-        $spreadCoefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
-        $calibratedWinProbability = $this->clamp(
-            1 / (1 + exp(-$calibratedSpread / $spreadCoefficient)),
-            0.01,
-            0.99
-        );
+        $calibratedWinProbability = $spreadWeight === 0.0 ? $winProbability : $this->winProbabilityFromSpread($calibratedSpread);
 
         $this->lastModelMetadata['adaptive_point_calibration'] = [
             'enabled' => true,
@@ -2201,6 +2202,7 @@ class GeneratePredictionFromHistoricalElo
             'spread_adjustment' => round($spreadAdjustment, 4),
             'total_adjustment' => round($totalAdjustment, 4),
             'spread_blend_weight' => round($spreadWeight, 4),
+            'spread_calibration_status' => $spreadWeight === 0.0 ? 'disabled_unverified_historical_corpus' : 'legacy',
             'total_blend_weight' => round($totalWeight, 4),
             'baseline_spread' => round($predictedSpread, 4),
             'baseline_total' => round($predictedTotal, 4),
@@ -2655,22 +2657,18 @@ class GeneratePredictionFromHistoricalElo
 
         $outSpreadPenalty = (float) config('nfl.predictions.injury_out_spread_penalty', 0.50);
         $questionableSpreadPenalty = (float) config('nfl.predictions.injury_questionable_spread_penalty', 0.20);
-        $outTotalPenalty = (float) config('nfl.predictions.injury_out_total_penalty', 0.30);
-        $questionableTotalPenalty = (float) config('nfl.predictions.injury_questionable_total_penalty', 0.10);
 
         $homePenalty = ($homeCounts['out'] * $outSpreadPenalty) + ($homeCounts['questionable'] * $questionableSpreadPenalty);
         $awayPenalty = ($awayCounts['out'] * $outSpreadPenalty) + ($awayCounts['questionable'] * $questionableSpreadPenalty);
 
         $spreadAdj = $awayPenalty - $homePenalty;
-        $totalAdj = -(
-            (($homeCounts['out'] + $awayCounts['out']) * $outTotalPenalty)
-            + (($homeCounts['questionable'] + $awayCounts['questionable']) * $questionableTotalPenalty)
-        );
+        $totalEffect = app(NflInjuryTotalAdjustment::class)->calculate($homeCounts, $awayCounts);
+        $totalAdj = $totalEffect['adjustment'];
 
         $winAdjPerPoint = (float) config('nfl.predictions.depth_chart.win_probability_adjustment_per_point', 0.03);
 
-        $adjustedSpread = round($predictedSpread + $spreadAdj, 1);
-        $adjustedTotal = round($predictedTotal + $totalAdj, 1);
+        $adjustedSpread = $predictedSpread + $spreadAdj;
+        $adjustedTotal = $predictedTotal + $totalAdj;
         $adjustedWin = $this->clamp($winProbability + ($spreadAdj * $winAdjPerPoint), 0.01, 0.99);
 
         $this->lastModelMetadata['depth_chart_injuries'] = [
@@ -2701,6 +2699,11 @@ class GeneratePredictionFromHistoricalElo
             'has_unscoped_injury_uncertainty' => ($homeCounts['unknown_return_skipped'] + $awayCounts['unknown_return_skipped']) > 0,
             'spread_adjustment' => round($spreadAdj, 2),
             'total_adjustment' => round($totalAdj, 2),
+            'total_effect' => $totalEffect,
+            'home_units' => $homeCounts['units'] ?? [],
+            'away_units' => $awayCounts['units'] ?? [],
+            'raw_adjustments' => ['spread' => $spreadAdj, 'total' => $totalAdj],
+            'raw_outputs' => ['spread' => $adjustedSpread, 'total' => $adjustedTotal],
             'win_probability_adjustment' => round($spreadAdj * $winAdjPerPoint, 4),
         ];
 
@@ -2715,6 +2718,7 @@ class GeneratePredictionFromHistoricalElo
         $counts = [
             'out' => 0.0,
             'questionable' => 0.0,
+            'units' => [],
             'scoped_out' => 0,
             'returned_before_game' => 0,
             'unknown_return_skipped' => 0,
@@ -2762,13 +2766,16 @@ class GeneratePredictionFromHistoricalElo
                 $coveredPlayerNames[] = $playerName;
             }
 
-            $counts[$bucket] += $this->depthChartImpactService->injuryMultiplier(
+            $impact = $this->depthChartImpactService->injuryMultiplier(
                 'nfl',
                 $teamId,
                 (int) ($injury->player_id ?? 0),
                 $season,
                 $asOf,
             );
+            $counts[$bucket] += $impact;
+            $unit = app(NflInjuryTotalAdjustment::class)->unit($injury->player?->position);
+            $counts['units'][$unit][$bucket] = ($counts['units'][$unit][$bucket] ?? 0.0) + $impact;
         }
 
         $nflverseCounts = $this->nflverseInjuryCountsForTeam($teamId, $season, $game, $coveredPlayerNames);
@@ -2777,6 +2784,11 @@ class GeneratePredictionFromHistoricalElo
             $counts['questionable'] += $nflverseCounts['questionable'];
             $counts['nflverse_rows'] = $nflverseCounts['rows'];
             $counts['nflverse_source'] = 'nflverse_injuries';
+            foreach ($nflverseCounts['units'] ?? [] as $unit => $buckets) {
+                foreach ($buckets as $bucket => $impact) {
+                    $counts['units'][$unit][$bucket] = ($counts['units'][$unit][$bucket] ?? 0.0) + $impact;
+                }
+            }
         }
 
         $counts['out'] = round($counts['out'], 2);
@@ -2797,6 +2809,10 @@ class GeneratePredictionFromHistoricalElo
     protected function pointInTimeInjuryStateForTeam(int $teamId, Game $game): array
     {
         $asOf = $this->gameKickoffAt($game) ?? Carbon::parse($game->game_date)->startOfDay();
+        $key = $teamId.'|'.$asOf->toIso8601String();
+        if (isset($this->injuryStateCache[$key])) {
+            return $this->injuryStateCache[$key];
+        }
         $snapshot = PlayerInjurySnapshot::query()
             ->with('entries.player')
             ->where('team_id', $teamId)
@@ -2810,7 +2826,7 @@ class GeneratePredictionFromHistoricalElo
             ->first();
 
         if ($snapshot !== null) {
-            return [
+            return $this->injuryStateCache[$key] = [
                 'entries' => $snapshot->entries,
                 'as_of' => $asOf,
                 'source' => 'append_only_snapshot',
@@ -2831,7 +2847,7 @@ class GeneratePredictionFromHistoricalElo
             })
             ->get();
 
-        return [
+        return $this->injuryStateCache[$key] = [
             'entries' => $entries,
             'as_of' => $asOf,
             'source' => $entries->isEmpty()
@@ -2856,6 +2872,7 @@ class GeneratePredictionFromHistoricalElo
             'questionable' => 0.0,
             'rows' => 0,
             'positions' => [],
+            'units' => [],
         ];
 
         if (! (bool) config('nfl.predictions.nflverse.injury_fallback.enabled', true)) {
@@ -2903,6 +2920,8 @@ class GeneratePredictionFromHistoricalElo
             $position = strtoupper((string) ($row->position ?? ''));
             $multiplier = $this->nflverseDepthInjuryMultiplier($team, (string) ($row->gsis_id ?? ''), $position, $game);
             $counts[$bucket] += $multiplier;
+            $unit = app(NflInjuryTotalAdjustment::class)->unit($position);
+            $counts['units'][$unit][$bucket] = ($counts['units'][$unit][$bucket] ?? 0.0) + $multiplier;
             if ($position !== '') {
                 $counts['positions'][] = $position;
             }
@@ -3051,75 +3070,16 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function rollingEfficiencyProfile(Game $game, int $teamId): array
     {
-        $date = $this->asDate($game->game_date);
-        $recentGames = max(1, (int) config('nfl.predictions.rolling_efficiency.recent_games', 5));
+        return $this->teamHistory($game)->rolling($teamId);
+    }
 
-        $games = Game::query()
-            ->with('teamStats')
-            ->where('season', (int) $game->season)
-            ->where('status', 'STATUS_FINAL')
-            ->whereIn('season_type', ['2', 'regular'])
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score')
-            ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
-            ->where(function ($query) use ($teamId): void {
-                $query->where('home_team_id', $teamId)
-                    ->orWhere('away_team_id', $teamId);
-            })
-            ->orderBy('game_date')
-            ->orderBy('id')
-            ->get();
-
-        if ($games->isEmpty()) {
-            return [
-                'games' => 0,
-                'avg_margin' => 0.0,
-                'recent_margin' => 0.0,
-                'yard_diff' => 0.0,
-                'turnover_diff' => 0.0,
-                'points_for' => 0.0,
-                'points_against' => 0.0,
-            ];
-        }
-
-        $margins = [];
-        $yardDiffs = [];
-        $turnoverDiffs = [];
-        $pointsFor = [];
-        $pointsAgainst = [];
-
-        foreach ($games as $priorGame) {
-            $isHome = (int) $priorGame->home_team_id === $teamId;
-            $opponentId = (int) ($isHome ? $priorGame->away_team_id : $priorGame->home_team_id);
-            $teamScore = (float) ($isHome ? $priorGame->home_score : $priorGame->away_score);
-            $opponentScore = (float) ($isHome ? $priorGame->away_score : $priorGame->home_score);
-
-            $teamStat = $priorGame->teamStats->firstWhere('team_id', $teamId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'home' : 'away');
-            $opponentStat = $priorGame->teamStats->firstWhere('team_id', $opponentId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'away' : 'home');
-
-            $margins[] = $teamScore - $opponentScore;
-            $pointsFor[] = $teamScore;
-            $pointsAgainst[] = $opponentScore;
-
-            if ($teamStat && $opponentStat) {
-                $yardDiffs[] = (float) ($teamStat->total_yards ?? 0) - (float) ($opponentStat->total_yards ?? 0);
-                $teamTurnovers = (float) ($teamStat->interceptions ?? 0) + (float) ($teamStat->fumbles_lost ?? $teamStat->fumbles ?? 0);
-                $opponentTurnovers = (float) ($opponentStat->interceptions ?? 0) + (float) ($opponentStat->fumbles_lost ?? $opponentStat->fumbles ?? 0);
-                $turnoverDiffs[] = $opponentTurnovers - $teamTurnovers;
-            }
-        }
-
-        return [
-            'games' => $games->count(),
-            'avg_margin' => round($this->average($margins), 3),
-            'recent_margin' => round($this->average(array_slice($margins, -$recentGames)), 3),
-            'yard_diff' => round($this->average($yardDiffs), 3),
-            'turnover_diff' => round($this->average($turnoverDiffs), 3),
-            'points_for' => round($this->average($pointsFor), 3),
-            'points_against' => round($this->average($pointsAgainst), 3),
-        ];
+    protected function teamHistory(Game $game): NflTeamHistory
+    {
+        return $this->teamHistory ??= new NflTeamHistory(
+            $game,
+            fn (int $teamId, mixed $date): float => $this->getEloAtDate($teamId, $date),
+            $this->projectedQuarterbacks,
+        );
     }
 
     /**
@@ -3127,64 +3087,7 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function opponentAdjustedEfficiencyProfile(Game $game, int $teamId): array
     {
-        $date = $this->asDate($game->game_date);
-        $opponentEloWeight = (float) config('nfl.predictions.opponent_adjusted_efficiency.opponent_elo_weight', 0.015);
-        $defaultElo = (float) config('nfl.elo.default_rating', 1500);
-
-        $games = Game::query()
-            ->with('teamStats')
-            ->where('season', (int) $game->season)
-            ->where('status', 'STATUS_FINAL')
-            ->whereIn('season_type', ['2', 'regular'])
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score')
-            ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
-            ->where(function ($query) use ($teamId): void {
-                $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
-            })
-            ->orderBy('game_date')
-            ->orderBy('id')
-            ->get();
-
-        $margins = [];
-        $yardDiffs = [];
-        $redZoneDiffs = [];
-        $thirdDownDiffs = [];
-        $opponentElos = [];
-
-        foreach ($games as $priorGame) {
-            $isHome = (int) $priorGame->home_team_id === $teamId;
-            $opponentId = (int) ($isHome ? $priorGame->away_team_id : $priorGame->home_team_id);
-            $teamScore = (float) ($isHome ? $priorGame->home_score : $priorGame->away_score);
-            $opponentScore = (float) ($isHome ? $priorGame->away_score : $priorGame->home_score);
-            $opponentElo = $this->getEloAtDate($opponentId, $priorGame->game_date);
-            $opponentElos[] = $opponentElo;
-            $margins[] = ($teamScore - $opponentScore) + (($opponentElo - $defaultElo) * $opponentEloWeight);
-
-            $teamStat = $priorGame->teamStats->firstWhere('team_id', $teamId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'home' : 'away');
-            $opponentStat = $priorGame->teamStats->firstWhere('team_id', $opponentId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'away' : 'home');
-
-            if (! $teamStat || ! $opponentStat) {
-                continue;
-            }
-
-            $yardDiffs[] = ((float) ($teamStat->total_yards ?? 0) - (float) ($opponentStat->total_yards ?? 0)) / 100;
-            $redZoneDiffs[] = $this->rate((int) ($teamStat->red_zone_scores ?? 0), (int) ($teamStat->red_zone_attempts ?? 0))
-                - $this->rate((int) ($opponentStat->red_zone_scores ?? 0), (int) ($opponentStat->red_zone_attempts ?? 0));
-            $thirdDownDiffs[] = $this->rate((int) ($teamStat->third_down_conversions ?? 0), (int) ($teamStat->third_down_attempts ?? 0))
-                - $this->rate((int) ($opponentStat->third_down_conversions ?? 0), (int) ($opponentStat->third_down_attempts ?? 0));
-        }
-
-        return [
-            'games' => $games->count(),
-            'opponent_adjusted_margin' => round($this->average($margins), 3),
-            'yard_diff' => round($this->average($yardDiffs), 3),
-            'red_zone_rate_diff' => round($this->average($redZoneDiffs), 3),
-            'third_down_rate_diff' => round($this->average($thirdDownDiffs), 3),
-            'avg_opponent_elo' => round($this->average($opponentElos), 1),
-        ];
+        return $this->teamHistory($game)->opponentAdjusted($teamId);
     }
 
     /**
@@ -3192,141 +3095,7 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function totalEnvironmentProfile(Game $game, int $teamId): array
     {
-        $date = $this->asDate($game->game_date);
-        $recentGames = max(1, (int) config('nfl.predictions.total_environment.recent_games', 8));
-
-        $games = Game::query()
-            ->with('teamStats')
-            ->where('season', (int) $game->season)
-            ->where('status', 'STATUS_FINAL')
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score')
-            ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
-            ->where(function ($query) use ($teamId): void {
-                $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
-            })
-            ->orderBy('game_date')
-            ->orderBy('id')
-            ->get();
-
-        $minGames = (int) config('nfl.predictions.total_environment.min_games', 2);
-        if ($games->count() < $minGames && (int) $game->season > 1900) {
-            $previousSeasonGames = Game::query()
-                ->with('teamStats')
-                ->where('season', (int) $game->season - 1)
-                ->where('status', 'STATUS_FINAL')
-                ->whereNotNull('home_score')
-                ->whereNotNull('away_score')
-                ->where(function ($query) use ($teamId): void {
-                    $query->where('home_team_id', $teamId)->orWhere('away_team_id', $teamId);
-                })
-                ->orderByDesc('game_date')
-                ->orderByDesc('id')
-                ->limit($recentGames)
-                ->get()
-                ->reverse()
-                ->values();
-
-            $games = $previousSeasonGames->concat($games)->values();
-        }
-
-        if ($games->isEmpty()) {
-            return [
-                'games' => 0,
-                'points_for' => 0.0,
-                'points_against' => 0.0,
-                'offensive_plays' => 0.0,
-                'defensive_plays' => 0.0,
-                'yards_per_play' => 0.0,
-                'yards_allowed_per_play' => 0.0,
-                'pass_rate' => 0.0,
-                'red_zone_rate' => 0.0,
-                'red_zone_allowed_rate' => 0.0,
-                'third_down_rate' => 0.0,
-                'third_down_allowed_rate' => 0.0,
-                'turnover_rate' => 0.0,
-                'takeaway_rate' => 0.0,
-                'penalty_yards' => 0.0,
-            ];
-        }
-
-        $pointsFor = [];
-        $pointsAgainst = [];
-        $offensivePlays = [];
-        $defensivePlays = [];
-        $yardsPerPlay = [];
-        $yardsAllowedPerPlay = [];
-        $passRates = [];
-        $redZoneRates = [];
-        $redZoneAllowedRates = [];
-        $thirdDownRates = [];
-        $thirdDownAllowedRates = [];
-        $turnoverRates = [];
-        $takeawayRates = [];
-        $penaltyYards = [];
-
-        foreach ($games->take(-$recentGames) as $priorGame) {
-            $isHome = (int) $priorGame->home_team_id === $teamId;
-            $opponentId = (int) ($isHome ? $priorGame->away_team_id : $priorGame->home_team_id);
-            $teamScore = (float) ($isHome ? $priorGame->home_score : $priorGame->away_score);
-            $opponentScore = (float) ($isHome ? $priorGame->away_score : $priorGame->home_score);
-
-            $teamStat = $priorGame->teamStats->firstWhere('team_id', $teamId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'home' : 'away');
-            $opponentStat = $priorGame->teamStats->firstWhere('team_id', $opponentId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'away' : 'home');
-
-            $pointsFor[] = $teamScore;
-            $pointsAgainst[] = $opponentScore;
-
-            if (! $teamStat || ! $opponentStat) {
-                continue;
-            }
-
-            $teamOffensivePlays = $this->offensivePlayCount($teamStat);
-            $opponentOffensivePlays = $this->offensivePlayCount($opponentStat);
-            $teamPassAttempts = (float) ($teamStat->passing_attempts ?? 0);
-            $teamTurnovers = (float) ($teamStat->interceptions ?? 0) + (float) ($teamStat->fumbles_lost ?? $teamStat->fumbles ?? 0);
-            $opponentTurnovers = (float) ($opponentStat->interceptions ?? 0) + (float) ($opponentStat->fumbles_lost ?? $opponentStat->fumbles ?? 0);
-
-            $offensivePlays[] = $teamOffensivePlays;
-            $defensivePlays[] = $opponentOffensivePlays;
-            $yardsPerPlay[] = $teamOffensivePlays > 0 ? (float) ($teamStat->total_yards ?? 0) / $teamOffensivePlays : 0.0;
-            $yardsAllowedPerPlay[] = $opponentOffensivePlays > 0 ? (float) ($opponentStat->total_yards ?? 0) / $opponentOffensivePlays : 0.0;
-            $passRates[] = $teamOffensivePlays > 0 ? $teamPassAttempts / $teamOffensivePlays : 0.0;
-            $redZoneRates[] = $this->rate((int) ($teamStat->red_zone_scores ?? 0), (int) ($teamStat->red_zone_attempts ?? 0));
-            $redZoneAllowedRates[] = $this->rate((int) ($opponentStat->red_zone_scores ?? 0), (int) ($opponentStat->red_zone_attempts ?? 0));
-            $thirdDownRates[] = $this->rate((int) ($teamStat->third_down_conversions ?? 0), (int) ($teamStat->third_down_attempts ?? 0));
-            $thirdDownAllowedRates[] = $this->rate((int) ($opponentStat->third_down_conversions ?? 0), (int) ($opponentStat->third_down_attempts ?? 0));
-            $turnoverRates[] = $teamOffensivePlays > 0 ? $teamTurnovers / $teamOffensivePlays : 0.0;
-            $takeawayRates[] = $opponentOffensivePlays > 0 ? $opponentTurnovers / $opponentOffensivePlays : 0.0;
-            $penaltyYards[] = (float) ($teamStat->penalty_yards ?? 0);
-        }
-
-        return [
-            'games' => $games->count(),
-            'points_for' => round($this->average($pointsFor), 3),
-            'points_against' => round($this->average($pointsAgainst), 3),
-            'offensive_plays' => round($this->average($offensivePlays), 3),
-            'defensive_plays' => round($this->average($defensivePlays), 3),
-            'yards_per_play' => round($this->average($yardsPerPlay), 3),
-            'yards_allowed_per_play' => round($this->average($yardsAllowedPerPlay), 3),
-            'pass_rate' => round($this->average($passRates), 3),
-            'red_zone_rate' => round($this->average($redZoneRates), 3),
-            'red_zone_allowed_rate' => round($this->average($redZoneAllowedRates), 3),
-            'third_down_rate' => round($this->average($thirdDownRates), 3),
-            'third_down_allowed_rate' => round($this->average($thirdDownAllowedRates), 3),
-            'turnover_rate' => round($this->average($turnoverRates), 4),
-            'takeaway_rate' => round($this->average($takeawayRates), 4),
-            'penalty_yards' => round($this->average($penaltyYards), 3),
-        ];
-    }
-
-    protected function offensivePlayCount(object $stat): float
-    {
-        return max(0.0, (float) ($stat->passing_attempts ?? 0)
-            + (float) ($stat->rushing_attempts ?? 0)
-            + (float) ($stat->sacks_allowed ?? 0));
+        return $this->teamHistory($game)->totals($teamId);
     }
 
     /**
@@ -3421,16 +3190,6 @@ class GeneratePredictionFromHistoricalElo
             'net_true_epa_per_play' => 0.0,
             'source' => 'nflverse_pbp_plays',
         ];
-    }
-
-    protected function rate(int $numerator, int $denominator): float
-    {
-        return $denominator > 0 ? $numerator / $denominator : 0.0;
-    }
-
-    protected function statByTeamType(Game $game, string $teamType): ?object
-    {
-        return $game->teamStats->first(fn ($stat) => strtolower((string) ($stat->team_type ?? '')) === $teamType);
     }
 
     /**
@@ -3837,89 +3596,7 @@ class GeneratePredictionFromHistoricalElo
      */
     protected function lineProfile(Game $game, int $teamId): array
     {
-        $date = $this->asDate($game->game_date);
-
-        $games = Game::query()
-            ->with('teamStats')
-            ->where('season', (int) $game->season)
-            ->where('status', 'STATUS_FINAL')
-            ->whereIn('season_type', ['2', 'regular'])
-            ->whereNotNull('home_score')
-            ->whereNotNull('away_score')
-            ->when($date, fn ($query) => $query->whereDate('game_date', '<', $date->toDateString()))
-            ->where(function ($query) use ($teamId): void {
-                $query->where('home_team_id', $teamId)
-                    ->orWhere('away_team_id', $teamId);
-            })
-            ->orderBy('game_date')
-            ->orderBy('id')
-            ->get();
-
-        $minGames = (int) config('nfl.predictions.line_matchup.min_games', 2);
-        if ($games->count() < $minGames) {
-            $previousSeasonGames = Game::query()
-                ->with('teamStats')
-                ->where('season', (int) $game->season - 1)
-                ->where('status', 'STATUS_FINAL')
-                ->whereIn('season_type', ['2', 'regular'])
-                ->whereNotNull('home_score')
-                ->whereNotNull('away_score')
-                ->where(function ($query) use ($teamId): void {
-                    $query->where('home_team_id', $teamId)
-                        ->orWhere('away_team_id', $teamId);
-                })
-                ->orderBy('game_date')
-                ->orderBy('id')
-                ->get();
-
-            $games = $previousSeasonGames->merge($games);
-        }
-
-        $gamesWithStats = 0;
-        $offSacksAllowed = 0;
-        $offPassAttempts = 0;
-        $offRushYards = 0;
-        $offRushAttempts = 0;
-        $defSacks = 0;
-        $defPassAttempts = 0;
-        $defRushYardsAllowed = 0;
-        $defRushAttempts = 0;
-
-        foreach ($games as $priorGame) {
-            $isHome = (int) $priorGame->home_team_id === $teamId;
-            $opponentId = (int) ($isHome ? $priorGame->away_team_id : $priorGame->home_team_id);
-            $teamStat = $priorGame->teamStats->firstWhere('team_id', $teamId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'home' : 'away');
-            $opponentStat = $priorGame->teamStats->firstWhere('team_id', $opponentId)
-                ?? $this->statByTeamType($priorGame, $isHome ? 'away' : 'home');
-
-            if (! $teamStat || ! $opponentStat) {
-                continue;
-            }
-
-            $gamesWithStats++;
-            $offSacksAllowed += (int) ($teamStat->sacks_allowed ?? 0);
-            $offPassAttempts += (int) ($teamStat->passing_attempts ?? 0);
-            $offRushYards += (int) ($teamStat->rushing_yards ?? 0);
-            $offRushAttempts += (int) ($teamStat->rushing_attempts ?? 0);
-
-            $defSacks += (int) ($opponentStat->sacks_allowed ?? 0);
-            $defPassAttempts += (int) ($opponentStat->passing_attempts ?? 0);
-            $defRushYardsAllowed += (int) ($opponentStat->rushing_yards ?? 0);
-            $defRushAttempts += (int) ($opponentStat->rushing_attempts ?? 0);
-        }
-
-        return [
-            'games' => $gamesWithStats,
-            'off_sack_allowed_rate' => round($offPassAttempts > 0 ? $offSacksAllowed / $offPassAttempts : 0.0, 4),
-            'off_rush_yards_per_attempt' => round($offRushAttempts > 0 ? $offRushYards / $offRushAttempts : 0.0, 3),
-            'def_sack_rate' => round($defPassAttempts > 0 ? $defSacks / $defPassAttempts : 0.0, 4),
-            'def_rush_yards_allowed_per_attempt' => round($defRushAttempts > 0 ? $defRushYardsAllowed / $defRushAttempts : 0.0, 3),
-            'off_pass_attempts' => $offPassAttempts,
-            'off_rush_attempts' => $offRushAttempts,
-            'def_pass_attempts' => $defPassAttempts,
-            'def_rush_attempts' => $defRushAttempts,
-        ];
+        return $this->teamHistory($game)->line($teamId);
     }
 
     /**
@@ -4365,29 +4042,7 @@ class GeneratePredictionFromHistoricalElo
                 DB::raw('0 as sacks_taken'),
             ]);
 
-        $games = $rows->count();
-        $attempts = (int) $rows->sum(fn ($row) => (int) ($row->passing_attempts ?? 0));
-        $yards = (int) $rows->sum(fn ($row) => (int) ($row->passing_yards ?? 0));
-        $touchdowns = (int) $rows->sum(fn ($row) => (int) ($row->passing_touchdowns ?? 0));
-        $interceptions = (int) $rows->sum(fn ($row) => (int) ($row->interceptions_thrown ?? 0));
-        $sacks = (int) $rows->sum(fn ($row) => (int) ($row->sacks_taken ?? 0));
-        $rushYards = (int) $rows->sum(fn ($row) => (int) ($row->rushing_yards ?? 0));
-        $dropbacks = $attempts + $sacks;
-
-        return [
-            'games' => $games,
-            'attempts' => $attempts,
-            'yards' => $yards,
-            'touchdowns' => $touchdowns,
-            'interceptions' => $interceptions,
-            'sacks' => $sacks,
-            'rush_yards' => $rushYards,
-            'yards_per_attempt' => $attempts > 0 ? $yards / $attempts : 0.0,
-            'td_rate' => $attempts > 0 ? $touchdowns / $attempts : 0.0,
-            'int_rate' => $attempts > 0 ? $interceptions / $attempts : 0.0,
-            'sack_rate' => $dropbacks > 0 ? $sacks / $dropbacks : 0.0,
-            'rush_yards_per_game' => $games > 0 ? $rushYards / $games : 0.0,
-        ];
+        return app(NflQuarterbackStatsSummary::class)->summarize($rows);
     }
 
     /**
@@ -4414,30 +4069,7 @@ class GeneratePredictionFromHistoricalElo
                 'nfl_player_stats.rushing_yards',
             ]);
 
-        $games = $rows->count();
-        $attempts = (int) $rows->sum(fn ($row) => (int) ($row->passing_attempts ?? 0));
-        $yards = (int) $rows->sum(fn ($row) => (int) ($row->passing_yards ?? 0));
-        $touchdowns = (int) $rows->sum(fn ($row) => (int) ($row->passing_touchdowns ?? 0));
-        $interceptions = (int) $rows->sum(fn ($row) => (int) ($row->interceptions_thrown ?? 0));
-        $sacks = (int) $rows->sum(fn ($row) => (int) ($row->sacks_taken ?? 0));
-        $rushYards = (int) $rows->sum(fn ($row) => (int) ($row->rushing_yards ?? 0));
-        $dropbacks = $attempts + $sacks;
-
-        return [
-            'games' => $games,
-            'current_team_games' => $rows->where('team_id', $teamId)->count(),
-            'attempts' => $attempts,
-            'yards' => $yards,
-            'touchdowns' => $touchdowns,
-            'interceptions' => $interceptions,
-            'sacks' => $sacks,
-            'rush_yards' => $rushYards,
-            'yards_per_attempt' => $attempts > 0 ? $yards / $attempts : 0.0,
-            'td_rate' => $attempts > 0 ? $touchdowns / $attempts : 0.0,
-            'int_rate' => $attempts > 0 ? $interceptions / $attempts : 0.0,
-            'sack_rate' => $dropbacks > 0 ? $sacks / $dropbacks : 0.0,
-            'rush_yards_per_game' => $games > 0 ? $rushYards / $games : 0.0,
-        ];
+        return app(NflQuarterbackStatsSummary::class)->summarize($rows, $teamId);
     }
 
     /**
@@ -4616,6 +4248,21 @@ class GeneratePredictionFromHistoricalElo
 
     protected function applyAnalysisLayer(Game $game, float $predictedSpread, float $predictedTotal, float $winProbability): void
     {
+        [$entryMargin, $marketTotal] = $this->extractMarketSpreadAndTotalFromGame($game);
+        $this->lastModelMetadata['confidence_basis'] = 'outright_winner';
+        $this->lastModelMetadata['spread_assessment'] = $entryMargin === null
+            ? ['status' => 'unavailable', 'cover_probability' => null, 'reason' => 'missing_market_line']
+            : app(NflSpreadProbability::class)->estimate([], $predictedSpread, -$entryMargin);
+        // Save a fixed, predeclared benchmark alongside the forecast, never feed it back in.
+        $legacyMargin = data_get($this->lastModelMetadata, 'legacy.spread');
+        $this->lastModelMetadata['spread_candidates'] = [
+            'version' => 'elo-market-50-50-v1',
+            'elo_market_margin' => $entryMargin !== null && is_numeric($legacyMargin)
+                ? ((float) $legacyMargin + $entryMargin) / 2 : null,
+            'validated_epa_market_margin' => null,
+            'epa_status' => 'requires_independent_as_of_source_and_validation',
+            'shadow_only' => true,
+        ];
         $enabled = (bool) config('nfl.predictions.analysis_layer.enabled', true);
         $analysis = [
             'enabled' => $enabled,
@@ -4629,13 +4276,13 @@ class GeneratePredictionFromHistoricalElo
             return;
         }
 
-        [$marketSpread, $marketTotal] = $this->extractMarketSpreadAndTotalFromGame($game);
+        $marketSpread = $entryMargin;
         $spreadEdge = $marketSpread !== null ? $predictedSpread - $marketSpread : null;
         $totalEdge = $marketTotal !== null ? $predictedTotal - $marketTotal : null;
         $riskFlags = $this->analysisRiskFlags($game, $winProbability, $spreadEdge, $totalEdge);
         $trustScore = $this->analysisTrustScore($winProbability, $riskFlags, $spreadEdge, $totalEdge);
-        $reasonCodes = $this->analysisReasonCodes($game, $winProbability, $trustScore, $spreadEdge, $totalEdge);
-        $trustScore = $this->applyAutomatedAnalysisTrustTweaks($game, $trustScore, $predictedSpread, $reasonCodes);
+        $keyNumberCodes = $this->marketKeyNumberReasonCodes($marketSpread, $spreadEdge);
+        $trustScore = $this->applyAutomatedAnalysisTrustTweaks($game, $trustScore, $predictedSpread, $keyNumberCodes);
         $betClassification = $this->betClassification($trustScore, $spreadEdge, $totalEdge);
         $modelSignalClassification = $this->modelSignalClassification($trustScore);
         $reasonCodes = $this->analysisReasonCodes($game, $winProbability, $trustScore, $spreadEdge, $totalEdge);
@@ -4663,7 +4310,6 @@ class GeneratePredictionFromHistoricalElo
             'bet_classification' => $betClassification,
             'model_signal_classification' => $modelSignalClassification,
             'reason_codes' => $reasonCodes,
-            'reason_code_metadata' => $this->reasonCodeCatalog->metadataForCodes($reasonCodes),
             'bet_rule_evaluation' => $betRuleEvaluation,
             'validated_signals' => $validatedSignals,
             'best_validated_signal' => $validatedSignals[0] ?? null,
@@ -4686,7 +4332,8 @@ class GeneratePredictionFromHistoricalElo
             $analysis,
             $predictedSpread,
             $predictedTotal,
-            $winProbability
+            $winProbability,
+            $this->oddsHistory($game)
         );
         $analysis['pro_signal_layer'] = $proSignalLayer;
         $analysis['reason_codes'] = array_values(array_unique([
@@ -4856,13 +4503,15 @@ class GeneratePredictionFromHistoricalElo
         if (($this->lastModelMetadata['line_matchup']['applied'] ?? false) === true) {
             $codes[] = 'ol_dl_matchup_signal';
             $lineSignal = (float) ($this->lastModelMetadata['line_matchup']['signal_spread'] ?? 0.0);
-            $this->appendDirectionalReason($codes, 'trench_matchup', $lineSignal, 0.75);
+            if (abs($lineSignal) >= 0.75) {
+                $codes[] = $lineSignal > 0 ? 'trench_matchup_home_proxy' : 'trench_matchup_away_proxy';
+            }
             $homePressure = (float) ($this->lastModelMetadata['line_matchup']['home_pressure_edge'] ?? 0.0);
             $awayPressure = (float) ($this->lastModelMetadata['line_matchup']['away_pressure_edge'] ?? 0.0);
             if ($homePressure < $awayPressure) {
-                $codes[] = 'home_pass_protection_edge';
+                $codes[] = 'home_sack_matchup_proxy';
             } elseif ($awayPressure < $homePressure) {
-                $codes[] = 'away_pass_protection_edge';
+                $codes[] = 'away_sack_matchup_proxy';
             }
             $homeRun = (float) ($this->lastModelMetadata['line_matchup']['home_run_edge'] ?? 0.0);
             $awayRun = (float) ($this->lastModelMetadata['line_matchup']['away_run_edge'] ?? 0.0);
@@ -5163,60 +4812,56 @@ class GeneratePredictionFromHistoricalElo
             $dogPressure = $homePressure;
         }
 
-        if ($favoritePressure + 0.02 < $dogPressure) {
-            $codes[] = 'ol_pass_protection_edge';
-        }
+        // Sack rates and rushing yards per attempt are proxies, not charted
+        // pressure, blitz, blocking, coverage, explosive-play or pace data.
+        // Keep these descriptive; never alias them into legacy approval rules.
         if ($favoriteRun - $dogRun >= 0.45) {
-            $codes[] = 'ol_run_blocking_edge';
+            $codes[] = 'model_side_rushing_efficiency_matchup_proxy';
         }
         if ($dogPressure - $favoritePressure >= 0.02) {
-            $codes[] = 'dl_pressure_edge';
-            $codes[] = 'pressure_mismatch_against_qb';
+            $codes[] = 'model_side_sack_matchup_proxy';
         }
         if ($favoriteRun <= -0.35) {
-            $codes[] = 'cannot_run_block_risk';
+            $codes[] = 'model_side_negative_rushing_matchup_proxy';
         }
         if ($awayRun >= 0.55) {
-            $codes[] = 'run_game_should_travel';
+            $codes[] = 'away_positive_rushing_matchup_proxy';
         }
         if ($homeRun >= 0.75 || $awayRun >= 0.75) {
-            $codes[] = 'run_heavy_clock_control';
+            $codes[] = 'large_positive_rushing_matchup_proxy';
         }
         if ((float) ($home['def_rush_yards_allowed_per_attempt'] ?? 99) <= 3.8 || (float) ($away['def_rush_yards_allowed_per_attempt'] ?? 99) <= 3.8) {
-            $codes[] = 'dl_run_stop_edge';
+            $codes[] = 'low_defensive_rushing_yards_per_attempt_context';
         }
         if (abs((float) ($this->lastModelMetadata['line_matchup']['signal_spread'] ?? 0.0)) >= 2.5) {
             $codes[] = ($this->lastModelMetadata['line_matchup']['signal_spread'] ?? 0) > 0
-                ? 'trenches_major_home_edge'
-                : 'trenches_major_away_edge';
+                ? 'trench_matchup_home_proxy'
+                : 'trench_matchup_away_proxy';
         }
         if (max($homePressure, $awayPressure) >= 0.145) {
-            $codes[] = 'weak_ol_vs_blitz_heavy_defense';
+            $codes[] = 'high_combined_sack_rate_proxy';
         }
         if (max((float) ($home['def_sack_rate'] ?? 0.0), (float) ($away['def_sack_rate'] ?? 0.0)) >= 0.085) {
-            $codes[] = 'elite_defense_edge';
-            $codes[] = 'explosive_play_prevention_edge';
+            $codes[] = 'high_defensive_sack_rate_context';
         }
         if (max((float) ($home['def_rush_yards_allowed_per_attempt'] ?? 0.0), (float) ($away['def_rush_yards_allowed_per_attempt'] ?? 0.0)) >= 4.8) {
-            $codes[] = 'poor_run_defense_risk';
+            $codes[] = 'high_defensive_rushing_yards_per_attempt_context';
         }
         if (min((float) ($home['def_sack_rate'] ?? 1.0), (float) ($away['def_sack_rate'] ?? 1.0)) <= 0.045) {
-            $codes[] = 'poor_secondary_risk';
+            $codes[] = 'low_defensive_sack_rate_context';
         }
 
         $homePassRate = $this->playRate((int) ($home['off_pass_attempts'] ?? 0), (int) ($home['off_rush_attempts'] ?? 0));
         $awayPassRate = $this->playRate((int) ($away['off_pass_attempts'] ?? 0), (int) ($away['off_rush_attempts'] ?? 0));
         if (max($homePassRate, $awayPassRate) >= 0.62) {
-            $codes[] = 'pass_heavy_volatility';
+            $codes[] = 'high_pass_attempt_share_context';
         }
 
         $totalSignal = (float) ($this->lastModelMetadata['line_matchup']['total_signal'] ?? 0.0);
         if ($totalSignal >= 1.0) {
-            $codes[] = 'fast_pace_over_signal';
-            $codes[] = 'explosive_offense_edge';
+            $codes[] = 'trench_total_increase_proxy';
         } elseif ($totalSignal <= -1.0) {
-            $codes[] = 'slow_pace_under_signal';
-            $codes[] = 'bend_dont_break_defense';
+            $codes[] = 'trench_total_decrease_proxy';
         }
     }
 
@@ -5541,19 +5186,7 @@ class GeneratePredictionFromHistoricalElo
     protected function appendMarketReasonCodes(array &$codes, Game $game, float $trustScore, ?float $spreadEdge, ?float $totalEdge): void
     {
         [$marketSpread, $marketTotal] = $this->extractMarketSpreadAndTotalFromGame($game);
-
-        if ($marketSpread !== null) {
-            $absMarket = abs($marketSpread);
-            foreach ((array) config('nfl.betting.key_numbers', [3, 7, 10]) as $keyNumber) {
-                $key = (float) $keyNumber;
-                if (abs($absMarket - $key) <= 0.5) {
-                    $codes[] = 'key_number_edge_'.(int) $key;
-                }
-                if ($spreadEdge !== null && $this->lineCrossesKeyNumber($marketSpread, $marketSpread + $spreadEdge, $key)) {
-                    $codes[] = 'spread_crosses_key_number';
-                }
-            }
-        }
+        array_push($codes, ...$this->marketKeyNumberReasonCodes($marketSpread, $spreadEdge));
 
         if ($spreadEdge !== null && abs($spreadEdge) >= 4.0) {
             $codes[] = 'model_market_disagreement';
@@ -5584,7 +5217,7 @@ class GeneratePredictionFromHistoricalElo
             }
         }
         if ($marketTotal !== null && $totalEdge !== null && abs($totalEdge) >= 3.0) {
-            $codes[] = $totalEdge > 0 ? 'fast_pace_over_signal' : 'slow_pace_under_signal';
+            $codes[] = $totalEdge > 0 ? 'model_total_above_market_context' : 'model_total_below_market_context';
         }
 
         if ($marketTotal !== null) {
@@ -5837,6 +5470,26 @@ class GeneratePredictionFromHistoricalElo
             && collect($westLocations)->contains(fn (string $needle): bool => str_contains($awayLocation, $needle));
     }
 
+    /** The only reason-code inputs required before trust adjustment; no database reads. */
+    protected function marketKeyNumberReasonCodes(?float $marketSpread, ?float $spreadEdge): array
+    {
+        $codes = [];
+        if ($marketSpread === null) {
+            return $codes;
+        }
+        foreach ((array) config('nfl.betting.key_numbers', [3, 7, 10]) as $keyNumber) {
+            $key = (float) $keyNumber;
+            if (abs(abs($marketSpread) - $key) <= 0.5) {
+                $codes[] = 'key_number_edge_'.(int) $key;
+            }
+            if ($spreadEdge !== null && $this->lineCrossesKeyNumber($marketSpread, $marketSpread + $spreadEdge, $key)) {
+                $codes[] = 'spread_crosses_key_number';
+            }
+        }
+
+        return $codes;
+    }
+
     protected function lineCrossesKeyNumber(float $marketSpread, float $modelSpread, float $keyNumber): bool
     {
         $market = abs($marketSpread);
@@ -5880,27 +5533,19 @@ class GeneratePredictionFromHistoricalElo
 
     protected function historicalLineMovement(Game $game): ?float
     {
-        $snapshots = GameOddsSnapshot::query()
-            ->where('sport', 'nfl')
-            ->where('game_table', $game->getTable())
-            ->where('game_id', $game->id)
-            ->orderBy('captured_at')
-            ->get();
-
-        if ($snapshots->count() < 2) {
+        $history = $this->oddsHistory($game);
+        if ($history->count() < 2) {
             return null;
         }
+        [$firstSpread] = $this->extractMarketSpreadAndTotal((array) $history->first()?->odds_data);
+        [$lastSpread] = $this->extractMarketSpreadAndTotal((array) $history->last()?->odds_data);
 
-        $first = $snapshots->first();
-        $last = $snapshots->last();
-        $firstOdds = is_array($first?->odds_data ?? null) ? $first->odds_data : [];
-        $lastOdds = is_array($last?->odds_data ?? null) ? $last->odds_data : [];
-        [$firstSpread] = $this->extractMarketSpreadAndTotal($firstOdds);
-        [$lastSpread] = $this->extractMarketSpreadAndTotal($lastOdds);
+        return $firstSpread !== null && $lastSpread !== null ? $lastSpread - $firstSpread : null;
+    }
 
-        return $firstSpread !== null && $lastSpread !== null
-            ? $lastSpread - $firstSpread
-            : null;
+    protected function oddsHistory(Game $game): NflOddsHistory
+    {
+        return $this->oddsHistory ??= new NflOddsHistory($game);
     }
 
     /**
@@ -5952,7 +5597,8 @@ class GeneratePredictionFromHistoricalElo
             }
         }
 
-        if ((bool) config('nfl.predictions.automated_calibration_tweaks.big_spread.enabled', true)) {
+        $allowUnvalidatedBoosts = (bool) config('nfl.predictions.allow_unvalidated_trust_boosts', false);
+        if ($allowUnvalidatedBoosts && (bool) config('nfl.predictions.automated_calibration_tweaks.big_spread.enabled', false)) {
             $threshold = (float) config('nfl.predictions.automated_calibration_tweaks.big_spread.threshold', 7.0);
             if (abs($predictedSpread) >= $threshold) {
                 $boost = (float) config('nfl.predictions.automated_calibration_tweaks.big_spread.trust_boost', 4.0);
@@ -5965,14 +5611,14 @@ class GeneratePredictionFromHistoricalElo
             }
         }
 
-        if (in_array('key_number_edge_10', $reasonCodes, true)) {
+        if ($allowUnvalidatedBoosts && in_array('key_number_edge_10', $reasonCodes, true)) {
             $boost = (float) config('nfl.predictions.automated_calibration_tweaks.key_number.edge_10_trust_boost', 6.0);
             $trustScore += $boost;
             $adjustments[] = [
                 'name' => 'key_number_10_trust_boost',
                 'adjustment' => round($boost, 3),
             ];
-        } elseif (in_array('key_number_edge_7', $reasonCodes, true)) {
+        } elseif ($allowUnvalidatedBoosts && in_array('key_number_edge_7', $reasonCodes, true)) {
             $boost = (float) config('nfl.predictions.automated_calibration_tweaks.key_number.edge_7_trust_boost', 3.0);
             $trustScore += $boost;
             $adjustments[] = [
@@ -6081,6 +5727,13 @@ class GeneratePredictionFromHistoricalElo
             ->first();
 
         return $eloRecord ? (float) $eloRecord->elo_rating : config('nfl.elo.default_rating');
+    }
+
+    protected function winProbabilityFromSpread(float $spread): float
+    {
+        $coefficient = (float) config('nfl.predictions.spread_to_probability_coefficient', 7.0);
+
+        return $this->clamp(1 / (1 + exp(-$spread / $coefficient)), 0.01, 0.99);
     }
 
     protected function calculateWinProbability(float $ratingA, float $ratingB): float

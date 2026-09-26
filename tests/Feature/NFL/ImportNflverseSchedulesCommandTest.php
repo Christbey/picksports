@@ -52,7 +52,11 @@ it('imports nflverse schedules with closing lines weather coaches and quarterbac
 
     expect($snapshot->source)->toBe('nflverse')
         ->and(data_get($snapshot->market_context, 'line_type'))->toBe('closing')
-        ->and(data_get($snapshot->odds_data, 'bookmakers.0.markets.0.outcomes.0.point'))->toBe(-2.5)
+        ->and(data_get($snapshot->odds_data, 'bookmakers.0.markets.0.outcomes.0.point'))->toBe(2.5)
+        ->and(data_get($snapshot->odds_data, 'bookmakers.0.markets.0.outcomes.1.point'))->toBe(-2.5)
+        ->and($snapshot->commence_time->utc()->format('Y-m-d H:i:s'))->toBe('2026-09-14 00:20:00')
+        ->and(data_get($snapshot->market_context, 'capture_time_is_synthetic'))->toBeTrue()
+        ->and(data_get($snapshot->market_context, 'normalization_version'))->toBe('nflverse_schedule_v2')
         ->and(data_get($snapshot->odds_data, 'bookmakers.0.markets.1.outcomes.0.point'))->toBe(44.5);
 
     $weather = GameWeather::query()->where('game_id', $game->id)->firstOrFail();

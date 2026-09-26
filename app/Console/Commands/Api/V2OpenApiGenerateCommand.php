@@ -41,6 +41,9 @@ class V2OpenApiGenerateCommand extends Command
      * @var array<string, array<string, mixed>>
      */
     private array $queryParameterSchemas = [
+        'since' => ['type' => 'integer', 'minimum' => 2009, 'description' => 'No later than the selected game season.'],
+        'home_line' => ['type' => 'number', 'minimum' => -60, 'maximum' => 60, 'multipleOf' => 0.5],
+        'window' => ['type' => 'string', 'enum' => ['season_to_date', 'previous_season']],
         'active' => ['type' => 'boolean'],
         'as_of_date' => ['type' => 'string', 'format' => 'date'],
         'before_date' => ['type' => 'string', 'format' => 'date'],
@@ -271,7 +274,9 @@ class V2OpenApiGenerateCommand extends Command
                 'enum' => match ($route->getName()) {
                     'v2.sports.games.live-betting.show' => ['cfb'],
                     'v2.sports.games.live-snapshot.show',
-                    'v2.sports.games.research.show' => ['nfl'],
+                    'v2.sports.games.research.show',
+                    'v2.sports.games.market-history.show',
+                    'v2.sports.games.matchup-signals.show' => ['nfl'],
                     default => ['nba', 'wnba', 'mlb', 'nfl', 'cbb', 'wcbb', 'cfb'],
                 },
             ];
@@ -337,6 +342,8 @@ class V2OpenApiGenerateCommand extends Command
             'v2.sports.games.trends.show',
             'v2.sports.games.live-snapshot.show',
             'v2.sports.games.research.show',
+            'v2.sports.games.market-history.show',
+            'v2.sports.games.matchup-signals.show',
         ], true);
     }
 
@@ -363,6 +370,12 @@ class V2OpenApiGenerateCommand extends Command
     {
         if (in_array($routeName, ['v2.sports.games.live-betting.show', 'v2.sports.games.live-snapshot.show', 'v2.sports.games.research.show'], true)) {
             return [];
+        }
+        if ($routeName === 'v2.sports.games.market-history.show') {
+            return ['since', 'home_line'];
+        }
+        if ($routeName === 'v2.sports.games.matchup-signals.show') {
+            return ['window'];
         }
         if (str_contains($routeName, 'stats.team.season-averages') || str_contains($routeName, 'teams.stats.season-averages')) {
             return $this->queryParametersByFamily['season-averages'];
@@ -696,6 +709,8 @@ class V2OpenApiGenerateCommand extends Command
             'v2.security.reports.csp', 'v2.security.reports.integrity' => 'SecurityReportResponse',
             'v2.sports.games.live-betting.show' => 'CfbLiveBettingResponse',
             'v2.sports.games.live-snapshot.show' => 'NflLiveSnapshotResponse',
+            'v2.sports.games.market-history.show' => 'NflMarketHistoryResponse',
+            'v2.sports.games.matchup-signals.show' => 'NflMatchupSignalsResponse',
             'v2.sports.games.depth-charts.show',
             'v2.sports.teams.depth-charts.show' => 'SportDepthChartResponse',
             'v2.sports.games.trends.show' => 'SportGameTrendsResponse',
@@ -1130,6 +1145,14 @@ class V2OpenApiGenerateCommand extends Command
                 'provisional' => ['const' => true], 'calibrated' => ['const' => false],
                 'model_kind' => ['const' => 'score_clock_heuristic'],
                 'clock_scope' => ['enum' => ['current_overtime_period', 'regulation']], 'warning' => ['type' => 'string'],
+            ]),
+            'NflMarketHistoryResponse' => $this->itemEnvelope('NflMarketHistoryData', true),
+            'NflMarketHistoryData' => $openObject,
+            'NflMatchupSignalsResponse' => $this->itemEnvelope('NflMatchupSignalsData', true),
+            'NflMatchupSignalsData' => $this->fixedObjectSchema(['role', 'affects_prediction', 'matchup', 'situational', 'generated_at'], [
+                'role' => ['const' => 'independent_matchup_analysis'], 'affects_prediction' => ['const' => false],
+                'matchup' => $openObject, 'situational' => $openObject,
+                'generated_at' => ['type' => 'string', 'format' => 'date-time'],
             ]),
             'SportGamePageResponse' => $this->sportCustomEnvelope('SportGamePageData'),
             'SportGamePageData' => $this->fixedObjectSchema([

@@ -736,6 +736,7 @@ it('records and settles only a released NFL bet with an exact immutable pregame 
         ->sole();
 
     expect($decision)->not->toBeNull()
+        ->and($decision->confidence)->toBeNull()
         ->and(BetDecision::query()->count())->toBe(1)
         ->and($flippedDecision->is($decision))->toBeTrue()
         ->and($decision->is_bet)->toBeTrue()

@@ -52,6 +52,13 @@ class ImportNflverseSchedulesCommand extends Command
         $snapshots = 0;
         $weather = 0;
         $skipped = 0;
+        $legacyBlocked = 0;
+        // Historical corrections need a reviewed repair, not an incidental reimport.
+        $legacyArchiveGames = GameOddsSnapshot::query()->where('sport', 'nfl')->where('game_table', 'nfl_games')
+            ->where('source', 'nflverse')->where(function ($query) {
+                $query->whereNull('market_context->normalization_version')
+                    ->orWhere('market_context->normalization_version', '!=', 'nflverse_schedule_v2');
+            })->pluck('game_id')->flip();
 
         foreach ($rows as $row) {
             if (! $this->shouldImport($row)) {
@@ -70,13 +77,19 @@ class ImportNflverseSchedulesCommand extends Command
                 continue;
             }
 
+            $existing = $this->findExistingGame($row, $homeTeam, $awayTeam, $nflverseGameId);
+            if ($existing && $legacyArchiveGames->has($existing->id)) {
+                $legacyBlocked++;
+                $skipped++;
+
+                continue;
+            }
+
             if ($this->option('dry-run')) {
                 $imported++;
 
                 continue;
             }
-
-            $existing = $this->findExistingGame($row, $homeTeam, $awayTeam, $nflverseGameId);
 
             $attributes = $this->gameAttributes($row, $homeTeam, $awayTeam, $nflverseGameId);
             if ($existing) {
@@ -114,6 +127,12 @@ class ImportNflverseSchedulesCommand extends Command
             $weather,
             $skipped,
         ));
+
+        if ($legacyBlocked > 0) {
+            $this->error("Preserved {$legacyBlocked} games with legacy nflverse archives. Review nfl:plan-nflverse-archive-repair before repairing or reimporting them.");
+
+            return self::FAILURE;
+        }
 
         return self::SUCCESS;
     }
@@ -308,9 +327,13 @@ class ImportNflverseSchedulesCommand extends Command
             return null;
         }
 
-        $time = $this->stringValue($row, 'gametime') ?? '00:00';
+        $time = $this->stringValue($row, 'gametime');
+        if ($time === null) {
+            return null;
+        }
 
-        return Carbon::parse($date.' '.$time);
+        // nflverse gametime is Eastern, including daylight-saving transitions.
+        return Carbon::parse($date.' '.$time, 'America/New_York')->setTimezone(config('app.timezone', 'UTC'));
     }
 
     /**
@@ -323,8 +346,11 @@ class ImportNflverseSchedulesCommand extends Command
         }
 
         $kickoff = $this->kickoff($row);
+        if ($kickoff === null) {
+            return false; // Do not invent a midnight closing-quote timestamp.
+        }
         $oddsData = $this->oddsPayload($row, $game->homeTeam, $game->awayTeam, $kickoff);
-        $capturedAt = $kickoff?->copy()->subMinutes(5) ?? Carbon::parse($game->game_date);
+        $capturedAt = $kickoff->copy()->subMinutes(5);
 
         GameOddsSnapshot::query()->updateOrCreate([
             'sport' => 'nfl',
@@ -344,6 +370,13 @@ class ImportNflverseSchedulesCommand extends Command
                 'line_type' => 'closing',
                 'spread_line' => $this->floatValue($row, 'spread_line'),
                 'total_line' => $this->floatValue($row, 'total_line'),
+                'source_spread_convention' => 'home_margin_positive_home_favored',
+                'payload_spread_convention' => 'home_handicap_negative_home_favored',
+                'source_timezone' => 'America/New_York',
+                'source_gameday' => $this->stringValue($row, 'gameday'),
+                'source_gametime' => $this->stringValue($row, 'gametime'),
+                'capture_time_is_synthetic' => true,
+                'normalization_version' => 'nflverse_schedule_v2',
             ],
         ]);
 
@@ -393,8 +426,8 @@ class ImportNflverseSchedulesCommand extends Command
             $markets[] = [
                 'key' => 'spreads',
                 'outcomes' => [
-                    ['name' => $home, 'price' => $this->intValue($row, 'home_spread_odds') ?? -110, 'point' => $spread],
-                    ['name' => $away, 'price' => $this->intValue($row, 'away_spread_odds') ?? -110, 'point' => -$spread],
+                    ['name' => $home, 'price' => $this->intValue($row, 'home_spread_odds') ?? -110, 'point' => -$spread],
+                    ['name' => $away, 'price' => $this->intValue($row, 'away_spread_odds') ?? -110, 'point' => $spread],
                 ],
             ];
         }
@@ -422,6 +455,9 @@ class ImportNflverseSchedulesCommand extends Command
             'market_context' => [
                 'source' => 'nflverse_schedules',
                 'line_type' => 'closing',
+                'source_spread_line' => $spread,
+                'payload_spread_convention' => 'home_handicap_negative_home_favored',
+                'normalization_version' => 'nflverse_schedule_v2',
             ],
         ];
     }

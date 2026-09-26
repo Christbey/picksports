@@ -11,7 +11,6 @@ use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\CFB\Predictions\CfbHistoricalSignalEvidenceBuilder;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Cache;
 
 /** Retrospective training from prior games, explicitly separate from archived live forecasts. */
 class CfbFootballSignalHistoricalTrainer
@@ -21,8 +20,14 @@ class CfbFootballSignalHistoricalTrainer
         return 'cfb:signal-history:v1:'.app(CanonicalPayloadHasher::class)->hash($configuration);
     }
 
-    public function train(array $configuration, int $fromSeason, int $toSeason, CarbonImmutable $asOf, ?callable $progress = null): array
+    public function train(array $configuration, int $fromSeason, int $toSeason, CarbonImmutable $asOf, ?callable $progress = null, int $maxGames = 0): array
     {
+        $store = app(CfbFootballSignalArtifactStore::class);
+        $checkpoint = $store->checkpoint($configuration, $fromSeason, $toSeason);
+        if ($checkpoint) {
+            // Resume the same source cutoff, never mix later revisions into a partial run.
+            $asOf = CarbonImmutable::parse($checkpoint['as_of']);
+        }
         $games = Game::whereBetween('season', [$fromSeason - 1, $toSeason])->where('status', 'STATUS_FINAL')
             ->whereDate('game_date', '<', $asOf->toDateString())->where('updated_at', '<=', $asOf)
             ->whereNotNull('home_score')->whereNotNull('away_score')->whereColumn('home_score', '!=', 'away_score')
@@ -52,11 +57,15 @@ class CfbFootballSignalHistoricalTrainer
         $base['football_signals']['enabled'] = false;
         $release = new CalculationReleaseData('historical-research', 'cfb', 'pregame', 'cfb-pregame-rules', 'rules',
             'historical-research', 'prior-game-reconstruction', CfbFootballSignalEvidence::baselineHash($configuration), 'cfb-pregame-v1', $base);
-        $observations = $sourceIds = $jointRows = [];
+        $observations = $checkpoint['observations'] ?? [];
+        $sourceIds = $checkpoint['source_game_ids'] ?? [];
+        $jointRows = $checkpoint['joint_observations'] ?? [];
+        $completed = array_fill_keys($sourceIds, true);
         $catalog = $configuration['football_signals']['catalog'];
         $builder = app(CfbHistoricalSignalEvidenceBuilder::class);
+        $processed = 0;
         foreach ($games as $target) {
-            if ($target->season < $fromSeason || ! $target->sportEvent?->starts_at) {
+            if (isset($completed[$target->id]) || $target->season < $fromSeason || ! $target->sportEvent?->starts_at) {
                 continue;
             }
             $homePrior = $prior->get(($target->season - 1).':'.$target->home_team_id);
@@ -110,8 +119,20 @@ class CfbFootballSignalHistoricalTrainer
             $jointRows[$target->id] = ['game_id' => $target->id, 'starts_at' => $cutoff->toIso8601String(),
                 'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($inputs, $configuration['football_signals'])];
             $sourceIds[] = $target->id;
-            if (count($sourceIds) % 100 === 0 && $progress) {
-                $progress(count($sourceIds));
+            $processed++;
+            if (count($sourceIds) % 100 === 0) {
+                $store->saveCheckpoint($configuration, $fromSeason, $toSeason, ['as_of' => $asOf->toIso8601String(),
+                    'source_game_ids' => $sourceIds, 'observations' => $observations, 'joint_observations' => $jointRows]);
+                if ($progress) {
+                    $progress(count($sourceIds));
+                }
+            }
+            if ($maxGames > 0 && $processed >= $maxGames) {
+                $partial = ['complete' => false, 'as_of' => $asOf->toIso8601String(),
+                    'source_game_ids' => $sourceIds, 'observations' => $observations, 'joint_observations' => $jointRows];
+                $store->saveCheckpoint($configuration, $fromSeason, $toSeason, $partial);
+
+                return $partial;
             }
         }
         unset($stats, $games, $prior, $byTeam, $related);
@@ -121,7 +142,8 @@ class CfbFootballSignalHistoricalTrainer
             'limitations' => ['retrospective_revised_box_scores', 'prior_season_fpi_differs_from_weekly_fpi',
                 'unarchived_weather_personnel_and_market_conditions_remain_unknown', 'not_live_profitability_validation'],
             'source_game_ids' => $sourceIds, 'observations' => $observations, 'joint_observations' => $jointRows];
-        Cache::put(self::key($configuration), $artifact, now()->addDays(8));
+        $store->save($configuration, $artifact);
+        $store->clearCheckpoint($configuration, $fromSeason, $toSeason);
 
         return $artifact;
     }

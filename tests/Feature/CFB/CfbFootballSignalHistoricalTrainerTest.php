@@ -5,13 +5,17 @@ use App\Models\CFB\Team;
 use App\Models\CFB\TeamMetric;
 use App\Models\SportEvent;
 use App\Services\CFB\Predictions\CfbCalculationReleaseDefinition;
+use App\Services\CFB\Signals\CfbFootballSignalArtifactStore;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 
 it('trains from prior-season ratings without letting target-season final metrics alter historical residuals', function () {
     CarbonImmutable::setTestNow('2026-09-19');
+    Storage::fake('local');
+    config(['cfb.data.source_disk' => 'local']);
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     foreach ([$home, $away] as $team) {
@@ -38,6 +42,13 @@ it('trains from prior-season ratings without letting target-season final metrics
     $evidence = app(CfbFootballSignalEvidence::class)->build(CarbonImmutable::now(), $config);
     expect($evidence['signals']['home']['sample_games'])->toBe(1)
         ->and($evidence['historical_training']['source_game_ids'])->toBe([$game->id]);
+    $partial = $trainer->train($config, 2025, 2025, CarbonImmutable::now(), maxGames: 1);
+    expect($partial['complete'])->toBeFalse()
+        ->and(Cache::get(CfbFootballSignalHistoricalTrainer::key($config)))->not->toHaveKey('complete');
+    $resumed = $trainer->train($config, 2025, 2025, CarbonImmutable::now(), maxGames: 1);
+    expect($resumed['source_game_ids'])->toBe([$game->id])
+        ->and($resumed['observations'])->toBe($first['observations'])
+        ->and(app(CfbFootballSignalArtifactStore::class)->checkpoint($config, 2025, 2025))->toBeNull();
     $artifact = Cache::get(CfbFootballSignalHistoricalTrainer::key($config));
     $artifact['available_at'] = CarbonImmutable::now()->addDay()->toIso8601String();
     Cache::put(CfbFootballSignalHistoricalTrainer::key($config), $artifact);

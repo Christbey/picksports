@@ -129,6 +129,17 @@ class CanonicalPredictionEvaluator
             );
         }
 
+        $teamErrors = [];
+        foreach (['home' => $result->home_score, 'away' => $result->away_score] as $side => $score) {
+            $market = $prediction->markets->first(fn ($m) => $m->market_type === 'team_total' && $m->selection === $side);
+            if ($market && is_numeric($market->projected_line)) {
+                $teamErrors[$side] = [
+                    'predicted' => (float) $market->projected_line, 'actual' => $score,
+                    'signed_error' => $score - (float) $market->projected_line,
+                    'absolute_error' => abs($score - (float) $market->projected_line)];
+            }
+        }
+
         return [
             'actuals' => [
                 'home_score' => $result->home_score,
@@ -138,6 +149,7 @@ class CanonicalPredictionEvaluator
                 'winner' => $actualHomeWin === null ? 'tie' : ($actualHomeWin === 1.0 ? 'home' : 'away'),
             ],
             'errors' => [
+                ...($teamErrors ? ['team_totals' => $teamErrors] : []),
                 'winner_correct' => $actualHomeWin === null ? null : ($homeWinProbability >= 0.5) === ($actualHomeWin === 1.0),
                 'brier_score' => $actualHomeWin === null ? null : round(($homeWinProbability - $actualHomeWin) ** 2, 8),
                 'log_loss' => $actualHomeWin === null ? null : round(-(($actualHomeWin * log($homeWinProbability))

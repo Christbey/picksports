@@ -8,7 +8,6 @@ use App\Models\CanonicalPrediction;
 use App\Services\CFB\Predictions\CfbCalculator;
 use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Cache;
 
 /** Uses only predictions and outcomes already observed at capture; never reconstructs old inputs. */
 class CfbFootballSignalEvidence
@@ -113,12 +112,15 @@ class CfbFootballSignalEvidence
             }
         }
         $historical = null;
+        $historyStatus = 'disabled';
         if (data_get($configuration, 'football_signals.historical_training', false)) {
-            $artifact = Cache::get(CfbFootballSignalHistoricalTrainer::key($configuration));
+            $artifact = app(CfbFootballSignalArtifactStore::class)->load($configuration);
+            $historyStatus = $artifact === null ? 'missing_training_artifact' : 'incompatible_or_future_training_artifact';
             if (is_array($artifact) && ($artifact['baseline_hash'] ?? null) === $baselineHash
                 && isset($artifact['available_at'], $artifact['as_of'])
                 && CarbonImmutable::parse($artifact['available_at'])->lte($asOf)
                 && CarbonImmutable::parse($artifact['as_of'])->lte($asOf)) {
+                $historyStatus = 'loaded';
                 foreach ($artifact['observations'] as $id => $rows) {
                     foreach ($rows as $gameId => $row) {
                         // Original frozen support takes precedence for the same rule/game.
@@ -146,7 +148,7 @@ class CfbFootballSignalEvidence
         return ['joint_models' => $joint, 'version' => CfbFootballSignalModel::VERSION, 'catalog_hash' => self::catalogHash($catalog),
             'feature_policy' => data_get($configuration, 'football_signals.feature_policy', 'observed_only'),
             'training_policy' => data_get($configuration, 'football_signals.training_policy', 'same_release_frozen_predictions'),
-            'replayed_prediction_ids' => $replayed, 'historical_training' => $historical,
+            'replayed_prediction_ids' => $replayed, 'historical_training' => $historical, 'historical_training_status' => $historyStatus,
             'baseline_hash' => $baselineHash, 'as_of' => $asOf->toIso8601String(),
             'latest_source_observed_at' => $latest?->toIso8601String(), 'prediction_ids' => $sourceIds,
             'status' => $historical ? 'retrospective_and_frozen_outcomes_evaluated' : ($sourceIds ? 'frozen_outcomes_evaluated' : 'no_eligible_frozen_outcomes'), 'signals' => $fits];

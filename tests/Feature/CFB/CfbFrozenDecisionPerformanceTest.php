@@ -36,10 +36,10 @@ function frozenCfbQuote(Game $game, array $attributes = []): MarketQuote
         'quote_hash' => hash('sha256', Str::uuid())], ...$attributes]);
 }
 
-it('grades ATS and priced returns and uses the last stored pregame quote across books', function () {
+it('grades ATS and priced returns and uses the last stored pregame quote from the entry book', function () {
     $this->travelTo(CarbonImmutable::parse('2026-09-19 10:00:00'));
     [$game, $decision] = frozenDecisionFixture();
-    frozenCfbQuote($game, ['bookmaker_key' => 'entrybook', 'line' => -21]);
+    $entryClosing = frozenCfbQuote($game, ['bookmaker_key' => 'entrybook', 'line' => -21]);
     $this->travelTo(CarbonImmutable::parse('2026-09-19 17:59:00'));
     $closing = frozenCfbQuote($game);
     $this->travelTo(CarbonImmutable::parse('2026-09-19 18:00:00'));
@@ -49,12 +49,12 @@ it('grades ATS and priced returns and uses the last stored pregame quote across 
     $service = app(CfbFrozenDecisionPerformance::class);
     $row = $service->grade($decision, $game);
     expect($row['grade'])->toBe('win')->and($row['profit_units'])->toBe(100 / 110)
-        ->and($row['clv'])->toBe(2.0)->and($row['closing']['quote_id'])->toBe($closing->id)
+        ->and($row['clv'])->toBe(0.5)->and($row['closing']['quote_id'])->toBe($entryClosing->id)
         ->and($row['cohort'])->toBe('tracked_recommendation');
     $movement = app(CfbMarketMovementSignalService::class)->withClosingLineValue($game, ['model_pick_side' => 'home', 'current_home_margin' => 20.5]);
     expect($movement['closing_line_value_points'])->toBe(2.0);
     $this->artisan('sports:settle-bet-decisions', ['--sport' => 'cfb'])->assertSuccessful();
-    expect((int) $decision->fresh('settlement')->settlement->metadata['closing_quote_id'])->toBe($closing->id)
+    expect((int) $decision->fresh('settlement')->settlement->metadata['closing_quote_id'])->toBe($entryClosing->id)
         ->and($decision->settlement->metadata['closing_quote_selection'])->toBe('last_stored_pregame_quote');
 });
 
@@ -111,4 +111,21 @@ it('regrades corrected results read-only while retaining the original frozen ent
     $row = $service->grade($decision, $game);
     expect($row['grade'])->toBe('loss')->and($row['profit_units'])->toBe(-1.0)
         ->and($decision->fresh()->toArray())->toBe($entry);
+});
+
+it('keeps closing quotes within the frozen participant and overtime contract', function () {
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 10:00:00'));
+    [$game, $decision] = frozenDecisionFixture(['market_key' => 'team_totals', 'market_type' => 'team_total', 'side' => 'over']);
+    $attributes = ['market_key' => 'team_totals', 'side' => 'over', 'bookmaker_key' => 'entrybook', 'participant' => 'Home team', 'line' => 28.5,
+        'metadata' => ['period' => 'full_game', 'includes_overtime' => true]];
+    $entry = frozenCfbQuote($game, $attributes);
+    $decision->update(['market_snapshot' => ['quote' => ['quote_id' => $entry->id]]]);
+    $this->travelTo(CarbonImmutable::parse('2026-09-19 17:00:00'));
+    $closing = frozenCfbQuote($game, [...$attributes, 'line' => 30.5]);
+    frozenCfbQuote($game, [...$attributes, 'participant' => 'Away team', 'line' => 20.5]);
+    frozenCfbQuote($game, [...$attributes, 'metadata' => ['period' => 'full_game', 'includes_overtime' => false]]);
+    $resolved = app(CfbStoredPregameQuote::class)->forDecision($decision, CarbonImmutable::parse('2026-09-19 18:00:00'));
+    expect($resolved->id)->toBe($closing->id);
+    $closing->metadata = [...$closing->metadata, 'provider_observed_at' => '2026-09-19 17:01:00'];
+    expect(CfbStoredPregameQuote::identity($entry))->toBe(CfbStoredPregameQuote::identity($closing));
 });

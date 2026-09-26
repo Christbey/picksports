@@ -77,7 +77,10 @@ class CfbFrozenDecisionPerformance
 
             return $row;
         }
-        $quote = $this->quotes->latest($game->id, $market, (string) $decision->side, $kickoff);
+        if (blank($decision->bookmaker)) {
+            return [...$row, 'missing' => [...$row['missing'], 'entry_bookmaker']];
+        }
+        $quote = $this->quotes->forDecision($decision, $kickoff);
         if (! $quote) {
             $row['missing'][] = 'stored_pregame_closing_quote';
 

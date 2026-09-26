@@ -15,7 +15,7 @@ function cfbRegradeFixture(?int $price = -110): array
         'status' => 'STATUS_FINAL', 'game_date' => '2026-09-19', 'game_time' => '18:00:00', 'home_score' => 28, 'away_score' => 14]);
     $decision = BetDecision::create(['decision_run_id' => (string) Str::uuid(), 'sport' => 'cfb', 'game_table' => 'cfb_games',
         'game_id' => $game->id, 'market_type' => 'spread', 'market_key' => 'spreads', 'side' => 'home',
-        'line' => -7, 'price' => $price, 'status' => 'released_tracking_bet', 'is_bet' => true, 'is_tracking_only' => true,
+        'line' => -7, 'price' => $price, 'bookmaker' => 'lastbook', 'status' => 'released_tracking_bet', 'is_bet' => true, 'is_tracking_only' => true,
         'pregame_safe' => true, 'decided_at' => now(), 'locked_at' => now(), 'game_start_at' => '2026-09-19 18:00:00',
         'decision_hash' => hash('sha256', Str::uuid())]);
     $settlement = BetSettlement::create(['bet_decision_id' => $decision->id, 'result_status' => 'win', 'result_value' => 14,

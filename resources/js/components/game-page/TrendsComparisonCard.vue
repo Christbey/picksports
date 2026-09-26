@@ -736,9 +736,7 @@ const displayTitle = computed(() =>
                         >
                             <div class="text-sm text-muted-foreground">
                                 Upgrade to
-                                {{
-                                    formatTierName(getRequiredTier(category))
-                                }}
+                                {{ formatTierName(getRequiredTier(category)) }}
                                 to unlock this trend
                             </div>
                         </div>

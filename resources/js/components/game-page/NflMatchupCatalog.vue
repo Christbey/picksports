@@ -122,17 +122,13 @@ const value = (number: number | null | undefined) =>
                         <p>
                             Offense {{ value(signal.evidence.offense.value) }} ·
                             rank
-                            {{
-                                signal.evidence.offense.rank ?? 'unavailable'
-                            }}
+                            {{ signal.evidence.offense.rank ?? 'unavailable' }}
                             · {{ signal.evidence.offense.games }} games
                         </p>
                         <p>
                             Defense {{ value(signal.evidence.defense.value) }} ·
                             rank
-                            {{
-                                signal.evidence.defense.rank ?? 'unavailable'
-                            }}
+                            {{ signal.evidence.defense.rank ?? 'unavailable' }}
                             · {{ signal.evidence.defense.games }} games
                         </p>
                         <p>{{ signal.reason }}</p>
@@ -159,9 +155,7 @@ const value = (number: number | null | undefined) =>
                             {{ situation.record.definition }}
                         </p>
                         <p>
-                            {{
-                                situation.record.from_date ?? 'No start date'
-                            }}
+                            {{ situation.record.from_date ?? 'No start date' }}
                             –
                             {{
                                 situation.record.through_date ?? 'No end date'

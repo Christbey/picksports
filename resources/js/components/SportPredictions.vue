@@ -8,6 +8,7 @@ import {
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { currentSlateDate, footballSeason } from '@/lib/predictionPeriod';
 import { predictionBoardLiveFields } from '@/lib/predictionBoardLive';
+import { pregameBetCalls } from '@/lib/pregameBetCalls';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -436,6 +437,12 @@ const normalizedSearchQuery = computed(() =>
 const shouldShowAsRecommendedBet = (
     prediction: PredictionListItem,
 ): boolean => {
+    if (prediction.model_bet_context != null) {
+        return Object.values(pregameBetCalls(prediction, 'Home', 'Away')).some(
+            (call) => call.startsWith('Bet '),
+        );
+    }
+
     if (props.config.sport === 'mlb') {
         return isBetRecommendation(prediction);
     }

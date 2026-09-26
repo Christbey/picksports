@@ -100,6 +100,11 @@ class Game extends Model
         return $this->hasMany(LivePredictionSnapshot::class, 'game_id');
     }
 
+    public function latestLiveSnapshot(): HasOne
+    {
+        return $this->hasOne(LivePredictionSnapshot::class, 'game_id')->latestOfMany();
+    }
+
     public function playerProps(): HasMany
     {
         return $this->hasMany(PlayerProp::class, 'game_id');

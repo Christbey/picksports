@@ -321,6 +321,8 @@ export interface PredictionListItem {
     live_seconds_remaining?: number | null;
     live_outs_remaining?: number | null;
     live_updated_at?: string | null;
+    live_status?: string | null;
+    live_unavailable_reason?: string | null;
     confidence_score?: number;
     actual_spread?: number;
     actual_total?: number;

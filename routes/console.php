@@ -1404,14 +1404,26 @@ $adminEmailReportEvent = Schedule::command('alerts:send-admin-email-report')
 $attachCommandHeartbeat($adminEmailReportEvent, 'alerts:send-admin-email-report', 'Alerts: Send Admin Email Report');
 
 // College football prop refresh includes January playoff games; the command scores after import.
-Schedule::command('cfb:sync-player-props --prepare')
+$cfbPlayerPropsCommand = 'cfb:sync-player-props --prepare';
+$cfbPlayerPropsEvent = Schedule::command($cfbPlayerPropsCommand)
     ->hourlyAt(15)
     ->timezone('America/Chicago')
     ->between('07:00', '23:00')
     ->when($cfbInSeason)
-    ->withoutOverlapping()
+    ->withoutOverlapping(60)
     ->onOneServer()
+    ->runInBackground()
+    ->appendOutputTo(storage_path('logs/cfb-player-props.log'))
     ->name('CFB: Sync and Analyze Player Props');
+$attachCommandHeartbeat($cfbPlayerPropsEvent, $cfbPlayerPropsCommand, 'CFB: Sync and Analyze Player Props');
+
+// Independent report still publishes coverage gaps when the refresh fails.
+$cfbDailyBoardEvent = Schedule::command('cfb:daily-board')
+    ->hourlyAt(35)->timezone('America/Chicago')->between('07:00', '23:00')
+    ->when($cfbInSeason)->withoutOverlapping(30)->onOneServer()->runInBackground()
+    ->appendOutputTo(storage_path('logs/cfb-daily-board.log'))
+    ->name('CFB: Publish Daily Forecast and Player Prop Board');
+$attachCommandHeartbeat($cfbDailyBoardEvent, 'cfb:daily-board', 'CFB: Publish Daily Forecast and Player Prop Board');
 $scheduleDailySeasonJob("cfb:grade-player-props --season={$fallSeasonYear}", '08:40', $cfbInSeason, 'CFB: Grade Player Props');
 
 Schedule::command('cfb:sync-live-betting')

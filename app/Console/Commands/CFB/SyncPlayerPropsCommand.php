@@ -4,6 +4,7 @@ namespace App\Console\Commands\CFB;
 
 use App\Actions\OddsApi\CFB\SyncPlayerPropsForGames;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Validator;
 
 class SyncPlayerPropsCommand extends Command
@@ -25,8 +26,18 @@ class SyncPlayerPropsCommand extends Command
         $this->info(json_encode($counts, JSON_THROW_ON_ERROR));
 
         if ($this->option('prepare') && ! $this->option('no-analyze')) {
-            $prepared = $this->call('cfb:prepare-player-props', array_filter(['--date' => $input['date'], '--game' => $input['game']], fn ($value) => $value !== null));
-            if ($prepared !== self::SUCCESS) {
+            // Keep preparation memory separate from the quote-import state.
+            // A separate process also gives the preparation stage a bounded runtime and visible errors.
+            $command = [PHP_BINARY, '-d', 'memory_limit=512M', base_path('artisan'), 'cfb:prepare-player-props'];
+            foreach (array_filter($input, fn ($value) => $value !== null) as $key => $value) {
+                $command[] = '--'.$key.'='.$value;
+            }
+            $prepared = Process::path(base_path())->timeout(900)->run($command);
+            $this->output->write($prepared->output());
+            if ($prepared->failed()) {
+                $this->error('CFB prop preparation failed (exit '.$prepared->exitCode().'); quotes were imported but the board is incomplete.');
+
+                // Avoid emitting provider exception URLs which may contain credentials.
                 return self::FAILURE;
             }
         }

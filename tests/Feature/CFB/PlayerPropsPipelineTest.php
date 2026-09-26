@@ -1,6 +1,9 @@
 <?php
 
 use App\Actions\ESPN\CFB\SyncGameDetails;
+use App\Actions\ESPN\CFB\SyncPlayerStats;
+use App\Actions\ESPN\CFB\SyncPlays;
+use App\Actions\ESPN\CFB\SyncTeamStats;
 use App\Actions\GradePlayerProps;
 use App\Actions\OddsApi\CFB\SyncPlayerPropsForGames;
 use App\Models\CFB\Game;
@@ -201,11 +204,11 @@ test('grades college props immediately after final game details ingest player st
         'status' => ['type' => ['name' => 'STATUS_FINAL']],
         'competitors' => [['homeAway' => 'home', 'score' => '24'], ['homeAway' => 'away', 'score' => '17']],
     ]]]]);
-    $stats = Mockery::mock();
+    $stats = Mockery::mock(SyncPlayerStats::class);
     $stats->shouldReceive('execute')->once()->andReturn(1);
-    $teams = Mockery::mock();
+    $teams = Mockery::mock(SyncTeamStats::class);
     $teams->shouldReceive('execute')->once()->andReturn(2);
-    $plays = Mockery::mock();
+    $plays = Mockery::mock(SyncPlays::class);
     $plays->shouldReceive('execute')->once()->andReturn(1);
     (new SyncGameDetails($service, $stats, $teams, $plays))->execute($this->game->espn_event_id);
     expect($prop->fresh()->graded_at)->not->toBeNull()->and($prop->fresh()->hit_over)->toBeTrue();

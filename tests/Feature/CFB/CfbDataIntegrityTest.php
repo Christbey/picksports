@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\ESPN\CFB\SyncGameDetails;
 use App\Actions\ESPN\CFB\SyncPlayerStats;
 use App\Models\CFB\Game;
 use App\Models\CFB\Player;
@@ -71,4 +72,10 @@ it('recovers readiness when a previously accepted response follows a transient p
     $this->travel(1)->minutes();
     $archive->record($game, 'boxscore', ['valid' => true], $valid);
     expect($readiness->forGame($game)['ready'])->toBeTrue();
+});
+
+it('resolves the real college football dependencies for the production repair command', function () {
+    $game = Game::factory()->create(['home_team_id' => Team::factory()->create()->id, 'away_team_id' => Team::factory()->create()->id, 'status' => 'STATUS_FINAL']);
+    expect(app(SyncGameDetails::class))->toBeInstanceOf(SyncGameDetails::class);
+    $this->artisan('cfb:repair-game-data', ['--game' => $game->id, '--max-games' => 1, '--dry-run' => true])->assertSuccessful();
 });

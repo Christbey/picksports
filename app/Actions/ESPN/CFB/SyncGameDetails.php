@@ -8,6 +8,7 @@ use App\Actions\GradePlayerProps;
 use App\Models\CFB\Game;
 use App\Services\CFB\Data\CfbGameDataValidator;
 use App\Services\CFB\Data\CfbSourceRevision;
+use App\Services\ESPN\CFB\EspnService;
 use App\Services\Sports\SportEventIdentitySynchronizer;
 use App\Support\SportsViewCache;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +16,11 @@ use Illuminate\Support\Facades\DB;
 class SyncGameDetails extends AbstractSummaryUpdatingSyncGameDetails
 {
     protected const GAME_MODEL_CLASS = Game::class;
+
+    public function __construct(EspnService $espnService, SyncPlayerStats $syncPlayerStats, SyncTeamStats $syncTeamStats, SyncPlays $syncPlays)
+    {
+        parent::__construct($espnService, $syncPlayerStats, $syncTeamStats, $syncPlays);
+    }
 
     public function execute(string $eventId): array
     {

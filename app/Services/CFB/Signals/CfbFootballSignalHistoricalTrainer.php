@@ -20,7 +20,7 @@ class CfbFootballSignalHistoricalTrainer
         return 'cfb:signal-history:v1:'.app(CanonicalPayloadHasher::class)->hash($configuration);
     }
 
-    public function train(array $configuration, int $fromSeason, int $toSeason, CarbonImmutable $asOf, ?callable $progress = null): array
+    public function train(array $configuration, int $fromSeason, int $toSeason, CarbonImmutable $asOf, ?callable $progress = null, int $maxGames = 0): array
     {
         $store = app(CfbFootballSignalArtifactStore::class);
         $checkpoint = $store->checkpoint($configuration, $fromSeason, $toSeason);
@@ -63,6 +63,7 @@ class CfbFootballSignalHistoricalTrainer
         $completed = array_fill_keys($sourceIds, true);
         $catalog = $configuration['football_signals']['catalog'];
         $builder = app(CfbHistoricalSignalEvidenceBuilder::class);
+        $processed = 0;
         foreach ($games as $target) {
             if (isset($completed[$target->id]) || $target->season < $fromSeason || ! $target->sportEvent?->starts_at) {
                 continue;
@@ -118,12 +119,20 @@ class CfbFootballSignalHistoricalTrainer
             $jointRows[$target->id] = ['game_id' => $target->id, 'starts_at' => $cutoff->toIso8601String(),
                 'residuals' => $residuals, 'features' => CfbFootballSignalJointModel::features($inputs, $configuration['football_signals'])];
             $sourceIds[] = $target->id;
+            $processed++;
             if (count($sourceIds) % 100 === 0) {
                 $store->saveCheckpoint($configuration, $fromSeason, $toSeason, ['as_of' => $asOf->toIso8601String(),
                     'source_game_ids' => $sourceIds, 'observations' => $observations, 'joint_observations' => $jointRows]);
                 if ($progress) {
                     $progress(count($sourceIds));
                 }
+            }
+            if ($maxGames > 0 && $processed >= $maxGames) {
+                $partial = ['complete' => false, 'as_of' => $asOf->toIso8601String(),
+                    'source_game_ids' => $sourceIds, 'observations' => $observations, 'joint_observations' => $jointRows];
+                $store->saveCheckpoint($configuration, $fromSeason, $toSeason, $partial);
+
+                return $partial;
             }
         }
         unset($stats, $games, $prior, $byTeam, $related);

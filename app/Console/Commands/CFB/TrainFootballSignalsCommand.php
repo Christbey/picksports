@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\CFB;
 
+use App\Jobs\CFB\TrainFootballSignalBatch;
 use App\Models\SportEvent;
 use App\Services\CFB\Signals\CfbFootballSignalArtifactStore;
 use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\Cache;
 
 class TrainFootballSignalsCommand extends Command
 {
-    protected $signature = 'cfb:train-football-signals {--from-season=} {--to-season=} {--if-missing : Recover absent evidence for the active production release}';
+    protected $signature = 'cfb:train-football-signals {--from-season=} {--to-season=} {--if-missing : Recover absent evidence for the active production release} {--queued : Train in bounded recoverable worker batches}';
 
     protected $description = 'Reconstruct prior-game football trends and cache explicitly retrospective training evidence';
 
@@ -51,6 +52,12 @@ class TrainFootballSignalsCommand extends Command
             && CarbonImmutable::parse($existing['available_at'])->gte(CarbonImmutable::now()->subDays(8))) {
             app(CfbFootballSignalArtifactStore::class)->save($configuration, $existing);
             $this->line(json_encode(['status' => 'ready', 'release_id' => $release->id, 'games' => count($existing['source_game_ids'])]));
+
+            return self::SUCCESS;
+        }
+        if ($this->option('queued')) {
+            TrainFootballSignalBatch::dispatch($release->id, (int) $from, (int) $to, now()->toIso8601String());
+            $this->line(json_encode(['status' => 'queued', 'release_id' => $release->id]));
 
             return self::SUCCESS;
         }

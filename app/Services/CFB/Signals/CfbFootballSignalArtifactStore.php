@@ -34,7 +34,7 @@ class CfbFootballSignalArtifactStore
 
     public function saveCheckpoint(array $configuration, int $from, int $to, array $data): void
     {
-        if (! Storage::disk(config('cfb.data.source_disk', 'local'))->put($this->checkpointPath($configuration, $from, $to), json_encode($data, JSON_THROW_ON_ERROR))) {
+        if (! Storage::disk(config('cfb.data.source_disk', 'local'))->put($this->checkpointPath($configuration, $from, $to), json_encode($data, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION))) {
             throw new RuntimeException('Could not save CFB signal training progress.');
         }
     }
@@ -70,7 +70,7 @@ class CfbFootballSignalArtifactStore
         if (empty($artifact['source_game_ids'])) {
             throw new RuntimeException('Signal training produced no eligible games; previous artifact preserved.');
         }
-        $json = json_encode($artifact, JSON_THROW_ON_ERROR);
+        $json = json_encode($artifact, JSON_THROW_ON_ERROR | JSON_PRESERVE_ZERO_FRACTION);
         if (! Storage::disk(config('cfb.data.source_disk', 'local'))->put($this->path($configuration), $json)) {
             throw new RuntimeException('Could not persist CFB signal training evidence.');
         }

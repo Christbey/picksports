@@ -1269,9 +1269,9 @@ $scheduleDailySeasonJob("cfb:compare-frozen-baselines --season={$fallSeasonYear}
     ->appendOutputTo(storage_path('logs/cfb-frozen-baselines.log'));
 $scheduleDailySeasonJob("cfb:report-signal-contributions --season={$fallSeasonYear}", '03:25', $cfbCanonicalPipelineEnabled, 'CFB: Grade Frozen Signal Contributions')
     ->appendOutputTo(storage_path('logs/cfb-signal-contributions.log'));
-$scheduleDailySeasonJob('cfb:train-football-signals', '03:15', $cfbCanonicalPipelineEnabled, 'CFB: Train Historical Football Signals')
+$scheduleDailySeasonJob('cfb:train-football-signals --queued', '03:15', $cfbCanonicalPipelineEnabled, 'CFB: Train Historical Football Signals')
     ->appendOutputTo(storage_path('logs/cfb-football-signal-training.log'));
-$cfbSignalRecoveryCommand = 'cfb:train-football-signals --if-missing';
+$cfbSignalRecoveryCommand = 'cfb:train-football-signals --if-missing --queued';
 $cfbSignalRecoveryEvent = Schedule::command($cfbSignalRecoveryCommand)
     ->hourlyAt(5)->timezone('America/Chicago')->between('06:00', '23:00')
     ->when($cfbCanonicalPipelineEnabled)->withoutOverlapping(120)->onOneServer()->runInBackground()

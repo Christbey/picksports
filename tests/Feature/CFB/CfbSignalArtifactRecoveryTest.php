@@ -1,6 +1,8 @@
 <?php
 
+use App\Jobs\CFB\TrainFootballSignalBatch;
 use App\Models\CalculationRelease;
+use App\Models\CommandHeartbeat;
 use App\Services\CFB\Signals\CfbFootballSignalArtifactStore;
 use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
@@ -8,6 +10,7 @@ use App\Services\Predictions\CanonicalPayloadHasher;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 
 beforeEach(function () {
@@ -67,4 +70,27 @@ test('checkpoint belongs to one release and season range and expires after one d
         ->and($store->checkpoint($this->config, 2023, 2025))->toBeNull();
     $this->travel(25)->hours();
     expect($store->checkpoint($this->config, 2022, 2025))->toBeNull();
+});
+
+test('queued recovery dispatches a bounded worker for the selected production release', function () {
+    Queue::fake();
+    $release = CalculationRelease::factory()->create(['sport' => 'cfb', 'phase' => 'pregame', 'status' => 'approved',
+        'effective_at' => now()->subDay(), 'retired_at' => null, 'configuration' => $this->config]);
+    $trainer = Mockery::mock(CfbFootballSignalHistoricalTrainer::class);
+    $trainer->shouldNotReceive('train');
+    app()->instance(CfbFootballSignalHistoricalTrainer::class, $trainer);
+    $this->artisan('cfb:train-football-signals', ['--queued' => true])->assertSuccessful();
+    Queue::assertPushed(TrainFootballSignalBatch::class, fn ($job) => $job->releaseId === $release->id && $job->queue === 'sync');
+});
+
+test('partial training dispatches the next batch without publishing a success heartbeat', function () {
+    Queue::fake();
+    $release = CalculationRelease::factory()->create(['configuration' => $this->config]);
+    $trainer = Mockery::mock(CfbFootballSignalHistoricalTrainer::class);
+    $trainer->shouldReceive('train')->once()->with($this->config, 2022, 2025, Mockery::type(CarbonImmutable::class), null, 250)
+        ->andReturn(['complete' => false, 'source_game_ids' => [1]]);
+    $job = new TrainFootballSignalBatch($release->id, 2022, 2025, now()->toIso8601String());
+    $job->handle($trainer, app(CfbFootballSignalArtifactStore::class));
+    Queue::assertPushed(TrainFootballSignalBatch::class);
+    expect(CommandHeartbeat::count())->toBe(0);
 });

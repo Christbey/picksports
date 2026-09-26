@@ -9,3 +9,5 @@ Training saves progress every 100 games on the same durable disk. A restart with
 `cfb:daily-board` now includes the frozen signal summary per game. Historical forecasts and their grades are not rewritten. Fresh pregame revisions are required to apply newly available evidence.
 
 Validation remains chronological, with at least 100 training games and 50 held-out games. The configured capped joint model must improve held-out absolute error by more than 1.96 standard errors. Prior-season FPI reconstruction is retrospective evidence, not proof of historical quote availability, calibrated cover probabilities, or live betting profitability.
+
+Scheduled training uses `--queued`: each sync worker reconstructs at most 250 new games, persists progress and dispatches its successor. Each batch has a 120-second timeout and a 150-second operation lease. Final artifact publication happens only after every eligible game has been processed; queue completion/failure has its own heartbeat. This avoids depending on one long-lived remote command process. The direct command remains available for diagnostics.

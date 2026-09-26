@@ -68,6 +68,7 @@ class DailyBoardCommand extends Command
                     'away_points' => $spread === null || $total === null ? null : round(($total + $spread) / 2, 1),
                     'home_points' => $spread === null || $total === null ? null : round(($total - $spread) / 2, 1),
                     'input_quality' => data_get($prediction?->output_metadata, 'input_quality'),
+                    'signal_summary' => data_get($prediction?->output_metadata, 'football_signal_summary'),
                     'prop_quote_count' => $count, 'eligible_prop_count' => $props->where('game_id', $game->id)->count(),
                     'prop_status' => $count === 0 ? 'no_current_quotes' : ($props->where('game_id', $game->id)->isEmpty() ? 'no_eligible_recommendations' : 'available')];
             })->values()->all(), 'player_props' => $props->all()];

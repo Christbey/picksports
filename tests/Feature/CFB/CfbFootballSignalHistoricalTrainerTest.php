@@ -9,9 +9,12 @@ use App\Services\CFB\Signals\CfbFootballSignalEvidence;
 use App\Services\CFB\Signals\CfbFootballSignalHistoricalTrainer;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Storage;
 
 it('trains from prior-season ratings without letting target-season final metrics alter historical residuals', function () {
     CarbonImmutable::setTestNow('2026-09-19');
+    Storage::fake('local');
+    config(['cfb.data.source_disk' => 'local']);
     $home = Team::factory()->create();
     $away = Team::factory()->create();
     foreach ([$home, $away] as $team) {

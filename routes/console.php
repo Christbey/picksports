@@ -1271,6 +1271,13 @@ $scheduleDailySeasonJob("cfb:report-signal-contributions --season={$fallSeasonYe
     ->appendOutputTo(storage_path('logs/cfb-signal-contributions.log'));
 $scheduleDailySeasonJob('cfb:train-football-signals', '03:15', $cfbCanonicalPipelineEnabled, 'CFB: Train Historical Football Signals')
     ->appendOutputTo(storage_path('logs/cfb-football-signal-training.log'));
+$cfbSignalRecoveryCommand = 'cfb:train-football-signals --if-missing';
+$cfbSignalRecoveryEvent = Schedule::command($cfbSignalRecoveryCommand)
+    ->hourlyAt(5)->timezone('America/Chicago')->between('06:00', '23:00')
+    ->when($cfbCanonicalPipelineEnabled)->withoutOverlapping(120)->onOneServer()->runInBackground()
+    ->appendOutputTo(storage_path('logs/cfb-football-signal-training.log'))
+    ->name('CFB: Recover Missing Signal Training Evidence');
+$attachCommandHeartbeat($cfbSignalRecoveryEvent, $cfbSignalRecoveryCommand, 'CFB: Recover Missing Signal Training Evidence');
 
 $scheduleDailySeasonJob("cfb:report-football-signals --season={$fallSeasonYear}", '03:30', $cfbCanonicalPipelineEnabled, 'CFB: Audit Football Signal Rules')
     ->appendOutputTo(storage_path('logs/cfb-football-signals.log'));

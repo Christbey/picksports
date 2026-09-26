@@ -91,7 +91,7 @@ class CfbFootballSignalModel
             }
         }
 
-        return [...($jointWeighting ? ['weighting' => 'joint_ridge_v1', 'model_validation' => array_map(fn ($m) => array_diff_key($m, ['coefficients' => true, 'feature_samples' => true]), $evidence['joint_models'] ?? []), 'historical_training_games' => count(data_get($evidence, 'historical_training.source_game_ids', []))] : []), 'version' => self::VERSION, 'catalog_count' => count($catalog),
+        return ['historical_training_status' => $evidence['historical_training_status'] ?? 'not_recorded', ...($jointWeighting ? ['weighting' => 'joint_ridge_v1', 'model_validation' => array_map(fn ($m) => array_diff_key($m, ['coefficients' => true, 'feature_samples' => true]), $evidence['joint_models'] ?? []), 'historical_training_games' => count(data_get($evidence, 'historical_training.source_game_ids', []))] : []), 'version' => self::VERSION, 'catalog_count' => count($catalog),
             'evaluated_team_conditions' => count($rows),
             'triggered' => count(array_filter($rows, fn ($row) => $row['matched'] === true)),
             'missing_inputs' => count(array_filter($rows, fn ($row) => $row['matched'] === null)),

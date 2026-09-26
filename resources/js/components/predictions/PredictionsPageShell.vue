@@ -2,7 +2,6 @@
 import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import SubscriptionBanner from '@/components/SubscriptionBanner.vue';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import AppLayout from '@/layouts/AppLayout.vue';
 import { type BreadcrumbItem } from '@/types';
 import { responsibleGambling } from '@/routes';
@@ -87,28 +86,25 @@ const breadcrumbs = computed<BreadcrumbItem[]>(() => [
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div
-            class="flex h-full flex-1 flex-col gap-5 overflow-x-auto rounded-[1.25rem] p-3 md:p-4"
+            class="mx-auto flex w-full max-w-7xl min-w-0 flex-1 flex-col gap-6 px-4 py-6 md:px-8 md:py-8"
         >
+            <slot />
+
             <SubscriptionBanner
                 variant="subtle"
                 :storage-key="bannerStorageKey"
             />
-
-            <slot />
-
-            <Alert class="ui-surface-subtle">
-                <AlertDescription>
-                    <strong>Entertainment Only:</strong> These predictions are
-                    for entertainment purposes only. Past performance does not
-                    guarantee future results. Please gamble responsibly. If you
-                    or someone you know has a gambling problem, call
-                    1-800-522-4700 or visit our
-                    <Link :href="responsibleGambling()" class="underline"
-                        >Responsible Gambling</Link
-                    >
-                    page.
-                </AlertDescription>
-            </Alert>
+            <footer
+                class="border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground"
+            >
+                For entertainment. Past performance does not guarantee future
+                results.
+                <Link
+                    :href="responsibleGambling()"
+                    class="underline underline-offset-4"
+                    >Responsible gambling</Link
+                >
+            </footer>
         </div>
     </AppLayout>
 </template>

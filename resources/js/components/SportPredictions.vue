@@ -1,6 +1,12 @@
 <script setup lang="ts">
-import { CalendarX2, FilterX } from 'lucide-vue-next';
+import {
+    CalendarX2,
+    FilterX,
+    SlidersHorizontal,
+    Search,
+} from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { currentSlateDate, footballSeason } from '@/lib/predictionPeriod';
 import { predictionBoardLiveFields } from '@/lib/predictionBoardLive';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
@@ -38,6 +44,14 @@ const today = ref('');
 const seasonType = ref('');
 const week = ref('');
 const searchQuery = ref('');
+const showFilters = ref(false);
+const centralToday = () =>
+    new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Chicago',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).format(new Date());
 const betViewMode = ref<'recommended' | 'all'>('all');
 const isBootstrapping = ref(true);
 const api = useApiV2Client();
@@ -64,13 +78,36 @@ const weekOptions = computed(() => {
     return props.config.seasonWeekConfig.postseasonOptions;
 });
 
-const setDefaultSeasonWeekFilters = () => {
-    if (filterMode.value !== 'seasonWeek') {
-        return;
-    }
-
-    seasonType.value = 'Regular Season';
-    week.value = props.config.sport === 'cfb' ? '0' : '1';
+const setDefaultSeasonWeekFilters = async () => {
+    if (filterMode.value !== 'seasonWeek') return;
+    const dates = await api.predictions.availableDates(props.config.sport, {
+        query: selectedSeason.value ? { season: selectedSeason.value } : {},
+    });
+    if (!dates)
+        throw new Error('Unable to load the current week. Please retry.');
+    const date = currentSlateDate(dates.data, centralToday());
+    seasonType.value = '';
+    week.value = '';
+    if (!date) return;
+    const slate = await api.predictions.index(props.config.sport, {
+        query: {
+            season: selectedSeason.value,
+            from_date: date,
+            to_date: date,
+            per_page: 1,
+        },
+    });
+    if (!slate)
+        throw new Error('Unable to load the current week. Please retry.');
+    const game = slate.data[0]?.game;
+    if (!game) return;
+    const type = String(game.season_type ?? '');
+    seasonType.value = ['2', 'Regular Season', 'regular'].includes(type)
+        ? 'Regular Season'
+        : ['3', 'Postseason', 'postseason'].includes(type)
+          ? 'Postseason'
+          : '';
+    week.value = game.week == null ? '' : String(game.week);
 };
 
 const buildQuery = (page: number): ApiV2Query => {
@@ -165,7 +202,10 @@ const fetchAvailableSeasons = async () => {
         : [];
 
     if (!selectedSeason.value && availableSeasons.value.length > 0) {
-        const currentYear = new Date().getFullYear();
+        const currentYear =
+            filterMode.value === 'seasonWeek'
+                ? footballSeason(centralToday())
+                : new Date().getFullYear();
         const preferredSeason = availableSeasons.value.includes(currentYear)
             ? currentYear
             : Math.max(...availableSeasons.value);
@@ -297,9 +337,13 @@ watch(selectedDate, () => {
     }
 });
 
-watch(seasonType, () => {
-    week.value = '';
-});
+watch(
+    seasonType,
+    () => {
+        week.value = '';
+    },
+    { flush: 'sync' },
+);
 
 watch(selectedSeason, async () => {
     if (isBootstrapping.value) {
@@ -320,8 +364,16 @@ watch(selectedSeason, async () => {
     }
 
     if (filterMode.value === 'seasonWeek') {
-        setDefaultSeasonWeekFilters();
-        fetchPredictions(1);
+        try {
+            loading.value = true;
+            await setDefaultSeasonWeekFilters();
+            await fetchPredictions(1);
+        } catch (e) {
+            error.value =
+                e instanceof Error ? e.message : 'Unable to load week';
+        } finally {
+            loading.value = false;
+        }
     }
 });
 
@@ -329,7 +381,7 @@ const applyFilters = () => {
     fetchPredictions(1);
 };
 
-const clearFilters = () => {
+const clearFilters = async () => {
     searchQuery.value = '';
     betViewMode.value = 'all';
 
@@ -343,13 +395,32 @@ const clearFilters = () => {
     }
 
     if (filterMode.value === 'seasonWeek') {
-        setDefaultSeasonWeekFilters();
-    } else {
-        seasonType.value = '';
-        week.value = '';
+        const current = footballSeason(centralToday());
+        const preferred = availableSeasons.value.includes(current)
+            ? current
+            : Math.max(...availableSeasons.value);
+        if (
+            Number.isFinite(preferred) &&
+            selectedSeason.value !== String(preferred)
+        ) {
+            selectedSeason.value = String(preferred);
+            return;
+        }
+        try {
+            loading.value = true;
+            await setDefaultSeasonWeekFilters();
+            await fetchPredictions(1);
+        } catch (e) {
+            error.value =
+                e instanceof Error ? e.message : 'Unable to load week';
+        } finally {
+            loading.value = false;
+        }
+        return;
     }
-
-    fetchPredictions(1);
+    seasonType.value = '';
+    week.value = '';
+    await fetchPredictions(1);
 };
 
 const hasAppliedSeasonWeekFilters = computed(() => {
@@ -509,7 +580,7 @@ const emptyStateDescription = computed(() => {
         filterMode.value === 'seasonWeek' &&
         hasAppliedSeasonWeekFilters.value
     ) {
-        return 'Try clearing season/week filters to view the full board.';
+        return 'Choose another week or return to the current week.';
     }
 
     return 'Check back after model runs complete.';
@@ -551,7 +622,7 @@ onMounted(async () => {
         if (filterMode.value === 'date') {
             await fetchAvailableDates();
         } else if (filterMode.value === 'seasonWeek') {
-            setDefaultSeasonWeekFilters();
+            await setDefaultSeasonWeekFilters();
         }
 
         isBootstrapping.value = false;
@@ -560,6 +631,7 @@ onMounted(async () => {
         error.value = e instanceof Error ? e.message : 'An error occurred';
     } finally {
         isBootstrapping.value = false;
+        loading.value = false;
     }
 });
 onBeforeUnmount(() => {
@@ -573,178 +645,163 @@ onBeforeUnmount(() => {
         <p v-if="refreshError" role="status" class="text-sm text-amber-600">
             {{ refreshError }}
         </p>
-        <div class="flex flex-wrap items-end justify-between gap-3">
+        <header class="flex flex-wrap items-center justify-between gap-4 pb-2">
             <div>
-                <div class="flex items-center gap-2">
-                    <h2 class="text-2xl font-bold">{{ config.title }}</h2>
-                    <span
-                        v-if="showSpringTrainingBadge"
-                        class="rounded-full border border-amber-200 bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold tracking-wide text-amber-800 uppercase dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-300"
+                <p
+                    class="mb-1 text-xs font-medium tracking-widest text-muted-foreground uppercase"
+                >
+                    {{ config.sport }} / Game board
+                </p>
+                <h1 class="text-3xl font-semibold tracking-tight">
+                    {{
+                        filterMode === 'seasonWeek' && week !== ''
+                            ? `Week ${week}`
+                            : config.title
+                    }}
+                </h1>
+                <p class="mt-1 text-sm text-muted-foreground">
+                    {{ selectedSeason
+                    }}<template v-if="seasonType"> · {{ seasonType }}</template>
+                    <template v-if="!loading">
+                        ·
+                        {{ meta?.total ?? predictions.length }} games</template
                     >
-                        Spring Training
-                    </span>
-                </div>
-                <p class="text-sm text-muted-foreground">
-                    {{ config.subtitle }}
+                    <span v-if="showSpringTrainingBadge">
+                        · Spring training</span
+                    >
                 </p>
             </div>
-            <div class="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                <span class="rounded-full border px-2.5 py-1">
-                    {{ filteredPredictions.length }} shown
-                </span>
-                <span class="rounded-full border px-2.5 py-1">
-                    {{ recommendedBetCount }} bets
-                </span>
-            </div>
-        </div>
+            <Button
+                v-if="filterMode === 'seasonWeek'"
+                variant="outline"
+                :disabled="loading"
+                @click="clearFilters"
+                >Current week</Button
+            >
+        </header>
 
-        <Card>
-            <CardContent class="p-4">
-                <div
-                    class="mb-3 flex flex-wrap items-center justify-between gap-2"
+        <div
+            class="flex flex-wrap items-center gap-3 border-y border-border py-3"
+        >
+            <div class="relative min-w-40 flex-1">
+                <Search
+                    class="pointer-events-none absolute top-2.5 left-3 size-4 text-muted-foreground"
+                />
+                <Input
+                    id="prediction-search"
+                    v-model="searchQuery"
+                    aria-label="Search matchups on this page"
+                    placeholder="Find a team…"
+                    class="border-transparent bg-muted/50 pl-9 shadow-none"
+                />
+            </div>
+            <select
+                v-if="filterMode === 'seasonWeek'"
+                id="week"
+                v-model="week"
+                aria-label="Week"
+                class="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                :disabled="!seasonType || loading"
+                @change="applyFilters"
+            >
+                <option value="">All weeks</option>
+                <option
+                    v-for="option in weekOptions"
+                    :key="option.value"
+                    :value="option.value"
                 >
-                    <div>
-                        <h3 class="text-sm font-semibold">Slate Controls</h3>
-                        <p class="text-xs text-muted-foreground">
-                            Filter the board, then open a game for full matchup
-                            context.
-                        </p>
-                    </div>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        class="h-8"
-                        :disabled="loading"
-                        @click="clearFilters"
-                    >
-                        Reset
-                    </Button>
-                </div>
-                <div class="flex flex-wrap items-end gap-4">
-                    <SeasonSelect
-                        id="predictions-season"
-                        v-model="selectedSeason"
-                        :options="availableSeasons"
-                        class="min-w-[180px] flex-1"
-                    />
-                    <div
-                        v-if="filterMode === 'date'"
-                        class="min-w-[200px] flex-1"
-                    >
-                        <Label for="game-date">Game Date</Label>
-                        <select
-                            id="game-date"
-                            v-model="selectedDate"
-                            :disabled="availableDates.length === 0"
-                            class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                            <option v-if="availableDates.length === 0" value="">
-                                Loading dates...
-                            </option>
-                            <option
-                                v-for="date in availableDates"
-                                :key="date"
-                                :value="date"
-                            >
-                                {{ formatDateLabel(date) }}
-                            </option>
-                        </select>
-                    </div>
-                    <template v-else-if="filterMode === 'seasonWeek'">
-                        <div class="min-w-[200px] flex-1">
-                            <Label for="season-type">Season Type</Label>
-                            <select
-                                id="season-type"
-                                v-model="seasonType"
-                                class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                <option value="">All Season Types</option>
-                                <option value="Regular Season">
-                                    Regular Season
-                                </option>
-                                <option value="Postseason">Postseason</option>
-                            </select>
-                        </div>
-                        <div class="min-w-[200px] flex-1">
-                            <Label for="week">Week</Label>
-                            <select
-                                id="week"
-                                v-model="week"
-                                :disabled="!seasonType"
-                                class="mt-1 flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                <option value="">All Weeks</option>
-                                <option
-                                    v-for="option in weekOptions"
-                                    :key="option.value"
-                                    :value="option.value"
-                                >
-                                    {{ option.label }}
-                                </option>
-                            </select>
-                        </div>
-                        <div class="flex gap-2">
-                            <Button @click="applyFilters" :disabled="loading">
-                                Apply Filters
-                            </Button>
-                            <Button
-                                @click="clearFilters"
-                                variant="outline"
-                                :disabled="loading"
-                            >
-                                Clear
-                            </Button>
-                        </div>
-                    </template>
-                    <div class="min-w-[220px] flex-1">
-                        <Label for="prediction-search">Search Matchup</Label>
-                        <Input
-                            id="prediction-search"
-                            v-model="searchQuery"
-                            placeholder="Team, school, or mascot..."
-                            class="mt-1"
-                        />
-                    </div>
-                    <div class="min-w-[220px]">
-                        <Label>Bet View</Label>
-                        <div
-                            class="mt-1 grid h-10 grid-cols-2 rounded-md border border-input bg-background p-1"
-                        >
-                            <button
-                                type="button"
-                                :class="[
-                                    'rounded px-3 text-sm font-medium transition',
-                                    betViewMode === 'recommended'
-                                        ? 'bg-primary text-primary-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground',
-                                ]"
-                                @click="betViewMode = 'recommended'"
-                            >
-                                Bets
-                                <span class="ml-1 text-xs opacity-80">
-                                    {{ recommendedBetCount }}
-                                </span>
-                            </button>
-                            <button
-                                type="button"
-                                :class="[
-                                    'rounded px-3 text-sm font-medium transition',
-                                    betViewMode === 'all'
-                                        ? 'bg-primary text-primary-foreground shadow-sm'
-                                        : 'text-muted-foreground hover:text-foreground',
-                                ]"
-                                @click="betViewMode = 'all'"
-                            >
-                                All
-                                <span class="ml-1 text-xs opacity-80">
-                                    {{ predictions.length }}
-                                </span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </CardContent>
-        </Card>
+                    {{ option.label }}
+                </option>
+            </select>
+            <select
+                v-if="filterMode === 'date'"
+                id="game-date"
+                v-model="selectedDate"
+                aria-label="Game date"
+                :disabled="!availableDates.length"
+                class="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+                <option v-if="!availableDates.length" value="">
+                    No dates available
+                </option>
+                <option
+                    v-for="date in availableDates"
+                    :key="date"
+                    :value="date"
+                >
+                    {{ formatDateLabel(date) }}
+                </option>
+            </select>
+            <div class="flex rounded-md bg-muted p-1" aria-label="Board view">
+                <button
+                    type="button"
+                    :aria-pressed="betViewMode === 'all'"
+                    :class="[
+                        'rounded px-3 py-1.5 text-sm',
+                        betViewMode === 'all'
+                            ? 'bg-background font-medium shadow-sm'
+                            : 'text-muted-foreground',
+                    ]"
+                    @click="betViewMode = 'all'"
+                >
+                    All games
+                </button>
+                <button
+                    type="button"
+                    :aria-pressed="betViewMode === 'recommended'"
+                    :class="[
+                        'rounded px-3 py-1.5 text-sm',
+                        betViewMode === 'recommended'
+                            ? 'bg-background font-medium shadow-sm'
+                            : 'text-muted-foreground',
+                    ]"
+                    @click="betViewMode = 'recommended'"
+                >
+                    Bets
+                    <span class="ml-1 text-xs text-muted-foreground">{{
+                        recommendedBetCount
+                    }}</span>
+                </button>
+            </div>
+            <Button
+                variant="ghost"
+                :aria-expanded="showFilters"
+                aria-controls="board-filters"
+                @click="showFilters = !showFilters"
+                ><SlidersHorizontal class="size-4" /><span
+                    >Filters</span
+                ></Button
+            >
+        </div>
+        <div
+            v-if="showFilters"
+            id="board-filters"
+            class="flex flex-wrap items-end gap-4 rounded-lg bg-muted/40 p-4"
+        >
+            <SeasonSelect
+                id="predictions-season"
+                v-model="selectedSeason"
+                :options="availableSeasons"
+                :disabled="loading"
+            />
+            <div v-if="filterMode === 'seasonWeek'">
+                <Label for="season-type">Season type</Label>
+                <select
+                    id="season-type"
+                    v-model="seasonType"
+                    :disabled="loading"
+                    class="mt-1 block h-10 rounded-md border border-input bg-background px-3 text-sm"
+                    @change="applyFilters"
+                >
+                    <option value="">All season types</option>
+                    <option value="Regular Season">Regular season</option>
+                    <option value="Postseason">Postseason</option>
+                </select>
+            </div>
+            <Button variant="ghost" :disabled="loading" @click="clearFilters"
+                >Reset</Button
+            >
+        </div>
 
         <Alert v-if="error" variant="destructive">
             <AlertDescription>{{ error }}</AlertDescription>
@@ -762,7 +819,10 @@ onBeforeUnmount(() => {
             </Card>
         </div>
 
-        <div v-else-if="filteredPredictions.length > 0" class="grid gap-4">
+        <div
+            v-else-if="filteredPredictions.length > 0"
+            class="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card"
+        >
             <template
                 v-for="prediction in filteredPredictions"
                 :key="prediction.game.id"
@@ -771,6 +831,7 @@ onBeforeUnmount(() => {
                     :prediction="prediction"
                     :href="gameHref(prediction)"
                     :sport="config.sport"
+                    compact
                 />
             </template>
         </div>

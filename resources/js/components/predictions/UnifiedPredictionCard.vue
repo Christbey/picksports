@@ -11,6 +11,7 @@ import {
     Radio,
 } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
+import { pregameBetCalls } from '@/lib/pregameBetCalls';
 import SavePickDialog from '@/components/predictions/SavePickDialog.vue';
 import { Button } from '@/components/ui/button';
 import {
@@ -103,7 +104,13 @@ const props = defineProps<{
     prediction: DashboardPrediction | PredictionListItem;
     href: string;
     sport?: string;
+    compact?: boolean;
 }>();
+
+const expanded = ref(false);
+const pregameCalls = computed(() =>
+    pregameBetCalls(props.prediction, homeTeamLabel(), awayTeamLabel()),
+);
 
 const predictionType = isPredictionListItem(props.prediction)
     ? props.prediction
@@ -1252,9 +1259,10 @@ const canSavePick = computed(
 );
 
 watch(
-    () => `${predictionSport() ?? 'unknown'}:${predictionId() ?? 'unknown'}`,
+    () =>
+        `${predictionSport() ?? 'unknown'}:${predictionId() ?? 'unknown'}:${expanded.value}`,
     () => {
-        void loadTrackingSummary();
+        if (!props.compact || expanded.value) void loadTrackingSummary();
     },
     { immediate: true },
 );
@@ -1455,532 +1463,653 @@ function saveOptions(): SavePickOption[] {
 </script>
 
 <template>
-    <div
-        class="group relative flex min-h-[132px] w-full overflow-hidden rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus-visible:ring-2 focus-visible:ring-sky-500/35 focus-visible:outline-none"
-        :class="dashboardCardClass()"
-    >
+    <article :class="compact ? 'bg-card' : ''">
         <div
-            class="absolute inset-y-0 left-0 w-1"
-            :class="dashboardRailClass()"
-        />
-        <div class="flex min-w-0 flex-1 flex-col gap-3 pl-1">
+            v-if="compact"
+            class="grid grid-cols-[1fr_auto] items-center gap-x-5 gap-y-3 px-4 py-5 sm:grid-cols-[minmax(0,1fr)_minmax(15rem,1fr)_auto] sm:px-6"
+        >
+            <Link
+                :href="href"
+                class="min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+            >
+                <div
+                    class="mb-2 flex items-center gap-2 text-xs text-muted-foreground"
+                >
+                    <span
+                        v-if="isLive()"
+                        class="size-1.5 rounded-full bg-red-500"
+                    />
+                    <span>{{
+                        isLive()
+                            ? liveGameStateLabel()
+                            : isFinal()
+                              ? 'Final'
+                              : gameDateTimeLabel()
+                    }}</span>
+                </div>
+                <div
+                    class="flex items-center gap-2 text-sm font-semibold sm:text-base"
+                >
+                    <img
+                        v-if="showAwayLogo()"
+                        :src="awayLogo()!"
+                        alt=""
+                        class="size-5 shrink-0 object-contain"
+                        @error="handleAwayLogoError"
+                    />
+                    <span class="truncate">{{ awayTeamLabel() }}</span>
+                    <span v-if="showGameScore()" class="ml-auto tabular-nums">{{
+                        awayScore()
+                    }}</span>
+                </div>
+                <div
+                    class="mt-1.5 flex items-center gap-2 text-sm font-semibold sm:text-base"
+                >
+                    <img
+                        v-if="showHomeLogo()"
+                        :src="homeLogo()!"
+                        alt=""
+                        class="size-5 shrink-0 object-contain"
+                        @error="handleHomeLogoError"
+                    />
+                    <span class="truncate">{{ homeTeamLabel() }}</span>
+                    <span v-if="showGameScore()" class="ml-auto tabular-nums">{{
+                        homeScore()
+                    }}</span>
+                </div>
+            </Link>
+            <section
+                class="col-span-full row-start-2 sm:col-span-1 sm:row-auto"
+                aria-label="Pregame model bets"
+            >
+                <p class="mb-2 text-xs text-muted-foreground">Pregame model</p>
+                <dl class="space-y-1.5 text-sm">
+                    <div class="grid grid-cols-[3.5rem_1fr] gap-3">
+                        <dt class="text-muted-foreground">Win</dt>
+                        <dd class="font-medium">{{ pregameCalls.winner }}</dd>
+                    </div>
+                    <div class="grid grid-cols-[3.5rem_1fr] gap-3">
+                        <dt class="text-muted-foreground">Cover</dt>
+                        <dd class="font-medium">{{ pregameCalls.spread }}</dd>
+                    </div>
+                    <div class="grid grid-cols-[3.5rem_1fr] gap-3">
+                        <dt class="text-muted-foreground">Total</dt>
+                        <dd class="font-medium">{{ pregameCalls.total }}</dd>
+                    </div>
+                </dl>
+            </section>
+            <button
+                type="button"
+                :aria-expanded="expanded"
+                :aria-label="`${expanded ? 'Hide' : 'Show'} analysis for ${awayTeamLabel()} at ${homeTeamLabel()}`"
+                class="col-start-2 row-start-1 flex items-center gap-1 rounded-md px-2 py-2 text-xs font-medium text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring sm:col-auto sm:row-auto"
+                @click="expanded = !expanded"
+            >
+                {{ expanded ? 'Less' : 'Analysis'
+                }}<ChevronDown
+                    class="size-4 transition-transform"
+                    :class="{ 'rotate-180': expanded }"
+                />
+            </button>
             <p
-                v-if="valueSignal()?.spread_assessment"
-                class="text-xs text-muted-foreground"
-                :title="valueSignal()?.spread_assessment?.risk_flags.join(', ')"
+                v-if="valueSignal()?.decision_summary"
+                class="col-span-full text-xs text-muted-foreground"
             >
-                {{
-                    valueSignal()?.decision_summary ??
-                    valueSignal()?.spread_assessment?.summary
-                }}
+                {{ valueSignal()?.decision_summary }}
             </p>
-            <details
-                v-if="valueSignal()?.decision_notes?.length"
-                class="text-xs text-muted-foreground"
-            >
-                <summary class="cursor-pointer">Why this status</summary>
-                <ul class="mt-1 list-disc space-y-1 pl-4">
-                    <li
-                        v-for="note in valueSignal()?.decision_notes"
-                        :key="note"
-                    >
-                        {{ note }}
-                    </li>
-                </ul>
-            </details>
-            <details
-                v-if="valueSignal()?.football_signals"
-                class="text-xs text-muted-foreground"
-            >
-                <summary class="cursor-pointer">
-                    Football signals:
-                    {{ valueSignal()?.football_signals?.catalog_count }} rules ·
-                    {{ valueSignal()?.football_signals?.applied }} contributions
-                </summary>
-                <p class="mt-1">
-                    Checked for both teams:
-                    {{ valueSignal()?.football_signals?.triggered }} conditions
-                    triggered;
-                    {{ valueSignal()?.football_signals?.missing_inputs }}
-                    missing inputs. A triggered rule contributes points only
-                    when its historical correction has supporting evidence.
-                </p>
-                <ul class="mt-1 list-disc space-y-1 pl-4">
-                    <li
-                        v-for="signal in valueSignal()?.football_signals?.signals.filter(
-                            (item) => item.matched,
-                        )"
-                        :key="`${signal.id}-${signal.side}`"
-                    >
-                        {{ signal.side }} · {{ signal.label }} ·
-                        {{ signal.market }}:
-                        {{ signal.contribution_points.toFixed(2) }} points ·
-                        {{ signal.status.replaceAll('_', ' ') }}
-                        ({{ signal.sample_games }} historical games)
-                    </li>
-                </ul>
-            </details>
-            <details
-                v-if="valueSignal()?.signal_contributions?.signals?.length"
-                class="text-xs text-muted-foreground"
-            >
-                <summary class="cursor-pointer">
-                    Signal impact:
+        </div>
+        <div
+            v-if="!compact || expanded"
+            class="group relative flex w-full overflow-hidden rounded-lg border border-border bg-card p-4 text-left"
+            :class="
+                compact
+                    ? 'rounded-none border-x-0 border-b-0 bg-muted/20'
+                    : dashboardCardClass()
+            "
+        >
+            <div
+                v-if="!compact"
+                class="absolute inset-y-0 left-0 w-0.5"
+                :class="dashboardRailClass()"
+            />
+            <div class="flex min-w-0 flex-1 flex-col gap-3 pl-1">
+                <p
+                    v-if="valueSignal()?.spread_assessment"
+                    class="text-xs text-muted-foreground"
+                    :title="
+                        valueSignal()?.spread_assessment?.risk_flags.join(', ')
+                    "
+                >
                     {{
-                        valueSignal()?.signal_contributions
-                            ?.active_spread_signals
+                        valueSignal()?.decision_summary ??
+                        valueSignal()?.spread_assessment?.summary
                     }}
-                    spread,
-                    {{
-                        valueSignal()?.signal_contributions
-                            ?.active_total_signals
-                    }}
-                    total
-                </summary>
-                <p class="mt-1">
-                    Positive spread points favor the home team; positive total
-                    points raise the total. Impacts compare the forecast with
-                    that signal removed and are not independent votes.
                 </p>
-                <ul class="mt-1 list-disc space-y-1 pl-4">
-                    <li
-                        v-for="signal in valueSignal()?.signal_contributions?.signals?.filter(
-                            (item) => item.active,
-                        )"
-                        :key="`${signal.signal}-${signal.market}`"
-                    >
-                        {{ signal.signal.replaceAll('_', ' ') }} ·
-                        {{ signal.market }}:
-                        {{ signal.contribution_points > 0 ? '+' : ''
-                        }}{{ signal.contribution_points.toFixed(1) }} points
-                    </li>
-                </ul>
-            </details>
-            <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
-                <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                        <div class="flex flex-wrap items-center gap-2 text-sm">
-                            <div class="flex items-center gap-2 font-semibold">
-                                <img
-                                    v-if="showAwayLogo()"
-                                    :src="awayLogo()!"
-                                    :alt="awayTeamLabel()"
-                                    class="h-6 w-6 rounded-full object-contain"
-                                    @error="handleAwayLogoError"
-                                />
-                                <span
-                                    class="inline-flex items-center gap-1.5"
-                                    :class="teamScoreClass('away')"
+                <details
+                    v-if="valueSignal()?.decision_notes?.length"
+                    class="text-xs text-muted-foreground"
+                >
+                    <summary class="cursor-pointer">Why this status</summary>
+                    <ul class="mt-1 list-disc space-y-1 pl-4">
+                        <li
+                            v-for="note in valueSignal()?.decision_notes"
+                            :key="note"
+                        >
+                            {{ note }}
+                        </li>
+                    </ul>
+                </details>
+                <details
+                    v-if="valueSignal()?.football_signals"
+                    class="text-xs text-muted-foreground"
+                >
+                    <summary class="cursor-pointer">
+                        Football signals:
+                        {{ valueSignal()?.football_signals?.catalog_count }}
+                        rules ·
+                        {{ valueSignal()?.football_signals?.applied }}
+                        contributions
+                    </summary>
+                    <p class="mt-1">
+                        Checked for both teams:
+                        {{ valueSignal()?.football_signals?.triggered }}
+                        conditions triggered;
+                        {{ valueSignal()?.football_signals?.missing_inputs }}
+                        missing inputs. A triggered rule contributes points only
+                        when its historical correction has supporting evidence.
+                    </p>
+                    <ul class="mt-1 list-disc space-y-1 pl-4">
+                        <li
+                            v-for="signal in valueSignal()?.football_signals?.signals.filter(
+                                (item) => item.matched,
+                            )"
+                            :key="`${signal.id}-${signal.side}`"
+                        >
+                            {{ signal.side }} · {{ signal.label }} ·
+                            {{ signal.market }}:
+                            {{ signal.contribution_points.toFixed(2) }} points ·
+                            {{ signal.status.replaceAll('_', ' ') }}
+                            ({{ signal.sample_games }} historical games)
+                        </li>
+                    </ul>
+                </details>
+                <details
+                    v-if="valueSignal()?.signal_contributions?.signals?.length"
+                    class="text-xs text-muted-foreground"
+                >
+                    <summary class="cursor-pointer">
+                        Signal impact:
+                        {{
+                            valueSignal()?.signal_contributions
+                                ?.active_spread_signals
+                        }}
+                        spread,
+                        {{
+                            valueSignal()?.signal_contributions
+                                ?.active_total_signals
+                        }}
+                        total
+                    </summary>
+                    <p class="mt-1">
+                        Positive spread points favor the home team; positive
+                        total points raise the total. Impacts compare the
+                        forecast with that signal removed and are not
+                        independent votes.
+                    </p>
+                    <ul class="mt-1 list-disc space-y-1 pl-4">
+                        <li
+                            v-for="signal in valueSignal()?.signal_contributions?.signals?.filter(
+                                (item) => item.active,
+                            )"
+                            :key="`${signal.signal}-${signal.market}`"
+                        >
+                            {{ signal.signal.replaceAll('_', ' ') }} ·
+                            {{ signal.market }}:
+                            {{ signal.contribution_points > 0 ? '+' : ''
+                            }}{{ signal.contribution_points.toFixed(1) }} points
+                        </li>
+                    </ul>
+                </details>
+                <Link :href="href" class="flex min-w-0 flex-1 flex-col gap-3">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div
+                                class="flex flex-wrap items-center gap-2 text-sm"
+                            >
+                                <div
+                                    class="flex items-center gap-2 font-semibold"
                                 >
-                                    <span>{{ awayTeamLabel() }}</span>
+                                    <img
+                                        v-if="showAwayLogo()"
+                                        :src="awayLogo()!"
+                                        :alt="awayTeamLabel()"
+                                        class="h-6 w-6 rounded-full object-contain"
+                                        @error="handleAwayLogoError"
+                                    />
                                     <span
-                                        v-if="showGameScore()"
-                                        class="font-bold"
+                                        class="inline-flex items-center gap-1.5"
+                                        :class="teamScoreClass('away')"
                                     >
-                                        {{ awayScore() }}
+                                        <span>{{ awayTeamLabel() }}</span>
+                                        <span
+                                            v-if="showGameScore()"
+                                            class="font-bold"
+                                        >
+                                            {{ awayScore() }}
+                                        </span>
                                     </span>
+                                    <span class="text-muted-foreground">@</span>
+                                    <img
+                                        v-if="showHomeLogo()"
+                                        :src="homeLogo()!"
+                                        :alt="homeTeamLabel()"
+                                        class="h-6 w-6 rounded-full object-contain"
+                                        @error="handleHomeLogoError"
+                                    />
+                                    <span
+                                        class="inline-flex items-center gap-1.5"
+                                        :class="teamScoreClass('home')"
+                                    >
+                                        <span>{{ homeTeamLabel() }}</span>
+                                        <span
+                                            v-if="showGameScore()"
+                                            class="font-bold"
+                                        >
+                                            {{ homeScore() }}
+                                        </span>
+                                    </span>
+                                </div>
+                                <span
+                                    v-if="gameDateTimeLabel()"
+                                    class="inline-flex items-center gap-1 rounded-full border bg-background/75 px-2.5 py-1 text-xs text-muted-foreground"
+                                >
+                                    <Clock class="h-3.5 w-3.5" />
+                                    {{ gameDateTimeLabel() }}
                                 </span>
-                                <span class="text-muted-foreground">@</span>
-                                <img
-                                    v-if="showHomeLogo()"
-                                    :src="homeLogo()!"
-                                    :alt="homeTeamLabel()"
-                                    class="h-6 w-6 rounded-full object-contain"
-                                    @error="handleHomeLogoError"
-                                />
+                                <span
+                                    v-if="weekLabel()"
+                                    :class="dashboardChipClass()"
+                                >
+                                    {{ weekLabel() }}
+                                </span>
                                 <span
                                     class="inline-flex items-center gap-1.5"
-                                    :class="teamScoreClass('home')"
+                                    :class="statusBadgeClass()"
                                 >
-                                    <span>{{ homeTeamLabel() }}</span>
                                     <span
-                                        v-if="showGameScore()"
-                                        class="font-bold"
-                                    >
-                                        {{ homeScore() }}
-                                    </span>
+                                        v-if="isLive()"
+                                        class="h-1.5 w-1.5 rounded-full bg-red-500 motion-safe:animate-pulse"
+                                    />
+                                    {{ statusBadgeLabel() }}
+                                </span>
+                                <span
+                                    v-if="predictionFreshnessLabel()"
+                                    :class="dashboardChipClass()"
+                                >
+                                    {{ predictionFreshnessLabel() }}
                                 </span>
                             </div>
-                            <span
-                                v-if="gameDateTimeLabel()"
-                                class="inline-flex items-center gap-1 rounded-full border bg-background/75 px-2.5 py-1 text-xs text-muted-foreground"
-                            >
-                                <Clock class="h-3.5 w-3.5" />
-                                {{ gameDateTimeLabel() }}
-                            </span>
-                            <span
-                                v-if="weekLabel()"
-                                :class="dashboardChipClass()"
-                            >
-                                {{ weekLabel() }}
-                            </span>
-                            <span
-                                class="inline-flex items-center gap-1.5"
-                                :class="statusBadgeClass()"
-                            >
+
+                            <div class="mt-3 flex flex-wrap items-center gap-2">
                                 <span
-                                    v-if="isLive()"
-                                    class="h-1.5 w-1.5 rounded-full bg-red-500 motion-safe:animate-pulse"
-                                />
-                                {{ statusBadgeLabel() }}
-                            </span>
-                            <span
-                                v-if="predictionFreshnessLabel()"
-                                :class="dashboardChipClass()"
-                            >
-                                {{ predictionFreshnessLabel() }}
-                            </span>
+                                    class="rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300"
+                                >
+                                    {{ dashboardPrimaryPickLabel() }}
+                                </span>
+                                <span
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="dashboardSignalClass()"
+                                >
+                                    {{ dashboardSignalLabel() }}
+                                </span>
+                                <span
+                                    v-if="totalPickPillLabel()"
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="
+                                        totalPickPillStrong()
+                                            ? 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                                            : 'border-muted bg-muted/40 text-muted-foreground'
+                                    "
+                                >
+                                    {{ totalPickPillLabel() }}
+                                </span>
+                                <span
+                                    v-if="isFinal() && finalResultLabel()"
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="finalResultBadgeClass()"
+                                >
+                                    Projection {{ finalResultLabel() }}
+                                </span>
+                                <span
+                                    v-if="isFinal() && totalResultLabel()"
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="totalResultBadgeClass()"
+                                >
+                                    O/U {{ totalResultLabel() }}
+                                </span>
+                                <span
+                                    v-if="trustScoreLabel()"
+                                    :class="dashboardChipClass()"
+                                >
+                                    {{ trustScoreLabel() }}
+                                </span>
+                                <span
+                                    v-for="badge in cfbSignalBadges()"
+                                    :key="badge.label"
+                                    class="rounded-full border px-2.5 py-1 text-xs font-semibold"
+                                    :class="cfbSignalBadgeClass(badge.tone)"
+                                >
+                                    {{ badge.label }}
+                                </span>
+                            </div>
                         </div>
 
-                        <div class="mt-3 flex flex-wrap items-center gap-2">
-                            <span
-                                class="rounded-full border border-sky-500/25 bg-sky-500/10 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:text-sky-300"
-                            >
-                                {{ dashboardPrimaryPickLabel() }}
-                            </span>
-                            <span
-                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
-                                :class="dashboardSignalClass()"
-                            >
-                                {{ dashboardSignalLabel() }}
-                            </span>
-                            <span
-                                v-if="totalPickPillLabel()"
-                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
-                                :class="
-                                    totalPickPillStrong()
-                                        ? 'border-sky-500/25 bg-sky-500/10 text-sky-700 dark:text-sky-300'
-                                        : 'border-muted bg-muted/40 text-muted-foreground'
-                                "
-                            >
-                                {{ totalPickPillLabel() }}
-                            </span>
-                            <span
-                                v-if="isFinal() && finalResultLabel()"
-                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
-                                :class="finalResultBadgeClass()"
-                            >
-                                Projection {{ finalResultLabel() }}
-                            </span>
-                            <span
-                                v-if="isFinal() && totalResultLabel()"
-                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
-                                :class="totalResultBadgeClass()"
-                            >
-                                O/U {{ totalResultLabel() }}
-                            </span>
-                            <span
-                                v-if="trustScoreLabel()"
-                                :class="dashboardChipClass()"
-                            >
-                                {{ trustScoreLabel() }}
-                            </span>
-                            <span
-                                v-for="badge in cfbSignalBadges()"
-                                :key="badge.label"
-                                class="rounded-full border px-2.5 py-1 text-xs font-semibold"
-                                :class="cfbSignalBadgeClass(badge.tone)"
-                            >
-                                {{ badge.label }}
-                            </span>
-                        </div>
-                    </div>
-
-                    <span
-                        class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
-                    >
-                        {{ dashboardSignalLabel() }}
-                    </span>
-                </div>
-
-                <section
-                    v-if="isLive()"
-                    data-testid="live-game-insights"
-                    class="overflow-hidden border-y border-red-500/15 bg-red-500/[0.035]"
-                    aria-label="Live game insights"
-                >
-                    <div
-                        class="flex items-center justify-between gap-3 px-3 py-2"
-                    >
-                        <div
-                            class="flex items-center gap-2 text-xs font-semibold tracking-wide text-red-700 uppercase dark:text-red-300"
+                        <span
+                            class="hidden shrink-0 rounded-full border bg-background/75 px-3 py-1 text-xs font-semibold text-muted-foreground sm:inline-flex"
                         >
-                            <Radio class="h-3.5 w-3.5" />
-                            Live read
-                        </div>
-                        <span class="text-xs text-muted-foreground">
-                            {{ liveScoreContextLabel() }}
+                            {{ dashboardSignalLabel() }}
                         </span>
                     </div>
 
-                    <div
-                        class="grid divide-y divide-border/60 border-t border-red-500/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+                    <section
+                        v-if="isLive()"
+                        data-testid="live-game-insights"
+                        class="overflow-hidden border-y border-red-500/15 bg-red-500/[0.035]"
+                        aria-label="Live game insights"
                     >
                         <div
-                            class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                            class="flex items-center justify-between gap-3 px-3 py-2"
                         >
                             <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-red-600 dark:text-red-400"
+                                class="flex items-center gap-2 text-xs font-semibold tracking-wide text-red-700 uppercase dark:text-red-300"
                             >
-                                <Radio class="h-4 w-4" />
+                                <Radio class="h-3.5 w-3.5" />
+                                Live read
                             </div>
-                            <div class="min-w-0">
+                            <span class="text-xs text-muted-foreground">
+                                {{ liveScoreContextLabel() }}
+                            </span>
+                        </div>
+
+                        <div
+                            class="grid divide-y divide-border/60 border-t border-red-500/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0"
+                        >
+                            <div
+                                class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                            >
                                 <div
-                                    class="text-[11px] font-medium text-muted-foreground uppercase"
+                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-red-600 dark:text-red-400"
                                 >
-                                    Game state
+                                    <Radio class="h-4 w-4" />
                                 </div>
-                                <div class="truncate text-sm font-semibold">
-                                    {{ liveGameStateLabel() }}
-                                </div>
-                                <div
-                                    class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground"
-                                >
-                                    <span>{{ liveGameStateMeta() }}</span>
-                                    <span
-                                        v-if="
-                                            isMlbPrediction() &&
-                                            gameOuts() !== null
-                                        "
-                                        class="inline-flex gap-1"
-                                        :aria-label="`${gameOuts()} outs`"
+                                <div class="min-w-0">
+                                    <div
+                                        class="text-[11px] font-medium text-muted-foreground uppercase"
                                     >
+                                        Game state
+                                    </div>
+                                    <div class="truncate text-sm font-semibold">
+                                        {{ liveGameStateLabel() }}
+                                    </div>
+                                    <div
+                                        class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground"
+                                    >
+                                        <span>{{ liveGameStateMeta() }}</span>
                                         <span
-                                            v-for="outNumber in 3"
-                                            :key="outNumber"
-                                            class="h-1.5 w-1.5 rounded-full border border-red-500/40"
-                                            :class="
-                                                outNumber <= gameOuts()!
-                                                    ? 'bg-red-500'
-                                                    : 'bg-transparent'
+                                            v-if="
+                                                isMlbPrediction() &&
+                                                gameOuts() !== null
                                             "
-                                        />
-                                    </span>
+                                            class="inline-flex gap-1"
+                                            :aria-label="`${gameOuts()} outs`"
+                                        >
+                                            <span
+                                                v-for="outNumber in 3"
+                                                :key="outNumber"
+                                                class="h-1.5 w-1.5 rounded-full border border-red-500/40"
+                                                :class="
+                                                    outNumber <= gameOuts()!
+                                                        ? 'bg-red-500'
+                                                        : 'bg-transparent'
+                                                "
+                                            />
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
+
+                            <div
+                                class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                            >
+                                <div
+                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-sky-600 dark:text-sky-400"
+                                >
+                                    <Activity class="h-4 w-4" />
+                                </div>
+                                <div class="min-w-0">
+                                    <div
+                                        class="text-[11px] font-medium text-muted-foreground uppercase"
+                                    >
+                                        Win outlook
+                                    </div>
+                                    <div class="truncate text-sm font-semibold">
+                                        {{ liveWinOutlookValue() }}
+                                    </div>
+                                    <div
+                                        class="truncate text-xs text-muted-foreground"
+                                    >
+                                        {{ liveWinOutlookMeta() }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                            >
+                                <div
+                                    class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-amber-600 dark:text-amber-400"
+                                >
+                                    <Gauge class="h-4 w-4" />
+                                </div>
+                                <div class="min-w-0">
+                                    <div
+                                        class="text-[11px] font-medium text-muted-foreground uppercase"
+                                    >
+                                        Updated total
+                                    </div>
+                                    <div class="truncate text-sm font-semibold">
+                                        {{ liveTotalOutlookValue() }}
+                                    </div>
+                                    <div
+                                        class="truncate text-xs text-muted-foreground"
+                                    >
+                                        {{ liveTotalOutlookMeta() }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
+                    >
+                        <div class="min-w-0 text-xs text-muted-foreground">
+                            {{ dashboardFooterContextLabel() }}
+                            <span v-if="homeSpreadLineValue() !== null">
+                                · Home spread
+                                {{ formatSignedNumber(homeSpreadLineValue()!) }}
+                            </span>
+                            <span v-if="predictedTotalValue() !== null">
+                                · Total {{ predictedTotalValue()!.toFixed(1) }}
+                            </span>
+                            <span v-if="canonicalPregameEdgeLabel()">
+                                · {{ canonicalPregameEdgeLabel() }}
+                            </span>
                         </div>
 
-                        <div
-                            class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                        <span
+                            class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold"
+                            :class="dashboardActionTextClass()"
                         >
-                            <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-sky-600 dark:text-sky-400"
-                            >
-                                <Activity class="h-4 w-4" />
-                            </div>
-                            <div class="min-w-0">
-                                <div
-                                    class="text-[11px] font-medium text-muted-foreground uppercase"
-                                >
-                                    Win outlook
-                                </div>
-                                <div class="truncate text-sm font-semibold">
-                                    {{ liveWinOutlookValue() }}
-                                </div>
-                                <div
-                                    class="truncate text-xs text-muted-foreground"
-                                >
-                                    {{ liveWinOutlookMeta() }}
-                                </div>
-                            </div>
-                        </div>
+                            Open
+                            <ChevronRight
+                                class="h-3.5 w-3.5 transition group-hover:translate-x-0.5"
+                            />
+                        </span>
+                    </div>
+                </Link>
 
+                <section
+                    v-if="hasExternalGameContext()"
+                    class="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3"
+                    aria-label="Sourced game context"
+                >
+                    <div
+                        class="flex flex-wrap items-center justify-between gap-2"
+                    >
                         <div
-                            class="flex min-h-16 items-center gap-3 px-3 py-2.5"
+                            class="flex items-center gap-2 text-xs font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-300"
                         >
-                            <div
-                                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/75 text-amber-600 dark:text-amber-400"
-                            >
-                                <Gauge class="h-4 w-4" />
-                            </div>
-                            <div class="min-w-0">
-                                <div
-                                    class="text-[11px] font-medium text-muted-foreground uppercase"
-                                >
-                                    Updated total
-                                </div>
-                                <div class="truncate text-sm font-semibold">
-                                    {{ liveTotalOutlookValue() }}
-                                </div>
-                                <div
-                                    class="truncate text-xs text-muted-foreground"
-                                >
-                                    {{ liveTotalOutlookMeta() }}
-                                </div>
-                            </div>
+                            <Globe2 class="h-3.5 w-3.5" />
+                            Current web context
                         </div>
+                        <span
+                            v-if="externalContextConfidenceLabel()"
+                            class="rounded-full border border-violet-500/20 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:text-violet-300"
+                        >
+                            {{ externalContextConfidenceLabel() }}
+                        </span>
+                    </div>
+                    <p class="mt-2 text-sm text-foreground/90">
+                        {{ externalGameContext()?.summary }}
+                    </p>
+                    <p
+                        v-if="externalContextAdjustmentLabel()"
+                        class="mt-1 text-xs font-medium text-muted-foreground"
+                    >
+                        Bounded model adjustment:
+                        {{ externalContextAdjustmentLabel() }}
+                    </p>
+                    <div
+                        v-if="externalGameContext()?.sources.length"
+                        class="mt-2 flex flex-wrap gap-x-3 gap-y-1"
+                    >
+                        <a
+                            v-for="source in externalGameContext()?.sources.slice(
+                                0,
+                                3,
+                            )"
+                            :key="source.url"
+                            :href="source.url"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="inline-flex items-center gap-1 text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
+                        >
+                            {{ source.publisher }}
+                            <ExternalLink class="h-3 w-3" />
+                        </a>
                     </div>
                 </section>
 
                 <div
-                    class="flex flex-wrap items-center justify-between gap-3 border-t pt-3"
+                    v-if="canSavePick && !isFinal()"
+                    class="mt-4 border-t border-border/70 pt-4"
                 >
-                    <div class="min-w-0 text-xs text-muted-foreground">
-                        {{ dashboardFooterContextLabel() }}
-                        <span v-if="homeSpreadLineValue() !== null">
-                            · Home spread
-                            {{ formatSignedNumber(homeSpreadLineValue()!) }}
-                        </span>
-                        <span v-if="predictedTotalValue() !== null">
-                            · Total {{ predictedTotalValue()!.toFixed(1) }}
-                        </span>
-                        <span v-if="canonicalPregameEdgeLabel()">
-                            · {{ canonicalPregameEdgeLabel() }}
-                        </span>
-                    </div>
-
-                    <span
-                        class="inline-flex shrink-0 items-center gap-1 text-xs font-semibold"
-                        :class="dashboardActionTextClass()"
-                    >
-                        Open
-                        <ChevronRight
-                            class="h-3.5 w-3.5 transition group-hover:translate-x-0.5"
-                        />
-                    </span>
-                </div>
-            </Link>
-
-            <section
-                v-if="hasExternalGameContext()"
-                class="rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-3"
-                aria-label="Sourced game context"
-            >
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                    <div
-                        class="flex items-center gap-2 text-xs font-semibold tracking-wide text-violet-700 uppercase dark:text-violet-300"
-                    >
-                        <Globe2 class="h-3.5 w-3.5" />
-                        Current web context
-                    </div>
-                    <span
-                        v-if="externalContextConfidenceLabel()"
-                        class="rounded-full border border-violet-500/20 px-2 py-0.5 text-[11px] font-semibold text-violet-700 dark:text-violet-300"
-                    >
-                        {{ externalContextConfidenceLabel() }}
-                    </span>
-                </div>
-                <p class="mt-2 text-sm text-foreground/90">
-                    {{ externalGameContext()?.summary }}
-                </p>
-                <p
-                    v-if="externalContextAdjustmentLabel()"
-                    class="mt-1 text-xs font-medium text-muted-foreground"
-                >
-                    Bounded model adjustment:
-                    {{ externalContextAdjustmentLabel() }}
-                </p>
-                <div
-                    v-if="externalGameContext()?.sources.length"
-                    class="mt-2 flex flex-wrap gap-x-3 gap-y-1"
-                >
-                    <a
-                        v-for="source in externalGameContext()?.sources.slice(
-                            0,
-                            3,
-                        )"
-                        :key="source.url"
-                        :href="source.url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="inline-flex items-center gap-1 text-xs font-medium text-violet-700 hover:underline dark:text-violet-300"
-                    >
-                        {{ source.publisher }}
-                        <ExternalLink class="h-3 w-3" />
-                    </a>
-                </div>
-            </section>
-
-            <div
-                v-if="canSavePick && !isFinal()"
-                class="mt-4 border-t border-border/70 pt-4"
-            >
-                <div class="flex items-center justify-between gap-2">
-                    <div>
-                        <div
-                            class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
-                        >
-                            Track This Pick
+                    <div class="flex items-center justify-between gap-2">
+                        <div>
+                            <div
+                                class="text-xs font-semibold tracking-wide text-muted-foreground uppercase"
+                            >
+                                Track This Pick
+                            </div>
+                            <div
+                                v-if="isLoadingTracking"
+                                class="mt-1 text-xs text-muted-foreground"
+                            >
+                                Loading tracked picks...
+                            </div>
                         </div>
-                        <div
-                            v-if="isLoadingTracking"
-                            class="mt-1 text-xs text-muted-foreground"
-                        >
-                            Loading tracked picks...
-                        </div>
-                    </div>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger :as-child="true">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                class="gap-2"
+                        <DropdownMenu>
+                            <DropdownMenuTrigger :as-child="true">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    class="gap-2"
+                                    @click.stop
+                                >
+                                    Save Pick
+                                    <ChevronDown class="h-4 w-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent
+                                align="end"
+                                class="w-56"
                                 @click.stop
                             >
-                                Save Pick
-                                <ChevronDown class="h-4 w-4" />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent
-                            align="end"
-                            class="w-56"
-                            @click.stop
-                        >
-                            <DropdownMenuLabel>Choose a side</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                v-for="option in saveOptions()"
-                                :key="`${option.betType}-${option.selectionSide}`"
-                                @select.prevent="openSaveDialog(option)"
-                            >
-                                <div
-                                    class="flex w-full items-start justify-between gap-3"
+                                <DropdownMenuLabel
+                                    >Choose a side</DropdownMenuLabel
                                 >
-                                    <div class="min-w-0">
-                                        <div
-                                            class="truncate font-medium text-foreground"
-                                        >
-                                            {{ option.title }}
-                                        </div>
-                                        <div
-                                            v-if="consensusForOption(option)"
-                                            class="truncate text-xs text-muted-foreground"
-                                        >
-                                            {{
-                                                consensusForOption(option)
-                                                    ?.summary
-                                            }}
-                                        </div>
-                                    </div>
-                                    <span
-                                        v-if="trackedBetForOption(option)"
-                                        class="shrink-0 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                    v-for="option in saveOptions()"
+                                    :key="`${option.betType}-${option.selectionSide}`"
+                                    @select.prevent="openSaveDialog(option)"
+                                >
+                                    <div
+                                        class="flex w-full items-start justify-between gap-3"
                                     >
-                                        Tracked
-                                    </span>
-                                </div>
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                                        <div class="min-w-0">
+                                            <div
+                                                class="truncate font-medium text-foreground"
+                                            >
+                                                {{ option.title }}
+                                            </div>
+                                            <div
+                                                v-if="
+                                                    consensusForOption(option)
+                                                "
+                                                class="truncate text-xs text-muted-foreground"
+                                            >
+                                                {{
+                                                    consensusForOption(option)
+                                                        ?.summary
+                                                }}
+                                            </div>
+                                        </div>
+                                        <span
+                                            v-if="trackedBetForOption(option)"
+                                            class="shrink-0 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:text-emerald-300"
+                                        >
+                                            Tracked
+                                        </span>
+                                    </div>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </div>
                 </div>
             </div>
-        </div>
 
-        <SavePickDialog
-            v-if="predictionId() !== null && predictionSport()"
-            :open="isSaveDialogOpen"
-            :prediction-id="predictionId()!"
-            :prediction-sport="predictionSport()!"
-            :option="activeSaveOption"
-            :existing-bet="
-                activeSaveOption ? trackedBetForOption(activeSaveOption) : null
-            "
-            :public-consensus="
-                activeSaveOption ? consensusForOption(activeSaveOption) : null
-            "
-            @update:open="isSaveDialogOpen = $event"
-            @saved="handleSaved"
-        />
-    </div>
+            <SavePickDialog
+                v-if="predictionId() !== null && predictionSport()"
+                :open="isSaveDialogOpen"
+                :prediction-id="predictionId()!"
+                :prediction-sport="predictionSport()!"
+                :option="activeSaveOption"
+                :existing-bet="
+                    activeSaveOption
+                        ? trackedBetForOption(activeSaveOption)
+                        : null
+                "
+                :public-consensus="
+                    activeSaveOption
+                        ? consensusForOption(activeSaveOption)
+                        : null
+                "
+                @update:open="isSaveDialogOpen = $event"
+                @saved="handleSaved"
+            />
+        </div>
+    </article>
 </template>

@@ -105,132 +105,151 @@ test('a late background response cannot overwrite a newly selected filter page',
     assert.deepEqual(list.items.value, ['new filter']);
 });
 
-test('mounted CFB board polls the current page, resumes on visibility and cleans up on unmount', async () => {
-    const server = await createServer({
-        configFile: false,
-        plugins: [
-            {
-                name: 'mock-board-api',
-                enforce: 'pre',
-                load(id) {
-                    if (id.endsWith('/composables/useApiV2Client.ts'))
-                        return 'export const useApiV2Client = () => globalThis.__cfbBoardApi;';
+for (const filterMode of ['date', 'seasonWeek']) {
+    test(`mounted CFB ${filterMode} board defaults to the current slate, polls and cleans up`, async () => {
+        const server = await createServer({
+            configFile: false,
+            plugins: [
+                {
+                    name: 'mock-board-api',
+                    enforce: 'pre',
+                    load(id) {
+                        if (id.endsWith('/composables/useApiV2Client.ts'))
+                            return 'export const useApiV2Client = () => globalThis.__cfbBoardApi;';
+                    },
+                },
+                vue(),
+            ],
+            server: {
+                middlewareMode: true,
+                hmr: false,
+                ws: false,
+                watch: null,
+            },
+            optimizeDeps: { noDiscovery: true, include: [] },
+            resolve: {
+                alias: {
+                    '@': fileURLToPath(
+                        new URL('../../resources/js', import.meta.url),
+                    ),
                 },
             },
-            vue(),
-        ],
-        server: { middlewareMode: true, hmr: false, ws: false, watch: null },
-        optimizeDeps: { noDiscovery: true, include: [] },
-        resolve: {
-            alias: {
-                '@': fileURLToPath(
-                    new URL('../../resources/js', import.meta.url),
-                ),
-            },
-        },
-    });
-    const original = {
-        document: globalThis.document,
-        setInterval: globalThis.setInterval,
-        clearInterval: globalThis.clearInterval,
-    };
-    let app;
-    try {
-        const { default: Board } = await server.ssrLoadModule(
-            '/resources/js/components/SportPredictions.vue',
-        );
-        Board.render = () => null;
-        const intervals = new Map();
-        const listeners = new Map();
-        const calls = [];
-        let status = 'STATUS_SCHEDULED';
-        globalThis.document = {
-            hidden: false,
-            addEventListener: (key, callback) => listeners.set(key, callback),
-            removeEventListener: (key) => listeners.delete(key),
+        });
+        const original = {
+            document: globalThis.document,
+            setInterval: globalThis.setInterval,
+            clearInterval: globalThis.clearInterval,
         };
-        globalThis.setInterval = (callback, delay) => {
-            intervals.set(1, { callback, delay });
-            return 1;
-        };
-        globalThis.clearInterval = (id) => intervals.delete(id);
-        globalThis.__cfbBoardApi = {
-            predictions: {
-                availableSeasons: async () => ({ data: [2026] }),
-                availableDates: async () => ({ data: ['2026-09-26'] }),
-                index: async (sport, options) => {
-                    calls.push({ sport, options });
-                    return {
-                        data: [
-                            {
-                                id: 'canonical-public-id',
-                                game_id: 1,
-                                status,
-                                projection: {},
-                                game: {
-                                    id: 1,
-                                    game_date: '2026-09-26',
+        let app;
+        try {
+            const { default: Board } = await server.ssrLoadModule(
+                '/resources/js/components/SportPredictions.vue',
+            );
+            Board.render = () => null;
+            const intervals = new Map();
+            const listeners = new Map();
+            const calls = [];
+            let status = 'STATUS_SCHEDULED';
+            globalThis.document = {
+                hidden: false,
+                addEventListener: (key, callback) =>
+                    listeners.set(key, callback),
+                removeEventListener: (key) => listeners.delete(key),
+            };
+            globalThis.setInterval = (callback, delay) => {
+                intervals.set(1, { callback, delay });
+                return 1;
+            };
+            globalThis.clearInterval = (id) => intervals.delete(id);
+            globalThis.__cfbBoardApi = {
+                predictions: {
+                    availableSeasons: async () => ({ data: [2026] }),
+                    availableDates: async () => ({ data: ['2026-09-26'] }),
+                    index: async (sport, options) => {
+                        calls.push({ sport, options });
+                        return {
+                            data: [
+                                {
+                                    id: 'canonical-public-id',
+                                    game_id: 1,
                                     status,
+                                    projection: {},
+                                    game: {
+                                        id: 1,
+                                        game_date: '2026-09-26',
+                                        season_type: 2,
+                                        week: 5,
+                                        status,
+                                    },
                                 },
-                            },
-                        ],
-                        meta: { pagination: { current_page: 2 } },
-                    };
+                            ],
+                            meta: { pagination: { current_page: 2 } },
+                        };
+                    },
                 },
-            },
-        };
-        const renderer = createRenderer({
-            createElement: () => ({}),
-            createText: () => ({}),
-            createComment: () => ({}),
-            insert() {},
-            remove() {},
-            setText() {},
-            setElementText() {},
-            patchProp() {},
-            parentNode: () => null,
-            nextSibling: () => null,
-        });
-        const flush = async () => {
-            for (let i = 0; i < 30; i++) await Promise.resolve();
-            await nextTick();
-        };
-        app = renderer.createApp(Board, {
-            config: { sport: 'cfb', filterMode: 'date' },
-        });
-        app.provide(ssrContextKey, { modules: new Set() });
-        app.mount({});
-        await flush();
-        assert.equal(calls.length, 1);
-        assert.equal(intervals.get(1).delay, 30000);
-        intervals.get(1).callback();
-        await flush();
-        assert.equal(calls.length, 2);
-        assert.equal(calls[1].options.query.page, 2);
-        assert.equal(calls[1].options.init.cache, 'no-store');
-        globalThis.document.hidden = true;
-        intervals.get(1).callback();
-        await flush();
-        assert.equal(calls.length, 2);
-        globalThis.document.hidden = false;
-        status = 'STATUS_FINAL';
-        listeners.get('visibilitychange')();
-        await flush();
-        assert.equal(calls.length, 3);
-        intervals.get(1).callback();
-        await flush();
-        assert.equal(calls.length, 3, 'Final-only pages stop polling');
-        app.unmount();
-        app = null;
-        assert.equal(intervals.size, 0);
-        assert.equal(listeners.size, 0);
-    } finally {
-        app?.unmount();
-        for (const [key, value] of Object.entries(original)) {
-            if (value === undefined) delete globalThis[key];
-            else globalThis[key] = value;
+            };
+            const renderer = createRenderer({
+                createElement: () => ({}),
+                createText: () => ({}),
+                createComment: () => ({}),
+                insert() {},
+                remove() {},
+                setText() {},
+                setElementText() {},
+                patchProp() {},
+                parentNode: () => null,
+                nextSibling: () => null,
+            });
+            const flush = async () => {
+                for (let i = 0; i < 30; i++) await Promise.resolve();
+                await nextTick();
+            };
+            app = renderer.createApp(Board, {
+                config: { sport: 'cfb', filterMode },
+            });
+            app.provide(ssrContextKey, { modules: new Set() });
+            app.mount({});
+            await flush();
+            const initialCalls = filterMode === 'seasonWeek' ? 2 : 1;
+            assert.equal(calls.length, initialCalls);
+            if (filterMode === 'seasonWeek') {
+                assert.equal(calls[1].options.query.week, '5');
+                assert.equal(calls[1].options.query.season_type, '2');
+            }
+            assert.equal(intervals.get(1).delay, 30000);
+            intervals.get(1).callback();
+            await flush();
+            assert.equal(calls.length, initialCalls + 1);
+            assert.equal(calls[initialCalls].options.query.page, 2);
+            assert.equal(calls[initialCalls].options.init.cache, 'no-store');
+            globalThis.document.hidden = true;
+            intervals.get(1).callback();
+            await flush();
+            assert.equal(calls.length, initialCalls + 1);
+            globalThis.document.hidden = false;
+            status = 'STATUS_FINAL';
+            listeners.get('visibilitychange')();
+            await flush();
+            assert.equal(calls.length, initialCalls + 2);
+            intervals.get(1).callback();
+            await flush();
+            assert.equal(
+                calls.length,
+                initialCalls + 2,
+                'Final-only pages stop polling',
+            );
+            app.unmount();
+            app = null;
+            assert.equal(intervals.size, 0);
+            assert.equal(listeners.size, 0);
+        } finally {
+            app?.unmount();
+            for (const [key, value] of Object.entries(original)) {
+                if (value === undefined) delete globalThis[key];
+                else globalThis[key] = value;
+            }
+            delete globalThis.__cfbBoardApi;
+            await server.close();
         }
-        delete globalThis.__cfbBoardApi;
-        await server.close();
-    }
-});
+    });
+}

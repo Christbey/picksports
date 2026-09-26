@@ -452,6 +452,8 @@ Unsupported sports return 404. All paths are relative to `/api/v2`.
 | --- | --- | --- | --- |
 | `/sports/{sport}/games/{game}/live-betting` | CFB | None | Nullable latest snapshot in `data`, up to 25 snapshots in `history`, and `meta` |
 | `/sports/{sport}/games/{game}/live-snapshot` | NFL | None | `data` with game state, nullable provisional projection, timestamps and limitations; no `meta`; private/no-store |
+| `/sports/{sport}/games/{game}/market-history` | NFL | `since` (2009 through game season), optional `home_line` (-60 to 60 in half-point increments) | Historical market evidence in `data`, plus `meta` |
+| `/sports/{sport}/games/{game}/matchup-signals` | NFL | `window`: `season_to_date` (default) or `previous_season` | Independent matchup and situational evidence in `data`, plus `meta` |
 
 CFB live betting requires a numeric game ID. The three NFL endpoints accept a
 numeric game ID or a sport-event public ID belonging to NFL. Canonical
@@ -464,7 +466,7 @@ Run `php artisan api:v2-openapi-generate` after changing their routes or schemas
 
 ## V1 retirement and final application migrations (2026-09-25)
 
-V1 is removed; there are 82 V2 route entries and no V1 routes. The final
+V1 is removed; there are 84 V2 route entries and no V1 routes. The final
 application callers use:
 
 - `GET /api/v2/sports/nfl/games/{game}/research`: numeric game ID or NFL

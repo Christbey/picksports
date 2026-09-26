@@ -35,7 +35,7 @@ wire format. This is the correct long-term boundary.
 | Surface | Registered routes | Status |
 | --- | ---: | --- |
 | `/api/v1` | 0 | Removed; former URLs return 404. |
-| `/api/v2` | 82 | Sole versioned application API. |
+| `/api/v2` | 84 | Sole versioned application API. |
 
 The frontend uses `resources/js/composables/useApiV2Client.ts`. NFL research
 and browser security reporting have moved to V2. Public sport pages now use

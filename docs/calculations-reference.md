@@ -457,6 +457,13 @@ The total model is similar as well, but includes additional college-basketball p
 
 ### NFL and CFB prediction model
 
+The shared model below is not a complete description of the NFL historical-Elo
+forecast pipeline. For that path, use the September 21, 2026
+[NFL formula reference](operations/nfl-prediction-formulas.md), covering all 18
+steps from Elo through output/grading, and its
+[review ledger](operations/nfl-prediction-review-ledger.md). Local safeguards and
+observed production behavior are explicitly distinguished there.
+
 Source:
 - `app/Actions/Sports/AbstractAmericanFootballPredictionGenerator.php`
 - concrete classes:

@@ -46,6 +46,23 @@ Focused tests use fake HTTP only: unchanged reuse, kickoff windows, material cha
 
 ## Deployment
 
+### Production override — September 19, 2026 (CDT)
+
+At the user's request, production `NFL_RESEARCH_DAILY_BUDGET_USD` was raised to
+`50` per rolling 24 hours. Configuration-only redeployment
+`depl-a2c9db63-d8f7-45fc-a7c7-714c0cb7bbd4` succeeded at
+`2026-09-20T04:30:21Z`, retaining commit
+`7dd99df7b58bc6f54f64019848fcb8f95dcb53a1`. Live Laravel configuration was read
+back and confirmed the $50 setting. The source-code default in the table above
+remains $5 for environments without this explicit override.
+
+Per-game limits remain $0.75 and eight attempts per rolling 24 hours; reservation,
+retry intervals, evidence requirements and market holds are unchanged. Raising
+the overall budget does not guarantee all games can immediately refresh and is
+an estimated admission ceiling, not a promise to spend $50 or a provider invoice cap.
+
+### Initial rollout
+
 Deployed to Laravel Cloud production on September 18, 2026 in commit `f4231e88d4f4c61603478eb3c7b6db853b498478` (deployment `depl-a2c729eb-8d65-4dc2-a49d-8e60beff77bf`, succeeded). Runtime checks confirmed Redis and all nine cost-control settings, including the $5 rolling daily and $0.75 per-game limits. The read-only cost command succeeded: its post-deploy 24-hour snapshot included 250 attempts, $12.139932 recorded estimates, and $2.10 unknown-cost reservations. That pre-existing usage exceeds the new admission budget; do not bypass the resulting research deferrals.
 
 The cost controls need no new database migration beyond the existing AI usage ledger. The accompanying NFL signal index migration was confirmed applied. Deploy application code and rebuilt config cache together on future releases. Inspect `nfl:research-costs` and scheduler deferral reasons, and measure actual provider spend and coverage over a full cycle before claiming savings. Source checks and stale-data holds must remain active when the budget prevents more paid research.

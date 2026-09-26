@@ -28,6 +28,7 @@ import {
 } from '@/composables/usePredictionLiveData';
 import { useApiV2Client } from '@/composables/useApiV2Client';
 import { getCfbPostseasonLabel } from '@/lib/cfbPostseason';
+import { liveForecastMessage } from '@/lib/predictionBoardLive';
 import {
     candidateRecommendation,
     getPredictionRecommendation,
@@ -445,7 +446,11 @@ function liveWinOutlookValue(): string {
     const probability = liveHomeProbability();
     const leader = liveWinLeaderLabel();
 
-    if (probability === null || !leader) return 'Model updating';
+    if (probability === null || !leader)
+        return isPredictionListItem(props.prediction) &&
+            props.prediction.live_status === 'unavailable'
+            ? 'Forecast unavailable'
+            : 'Model updating';
 
     return `${leader} ${(Math.max(probability, 1 - probability) * 100).toFixed(1)}%`;
 }
@@ -458,6 +463,8 @@ function liveWinMovement(): number | null {
 }
 
 function liveWinOutlookMeta(): string {
+    const status = liveForecastStatus();
+    if (status) return status;
     const movement = liveWinMovement();
     if (movement === null) return 'Live probability pending';
     if (Math.abs(movement) < 1) return 'Holding near pregame';
@@ -482,6 +489,8 @@ function liveTotalOutlookValue(): string {
 }
 
 function liveTotalOutlookMeta(): string {
+    const status = liveForecastStatus();
+    if (status) return status;
     const live = normalizedLiveState.value.livePredictedTotal;
     const pregame = normalizedLiveState.value.preGamePredictedTotal;
 
@@ -493,6 +502,12 @@ function liveTotalOutlookMeta(): string {
     if (Math.abs(movement) < 0.5) return 'Near pregame projection';
 
     return `${formatSignedNumber(movement)} vs pregame total`;
+}
+
+function liveForecastStatus(): string | null {
+    return isPredictionListItem(props.prediction)
+        ? liveForecastMessage(props.prediction)
+        : null;
 }
 
 function preGameTeamLabel(): string {
@@ -1486,9 +1501,7 @@ function saveOptions(): SavePickOption[] {
                     Checked for both teams:
                     {{ valueSignal()?.football_signals?.triggered }} conditions
                     triggered;
-                    {{
-                        valueSignal()?.football_signals?.missing_inputs
-                    }}
+                    {{ valueSignal()?.football_signals?.missing_inputs }}
                     missing inputs. A triggered rule contributes points only
                     when its historical correction has supporting evidence.
                 </p>

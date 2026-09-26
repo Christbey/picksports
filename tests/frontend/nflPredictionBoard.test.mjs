@@ -126,7 +126,27 @@ test('explicit research forecast wins over older stored projection without clear
     assert.equal(v.winner, 'AWAY');
     assert.equal(v.winnerProbability, 0.6);
     assert.equal(v.researchLabel, 'Research hold');
-    assert.equal(v.spreadLean, 'HOME +3.5');
+    assert.equal(v.spreadLean, 'Pass — small edge');
+});
+test('tiny edges pass on either side without hiding the winner or projection', () => {
+    for (const margin of [4.7, 4.3]) {
+        const v = nflBoardPresentation(prediction(0.65, margin, -4.5));
+        assert.equal(v.spreadLean, 'Pass — small edge');
+        assert.equal(v.winner, 'HOME');
+        assert.equal(v.margin, margin);
+    }
+    assert.equal(
+        nflBoardPresentation(prediction(0.65, 6.5, -4.5)).spreadLean,
+        'HOME -4.5',
+    );
+    assert.equal(
+        nflBoardPresentation(
+            prediction(0.65, 6.5, -4.5, {
+                spread_assessment: { minimum_edge_points: 3 },
+            }),
+        ).spreadLean,
+        'Pass — small edge',
+    );
 });
 test('kickoff uses an absolute instant with explicit timezone, missing time is not invented', () => {
     assert.match(kickoffLabel(prediction(0.5, 0, 0)), /(?:AM|PM).*\S+/);
@@ -155,6 +175,37 @@ before(async () => {
 });
 after(async () => {
     await server?.close();
+});
+
+test('game page preserves and renders the ATS assessment independently of win probability', async () => {
+    const { normalizePrediction } = await server.ssrLoadModule(
+        '/resources/js/composables/useNflGamePage.ts',
+    );
+    const assessment = {
+        recommendation: 'pass_small_edge',
+        edge_points: 0.2,
+        minimum_edge_points: 2,
+    };
+    const normalized = normalizePrediction({
+        predicted_spread: 4.7,
+        spread_assessment: assessment,
+    });
+    assert.deepEqual(normalized.spread_assessment, assessment);
+    const { default: component } = await server.ssrLoadModule(
+        '/resources/js/components/game-page/NFLPredictionModelCard.vue',
+    );
+    const html = await renderToString(
+        createSSRApp(component, {
+            prediction: normalized,
+            homeLabel: 'GB',
+            awayLabel: 'ATL',
+            formatNumber: (n, decimals = 1) => Number(n).toFixed(decimals),
+            formatSpread: String,
+        }),
+    );
+    assert.match(html, /Spread: pass/);
+    assert.match(html, /0\.2/);
+    assert.match(html, /Win probability unavailable/);
 });
 
 test('compact card renders winner and spread as separate concepts without diagnostic clutter', async () => {

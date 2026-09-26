@@ -4,6 +4,8 @@ import BettingPlanCard from '@/components/game-page/BettingPlanCard.vue';
 import DepthChartCard from '@/components/game-page/DepthChartCard.vue';
 import InjuryReportCard from '@/components/game-page/InjuryReportCard.vue';
 import NflResearchBrief from '@/components/game-page/NflResearchBrief.vue';
+import NflMatchupSignals from '@/components/game-page/NflMatchupSignals.vue';
+import NflMarketHistory from '@/components/game-page/NflMarketHistory.vue';
 import NflGameEnhancements from '@/components/game-page/NflGameEnhancements.vue';
 import SportDetailedGamePage from '@/components/game-page/SportDetailedGamePage.vue';
 import { useNflDetailedGamePage } from '@/composables/useNflDetailedGamePage';
@@ -164,6 +166,8 @@ const sectionClass = (section: string) =>
 
         <template #afterTrends>
             <div :class="sectionClass('trends')">
+                <NflMarketHistory :game-id="gameId" />
+                <NflMatchupSignals :game-id="gameId" />
                 <p class="text-sm text-muted-foreground">
                     Recent games: up to five completed games from the same
                     season type, before this matchup’s kickoff. W–L–T excludes

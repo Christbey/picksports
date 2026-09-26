@@ -156,7 +156,7 @@ const normalizeNarrative = (
     };
 };
 
-const normalizePrediction = (
+export const normalizePrediction = (
     rawPrediction: unknown,
 ): NflPagePrediction | null => {
     if (!rawPrediction || typeof rawPrediction !== 'object') return null;
@@ -172,6 +172,11 @@ const normalizePrediction = (
         predicted_total: toOptionalNumber(source.predicted_total) ?? '',
         win_probability: toOptionalNumber(source.win_probability) ?? '',
         confidence_score: toNumber(source.confidence_score),
+        spread_assessment:
+            source.spread_assessment &&
+            typeof source.spread_assessment === 'object'
+                ? (source.spread_assessment as NflPagePrediction['spread_assessment'])
+                : undefined,
         betting_value: Array.isArray(source.betting_value)
             ? (source.betting_value as NflPagePrediction['betting_value'])
             : undefined,

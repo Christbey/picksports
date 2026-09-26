@@ -44,7 +44,7 @@ const favorite = computed(() => {
                 Model estimates, not sportsbook lines or an approved bet.
             </p>
             <p
-                v-if="prediction.sport === 'cfb'"
+                v-if="prediction.sport === 'cfb' || prediction.sport === 'nfl'"
                 class="text-xs text-muted-foreground"
             >
                 <span
@@ -89,6 +89,23 @@ const favorite = computed(() => {
                     </div>
                 </div>
             </div>
+            <p
+                v-if="
+                    prediction.spread_assessment?.recommendation ===
+                    'pass_small_edge'
+                "
+                class="mb-3 text-sm text-muted-foreground"
+            >
+                Spread: pass. The model differs from the market by only
+                {{
+                    formatNumber(
+                        Math.abs(prediction.spread_assessment.edge_points ?? 0),
+                        1,
+                    )
+                }}
+                points; the minimum is
+                {{ prediction.spread_assessment.minimum_edge_points }}.
+            </p>
             <div v-if="probability !== null">
                 <p class="mb-2 text-xs text-muted-foreground">
                     Model win probability

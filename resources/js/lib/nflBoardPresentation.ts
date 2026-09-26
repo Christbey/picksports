@@ -53,6 +53,10 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
             : edge > 0
               ? 'home'
               : 'away';
+    const minimumSpreadEdge =
+        numberValue(record(prediction.spread_assessment).minimum_edge_points) ??
+        2;
+    const smallSpreadEdge = edge !== null && Math.abs(edge) < minimumSpreadEdge;
     const research = record(board.research);
     const status = String(research.status ?? 'missing');
     const final = String(prediction.status ?? game?.status ?? '')
@@ -81,13 +85,15 @@ export function nflBoardPresentation(prediction: ApiV2Prediction) {
                   : `${team(margin > 0 ? 'home' : 'away')} by ${Math.abs(margin).toFixed(1)}`,
         total,
         spreadLean:
-            spreadSide && homeLine !== null
-                ? `${team(spreadSide)} ${signed(spreadSide === 'home' ? homeLine : -homeLine)}`
-                : homeLine === null
-                  ? 'Line unavailable'
-                  : margin === null
-                    ? 'Forecast unavailable'
-                    : 'No edge',
+            spreadSide && smallSpreadEdge
+                ? 'Pass — small edge'
+                : spreadSide && homeLine !== null
+                  ? `${team(spreadSide)} ${signed(spreadSide === 'home' ? homeLine : -homeLine)}`
+                  : homeLine === null
+                    ? 'Line unavailable'
+                    : margin === null
+                      ? 'Forecast unavailable'
+                      : 'No edge',
         spreadEdge: edge === null ? null : Math.abs(edge),
         marketSpread:
             homeLine === null

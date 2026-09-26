@@ -1,0 +1,92 @@
+[
+    {
+        "id": "offense",
+        "label": "Offense",
+        "metrics": [
+            {
+                "id": "points_per_game",
+                "label": "Points scored / game",
+                "direction": "higher",
+                "description": "Team scoring, including defensive and special-teams scores; not isolated offensive scoring."
+            },
+            {
+                "id": "epa_per_play",
+                "label": "Overall EPA / play",
+                "direction": "higher",
+                "description": "Expected points added on offensive plays."
+            },
+            {
+                "id": "passing_epa",
+                "label": "Passing EPA / play",
+                "direction": "higher",
+                "description": "Expected points added on pass plays, including sacks."
+            },
+            {
+                "id": "rushing_epa",
+                "label": "Rushing EPA / play",
+                "direction": "higher",
+                "description": "Expected points added on rushing plays."
+            }
+        ]
+    },
+    {
+        "id": "defense",
+        "label": "Defense",
+        "metrics": [
+            {
+                "id": "points_allowed_per_game",
+                "label": "Points allowed / game",
+                "direction": "lower",
+                "description": "Team points allowed, including scores conceded by offense and special teams; not isolated defensive scoring."
+            },
+            {
+                "id": "epa_allowed_per_play",
+                "label": "Overall EPA allowed / play",
+                "direction": "lower",
+                "description": "Opponent expected points added on offensive plays."
+            },
+            {
+                "id": "passing_epa_allowed",
+                "label": "Passing EPA allowed / play",
+                "direction": "lower",
+                "description": "Opponent passing EPA, including sacks."
+            },
+            {
+                "id": "rushing_epa_allowed",
+                "label": "Rushing EPA allowed / play",
+                "direction": "lower",
+                "description": "Opponent rushing EPA."
+            }
+        ]
+    },
+    {
+        "id": "special_teams",
+        "label": "Special teams",
+        "metrics": [
+            {
+                "id": "special_teams_epa",
+                "label": "Overall special-teams EPA",
+                "direction": "higher",
+                "description": "Net EPA attributed to the special-teams unit; requires verified play-level attribution."
+            },
+            {
+                "id": "kicking_epa",
+                "label": "Kicking EPA",
+                "direction": "higher",
+                "description": "EPA attributable to field goals and extra points, not raw kicking percentage."
+            },
+            {
+                "id": "punting_epa",
+                "label": "Punting EPA",
+                "direction": "higher",
+                "description": "Net punt-play EPA, including field position and return outcomes."
+            },
+            {
+                "id": "return_epa",
+                "label": "Return EPA",
+                "direction": "higher",
+                "description": "EPA attributable to punt and kickoff returns; requires verified return opportunities."
+            }
+        ]
+    }
+]

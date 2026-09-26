@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { CalendarX2, FilterX } from 'lucide-vue-next';
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { predictionBoardLiveFields } from '@/lib/predictionBoardLive';
 import UnifiedPredictionCard from '@/components/predictions/UnifiedPredictionCard.vue';
 import SeasonSelect from '@/components/SeasonSelect.vue';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -116,6 +117,7 @@ const {
     meta,
     loading,
     error,
+    refreshError,
     fetchPage: fetchPredictions,
 } = usePredictionList<PredictionListItem>(async (page) => {
     if (filterMode.value === 'date' && !selectedDate.value) {
@@ -124,6 +126,7 @@ const {
 
     const payload = await api.predictions.index(props.config.sport, {
         query: buildQuery(page),
+        init: { cache: 'no-store' },
     });
 
     if (!payload) throw new Error('Failed to fetch predictions');
@@ -229,6 +232,7 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
 
     return {
         id: Number(prediction.id),
+        ...predictionBoardLiveFields(prediction),
         game_id: numberValue(prediction.game_id),
         predicted_spread: numberValue(projection.predicted_spread),
         predicted_total: numberValue(projection.predicted_total),
@@ -268,6 +272,8 @@ const mapV2Prediction = (prediction: ApiV2Prediction): PredictionListItem => {
             status: prediction.status ?? game?.status ?? '',
             home_score: numberValue(game?.home_score),
             away_score: numberValue(game?.away_score),
+            period: numberValue(game?.period),
+            clock: typeof game?.clock === 'string' ? game.clock : undefined,
             inning: numberValue(game?.inning) ?? null,
             inning_half:
                 typeof game?.inning_half === 'string' ? game.inning_half : null,
@@ -523,7 +529,22 @@ const gameHref = (prediction: PredictionListItem): string => {
     return `/${props.config.sport}/games/${gameId}`;
 };
 
+let refreshTimer: ReturnType<typeof setInterval> | undefined;
+const refreshBoard = () => {
+    if (
+        props.config.sport !== 'cfb' ||
+        document.hidden ||
+        isBootstrapping.value
+    )
+        return;
+    // Include scheduled games so the board transitions into live without a reload.
+    if (predictions.value.every((p) => p.game.status === 'STATUS_FINAL'))
+        return;
+    void fetchPredictions(meta.value?.current_page ?? 1, true);
+};
 onMounted(async () => {
+    refreshTimer = setInterval(refreshBoard, 30000);
+    document.addEventListener('visibilitychange', refreshBoard);
     try {
         await fetchAvailableSeasons();
 
@@ -541,10 +562,17 @@ onMounted(async () => {
         isBootstrapping.value = false;
     }
 });
+onBeforeUnmount(() => {
+    if (refreshTimer) clearInterval(refreshTimer);
+    document.removeEventListener('visibilitychange', refreshBoard);
+});
 </script>
 
 <template>
     <div class="space-y-4">
+        <p v-if="refreshError" role="status" class="text-sm text-amber-600">
+            {{ refreshError }}
+        </p>
         <div class="flex flex-wrap items-end justify-between gap-3">
             <div>
                 <div class="flex items-center gap-2">
@@ -737,7 +765,7 @@ onMounted(async () => {
         <div v-else-if="filteredPredictions.length > 0" class="grid gap-4">
             <template
                 v-for="prediction in filteredPredictions"
-                :key="prediction.id"
+                :key="prediction.game.id"
             >
                 <UnifiedPredictionCard
                     :prediction="prediction"

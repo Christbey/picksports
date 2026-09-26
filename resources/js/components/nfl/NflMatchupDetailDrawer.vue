@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
+import NflMatchupSignals from '@/components/game-page/NflMatchupSignals.vue';
+import NflMarketHistory from '@/components/game-page/NflMarketHistory.vue';
 import {
     Sheet,
     SheetContent,
@@ -204,6 +206,14 @@ const timestamp = (value: string | null | undefined) =>
                         Last assessed {{ timestamp(view.researchAt) }}
                     </p>
                 </section>
+                <NflMarketHistory
+                    v-if="prediction.game_id ?? prediction.game?.id"
+                    :game-id="Number(prediction.game_id ?? prediction.game?.id)"
+                />
+                <NflMatchupSignals
+                    v-if="prediction.game_id ?? prediction.game?.id"
+                    :game-id="Number(prediction.game_id ?? prediction.game?.id)"
+                />
                 <details class="rounded-xl border p-3">
                     <summary class="cursor-pointer text-sm font-medium">
                         Model diagnostics

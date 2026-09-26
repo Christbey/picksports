@@ -11,6 +11,7 @@ import {
     Radio,
 } from 'lucide-vue-next';
 import { computed, ref, watch } from 'vue';
+import { predictionWeather } from '@/lib/predictionWeather';
 import { pregameBetCalls } from '@/lib/pregameBetCalls';
 import SavePickDialog from '@/components/predictions/SavePickDialog.vue';
 import { Button } from '@/components/ui/button';
@@ -108,6 +109,13 @@ const props = defineProps<{
 }>();
 
 const expanded = ref(false);
+const weatherForecast = computed(() =>
+    predictionWeather(
+        'weather_forecast' in props.prediction
+            ? props.prediction.weather_forecast
+            : null,
+    ),
+);
 const pregameCalls = computed(() =>
     pregameBetCalls(props.prediction, homeTeamLabel(), awayTeamLabel()),
 );
@@ -1552,6 +1560,19 @@ function saveOptions(): SavePickOption[] {
                 />
             </button>
         </div>
+        <section
+            v-if="sport === 'cfb'"
+            aria-label="Game weather forecast"
+            class="border-t border-border/50 px-4 py-3 text-xs sm:px-6"
+        >
+            <p class="font-medium">{{ weatherForecast.summary }}</p>
+            <details class="mt-1 text-muted-foreground">
+                <summary class="cursor-pointer">
+                    Forecast source and timing
+                </summary>
+                <p class="mt-1">{{ weatherForecast.detail }}</p>
+            </details>
+        </section>
         <div
             v-if="!compact || expanded"
             class="group relative flex w-full overflow-hidden rounded-lg border border-border bg-card p-4 text-left"

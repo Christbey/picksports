@@ -333,6 +333,7 @@ export interface PredictionListItem {
     betting_value?: BettingRecommendation[];
     betting_value_summary?: BettingValueSummary;
     model_bet_context?: unknown;
+    weather_forecast?: unknown;
     value_signal?: ValueSignalSummary | null;
     prediction_analysis?: PredictionAnalysisSummary | null;
     cfb_signal_context?: Record<string, unknown> | null;
@@ -465,6 +466,7 @@ export interface PredictionSummary {
         block_reasons?: string[];
     } | null;
     model_bet_context?: unknown;
+    weather_forecast?: unknown;
     value_signal?: ValueSignalSummary | null;
     market_aware_projection?: MarketAwareProjection | null;
     market_summary?: {
